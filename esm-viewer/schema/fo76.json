@@ -1,0 +1,216 @@
+{
+  "records": {
+    "AMMO": {
+      "name": "Ammunition",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "struct", "sig": "DATA", "name": "Data", "fields": [
+          {"kind": "integer", "name": "Value", "width": "u32", "signed": false},
+          {"kind": "float", "name": "Weight"}
+        ]},
+        {"kind": "struct", "sig": "DNAM", "name": "Data", "fields": [
+          {"kind": "formid", "name": "Projectile"},
+          {"kind": "integer", "name": "Flags", "width": "u8", "signed": false, "format": {"flags": [
+            "Ignores Normal Weapon Resistance", "Non-Playable", "Has Count Based 3D"
+          ]}},
+          {"kind": "unused", "bytes": 3},
+          {"kind": "float", "name": "Damage"},
+          {"kind": "integer", "name": "Health", "width": "u32", "signed": false}
+        ]},
+        {"kind": "lstring", "sig": "ONAM", "name": "Short Name"},
+        {"kind": "string", "sig": "NAM1", "name": "Casing Model"}
+      ]
+    },
+    "ARMO": {
+      "name": "Armor",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "struct", "sig": "DATA", "name": "Armor Data", "fields": [
+          {"kind": "integer", "name": "Value", "width": "s32", "signed": true},
+          {"kind": "float", "name": "Weight"},
+          {"kind": "integer", "name": "Health", "width": "u32", "signed": false, "from_version": 109}
+        ]},
+        {"kind": "struct", "sig": "FNAM", "name": "Rating Addon Data", "fields": [
+          {"kind": "integer", "name": "Armor Rating", "width": "u16", "signed": false},
+          {"kind": "integer", "name": "Base Addon Index", "width": "u16", "signed": false},
+          {"kind": "integer", "name": "Stagger Rating", "width": "u32", "signed": false, "format": {"enum": ["None", "Small", "Medium", "Large", "Extra Large"]}, "from_version": 99}
+        ]},
+        {"kind": "formid", "sig": "TNAM", "name": "Template Armor"}
+      ]
+    },
+    "PROJ": {
+      "name": "Projectile",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "struct", "sig": "DNAM", "name": "Data", "fields": [
+          {"kind": "integer", "name": "Flags", "width": "u16", "signed": false, "format": {"flags": [
+            "Hitscan", "Explosion", "Alt. Trigger", "Muzzle Flash", "Unknown 4",
+            "Can Be Disabled", "Can Be Picked Up", "Supersonic", "Pins Limbs",
+            "Pass Through Small Transparent", "Disable Combat Aim Correction",
+            "Penetrates Geometry", "Continuous Update", "Seeks Target",
+            "Unknown 14", "Unknown 15"
+          ]}},
+          {"kind": "integer", "name": "Type", "width": "u16", "signed": false, "format": {"enum": {
+            "1": "Missile", "2": "Lobber", "4": "Beam", "8": "Flame",
+            "16": "Cone", "32": "Barrier", "64": "Arrow"
+          }}},
+          {"kind": "float", "name": "Gravity"},
+          {"kind": "float", "name": "Speed"},
+          {"kind": "float", "name": "Range"},
+          {"kind": "formid", "name": "Light"},
+          {"kind": "formid", "name": "Muzzle Flash - Light"},
+          {"kind": "float", "name": "Explosion - Alt. Trigger - Proximity"},
+          {"kind": "float", "name": "Explosion - Alt. Trigger - Timer"},
+          {"kind": "formid", "name": "Explosion"},
+          {"kind": "formid", "name": "Sound"},
+          {"kind": "float", "name": "Muzzle Flash - Duration"},
+          {"kind": "float", "name": "Fade Duration"},
+          {"kind": "float", "name": "Impact Force"},
+          {"kind": "formid", "name": "Sound - Countdown"},
+          {"kind": "formid", "name": "Sound - Disable"},
+          {"kind": "formid", "name": "Default Weapon Source"},
+          {"kind": "float", "name": "Cone Spread"},
+          {"kind": "float", "name": "Collision Radius"},
+          {"kind": "float", "name": "Lifetime"},
+          {"kind": "float", "name": "Relaunch Interval"},
+          {"kind": "formid", "name": "Decal Data"},
+          {"kind": "formid", "name": "Collision Layer"},
+          {"kind": "integer", "name": "Tracer Frequency", "width": "u8", "signed": false},
+          {"kind": "formid", "name": "VATS Projectile"}
+        ]}
+      ]
+    },
+    "EXPL": {
+      "name": "Explosion",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "struct", "sig": "DATA", "name": "Data", "fields": [
+          {"kind": "formid", "name": "Light"},
+          {"kind": "formid", "name": "Sound 1"},
+          {"kind": "formid", "name": "Sound 2"},
+          {"kind": "formid", "name": "Impact Data Set"},
+          {"kind": "formid", "name": "Placed Object"},
+          {"kind": "formid", "name": "Spawn Projectile"},
+          {"kind": "formid", "name": "Damage Curve Table", "from_version": 150},
+          {"kind": "float", "name": "Force"},
+          {"kind": "float", "name": "Damage"},
+          {"kind": "float", "name": "Inner Radius", "from_version": 97},
+          {"kind": "float", "name": "Outer Radius"},
+          {"kind": "float", "name": "IS Radius"},
+          {"kind": "float", "name": "Vertical Offset Mult"},
+          {"kind": "integer", "name": "Sound Level", "width": "u32", "signed": false, "format": {"enum": ["Loud", "Normal", "Silent", "Very Loud", "Quiet"]}}
+        ]}
+      ]
+    },
+    "WEAP": {
+      "name": "Weapon",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "struct", "sig": "DNAM", "name": "Data", "fields": [
+          {"kind": "formid", "name": "Ammo"},
+          {"kind": "float", "name": "Speed"},
+          {"kind": "float", "name": "Reload Speed", "from_version": 61},
+          {"kind": "float", "name": "NPC Reload Delay", "from_version": 177},
+          {"kind": "float", "name": "Reach"},
+          {"kind": "float", "name": "Reach Engagement Mult", "from_version": 140},
+          {"kind": "float", "name": "Min Range"},
+          {"kind": "float", "name": "Max Range"},
+          {"kind": "float", "name": "Unknown", "from_version": 139},
+          {"kind": "float", "name": "Attack Delay Seconds"},
+          {"kind": "float", "name": "Unused"},
+          {"kind": "float", "name": "Damage - OutOfRangeMult"},
+          {"kind": "integer", "name": "On Hit", "width": "u32", "signed": false, "format": {"enum": [
+            "Normal formula behaviour", "Dismember only", "Explode only", "No dismember or explode"
+          ]}},
+          {"kind": "formid", "name": "Skill"},
+          {"kind": "formid", "name": "Resist"},
+          {"kind": "integer", "name": "Flags", "width": "u32", "signed": false, "format": {"flags": [
+            "Player Only", "NPCs Use Ammo", "No Jam After Reload", "Charging Reload",
+            "Minor Crime", "Fixed Range", "Not Used In Normal Combat", "Unknown 8",
+            "Crit Effect - on Death", "Charging Attack", "Alternate Rumble",
+            "Hold Input To Power", "Non Hostile", "Bound Weapon",
+            "Ignores Normal Weapon Resistance", "Automatic", "Repeatable Single Fire",
+            "Can't Drop", "Hide Backpack", "Embedded Weapon", "Not Playable",
+            "Has Scope", "Bolt Action", "Secondary Weapon", "Disable Shells",
+            "Unknown 26", "Unknown 27", "Unknown 28", "Unknown 29", "Unknown 30",
+            "Has Overheating", "Unknown 32"
+          ]}},
+          {"kind": "integer", "name": "Capacity", "width": "u16", "signed": false},
+          {"kind": "integer", "name": "Ammo used per shot", "width": "u16", "signed": false, "from_version": 200},
+          {"kind": "integer", "name": "Weapon Type", "width": "u8", "signed": false, "format": {"enum": [
+            "HandToHandMelee", "OneHandSword", "OneHandDagger", "OneHandAxe", "OneHandMace",
+            "TwoHandSword", "TwoHandAxe", "Bow", "Staff", "Gun", "Grenade", "Mine"
+          ]}},
+          {"kind": "float", "name": "Secondary Damage"},
+          {"kind": "float", "name": "Weight", "from_version": 54},
+          {"kind": "integer", "name": "Value", "width": "u32", "signed": false, "from_version": 54},
+          {"kind": "integer", "name": "Base Damage", "width": "u16", "signed": false, "from_version": 55}
+        ]},
+        {"kind": "struct", "sig": "FNAM", "name": "Animation Data", "fields": [
+          {"kind": "float", "name": "Animation Fire Seconds"},
+          {"kind": "float", "name": "Rumble - Left Motor Strength"},
+          {"kind": "float", "name": "Rumble - Right Motor Strength"},
+          {"kind": "float", "name": "Rumble - Duration"},
+          {"kind": "float", "name": "Animation Reload Seconds"},
+          {"kind": "float", "name": "Bolt Anim Seconds", "from_version": 55},
+          {"kind": "float", "name": "Sighted Transition Seconds", "from_version": 66},
+          {"kind": "integer", "name": "# Projectiles", "width": "u8", "signed": false}
+        ]}
+      ]
+    },
+    "SPEL": {
+      "name": "Spell",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "struct", "sig": "SPIT", "name": "Data", "fields": [
+          {"kind": "integer", "name": "Base Cost", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Flags", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Type", "width": "u32", "signed": false, "format": {"enum": [
+            "Spell", "Disease", "Power", "Lesser Power", "Ability", "Poison",
+            "Enchantment", "Potion", "Wortcraft", "Levelled", "Addiction",
+            "Voice", "Staff Enchantment", "Scroll"
+          ]}},
+          {"kind": "float", "name": "Charge Time"},
+          {"kind": "integer", "name": "Cast Type", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Target Type", "width": "u32", "signed": false},
+          {"kind": "float", "name": "Cast Duration"},
+          {"kind": "float", "name": "Range"},
+          {"kind": "formid", "name": "Casting Perk"}
+        ]},
+        {"kind": "raw_fallback", "sig": "EFID", "name": "Effects", "reason": "wbEffect/wbConditions closure decider"}
+      ]
+    },
+    "MGEF": {
+      "name": "Magic Effect",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DNAM", "name": "Magic Item Description"},
+        {"kind": "raw_fallback", "sig": "DATA", "name": "Magic Effect Data", "reason": "wbMGEFAssocItemDecider closure union"},
+        {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider"}
+      ]
+    },
+    "PERK": {
+      "name": "Perk",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "string", "sig": "ICON", "name": "Image"},
+        {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider"},
+        {"kind": "raw_fallback", "sig": "PRKE", "name": "Effects", "reason": "wbPerkEffectDataDecider closure decider"}
+      ]
+    }
+  }
+}

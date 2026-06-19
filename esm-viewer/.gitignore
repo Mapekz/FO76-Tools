@@ -1,0 +1,6 @@
+/target
+
+# Game data (large, not redistributable — obtain from your own install)
+*.esm
+*.esm.idx
+*.ba2

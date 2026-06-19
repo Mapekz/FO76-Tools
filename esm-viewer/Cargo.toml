@@ -1,0 +1,23 @@
+[package]
+name = "fo76-esm-parser"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "fo76_esm_parser"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fo76"
+path = "src/bin/cli.rs"
+
+[dependencies]
+anyhow = "1"
+bincode = "1.3"
+byteorder = "1.5"
+clap = { version = "4", features = ["derive"] }
+flate2 = "1"
+memmap2 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
