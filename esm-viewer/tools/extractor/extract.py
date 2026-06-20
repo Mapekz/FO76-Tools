@@ -401,7 +401,7 @@ class Extractor:
         # wbStruct / wbStructSK
         for prefix in ("wbStructSK", "wbStruct"):
             if expr.startswith(prefix + "("):
-                return self._parse_struct(expr, prefix)
+                return self._parse_struct(expr)
         if expr.startswith("wbRStruct") or expr.startswith("wbRStructSK"):
             return self._parse_rstruct(expr)
         if expr.startswith("wbRArray") or expr.startswith("wbRArrayS"):
@@ -437,7 +437,7 @@ class Extractor:
             return self._parse_sig_ref(expr)
         return None
 
-    def _parse_struct(self, expr: str, prefix: str) -> dict:
+    def _parse_struct(self, expr: str) -> dict:
         lparen = expr.index("(")
         rparen = find_matching_paren(expr, lparen)
         args = expr[lparen + 1 : rparen]
