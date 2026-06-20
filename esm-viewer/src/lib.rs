@@ -1,5 +1,6 @@
 pub mod ba2;
 pub mod compress;
+pub mod curves;
 pub mod decode;
 pub mod diff;
 pub mod format;
@@ -39,6 +40,9 @@ pub struct Database {
     pub schema: Schema,
     /// Resolved string tables, if a localization BA2 was found or supplied.
     pub localization: Option<Localization>,
+    /// Optional curve index built from Startup BA2. When present, FormID fields
+    /// whose `valid_refs` includes `"CURV"` have their curve data inlined.
+    pub curves: Option<crate::curves::CurveIndex>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,12 +90,23 @@ impl Database {
             index,
             schema,
             localization,
+            curves: None,
         })
     }
 
     /// Replace (or set) the localization tables used for LString resolution.
     pub fn set_localization(&mut self, loc: Localization) {
         self.localization = Some(loc);
+    }
+
+    /// Load and build the curve index from a Startup BA2 archive.
+    ///
+    /// Once loaded, any `formid` field with `"CURV"` in its `valid_refs` will
+    /// have the curve's path and point data inlined in the decoded output.
+    pub fn load_curves(&mut self, ba2_path: &Path) -> anyhow::Result<()> {
+        let curves = crate::curves::CurveIndex::build(&self.esm, &self.index, ba2_path)?;
+        self.curves = Some(curves);
+        Ok(())
     }
 
     pub fn file_info(&self) -> anyhow::Result<FileInfo> {
@@ -274,6 +289,7 @@ impl Database {
             schema: &self.schema,
             form_version: parsed.header.form_version,
             localization: self.localization.as_ref(),
+            curves: self.curves.as_ref(),
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
