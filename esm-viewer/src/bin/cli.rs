@@ -48,6 +48,19 @@ enum Commands {
         #[arg(long)]
         pretty: bool,
     },
+    /// Browse the hierarchical GRUP structure of an ESM file
+    Tree {
+        file: PathBuf,
+        /// Record type to drill into (e.g. WEAP). Omit to list top-level groups.
+        #[arg(long = "type")]
+        record_type: Option<String>,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        #[arg(long)]
+        pretty: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -74,6 +87,13 @@ fn main() -> anyhow::Result<()> {
             json,
             pretty,
         } => cmd_diff(&file_a, &file_b, record_type.as_deref(), json, pretty),
+        Commands::Tree {
+            file,
+            record_type,
+            offset,
+            limit,
+            pretty,
+        } => cmd_tree(&file, record_type.as_deref(), offset, limit, pretty),
     }
 }
 
@@ -319,6 +339,24 @@ fn format_val(v: &serde_json::Value) -> String {
         serde_json::Value::Bool(b) => b.to_string(),
         _ => serde_json::to_string(v).unwrap_or_default(),
     }
+}
+
+fn cmd_tree(
+    file: &PathBuf,
+    record_type: Option<&str>,
+    offset: usize,
+    limit: usize,
+    pretty: bool,
+) -> anyhow::Result<()> {
+    let mut db = Database::open(file)?;
+    if let Some(sig) = record_type {
+        let children = db.list_type_children(sig, offset, limit)?;
+        print_json(&serde_json::to_value(&children)?, pretty);
+    } else {
+        let groups = db.list_groups();
+        print_json(&serde_json::to_value(&groups)?, pretty);
+    }
+    Ok(())
 }
 
 fn print_json(value: &serde_json::Value, pretty: bool) {

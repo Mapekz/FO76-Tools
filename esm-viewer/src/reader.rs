@@ -10,6 +10,29 @@ use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
+/// A record reference emitted by [`EsmFile::walk_structure`].
+#[derive(Debug, Clone)]
+pub struct StructuralRecord {
+    pub form_id: FormId,
+    pub record_type: String,
+    pub offset: u64,
+}
+
+/// Event emitted by [`EsmFile::walk_structure`] as it traverses the GRUP tree.
+pub enum WalkEvent {
+    /// A GRUP node has been entered.
+    GroupStart {
+        offset: u64,
+        group_type: i32,
+        label: u32,
+        group_size: u32,
+    },
+    /// A GRUP node has been fully traversed (all children emitted).
+    GroupEnd { offset: u64 },
+    /// A regular record (non-GRUP) was encountered.
+    Record(StructuralRecord),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileInfo {
     pub path: PathBuf,
@@ -144,6 +167,80 @@ impl EsmFile {
         let start = HEADER_SIZE + tes4.data_size as u64;
         let end = data.len() as u64;
         walk_container(data, start, end, &mut f)
+    }
+
+    /// Walk the GRUP/record tree emitting [`WalkEvent`]s.
+    ///
+    /// Skips the TES4 file header record and begins from the first top-level
+    /// GRUP. Does not modify or call into the existing [`walk_records`] path.
+    ///
+    /// [`walk_records`]: EsmFile::walk_records
+    pub fn walk_structure<F>(&self, mut f: F) -> anyhow::Result<()>
+    where
+        F: FnMut(WalkEvent) -> anyhow::Result<()>,
+    {
+        let data = self.data();
+        if data.len() < HEADER_SIZE as usize {
+            bail!("file too small for walk_structure");
+        }
+        let tes4 = RecordHeader::parse(&data[0..HEADER_SIZE as usize])?;
+        let start = HEADER_SIZE as usize + tes4.data_size as usize;
+        let end = data.len();
+        self.walk_structure_container(data, start, end, &mut f)
+    }
+
+    fn walk_structure_container<F>(
+        &self,
+        data: &[u8],
+        mut pos: usize,
+        end: usize,
+        f: &mut F,
+    ) -> anyhow::Result<()>
+    where
+        F: FnMut(WalkEvent) -> anyhow::Result<()>,
+    {
+        while pos + HEADER_SIZE as usize <= end {
+            // Need at least 4 bytes to identify GRUP vs record
+            if pos + 4 > data.len() {
+                break;
+            }
+            if data[pos..pos + 4] == GRUP_SIG {
+                // GRUP header: sig(4) + group_size(4) + label(4) + group_type(4) + stamp(4) + unknown(4)
+                let gh = GroupHeader::parse(&data[pos..])?;
+                let group_size = gh.group_size as usize;
+                // group_size includes the 24-byte header itself
+                let group_end = pos.saturating_add(group_size);
+                if group_end > end {
+                    bail!("GRUP extends beyond container at offset {}", pos);
+                }
+                f(WalkEvent::GroupStart {
+                    offset: pos as u64,
+                    group_type: gh.group_type,
+                    label: gh.label,
+                    group_size: gh.group_size,
+                })?;
+                // Walk children (after the 24-byte GRUP header)
+                self.walk_structure_container(data, pos + HEADER_SIZE as usize, group_end, f)?;
+                f(WalkEvent::GroupEnd { offset: pos as u64 })?;
+                pos = group_end;
+            } else {
+                // Regular record header
+                let rh = RecordHeader::parse(&data[pos..])?;
+                let record_end = pos
+                    .saturating_add(HEADER_SIZE as usize)
+                    .saturating_add(rh.data_size as usize);
+                if record_end > end {
+                    break;
+                }
+                f(WalkEvent::Record(StructuralRecord {
+                    form_id: FormId::new(rh.form_id),
+                    record_type: rh.signature.to_string(),
+                    offset: pos as u64,
+                }))?;
+                pos = record_end;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -300,4 +397,108 @@ pub fn lstring_id_from_subrecords(subs: &[OwnedSubrecord], sig: &str) -> Option<
         .find(|s| s.signature.as_str() == sig)
         .filter(|s| s.data.len() >= 4)
         .map(|s| u32::from_le_bytes(s.data[0..4].try_into().unwrap()))
+}
+
+#[cfg(test)]
+mod structural_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Build a minimal ESM byte buffer:
+    /// - TES4 record: 24 bytes, data_size=0
+    /// - GRUP: 24 bytes header + 2 × 24-byte child records = 72 bytes total (group_size=72)
+    /// - 2 WEAP records (data_size=0 each)
+    fn make_minimal_esm() -> Vec<u8> {
+        let mut buf = Vec::new();
+
+        // TES4 header: sig=TES4, data_size=0, flags=0, form_id=0, vcs1=0, form_version=0, vcs2=0
+        buf.extend_from_slice(b"TES4"); // signature
+        buf.extend_from_slice(&0u32.to_le_bytes()); // data_size = 0
+        buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+        buf.extend_from_slice(&0u32.to_le_bytes()); // form_id
+        buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+        buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
+        buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+                                                    // TES4 data_size=0, so no payload bytes
+
+        // GRUP header: sig=GRUP, group_size=72, label=WEAP, group_type=0, stamp=0, unknown=0
+        // group_size = 24 (header) + 24 (rec1) + 24 (rec2) = 72
+        let group_size: u32 = 72;
+        let label = u32::from_le_bytes(*b"WEAP");
+        buf.extend_from_slice(b"GRUP"); // signature
+        buf.extend_from_slice(&group_size.to_le_bytes()); // group_size
+        buf.extend_from_slice(&label.to_le_bytes()); // label
+        buf.extend_from_slice(&0i32.to_le_bytes()); // group_type = 0 (top-level)
+        buf.extend_from_slice(&0u32.to_le_bytes()); // stamp
+        buf.extend_from_slice(&0u32.to_le_bytes()); // unknown
+
+        // WEAP record 1: sig=WEAP, data_size=0, flags=0, form_id=1, vcs1=0, form_version=0, vcs2=0
+        buf.extend_from_slice(b"WEAP");
+        buf.extend_from_slice(&0u32.to_le_bytes()); // data_size
+        buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+        buf.extend_from_slice(&1u32.to_le_bytes()); // form_id = 1
+        buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+        buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
+        buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+
+        // WEAP record 2: form_id = 2
+        buf.extend_from_slice(b"WEAP");
+        buf.extend_from_slice(&0u32.to_le_bytes()); // data_size
+        buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+        buf.extend_from_slice(&2u32.to_le_bytes()); // form_id = 2
+        buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+        buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
+        buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+
+        buf
+    }
+
+    #[test]
+    fn walk_structure_events_sequence() {
+        let buf = make_minimal_esm();
+
+        // Write to a temp file so EsmFile::open can mmap it
+        let tmp_path = std::env::temp_dir().join("fo76_esm_test_walk_structure.esm");
+        {
+            let mut f = std::fs::File::create(&tmp_path).expect("create temp file");
+            f.write_all(&buf).expect("write");
+        }
+
+        let esm = EsmFile::open(&tmp_path).expect("open");
+
+        let mut events = Vec::new();
+        esm.walk_structure(|ev| {
+            match &ev {
+                WalkEvent::GroupStart {
+                    group_type, label, ..
+                } => {
+                    events.push(format!("GroupStart(type={},label={})", group_type, label));
+                }
+                WalkEvent::GroupEnd { .. } => {
+                    events.push("GroupEnd".to_string());
+                }
+                WalkEvent::Record(r) => {
+                    events.push(format!("Record({},{})", r.record_type, r.form_id.0));
+                }
+            }
+            Ok(())
+        })
+        .expect("walk_structure");
+
+        let _ = std::fs::remove_file(&tmp_path);
+
+        assert_eq!(
+            events.len(),
+            4,
+            "expected GroupStart, Record, Record, GroupEnd; got {:?}",
+            events
+        );
+        assert!(
+            events[0].starts_with("GroupStart"),
+            "first event is GroupStart"
+        );
+        assert_eq!(events[1], "Record(WEAP,1)");
+        assert_eq!(events[2], "Record(WEAP,2)");
+        assert_eq!(events[3], "GroupEnd");
+    }
 }

@@ -1,5 +1,6 @@
 use crate::formid::FormId;
 use crate::reader::{edid_from_subrecords, lstring_id_from_subrecords, EsmFile, RecordMeta};
+use crate::tree::TreeIndex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -7,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 2;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CacheFile {
@@ -18,6 +19,7 @@ struct CacheFile {
     mtime_nanos: u32,
     form_index: HashMap<u32, RecordMeta>,
     edid_index: Option<HashMap<String, u32>>,
+    tree: TreeIndex,
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,7 @@ pub struct Index {
     pub path: PathBuf,
     pub form_index: HashMap<FormId, RecordMeta>,
     edid_index: Option<HashMap<String, FormId>>,
+    pub tree: TreeIndex,
     cache_path: PathBuf,
 }
 
@@ -97,6 +100,7 @@ impl Index {
             mtime_nanos: dur.subsec_nanos(),
             form_index,
             edid_index,
+            tree: self.tree.clone(),
         };
 
         let encoded = bincode::serialize(&cache)?;
@@ -119,7 +123,10 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
     }
     let meta = fs::metadata(&esm.path)?;
     let bytes = fs::read(&cache_path)?;
-    let cache: CacheFile = bincode::deserialize(&bytes)?;
+    let cache: CacheFile = match bincode::deserialize(&bytes) {
+        Ok(c) => c,
+        Err(_) => return Ok(None), // stale or incompatible cache format
+    };
     let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
     let dur = mtime
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -146,6 +153,7 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         path: esm.path.clone(),
         form_index,
         edid_index,
+        tree: cache.tree,
         cache_path,
     }))
 }
@@ -160,11 +168,14 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
         Ok(())
     })?;
 
+    let tree = TreeIndex::build(esm)?;
+
     let cache_path = cache_path_for(&esm.path);
     let index = Index {
         path: esm.path.clone(),
         form_index,
         edid_index: None,
+        tree,
         cache_path,
     };
     index.save_cache(esm)?;
