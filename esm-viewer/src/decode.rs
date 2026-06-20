@@ -359,20 +359,8 @@ fn decode_member(
                     field,
                     map,
                     default_variant,
-                } => out
-                    .get(field)
-                    .and_then(|val| {
-                        let key = match val {
-                            Value::Number(n) => n.to_string(),
-                            Value::Object(o) => o
-                                .get("value")
-                                .and_then(Value::as_i64)
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                            _ => val.to_string(),
-                        };
-                        map.get(&key).copied()
-                    })
+                } => field_value_key(out, field)
+                    .and_then(|k| map.get(&k).copied())
                     .or(*default_variant),
                 UnionDecider::ByteAtOffset {
                     byte_offset,
@@ -550,20 +538,8 @@ fn decode_struct_fields(
                         field,
                         map,
                         default_variant,
-                    } => struct_out
-                        .get(field)
-                        .and_then(|val| {
-                            let key = match val {
-                                Value::Number(n) => n.to_string(),
-                                Value::Object(o) => o
-                                    .get("value")
-                                    .and_then(Value::as_i64)
-                                    .map(|v| v.to_string())
-                                    .unwrap_or_default(),
-                                _ => val.to_string(),
-                            };
-                            map.get(&key).copied()
-                        })
+                    } => field_value_key(&struct_out, field)
+                        .and_then(|k| map.get(&k).copied())
                         .or(*default_variant),
                     _ => choose_union_variant(ctx.form_version, decider, variants.len()),
                 };
@@ -772,6 +748,30 @@ fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
 fn read_zstring(data: &[u8]) -> String {
     let end = data.iter().position(|&b| b == 0).unwrap_or(data.len());
     String::from_utf8_lossy(&data[..end]).into_owned()
+}
+
+/// Resolve a `FieldValue` lookup key from an already-decoded output map.
+///
+/// Supports dot-separated paths (e.g. `"Effect Header.Effect Type"`) to reach
+/// into nested objects. For enum-formatted integers, the object has a `"value"`
+/// key whose integer is used as the map key.
+fn field_value_key(out: &Map<String, Value>, field: &str) -> Option<String> {
+    let val = if let Some((parent, child)) = field.split_once('.') {
+        out.get(parent)?.get(child)?
+    } else {
+        out.get(field)?
+    };
+    let key = match val {
+        Value::Number(n) => n.to_string(),
+        Value::String(s) => s.clone(),
+        Value::Object(o) => o
+            .get("value")
+            .and_then(Value::as_i64)
+            .map(|v| v.to_string())
+            .unwrap_or_default(),
+        _ => val.to_string(),
+    };
+    Some(key)
 }
 
 fn take_first<'a>(
