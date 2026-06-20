@@ -941,6 +941,326 @@
           ]}}
         ]}}
       ]
+    },
+    "CONT": {
+      "name": "Container",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "raw_fallback", "sig": "VMAD", "name": "Virtual Machine Adapter", "reason": "wbVMAD closure decider"},
+        {"kind": "struct", "sig": "OBND", "name": "Object Bounds", "fields": [
+          {"kind": "integer", "name": "X1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "X2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z2", "width": "s16", "signed": true}
+        ]},
+        {"kind": "rarray", "name": "Object Placement Defaults", "element": {"kind": "struct", "sig": "OPDS", "name": "Object Placement Default", "fields": [
+          {"kind": "bytes", "name": "Flags", "len": 4},
+          {"kind": "float", "name": "Sink"},
+          {"kind": "float", "name": "Sink Var"},
+          {"kind": "float", "name": "Scale"},
+          {"kind": "float", "name": "Scale Var"},
+          {"kind": "float", "name": "Angle X"},
+          {"kind": "float", "name": "Angle X Var"},
+          {"kind": "float", "name": "Angle Y"},
+          {"kind": "float", "name": "Angle Y Var"},
+          {"kind": "float", "name": "Angle Z"},
+          {"kind": "float", "name": "Angle Z Var"}
+        ]}},
+        {"kind": "formid", "sig": "PTRN", "name": "Preview Transform", "valid_refs": ["TRNS", "NULL"]},
+        {"kind": "bytes", "sig": "PHST", "name": "Photo Studio"},
+        {"kind": "formid", "sig": "STCP", "name": "Animation Sound", "valid_refs": ["STAG"]},
+        {"kind": "formid", "sig": "SNTP", "name": "Snap Template", "valid_refs": ["STMP"]},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "rstruct", "name": "Model", "members": [
+          {"kind": "string", "sig": "MODL", "name": "Model FileName", "keep_case": false},
+          {"kind": "bytes", "sig": "MODT", "name": "Model Information"},
+          {"kind": "bytes", "sig": "MODC", "name": "Model Color"},
+          {"kind": "bytes", "sig": "MODS", "name": "Model Data"},
+          {"kind": "bytes", "sig": "MODF", "name": "Model Flags"}
+        ]},
+        {"kind": "integer", "sig": "COCT", "name": "Count", "width": "u32", "signed": false},
+        {"kind": "rarray", "name": "Items", "element": {
+          "kind": "struct", "sig": "CNTO", "name": "Item", "fields": [
+            {"kind": "formid", "name": "Object"},
+            {"kind": "integer", "name": "Count", "width": "s32", "signed": true}
+          ]
+        }},
+        {"kind": "struct", "sig": "DEST", "name": "Destructible", "fields": [
+          {"kind": "integer", "name": "Health", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Count", "width": "u8", "signed": false},
+          {"kind": "formid", "name": "Explosion", "valid_refs": ["EXPL", "NULL"]},
+          {"kind": "formid", "name": "Debris", "valid_refs": ["DEBR", "NULL"]}
+        ]},
+        {"kind": "struct", "sig": "DATA", "name": "Data", "fields": [
+          {"kind": "integer", "name": "Flags", "width": "u8", "signed": false, "format": {"flags": [
+            "Allow Sounds When Animation", "Respawns", "Show Owner",
+            "Unknown 4", "Unknown 5", "Unknown 6"
+          ]}},
+          {"kind": "float", "name": "Weight"}
+        ]},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider; upgrade after 03-schema-coverage ships"},
+        {"kind": "formid", "sig": "SNAM", "name": "Sound - Open", "valid_refs": ["SNDR"]},
+        {"kind": "formid", "sig": "QNAM", "name": "Sound - Close", "valid_refs": ["SNDR"]},
+        {"kind": "formid", "sig": "TNAM", "name": "Sound - Take All", "valid_refs": ["SNDR"]},
+        {"kind": "formid", "sig": "ONAM", "name": "Filter List", "valid_refs": ["FLST"]}
+      ]
+    },
+    "FLOR": {
+      "name": "Flora",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "raw_fallback", "sig": "VMAD", "name": "Virtual Machine Adapter", "reason": "wbVMAD closure decider"},
+        {"kind": "struct", "sig": "OBND", "name": "Object Bounds", "fields": [
+          {"kind": "integer", "name": "X1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "X2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z2", "width": "s16", "signed": true}
+        ]},
+        {"kind": "formid", "sig": "PTRN", "name": "Preview Transform", "valid_refs": ["TRNS", "NULL"]},
+        {"kind": "formid", "sig": "SNTP", "name": "Snap Template", "valid_refs": ["STMP"]},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "rstruct", "name": "Model", "members": [
+          {"kind": "string", "sig": "MODL", "name": "Model FileName", "keep_case": false},
+          {"kind": "bytes", "sig": "MODT", "name": "Model Information"},
+          {"kind": "bytes", "sig": "MODC", "name": "Model Color"},
+          {"kind": "bytes", "sig": "MODS", "name": "Model Data"},
+          {"kind": "bytes", "sig": "MODF", "name": "Model Flags"}
+        ]},
+        {"kind": "struct", "sig": "DEST", "name": "Destructible", "fields": [
+          {"kind": "integer", "name": "Health", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Count", "width": "u8", "signed": false},
+          {"kind": "formid", "name": "Explosion", "valid_refs": ["EXPL", "NULL"]},
+          {"kind": "formid", "name": "Debris", "valid_refs": ["DEBR", "NULL"]}
+        ]},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "formid", "sig": "PFIG", "name": "Ingredient", "valid_refs": []},
+        {"kind": "formid", "sig": "SNAM", "name": "Harvest Sound", "valid_refs": ["SNDR"]},
+        {"kind": "struct", "sig": "PFPC", "name": "Harvest Chance", "fields": [
+          {"kind": "integer", "name": "Spring", "width": "u8", "signed": false},
+          {"kind": "integer", "name": "Summer", "width": "u8", "signed": false},
+          {"kind": "integer", "name": "Fall", "width": "u8", "signed": false},
+          {"kind": "integer", "name": "Winter", "width": "u8", "signed": false}
+        ]},
+        {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider; upgrade after 03-schema-coverage ships"}
+      ]
+    },
+    "FURN": {
+      "name": "Furniture",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "raw_fallback", "sig": "VMAD", "name": "Virtual Machine Adapter", "reason": "wbVMAD closure decider"},
+        {"kind": "struct", "sig": "OBND", "name": "Object Bounds", "fields": [
+          {"kind": "integer", "name": "X1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "X2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z2", "width": "s16", "signed": true}
+        ]},
+        {"kind": "rarray", "name": "Object Placement Defaults", "element": {"kind": "struct", "sig": "OPDS", "name": "Object Placement Default", "fields": [
+          {"kind": "bytes", "name": "Flags", "len": 4},
+          {"kind": "float", "name": "Sink"},
+          {"kind": "float", "name": "Sink Var"},
+          {"kind": "float", "name": "Scale"},
+          {"kind": "float", "name": "Scale Var"},
+          {"kind": "float", "name": "Angle X"},
+          {"kind": "float", "name": "Angle X Var"},
+          {"kind": "float", "name": "Angle Y"},
+          {"kind": "float", "name": "Angle Y Var"},
+          {"kind": "float", "name": "Angle Z"},
+          {"kind": "float", "name": "Angle Z Var"}
+        ]}},
+        {"kind": "formid", "sig": "PTRN", "name": "Preview Transform", "valid_refs": ["TRNS", "NULL"]},
+        {"kind": "formid", "sig": "SNTP", "name": "Snap Template", "valid_refs": ["STMP"]},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "rarray", "name": "Form Tags", "element": {"kind": "string", "sig": "FTAG", "name": "Form Tag", "keep_case": false}},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "rstruct", "name": "Model", "members": [
+          {"kind": "string", "sig": "MODL", "name": "Model FileName", "keep_case": false},
+          {"kind": "bytes", "sig": "MODT", "name": "Model Information"},
+          {"kind": "bytes", "sig": "MODC", "name": "Model Color"},
+          {"kind": "bytes", "sig": "MODS", "name": "Model Data"},
+          {"kind": "bytes", "sig": "MODF", "name": "Model Flags"}
+        ]},
+        {"kind": "struct", "sig": "DEST", "name": "Destructible", "fields": [
+          {"kind": "integer", "name": "Health", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Count", "width": "u8", "signed": false},
+          {"kind": "formid", "name": "Explosion", "valid_refs": ["EXPL", "NULL"]},
+          {"kind": "formid", "name": "Debris", "valid_refs": ["DEBR", "NULL"]}
+        ]},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "integer", "sig": "COCT", "name": "Count", "width": "u32", "signed": false},
+        {"kind": "rarray", "name": "Items", "element": {
+          "kind": "struct", "sig": "CNTO", "name": "Item", "fields": [
+            {"kind": "formid", "name": "Object"},
+            {"kind": "integer", "name": "Count", "width": "s32", "signed": true}
+          ]
+        }},
+        {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider; upgrade after 03-schema-coverage ships"},
+        {"kind": "bytes", "sig": "MNAM", "name": "Marker Data"},
+        {"kind": "integer", "sig": "FNAM", "name": "Flags", "width": "u16", "signed": false, "format": {"flags": [
+          "No Displacement", "Ignored by Sandbox", "Unknown 2", "Unknown 3",
+          "Is a Radio", "Is a Lookat Trigger", "Unknown 6"
+        ]}}
+      ]
+    },
+    "FISH": {
+      "name": "Fish",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "float", "sig": "FISP", "name": "Start Progress"},
+        {"kind": "float", "sig": "FIDS", "name": "Draw In Speed"},
+        {"kind": "float", "sig": "FIES", "name": "Escape Speed"},
+        {"kind": "integer", "sig": "FIHS", "name": "Max Stamina", "width": "u8", "signed": false},
+        {"kind": "integer", "sig": "FILS", "name": "Min Stamina", "width": "u8", "signed": false},
+        {"kind": "float", "sig": "FIHD", "name": "Max Jump Delay"},
+        {"kind": "float", "sig": "FILD", "name": "Min Jump Delay"},
+        {"kind": "float", "sig": "FIJS", "name": "Jump Speed"},
+        {"kind": "float", "sig": "FIHJ", "name": "Max Jump Distance"},
+        {"kind": "float", "sig": "FILJ", "name": "Min Jump Distance"},
+        {"kind": "float", "sig": "FILA", "name": "Min Initial Angle Distance"},
+        {"kind": "float", "sig": "FIHA", "name": "Max Initial Angle Distance"},
+        {"kind": "formid", "sig": "FIRI", "name": "Item Reward", "valid_refs": []},
+        {"kind": "formid", "sig": "FIEX", "name": "Reel In Splash Override", "valid_refs": []},
+        {"kind": "formid", "sig": "FISD", "name": "Reel In Sound Override", "valid_refs": []},
+        {"kind": "formid", "sig": "FISU", "name": "Fanfare UI Sound Override", "valid_refs": []}
+      ]
+    },
+    "HAZD": {
+      "name": "Hazard",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "struct", "sig": "OBND", "name": "Object Bounds", "fields": [
+          {"kind": "integer", "name": "X1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "X2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z2", "width": "s16", "signed": true}
+        ]},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "rstruct", "name": "Model", "members": [
+          {"kind": "string", "sig": "MODL", "name": "Model FileName", "keep_case": false},
+          {"kind": "bytes", "sig": "MODT", "name": "Model Information"},
+          {"kind": "bytes", "sig": "MODC", "name": "Model Color"},
+          {"kind": "bytes", "sig": "MODS", "name": "Model Data"},
+          {"kind": "bytes", "sig": "MODF", "name": "Model Flags"}
+        ]},
+        {"kind": "formid", "sig": "MNAM", "name": "Image Space Modifier", "valid_refs": ["IMAD", "NULL"]},
+        {"kind": "struct", "sig": "DNAM", "name": "Data", "fields": [
+          {"kind": "integer", "name": "Limit", "width": "u32", "signed": false},
+          {"kind": "float", "name": "Radius"},
+          {"kind": "float", "name": "Lifetime"},
+          {"kind": "float", "name": "Image Space Radius"},
+          {"kind": "float", "name": "Target Interval"},
+          {"kind": "integer", "name": "Flags", "width": "u32", "signed": false, "format": {"flags": [
+            "Affects Player Only", "Inherit Duration from Spawn Spell",
+            "Align to Impact Normal", "Inherit Radius from Spawn Spell",
+            "Drop to Ground", "Taper Effectiveness by Proximity", "Unknown 6"
+          ]}},
+          {"kind": "formid", "name": "Effect", "valid_refs": ["SPEL", "ENCH", "NULL"]},
+          {"kind": "formid", "name": "Light", "valid_refs": ["LIGH", "NULL"]},
+          {"kind": "formid", "name": "Impact Data Set", "valid_refs": ["IPDS", "NULL"]},
+          {"kind": "formid", "name": "Sound", "valid_refs": ["SNDR", "NULL"]},
+          {"kind": "struct", "name": "Taper Effectiveness", "fields": [
+            {"kind": "float", "name": "Full Effect Radius"},
+            {"kind": "float", "name": "Taper Weight"},
+            {"kind": "float", "name": "Taper Curse"}
+          ]}
+        ]}
+      ]
+    },
+    "BPTD": {
+      "name": "Body Part Data",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "rstruct", "name": "Model", "members": [
+          {"kind": "string", "sig": "MODL", "name": "Model FileName", "keep_case": false},
+          {"kind": "bytes", "sig": "MODT", "name": "Model Information"},
+          {"kind": "bytes", "sig": "MODC", "name": "Model Color"},
+          {"kind": "bytes", "sig": "MODS", "name": "Model Data"},
+          {"kind": "bytes", "sig": "MODF", "name": "Model Flags"}
+        ]},
+        {"kind": "rarray", "name": "Body Parts", "element": {
+          "kind": "rstruct", "name": "Body Part", "members": [
+            {"kind": "lstring", "sig": "BPTN", "name": "Part Name"},
+            {"kind": "string", "sig": "BPNT", "name": "VATS Target", "keep_case": false},
+            {"kind": "struct", "sig": "BPND", "name": "Data", "fields": [
+              {"kind": "float", "name": "Damage Mult"},
+              {"kind": "formid", "name": "Explodable - Debris", "valid_refs": ["DEBR", "NULL"]},
+              {"kind": "formid", "name": "Explodable - Explosion", "valid_refs": ["EXPL", "NULL"]},
+              {"kind": "float", "name": "Explodable - Debris Scale"},
+              {"kind": "formid", "name": "Severable - Debris", "valid_refs": ["DEBR", "NULL"]},
+              {"kind": "formid", "name": "Severable - Explosion", "valid_refs": ["EXPL", "NULL"]},
+              {"kind": "float", "name": "Severable - Debris Scale"},
+              {"kind": "float", "name": "Cut - Min"},
+              {"kind": "float", "name": "Cut - Max"},
+              {"kind": "float", "name": "Cut - Radius"},
+              {"kind": "float", "name": "Gore Effects - Local Rotate X"},
+              {"kind": "float", "name": "Gore Effects - Local Rotate Y"},
+              {"kind": "float", "name": "Cut - Tesselation"},
+              {"kind": "formid", "name": "Severable - Impact DataSet", "valid_refs": ["IPDS", "NULL"]},
+              {"kind": "formid", "name": "Explodable - Impact DataSet", "valid_refs": ["IPDS", "NULL"]},
+              {"kind": "float", "name": "Explodable - Limb Replacement Scale"},
+              {"kind": "integer", "name": "Flags", "width": "u8", "signed": false, "format": {"flags": [
+                "Severable", "Hit Reaction", "Hit Reaction - Default", "Explodable",
+                "Cut - Meat Cap Sever", "On Cripple", "Explodable - Absolute Chance",
+                "Show Cripple Geometry"
+              ]}},
+              {"kind": "integer", "name": "Part Type", "width": "u8", "signed": false, "format": {"enum": [
+                "Torso", "Head1", "Eye", "LookAt", "Fly Grab", "Head2",
+                "LeftArm1", "LeftArm2", "RightArm1", "RightArm2",
+                "LeftLeg1", "LeftLeg2", "LeftLeg3",
+                "RightLeg1", "RightLeg2", "RightLeg3",
+                "Brain", "Weapon", "Root", "COM", "Pelvis", "Camera",
+                "Offset Root", "Left Foot", "Right Foot", "Face Target Source"
+              ]}},
+              {"kind": "integer", "name": "Health Percent", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "To Hit Chance", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "Explodable - Explosion Chance %", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "Non-Lethal Dismemberment Chance", "width": "u8", "signed": false, "from_version": 100},
+              {"kind": "integer", "name": "Severable - Debris Count", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "Explodable - Debris Count", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "Severable - Decal Count", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "Explodable - Decal Count", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "Geometry Segment Index", "width": "u8", "signed": false}
+            ]},
+            {"kind": "string", "sig": "NAM1", "name": "Limb Replacement Model", "keep_case": false},
+            {"kind": "string", "sig": "NAM4", "name": "Gore Effects - Target Bone", "keep_case": false},
+            {"kind": "bytes", "sig": "NAM5", "name": "Model Information"},
+            {"kind": "string", "sig": "ENAM", "name": "Hit Reaction - Start", "keep_case": false},
+            {"kind": "string", "sig": "FNAM", "name": "Hit Reaction - End", "keep_case": false},
+            {"kind": "formid", "sig": "BNAM", "name": "Gore Effects - Dismember Blood Art", "valid_refs": ["ARTO"]},
+            {"kind": "formid", "sig": "INAM", "name": "Gore Effects - Blood Impact Material Type", "valid_refs": ["MATT"]},
+            {"kind": "formid", "sig": "JNAM", "name": "On Cripple - Blood Impact Material Type", "valid_refs": ["MATT"]},
+            {"kind": "formid", "sig": "CNAM", "name": "Meat Cap TextureSet", "valid_refs": ["TXST"]},
+            {"kind": "formid", "sig": "NAM2", "name": "Collar TextureSet", "valid_refs": ["TXST"]},
+            {"kind": "string", "sig": "DNAM", "name": "Twist Variable Prefix", "keep_case": false},
+            {"kind": "string", "sig": "BPVB", "name": "Bone Name", "keep_case": false}
+          ]
+        }}
+      ]
     }
   }
 }

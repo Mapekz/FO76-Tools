@@ -20,6 +20,7 @@ WHITELIST = [
     "DFOB", "MSWP", "RESO", "CNCY", "ENTM", "GMRW", "LGDI", "PCRD",
     "PLYT", "COEN", "PEPF", "STHD", "WAVE", "CMPT",
     "BOOK", "MISC", "CMPO", "COBJ", "LVLI", "LVLN", "INNR",
+    "CONT", "FLOR", "FURN", "FISH", "HAZD", "BPTD",
 ]
 
 # Vars that use runtime Pascal deciders — emit raw fallback at subrecord level.
@@ -183,10 +184,14 @@ def parse_enum_sparse(text: str) -> dict[str, str]:
 def parse_format_arg(arg: str) -> dict | None:
     arg = arg.strip()
     if arg.startswith("wbFlags("):
-        inner = arg[len("wbFlags(") : find_matching_paren(arg, len("wbFlags("))]
+        paren_pos = arg.index("(")
+        close = find_matching_paren(arg, paren_pos)
+        inner = arg[paren_pos + 1 : close]
         return {"flags": parse_flags_list(inner)}
     if arg.startswith("wbEnum("):
-        inner = arg[len("wbEnum(") : find_matching_paren(arg, len("wbEnum("))]
+        paren_pos = arg.index("(")
+        close = find_matching_paren(arg, paren_pos)
+        inner = arg[paren_pos + 1 : close]
         parts = split_top_level(inner)
         if len(parts) >= 2 and parts[1].strip().startswith("["):
             sparse = parse_enum_sparse(parts[1])
