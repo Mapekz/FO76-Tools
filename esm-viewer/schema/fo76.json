@@ -10411,8 +10411,96 @@
           "kind": "rarray",
           "name": "Effects",
           "element": {
-            "kind": "unknown",
-            "name": "element"
+            "kind": "rstruct",
+            "name": "Effect",
+            "members": [
+              {
+                "kind": "formid",
+                "sig": "EFID",
+                "name": "Magic Effect",
+                "valid_refs": [
+                  "MGEF"
+                ]
+              },
+              {
+                "kind": "struct",
+                "sig": "EFIT",
+                "name": "Effect Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Magnitude"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Area",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Duration",
+                    "width": "u32"
+                  }
+                ]
+              },
+              {
+                "kind": "struct",
+                "sig": "CTDA",
+                "name": "Condition",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Operator",
+                    "width": "u8"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad",
+                    "len": 3
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Comparison Value"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Function Index",
+                    "width": "u16",
+                    "signed": false
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad2",
+                    "len": 2
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 1",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 2",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Run On",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Reference"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 3",
+                    "width": "s32",
+                    "signed": true
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -10822,9 +10910,61 @@
           "kind": "rarray",
           "name": "Conditions",
           "element": {
-            "kind": "rstruct",
+            "kind": "struct",
+            "sig": "CTDA",
             "name": "Condition",
-            "members": []
+            "fields": [
+              {
+                "kind": "integer",
+                "name": "Operator",
+                "width": "u8"
+              },
+              {
+                "kind": "bytes",
+                "name": "_pad",
+                "len": 3
+              },
+              {
+                "kind": "float",
+                "name": "Comparison Value"
+              },
+              {
+                "kind": "integer",
+                "name": "Function Index",
+                "width": "u16",
+                "signed": false
+              },
+              {
+                "kind": "bytes",
+                "name": "_pad2",
+                "len": 2
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 1",
+                "width": "u32"
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 2",
+                "width": "u32"
+              },
+              {
+                "kind": "integer",
+                "name": "Run On",
+                "width": "u32"
+              },
+              {
+                "kind": "formid",
+                "name": "Reference"
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 3",
+                "width": "s32",
+                "signed": true
+              }
+            ]
           }
         }
       ]
@@ -10969,9 +11109,61 @@
           "kind": "rarray",
           "name": "Conditions",
           "element": {
-            "kind": "rstruct",
+            "kind": "struct",
+            "sig": "CTDA",
             "name": "Condition",
-            "members": []
+            "fields": [
+              {
+                "kind": "integer",
+                "name": "Operator",
+                "width": "u8"
+              },
+              {
+                "kind": "bytes",
+                "name": "_pad",
+                "len": 3
+              },
+              {
+                "kind": "float",
+                "name": "Comparison Value"
+              },
+              {
+                "kind": "integer",
+                "name": "Function Index",
+                "width": "u16",
+                "signed": false
+              },
+              {
+                "kind": "bytes",
+                "name": "_pad2",
+                "len": 2
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 1",
+                "width": "u32"
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 2",
+                "width": "u32"
+              },
+              {
+                "kind": "integer",
+                "name": "Run On",
+                "width": "u32"
+              },
+              {
+                "kind": "formid",
+                "name": "Reference"
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 3",
+                "width": "s32",
+                "signed": true
+              }
+            ]
           }
         },
         {
@@ -10987,9 +11179,61 @@
               "kind": "rarray",
               "name": "Conditions",
               "element": {
-                "kind": "rstruct",
+                "kind": "struct",
+                "sig": "CTDA",
                 "name": "Condition",
-                "members": []
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Operator",
+                    "width": "u8"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad",
+                    "len": 3
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Comparison Value"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Function Index",
+                    "width": "u16",
+                    "signed": false
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad2",
+                    "len": 2
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 1",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 2",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Run On",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Reference"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 3",
+                    "width": "s32",
+                    "signed": true
+                  }
+                ]
               }
             }
           ]
@@ -11678,9 +11922,61 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "rstruct",
+                  "kind": "struct",
+                  "sig": "CTDA",
                   "name": "Condition",
-                  "members": []
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Operator",
+                      "width": "u8"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Comparison Value"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Function Index",
+                      "width": "u16",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad2",
+                      "len": 2
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 1",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 2",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Run On",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Reference"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 3",
+                      "width": "s32",
+                      "signed": true
+                    }
+                  ]
                 }
               }
             ]
@@ -11771,9 +12067,61 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "rstruct",
+                  "kind": "struct",
+                  "sig": "CTDA",
                   "name": "Condition",
-                  "members": []
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Operator",
+                      "width": "u8"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Comparison Value"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Function Index",
+                      "width": "u16",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad2",
+                      "len": 2
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 1",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 2",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Run On",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Reference"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 3",
+                      "width": "s32",
+                      "signed": true
+                    }
+                  ]
                 }
               }
             ]
@@ -11801,9 +12149,61 @@
           "kind": "rarray",
           "name": "Conditions",
           "element": {
-            "kind": "rstruct",
+            "kind": "struct",
+            "sig": "CTDA",
             "name": "Condition",
-            "members": []
+            "fields": [
+              {
+                "kind": "integer",
+                "name": "Operator",
+                "width": "u8"
+              },
+              {
+                "kind": "bytes",
+                "name": "_pad",
+                "len": 3
+              },
+              {
+                "kind": "float",
+                "name": "Comparison Value"
+              },
+              {
+                "kind": "integer",
+                "name": "Function Index",
+                "width": "u16",
+                "signed": false
+              },
+              {
+                "kind": "bytes",
+                "name": "_pad2",
+                "len": 2
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 1",
+                "width": "u32"
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 2",
+                "width": "u32"
+              },
+              {
+                "kind": "integer",
+                "name": "Run On",
+                "width": "u32"
+              },
+              {
+                "kind": "formid",
+                "name": "Reference"
+              },
+              {
+                "kind": "integer",
+                "name": "Parameter 3",
+                "width": "s32",
+                "signed": true
+              }
+            ]
           }
         }
       ]
@@ -11819,10 +12219,9 @@
           "sized": 0
         },
         {
-          "kind": "raw_fallback",
+          "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter",
-          "reason": "wbVMAD fragmented; upgrade after vmad decoder"
+          "name": "Scripts"
         },
         {
           "kind": "struct",
@@ -12411,9 +12810,61 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "rstruct",
+                  "kind": "struct",
+                  "sig": "CTDA",
                   "name": "Condition",
-                  "members": []
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Operator",
+                      "width": "u8"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Comparison Value"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Function Index",
+                      "width": "u16",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad2",
+                      "len": 2
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 1",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 2",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Run On",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Reference"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 3",
+                      "width": "s32",
+                      "signed": true
+                    }
+                  ]
                 }
               }
             ]
@@ -13679,9 +14130,61 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "rstruct",
+                  "kind": "struct",
+                  "sig": "CTDA",
                   "name": "Condition",
-                  "members": []
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Operator",
+                      "width": "u8"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Comparison Value"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Function Index",
+                      "width": "u16",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "_pad2",
+                      "len": 2
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 1",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 2",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Run On",
+                      "width": "u32"
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Reference"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Parameter 3",
+                      "width": "s32",
+                      "signed": true
+                    }
+                  ]
                 }
               }
             ]
@@ -17668,10 +18171,9 @@
           "sig": "DURL"
         },
         {
-          "kind": "raw_fallback",
+          "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter",
-          "reason": "wbVMADFragmentedQUST; upgrade after vmad decoder"
+          "name": "Scripts"
         },
         {
           "kind": "lstring",
@@ -17900,9 +18402,61 @@
               "kind": "rarray",
               "name": "Conditions",
               "element": {
-                "kind": "rstruct",
+                "kind": "struct",
+                "sig": "CTDA",
                 "name": "Condition",
-                "members": []
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Operator",
+                    "width": "u8"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad",
+                    "len": 3
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Comparison Value"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Function Index",
+                    "width": "u16",
+                    "signed": false
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad2",
+                    "len": 2
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 1",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 2",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Run On",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Reference"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 3",
+                    "width": "s32",
+                    "signed": true
+                  }
+                ]
               }
             }
           ]
@@ -17920,9 +18474,61 @@
               "kind": "rarray",
               "name": "Conditions",
               "element": {
-                "kind": "rstruct",
+                "kind": "struct",
+                "sig": "CTDA",
                 "name": "Condition",
-                "members": []
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Operator",
+                    "width": "u8"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad",
+                    "len": 3
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Comparison Value"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Function Index",
+                    "width": "u16",
+                    "signed": false
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "_pad2",
+                    "len": 2
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 1",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 2",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Run On",
+                    "width": "u32"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Reference"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Parameter 3",
+                    "width": "s32",
+                    "signed": true
+                  }
+                ]
               }
             },
             {
@@ -17938,9 +18544,61 @@
                   "kind": "rarray",
                   "name": "Conditions",
                   "element": {
-                    "kind": "rstruct",
+                    "kind": "struct",
+                    "sig": "CTDA",
                     "name": "Condition",
-                    "members": []
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Operator",
+                        "width": "u8"
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "_pad",
+                        "len": 3
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Comparison Value"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Function Index",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "_pad2",
+                        "len": 2
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parameter 1",
+                        "width": "u32"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parameter 2",
+                        "width": "u32"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Run On",
+                        "width": "u32"
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Reference"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parameter 3",
+                        "width": "s32",
+                        "signed": true
+                      }
+                    ]
                   }
                 },
                 {
@@ -17956,9 +18614,61 @@
                       "kind": "rarray",
                       "name": "Conditions",
                       "element": {
-                        "kind": "rstruct",
+                        "kind": "struct",
+                        "sig": "CTDA",
                         "name": "Condition",
-                        "members": []
+                        "fields": [
+                          {
+                            "kind": "integer",
+                            "name": "Operator",
+                            "width": "u8"
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "_pad",
+                            "len": 3
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Comparison Value"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Function Index",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "_pad2",
+                            "len": 2
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 1",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 2",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Run On",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Reference"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 3",
+                            "width": "s32",
+                            "signed": true
+                          }
+                        ]
                       }
                     }
                   ]
@@ -18032,9 +18742,61 @@
                       "kind": "rarray",
                       "name": "Conditions",
                       "element": {
-                        "kind": "rstruct",
+                        "kind": "struct",
+                        "sig": "CTDA",
                         "name": "Condition",
-                        "members": []
+                        "fields": [
+                          {
+                            "kind": "integer",
+                            "name": "Operator",
+                            "width": "u8"
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "_pad",
+                            "len": 3
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Comparison Value"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Function Index",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "_pad2",
+                            "len": 2
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 1",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 2",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Run On",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Reference"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 3",
+                            "width": "s32",
+                            "signed": true
+                          }
+                        ]
                       }
                     },
                     {
@@ -18218,9 +18980,61 @@
                       "kind": "rarray",
                       "name": "Conditions",
                       "element": {
-                        "kind": "rstruct",
+                        "kind": "struct",
+                        "sig": "CTDA",
                         "name": "Condition",
-                        "members": []
+                        "fields": [
+                          {
+                            "kind": "integer",
+                            "name": "Operator",
+                            "width": "u8"
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "_pad",
+                            "len": 3
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Comparison Value"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Function Index",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "_pad2",
+                            "len": 2
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 1",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 2",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Run On",
+                            "width": "u32"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Reference"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Parameter 3",
+                            "width": "s32",
+                            "signed": true
+                          }
+                        ]
                       }
                     }
                   ]
