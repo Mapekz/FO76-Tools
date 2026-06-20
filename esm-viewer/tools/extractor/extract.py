@@ -19,6 +19,7 @@ WHITELIST = [
     "GLOB", "GMST", "KYWD", "FLST", "OTFT", "AVIF", "AMDL", "DMGT",
     "DFOB", "MSWP", "RESO", "CNCY", "ENTM", "GMRW", "LGDI", "PCRD",
     "PLYT", "COEN", "PEPF", "STHD", "WAVE", "CMPT",
+    "BOOK", "MISC", "CMPO", "COBJ", "LVLI", "LVLN", "INNR",
 ]
 
 # Vars that use runtime Pascal deciders — emit raw fallback at subrecord level.
