@@ -93,6 +93,10 @@ pub enum MemberDef {
         #[serde(default)]
         sig: Option<String>,
         name: String,
+        /// Which string table file holds this field's strings.
+        /// Defaults to `Strings` (`.strings`) when not specified in the schema.
+        #[serde(default)]
+        table: LStringTable,
     },
     #[serde(rename = "formid")]
     FormId {
@@ -152,6 +156,19 @@ pub enum MemberDef {
 }
 
 pub type FieldDef = MemberDef;
+
+/// Selects which of the three string-table files an LString lives in.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LStringTable {
+    /// `.strings` file — plain NUL-terminated strings (e.g. EditorID-style names).
+    #[default]
+    Strings,
+    /// `.dlstrings` file — length-prefixed strings used for descriptions.
+    Dlstrings,
+    /// `.ilstrings` file — length-prefixed strings used for inventory labels.
+    Ilstrings,
+}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]

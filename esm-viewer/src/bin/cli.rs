@@ -26,6 +26,12 @@ enum Commands {
         pretty: bool,
         #[arg(long)]
         raw: bool,
+        /// Path to a localization BA2 (overrides auto-detected sibling BA2)
+        #[arg(long)]
+        strings: Option<PathBuf>,
+        /// Language code to use when loading string tables (default: "en")
+        #[arg(long, default_value = "en")]
+        lang: String,
     },
     /// List records of a given type
     List {
@@ -34,6 +40,12 @@ enum Commands {
         r#type: String,
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        /// Path to a localization BA2 (overrides auto-detected sibling BA2)
+        #[arg(long)]
+        strings: Option<PathBuf>,
+        /// Language code to use when loading string tables (default: "en")
+        #[arg(long, default_value = "en")]
+        lang: String,
     },
     /// Diff two ESM versions by FormID alignment
     Diff {
@@ -61,12 +73,16 @@ fn main() -> anyhow::Result<()> {
             json,
             pretty,
             raw,
-        } => cmd_get(&file, formid, edid, json, pretty, raw),
+            strings,
+            lang,
+        } => cmd_get(&file, formid, edid, json, pretty, raw, strings, &lang),
         Commands::List {
             file,
             r#type,
             limit,
-        } => cmd_list(&file, &r#type, limit),
+            strings,
+            lang,
+        } => cmd_list(&file, &r#type, limit, strings, &lang),
         Commands::Diff {
             file_a,
             file_b,
@@ -102,6 +118,20 @@ fn cmd_info(file: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn apply_strings_override(db: &mut Database, strings: Option<PathBuf>, lang: &str) {
+    if let Some(ba2_path) = strings {
+        match fo76_esm_parser::strings::Localization::from_ba2(&ba2_path, lang, "seventysix") {
+            Ok(loc) => db.set_localization(loc),
+            Err(e) => eprintln!(
+                "Warning: failed to load localization from {}: {}",
+                ba2_path.display(),
+                e
+            ),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn cmd_get(
     file: &PathBuf,
     formid: Option<String>,
@@ -109,8 +139,12 @@ fn cmd_get(
     json: bool,
     pretty: bool,
     raw: bool,
+    strings: Option<PathBuf>,
+    lang: &str,
 ) -> anyhow::Result<()> {
     let mut db = Database::open(file)?;
+    apply_strings_override(&mut db, strings, lang);
+
     if raw {
         let form_id = resolve_form_id(&mut db, formid, edid)?;
         let rec = db.record_raw(form_id)?;
@@ -143,8 +177,15 @@ fn cmd_get(
     Ok(())
 }
 
-fn cmd_list(file: &PathBuf, sig: &str, limit: usize) -> anyhow::Result<()> {
+fn cmd_list(
+    file: &PathBuf,
+    sig: &str,
+    limit: usize,
+    strings: Option<PathBuf>,
+    lang: &str,
+) -> anyhow::Result<()> {
     let mut db = Database::open(file)?;
+    apply_strings_override(&mut db, strings, lang);
     db.index.ensure_edid_index(&db.esm)?;
     let entries = db.list_by_type(sig, limit)?;
     for e in entries {

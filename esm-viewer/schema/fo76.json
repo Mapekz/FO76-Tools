@@ -224,7 +224,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "rstruct",
@@ -704,7 +705,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "formid",
@@ -1491,7 +1493,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "rstruct",
@@ -2154,7 +2157,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "formid",
@@ -3298,7 +3302,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "struct",
@@ -3972,7 +3977,8 @@
         {
           "kind": "lstring",
           "sig": "DNAM",
-          "name": "Magic Item Description"
+          "name": "Magic Item Description",
+          "table": "dlstrings"
         },
         {
           "kind": "rarray",
@@ -4088,7 +4094,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "string",
@@ -4830,7 +4837,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "struct",
@@ -4917,7 +4925,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "rstruct",
@@ -5322,7 +5331,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "struct",
@@ -5523,7 +5533,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "rstruct",
@@ -6691,7 +6702,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "struct",
@@ -7047,7 +7059,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "rarray",
@@ -8773,7 +8786,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "byte_rgba",
@@ -9316,7 +9330,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "byte_rgba",
@@ -12862,7 +12877,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "integer",
@@ -17665,7 +17681,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "array",
@@ -18670,7 +18687,8 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description"
+          "name": "Description",
+          "table": "dlstrings"
         },
         {
           "kind": "lstring",
