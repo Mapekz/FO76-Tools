@@ -4973,9 +4973,38 @@
                 "width": "u16"
               },
               {
-                "kind": "bytes",
-                "sig": "EPFD",
-                "name": "Function Data"
+                "kind": "union",
+                "name": "Function Data",
+                "decider": {
+                  "field": "Function Type",
+                  "default_variant": 0,
+                  "map": {
+                    "0": 0,
+                    "1": 1,
+                    "2": 2,
+                    "3": 3,
+                    "4": 4,
+                    "5": 4,
+                    "6": 5,
+                    "7": 6,
+                    "8": 7,
+                    "9": 8
+                  }
+                },
+                "variants": [
+                  {"kind": "bytes", "sig": "EPFD", "name": "Data"},
+                  {"kind": "float", "sig": "EPFD", "name": "Float"},
+                  {"kind": "struct", "sig": "EPFD", "name": "Float, Float", "fields": [
+                    {"kind": "float", "name": "Float 1"},
+                    {"kind": "float", "name": "Float 2"}
+                  ]},
+                  {"kind": "formid", "sig": "EPFD", "name": "Leveled Item", "valid_refs": ["LVLI"]},
+                  {"kind": "formid", "sig": "EPFD", "name": "Spell", "valid_refs": ["SPEL"]},
+                  {"kind": "string", "sig": "EPFD", "name": "Text"},
+                  {"kind": "lstring", "sig": "EPFD", "name": "Text"},
+                  {"kind": "float", "sig": "EPFD", "name": "Float"},
+                  {"kind": "formid", "sig": "EPFD", "name": "Item", "valid_refs": ["ALCH"]}
+                ]
               },
               {
                 "kind": "bytes",
