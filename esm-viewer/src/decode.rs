@@ -38,6 +38,12 @@ pub struct FormIdStub {
 pub struct DecodeContext<'a> {
     pub schema: &'a Schema,
     pub form_version: u16,
+    /// Whether the ESM file has the Localized flag set in its TES4 header.
+    ///
+    /// When `false`, FULL/DESC and other `lstring` fields contain inline
+    /// NUL-terminated strings (optionally prefixed with `<ID=XXXXXXXX>`).
+    /// When `true`, they contain 4-byte IDs into the string tables.
+    pub is_localized: bool,
     /// Optional localization tables used to resolve LString IDs to text.
     pub localization: Option<&'a Localization>,
     /// Optional curve index for inlining CURV record data on FormID fields.
@@ -225,20 +231,42 @@ fn decode_member(
         MemberDef::LString { sig, name, table } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
-                    if sr.data.len() >= 4 {
-                        let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                        let kind = lstring_table_to_kind(table);
-                        if let Some(text) = ctx.localization.and_then(|loc| loc.lookup(kind, id)) {
-                            out.insert(name.clone(), json!(text));
-                        } else {
-                            out.insert(
-                                name.clone(),
-                                json!({
-                                    "lstring_id": format!("0x{:08X}", id),
-                                    "_unresolved": true
-                                }),
-                            );
+                    if ctx.is_localized {
+                        // Localized ESM: field is a 4-byte ID into string tables.
+                        if sr.data.len() >= 4 {
+                            let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
+                            let kind = lstring_table_to_kind(table);
+                            if let Some(text) =
+                                ctx.localization.and_then(|loc| loc.lookup(kind, id))
+                            {
+                                out.insert(name.clone(), json!(text));
+                            } else {
+                                out.insert(
+                                    name.clone(),
+                                    json!({
+                                        "lstring_id": format!("0x{:08X}", id),
+                                        "_unresolved": true
+                                    }),
+                                );
+                            }
                         }
+                    } else {
+                        // Non-localized ESM: field is an inline NUL-terminated string,
+                        // optionally prefixed with `<ID=XXXXXXXX>` (a reference marker).
+                        let raw = &sr.data;
+                        let nul_end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+                        let s = String::from_utf8_lossy(&raw[..nul_end]);
+                        // Strip the optional `<ID=XXXXXXXX>` prefix.
+                        let text = if s.starts_with("<ID=") {
+                            if let Some(close) = s.find('>') {
+                                s[close + 1..].trim_start().to_string()
+                            } else {
+                                s.into_owned()
+                            }
+                        } else {
+                            s.into_owned()
+                        };
+                        out.insert(name.clone(), json!(text));
                     }
                 }
             }

@@ -39,6 +39,8 @@ pub struct Database {
     pub esm: EsmFile,
     pub index: Index,
     pub schema: Schema,
+    /// Whether the ESM's TES4 header has the Localized flag set.
+    pub is_localized: bool,
     /// Resolved string tables, if a localization BA2 was found or supplied.
     pub localization: Option<Localization>,
     /// Optional curve index built from Startup BA2. When present, FormID fields
@@ -86,10 +88,13 @@ impl Database {
             None
         };
 
+        let is_localized = esm.file_info().map(|i| i.is_localized).unwrap_or(false);
+
         Ok(Database {
             esm,
             index,
             schema,
+            is_localized,
             localization,
             curves: None,
         })
@@ -289,6 +294,7 @@ impl Database {
         let ctx = DecodeContext {
             schema: &self.schema,
             form_version: parsed.header.form_version,
+            is_localized: self.is_localized,
             localization: self.localization.as_ref(),
             curves: self.curves.as_ref(),
             resolve_depth: crate::decode::ResolveDepth::None,
@@ -317,6 +323,7 @@ impl Database {
         let ctx = DecodeContext {
             schema: &self.schema,
             form_version: parsed.header.form_version,
+            is_localized: self.is_localized,
             localization: self.localization.as_ref(),
             curves: self.curves.as_ref(),
             resolve_depth: depth,
@@ -406,6 +413,7 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
         let ctx = DecodeContext {
             schema: &self.db.schema,
             form_version: parsed.header.form_version,
+            is_localized: self.db.is_localized,
             localization: self.db.localization.as_ref(),
             curves: self.db.curves.as_ref(),
             resolve_depth: crate::decode::ResolveDepth::Full,
