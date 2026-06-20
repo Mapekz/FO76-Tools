@@ -143,6 +143,12 @@ pub enum MemberDef {
         name: String,
         reason: String,
     },
+    #[serde(rename = "vmad")]
+    Vmad {
+        #[serde(default)]
+        sig: Option<String>,
+        name: String,
+    },
 }
 
 pub type FieldDef = MemberDef;
@@ -171,9 +177,31 @@ pub enum ArrayCount {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum UnionDecider {
-    FormVersion { form_version: FormVersionRange },
-    FromVersion { from_version: u16 },
-    BelowVersion { below_version: u16 },
+    FormVersion {
+        form_version: FormVersionRange,
+    },
+    FromVersion {
+        from_version: u16,
+    },
+    BelowVersion {
+        below_version: u16,
+    },
+    /// Select a variant by reading a single byte at a fixed offset in the payload.
+    /// `byte_offset` is the discriminating field (unique to this variant).
+    ByteAtOffset {
+        byte_offset: usize,
+        #[serde(default)]
+        default_variant: Option<usize>,
+        map: HashMap<u8, usize>,
+    },
+    /// Select a variant by looking up an already-decoded sibling field's integer value.
+    /// `field` is the discriminating field (unique to this variant).
+    FieldValue {
+        field: String,
+        #[serde(default)]
+        default_variant: Option<usize>,
+        map: HashMap<String, usize>,
+    },
     Raw,
 }
 

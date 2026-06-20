@@ -171,6 +171,7 @@
       "name": "Spell",
       "members": [
         {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "vmad", "sig": "VMAD", "name": "Script"},
         {"kind": "lstring", "sig": "FULL", "name": "Name"},
         {"kind": "lstring", "sig": "DESC", "name": "Description"},
         {"kind": "struct", "sig": "SPIT", "name": "Data", "fields": [
@@ -188,7 +189,19 @@
           {"kind": "float", "name": "Range"},
           {"kind": "formid", "name": "Casting Perk"}
         ]},
-        {"kind": "raw_fallback", "sig": "EFID", "name": "Effects", "reason": "wbEffect/wbConditions closure decider"}
+        {"kind": "rarray", "name": "Effects", "element": {
+          "kind": "rstruct", "name": "Effect", "members": [
+            {"kind": "formid", "sig": "EFID", "name": "Base Effect"},
+            {"kind": "struct", "sig": "EFIT", "name": "Effect Data", "fields": [
+              {"kind": "float", "name": "Magnitude"},
+              {"kind": "integer", "name": "Area", "width": "u32", "signed": false},
+              {"kind": "integer", "name": "Duration", "width": "u32", "signed": false}
+            ]},
+            {"kind": "rarray", "name": "Conditions", "element": {
+              "kind": "bytes", "sig": "CTDA", "name": "Condition"
+            }}
+          ]
+        }}
       ]
     },
     "MGEF": {
@@ -197,19 +210,39 @@
         {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
         {"kind": "lstring", "sig": "FULL", "name": "Name"},
         {"kind": "lstring", "sig": "DNAM", "name": "Magic Item Description"},
-        {"kind": "raw_fallback", "sig": "DATA", "name": "Magic Effect Data", "reason": "wbMGEFAssocItemDecider closure union"},
-        {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider"}
+        {"kind": "bytes", "sig": "DATA", "name": "Effect Data"},
+        {"kind": "rarray", "name": "Conditions", "element": {
+          "kind": "bytes", "sig": "CTDA", "name": "Condition"
+        }}
       ]
     },
     "PERK": {
       "name": "Perk",
       "members": [
         {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "vmad", "sig": "VMAD", "name": "Script"},
         {"kind": "lstring", "sig": "FULL", "name": "Name"},
         {"kind": "lstring", "sig": "DESC", "name": "Description"},
         {"kind": "string", "sig": "ICON", "name": "Image"},
-        {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider"},
-        {"kind": "raw_fallback", "sig": "PRKE", "name": "Effects", "reason": "wbPerkEffectDataDecider closure decider"}
+        {"kind": "rarray", "name": "Conditions", "element": {
+          "kind": "bytes", "sig": "CTDA", "name": "Condition"
+        }},
+        {"kind": "rarray", "name": "Effects", "element": {
+          "kind": "rstruct", "name": "Perk Effect", "members": [
+            {"kind": "struct", "sig": "PRKE", "name": "Perk Entry", "fields": [
+              {"kind": "integer", "name": "Type", "width": "u8", "signed": false, "format": {"enum": ["Quest + Stage", "Ability", "Entry Point"]}},
+              {"kind": "integer", "name": "Rank", "width": "u8", "signed": false},
+              {"kind": "integer", "name": "Priority", "width": "u8", "signed": false}
+            ]},
+            {"kind": "bytes", "sig": "PRKC", "name": "Run On"},
+            {"kind": "rarray", "name": "Conditions", "element": {"kind": "bytes", "sig": "CTDA", "name": "Condition"}},
+            {"kind": "bytes", "sig": "EPFT", "name": "Effect Data Type"},
+            {"kind": "bytes", "sig": "EPF2", "name": "Button Label"},
+            {"kind": "bytes", "sig": "EPF3", "name": "Script Flags"},
+            {"kind": "bytes", "sig": "EPFD", "name": "Effect Data"},
+            {"kind": "bytes", "sig": "PRKF", "name": "End Marker"}
+          ]
+        }}
       ]
     },
     "GLOB": {

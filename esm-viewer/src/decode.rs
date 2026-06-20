@@ -220,8 +220,8 @@ fn decode_member(
                 let mut item = Map::new();
                 decode_member(ctx, element, &mut item, by_sig, None);
                 let after: usize = by_sig.values().map(|v| v.len()).sum();
-                if item.is_empty() || before == after {
-                    break;
+                if before == after {
+                    break; // no subrecords consumed — done
                 }
                 items.push(Value::Object(item));
             }
@@ -258,7 +258,36 @@ fn decode_member(
             decider,
             variants,
         } => {
-            let chosen = choose_union_variant(ctx.form_version, decider, variants.len());
+            let chosen = match decider {
+                UnionDecider::FieldValue {
+                    field,
+                    map,
+                    default_variant,
+                } => out
+                    .get(field)
+                    .and_then(|val| {
+                        let key = match val {
+                            Value::Number(n) => n.to_string(),
+                            Value::Object(o) => o
+                                .get("value")
+                                .and_then(Value::as_i64)
+                                .map(|v| v.to_string())
+                                .unwrap_or_default(),
+                            _ => val.to_string(),
+                        };
+                        map.get(&key).copied()
+                    })
+                    .or(*default_variant),
+                UnionDecider::ByteAtOffset {
+                    byte_offset,
+                    map,
+                    default_variant,
+                } => payload
+                    .and_then(|p| p.get(*byte_offset).copied())
+                    .and_then(|b| map.get(&b).copied())
+                    .or(*default_variant),
+                _ => choose_union_variant(ctx.form_version, decider, variants.len()),
+            };
             if let Some(idx) = chosen {
                 if let Some(variant) = variants.get(idx) {
                     decode_member(ctx, variant, out, by_sig, payload);
@@ -317,6 +346,13 @@ fn decode_member(
                         "reason": reason
                     }),
                 );
+            }
+        }
+        MemberDef::Vmad { sig, name } => {
+            if let Some(sig) = sig {
+                if let Some(sr) = take_first(by_sig, sig) {
+                    out.insert(name.clone(), decode_vmad(&sr.data));
+                }
             }
         }
     }
@@ -402,7 +438,37 @@ fn decode_struct_fields(
                 decider,
                 variants,
             } => {
-                let chosen = choose_union_variant(ctx.form_version, decider, variants.len());
+                let chosen = match decider {
+                    UnionDecider::ByteAtOffset {
+                        byte_offset,
+                        map,
+                        default_variant,
+                    } => data
+                        .get(pos + byte_offset)
+                        .copied()
+                        .and_then(|b| map.get(&b).copied())
+                        .or(*default_variant),
+                    UnionDecider::FieldValue {
+                        field,
+                        map,
+                        default_variant,
+                    } => struct_out
+                        .get(field)
+                        .and_then(|val| {
+                            let key = match val {
+                                Value::Number(n) => n.to_string(),
+                                Value::Object(o) => o
+                                    .get("value")
+                                    .and_then(Value::as_i64)
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_default(),
+                                _ => val.to_string(),
+                            };
+                            map.get(&key).copied()
+                        })
+                        .or(*default_variant),
+                    _ => choose_union_variant(ctx.form_version, decider, variants.len()),
+                };
                 if let Some(idx) = chosen {
                     if let Some(variant) = variants.get(idx) {
                         let mut dummy = HashMap::new();
@@ -534,6 +600,8 @@ fn choose_union_variant(form_version: u16, decider: &UnionDecider, n: usize) -> 
                 None
             }
         }
+        // ByteAtOffset and FieldValue are handled by the callers before reaching here
+        UnionDecider::ByteAtOffset { .. } | UnionDecider::FieldValue { .. } => None,
         UnionDecider::Raw => None,
     }
 }
@@ -626,6 +694,146 @@ fn take_all<'a>(
     sig: &str,
 ) -> Vec<&'a OwnedSubrecord> {
     by_sig.remove(sig).unwrap_or_default()
+}
+
+/// Decode a VMAD (Papyrus scripts) subrecord into a structured JSON value.
+///
+/// VMAD stores Papyrus script attachments with properties in a compact binary format.
+/// Never panics on truncated or malformed input — returns a raw hex fallback instead.
+pub fn decode_vmad(data: &[u8]) -> Value {
+    let mut pos = 0usize;
+
+    macro_rules! need {
+        ($n:expr) => {
+            if pos + $n > data.len() {
+                return json!({
+                    "_raw": true,
+                    "reason": "VMAD truncated",
+                    "hex": hex::encode(&data[pos..])
+                });
+            }
+        };
+    }
+
+    macro_rules! read_u16 {
+        () => {{
+            need!(2);
+            let v = u16::from_le_bytes([data[pos], data[pos + 1]]);
+            pos += 2;
+            v
+        }};
+    }
+
+    macro_rules! read_wstring {
+        () => {{
+            let len = read_u16!() as usize;
+            need!(len);
+            let s = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
+            pos += len;
+            s
+        }};
+    }
+
+    let version = read_u16!();
+    let obj_format = read_u16!();
+    let script_count = read_u16!();
+
+    let mut scripts = Vec::new();
+    for _ in 0..script_count {
+        let name = read_wstring!();
+        need!(1);
+        let status = data[pos];
+        pos += 1;
+        let prop_count = read_u16!();
+        let mut props = Vec::new();
+        for _ in 0..prop_count {
+            let prop_name = read_wstring!();
+            need!(2);
+            let prop_type = data[pos];
+            pos += 1;
+            let _prop_status = data[pos];
+            pos += 1;
+            let value = decode_vmad_property(data, &mut pos, prop_type, obj_format);
+            props.push(json!({"name": prop_name, "type": prop_type, "value": value}));
+        }
+        scripts.push(json!({"name": name, "status": status, "properties": props}));
+    }
+
+    json!({"version": version, "scripts": scripts})
+}
+
+fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format: u16) -> Value {
+    let read_object = |data: &[u8], pos: &mut usize, obj_format: u16| -> Value {
+        if obj_format == 2 {
+            if *pos + 4 > data.len() {
+                return json!(null);
+            }
+            let form_id =
+                u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+            *pos += 4;
+            json!(format!("{:#010X}", form_id))
+        } else {
+            if *pos + 6 > data.len() {
+                return json!(null);
+            }
+            *pos += 2; // unused alias field
+            let form_id =
+                u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+            *pos += 4;
+            json!(format!("{:#010X}", form_id))
+        }
+    };
+
+    match prop_type {
+        1 => read_object(data, pos, obj_format),
+        2 => {
+            // String
+            if *pos + 2 > data.len() {
+                return json!(null);
+            }
+            let len = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
+            *pos += 2;
+            if *pos + len > data.len() {
+                return json!(null);
+            }
+            let s = String::from_utf8_lossy(&data[*pos..*pos + len]).into_owned();
+            *pos += len;
+            json!(s)
+        }
+        3 => {
+            // Int
+            if *pos + 4 > data.len() {
+                return json!(null);
+            }
+            let v =
+                i32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+            *pos += 4;
+            json!(v)
+        }
+        4 => {
+            // Float
+            if *pos + 4 > data.len() {
+                return json!(null);
+            }
+            let v =
+                f32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
+            *pos += 4;
+            json!(v)
+        }
+        5 => {
+            // Bool
+            if *pos >= data.len() {
+                return json!(null);
+            }
+            let v = data[*pos] != 0;
+            *pos += 1;
+            json!(v)
+        }
+        _ => {
+            // Array types and unknown — emit type tag as raw fallback
+            json!({"_raw": true, "type": prop_type})
+        }
+    }
 }
 
 // Minimal hex encoding without extra dependency
