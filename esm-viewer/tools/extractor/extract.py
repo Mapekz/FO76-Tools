@@ -14,7 +14,7 @@ FO76_PAS = TES5 / "Core" / "wbDefinitionsFO76.pas"
 COMMON_PAS = TES5 / "Core" / "wbDefinitionsCommon.pas"
 OUT = ROOT / "schema" / "fo76.json"
 
-WHITELIST = ["AMMO", "ARMO", "PROJ", "EXPL", "WEAP", "SPEL", "MGEF", "PERK"]
+WHITELIST = ["AMMO", "ARMO", "PROJ", "EXPL", "WEAP", "SPEL", "MGEF", "PERK", "GLOB"]
 
 # Vars that use runtime Pascal deciders — emit raw fallback at subrecord level.
 HARD_RAW_VARS = {
