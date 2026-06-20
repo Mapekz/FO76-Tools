@@ -21,6 +21,7 @@ WHITELIST = [
     "PLYT", "COEN", "PEPF", "STHD", "WAVE", "CMPT",
     "BOOK", "MISC", "CMPO", "COBJ", "LVLI", "LVLN", "INNR",
     "CONT", "FLOR", "FURN", "FISH", "HAZD", "BPTD",
+    "ENCH", "FACT", "CHAL", "TERM", "CNDF",
 ]
 
 # Vars that use runtime Pascal deciders — emit raw fallback at subrecord level.
