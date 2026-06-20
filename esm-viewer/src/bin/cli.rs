@@ -40,7 +40,7 @@ enum Commands {
         file_a: PathBuf,
         file_b: PathBuf,
         /// Filter output to a specific record type (e.g. GLOB)
-        #[arg(long, name = "type")]
+        #[arg(long = "type")]
         record_type: Option<String>,
         /// Output full diff as JSON
         #[arg(long)]

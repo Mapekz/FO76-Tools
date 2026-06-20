@@ -92,10 +92,7 @@ fn decode_member(
             format,
             ..
         } => {
-            if let Some(data) = payload.or_else(|| {
-                sig.as_ref()
-                    .and_then(|s| peek_first(by_sig, s).map(|sr| sr.data.as_slice()))
-            }) {
+            if let Some(data) = payload {
                 if let Some(v) = read_int(data, *width, *signed) {
                     out.insert(name.clone(), format_int(v, format.as_ref()));
                 }
@@ -108,11 +105,7 @@ fn decode_member(
             }
         }
         MemberDef::Float { sig, name, .. } => {
-            let data = payload.or_else(|| {
-                sig.as_ref()
-                    .and_then(|s| peek_first(by_sig, s).map(|sr| sr.data.as_slice()))
-            });
-            if let Some(data) = data {
+            if let Some(data) = payload {
                 if data.len() >= 4 {
                     let f = f32::from_le_bytes(data[0..4].try_into().unwrap());
                     out.insert(name.clone(), json!(f));
@@ -626,13 +619,6 @@ fn take_first<'a>(
             Some(v.remove(0))
         }
     })
-}
-
-fn peek_first<'a>(
-    by_sig: &HashMap<String, Vec<&'a OwnedSubrecord>>,
-    sig: &str,
-) -> Option<&'a OwnedSubrecord> {
-    by_sig.get(sig).and_then(|v| v.first().copied())
 }
 
 fn take_all<'a>(
