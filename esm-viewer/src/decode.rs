@@ -276,7 +276,12 @@ fn decode_member(
             name,
             valid_refs,
         } => {
-            if let Some(sig) = sig {
+            if let Some(data) = payload {
+                if data.len() >= 4 {
+                    let id = FormId::new(u32::from_le_bytes(data[0..4].try_into().unwrap()));
+                    out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
+                }
+            } else if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sr.data.len() >= 4 {
                         let id = FormId::new(u32::from_le_bytes(sr.data[0..4].try_into().unwrap()));
@@ -378,10 +383,16 @@ fn decode_member(
             }
         }
         MemberDef::Union {
+            sig,
             name,
             decider,
             variants,
         } => {
+            // If the union has a sig, consume the subrecord and use its bytes as payload.
+            let taken = sig.as_deref().and_then(|s| take_first(by_sig, s));
+            let taken_data: Option<&[u8]> = taken.as_ref().map(|sr| sr.data.as_slice());
+            let effective_payload = taken_data.or(payload);
+
             let chosen = match decider {
                 UnionDecider::FieldValue {
                     field,
@@ -394,7 +405,7 @@ fn decode_member(
                     byte_offset,
                     map,
                     default_variant,
-                } => payload
+                } => effective_payload
                     .and_then(|p| p.get(*byte_offset).copied())
                     .and_then(|b| map.get(&b).copied())
                     .or(*default_variant),
@@ -402,7 +413,7 @@ fn decode_member(
             };
             if let Some(idx) = chosen {
                 if let Some(variant) = variants.get(idx) {
-                    decode_member(ctx, variant, out, by_sig, payload);
+                    decode_member(ctx, variant, out, by_sig, effective_payload);
                     return;
                 }
             }
@@ -551,6 +562,7 @@ fn decode_struct_fields(
                 name,
                 decider,
                 variants,
+                ..
             } => {
                 let chosen = match decider {
                     UnionDecider::ByteAtOffset {

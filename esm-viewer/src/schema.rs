@@ -49,6 +49,8 @@ pub enum MemberDef {
     },
     #[serde(rename = "union")]
     Union {
+        #[serde(default)]
+        sig: Option<String>,
         name: String,
         decider: UnionDecider,
         variants: Vec<MemberDef>,

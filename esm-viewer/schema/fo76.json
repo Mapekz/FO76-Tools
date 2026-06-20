@@ -4675,22 +4675,32 @@
                 ]
               },
               {
-                "kind": "struct",
+                "kind": "union",
                 "sig": "DATA",
                 "name": "Effect Data",
-                "fields": [
+                "decider": {
+                  "field": "Effect Header.Effect Type",
+                  "default_variant": 2,
+                  "map": {"0": 0, "1": 1, "2": 2}
+                },
+                "variants": [
                   {
-                    "kind": "integer",
-                    "name": "Effect Type",
-                    "width": "u8",
-                    "format": {
-                      "enum": [
-                        "Quest",
-                        "Ability",
-                        "Entry Point"
-                      ]
-                    }
+                    "kind": "struct",
+                    "name": "Quest + Stage",
+                    "fields": [
+                      {"kind": "formid", "name": "Quest", "valid_refs": ["QUST"]},
+                      {"kind": "integer", "name": "Quest Stage", "width": "u16"}
+                    ]
                   },
+                  {
+                    "kind": "formid",
+                    "name": "Ability",
+                    "valid_refs": ["SPEL"]
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Entry Point",
+                    "fields": [
                   {
                     "kind": "integer",
                     "name": "Entry Point",
@@ -4943,6 +4953,9 @@
                     "kind": "integer",
                     "name": "Perk Condition Tab Count",
                     "width": "u8"
+                  },
+                  {"kind": "unused", "bytes": 1}
+                ]
                   }
                 ]
               },
