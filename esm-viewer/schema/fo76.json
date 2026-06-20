@@ -211,6 +211,14 @@
         {"kind": "raw_fallback", "name": "Conditions", "reason": "wbConditions closure decider"},
         {"kind": "raw_fallback", "sig": "PRKE", "name": "Effects", "reason": "wbPerkEffectDataDecider closure decider"}
       ]
+    },
+    "GLOB": {
+      "name": "Global Variable",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "FNAM", "name": "Type", "width": "u8", "signed": false, "format": {"enum": {"102": "Short", "108": "Long", "115": "Float", "98": "Boolean"}}},
+        {"kind": "float", "sig": "FLTV", "name": "Float Value"}
+      ]
     }
   }
 }
