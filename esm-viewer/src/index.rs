@@ -138,11 +138,9 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         .into_iter()
         .map(|(k, v)| (FormId::new(k), v))
         .collect();
-    let edid_index = cache.edid_index.map(|m| {
-        m.into_iter()
-            .map(|(k, v)| (k, FormId::new(v)))
-            .collect()
-    });
+    let edid_index = cache
+        .edid_index
+        .map(|m| m.into_iter().map(|(k, v)| (k, FormId::new(v))).collect());
 
     Ok(Some(Index {
         path: esm.path.clone(),
@@ -173,10 +171,7 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
     Ok(index)
 }
 
-pub fn full_name_for_record(
-    esm: &EsmFile,
-    meta: &RecordMeta,
-) -> anyhow::Result<Option<u32>> {
+pub fn full_name_for_record(esm: &EsmFile, meta: &RecordMeta) -> anyhow::Result<Option<u32>> {
     let rec = esm.parse_record_at(meta.offset)?;
     Ok(lstring_id_from_subrecords(&rec.subrecords, "FULL"))
 }

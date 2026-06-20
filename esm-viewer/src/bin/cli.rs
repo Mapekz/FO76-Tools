@@ -12,9 +12,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Print TES4 header info
-    Info {
-        file: PathBuf,
-    },
+    Info { file: PathBuf },
     /// Fetch a record by FormID or EditorID
     Get {
         file: PathBuf,
@@ -37,6 +35,19 @@ enum Commands {
         #[arg(long, default_value_t = 50)]
         limit: usize,
     },
+    /// Diff two ESM versions by FormID alignment
+    Diff {
+        file_a: PathBuf,
+        file_b: PathBuf,
+        /// Filter output to a specific record type (e.g. GLOB)
+        #[arg(long, name = "type")]
+        record_type: Option<String>,
+        /// Output full diff as JSON
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -51,7 +62,18 @@ fn main() -> anyhow::Result<()> {
             pretty,
             raw,
         } => cmd_get(&file, formid, edid, json, pretty, raw),
-        Commands::List { file, r#type, limit } => cmd_list(&file, &r#type, limit),
+        Commands::List {
+            file,
+            r#type,
+            limit,
+        } => cmd_list(&file, &r#type, limit),
+        Commands::Diff {
+            file_a,
+            file_b,
+            record_type,
+            json,
+            pretty,
+        } => cmd_diff(&file_a, &file_b, record_type.as_deref(), json, pretty),
     }
 }
 
@@ -153,6 +175,149 @@ fn resolve_form_id(
             .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", e))
     } else {
         anyhow::bail!("specify --formid or --edid")
+    }
+}
+
+fn cmd_diff(
+    file_a: &PathBuf,
+    file_b: &PathBuf,
+    record_type: Option<&str>,
+    as_json: bool,
+    pretty: bool,
+) -> anyhow::Result<()> {
+    use fo76_esm_parser::diff::diff_databases;
+    use std::collections::BTreeMap;
+
+    let db_a = Database::open(file_a)?;
+    let db_b = Database::open(file_b)?;
+    let mut result = diff_databases(&db_a, &db_b)?;
+
+    // Apply --type filter
+    if let Some(sig) = record_type {
+        let sig = sig.to_uppercase();
+        result.added.retain(|s| s.record_type == sig);
+        result.removed.retain(|s| s.record_type == sig);
+        result.changed.retain(|d| d.stub.record_type == sig);
+    }
+
+    if as_json {
+        let out = serde_json::to_value(&result)?;
+        print_json(&out, pretty);
+        return Ok(());
+    }
+
+    // Human-readable output
+    println!("A: {}", file_a.display());
+    println!("B: {}", file_b.display());
+    println!();
+    println!("Summary:");
+    println!("  Added:   {}", result.added.len());
+    println!("  Removed: {}", result.removed.len());
+    println!("  Changed: {}", result.changed.len());
+
+    // Group by record type for summary
+    if record_type.is_none() {
+        let mut added_by_type: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut removed_by_type: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut changed_by_type: BTreeMap<&str, usize> = BTreeMap::new();
+        for s in &result.added {
+            *added_by_type.entry(&s.record_type).or_default() += 1;
+        }
+        for s in &result.removed {
+            *removed_by_type.entry(&s.record_type).or_default() += 1;
+        }
+        for d in &result.changed {
+            *changed_by_type.entry(&d.stub.record_type).or_default() += 1;
+        }
+
+        let all_types: std::collections::BTreeSet<&str> = added_by_type
+            .keys()
+            .chain(removed_by_type.keys())
+            .chain(changed_by_type.keys())
+            .copied()
+            .collect();
+        if !all_types.is_empty() {
+            println!();
+            println!("By record type:");
+            for t in all_types {
+                println!(
+                    "  {}: +{} -{} ~{}",
+                    t,
+                    added_by_type.get(t).copied().unwrap_or(0),
+                    removed_by_type.get(t).copied().unwrap_or(0),
+                    changed_by_type.get(t).copied().unwrap_or(0),
+                );
+            }
+        }
+    }
+
+    if !result.added.is_empty() {
+        println!();
+        println!("Added ({}):", result.added.len());
+        for s in &result.added {
+            println!(
+                "  [{}] {}",
+                s.form_id,
+                s.editor_id.as_deref().unwrap_or("<no edid>")
+            );
+        }
+    }
+    if !result.removed.is_empty() {
+        println!();
+        println!("Removed ({}):", result.removed.len());
+        for s in &result.removed {
+            println!(
+                "  [{}] {}",
+                s.form_id,
+                s.editor_id.as_deref().unwrap_or("<no edid>")
+            );
+        }
+    }
+    if !result.changed.is_empty() {
+        println!();
+        println!("Changed ({}):", result.changed.len());
+        for d in &result.changed {
+            println!(
+                "  [{}] {}",
+                d.stub.form_id,
+                d.stub.editor_id.as_deref().unwrap_or("<no edid>")
+            );
+            print_field_changes(&d.field_changes, "    ");
+        }
+    }
+
+    Ok(())
+}
+
+fn print_field_changes(changes: &serde_json::Value, indent: &str) {
+    if let Some(obj) = changes.as_object() {
+        for (key, val) in obj {
+            if let Some(inner) = val.as_object() {
+                if inner.contains_key("from") && inner.contains_key("to") {
+                    println!(
+                        "{}  {}: {} \u{2192} {}",
+                        indent,
+                        key,
+                        format_val(&inner["from"]),
+                        format_val(&inner["to"])
+                    );
+                } else {
+                    // nested diff
+                    println!("{}  {}:", indent, key);
+                    print_field_changes(val, &format!("{}  ", indent));
+                }
+            }
+        }
+    }
+}
+
+fn format_val(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        _ => serde_json::to_string(v).unwrap_or_default(),
     }
 }
 

@@ -129,9 +129,7 @@ pub enum MemberDef {
         name: String,
     },
     #[serde(rename = "unused")]
-    Unused {
-        bytes: usize,
-    },
+    Unused { bytes: usize },
     #[serde(rename = "unknown")]
     Unknown {
         #[serde(default)]
@@ -173,15 +171,9 @@ pub enum ArrayCount {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum UnionDecider {
-    FormVersion {
-        form_version: FormVersionRange,
-    },
-    FromVersion {
-        from_version: u16,
-    },
-    BelowVersion {
-        below_version: u16,
-    },
+    FormVersion { form_version: FormVersionRange },
+    FromVersion { from_version: u16 },
+    BelowVersion { below_version: u16 },
     Raw,
 }
 
