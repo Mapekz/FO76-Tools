@@ -22,6 +22,7 @@ WHITELIST = [
     "BOOK", "MISC", "CMPO", "COBJ", "LVLI", "LVLN", "INNR",
     "CONT", "FLOR", "FURN", "FISH", "HAZD", "BPTD",
     "ENCH", "FACT", "CHAL", "TERM", "CNDF",
+    "NPC_", "RACE", "QUST", "WTHR",
 ]
 
 # Vars that use runtime Pascal deciders — emit raw fallback at subrecord level.
@@ -424,7 +425,7 @@ class Extractor:
             return self._parse_union(expr)
         if expr.startswith("wbInteger"):
             return self._parse_integer(expr)
-        if expr.startswith("wbFloat"):
+        if expr.startswith("wbFloat") and "(" in expr:
             return self._parse_float(expr)
         if expr.startswith("wbFormIDCk") or expr.startswith("wbFormIDCK"):
             return self._parse_formid(expr)
@@ -487,11 +488,8 @@ class Extractor:
             idx = 1
         name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[idx]
         members_expr = parts[-1]
-        if members_expr.strip().startswith("["):
-            fb = 0
-        else:
-            fb = members_expr.index("[")
-        fe = find_matching_bracket(members_expr, fb if members_expr[fb] == "[" else members_expr.index("["))
+        if "[" not in members_expr:
+            return {"kind": "raw_fallback", "name": name or "rstruct", "reason": "rstruct variable ref"}
         start = members_expr.index("[")
         fe = find_matching_bracket(members_expr, start)
         members = self._parse_member_list(members_expr[start + 1 : fe])
@@ -549,16 +547,22 @@ class Extractor:
             decider = {"raw": True}
         else:
             decider = {"raw": True}
-        variants_expr = parts[2]
-        vb = variants_expr.index("[")
-        ve = find_matching_bracket(variants_expr, vb)
-        variants = self._parse_member_list(variants_expr[vb + 1 : ve])
         if decider.get("raw"):
             return {
                 "kind": "raw_fallback",
                 "name": name or "union",
                 "reason": "closure union decider",
             }
+        variants_expr = parts[2]
+        if "[" not in variants_expr:
+            return {
+                "kind": "raw_fallback",
+                "name": name or "union",
+                "reason": "closure union decider",
+            }
+        vb = variants_expr.index("[")
+        ve = find_matching_bracket(variants_expr, vb)
+        variants = self._parse_member_list(variants_expr[vb + 1 : ve])
         return {"kind": "union", "name": name, "decider": decider, "variants": variants}
 
     def _parse_integer(self, expr: str) -> dict:
@@ -596,7 +600,7 @@ class Extractor:
         if sig_id(parts[0].strip()):
             sig = parts[0].strip()
             idx = 1
-        name = unquote(parts[idx])
+        name = unquote(parts[idx]) if idx < len(parts) else (sig or "Float")
         out: dict = {"kind": "float", "name": name}
         if sig:
             out["sig"] = sig
@@ -629,7 +633,10 @@ class Extractor:
         if sig_id(parts[0].strip()):
             sig = parts[0].strip()
             idx = 1
-        name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[0]
+        if idx >= len(parts):
+            name = sig or "String"
+        else:
+            name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[0]
         out: dict = {"kind": "string", "name": name, "keep_case": "KC" in expr[:20]}
         if sig:
             out["sig"] = sig
@@ -672,7 +679,7 @@ class Extractor:
         rparen = find_matching_paren(expr, lparen)
         parts = split_top_level(expr[lparen + 1 : rparen])
         sig = parts[0].strip()
-        name = unquote(parts[1])
+        name = unquote(parts[1]) if len(parts) > 1 else "Color"
         return {"kind": "byte_rgba", "sig": sig, "name": name}
 
     def _parse_empty(self, expr: str) -> dict:
@@ -733,7 +740,11 @@ class Extractor:
     def run(self) -> dict:
         records: dict = {}
         for sig in WHITELIST:
-            rec = self.extract_record(sig)
+            try:
+                rec = self.extract_record(sig)
+            except Exception as e:
+                print(f"WARNING: failed {sig}: {e}", file=sys.stderr)
+                rec = None
             if rec:
                 records[sig] = rec
                 print(f"extracted {sig}: {len(rec['members'])} members", file=sys.stderr)
