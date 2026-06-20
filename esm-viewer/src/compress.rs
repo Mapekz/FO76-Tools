@@ -2,6 +2,14 @@ use anyhow::Context;
 use flate2::read::ZlibDecoder;
 use std::io::Read;
 
+/// Decompress an LZ4-block-compressed buffer to the given expected output size.
+///
+/// BA2 archives use raw LZ4 blocks (not the LZ4 frame format).
+pub fn decompress_lz4(compressed: &[u8], expected_size: usize) -> anyhow::Result<Vec<u8>> {
+    lz4_flex::decompress(compressed, expected_size)
+        .map_err(|e| anyhow::anyhow!("LZ4 decompress: {}", e))
+}
+
 pub fn decompress_zlib(compressed: &[u8], expected_size: usize) -> anyhow::Result<Vec<u8>> {
     let mut decoder = ZlibDecoder::new(compressed);
     let mut out = Vec::with_capacity(expected_size);

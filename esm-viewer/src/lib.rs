@@ -1,3 +1,4 @@
+pub mod ba2;
 pub mod compress;
 pub mod decode;
 pub mod diff;
@@ -6,6 +7,7 @@ pub mod formid;
 pub mod index;
 pub mod reader;
 pub mod schema;
+pub mod strings;
 pub mod tree;
 
 use crate::decode::{decode_record, DecodeContext};
@@ -13,6 +15,7 @@ use crate::formid::parse_formid;
 use crate::index::Index;
 use crate::reader::{edid_from_subrecords, EsmFile, FileInfo, ParsedRecord, RecordHeaderInfo};
 use crate::schema::Schema;
+use crate::strings::Localization;
 use crate::tree::ChildRef;
 use anyhow::{bail, Context};
 pub use diff::{DiffResult, RecordDiff, RecordStub};
@@ -26,10 +29,16 @@ use std::path::Path;
 // exported under the alias TreeRecordStub to avoid a name collision.
 pub use tree::{GroupChild, GroupLabel, GroupNode, RecordStub as TreeRecordStub, TreeIndex};
 
+/// Primary interface to a Fallout 76 ESM file.
+///
+/// Holds a memory-mapped ESM, a FormID/EditorID index, the embedded field
+/// schema, and an optional localization table loaded from the sibling BA2.
 pub struct Database {
     pub esm: EsmFile,
     pub index: Index,
     pub schema: Schema,
+    /// Resolved string tables, if a localization BA2 was found or supplied.
+    pub localization: Option<Localization>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,11 +56,42 @@ pub struct ListEntry {
 }
 
 impl Database {
+    /// Open an ESM file.
+    ///
+    /// If a `SeventySix - Localization.ba2` file is found next to the ESM, it is
+    /// loaded silently.  Failures to load the BA2 produce a `stderr` warning but
+    /// do not abort.
     pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let path = path.as_ref();
         let esm = EsmFile::open(path)?;
         let index = Index::build(&esm)?;
         let schema = Schema::load_embedded().context("load embedded schema")?;
-        Ok(Database { esm, index, schema })
+
+        // Auto-detect sibling localization BA2.
+        let sibling_ba2 = path.with_file_name("SeventySix - Localization.ba2");
+        let localization = if sibling_ba2.exists() {
+            match Localization::from_ba2(&sibling_ba2, "en", "seventysix") {
+                Ok(loc) => Some(loc),
+                Err(e) => {
+                    eprintln!("Warning: failed to load localization: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok(Database {
+            esm,
+            index,
+            schema,
+            localization,
+        })
+    }
+
+    /// Replace (or set) the localization tables used for LString resolution.
+    pub fn set_localization(&mut self, loc: Localization) {
+        self.localization = Some(loc);
     }
 
     pub fn file_info(&self) -> anyhow::Result<FileInfo> {
@@ -233,6 +273,7 @@ impl Database {
         let ctx = DecodeContext {
             schema: &self.schema,
             form_version: parsed.header.form_version,
+            localization: self.localization.as_ref(),
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {

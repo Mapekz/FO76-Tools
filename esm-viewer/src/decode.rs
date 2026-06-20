@@ -1,14 +1,18 @@
 use crate::formid::FormId;
 use crate::reader::OwnedSubrecord;
 use crate::schema::{
-    ArrayCount, EnumFormat, FieldDef, IntegerWidth, MemberDef, Schema, UnionDecider, ValueFormat,
+    ArrayCount, EnumFormat, FieldDef, IntegerWidth, LStringTable, MemberDef, Schema, UnionDecider,
+    ValueFormat,
 };
+use crate::strings::{Localization, StringKind};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 
 pub struct DecodeContext<'a> {
     pub schema: &'a Schema,
     pub form_version: u16,
+    /// Optional localization tables used to resolve LString IDs to text.
+    pub localization: Option<&'a Localization>,
 }
 
 pub fn decode_record(
@@ -135,18 +139,23 @@ fn decode_member(
                 }
             }
         }
-        MemberDef::LString { sig, name } => {
+        MemberDef::LString { sig, name, table } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sr.data.len() >= 4 {
                         let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                        out.insert(
-                            name.clone(),
-                            json!({
-                                "lstring_id": format!("0x{:08X}", id),
-                                "_unresolved": true
-                            }),
-                        );
+                        let kind = lstring_table_to_kind(table);
+                        if let Some(text) = ctx.localization.and_then(|loc| loc.lookup(kind, id)) {
+                            out.insert(name.clone(), json!(text));
+                        } else {
+                            out.insert(
+                                name.clone(),
+                                json!({
+                                    "lstring_id": format!("0x{:08X}", id),
+                                    "_unresolved": true
+                                }),
+                            );
+                        }
                     }
                 }
             }
@@ -833,6 +842,15 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
             // Array types and unknown — emit type tag as raw fallback
             json!({"_raw": true, "type": prop_type})
         }
+    }
+}
+
+/// Map a schema [`LStringTable`] selector to the runtime [`StringKind`].
+fn lstring_table_to_kind(table: &LStringTable) -> StringKind {
+    match table {
+        LStringTable::Strings => StringKind::Strings,
+        LStringTable::Dlstrings => StringKind::DlStrings,
+        LStringTable::Ilstrings => StringKind::IlStrings,
     }
 }
 

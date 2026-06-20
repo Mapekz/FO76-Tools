@@ -86,6 +86,8 @@ impl EsmFile {
     pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = File::open(&path).with_context(|| format!("open {}", path.display()))?;
+        // SAFETY: We hold the file open for the lifetime of `Mmap`; no other process
+        // is expected to truncate the file while it is mapped.
         let mmap = unsafe { Mmap::map(&file)? };
         Ok(EsmFile { mmap, path })
     }
