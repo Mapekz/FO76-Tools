@@ -23,7 +23,21 @@ WHITELIST = [
     "CONT", "FLOR", "FURN", "FISH", "HAZD", "BPTD",
     "ENCH", "FACT", "CHAL", "TERM", "CNDF",
     "NPC_", "RACE", "QUST", "WTHR",
+    "CURV",
 ]
+
+# Closure decider names that we can substitute with a known fixed type.
+# Used in _parse_union to avoid raw_fallback for simple all-same-width unions.
+KNOWN_UNION_DECIDERS: dict[str, dict] = {
+    # All four Function Type variants are itU8 integer — only the enum labels differ.
+    "wbOMODDataFunctionTypeDecider": {"kind": "integer", "name": "Function Type", "width": "u8"},
+    # Value 1 / Value 2 variants are all 4 bytes — emit raw bytes.
+    "wbOMODDataPropertyValue1Decider": {"kind": "bytes", "name": "Value 1", "len": 4},
+    "wbOMODDataPropertyValue2Decider": {"kind": "bytes", "name": "Value 2", "len": 4},
+    # wbRecordSizeDecider(1): QRRI is 0 bytes (empty) or 1 byte (u8 bool).
+    # We model it as variable-length bytes; both cases are safe to read.
+    "wbRecordSizeDecider": {"kind": "bytes", "name": None, "len": None},
+}
 
 # Vars that use runtime Pascal deciders — emit raw fallback at subrecord level.
 HARD_RAW_VARS = {
@@ -39,7 +53,7 @@ HARD_RAW_VARS = {
     "wbVMADFragmentedSCEN",
     "wbVMADFragmentedINFO",
     "wbObjectTemplate",
-    "wbMagicEffectSounds",
+    # wbMagicEffectSounds is modeled via _inject_builtin_helpers below.
 }
 
 INT_MAP = {
@@ -66,9 +80,18 @@ def find_matching_paren(s: str, start: int) -> int:
     while i < len(s):
         c = s[i]
         if in_str:
-            if c == quote and (i == 0 or s[i - 1] != "\\"):
+            if c == quote:
+                # Pascal uses '' to escape a single quote inside a string.
+                if c == "'" and i + 1 < len(s) and s[i + 1] == "'":
+                    i += 2  # skip the escape pair, stay in string
+                    continue
                 in_str = False
             i += 1
+            continue
+        # Skip // line comments — they can contain unbalanced parens/brackets.
+        if c == "/" and i + 1 < len(s) and s[i + 1] == "/":
+            while i < len(s) and s[i] != "\n":
+                i += 1
             continue
         if c in ("'", '"'):
             in_str = True
@@ -93,9 +116,18 @@ def find_matching_bracket(s: str, start: int) -> int:
     while i < len(s):
         c = s[i]
         if in_str:
-            if c == quote and (i == 0 or s[i - 1] != "\\"):
+            if c == quote:
+                # Pascal uses '' to escape a single quote inside a string.
+                if c == "'" and i + 1 < len(s) and s[i + 1] == "'":
+                    i += 2  # skip the escape pair, stay in string
+                    continue
                 in_str = False
             i += 1
+            continue
+        # Skip // line comments — they can contain unbalanced parens/brackets.
+        if c == "/" and i + 1 < len(s) and s[i + 1] == "/":
+            while i < len(s) and s[i] != "\n":
+                i += 1
             continue
         if c in ("'", '"'):
             in_str = True
@@ -118,16 +150,30 @@ def split_top_level(text: str) -> list[str]:
     depth_paren = depth_bracket = 0
     in_str = False
     quote = ""
-    for c in text:
+    i = 0
+    while i < len(text):
+        c = text[i]
         if in_str:
             cur.append(c)
             if c == quote:
+                # Pascal uses '' to escape a single quote inside a string.
+                if c == "'" and i + 1 < len(text) and text[i + 1] == "'":
+                    cur.append(text[i + 1])
+                    i += 2  # skip the escape pair, stay in string
+                    continue
                 in_str = False
+            i += 1
+            continue
+        # Skip // line comments — they can contain unbalanced parens/brackets/commas.
+        if c == "/" and i + 1 < len(text) and text[i + 1] == "/":
+            while i < len(text) and text[i] != "\n":
+                i += 1
             continue
         if c in ("'", '"'):
             in_str = True
             quote = c
             cur.append(c)
+            i += 1
             continue
         if c == "(":
             depth_paren += 1
@@ -140,8 +186,10 @@ def split_top_level(text: str) -> list[str]:
         elif c == "," and depth_paren == 0 and depth_bracket == 0:
             parts.append("".join(cur).strip())
             cur = []
+            i += 1
             continue
         cur.append(c)
+        i += 1
     tail = "".join(cur).strip()
     if tail:
         parts.append(tail)
@@ -318,6 +366,27 @@ class Extractor:
         self.vars["wbSoundLevelEnum"] = "wbEnum(['Loud','Normal','Silent','Very Loud','Quiet'])"
         self.vars["wbStaggerEnum"] = "wbEnum(['None','Small','Medium','Large','Extra Large'])"
         self.vars["wbBoolEnum"] = "wbEnum(['False','True'])"
+        # Pascal functions (not variables) — inject as builtin helpers so they
+        # appear in self.vars and are expanded by _parse_member_list.
+        self.vars.setdefault(
+            "wbMagicEffectSounds",
+            (
+                "wbArrayS(SNDD, 'Sounds', wbStruct('Sound', ["
+                "wbInteger('Type', itU32, wbEnum(["
+                "'Sheathe/Draw', 'Charge', 'Ready', 'Release',"
+                "'Concentration Cast Loop', 'On Hit'])),"
+                "wbFormIDCk('Sound', [SNDR])]))"
+            ),
+        )
+        self.vars.setdefault(
+            "wbWeatherSounds",
+            (
+                "wbRArray('Sounds', wbStruct(SNAM, 'Sound', ["
+                "wbFormIDCk('Sound', [SNDR]),"
+                "wbInteger('Type', itU32, wbEnum(["
+                "'Default', 'Precipitation', 'Wind', 'Thunder']))]))"
+            ),
+        )
 
     def resolve(self, expr: str, depth: int = 0) -> str:
         expr = expr.strip()
@@ -487,7 +556,15 @@ class Extractor:
         if parts[0].strip().startswith("["):
             idx = 1
         name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[idx]
+        # wbRStruct/wbRStructSK can have trailing args after the member list
+        # (e.g., [], cpNormal, False, nil, True).  Mirror _parse_struct: take the
+        # LAST arg as a first guess and fall back to the first arg that contains '['.
         members_expr = parts[-1]
+        if not members_expr.strip().startswith("["):
+            for p in parts:
+                if p.strip().startswith("["):
+                    members_expr = p
+                    break
         if "[" not in members_expr:
             return {"kind": "raw_fallback", "name": name or "rstruct", "reason": "rstruct variable ref"}
         start = members_expr.index("[")
@@ -529,11 +606,22 @@ class Extractor:
         lparen = expr.index("(")
         rparen = find_matching_paren(expr, lparen)
         parts = split_top_level(expr[lparen + 1 : rparen])
-        name = unquote(parts[0]) if parts[0].strip().startswith("'") else parts[0]
-        decider_expr = parts[1]
+        # wbUnion can have an optional leading sig (4-char uppercase token)
+        # e.g. wbUnion(LVLF, 'Flags', decider, [...])
+        #   vs wbUnion('Flags', decider, [...])
+        sig = None
+        idx = 0
+        if sig_id(parts[0].strip()):
+            sig = parts[0].strip()
+            idx = 1
+        name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[idx].strip()
+        decider_expr = parts[idx + 1]
         decider: dict
         if "wbFormVersionDecider" in decider_expr:
+            # wbFormVersionDecider(N) — single threshold
             m = re.search(r"wbFormVersionDecider\((\d+)(?:\s*,\s*(\d+))?\)", decider_expr)
+            # wbFormVersionDecider([N, M, ...]) — multi-threshold array form
+            ma = re.search(r"wbFormVersionDecider\(\[([^\]]+)\]\)", decider_expr)
             if m:
                 decider = {
                     "form_version": {
@@ -541,29 +629,45 @@ class Extractor:
                         "max": int(m.group(2)) if m.group(2) else None,
                     }
                 }
+            elif ma:
+                # Multi-threshold array form — needs hand-modeling (no schema support yet).
+                decider = {"raw": True}
             else:
                 decider = {"raw": True}
         elif "Decider" in decider_expr or "wbCondition" in decider_expr:
+            # Check for known closure deciders we can substitute with a fixed type.
+            for known_fn, subst in KNOWN_UNION_DECIDERS.items():
+                if known_fn in decider_expr:
+                    out = dict(subst)
+                    # Use the name from the union call when the substitution has None.
+                    if out.get("name") is None:
+                        out["name"] = name or sig or "union"
+                    if sig and "sig" not in out:
+                        out["sig"] = sig
+                    return out
             decider = {"raw": True}
         else:
             decider = {"raw": True}
         if decider.get("raw"):
             return {
                 "kind": "raw_fallback",
-                "name": name or "union",
+                "name": name or sig or "union",
                 "reason": "closure union decider",
             }
-        variants_expr = parts[2]
+        variants_expr = parts[idx + 2]
         if "[" not in variants_expr:
             return {
                 "kind": "raw_fallback",
-                "name": name or "union",
+                "name": name or sig or "union",
                 "reason": "closure union decider",
             }
         vb = variants_expr.index("[")
         ve = find_matching_bracket(variants_expr, vb)
         variants = self._parse_member_list(variants_expr[vb + 1 : ve])
-        return {"kind": "union", "name": name, "decider": decider, "variants": variants}
+        out: dict = {"kind": "union", "name": name or sig or "union", "decider": decider, "variants": variants}
+        if sig:
+            out["sig"] = sig
+        return out
 
     def _parse_integer(self, expr: str) -> dict:
         lparen = expr.index("(")

@@ -224,8 +224,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "rstruct",
@@ -419,9 +418,48 @@
           "kind": "rarray",
           "name": "Enlighten Modes",
           "element": {
-            "kind": "raw_fallback",
-            "name": "ENLM",
-            "reason": "closure union decider"
+            "kind": "union",
+            "name": "Enlighten Mode",
+            "decider": {
+              "form_version": {
+                "min": 156,
+                "max": null
+              }
+            },
+            "variants": [
+              {
+                "kind": "integer",
+                "name": "Mode",
+                "width": "u8",
+                "signed": false,
+                "format": {
+                  "enum": [
+                    "Default",
+                    "Light Map",
+                    "Light Map UV",
+                    "Albedo",
+                    "Indirect Specular (Cubemaps)",
+                    "Unknown 5",
+                    "Unknown 6"
+                  ]
+                }
+              },
+              {
+                "kind": "integer",
+                "name": "Mode",
+                "width": "u32",
+                "signed": false,
+                "format": {
+                  "enum": {
+                    "2147483649": "Light Map?",
+                    "2147483651": "Albedo?",
+                    "2147483653": "Unknown 5?",
+                    "2147483654": "Unknown 6?"
+                  }
+                }
+              }
+            ],
+            "sig": "ENLM"
           }
         },
         {
@@ -705,8 +743,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "formid",
@@ -859,9 +896,210 @@
               "kind": "rarray",
               "name": "Combinations",
               "element": {
-                "kind": "raw_fallback",
+                "kind": "rstruct",
                 "name": "Combination",
-                "reason": "rstruct variable ref"
+                "members": [
+                  {
+                    "kind": "empty",
+                    "sig": "OBTF",
+                    "name": "Editor Only"
+                  },
+                  {
+                    "kind": "lstring",
+                    "sig": "FULL",
+                    "name": "Name"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "unknown",
+                          "name": "element"
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Struct",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function Type",
+                              "width": "u8"
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Property",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "sig": "OBTS"
+                  }
+                ]
               }
             },
             {
@@ -1336,9 +1574,9 @@
           "sig": "DNAM"
         },
         {
-          "kind": "raw_fallback",
+          "kind": "rstruct",
           "name": "Muzzle Flash Model",
-          "reason": "rstruct variable ref"
+          "members": []
         },
         {
           "kind": "integer",
@@ -1493,8 +1731,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "rstruct",
@@ -2157,8 +2394,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "formid",
@@ -2198,9 +2434,210 @@
               "kind": "rarray",
               "name": "Combinations",
               "element": {
-                "kind": "raw_fallback",
+                "kind": "rstruct",
                 "name": "Combination",
-                "reason": "rstruct variable ref"
+                "members": [
+                  {
+                    "kind": "empty",
+                    "sig": "OBTF",
+                    "name": "Editor Only"
+                  },
+                  {
+                    "kind": "lstring",
+                    "sig": "FULL",
+                    "name": "Name"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "unknown",
+                          "name": "element"
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Struct",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function Type",
+                              "width": "u8"
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Property",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "sig": "OBTS"
+                  }
+                ]
               }
             },
             {
@@ -2626,7 +3063,7 @@
             },
             {
               "kind": "union",
-              "name": "",
+              "name": "union",
               "decider": {
                 "form_version": {
                   "min": 146,
@@ -3302,8 +3739,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "struct",
@@ -3602,9 +4038,8 @@
                   "name": "Base Cost"
                 },
                 {
-                  "kind": "raw_fallback",
-                  "name": "Assoc. Item",
-                  "reason": "closure union decider"
+                  "kind": "formid",
+                  "name": "Assoc. Item"
                 },
                 {
                   "kind": "bytes",
@@ -3970,15 +4405,43 @@
           }
         },
         {
-          "kind": "raw_fallback",
-          "name": "wbMagicEffectSounds",
-          "reason": "runtime Pascal decider"
+          "kind": "array",
+          "name": "Sounds",
+          "element": {
+            "kind": "struct",
+            "name": "Sound",
+            "fields": [
+              {
+                "kind": "integer",
+                "name": "Type",
+                "width": "u32",
+                "signed": false,
+                "format": {
+                  "enum": [
+                    "Sheathe/Draw",
+                    "Charge",
+                    "Ready",
+                    "Release",
+                    "Concentration Cast Loop",
+                    "On Hit"
+                  ]
+                }
+              },
+              {
+                "kind": "formid",
+                "name": "Sound",
+                "valid_refs": [
+                  "SNDR"
+                ]
+              }
+            ]
+          },
+          "sig": "SNDD"
         },
         {
           "kind": "lstring",
           "sig": "DNAM",
-          "name": "Magic Item Description",
-          "table": "dlstrings"
+          "name": "Magic Item Description"
         },
         {
           "kind": "rarray",
@@ -4094,8 +4557,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "string",
@@ -4213,300 +4675,274 @@
                 ]
               },
               {
-                "kind": "union",
+                "kind": "struct",
+                "sig": "DATA",
                 "name": "Effect Data",
-                "decider": {
-                  "field": "Effect Header.Effect Type",
-                  "map": {
-                    "0": 0,
-                    "1": 1,
-                    "2": 2
-                  },
-                  "default_variant": 2
-                },
-                "variants": [
+                "fields": [
                   {
-                    "kind": "raw_fallback",
-                    "sig": "DATA",
-                    "name": "Quest Stage Data",
-                    "reason": "Quest-type perk DATA layout not yet modeled"
+                    "kind": "integer",
+                    "name": "Effect Type",
+                    "width": "u8",
+                    "format": {
+                      "enum": [
+                        "Quest",
+                        "Ability",
+                        "Entry Point"
+                      ]
+                    }
                   },
                   {
-                    "kind": "formid",
-                    "sig": "DATA",
-                    "name": "Ability"
+                    "kind": "integer",
+                    "name": "Entry Point",
+                    "width": "u8",
+                    "format": {
+                      "enum": [
+                        "Mod Breath Timer",
+                        "Mod My Critical Hit Chance",
+                        "Mod My Critical Hit Damage Mult",
+                        "Mod Mine Explode Chance",
+                        "Mod Incoming Limb Damage",
+                        "Mod Book Actor Value Bonus",
+                        "Mod Recovered Health",
+                        "Set Should Attack",
+                        "Mod Buy Prices",
+                        "Add Leveled List On Death",
+                        "Set Max Carry Weight",
+                        "Mod Addiction Chance",
+                        "Mod Addiction Duration",
+                        "Mod Positive Chem Duration",
+                        "Activate",
+                        "Ignore Running During Detection",
+                        "Ignore Broken Lock",
+                        "Mod Enemy Critical Hit Chance",
+                        "Mod Sneak Attack Mult",
+                        "Mod Max Placeable Mines",
+                        "Mod Bow Zoom",
+                        "Mod Recover Arrow Chance",
+                        "Mod Exp",
+                        "Mod Move Camp Cost",
+                        "Mod Shuffle Cost",
+                        "Mod Workshop Build Cost",
+                        "Mod Bashing Damage",
+                        "Mod Power Attack Action Points",
+                        "Mod Power Attack Damage",
+                        "Mod Spell Magnitude",
+                        "Mod Spell Duration",
+                        "Mod Secondary Value Weight",
+                        "Mod Armor Weight",
+                        "Mod Incoming Stagger",
+                        "Mod Target Stagger",
+                        "Mod Weapon Attack Damage",
+                        "Mod Incoming Weapon Damage",
+                        "Mod Target Damage Resistance",
+                        "Mod Spell Cost",
+                        "Mod Percent Blocked",
+                        "Mod Shield Deflect Arrow Chance",
+                        "Mod Incoming Spell Magnitude",
+                        "Mod Incoming Spell Duration",
+                        "Mod Player Intimidation",
+                        "Mod Ricochet Chance",
+                        "Mod Ricochet Damage",
+                        "Mod Bribe Amount",
+                        "Mod Detection Light",
+                        "Mod Detection Movement",
+                        "Mod Scrap Reward Mult",
+                        "Set Sweep Attack",
+                        "Apply Combat Hit Spell",
+                        "Apply Bashing Spell",
+                        "Apply Reanimate Spell",
+                        "Set Boolean Graph Variable",
+                        "Mod Spell Casting Sound Event",
+                        "Mod VATS Critical Cost",
+                        "Mod Detection Sneak Skill",
+                        "Mod Falling Damage",
+                        "Mod Lockpick Sweet Spot",
+                        "Mod Sell Prices",
+                        "Mod VATS Attacker Accuracy",
+                        "Set Player Gate Lockpick",
+                        "Set Lockpick Starting Arc",
+                        "Set Progression Picking",
+                        "Set Lockpicks Unbreakable",
+                        "Mod Alchemy Effectiveness",
+                        "Apply Weapon Swing Spell",
+                        "Mod Commanded Actor Limit",
+                        "Apply Sneaking Spell",
+                        "Mod Player Magic Slowdown",
+                        "Mod Ward Magicka Absorption Pct",
+                        "Mod Initial Ingredient Effects Learned",
+                        "Purify Alchemy Ingredients",
+                        "Set Filter Activation",
+                        "Set Dual Cast",
+                        "Mod Outgoing Explosion Limb Damage",
+                        "Mod Enchantment Power",
+                        "Mod Soul Pct Captured to Weapon",
+                        "Mod VATS Attack Action Points",
+                        "Mod Reflect Damage Chance",
+                        "Set Activate Label",
+                        "Mod Kill Experience",
+                        "Mod Poison Dose Count",
+                        "Set Apply Placed Item",
+                        "Mod Armor Rating",
+                        "Mod lockpicking crime chance",
+                        "Mod ingredients harvested",
+                        "Mod Spell Range (Target Loc.)",
+                        "Mod Critical Charge Mult on Ricochet",
+                        "Mod lockpicking key reward chance",
+                        "Mod Auto Lockpicking Chance",
+                        "Mod Auto Hacking Chance",
+                        "Mod Typed Weapon Attack Damage",
+                        "Mod Typed Incoming Weapon Damage",
+                        "Mod Charisma Challenge Chance",
+                        "Mod Sprint AP Drain Rate",
+                        "Mod Drawn Weapon Weight Speed Effect",
+                        "Set Player Gate Hacking",
+                        "Mod Player Explosion Damage",
+                        "Mod Player Explosion Scale",
+                        "Set Rads To Health Mult",
+                        "Mod Actor Scope Stability",
+                        "Mod Actor Grenade Speed Mult",
+                        "Mod Explosion Force",
+                        "Mod VATS Penetration Min Visibility",
+                        "Mod Rads for Rad Health Max",
+                        "Mod VATS Player AP On Kill Chance",
+                        "Set VATS Fill Critical Bar On Hit",
+                        "Mod VATS Concentrated Fire Chance Bonus",
+                        "Mod Crafting Dupe Chance",
+                        "Mod VATS Hold Em Steady Bonus",
+                        "Mod Typed Spell Magnitude",
+                        "Mod Typed Incoming Spell Magnitude",
+                        "Set VATS Gun-Fu",
+                        "Mod Outgoing Limb Damage",
+                        "Mod Restore Action Cost Value",
+                        "Mod VATS Splash Damage",
+                        "Mod Incoming Battery Damage",
+                        "Mod VATS Critical Charge",
+                        "Mod Exp Location",
+                        "Mod Exp Speech",
+                        "Mod VATS Head Shot Chance",
+                        "Mod VATS Hit Chance",
+                        "Mod Incoming Explosion Damage",
+                        "Mod Ammo Health Mult",
+                        "Mod Hacking Guesses",
+                        "Mod Terminal Lockout Time",
+                        "Set Undetectable",
+                        "Invest In Vendor",
+                        "Mod Outgoing Limb Bash Damage",
+                        "Set Run While Over Encumbered",
+                        "Get Component Radar Distance",
+                        "Show Grenade Trajectory",
+                        "Mod Cone-of-fire Mult",
+                        "Mod VATS Concentrated Fire Damage Mult",
+                        "Apply Bloody Mess Spell",
+                        "Iron-Sights Activate",
+                        "Mod VATS Critical Fill Chance On Use",
+                        "Set VATS Critical Fill On AP Reward",
+                        "Set VATS Critical Fill On Stranger",
+                        "Mod Gun Range Mult",
+                        "Mod Scope Hold Breath AP Drain Mult",
+                        "Set Force Decapitate",
+                        "Mod VATS Shoot Explosive Damage Mult",
+                        "Mod Scrounger Fill Ammo Chance",
+                        "Set Can Explode Pants",
+                        "Set VATS Penetration Full Damage",
+                        "Mod VATS Gun-Fu 2nd Target Dmg Mult",
+                        "Mod VATS Gun-Fu 3rd Target Dmg Mult",
+                        "Mod VATS Gun-Fu 4th+ Target Dmg Mult",
+                        "Mod VATS Blitz Max Distance",
+                        "Set VATS Blitz Max Dmg Mult",
+                        "Mod VATS Blitz Dmg Bonus Dist",
+                        "Mod Bash Critical Chance",
+                        "Mod Evasion Chance",
+                        "Mod Fatigue for Fatigue AP Max",
+                        "Set Fatigue to AP Mult",
+                        "Mod Item Weight",
+                        "Set Alt Revive Item",
+                        "Mod VATS Splash Damage Radius",
+                        "Apply VATS Splash Damage Spell",
+                        "Mod Bleedout Time",
+                        "Mod Item Condition Loss",
+                        "Mod Crafting Creation Recipe Level",
+                        "Mod Workshop Repair Cost",
+                        "Mod Item Repair Mult",
+                        "Mod Weapon DMG Bonus Mult",
+                        "Mod Mysterious Stranger Chance",
+                        "Mod Item Spawn Count",
+                        "Apply Weapon Attack Spell",
+                        "Mod Item Condition Curve Ratio",
+                        "Mod Ammo Used Count",
+                        "Apply Combat Melee Spell",
+                        "Mod Barter Charisma",
+                        "Mod Mysterious Savior Chance",
+                        "Mod Item Repair Condition",
+                        "Mod Crafting Return Quantity",
+                        "Mod Damaged Condition Regen Delay",
+                        "Set Consume Revive Item",
+                        "Set Consume Travel Ticket",
+                        "Mod Wanted Timer Mult",
+                        "Auto Fill Weapon Clip",
+                        "Mod Fast Travel Cost",
+                        "Apply Friendly Hit Spell",
+                        "Set VATS Target Limbs",
+                        "Set Team Medic",
+                        "Apply On Kill Spell",
+                        "Set Damage on Consecutive Hits",
+                        "Mod Damage on Consecutive Hits",
+                        "Mod Max Consecutive Hits Allowed",
+                        "Mod Crafted Item Bonus Health",
+                        "Set Cheat Death",
+                        "Apply Combat Hit Spell Taken",
+                        "Apply On Death Spell",
+                        "Mod Max Barter Currency",
+                        "Mod Body Part Damage Mult",
+                        "Apply On Kill Participation Spell",
+                        "Is Next Clip Last Shot",
+                        "Instant Reload Clip On Bash",
+                        "Mod Attack Damage On Striking Appendage",
+                        "Apply Spell On Actor When Limb Crippled",
+                        "Mod Rads to Health Mult",
+                        "Mod Rads to Radshield Mult",
+                        "Mod Weak Body Part Damage Mult",
+                        "Mod Projectile Bounce Count",
+                        "Mod NPC Normalized Min Level",
+                        "Mod NPC Normalized Max level",
+                        "Mod NPC Normalized Level",
+                        "Mod Ammo Spender Max Stack Count",
+                        "Mod Ammo Spender Max Reload Stack Mult",
+                        "Unknown 211"
+                      ]
+                    }
                   },
                   {
-                    "kind": "struct",
-                    "sig": "DATA",
-                    "name": "Entry Point Data",
-                    "fields": [
-                      {
-                        "kind": "integer",
-                        "name": "Effect Type",
-                        "width": "u8",
-                        "format": {
-                          "enum": [
-                            "Quest",
-                            "Ability",
-                            "Entry Point"
-                          ]
-                        }
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Entry Point",
-                        "width": "u8",
-                        "format": {
-                          "enum": [
-                            "Mod Breath Timer",
-                            "Mod My Critical Hit Chance",
-                            "Mod My Critical Hit Damage Mult",
-                            "Mod Mine Explode Chance",
-                            "Mod Incoming Limb Damage",
-                            "Mod Book Actor Value Bonus",
-                            "Mod Recovered Health",
-                            "Set Should Attack",
-                            "Mod Buy Prices",
-                            "Add Leveled List On Death",
-                            "Set Max Carry Weight",
-                            "Mod Addiction Chance",
-                            "Mod Addiction Duration",
-                            "Mod Positive Chem Duration",
-                            "Activate",
-                            "Ignore Running During Detection",
-                            "Ignore Broken Lock",
-                            "Mod Enemy Critical Hit Chance",
-                            "Mod Sneak Attack Mult",
-                            "Mod Max Placeable Mines",
-                            "Mod Bow Zoom",
-                            "Mod Recover Arrow Chance",
-                            "Mod Exp",
-                            "Mod Move Camp Cost",
-                            "Mod Shuffle Cost",
-                            "Mod Workshop Build Cost",
-                            "Mod Bashing Damage",
-                            "Mod Power Attack Action Points",
-                            "Mod Power Attack Damage",
-                            "Mod Spell Magnitude",
-                            "Mod Spell Duration",
-                            "Mod Secondary Value Weight",
-                            "Mod Armor Weight",
-                            "Mod Incoming Stagger",
-                            "Mod Target Stagger",
-                            "Mod Weapon Attack Damage",
-                            "Mod Incoming Weapon Damage",
-                            "Mod Target Damage Resistance",
-                            "Mod Spell Cost",
-                            "Mod Percent Blocked",
-                            "Mod Shield Deflect Arrow Chance",
-                            "Mod Incoming Spell Magnitude",
-                            "Mod Incoming Spell Duration",
-                            "Mod Player Intimidation",
-                            "Mod Ricochet Chance",
-                            "Mod Ricochet Damage",
-                            "Mod Bribe Amount",
-                            "Mod Detection Light",
-                            "Mod Detection Movement",
-                            "Mod Scrap Reward Mult",
-                            "Set Sweep Attack",
-                            "Apply Combat Hit Spell",
-                            "Apply Bashing Spell",
-                            "Apply Reanimate Spell",
-                            "Set Boolean Graph Variable",
-                            "Mod Spell Casting Sound Event",
-                            "Mod VATS Critical Cost",
-                            "Mod Detection Sneak Skill",
-                            "Mod Falling Damage",
-                            "Mod Lockpick Sweet Spot",
-                            "Mod Sell Prices",
-                            "Mod VATS Attacker Accuracy",
-                            "Set Player Gate Lockpick",
-                            "Set Lockpick Starting Arc",
-                            "Set Progression Picking",
-                            "Set Lockpicks Unbreakable",
-                            "Mod Alchemy Effectiveness",
-                            "Apply Weapon Swing Spell",
-                            "Mod Commanded Actor Limit",
-                            "Apply Sneaking Spell",
-                            "Mod Player Magic Slowdown",
-                            "Mod Ward Magicka Absorption Pct",
-                            "Mod Initial Ingredient Effects Learned",
-                            "Purify Alchemy Ingredients",
-                            "Set Filter Activation",
-                            "Set Dual Cast",
-                            "Mod Outgoing Explosion Limb Damage",
-                            "Mod Enchantment Power",
-                            "Mod Soul Pct Captured to Weapon",
-                            "Mod VATS Attack Action Points",
-                            "Mod Reflect Damage Chance",
-                            "Set Activate Label",
-                            "Mod Kill Experience",
-                            "Mod Poison Dose Count",
-                            "Set Apply Placed Item",
-                            "Mod Armor Rating",
-                            "Mod lockpicking crime chance",
-                            "Mod ingredients harvested",
-                            "Mod Spell Range (Target Loc.)",
-                            "Mod Critical Charge Mult on Ricochet",
-                            "Mod lockpicking key reward chance",
-                            "Mod Auto Lockpicking Chance",
-                            "Mod Auto Hacking Chance",
-                            "Mod Typed Weapon Attack Damage",
-                            "Mod Typed Incoming Weapon Damage",
-                            "Mod Charisma Challenge Chance",
-                            "Mod Sprint AP Drain Rate",
-                            "Mod Drawn Weapon Weight Speed Effect",
-                            "Set Player Gate Hacking",
-                            "Mod Player Explosion Damage",
-                            "Mod Player Explosion Scale",
-                            "Set Rads To Health Mult",
-                            "Mod Actor Scope Stability",
-                            "Mod Actor Grenade Speed Mult",
-                            "Mod Explosion Force",
-                            "Mod VATS Penetration Min Visibility",
-                            "Mod Rads for Rad Health Max",
-                            "Mod VATS Player AP On Kill Chance",
-                            "Set VATS Fill Critical Bar On Hit",
-                            "Mod VATS Concentrated Fire Chance Bonus",
-                            "Mod Crafting Dupe Chance",
-                            "Mod VATS Hold Em Steady Bonus",
-                            "Mod Typed Spell Magnitude",
-                            "Mod Typed Incoming Spell Magnitude",
-                            "Set VATS Gun-Fu",
-                            "Mod Outgoing Limb Damage",
-                            "Mod Restore Action Cost Value",
-                            "Mod VATS Splash Damage",
-                            "Mod Incoming Battery Damage",
-                            "Mod VATS Critical Charge",
-                            "Mod Exp Location",
-                            "Mod Exp Speech",
-                            "Mod VATS Head Shot Chance",
-                            "Mod VATS Hit Chance",
-                            "Mod Incoming Explosion Damage",
-                            "Mod Ammo Health Mult",
-                            "Mod Hacking Guesses",
-                            "Mod Terminal Lockout Time",
-                            "Set Undetectable",
-                            "Invest In Vendor",
-                            "Mod Outgoing Limb Bash Damage",
-                            "Set Run While Over Encumbered",
-                            "Get Component Radar Distance",
-                            "Show Grenade Trajectory",
-                            "Mod Cone-of-fire Mult",
-                            "Mod VATS Concentrated Fire Damage Mult",
-                            "Apply Bloody Mess Spell",
-                            "Iron-Sights Activate",
-                            "Mod VATS Critical Fill Chance On Use",
-                            "Set VATS Critical Fill On AP Reward",
-                            "Set VATS Critical Fill On Stranger",
-                            "Mod Gun Range Mult",
-                            "Mod Scope Hold Breath AP Drain Mult",
-                            "Set Force Decapitate",
-                            "Mod VATS Shoot Explosive Damage Mult",
-                            "Mod Scrounger Fill Ammo Chance",
-                            "Set Can Explode Pants",
-                            "Set VATS Penetration Full Damage",
-                            "Mod VATS Gun-Fu 2nd Target Dmg Mult",
-                            "Mod VATS Gun-Fu 3rd Target Dmg Mult",
-                            "Mod VATS Gun-Fu 4th+ Target Dmg Mult",
-                            "Mod VATS Blitz Max Distance",
-                            "Set VATS Blitz Max Dmg Mult",
-                            "Mod VATS Blitz Dmg Bonus Dist",
-                            "Mod Bash Critical Chance",
-                            "Mod Evasion Chance",
-                            "Mod Fatigue for Fatigue AP Max",
-                            "Set Fatigue to AP Mult",
-                            "Mod Item Weight",
-                            "Set Alt Revive Item",
-                            "Mod VATS Splash Damage Radius",
-                            "Apply VATS Splash Damage Spell",
-                            "Mod Bleedout Time",
-                            "Mod Item Condition Loss",
-                            "Mod Crafting Creation Recipe Level",
-                            "Mod Workshop Repair Cost",
-                            "Mod Item Repair Mult",
-                            "Mod Weapon DMG Bonus Mult",
-                            "Mod Mysterious Stranger Chance",
-                            "Mod Item Spawn Count",
-                            "Apply Weapon Attack Spell",
-                            "Mod Item Condition Curve Ratio",
-                            "Mod Ammo Used Count",
-                            "Apply Combat Melee Spell",
-                            "Mod Barter Charisma",
-                            "Mod Mysterious Savior Chance",
-                            "Mod Item Repair Condition",
-                            "Mod Crafting Return Quantity",
-                            "Mod Damaged Condition Regen Delay",
-                            "Set Consume Revive Item",
-                            "Set Consume Travel Ticket",
-                            "Mod Wanted Timer Mult",
-                            "Auto Fill Weapon Clip",
-                            "Mod Fast Travel Cost",
-                            "Apply Friendly Hit Spell",
-                            "Set VATS Target Limbs",
-                            "Set Team Medic",
-                            "Apply On Kill Spell",
-                            "Set Damage on Consecutive Hits",
-                            "Mod Damage on Consecutive Hits",
-                            "Mod Max Consecutive Hits Allowed",
-                            "Mod Crafted Item Bonus Health",
-                            "Set Cheat Death",
-                            "Apply Combat Hit Spell Taken",
-                            "Apply On Death Spell",
-                            "Mod Max Barter Currency",
-                            "Mod Body Part Damage Mult",
-                            "Apply On Kill Participation Spell",
-                            "Is Next Clip Last Shot",
-                            "Instant Reload Clip On Bash",
-                            "Mod Attack Damage On Striking Appendage",
-                            "Apply Spell On Actor When Limb Crippled",
-                            "Mod Rads to Health Mult",
-                            "Mod Rads to Radshield Mult",
-                            "Mod Weak Body Part Damage Mult",
-                            "Mod Projectile Bounce Count",
-                            "Mod NPC Normalized Min Level",
-                            "Mod NPC Normalized Max level",
-                            "Mod NPC Normalized Level",
-                            "Mod Ammo Spender Max Stack Count",
-                            "Mod Ammo Spender Max Reload Stack Mult",
-                            "Unknown 211"
-                          ]
-                        }
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Function",
-                        "width": "u8",
-                        "format": {
-                          "enum": [
-                            "Null Function",
-                            "Set Value",
-                            "Add Value",
-                            "Multiply Value",
-                            "Add Range To Value",
-                            "Add Actor Value Mult",
-                            "Absolute Value",
-                            "Negative Absolute Value",
-                            "Add Leveled List",
-                            "Add Activate Choice",
-                            "Select Spell",
-                            "Select Text",
-                            "Set to Actor Value Mult",
-                            "Multiply Actor Value Mult",
-                            "Multiply 1 + Actor Value Mult",
-                            "Set Text",
-                            "Select Item",
-                            "Unknown 17"
-                          ]
-                        }
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Perk Condition Tab Count",
-                        "width": "u8"
-                      }
-                    ]
+                    "kind": "integer",
+                    "name": "Function",
+                    "width": "u8",
+                    "format": {
+                      "enum": [
+                        "Null Function",
+                        "Set Value",
+                        "Add Value",
+                        "Multiply Value",
+                        "Add Range To Value",
+                        "Add Actor Value Mult",
+                        "Absolute Value",
+                        "Negative Absolute Value",
+                        "Add Leveled List",
+                        "Add Activate Choice",
+                        "Select Spell",
+                        "Select Text",
+                        "Set to Actor Value Mult",
+                        "Multiply Actor Value Mult",
+                        "Multiply 1 + Actor Value Mult",
+                        "Set Text",
+                        "Select Item",
+                        "Unknown 17"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Perk Condition Tab Count",
+                    "width": "u8"
                   }
                 ]
               },
@@ -4626,9 +5062,9 @@
           "sized": 0
         },
         {
-          "kind": "raw_fallback",
-          "name": "DATA",
-          "reason": "closure union decider"
+          "kind": "bytes",
+          "sig": "DATA",
+          "name": "Value"
         }
       ]
     },
@@ -4776,6 +5212,163 @@
             "KYWD"
           ],
           "sig": "KNAM"
+        }
+      ]
+    },
+    "AVIF": {
+      "name": "Actor Value Information",
+      "members": [
+        {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
+        },
+        {
+          "kind": "string",
+          "name": "DURL",
+          "keep_case": false,
+          "sig": "DURL"
+        },
+        {
+          "kind": "lstring",
+          "sig": "FULL",
+          "name": "Name"
+        },
+        {
+          "kind": "lstring",
+          "sig": "DESC",
+          "name": "Description"
+        },
+        {
+          "kind": "lstring",
+          "sig": "ANAM",
+          "name": "Abbreviation"
+        },
+        {
+          "kind": "float",
+          "name": "Default Value",
+          "sig": "NAM0"
+        },
+        {
+          "kind": "float",
+          "name": "Minimum Value",
+          "sig": "NAM5"
+        },
+        {
+          "kind": "float",
+          "name": "Maximum Value",
+          "sig": "NAM6"
+        },
+        {
+          "kind": "integer",
+          "name": "Flags",
+          "width": "u32",
+          "signed": false,
+          "sig": "AVFL",
+          "format": {
+            "flags": [
+              "Unused 0",
+              "Skill",
+              "Uses Enum",
+              "No Modifiers From Scripts",
+              "Is Full AV Cached",
+              "Is Permanant AV Cached",
+              "No Modifiers",
+              "No Base Value Changes From Scripts",
+              "Allow Local Edits",
+              "Unused 9",
+              "Default to 0",
+              "Default to 1.0",
+              "Default to 100.0",
+              "User Defined Default",
+              "Enforce Max On Modifiers",
+              "Value Derived From Code Function",
+              "Unused 16",
+              "Min Value Defined",
+              "Max Value Defined",
+              "Boolean",
+              "Minimum 1",
+              "Maximum 10",
+              "Maximum 100",
+              "Multiply By 100",
+              "Percentage (Scale By 100 In UI)",
+              "Damage Can",
+              "t Go Below 0",
+              "Damage Is Positive",
+              "God Mode Immune",
+              "Does Not Recover",
+              "Cannot Modify Directly",
+              "Unused 30",
+              "Hardcoded"
+            ]
+          }
+        },
+        {
+          "kind": "integer",
+          "name": "Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "NAM1",
+          "format": {
+            "enum": [
+              "Derived Attribute",
+              "Special (Attribute)",
+              "Skill",
+              "AI Attribute",
+              "Resistance",
+              "Condition",
+              "Charge",
+              "Int Value",
+              "Variable",
+              "Resource",
+              "Aggregate",
+              "Reputation",
+              "Unknown"
+            ]
+          }
+        },
+        {
+          "kind": "integer",
+          "name": "Networking Flags",
+          "width": "u32",
+          "signed": false,
+          "sig": "NAM2",
+          "format": {
+            "flags": [
+              "Unknown 0",
+              "Replicate all",
+              "Replicate one",
+              "Network Float Value",
+              "Only Modified Value",
+              "Unknown 5",
+              "Only Base Value",
+              "Low Priority"
+            ]
+          }
+        },
+        {
+          "kind": "formid",
+          "name": "Actor Value Keyword",
+          "valid_refs": [
+            "KYWD"
+          ],
+          "sig": "NAM3"
+        },
+        {
+          "kind": "formid",
+          "name": "Associated List",
+          "valid_refs": [
+            "FLST"
+          ],
+          "sig": "NAM4"
+        },
+        {
+          "kind": "string",
+          "name": "Description",
+          "keep_case": false,
+          "sig": "CNAM"
         }
       ]
     },
@@ -5211,8 +5804,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "struct",
@@ -5299,8 +5891,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "rstruct",
@@ -5419,9 +6010,143 @@
           "kind": "rarray",
           "name": "Rewards List",
           "element": {
-            "kind": "raw_fallback",
+            "kind": "rstruct",
             "name": "Reward",
-            "reason": "rstruct variable ref"
+            "members": [
+              {
+                "kind": "unknown",
+                "name": "Unknown",
+                "sig": "CTRG"
+              },
+              {
+                "kind": "formid",
+                "name": "XP Amount Global",
+                "valid_refs": [
+                  "GLOB",
+                  "NULL"
+                ],
+                "sig": "NAM7"
+              },
+              {
+                "kind": "formid",
+                "name": "XP Curv Table",
+                "valid_refs": [
+                  "CURV",
+                  "NULL"
+                ],
+                "sig": "XPCT"
+              },
+              {
+                "kind": "formid",
+                "name": "Currency Amount Global",
+                "valid_refs": [
+                  "GLOB",
+                  "NULL"
+                ],
+                "sig": "NAM8"
+              },
+              {
+                "kind": "formid",
+                "name": "Quest Reward Currency Object",
+                "valid_refs": [
+                  "NULL",
+                  "CNCY"
+                ],
+                "sig": "QRCO"
+              },
+              {
+                "kind": "formid",
+                "name": "Unknown Global",
+                "valid_refs": [
+                  "GLOB",
+                  "NULL"
+                ],
+                "sig": "NAM9"
+              },
+              {
+                "kind": "formid",
+                "name": "Legendary Item Reward List",
+                "valid_refs": [],
+                "sig": "QRLI"
+              },
+              {
+                "kind": "formid",
+                "name": "SCORE Reward Amount",
+                "valid_refs": [],
+                "sig": "QRCX"
+              },
+              {
+                "kind": "float",
+                "name": "XP Amount",
+                "sig": "ESRE"
+              },
+              {
+                "kind": "integer",
+                "name": "Legendary Item Reward Rank",
+                "width": "u32",
+                "signed": false,
+                "sig": "QRLR"
+              },
+              {
+                "kind": "bytes",
+                "name": "QRRI",
+                "len": null,
+                "sig": "QRRI"
+              },
+              {
+                "kind": "rarray",
+                "name": "Rewarded Items",
+                "element": {
+                  "kind": "struct",
+                  "name": "Rewarded Item",
+                  "fields": [
+                    {
+                      "kind": "formid",
+                      "name": "Item",
+                      "valid_refs": []
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ],
+                  "sig": "QSRD"
+                }
+              },
+              {
+                "kind": "formid",
+                "name": "Entitlement",
+                "valid_refs": [
+                  "ENTM",
+                  "NULL"
+                ],
+                "sig": "CENT"
+              },
+              {
+                "kind": "rarray",
+                "name": "Conditions",
+                "element": {
+                  "kind": "rstruct",
+                  "name": "Condition",
+                  "members": []
+                }
+              },
+              {
+                "kind": "formid",
+                "name": "Reward Record",
+                "valid_refs": [
+                  "GMRW"
+                ],
+                "sig": "DNAM"
+              },
+              {
+                "kind": "empty",
+                "sig": "ITME",
+                "name": "Reward End Marker"
+              }
+            ]
           }
         }
       ]
@@ -5705,8 +6430,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "struct",
@@ -5879,6 +6603,15 @@
           "kind": "unknown",
           "name": "Unknown",
           "sig": "PTDS"
+        },
+        {
+          "kind": "rarray",
+          "name": "Conditions",
+          "element": {
+            "kind": "rstruct",
+            "name": "Condition",
+            "members": []
+          }
         }
       ]
     },
@@ -5907,8 +6640,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "rstruct",
@@ -6225,6 +6957,15 @@
           "kind": "unknown",
           "name": "Unknown",
           "sig": "PTDS"
+        },
+        {
+          "kind": "rarray",
+          "name": "Conditions",
+          "element": {
+            "kind": "rstruct",
+            "name": "Condition",
+            "members": []
+          }
         }
       ]
     },
@@ -6576,9 +7317,9 @@
               }
             },
             {
-              "kind": "raw_fallback",
+              "kind": "bytes",
               "name": "Teaches",
-              "reason": "closure union decider"
+              "len": 4
             },
             {
               "kind": "struct",
@@ -7076,8 +7817,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "struct",
@@ -7108,6 +7848,37 @@
             "QUST"
           ],
           "sig": "DIQO"
+        },
+        {
+          "kind": "array",
+          "name": "Components",
+          "element": {
+            "kind": "struct",
+            "name": "Struct",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Component",
+                "valid_refs": []
+              },
+              {
+                "kind": "integer",
+                "name": "Count",
+                "width": "u32",
+                "signed": false
+              },
+              {
+                "kind": "formid",
+                "name": "Curve Table",
+                "valid_refs": [
+                  "CURV",
+                  "NULL"
+                ],
+                "from_version": 152
+              }
+            ]
+          },
+          "sig": "CVPA"
         },
         {
           "kind": "array",
@@ -7433,8 +8204,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "rarray",
@@ -7463,6 +8233,24 @@
           "kind": "bytes",
           "name": "Unused",
           "sig": "NAM1"
+        },
+        {
+          "kind": "bytes",
+          "name": "Unused",
+          "sig": "NAM2"
+        },
+        {
+          "kind": "bytes",
+          "name": "Unused",
+          "sig": "NAM3"
+        },
+        {
+          "kind": "formid",
+          "name": "Menu Art Object",
+          "valid_refs": [
+            "ARTO"
+          ],
+          "sig": "ANAM"
         },
         {
           "kind": "formid",
@@ -7568,6 +8356,25 @@
           "kind": "unknown",
           "name": "Unknown",
           "sig": "RECF"
+        },
+        {
+          "kind": "struct",
+          "name": "Data",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "Created Object Count",
+              "width": "u16",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Priority",
+              "width": "u16",
+              "signed": false
+            }
+          ],
+          "sig": "INTV"
         }
       ]
     },
@@ -7769,9 +8576,29 @@
           "sig": "LVCT"
         },
         {
-          "kind": "raw_fallback",
-          "name": "LVLF",
-          "reason": "closure union decider"
+          "kind": "union",
+          "name": "Flags",
+          "decider": {
+            "form_version": {
+              "min": 185,
+              "max": null
+            }
+          },
+          "variants": [
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u16",
+              "signed": false
+            }
+          ],
+          "sig": "LVLF"
         },
         {
           "kind": "rarray",
@@ -7797,9 +8624,33 @@
             "name": "Leveled List Entry",
             "members": [
               {
-                "kind": "raw_fallback",
+                "kind": "union",
                 "name": "LVLO",
-                "reason": "closure union decider"
+                "decider": {
+                  "form_version": {
+                    "min": 174,
+                    "max": null
+                  }
+                },
+                "variants": [
+                  {
+                    "kind": "union",
+                    "name": "union",
+                    "decider": {
+                      "form_version": {
+                        "min": 69,
+                        "max": null
+                      }
+                    },
+                    "variants": []
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Reference",
+                    "valid_refs": []
+                  }
+                ],
+                "sig": "LVLO"
               },
               {
                 "kind": "rarray",
@@ -8112,9 +8963,29 @@
           "sig": "LVLM"
         },
         {
-          "kind": "raw_fallback",
-          "name": "LVLF",
-          "reason": "closure union decider"
+          "kind": "union",
+          "name": "Flags",
+          "decider": {
+            "form_version": {
+              "min": 185,
+              "max": null
+            }
+          },
+          "variants": [
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u16",
+              "signed": false
+            }
+          ],
+          "sig": "LVLF"
         },
         {
           "kind": "rarray",
@@ -8140,9 +9011,25 @@
             "name": "Leveled List Entry",
             "members": [
               {
-                "kind": "raw_fallback",
+                "kind": "union",
                 "name": "LVLO",
-                "reason": "closure union decider"
+                "decider": {
+                  "form_version": {
+                    "min": 174,
+                    "max": null
+                  }
+                },
+                "variants": [
+                  {
+                    "kind": "formid",
+                    "name": "Reference",
+                    "valid_refs": [
+                      "NPC_",
+                      "LVLN"
+                    ]
+                  }
+                ],
+                "sig": "LVLO"
               },
               {
                 "kind": "rarray",
@@ -8309,6 +9196,104 @@
                 "width": "u32",
                 "signed": false,
                 "sig": "VNAM"
+              },
+              {
+                "kind": "rarray",
+                "name": "Names",
+                "element": {
+                  "kind": "rstruct",
+                  "name": "Name",
+                  "members": [
+                    {
+                      "kind": "lstring",
+                      "sig": "WNAM",
+                      "name": "Text"
+                    },
+                    {
+                      "kind": "rstruct",
+                      "name": "Keywords",
+                      "members": [
+                        {
+                          "kind": "integer",
+                          "name": "Keyword Count",
+                          "width": "u32",
+                          "signed": false,
+                          "sig": "KSIZ"
+                        },
+                        {
+                          "kind": "array",
+                          "name": "Keywords",
+                          "element": {
+                            "kind": "formid",
+                            "name": "Keyword",
+                            "valid_refs": [
+                              "KYWD",
+                              "NULL"
+                            ]
+                          },
+                          "sig": "KWDA"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Property",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "Value"
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Target",
+                          "width": "u8",
+                          "signed": false,
+                          "format": {
+                            "enum": [
+                              "Enchantments",
+                              "BashImpactDataSet",
+                              "BlockMaterial",
+                              "Keywords",
+                              "Weight",
+                              "Value",
+                              "Rating",
+                              "AddonIndex",
+                              "BodyPart",
+                              "DamageTypeValues",
+                              "ActorValues",
+                              "Health",
+                              "ColorRemappingIndex",
+                              "MaterialSwaps"
+                            ]
+                          }
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Op",
+                          "width": "u8",
+                          "signed": false,
+                          "format": {
+                            "enum": [
+                              ">=",
+                              ">",
+                              "<=",
+                              "<",
+                              "="
+                            ]
+                          }
+                        }
+                      ],
+                      "sig": "XNAM"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Priority",
+                      "width": "u16",
+                      "signed": false,
+                      "sig": "YNAM"
+                    }
+                  ]
+                }
               }
             ]
           }
@@ -9160,8 +10145,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "byte_rgba",
@@ -9704,8 +10688,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "byte_rgba",
@@ -9861,12 +10844,699 @@
           "len": 13
         },
         {
-          "kind": "float",
-          "name": "Unknown"
+          "kind": "integer",
+          "name": "Active Markers / Flags",
+          "width": "u32",
+          "signed": false,
+          "sig": "MNAM",
+          "format": {
+            "flags": [
+              "Interaction Point 0",
+              "Interaction Point 1",
+              "Interaction Point 2",
+              "Interaction Point 3",
+              "Interaction Point 4",
+              "Interaction Point 5",
+              "Interaction Point 6",
+              "Interaction Point 7",
+              "Interaction Point 8",
+              "Interaction Point 9",
+              "Interaction Point 10",
+              "Interaction Point 11",
+              "Interaction Point 12",
+              "Interaction Point 13",
+              "Interaction Point 14",
+              "Interaction Point 15",
+              "Interaction Point 16",
+              "Interaction Point 17",
+              "Interaction Point 18",
+              "Interaction Point 19",
+              "Interaction Point 20",
+              "Interaction Point 21",
+              "Allow Awake Sound",
+              "Enter With Weapon Drawn",
+              "Play Anim When Full",
+              "Disables Activation",
+              "Is Perch",
+              "Must Exit to Talk",
+              "Use Static Avoid Node",
+              "Unknown 29",
+              "Has Model?",
+              "Is Sleep Furniture"
+            ]
+          }
+        },
+        {
+          "kind": "struct",
+          "name": "Workbench Data",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "Bench Type",
+              "width": "u8",
+              "signed": false,
+              "format": {
+                "enum": [
+                  "None",
+                  "Create Object",
+                  "Weapons",
+                  "Enchanting (unused)",
+                  "Enchanting Experiment (unused)",
+                  "Alchemy",
+                  "Alchemy Experiment (unused)",
+                  "Armor",
+                  "Power Armor",
+                  "Robot Mod"
+                ]
+              }
+            },
+            {
+              "kind": "integer",
+              "name": "Uses Skill",
+              "width": "s8",
+              "signed": true
+            }
+          ],
+          "sig": "WBDT"
+        },
+        {
+          "kind": "formid",
+          "name": "Associated Form",
+          "valid_refs": [
+            "ARMO",
+            "WEAP",
+            "PERK",
+            "SPEL",
+            "HAZD"
+          ],
+          "sig": "NAM1"
+        },
+        {
+          "kind": "rarray",
+          "name": "Markers",
+          "element": {
+            "kind": "rstruct",
+            "name": "Marker",
+            "members": [
+              {
+                "kind": "integer",
+                "name": "Marker Index",
+                "width": "s32",
+                "signed": true,
+                "sig": "ENAM"
+              },
+              {
+                "kind": "struct",
+                "name": "Disabled Entry Points",
+                "fields": [
+                  {
+                    "kind": "bytes",
+                    "name": "Unknown",
+                    "len": 2
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Disabled Points",
+                    "width": "u16",
+                    "signed": false
+                  }
+                ],
+                "sig": "NAM0"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "rarray",
+          "name": "Marker Entry Points",
+          "element": {
+            "kind": "struct",
+            "name": "Marker",
+            "fields": [
+              {
+                "kind": "integer",
+                "name": "Type",
+                "width": "u16",
+                "signed": false
+              },
+              {
+                "kind": "integer",
+                "name": "Entry Points",
+                "width": "u16",
+                "signed": false
+              }
+            ],
+            "sig": "FNPR"
+          }
+        },
+        {
+          "kind": "struct",
+          "name": "Music Instrument",
+          "fields": [
+            {
+              "kind": "formid",
+              "name": "Intro",
+              "valid_refs": [
+                "SNDR",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Rhythm",
+              "valid_refs": [
+                "SNDR"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Lead",
+              "valid_refs": [
+                "SNDR"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Outro",
+              "valid_refs": [
+                "SNDR",
+                "NULL"
+              ]
+            }
+          ],
+          "sig": "FNMU"
+        },
+        {
+          "kind": "string",
+          "name": "Marker Model",
+          "keep_case": false,
+          "sig": "XMRK"
+        },
+        {
+          "kind": "array",
+          "name": "Marker Parameters",
+          "element": {
+            "kind": "struct",
+            "name": "Marker",
+            "fields": [
+              {
+                "kind": "float",
+                "name": "Offset X"
+              },
+              {
+                "kind": "float",
+                "name": "Offset Y"
+              },
+              {
+                "kind": "float",
+                "name": "Offset Z"
+              },
+              {
+                "kind": "float",
+                "name": "Rotation Z"
+              },
+              {
+                "kind": "formid",
+                "name": "Keyword",
+                "valid_refs": [
+                  "KYWD",
+                  "NULL"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Entry Types",
+                "width": "u8",
+                "signed": false,
+                "format": {
+                  "flags": [
+                    "Front",
+                    "Rear",
+                    "Right",
+                    "Left",
+                    "Other",
+                    "Unused 5",
+                    "Unused 6",
+                    "Unused 7"
+                  ]
+                },
+                "from_version": 125
+              },
+              {
+                "kind": "unused",
+                "bytes": 3,
+                "from_version": 125
+              }
+            ]
+          },
+          "sig": "SNAM"
+        },
+        {
+          "kind": "array",
+          "name": "Marker Parameters",
+          "element": {
+            "kind": "struct",
+            "name": "Marker",
+            "fields": [
+              {
+                "kind": "float",
+                "name": "Offset X"
+              },
+              {
+                "kind": "float",
+                "name": "Offset Y"
+              },
+              {
+                "kind": "float",
+                "name": "Offset Z"
+              },
+              {
+                "kind": "float",
+                "name": "Rotation Z"
+              },
+              {
+                "kind": "formid",
+                "name": "Keyword",
+                "valid_refs": [
+                  "KYWD",
+                  "NULL"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Entry Types",
+                "width": "u8",
+                "signed": false,
+                "format": {
+                  "flags": [
+                    "Front",
+                    "Rear",
+                    "Right",
+                    "Left",
+                    "Other",
+                    "Unused 5",
+                    "Unused 6",
+                    "Unused 7"
+                  ]
+                },
+                "from_version": 125
+              },
+              {
+                "kind": "unused",
+                "bytes": 3,
+                "from_version": 125
+              }
+            ]
+          },
+          "sig": "ZNAM"
+        },
+        {
+          "kind": "rstruct",
+          "name": "Keypad Data",
+          "members": [
+            {
+              "kind": "float",
+              "name": "Default Code",
+              "sig": "CNAM"
+            },
+            {
+              "kind": "integer",
+              "name": "Default Code Length",
+              "width": "u8",
+              "signed": false,
+              "sig": "LNAM"
+            }
+          ]
+        },
+        {
+          "kind": "bytes",
+          "name": "Appearance",
+          "sig": "APPR"
+        },
+        {
+          "kind": "rstruct",
+          "name": "Object Template",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "OBTE"
+            },
+            {
+              "kind": "rarray",
+              "name": "Combinations",
+              "element": {
+                "kind": "rstruct",
+                "name": "Combination",
+                "members": [
+                  {
+                    "kind": "empty",
+                    "sig": "OBTF",
+                    "name": "Editor Only"
+                  },
+                  {
+                    "kind": "lstring",
+                    "sig": "FULL",
+                    "name": "Name"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "unknown",
+                          "name": "element"
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Struct",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function Type",
+                              "width": "u8"
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Property",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "sig": "OBTS"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "empty",
+              "sig": "STOP",
+              "name": "Marker"
+            }
+          ]
+        },
+        {
+          "kind": "unknown",
+          "name": "Unknown",
+          "sig": "FFEF"
+        },
+        {
+          "kind": "bytes",
+          "name": "NVNM",
+          "len": null,
+          "sig": "NVNM"
+        }
+      ]
+    },
+    "FISH": {
+      "name": "Fish",
+      "members": [
+        {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
+        },
+        {
+          "kind": "rstruct",
+          "name": "Keywords",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Keyword Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "KSIZ"
+            },
+            {
+              "kind": "array",
+              "name": "Keywords",
+              "element": {
+                "kind": "formid",
+                "name": "Keyword",
+                "valid_refs": [
+                  "KYWD",
+                  "NULL"
+                ]
+              },
+              "sig": "KWDA"
+            }
+          ]
         },
         {
           "kind": "float",
-          "name": "Unknown"
+          "name": "Start Progress",
+          "sig": "FISP"
+        },
+        {
+          "kind": "float",
+          "name": "Draw In Speed",
+          "sig": "FIDS"
+        },
+        {
+          "kind": "float",
+          "name": "Escape Speed",
+          "sig": "FIES"
+        },
+        {
+          "kind": "integer",
+          "name": "Max Stamina",
+          "width": "u8",
+          "signed": false,
+          "sig": "FIHS"
+        },
+        {
+          "kind": "integer",
+          "name": "Min Stamina",
+          "width": "u8",
+          "signed": false,
+          "sig": "FILS"
+        },
+        {
+          "kind": "float",
+          "name": "Max Jump Delay",
+          "sig": "FIHD"
+        },
+        {
+          "kind": "float",
+          "name": "Min Jump Delay",
+          "sig": "FILD"
+        },
+        {
+          "kind": "float",
+          "name": "Jump Speed",
+          "sig": "FIJS"
+        },
+        {
+          "kind": "float",
+          "name": "Max Jump Distance",
+          "sig": "FIHJ"
+        },
+        {
+          "kind": "float",
+          "name": "Min Jump Distance",
+          "sig": "FILJ"
+        },
+        {
+          "kind": "float",
+          "name": "Min Initial Angle Distance",
+          "sig": "FILA"
+        },
+        {
+          "kind": "float",
+          "name": "Max Initial Angle Distance",
+          "sig": "FIHA"
+        },
+        {
+          "kind": "formid",
+          "name": "Item Reward",
+          "valid_refs": [],
+          "sig": "FIRI"
+        },
+        {
+          "kind": "formid",
+          "name": "Reel In Splash Override",
+          "valid_refs": [],
+          "sig": "FIEX"
+        },
+        {
+          "kind": "formid",
+          "name": "Reel In Sound Override",
+          "valid_refs": [],
+          "sig": "FISD"
+        },
+        {
+          "kind": "formid",
+          "name": "Fanfare UI Sound Override",
+          "valid_refs": [],
+          "sig": "FISU"
         }
       ]
     },
@@ -10185,6 +11855,12 @@
                 "kind": "lstring",
                 "sig": "BPTN",
                 "name": "Part Name"
+              },
+              {
+                "kind": "string",
+                "name": "Part Node",
+                "keep_case": false,
+                "sig": "BPNN"
               },
               {
                 "kind": "string",
@@ -10785,96 +12461,8 @@
           "kind": "rarray",
           "name": "Effects",
           "element": {
-            "kind": "rstruct",
-            "name": "Effect",
-            "members": [
-              {
-                "kind": "formid",
-                "sig": "EFID",
-                "name": "Magic Effect",
-                "valid_refs": [
-                  "MGEF"
-                ]
-              },
-              {
-                "kind": "struct",
-                "sig": "EFIT",
-                "name": "Effect Data",
-                "fields": [
-                  {
-                    "kind": "float",
-                    "name": "Magnitude"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Area",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Duration",
-                    "width": "u32"
-                  }
-                ]
-              },
-              {
-                "kind": "struct",
-                "sig": "CTDA",
-                "name": "Condition",
-                "fields": [
-                  {
-                    "kind": "integer",
-                    "name": "Operator",
-                    "width": "u8"
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad",
-                    "len": 3
-                  },
-                  {
-                    "kind": "float",
-                    "name": "Comparison Value"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Function Index",
-                    "width": "u16",
-                    "signed": false
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad2",
-                    "len": 2
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 1",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 2",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Run On",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "formid",
-                    "name": "Reference"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 3",
-                    "width": "s32",
-                    "signed": true
-                  }
-                ]
-              }
-            ]
+            "kind": "unknown",
+            "name": "element"
           }
         },
         {
@@ -11238,9 +12826,9 @@
               "signed": true
             },
             {
-              "kind": "raw_fallback",
+              "kind": "bytes",
               "name": "Location Value",
-              "reason": "closure union decider"
+              "len": 4
             },
             {
               "kind": "integer",
@@ -11284,61 +12872,9 @@
           "kind": "rarray",
           "name": "Conditions",
           "element": {
-            "kind": "struct",
-            "sig": "CTDA",
+            "kind": "rstruct",
             "name": "Condition",
-            "fields": [
-              {
-                "kind": "integer",
-                "name": "Operator",
-                "width": "u8"
-              },
-              {
-                "kind": "bytes",
-                "name": "_pad",
-                "len": 3
-              },
-              {
-                "kind": "float",
-                "name": "Comparison Value"
-              },
-              {
-                "kind": "integer",
-                "name": "Function Index",
-                "width": "u16",
-                "signed": false
-              },
-              {
-                "kind": "bytes",
-                "name": "_pad2",
-                "len": 2
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 1",
-                "width": "u32"
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 2",
-                "width": "u32"
-              },
-              {
-                "kind": "integer",
-                "name": "Run On",
-                "width": "u32"
-              },
-              {
-                "kind": "formid",
-                "name": "Reference"
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 3",
-                "width": "s32",
-                "signed": true
-              }
-            ]
+            "members": []
           }
         }
       ]
@@ -11429,6 +12965,14 @@
           "sig": "XFLG"
         },
         {
+          "kind": "formid",
+          "name": "Required Count Global",
+          "valid_refs": [
+            "GLOB"
+          ],
+          "sig": "HNAM"
+        },
+        {
           "kind": "integer",
           "name": "Challenge Frequency",
           "width": "u32",
@@ -11483,61 +13027,9 @@
           "kind": "rarray",
           "name": "Conditions",
           "element": {
-            "kind": "struct",
-            "sig": "CTDA",
+            "kind": "rstruct",
             "name": "Condition",
-            "fields": [
-              {
-                "kind": "integer",
-                "name": "Operator",
-                "width": "u8"
-              },
-              {
-                "kind": "bytes",
-                "name": "_pad",
-                "len": 3
-              },
-              {
-                "kind": "float",
-                "name": "Comparison Value"
-              },
-              {
-                "kind": "integer",
-                "name": "Function Index",
-                "width": "u16",
-                "signed": false
-              },
-              {
-                "kind": "bytes",
-                "name": "_pad2",
-                "len": 2
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 1",
-                "width": "u32"
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 2",
-                "width": "u32"
-              },
-              {
-                "kind": "integer",
-                "name": "Run On",
-                "width": "u32"
-              },
-              {
-                "kind": "formid",
-                "name": "Reference"
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 3",
-                "width": "s32",
-                "signed": true
-              }
-            ]
+            "members": []
           }
         },
         {
@@ -11553,61 +13045,9 @@
               "kind": "rarray",
               "name": "Conditions",
               "element": {
-                "kind": "struct",
-                "sig": "CTDA",
+                "kind": "rstruct",
                 "name": "Condition",
-                "fields": [
-                  {
-                    "kind": "integer",
-                    "name": "Operator",
-                    "width": "u8"
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad",
-                    "len": 3
-                  },
-                  {
-                    "kind": "float",
-                    "name": "Comparison Value"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Function Index",
-                    "width": "u16",
-                    "signed": false
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad2",
-                    "len": 2
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 1",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 2",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Run On",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "formid",
-                    "name": "Reference"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 3",
-                    "width": "s32",
-                    "signed": true
-                  }
-                ]
+                "members": []
               }
             }
           ]
@@ -11616,9 +13056,143 @@
           "kind": "rarray",
           "name": "Rewards",
           "element": {
-            "kind": "raw_fallback",
+            "kind": "rstruct",
             "name": "Reward",
-            "reason": "rstruct variable ref"
+            "members": [
+              {
+                "kind": "unknown",
+                "name": "Unknown",
+                "sig": "CTRG"
+              },
+              {
+                "kind": "formid",
+                "name": "XP Amount Global",
+                "valid_refs": [
+                  "GLOB",
+                  "NULL"
+                ],
+                "sig": "NAM7"
+              },
+              {
+                "kind": "formid",
+                "name": "XP Curv Table",
+                "valid_refs": [
+                  "CURV",
+                  "NULL"
+                ],
+                "sig": "XPCT"
+              },
+              {
+                "kind": "formid",
+                "name": "Currency Amount Global",
+                "valid_refs": [
+                  "GLOB",
+                  "NULL"
+                ],
+                "sig": "NAM8"
+              },
+              {
+                "kind": "formid",
+                "name": "Quest Reward Currency Object",
+                "valid_refs": [
+                  "NULL",
+                  "CNCY"
+                ],
+                "sig": "QRCO"
+              },
+              {
+                "kind": "formid",
+                "name": "Unknown Global",
+                "valid_refs": [
+                  "GLOB",
+                  "NULL"
+                ],
+                "sig": "NAM9"
+              },
+              {
+                "kind": "formid",
+                "name": "Legendary Item Reward List",
+                "valid_refs": [],
+                "sig": "QRLI"
+              },
+              {
+                "kind": "formid",
+                "name": "SCORE Reward Amount",
+                "valid_refs": [],
+                "sig": "QRCX"
+              },
+              {
+                "kind": "float",
+                "name": "XP Amount",
+                "sig": "ESRE"
+              },
+              {
+                "kind": "integer",
+                "name": "Legendary Item Reward Rank",
+                "width": "u32",
+                "signed": false,
+                "sig": "QRLR"
+              },
+              {
+                "kind": "bytes",
+                "name": "QRRI",
+                "len": null,
+                "sig": "QRRI"
+              },
+              {
+                "kind": "rarray",
+                "name": "Rewarded Items",
+                "element": {
+                  "kind": "struct",
+                  "name": "Rewarded Item",
+                  "fields": [
+                    {
+                      "kind": "formid",
+                      "name": "Item",
+                      "valid_refs": []
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ],
+                  "sig": "QSRD"
+                }
+              },
+              {
+                "kind": "formid",
+                "name": "Entitlement",
+                "valid_refs": [
+                  "ENTM",
+                  "NULL"
+                ],
+                "sig": "CENT"
+              },
+              {
+                "kind": "rarray",
+                "name": "Conditions",
+                "element": {
+                  "kind": "rstruct",
+                  "name": "Condition",
+                  "members": []
+                }
+              },
+              {
+                "kind": "formid",
+                "name": "Reward Record",
+                "valid_refs": [
+                  "GMRW"
+                ],
+                "sig": "DNAM"
+              },
+              {
+                "kind": "empty",
+                "sig": "ITME",
+                "name": "Reward End Marker"
+              }
+            ]
           }
         },
         {
@@ -11639,6 +13213,12 @@
           "kind": "lstring",
           "sig": "MNAM",
           "name": "Reward Display"
+        },
+        {
+          "kind": "string",
+          "name": "Reward Icon",
+          "keep_case": false,
+          "sig": "RNAM"
         }
       ]
     },
@@ -11730,6 +13310,49 @@
             }
           ],
           "sig": "VMAD"
+        },
+        {
+          "kind": "struct",
+          "name": "Object Bounds",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "X1",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Y1",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Z1",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "X2",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Y2",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Z2",
+              "width": "s16",
+              "signed": true
+            }
+          ],
+          "sig": "OBND"
         },
         {
           "kind": "rarray",
@@ -12296,61 +13919,9 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "struct",
-                  "sig": "CTDA",
+                  "kind": "rstruct",
                   "name": "Condition",
-                  "fields": [
-                    {
-                      "kind": "integer",
-                      "name": "Operator",
-                      "width": "u8"
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad",
-                      "len": 3
-                    },
-                    {
-                      "kind": "float",
-                      "name": "Comparison Value"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Function Index",
-                      "width": "u16",
-                      "signed": false
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad2",
-                      "len": 2
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 1",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 2",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Run On",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "formid",
-                      "name": "Reference"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 3",
-                      "width": "s32",
-                      "signed": true
-                    }
-                  ]
+                  "members": []
                 }
               }
             ]
@@ -12441,61 +14012,9 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "struct",
-                  "sig": "CTDA",
+                  "kind": "rstruct",
                   "name": "Condition",
-                  "fields": [
-                    {
-                      "kind": "integer",
-                      "name": "Operator",
-                      "width": "u8"
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad",
-                      "len": 3
-                    },
-                    {
-                      "kind": "float",
-                      "name": "Comparison Value"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Function Index",
-                      "width": "u16",
-                      "signed": false
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad2",
-                      "len": 2
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 1",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 2",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Run On",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "formid",
-                      "name": "Reference"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 3",
-                      "width": "s32",
-                      "signed": true
-                    }
-                  ]
+                  "members": []
                 }
               }
             ]
@@ -12523,61 +14042,9 @@
           "kind": "rarray",
           "name": "Conditions",
           "element": {
-            "kind": "struct",
-            "sig": "CTDA",
+            "kind": "rstruct",
             "name": "Condition",
-            "fields": [
-              {
-                "kind": "integer",
-                "name": "Operator",
-                "width": "u8"
-              },
-              {
-                "kind": "bytes",
-                "name": "_pad",
-                "len": 3
-              },
-              {
-                "kind": "float",
-                "name": "Comparison Value"
-              },
-              {
-                "kind": "integer",
-                "name": "Function Index",
-                "width": "u16",
-                "signed": false
-              },
-              {
-                "kind": "bytes",
-                "name": "_pad2",
-                "len": 2
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 1",
-                "width": "u32"
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 2",
-                "width": "u32"
-              },
-              {
-                "kind": "integer",
-                "name": "Run On",
-                "width": "u32"
-              },
-              {
-                "kind": "formid",
-                "name": "Reference"
-              },
-              {
-                "kind": "integer",
-                "name": "Parameter 3",
-                "width": "s32",
-                "signed": true
-              }
-            ]
+            "members": []
           }
         }
       ]
@@ -12593,9 +14060,31 @@
           "sized": 0
         },
         {
-          "kind": "vmad",
-          "sig": "VMAD",
-          "name": "Scripts"
+          "kind": "struct",
+          "name": "Virtual Machine Adapter",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "Version",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Object Format",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "array",
+              "name": "Scripts",
+              "element": {
+                "kind": "unknown",
+                "name": "element"
+              }
+            }
+          ],
+          "sig": "VMAD"
         },
         {
           "kind": "struct",
@@ -12806,9 +14295,9 @@
               "signed": true
             },
             {
-              "kind": "raw_fallback",
+              "kind": "bytes",
               "name": "Level",
-              "reason": "closure union decider"
+              "len": 2
             },
             {
               "kind": "integer",
@@ -13184,61 +14673,9 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "struct",
-                  "sig": "CTDA",
+                  "kind": "rstruct",
                   "name": "Condition",
-                  "fields": [
-                    {
-                      "kind": "integer",
-                      "name": "Operator",
-                      "width": "u8"
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad",
-                      "len": 3
-                    },
-                    {
-                      "kind": "float",
-                      "name": "Comparison Value"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Function Index",
-                      "width": "u16",
-                      "signed": false
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad2",
-                      "len": 2
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 1",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 2",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Run On",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "formid",
-                      "name": "Reference"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 3",
-                      "width": "s32",
-                      "signed": true
-                    }
-                  ]
+                  "members": []
                 }
               }
             ]
@@ -13538,9 +14975,210 @@
               "kind": "rarray",
               "name": "Combinations",
               "element": {
-                "kind": "raw_fallback",
+                "kind": "rstruct",
                 "name": "Combination",
-                "reason": "rstruct variable ref"
+                "members": [
+                  {
+                    "kind": "empty",
+                    "sig": "OBTF",
+                    "name": "Editor Only"
+                  },
+                  {
+                    "kind": "lstring",
+                    "sig": "FULL",
+                    "name": "Name"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "unknown",
+                          "name": "element"
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Struct",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function Type",
+                              "width": "u8"
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Property",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Value 2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ],
+                    "sig": "OBTS"
+                  }
+                ]
               }
             },
             {
@@ -13633,30 +15271,386 @@
           "sig": "HCLF"
         },
         {
+          "kind": "bytes",
+          "name": "Unused",
+          "sig": "NAM5",
+          "len": 2
+        },
+        {
+          "kind": "float",
+          "name": "Height Min",
+          "sig": "NAM6"
+        },
+        {
+          "kind": "float",
+          "name": "Height Max",
+          "sig": "NAM4"
+        },
+        {
+          "kind": "struct",
+          "name": "Weight (old FormVersion only)",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Thin"
+            },
+            {
+              "kind": "float",
+              "name": "Muscular"
+            },
+            {
+              "kind": "float",
+              "name": "Fat"
+            }
+          ],
+          "sig": "MWGT"
+        },
+        {
+          "kind": "integer",
+          "name": "Sound Level",
+          "width": "u32",
+          "signed": false,
+          "sig": "NAM8"
+        },
+        {
           "kind": "rstruct",
-          "name": "Keywords",
+          "name": "Actor Sounds",
           "members": [
             {
               "kind": "integer",
-              "name": "Keyword Count",
+              "name": "Count",
               "width": "u32",
               "signed": false,
-              "sig": "KSIZ"
+              "sig": "CS2H"
             },
             {
-              "kind": "array",
-              "name": "Keywords",
-              "element": {
-                "kind": "formid",
-                "name": "Keyword",
-                "valid_refs": [
-                  "KYWD",
-                  "NULL"
-                ]
-              },
-              "sig": "KWDA"
+              "kind": "empty",
+              "sig": "CS2E",
+              "name": "End Marker"
+            },
+            {
+              "kind": "bytes",
+              "name": "Finalize",
+              "sig": "CS2F",
+              "len": 1
             }
           ]
+        },
+        {
+          "kind": "formid",
+          "name": "Inherits Sounds From",
+          "valid_refs": [
+            "NPC_"
+          ],
+          "sig": "CSCR"
+        },
+        {
+          "kind": "formid",
+          "name": "Power Armor Stand",
+          "valid_refs": [
+            "FURN"
+          ],
+          "sig": "PFRN"
+        },
+        {
+          "kind": "formid",
+          "name": "Default Outfit",
+          "valid_refs": [
+            "OTFT"
+          ],
+          "sig": "DOFT"
+        },
+        {
+          "kind": "formid",
+          "name": "Sleeping Outfit",
+          "valid_refs": [
+            "OTFT"
+          ],
+          "sig": "SOFT"
+        },
+        {
+          "kind": "formid",
+          "name": "Default Package List",
+          "valid_refs": [
+            "FLST"
+          ],
+          "sig": "DPLT"
+        },
+        {
+          "kind": "formid",
+          "name": "Crime Faction",
+          "valid_refs": [
+            "FACT"
+          ],
+          "sig": "CRIF"
+        },
+        {
+          "kind": "rarray",
+          "name": "Head Parts",
+          "element": {
+            "kind": "formid",
+            "name": "Head Part",
+            "valid_refs": [
+              "HDPT"
+            ],
+            "sig": "PNAM"
+          }
+        },
+        {
+          "kind": "formid",
+          "name": "Hair Color",
+          "valid_refs": [
+            "CLFM"
+          ],
+          "sig": "HCLF"
+        },
+        {
+          "kind": "formid",
+          "name": "Facial Hair Color",
+          "valid_refs": [
+            "CLFM"
+          ],
+          "sig": "BCLF"
+        },
+        {
+          "kind": "struct",
+          "name": "Weight",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Thin"
+            },
+            {
+              "kind": "float",
+              "name": "Muscular"
+            },
+            {
+              "kind": "float",
+              "name": "Fat"
+            }
+          ],
+          "sig": "MWGT"
+        },
+        {
+          "kind": "formid",
+          "name": "Head Texture",
+          "valid_refs": [
+            "TXST"
+          ],
+          "sig": "FTST"
+        },
+        {
+          "kind": "float",
+          "name": "QNAM",
+          "sig": "QNAM"
+        },
+        {
+          "kind": "array",
+          "name": "Morph Keys",
+          "element": {
+            "kind": "integer",
+            "name": "Key",
+            "width": "u32",
+            "signed": false
+          },
+          "sig": "MSDK"
+        },
+        {
+          "kind": "array",
+          "name": "Morph Values",
+          "element": {
+            "kind": "float",
+            "name": "Value"
+          },
+          "sig": "MSDV"
+        },
+        {
+          "kind": "rarray",
+          "name": "Face Tinting Layers",
+          "element": {
+            "kind": "rstruct",
+            "name": "Layer",
+            "members": [
+              {
+                "kind": "struct",
+                "name": "TETI",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Data Type",
+                    "width": "u16",
+                    "signed": false,
+                    "format": {
+                      "enum": [
+                        "",
+                        "Value/Color",
+                        "Value"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Index",
+                    "width": "u16",
+                    "signed": false
+                  }
+                ],
+                "sig": "TETI"
+              },
+              {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Value",
+                    "width": "u8",
+                    "signed": false
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Template Color Index",
+                    "width": "s16",
+                    "signed": true
+                  }
+                ],
+                "sig": "TEND"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "struct",
+          "name": "Body Morph Region Values",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Head"
+            },
+            {
+              "kind": "float",
+              "name": "Upper Torso"
+            },
+            {
+              "kind": "float",
+              "name": "Arms"
+            },
+            {
+              "kind": "float",
+              "name": "Lower Torso"
+            },
+            {
+              "kind": "float",
+              "name": "Legs"
+            }
+          ],
+          "sig": "MRSV"
+        },
+        {
+          "kind": "rarray",
+          "name": "Face Morphs",
+          "element": {
+            "kind": "rstruct",
+            "name": "Face Morph",
+            "members": [
+              {
+                "kind": "integer",
+                "name": "Index",
+                "width": "u32",
+                "signed": false,
+                "sig": "FMRI"
+              },
+              {
+                "kind": "struct",
+                "name": "Values",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Position - X"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Position - Y"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Position - Z"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Rotation - X"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Rotation - Y"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Rotation - Z"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Scale"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Unknown"
+                  }
+                ],
+                "sig": "FMRS"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "float",
+          "name": "Facial Morph Intensity",
+          "sig": "FMIN"
+        },
+        {
+          "kind": "lstring",
+          "sig": "ATTX",
+          "name": "Activate Text Override"
+        },
+        {
+          "kind": "formid",
+          "name": "Health Curve Table",
+          "valid_refs": [
+            "CURV"
+          ],
+          "sig": "CVT0"
+        },
+        {
+          "kind": "formid",
+          "name": "Tier Curve Table",
+          "valid_refs": [
+            "CURV"
+          ],
+          "sig": "CVT1"
+        },
+        {
+          "kind": "formid",
+          "name": "XP Curve Table",
+          "valid_refs": [
+            "CURV"
+          ],
+          "sig": "CVT2"
+        },
+        {
+          "kind": "formid",
+          "name": "EWS Actor Cost Curve Table",
+          "valid_refs": [
+            "CURV"
+          ],
+          "sig": "CVT3"
+        },
+        {
+          "kind": "formid",
+          "name": "Unarmed Weapon",
+          "valid_refs": [
+            "WEAP"
+          ],
+          "sig": "UNWP"
         }
       ]
     },
@@ -13702,8 +15696,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "integer",
@@ -14504,70 +16497,62 @@
                 "kind": "rarray",
                 "name": "Conditions",
                 "element": {
-                  "kind": "struct",
-                  "sig": "CTDA",
+                  "kind": "rstruct",
                   "name": "Condition",
-                  "fields": [
-                    {
-                      "kind": "integer",
-                      "name": "Operator",
-                      "width": "u8"
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad",
-                      "len": 3
-                    },
-                    {
-                      "kind": "float",
-                      "name": "Comparison Value"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Function Index",
-                      "width": "u16",
-                      "signed": false
-                    },
-                    {
-                      "kind": "bytes",
-                      "name": "_pad2",
-                      "len": 2
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 1",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 2",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Run On",
-                      "width": "u32"
-                    },
-                    {
-                      "kind": "formid",
-                      "name": "Reference"
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Parameter 3",
-                      "width": "s32",
-                      "signed": true
-                    }
-                  ]
+                  "members": []
                 }
               }
             ]
           }
         },
         {
-          "kind": "raw_fallback",
+          "kind": "rstruct",
           "name": "Body Data",
-          "reason": "rstruct variable ref"
+          "members": [
+            {
+              "kind": "empty",
+              "sig": "NAM1",
+              "name": "Body Data Marker"
+            },
+            {
+              "kind": "rstruct",
+              "name": "Male Body Data",
+              "members": [
+                {
+                  "kind": "empty",
+                  "sig": "MNAM",
+                  "name": "Male Data Marker"
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Parts",
+                  "element": {
+                    "kind": "unknown",
+                    "name": "element"
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Female Body Data",
+              "members": [
+                {
+                  "kind": "empty",
+                  "sig": "FNAM",
+                  "name": "Female Data Marker"
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Parts",
+                  "element": {
+                    "kind": "unknown",
+                    "name": "element"
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
           "kind": "formid",
@@ -14595,14 +16580,90 @@
               "name": "Behavior Graph Marker"
             },
             {
-              "kind": "raw_fallback",
+              "kind": "rstruct",
               "name": "Male Behavior Graph",
-              "reason": "rstruct variable ref"
+              "members": [
+                {
+                  "kind": "empty",
+                  "sig": "MNAM",
+                  "name": "Male Data Marker"
+                },
+                {
+                  "kind": "rstruct",
+                  "name": "Model",
+                  "members": [
+                    {
+                      "kind": "string",
+                      "name": "Model FileName",
+                      "keep_case": false,
+                      "sig": "MODL"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Information",
+                      "sig": "MODT"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Color",
+                      "sig": "MODC"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Data",
+                      "sig": "MODS"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Flags",
+                      "sig": "MODF"
+                    }
+                  ]
+                }
+              ]
             },
             {
-              "kind": "raw_fallback",
+              "kind": "rstruct",
               "name": "Female Behavior Graph",
-              "reason": "rstruct variable ref"
+              "members": [
+                {
+                  "kind": "empty",
+                  "sig": "FNAM",
+                  "name": "Female Data Marker"
+                },
+                {
+                  "kind": "rstruct",
+                  "name": "Model",
+                  "members": [
+                    {
+                      "kind": "string",
+                      "name": "Model FileName",
+                      "keep_case": false,
+                      "sig": "MODL"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Information",
+                      "sig": "MODT"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Color",
+                      "sig": "MODC"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Data",
+                      "sig": "MODS"
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Model Flags",
+                      "sig": "MODF"
+                    }
+                  ]
+                }
+              ]
             }
           ]
         },
@@ -14719,9 +16780,9 @@
                 "sig": "MTYP"
               },
               {
-                "kind": "raw_fallback",
-                "name": "SPED",
-                "reason": "closure union decider"
+                "kind": "bytes",
+                "sig": "SPED",
+                "name": "Movement Data"
               }
             ]
           }
@@ -18305,6 +20366,206 @@
           "sig": "SNMV"
         },
         {
+          "kind": "rstruct",
+          "name": "Head Datas",
+          "members": [
+            {
+              "kind": "empty",
+              "sig": "NAM0",
+              "name": "Head Data Marker"
+            },
+            {
+              "kind": "rstruct",
+              "name": "Male Head Data",
+              "members": [
+                {
+                  "kind": "empty",
+                  "sig": "MNAM",
+                  "name": "Male Data Marker"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Male Neck Fat Adjustments Scale",
+                  "fields": [
+                    {
+                      "kind": "bytes",
+                      "name": "Unknown",
+                      "len": 4
+                    },
+                    {
+                      "kind": "float",
+                      "name": "X"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Y"
+                    }
+                  ],
+                  "sig": "NNAM"
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Male Head Parts",
+                  "element": {
+                    "kind": "unknown",
+                    "name": "element"
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Male Race Presets",
+                  "element": {
+                    "kind": "formid",
+                    "name": "Preset NPC",
+                    "valid_refs": [
+                      "NPC_",
+                      "NULL"
+                    ],
+                    "sig": "RPRM"
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Male Hair Colors",
+                  "element": {
+                    "kind": "formid",
+                    "name": "Hair Color",
+                    "valid_refs": [
+                      "CLFM",
+                      "NULL"
+                    ],
+                    "sig": "AHCM"
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Male Face Details",
+                  "element": {
+                    "kind": "formid",
+                    "name": "Texture Set",
+                    "valid_refs": [
+                      "TXST",
+                      "NULL"
+                    ],
+                    "sig": "FTSM"
+                  }
+                },
+                {
+                  "kind": "formid",
+                  "name": "Male Default Face Texture",
+                  "valid_refs": [
+                    "TXST"
+                  ],
+                  "sig": "DFTM"
+                },
+                {
+                  "kind": "string",
+                  "name": "Male Wrinkle Map Path",
+                  "keep_case": false,
+                  "sig": "WMAP"
+                }
+              ]
+            },
+            {
+              "kind": "empty",
+              "sig": "NAM0",
+              "name": "Head Data Marker"
+            },
+            {
+              "kind": "rstruct",
+              "name": "Female Head Data",
+              "members": [
+                {
+                  "kind": "empty",
+                  "sig": "FNAM",
+                  "name": "Female Data Marker"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Female Neck Fat Adjustments Scale",
+                  "fields": [
+                    {
+                      "kind": "bytes",
+                      "name": "Unknown",
+                      "len": 4
+                    },
+                    {
+                      "kind": "float",
+                      "name": "X"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Y"
+                    }
+                  ],
+                  "sig": "NNAM"
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Female Head Parts",
+                  "element": {
+                    "kind": "unknown",
+                    "name": "element"
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Female Race Presets",
+                  "element": {
+                    "kind": "formid",
+                    "name": "Preset NPC",
+                    "valid_refs": [
+                      "NPC_",
+                      "NULL"
+                    ],
+                    "sig": "RPRF"
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Female Hair Colors",
+                  "element": {
+                    "kind": "formid",
+                    "name": "Hair Color",
+                    "valid_refs": [
+                      "CLFM",
+                      "NULL"
+                    ],
+                    "sig": "AHCF"
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Female Face Details",
+                  "element": {
+                    "kind": "formid",
+                    "name": "Texture Set",
+                    "valid_refs": [
+                      "TXST",
+                      "NULL"
+                    ],
+                    "sig": "FTSF"
+                  }
+                },
+                {
+                  "kind": "formid",
+                  "name": "Female Default Face Texture",
+                  "valid_refs": [
+                    "TXST"
+                  ],
+                  "sig": "DFTF"
+                },
+                {
+                  "kind": "string",
+                  "name": "Female Wrinkle Map Path",
+                  "keep_case": false,
+                  "sig": "WMAP"
+                }
+              ]
+            }
+          ]
+        },
+        {
           "kind": "formid",
           "name": "Morph Race",
           "valid_refs": [
@@ -18348,9 +20609,82 @@
           "kind": "rarray",
           "name": "Subgraph Data",
           "element": {
-            "kind": "raw_fallback",
+            "kind": "rstruct",
             "name": "Data",
-            "reason": "rstruct variable ref"
+            "members": [
+              {
+                "kind": "rarray",
+                "name": "Actor Keywords",
+                "element": {
+                  "kind": "formid",
+                  "name": "Keyword",
+                  "valid_refs": [
+                    "KYWD"
+                  ],
+                  "sig": "SAKD"
+                }
+              },
+              {
+                "kind": "string",
+                "name": "Behaviour Graph",
+                "keep_case": false,
+                "sig": "SGNM"
+              },
+              {
+                "kind": "rarray",
+                "name": "Animation Paths",
+                "element": {
+                  "kind": "unknown",
+                  "name": "element"
+                }
+              },
+              {
+                "kind": "rarray",
+                "name": "Target Keywords",
+                "element": {
+                  "kind": "formid",
+                  "name": "Keyword",
+                  "valid_refs": [
+                    "KYWD"
+                  ],
+                  "sig": "STKD"
+                }
+              },
+              {
+                "kind": "struct",
+                "name": "Flags",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Role",
+                    "width": "u16",
+                    "signed": false,
+                    "format": {
+                      "enum": [
+                        "MT",
+                        "Weapon",
+                        "Furniture",
+                        "Linking Only",
+                        "Pipboy"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Perspective",
+                    "width": "u16",
+                    "signed": false,
+                    "format": {
+                      "enum": [
+                        "3rd",
+                        "1st"
+                      ]
+                    }
+                  }
+                ],
+                "sig": "SRAF"
+              }
+            ]
           }
         },
         {
@@ -18545,9 +20879,87 @@
           "sig": "DURL"
         },
         {
-          "kind": "vmad",
-          "sig": "VMAD",
-          "name": "Scripts"
+          "kind": "struct",
+          "name": "Virtual Machine Adapter",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "Version",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Object Format",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "array",
+              "name": "Scripts",
+              "element": {
+                "kind": "unknown",
+                "name": "element"
+              }
+            },
+            {
+              "kind": "struct",
+              "name": "Script Fragments",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Extra bind data version",
+                  "width": "s8",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "FragmentCount",
+                  "width": "u16",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Script"
+                },
+                {
+                  "kind": "array",
+                  "name": "Fragments",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Struct",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Quest Stage",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Quest Stage Index",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unknown",
+                        "name": "Unknown"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "array",
+              "name": "Aliases",
+              "element": {
+                "kind": "unknown",
+                "name": "element"
+              }
+            }
+          ],
+          "sig": "VMAD"
         },
         {
           "kind": "lstring",
@@ -18557,8 +20969,7 @@
         {
           "kind": "lstring",
           "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
+          "name": "Description"
         },
         {
           "kind": "array",
@@ -18776,61 +21187,9 @@
               "kind": "rarray",
               "name": "Conditions",
               "element": {
-                "kind": "struct",
-                "sig": "CTDA",
+                "kind": "rstruct",
                 "name": "Condition",
-                "fields": [
-                  {
-                    "kind": "integer",
-                    "name": "Operator",
-                    "width": "u8"
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad",
-                    "len": 3
-                  },
-                  {
-                    "kind": "float",
-                    "name": "Comparison Value"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Function Index",
-                    "width": "u16",
-                    "signed": false
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad2",
-                    "len": 2
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 1",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 2",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Run On",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "formid",
-                    "name": "Reference"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 3",
-                    "width": "s32",
-                    "signed": true
-                  }
-                ]
+                "members": []
               }
             }
           ]
@@ -18848,61 +21207,9 @@
               "kind": "rarray",
               "name": "Conditions",
               "element": {
-                "kind": "struct",
-                "sig": "CTDA",
+                "kind": "rstruct",
                 "name": "Condition",
-                "fields": [
-                  {
-                    "kind": "integer",
-                    "name": "Operator",
-                    "width": "u8"
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad",
-                    "len": 3
-                  },
-                  {
-                    "kind": "float",
-                    "name": "Comparison Value"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Function Index",
-                    "width": "u16",
-                    "signed": false
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "_pad2",
-                    "len": 2
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 1",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 2",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Run On",
-                    "width": "u32"
-                  },
-                  {
-                    "kind": "formid",
-                    "name": "Reference"
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Parameter 3",
-                    "width": "s32",
-                    "signed": true
-                  }
-                ]
+                "members": []
               }
             },
             {
@@ -18918,61 +21225,9 @@
                   "kind": "rarray",
                   "name": "Conditions",
                   "element": {
-                    "kind": "struct",
-                    "sig": "CTDA",
+                    "kind": "rstruct",
                     "name": "Condition",
-                    "fields": [
-                      {
-                        "kind": "integer",
-                        "name": "Operator",
-                        "width": "u8"
-                      },
-                      {
-                        "kind": "bytes",
-                        "name": "_pad",
-                        "len": 3
-                      },
-                      {
-                        "kind": "float",
-                        "name": "Comparison Value"
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Function Index",
-                        "width": "u16",
-                        "signed": false
-                      },
-                      {
-                        "kind": "bytes",
-                        "name": "_pad2",
-                        "len": 2
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Parameter 1",
-                        "width": "u32"
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Parameter 2",
-                        "width": "u32"
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Run On",
-                        "width": "u32"
-                      },
-                      {
-                        "kind": "formid",
-                        "name": "Reference"
-                      },
-                      {
-                        "kind": "integer",
-                        "name": "Parameter 3",
-                        "width": "s32",
-                        "signed": true
-                      }
-                    ]
+                    "members": []
                   }
                 },
                 {
@@ -18988,61 +21243,9 @@
                       "kind": "rarray",
                       "name": "Conditions",
                       "element": {
-                        "kind": "struct",
-                        "sig": "CTDA",
+                        "kind": "rstruct",
                         "name": "Condition",
-                        "fields": [
-                          {
-                            "kind": "integer",
-                            "name": "Operator",
-                            "width": "u8"
-                          },
-                          {
-                            "kind": "bytes",
-                            "name": "_pad",
-                            "len": 3
-                          },
-                          {
-                            "kind": "float",
-                            "name": "Comparison Value"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Function Index",
-                            "width": "u16",
-                            "signed": false
-                          },
-                          {
-                            "kind": "bytes",
-                            "name": "_pad2",
-                            "len": 2
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 1",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 2",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Run On",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "formid",
-                            "name": "Reference"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 3",
-                            "width": "s32",
-                            "signed": true
-                          }
-                        ]
+                        "members": []
                       }
                     }
                   ]
@@ -19116,61 +21319,9 @@
                       "kind": "rarray",
                       "name": "Conditions",
                       "element": {
-                        "kind": "struct",
-                        "sig": "CTDA",
+                        "kind": "rstruct",
                         "name": "Condition",
-                        "fields": [
-                          {
-                            "kind": "integer",
-                            "name": "Operator",
-                            "width": "u8"
-                          },
-                          {
-                            "kind": "bytes",
-                            "name": "_pad",
-                            "len": 3
-                          },
-                          {
-                            "kind": "float",
-                            "name": "Comparison Value"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Function Index",
-                            "width": "u16",
-                            "signed": false
-                          },
-                          {
-                            "kind": "bytes",
-                            "name": "_pad2",
-                            "len": 2
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 1",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 2",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Run On",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "formid",
-                            "name": "Reference"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 3",
-                            "width": "s32",
-                            "signed": true
-                          }
-                        ]
+                        "members": []
                       }
                     },
                     {
@@ -19202,9 +21353,143 @@
                       "kind": "rarray",
                       "name": "Rewards",
                       "element": {
-                        "kind": "raw_fallback",
+                        "kind": "rstruct",
                         "name": "Reward",
-                        "reason": "rstruct variable ref"
+                        "members": [
+                          {
+                            "kind": "unknown",
+                            "name": "Unknown",
+                            "sig": "CTRG"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "XP Amount Global",
+                            "valid_refs": [
+                              "GLOB",
+                              "NULL"
+                            ],
+                            "sig": "NAM7"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "XP Curv Table",
+                            "valid_refs": [
+                              "CURV",
+                              "NULL"
+                            ],
+                            "sig": "XPCT"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Currency Amount Global",
+                            "valid_refs": [
+                              "GLOB",
+                              "NULL"
+                            ],
+                            "sig": "NAM8"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Quest Reward Currency Object",
+                            "valid_refs": [
+                              "NULL",
+                              "CNCY"
+                            ],
+                            "sig": "QRCO"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Unknown Global",
+                            "valid_refs": [
+                              "GLOB",
+                              "NULL"
+                            ],
+                            "sig": "NAM9"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Legendary Item Reward List",
+                            "valid_refs": [],
+                            "sig": "QRLI"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "SCORE Reward Amount",
+                            "valid_refs": [],
+                            "sig": "QRCX"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "XP Amount",
+                            "sig": "ESRE"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Legendary Item Reward Rank",
+                            "width": "u32",
+                            "signed": false,
+                            "sig": "QRLR"
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "QRRI",
+                            "len": null,
+                            "sig": "QRRI"
+                          },
+                          {
+                            "kind": "rarray",
+                            "name": "Rewarded Items",
+                            "element": {
+                              "kind": "struct",
+                              "name": "Rewarded Item",
+                              "fields": [
+                                {
+                                  "kind": "formid",
+                                  "name": "Item",
+                                  "valid_refs": []
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Count",
+                                  "width": "u32",
+                                  "signed": false
+                                }
+                              ],
+                              "sig": "QSRD"
+                            }
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Entitlement",
+                            "valid_refs": [
+                              "ENTM",
+                              "NULL"
+                            ],
+                            "sig": "CENT"
+                          },
+                          {
+                            "kind": "rarray",
+                            "name": "Conditions",
+                            "element": {
+                              "kind": "rstruct",
+                              "name": "Condition",
+                              "members": []
+                            }
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Reward Record",
+                            "valid_refs": [
+                              "GMRW"
+                            ],
+                            "sig": "DNAM"
+                          },
+                          {
+                            "kind": "empty",
+                            "sig": "ITME",
+                            "name": "Reward End Marker"
+                          }
+                        ]
                       }
                     },
                     {
@@ -19354,61 +21639,9 @@
                       "kind": "rarray",
                       "name": "Conditions",
                       "element": {
-                        "kind": "struct",
-                        "sig": "CTDA",
+                        "kind": "rstruct",
                         "name": "Condition",
-                        "fields": [
-                          {
-                            "kind": "integer",
-                            "name": "Operator",
-                            "width": "u8"
-                          },
-                          {
-                            "kind": "bytes",
-                            "name": "_pad",
-                            "len": 3
-                          },
-                          {
-                            "kind": "float",
-                            "name": "Comparison Value"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Function Index",
-                            "width": "u16",
-                            "signed": false
-                          },
-                          {
-                            "kind": "bytes",
-                            "name": "_pad2",
-                            "len": 2
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 1",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 2",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Run On",
-                            "width": "u32"
-                          },
-                          {
-                            "kind": "formid",
-                            "name": "Reference"
-                          },
-                          {
-                            "kind": "integer",
-                            "name": "Parameter 3",
-                            "width": "s32",
-                            "signed": true
-                          }
-                        ]
+                        "members": []
                       }
                     }
                   ]
@@ -19684,8 +21917,42 @@
               "signed": false
             },
             {
+              "kind": "unused",
+              "bytes": 2
+            },
+            {
               "kind": "integer",
               "name": "Trans Delta",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Sun Glare",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Sun Damage",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Precipitation - Begin Fade In",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Precipitation - End Fade Out",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Thunder/Lightning - Begin Fade In",
               "width": "u8",
               "signed": false
             },
@@ -19727,6 +21994,31 @@
             },
             {
               "kind": "integer",
+              "name": "Visual Effect - End",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Wind Direction",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Wind Direction Range",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Wind Turbulance",
+              "width": "u8",
+              "signed": false,
+              "from_version": 119
+            },
+            {
+              "kind": "integer",
               "name": "Unknown",
               "width": "u8",
               "signed": false,
@@ -19734,6 +22026,38 @@
             }
           ],
           "sig": "DATA"
+        },
+        {
+          "kind": "rarray",
+          "name": "Sounds",
+          "element": {
+            "kind": "struct",
+            "name": "Sound",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Sound",
+                "valid_refs": [
+                  "SNDR"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Type",
+                "width": "u32",
+                "signed": false,
+                "format": {
+                  "enum": [
+                    "Default",
+                    "Precipitation",
+                    "Wind",
+                    "Thunder"
+                  ]
+                }
+              }
+            ],
+            "sig": "SNAM"
+          }
         },
         {
           "kind": "rarray",
@@ -19828,308 +22152,6 @@
           "kind": "float",
           "name": "INAM",
           "sig": "INAM"
-        },
-        {
-          "kind": "rarray",
-          "name": "Sounds",
-          "element": {
-            "kind": "struct",
-            "sig": "SNAM",
-            "name": "Sound",
-            "fields": [
-              {
-                "kind": "formid",
-                "name": "Sound"
-              },
-              {
-                "kind": "integer",
-                "name": "Type",
-                "width": "u32",
-                "signed": false
-              }
-            ]
-          }
-        }
-      ]
-    },
-    "AVIF": {
-      "name": "Actor Value Information",
-      "members": [
-        {
-          "kind": "string",
-          "sig": "EDID",
-          "name": "Editor ID",
-          "keep_case": true
-        },
-        {
-          "kind": "string",
-          "sig": "DURL",
-          "name": "DURL",
-          "keep_case": false
-        },
-        {
-          "kind": "lstring",
-          "sig": "FULL",
-          "name": "Name"
-        },
-        {
-          "kind": "lstring",
-          "sig": "DESC",
-          "name": "Description",
-          "table": "dlstrings"
-        },
-        {
-          "kind": "lstring",
-          "sig": "ANAM",
-          "name": "Abbreviation"
-        },
-        {
-          "kind": "float",
-          "sig": "NAM0",
-          "name": "Default Value"
-        },
-        {
-          "kind": "float",
-          "sig": "NAM5",
-          "name": "Minimum Value"
-        },
-        {
-          "kind": "float",
-          "sig": "NAM6",
-          "name": "Maximum Value"
-        },
-        {
-          "kind": "integer",
-          "sig": "AVFL",
-          "name": "Flags",
-          "width": "u32",
-          "signed": false,
-          "format": {
-            "flags": [
-              "Unused 0",
-              "Skill",
-              "Uses Enum",
-              "No Modifiers From Scripts",
-              "Is Full AV Cached",
-              "Is Permanant AV Cached",
-              "No Modifiers",
-              "No Base Value Changes From Scripts",
-              "Allow Local Edits",
-              "Unused 9",
-              "Default to 0",
-              "Default to 1.0",
-              "Default to 100.0",
-              "User Defined Default",
-              "Enforce Max On Modifiers",
-              "Value Derived From Code Function",
-              "Unused 16",
-              "Min Value Defined",
-              "Max Value Defined",
-              "Boolean",
-              "Minimum 1",
-              "Maximum 10",
-              "Maximum 100",
-              "Multiply By 100",
-              "Percentage (Scale By 100 In UI)",
-              "Damage Can't Go Below 0",
-              "Damage Is Positive",
-              "God Mode Immune",
-              "Does Not Recover",
-              "Cannot Modify Directly",
-              "Unused 30",
-              "Hardcoded"
-            ]
-          }
-        },
-        {
-          "kind": "integer",
-          "sig": "NAM1",
-          "name": "Type",
-          "width": "u32",
-          "signed": false,
-          "format": {
-            "enum": [
-              "Derived Attribute",
-              "Special (Attribute)",
-              "Skill",
-              "AI Attribute",
-              "Resistance",
-              "Condition",
-              "Charge",
-              "Int Value",
-              "Variable",
-              "Resource",
-              "Aggregate",
-              "Reputation",
-              "Unknown"
-            ]
-          }
-        },
-        {
-          "kind": "integer",
-          "sig": "NAM2",
-          "name": "Networking Flags",
-          "width": "u32",
-          "signed": false,
-          "format": {
-            "flags": [
-              "Unknown 0",
-              "Replicate all",
-              "Replicate one",
-              "Network Float Value",
-              "Only Modified Value",
-              "Unknown 5",
-              "Only Base Value",
-              "Low Priority"
-            ]
-          }
-        },
-        {
-          "kind": "formid",
-          "sig": "NAM3",
-          "name": "Actor Value Keyword",
-          "valid_refs": [
-            "KYWD"
-          ]
-        },
-        {
-          "kind": "formid",
-          "sig": "NAM4",
-          "name": "Associated List",
-          "valid_refs": [
-            "FLST"
-          ]
-        },
-        {
-          "kind": "string",
-          "sig": "CNAM",
-          "name": "Description",
-          "keep_case": false
-        }
-      ]
-    },
-    "FISH": {
-      "name": "Fish",
-      "members": [
-        {
-          "kind": "string",
-          "sig": "EDID",
-          "name": "Editor ID",
-          "keep_case": true
-        },
-        {
-          "kind": "rstruct",
-          "name": "Keywords",
-          "members": [
-            {
-              "kind": "integer",
-              "sig": "KSIZ",
-              "name": "Keyword Count",
-              "width": "u32",
-              "signed": false
-            },
-            {
-              "kind": "array",
-              "sig": "KWDA",
-              "name": "Keywords",
-              "element": {
-                "kind": "formid",
-                "name": "Keyword",
-                "valid_refs": [
-                  "KYWD",
-                  "NULL"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "kind": "float",
-          "sig": "FISP",
-          "name": "Start Progress"
-        },
-        {
-          "kind": "float",
-          "sig": "FIDS",
-          "name": "Draw In Speed"
-        },
-        {
-          "kind": "float",
-          "sig": "FIES",
-          "name": "Escape Speed"
-        },
-        {
-          "kind": "integer",
-          "sig": "FIHS",
-          "name": "Max Stamina",
-          "width": "u8",
-          "signed": false
-        },
-        {
-          "kind": "integer",
-          "sig": "FILS",
-          "name": "Min Stamina",
-          "width": "u8",
-          "signed": false
-        },
-        {
-          "kind": "float",
-          "sig": "FIHD",
-          "name": "Max Jump Delay"
-        },
-        {
-          "kind": "float",
-          "sig": "FILD",
-          "name": "Min Jump Delay"
-        },
-        {
-          "kind": "float",
-          "sig": "FIJS",
-          "name": "Jump Speed"
-        },
-        {
-          "kind": "float",
-          "sig": "FIHJ",
-          "name": "Max Jump Distance"
-        },
-        {
-          "kind": "float",
-          "sig": "FILJ",
-          "name": "Min Jump Distance"
-        },
-        {
-          "kind": "float",
-          "sig": "FILA",
-          "name": "Min Initial Angle Distance"
-        },
-        {
-          "kind": "float",
-          "sig": "FIHA",
-          "name": "Max Initial Angle Distance"
-        },
-        {
-          "kind": "formid",
-          "sig": "FIRI",
-          "name": "Item Reward",
-          "valid_refs": []
-        },
-        {
-          "kind": "formid",
-          "sig": "FIEX",
-          "name": "Reel In Splash Override",
-          "valid_refs": []
-        },
-        {
-          "kind": "formid",
-          "sig": "FISD",
-          "name": "Reel In Sound Override",
-          "valid_refs": []
-        },
-        {
-          "kind": "formid",
-          "sig": "FISU",
-          "name": "Fanfare UI Sound Override",
-          "valid_refs": []
         }
       ]
     },
@@ -20138,21 +22160,22 @@
       "members": [
         {
           "kind": "string",
-          "sig": "EDID",
           "name": "Editor ID",
-          "keep_case": true
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
         },
         {
           "kind": "string",
-          "sig": "CRVE",
-          "name": "Curve Path",
-          "keep_case": true
+          "name": "JSON File Path",
+          "keep_case": false,
+          "sig": "CRVE"
         },
         {
           "kind": "string",
-          "sig": "JASF",
-          "name": "Curve Path (alt)",
-          "keep_case": true
+          "name": "JSON File Path",
+          "keep_case": false,
+          "sig": "JASF"
         }
       ]
     }
