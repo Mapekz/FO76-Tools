@@ -19,6 +19,7 @@ use crate::schema::Schema;
 use crate::strings::Localization;
 use crate::tree::ChildRef;
 use anyhow::{bail, Context};
+pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
 pub use diff::{DiffResult, RecordDiff, RecordStub};
 pub use formid::FormId;
 use serde::{Deserialize, Serialize};
@@ -290,6 +291,8 @@ impl Database {
             form_version: parsed.header.form_version,
             localization: self.localization.as_ref(),
             curves: self.curves.as_ref(),
+            resolve_depth: crate::decode::ResolveDepth::None,
+            resolver: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
@@ -297,6 +300,124 @@ impl Database {
             editor_id,
             fields,
         })
+    }
+
+    fn record_at_meta_with_depth(
+        &self,
+        meta: &crate::reader::RecordMeta,
+        depth: crate::decode::ResolveDepth,
+    ) -> anyhow::Result<RecordResult> {
+        let parsed = self.esm.parse_record_at(meta.offset)?;
+        let editor_id = edid_from_subrecords(&parsed.subrecords);
+        let resolver: Option<DatabaseResolver<'_>> = if depth != crate::decode::ResolveDepth::None {
+            Some(DatabaseResolver::new(self, 2))
+        } else {
+            None
+        };
+        let ctx = DecodeContext {
+            schema: &self.schema,
+            form_version: parsed.header.form_version,
+            localization: self.localization.as_ref(),
+            curves: self.curves.as_ref(),
+            resolve_depth: depth,
+            resolver: resolver
+                .as_ref()
+                .map(|r| r as &dyn crate::decode::FormIdRefResolver),
+        };
+        let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
+        Ok(RecordResult {
+            header: parsed.header,
+            editor_id,
+            fields,
+        })
+    }
+
+    /// Decode a record by FormID with the given resolution depth.
+    pub fn record_by_formid_resolved(
+        &self,
+        form_id: FormId,
+        depth: crate::decode::ResolveDepth,
+    ) -> anyhow::Result<RecordResult> {
+        let meta = self
+            .index
+            .get_by_formid(form_id)
+            .with_context(|| format!("FormID {} not found", form_id))?
+            .clone();
+        self.record_at_meta_with_depth(&meta, depth)
+    }
+
+    /// Decode a record by EditorID with the given resolution depth.
+    pub fn record_by_edid_resolved(
+        &mut self,
+        edid: &str,
+        depth: crate::decode::ResolveDepth,
+    ) -> anyhow::Result<RecordResult> {
+        self.index.ensure_edid_index(&self.esm)?;
+        let form_id = self
+            .index
+            .get_by_edid(edid)
+            .with_context(|| format!("EditorID '{}' not found", edid))?;
+        self.record_by_formid_resolved(form_id, depth)
+    }
+}
+
+/// Adapter that wraps a [`Database`] and implements [`FormIdRefResolver`].
+///
+/// Uses only `&self` methods on `Database` — read-only record access via `esm`.
+pub struct DatabaseResolver<'a> {
+    db: &'a Database,
+    /// Remaining recursion depth for `Full` resolution.
+    remaining: u8,
+}
+
+impl<'a> DatabaseResolver<'a> {
+    pub fn new(db: &'a Database, remaining: u8) -> Self {
+        Self { db, remaining }
+    }
+}
+
+impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
+    fn stub(&self, id: FormId) -> Option<crate::decode::FormIdStub> {
+        let meta = self.db.index.get_by_formid(id)?.clone();
+        let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
+        let editor_id = crate::reader::edid_from_subrecords(&parsed.subrecords);
+        let record_type = parsed.header.signature.clone();
+        Some(crate::decode::FormIdStub {
+            formid: id.display(),
+            editor_id,
+            record_type,
+        })
+    }
+
+    fn decode_full(&self, id: FormId) -> Option<Value> {
+        if self.remaining == 0 {
+            // At depth limit — fall back to stub
+            return self.stub(id).and_then(|s| serde_json::to_value(&s).ok());
+        }
+        let meta = self.db.index.get_by_formid(id)?.clone();
+        let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
+        let editor_id = crate::reader::edid_from_subrecords(&parsed.subrecords);
+        let record_type = parsed.header.signature.clone();
+        // Build a nested DecodeContext with depth decremented
+        let nested_resolver = DatabaseResolver {
+            db: self.db,
+            remaining: self.remaining - 1,
+        };
+        let ctx = DecodeContext {
+            schema: &self.db.schema,
+            form_version: parsed.header.form_version,
+            localization: self.db.localization.as_ref(),
+            curves: self.db.curves.as_ref(),
+            resolve_depth: crate::decode::ResolveDepth::Full,
+            resolver: Some(&nested_resolver),
+        };
+        let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
+        Some(serde_json::json!({
+            "formid": id.display(),
+            "editor_id": editor_id,
+            "record_type": record_type,
+            "fields": fields,
+        }))
     }
 }
 

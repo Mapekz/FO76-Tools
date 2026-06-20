@@ -5,8 +5,35 @@ use crate::schema::{
     ValueFormat,
 };
 use crate::strings::{Localization, StringKind};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
+
+/// Controls how deeply FormID references are followed during decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ResolveDepth {
+    /// Emit raw hex string — no resolution (default).
+    #[default]
+    None,
+    /// Resolve to a stub: `{"formid": "...", "editor_id": "...", "record_type": "..."}`.
+    Stub,
+    /// Recursively decode the referenced record (depth-limited to 2 hops).
+    Full,
+}
+
+pub trait FormIdRefResolver: Send + Sync {
+    /// Look up a FormID stub. Returns None if not found.
+    fn stub(&self, id: FormId) -> Option<FormIdStub>;
+    /// Fully decode a record by FormID. Returns None if not found or on error.
+    fn decode_full(&self, id: FormId) -> Option<Value>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormIdStub {
+    pub formid: String,
+    pub editor_id: Option<String>,
+    pub record_type: String,
+}
 
 pub struct DecodeContext<'a> {
     pub schema: &'a Schema,
@@ -15,14 +42,20 @@ pub struct DecodeContext<'a> {
     pub localization: Option<&'a Localization>,
     /// Optional curve index for inlining CURV record data on FormID fields.
     pub curves: Option<&'a crate::curves::CurveIndex>,
+    /// How to expand FormID references.
+    pub resolve_depth: ResolveDepth,
+    /// Resolver implementation (None when resolve_depth == None).
+    pub resolver: Option<&'a dyn FormIdRefResolver>,
 }
 
 /// Resolve a FormID field to its JSON representation.
 ///
 /// If the field's `valid_refs` includes `"CURV"` and a curve index is loaded,
 /// the curve's path and point data are inlined into the output object.
-/// Otherwise, a bare hex string is returned.
+/// When `ctx.resolve_depth` is `Stub` or `Full` and a resolver is present,
+/// the referenced record is expanded inline. Otherwise, a bare hex string is returned.
 fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
+    // Existing curve branch — unchanged
     if valid_refs.iter().any(|r| r == "CURV") {
         if let Some(curves) = ctx.curves {
             if let Some(curve) = curves.get(id) {
@@ -34,6 +67,34 @@ fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) ->
             }
         }
     }
+
+    // Reference-following branch
+    if ctx.resolve_depth != ResolveDepth::None {
+        if let Some(resolver) = ctx.resolver {
+            if id.0 == 0 {
+                return json!(null);
+            }
+            match ctx.resolve_depth {
+                ResolveDepth::Stub => {
+                    if let Some(stub) = resolver.stub(id) {
+                        return serde_json::to_value(&stub).unwrap_or_else(|_| json!(id.display()));
+                    }
+                }
+                ResolveDepth::Full => {
+                    if let Some(full) = resolver.decode_full(id) {
+                        return full;
+                    }
+                }
+                ResolveDepth::None => {}
+            }
+        }
+    }
+
+    // Null FormID
+    if id.0 == 0 {
+        return json!(null);
+    }
+
     json!(id.display())
 }
 

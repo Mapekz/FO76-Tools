@@ -35,6 +35,9 @@ enum Commands {
         /// Path to a Startup BA2 archive for inlining curve table data
         #[arg(long)]
         startup_ba2: Option<PathBuf>,
+        /// Resolve FormID references: none (default), stub, full
+        #[arg(long, default_value = "none")]
+        resolve: String,
     },
     /// List records of a given type
     List {
@@ -92,6 +95,7 @@ fn main() -> anyhow::Result<()> {
             strings,
             lang,
             startup_ba2,
+            resolve,
         } => cmd_get(
             &file,
             formid,
@@ -102,6 +106,7 @@ fn main() -> anyhow::Result<()> {
             strings,
             &lang,
             startup_ba2,
+            resolve,
         ),
         Commands::List {
             file,
@@ -176,6 +181,7 @@ fn cmd_get(
     strings: Option<PathBuf>,
     lang: &str,
     startup_ba2: Option<PathBuf>,
+    resolve: String,
 ) -> anyhow::Result<()> {
     let mut db = Database::open(file)?;
     apply_strings_override(&mut db, strings, lang);
@@ -198,7 +204,21 @@ fn cmd_get(
         return Ok(());
     }
 
-    let result = if let Some(fid) = formid {
+    let depth = match resolve.as_str() {
+        "stub" => fo76_esm_parser::ResolveDepth::Stub,
+        "full" => fo76_esm_parser::ResolveDepth::Full,
+        _ => fo76_esm_parser::ResolveDepth::None,
+    };
+
+    let result = if depth != fo76_esm_parser::ResolveDepth::None {
+        if let Some(fid) = formid {
+            db.record_by_formid_resolved(parse_form_id_input(&fid)?, depth)?
+        } else if let Some(e) = edid {
+            db.record_by_edid_resolved(&e, depth)?
+        } else {
+            anyhow::bail!("specify --formid or --edid");
+        }
+    } else if let Some(fid) = formid {
         db.record_by_formid(parse_form_id_input(&fid)?)?
     } else if let Some(e) = edid {
         db.record_by_edid(&e)?
