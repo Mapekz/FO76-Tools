@@ -27,8 +27,11 @@ enum Commands {
         #[arg(long)]
         raw: bool,
         /// Path to a localization BA2 (overrides auto-detected sibling BA2)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "strings_dir")]
         strings: Option<PathBuf>,
+        /// Directory containing loose .strings/.dlstrings/.ilstrings files
+        #[arg(long, conflicts_with = "strings")]
+        strings_dir: Option<PathBuf>,
         /// Language code to use when loading string tables (default: "en")
         #[arg(long, default_value = "en")]
         lang: String,
@@ -47,8 +50,11 @@ enum Commands {
         #[arg(long, default_value_t = 50)]
         limit: usize,
         /// Path to a localization BA2 (overrides auto-detected sibling BA2)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "strings_dir")]
         strings: Option<PathBuf>,
+        /// Directory containing loose .strings/.dlstrings/.ilstrings files
+        #[arg(long, conflicts_with = "strings")]
+        strings_dir: Option<PathBuf>,
         /// Language code to use when loading string tables (default: "en")
         #[arg(long, default_value = "en")]
         lang: String,
@@ -93,6 +99,7 @@ fn main() -> anyhow::Result<()> {
             pretty,
             raw,
             strings,
+            strings_dir,
             lang,
             startup_ba2,
             resolve,
@@ -104,6 +111,7 @@ fn main() -> anyhow::Result<()> {
             pretty,
             raw,
             strings,
+            strings_dir,
             &lang,
             startup_ba2,
             resolve,
@@ -113,8 +121,9 @@ fn main() -> anyhow::Result<()> {
             r#type,
             limit,
             strings,
+            strings_dir,
             lang,
-        } => cmd_list(&file, &r#type, limit, strings, &lang),
+        } => cmd_list(&file, &r#type, limit, strings, strings_dir, &lang),
         Commands::Diff {
             file_a,
             file_b,
@@ -157,13 +166,39 @@ fn cmd_info(file: &PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn apply_strings_override(db: &mut Database, strings: Option<PathBuf>, lang: &str) {
+/// Derive the string table prefix from an ESM file path.
+///
+/// E.g. `SeventySix_20260612.esm` → `"SeventySix_20260612"`.
+fn esm_string_prefix(esm_path: &std::path::Path) -> String {
+    esm_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "SeventySix".to_string())
+}
+
+fn apply_strings_override(
+    db: &mut Database,
+    esm_path: &std::path::Path,
+    strings: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
+    lang: &str,
+) {
     if let Some(ba2_path) = strings {
         match fo76_esm_parser::strings::Localization::from_ba2(&ba2_path, lang, "seventysix") {
             Ok(loc) => db.set_localization(loc),
             Err(e) => eprintln!(
                 "Warning: failed to load localization from {}: {}",
                 ba2_path.display(),
+                e
+            ),
+        }
+    } else if let Some(dir) = strings_dir {
+        let prefix = esm_string_prefix(esm_path);
+        match fo76_esm_parser::strings::Localization::from_loose_files(&dir, lang, &prefix) {
+            Ok(loc) => db.set_localization(loc),
+            Err(e) => eprintln!(
+                "Warning: failed to load string tables from {}: {}",
+                dir.display(),
                 e
             ),
         }
@@ -179,12 +214,13 @@ fn cmd_get(
     pretty: bool,
     raw: bool,
     strings: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
     lang: &str,
     startup_ba2: Option<PathBuf>,
     resolve: String,
 ) -> anyhow::Result<()> {
     let mut db = Database::open(file)?;
-    apply_strings_override(&mut db, strings, lang);
+    apply_strings_override(&mut db, file, strings, strings_dir, lang);
     if let Some(ba2_path) = startup_ba2 {
         db.load_curves(&ba2_path)?;
     }
@@ -240,10 +276,11 @@ fn cmd_list(
     sig: &str,
     limit: usize,
     strings: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
     lang: &str,
 ) -> anyhow::Result<()> {
     let mut db = Database::open(file)?;
-    apply_strings_override(&mut db, strings, lang);
+    apply_strings_override(&mut db, file, strings, strings_dir, lang);
     db.index.ensure_edid_index(&db.esm)?;
     let entries = db.list_by_type(sig, limit)?;
     for e in entries {

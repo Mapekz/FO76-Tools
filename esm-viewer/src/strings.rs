@@ -182,6 +182,35 @@ impl Localization {
         })
     }
 
+    /// Load all three string tables from loose `.strings` / `.dlstrings` / `.ilstrings` files.
+    ///
+    /// Looks for files at `<dir>/<prefix>_<locale>.{strings,dlstrings,ilstrings}`.
+    /// The prefix is typically the ESM stem (e.g. `"SeventySix_20260612"`).
+    pub fn from_loose_files(
+        dir: impl AsRef<std::path::Path>,
+        locale: &str,
+        prefix: &str,
+    ) -> Result<Self> {
+        let dir = dir.as_ref();
+
+        let load = |ext: &str| -> Result<StringTable> {
+            let filename = format!("{}_{}.{}", prefix, locale, ext);
+            let path = dir.join(&filename);
+            let bytes =
+                std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+            let kind = StringKind::from_extension(ext)
+                .ok_or_else(|| anyhow::anyhow!("unknown string extension: {}", ext))?;
+            StringTable::parse(&bytes, kind)
+                .with_context(|| format!("parsing string table {}", path.display()))
+        };
+
+        Ok(Self {
+            strings: load("strings")?,
+            dlstrings: load("dlstrings")?,
+            ilstrings: load("ilstrings")?,
+        })
+    }
+
     /// Look up a string by table kind and LString ID.
     pub fn lookup(&self, kind: StringKind, id: u32) -> Option<&str> {
         match kind {
