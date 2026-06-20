@@ -18,8 +18,7 @@ pub fn decompress_record_data(data: &[u8]) -> anyhow::Result<Vec<u8>> {
     if data.len() < 4 {
         anyhow::bail!("compressed record data too short");
     }
-    let uncompressed_size =
-        u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    let uncompressed_size = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
     if uncompressed_size == 0 {
         return Ok(Vec::new());
     }

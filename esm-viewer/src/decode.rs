@@ -1,8 +1,7 @@
 use crate::formid::FormId;
 use crate::reader::OwnedSubrecord;
 use crate::schema::{
-    ArrayCount, EnumFormat, FieldDef, IntegerWidth, MemberDef, Schema, UnionDecider,
-    ValueFormat,
+    ArrayCount, EnumFormat, FieldDef, IntegerWidth, MemberDef, Schema, UnionDecider, ValueFormat,
 };
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
@@ -74,7 +73,9 @@ fn decode_member(
     }
 
     match member {
-        MemberDef::Struct { sig, name, fields, .. } => {
+        MemberDef::Struct {
+            sig, name, fields, ..
+        } => {
             if let Some(payload) = payload {
                 decode_struct_fields(ctx, name, fields, payload, out);
             } else if let Some(sig) = sig {
@@ -83,8 +84,18 @@ fn decode_member(
                 }
             }
         }
-        MemberDef::Integer { sig, name, width, signed, format, .. } => {
-            if let Some(data) = payload.or_else(|| sig.as_ref().and_then(|s| peek_first(by_sig, s).map(|sr| sr.data.as_slice()))) {
+        MemberDef::Integer {
+            sig,
+            name,
+            width,
+            signed,
+            format,
+            ..
+        } => {
+            if let Some(data) = payload.or_else(|| {
+                sig.as_ref()
+                    .and_then(|s| peek_first(by_sig, s).map(|sr| sr.data.as_slice()))
+            }) {
                 if let Some(v) = read_int(data, *width, *signed) {
                     out.insert(name.clone(), format_int(v, format.as_ref()));
                 }
@@ -97,7 +108,10 @@ fn decode_member(
             }
         }
         MemberDef::Float { sig, name, .. } => {
-            let data = payload.or_else(|| sig.as_ref().and_then(|s| peek_first(by_sig, s).map(|sr| sr.data.as_slice())));
+            let data = payload.or_else(|| {
+                sig.as_ref()
+                    .and_then(|s| peek_first(by_sig, s).map(|sr| sr.data.as_slice()))
+            });
             if let Some(data) = data {
                 if data.len() >= 4 {
                     let f = f32::from_le_bytes(data[0..4].try_into().unwrap());
@@ -112,11 +126,15 @@ fn decode_member(
                 }
             }
         }
-        MemberDef::String { sig, name, sized, .. } => {
+        MemberDef::String {
+            sig, name, sized, ..
+        } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     let s = if let Some(n) = sized {
-                        String::from_utf8_lossy(&sr.data[..sr.data.len().min(*n as usize)]).trim_end_matches('\0').to_string()
+                        String::from_utf8_lossy(&sr.data[..sr.data.len().min(*n as usize)])
+                            .trim_end_matches('\0')
+                            .to_string()
                     } else {
                         read_zstring(&sr.data)
                     };
@@ -129,10 +147,13 @@ fn decode_member(
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sr.data.len() >= 4 {
                         let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                        out.insert(name.clone(), json!({
-                            "lstring_id": format!("0x{:08X}", id),
-                            "_unresolved": true
-                        }));
+                        out.insert(
+                            name.clone(),
+                            json!({
+                                "lstring_id": format!("0x{:08X}", id),
+                                "_unresolved": true
+                            }),
+                        );
                     }
                 }
             }
@@ -151,9 +172,12 @@ fn decode_member(
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     let n = len.unwrap_or(sr.data.len());
-                    out.insert(name.clone(), json!({
-                        "hex": hex::encode(&sr.data[..sr.data.len().min(n)]),
-                    }));
+                    out.insert(
+                        name.clone(),
+                        json!({
+                            "hex": hex::encode(&sr.data[..sr.data.len().min(n)]),
+                        }),
+                    );
                 }
             }
         }
@@ -161,9 +185,12 @@ fn decode_member(
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sr.data.len() >= 4 {
-                        out.insert(name.clone(), json!({
-                            "r": sr.data[0], "g": sr.data[1], "b": sr.data[2], "a": sr.data[3]
-                        }));
+                        out.insert(
+                            name.clone(),
+                            json!({
+                                "r": sr.data[0], "g": sr.data[1], "b": sr.data[2], "a": sr.data[3]
+                            }),
+                        );
                     }
                 }
             }
@@ -172,11 +199,14 @@ fn decode_member(
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sr.data.len() >= 12 {
-                        out.insert(name.clone(), json!({
-                            "x": f32::from_le_bytes(sr.data[0..4].try_into().unwrap()),
-                            "y": f32::from_le_bytes(sr.data[4..8].try_into().unwrap()),
-                            "z": f32::from_le_bytes(sr.data[8..12].try_into().unwrap()),
-                        }));
+                        out.insert(
+                            name.clone(),
+                            json!({
+                                "x": f32::from_le_bytes(sr.data[0..4].try_into().unwrap()),
+                                "y": f32::from_le_bytes(sr.data[4..8].try_into().unwrap()),
+                                "z": f32::from_le_bytes(sr.data[8..12].try_into().unwrap()),
+                            }),
+                        );
                     }
                 }
             }
@@ -206,19 +236,35 @@ fn decode_member(
                 out.insert(name.clone(), Value::Array(items));
             }
         }
-        MemberDef::Array { sig, name, element, count } => {
+        MemberDef::Array {
+            sig,
+            name,
+            element,
+            count,
+        } => {
             if let Some(sig) = sig {
                 let taken = take_all(by_sig, sig);
                 let items: Vec<Value> = match count {
-                    Some(ArrayCount::Fixed(n)) => taken.into_iter().take(*n).map(|sr| decode_field_value(ctx, element, &sr.data)).collect(),
-                    _ => taken.into_iter().map(|sr| decode_field_value(ctx, element, &sr.data)).collect(),
+                    Some(ArrayCount::Fixed(n)) => taken
+                        .into_iter()
+                        .take(*n)
+                        .map(|sr| decode_field_value(ctx, element, &sr.data))
+                        .collect(),
+                    _ => taken
+                        .into_iter()
+                        .map(|sr| decode_field_value(ctx, element, &sr.data))
+                        .collect(),
                 };
                 if !items.is_empty() {
                     out.insert(name.clone(), Value::Array(items));
                 }
             }
         }
-        MemberDef::Union { name, decider, variants } => {
+        MemberDef::Union {
+            name,
+            decider,
+            variants,
+        } => {
             let chosen = choose_union_variant(ctx.form_version, decider, variants.len());
             if let Some(idx) = chosen {
                 if let Some(variant) = variants.get(idx) {
@@ -226,10 +272,13 @@ fn decode_member(
                     return;
                 }
             }
-            out.insert(name.clone(), json!({
-                "_raw": true,
-                "reason": "union decider unresolved"
-            }));
+            out.insert(
+                name.clone(),
+                json!({
+                    "_raw": true,
+                    "reason": "union decider unresolved"
+                }),
+            );
         }
         MemberDef::Empty { sig, name } => {
             if let Some(sig) = sig {
@@ -245,27 +294,36 @@ fn decode_member(
         MemberDef::Unknown { sig, name } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
-                    out.insert(name.clone(), json!({
-                        "hex": hex::encode(&sr.data),
-                        "_raw": true
-                    }));
+                    out.insert(
+                        name.clone(),
+                        json!({
+                            "hex": hex::encode(&sr.data),
+                            "_raw": true
+                        }),
+                    );
                 }
             }
         }
         MemberDef::RawFallback { sig, name, reason } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
-                    out.insert(name.clone(), json!({
-                        "hex": hex::encode(&sr.data),
-                        "_raw": true,
-                        "reason": reason
-                    }));
+                    out.insert(
+                        name.clone(),
+                        json!({
+                            "hex": hex::encode(&sr.data),
+                            "_raw": true,
+                            "reason": reason
+                        }),
+                    );
                 }
             } else {
-                out.insert(name.clone(), json!({
-                    "_raw": true,
-                    "reason": reason
-                }));
+                out.insert(
+                    name.clone(),
+                    json!({
+                        "_raw": true,
+                        "reason": reason
+                    }),
+                );
             }
         }
     }
@@ -288,7 +346,13 @@ fn decode_struct_fields(
             MemberDef::Unused { bytes } => {
                 pos = pos.saturating_add(*bytes);
             }
-            MemberDef::Integer { name, width, signed, format, .. } => {
+            MemberDef::Integer {
+                name,
+                width,
+                signed,
+                format,
+                ..
+            } => {
                 let size = int_size(*width);
                 if pos + size <= data.len() {
                     if let Some(v) = read_int(&data[pos..], *width, *signed) {
@@ -306,7 +370,8 @@ fn decode_struct_fields(
             }
             MemberDef::FormId { name, .. } => {
                 if pos + 4 <= data.len() {
-                    let id = FormId::new(u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()));
+                    let id =
+                        FormId::new(u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()));
                     struct_out.insert(name.clone(), json!(id.display()));
                     pos += 4;
                 }
@@ -314,11 +379,17 @@ fn decode_struct_fields(
             MemberDef::String { name, sized, .. } => {
                 if let Some(n) = sized {
                     let end = (pos + *n as usize).min(data.len());
-                    let s = String::from_utf8_lossy(&data[pos..end]).trim_end_matches('\0').to_string();
+                    let s = String::from_utf8_lossy(&data[pos..end])
+                        .trim_end_matches('\0')
+                        .to_string();
                     struct_out.insert(name.clone(), json!(s));
                     pos = end;
                 } else {
-                    let end = data[pos..].iter().position(|&b| b == 0).map(|i| pos + i).unwrap_or(data.len());
+                    let end = data[pos..]
+                        .iter()
+                        .position(|&b| b == 0)
+                        .map(|i| pos + i)
+                        .unwrap_or(data.len());
                     let s = String::from_utf8_lossy(&data[pos..end]).to_string();
                     struct_out.insert(name.clone(), json!(s));
                     pos = if end < data.len() { end + 1 } else { end };
@@ -333,22 +404,38 @@ fn decode_struct_fields(
             MemberDef::Struct { name, fields, .. } => {
                 decode_struct_fields(ctx, name, fields, &data[pos..], &mut struct_out);
             }
-            MemberDef::Union { name, decider, variants } => {
+            MemberDef::Union {
+                name,
+                decider,
+                variants,
+            } => {
                 let chosen = choose_union_variant(ctx.form_version, decider, variants.len());
                 if let Some(idx) = chosen {
                     if let Some(variant) = variants.get(idx) {
                         let mut dummy = HashMap::new();
-                        decode_member(ctx, variant, &mut struct_out, &mut dummy, Some(&data[pos..]));
+                        decode_member(
+                            ctx,
+                            variant,
+                            &mut struct_out,
+                            &mut dummy,
+                            Some(&data[pos..]),
+                        );
                         // advance pos heuristically for known variants
                         pos = advance_union(ctx, variant, &data[pos..], pos);
                     }
                 } else {
-                    struct_out.insert(name.clone(), json!({"hex": hex::encode(&data[pos..]), "_raw": true}));
+                    struct_out.insert(
+                        name.clone(),
+                        json!({"hex": hex::encode(&data[pos..]), "_raw": true}),
+                    );
                     break;
                 }
             }
             MemberDef::Unknown { name, .. } => {
-                struct_out.insert(name.clone(), json!({"hex": hex::encode(&data[pos..]), "_raw": true}));
+                struct_out.insert(
+                    name.clone(),
+                    json!({"hex": hex::encode(&data[pos..]), "_raw": true}),
+                );
                 break;
             }
             _ => {}
@@ -370,10 +457,15 @@ fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos:
             decode_struct_fields(ctx, "_", fields, data, &mut dummy);
             // estimate consumed bytes from field sizes
             for f in fields {
-                if let MemberDef::Unused { bytes } = f { p += bytes; }
-                else if let MemberDef::Integer { width, .. } = f { p += int_size(*width); }
-                else if let MemberDef::Float { .. } = f { p += 4; }
-                else if let MemberDef::FormId { .. } = f { p += 4; }
+                if let MemberDef::Unused { bytes } = f {
+                    p += bytes;
+                } else if let MemberDef::Integer { width, .. } = f {
+                    p += int_size(*width);
+                } else if let MemberDef::Float { .. } = f {
+                    p += 4;
+                } else if let MemberDef::FormId { .. } = f {
+                    p += 4;
+                }
             }
         }
         _ => {}
@@ -394,9 +486,21 @@ fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) ->
 
 fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
     let (from_v, below_v) = match member {
-        MemberDef::Struct { from_version, below_version, .. } => (*from_version, *below_version),
-        MemberDef::Integer { from_version, below_version, .. } => (*from_version, *below_version),
-        MemberDef::Float { from_version, below_version, .. } => (*from_version, *below_version),
+        MemberDef::Struct {
+            from_version,
+            below_version,
+            ..
+        } => (*from_version, *below_version),
+        MemberDef::Integer {
+            from_version,
+            below_version,
+            ..
+        } => (*from_version, *below_version),
+        MemberDef::Float {
+            from_version,
+            below_version,
+            ..
+        } => (*from_version, *below_version),
         _ => (None, None),
     };
     if let Some(v) = from_v {
@@ -414,9 +518,11 @@ fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
 
 fn choose_union_variant(form_version: u16, decider: &UnionDecider, n: usize) -> Option<usize> {
     match decider {
-        UnionDecider::FormVersion { form_version: range } => {
-            if form_version >= range.min && range.max.map_or(true, |m| form_version <= m) {
-                Some(0.min(n.saturating_sub(1)))
+        UnionDecider::FormVersion {
+            form_version: range,
+        } => {
+            if form_version >= range.min && range.max.is_none_or(|m| form_version <= m) {
+                Some(0)
             } else {
                 Some(1.min(n.saturating_sub(1)))
             }
@@ -450,7 +556,9 @@ fn int_size(w: IntegerWidth) -> usize {
 
 fn read_int(data: &[u8], width: IntegerWidth, signed: bool) -> Option<i64> {
     let size = int_size(width);
-    if data.len() < size { return None; }
+    if data.len() < size {
+        return None;
+    }
     let v = match width {
         IntegerWidth::U8 => data[0] as i64,
         IntegerWidth::S8 => data[0] as i8 as i64,
@@ -459,9 +567,11 @@ fn read_int(data: &[u8], width: IntegerWidth, signed: bool) -> Option<i64> {
         IntegerWidth::U32 => u32::from_le_bytes(data[0..4].try_into().ok()?) as i64,
         IntegerWidth::S32 => i32::from_le_bytes(data[0..4].try_into().ok()?) as i64,
         IntegerWidth::U64 => u64::from_le_bytes(data[0..8].try_into().ok()?) as i64,
-        IntegerWidth::S64 => i64::from_le_bytes(data[0..8].try_into().ok()?) as i64,
+        IntegerWidth::S64 => i64::from_le_bytes(data[0..8].try_into().ok()?),
     };
-    if !signed && v < 0 { return Some(v as u64 as i64); }
+    if !signed && v < 0 {
+        return Some(v as u64 as i64);
+    }
     Some(v)
 }
 
@@ -477,7 +587,10 @@ fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
             }
             EnumFormat::Sparse(map) => {
                 let key = format!("{}", v);
-                if let Some(name) = map.get(&key).or_else(|| map.get(&format!("0x{:X}", v as u32))) {
+                if let Some(name) = map
+                    .get(&key)
+                    .or_else(|| map.get(&format!("0x{:X}", v as u32)))
+                {
                     json!({"value": v, "name": name})
                 } else {
                     json!(v)
@@ -502,15 +615,30 @@ fn read_zstring(data: &[u8]) -> String {
     String::from_utf8_lossy(&data[..end]).into_owned()
 }
 
-fn take_first<'a>(by_sig: &mut HashMap<String, Vec<&'a OwnedSubrecord>>, sig: &str) -> Option<&'a OwnedSubrecord> {
-    by_sig.get_mut(sig).and_then(|v| if v.is_empty() { None } else { Some(v.remove(0)) })
+fn take_first<'a>(
+    by_sig: &mut HashMap<String, Vec<&'a OwnedSubrecord>>,
+    sig: &str,
+) -> Option<&'a OwnedSubrecord> {
+    by_sig.get_mut(sig).and_then(|v| {
+        if v.is_empty() {
+            None
+        } else {
+            Some(v.remove(0))
+        }
+    })
 }
 
-fn peek_first<'a>(by_sig: &HashMap<String, Vec<&'a OwnedSubrecord>>, sig: &str) -> Option<&'a OwnedSubrecord> {
+fn peek_first<'a>(
+    by_sig: &HashMap<String, Vec<&'a OwnedSubrecord>>,
+    sig: &str,
+) -> Option<&'a OwnedSubrecord> {
     by_sig.get(sig).and_then(|v| v.first().copied())
 }
 
-fn take_all<'a>(by_sig: &mut HashMap<String, Vec<&'a OwnedSubrecord>>, sig: &str) -> Vec<&'a OwnedSubrecord> {
+fn take_all<'a>(
+    by_sig: &mut HashMap<String, Vec<&'a OwnedSubrecord>>,
+    sig: &str,
+) -> Vec<&'a OwnedSubrecord> {
     by_sig.remove(sig).unwrap_or_default()
 }
 

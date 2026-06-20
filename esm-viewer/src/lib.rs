@@ -1,5 +1,6 @@
 pub mod compress;
 pub mod decode;
+pub mod diff;
 pub mod format;
 pub mod formid;
 pub mod index;
@@ -8,11 +9,12 @@ pub mod schema;
 
 use crate::decode::{decode_record, DecodeContext};
 use crate::formid::parse_formid;
-pub use formid::FormId;
 use crate::index::Index;
 use crate::reader::{edid_from_subrecords, EsmFile, FileInfo, ParsedRecord, RecordHeaderInfo};
 use crate::schema::Schema;
 use anyhow::{bail, Context};
+pub use diff::{DiffResult, RecordDiff, RecordStub};
+pub use formid::FormId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
@@ -78,8 +80,9 @@ impl Database {
         for (form_id, meta) in records.into_iter().take(limit) {
             let rec = self.esm.parse_record_at(meta.offset)?;
             let editor_id = edid_from_subrecords(&rec.subrecords);
-            let full_lstring_id = crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL")
-                .map(|id| format!("0x{:08X}", id));
+            let full_lstring_id =
+                crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL")
+                    .map(|id| format!("0x{:08X}", id));
             out.push(ListEntry {
                 form_id: form_id.display(),
                 editor_id,
@@ -98,7 +101,10 @@ impl Database {
         self.esm.parse_record_at(meta.offset)
     }
 
-    fn record_at_meta(&self, meta: &crate::reader::RecordMeta) -> anyhow::Result<RecordResult> {
+    pub(crate) fn record_at_meta(
+        &self,
+        meta: &crate::reader::RecordMeta,
+    ) -> anyhow::Result<RecordResult> {
         let parsed = self.esm.parse_record_at(meta.offset)?;
         let editor_id = edid_from_subrecords(&parsed.subrecords);
         let ctx = DecodeContext {

@@ -1,7 +1,7 @@
 use crate::compress::decompress_record_data;
 use crate::format::{
-    GroupHeader, RecordHeader, Signature, Subrecord, SubrecordHeader, GRUP_SIG, HEADER_SIZE,
-    SUBRECORD_HEADER_SIZE, TES4_SIG, XXXX_SIG,
+    GroupHeader, RecordHeader, Signature, Subrecord, SubrecordHeader, COMPRESSED_FLAG, GRUP_SIG,
+    HEADER_SIZE, SUBRECORD_HEADER_SIZE, TES4_SIG, XXXX_SIG,
 };
 use crate::formid::FormId;
 use anyhow::{bail, Context};
@@ -110,6 +110,24 @@ impl EsmFile {
         Ok(ParsedRecord { header, subrecords })
     }
 
+    /// Returns the decompressed data payload bytes for the record at `offset`.
+    /// Header bytes are excluded; for compressed records the zlib payload is decompressed.
+    pub fn record_payload_at(&self, offset: u64) -> anyhow::Result<Vec<u8>> {
+        let data = self.data();
+        let hdr = RecordHeader::parse(&data[offset as usize..])?;
+        let data_start = offset as usize + HEADER_SIZE as usize;
+        let data_end = data_start + hdr.data_size as usize;
+        if data_end > data.len() {
+            anyhow::bail!("record data out of range");
+        }
+        let raw = &data[data_start..data_end];
+        if hdr.flags & COMPRESSED_FLAG != 0 {
+            decompress_record_data(raw)
+        } else {
+            Ok(raw.to_vec())
+        }
+    }
+
     pub fn walk_records<F>(&self, mut f: F) -> anyhow::Result<()>
     where
         F: FnMut(RecordMeta) -> anyhow::Result<()>,
@@ -179,12 +197,11 @@ pub fn parse_subrecords(data: &[u8]) -> anyhow::Result<Vec<Subrecord<'_>>> {
         pos += SUBRECORD_HEADER_SIZE;
 
         if sig.0 == XXXX_SIG && hdr.size == 4 && pos + 4 <= data.len() {
-            pending_size = Some(u32::from_le_bytes([
-                data[pos],
-                data[pos + 1],
-                data[pos + 2],
-                data[pos + 3],
-            ]) as usize);
+            pending_size =
+                Some(
+                    u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
+                        as usize,
+                );
             pos += 4;
             continue;
         }
