@@ -13,6 +13,28 @@ pub struct DecodeContext<'a> {
     pub form_version: u16,
     /// Optional localization tables used to resolve LString IDs to text.
     pub localization: Option<&'a Localization>,
+    /// Optional curve index for inlining CURV record data on FormID fields.
+    pub curves: Option<&'a crate::curves::CurveIndex>,
+}
+
+/// Resolve a FormID field to its JSON representation.
+///
+/// If the field's `valid_refs` includes `"CURV"` and a curve index is loaded,
+/// the curve's path and point data are inlined into the output object.
+/// Otherwise, a bare hex string is returned.
+fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
+    if valid_refs.iter().any(|r| r == "CURV") {
+        if let Some(curves) = ctx.curves {
+            if let Some(curve) = curves.get(id) {
+                return json!({
+                    "formid": id.display(),
+                    "curve_path": curve.path,
+                    "curve": curve.points.iter().map(|p| json!({"x": p.x, "y": p.y})).collect::<Vec<_>>()
+                });
+            }
+        }
+    }
+    json!(id.display())
 }
 
 pub fn decode_record(
@@ -160,12 +182,16 @@ fn decode_member(
                 }
             }
         }
-        MemberDef::FormId { sig, name, .. } => {
+        MemberDef::FormId {
+            sig,
+            name,
+            valid_refs,
+        } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sr.data.len() >= 4 {
                         let id = FormId::new(u32::from_le_bytes(sr.data[0..4].try_into().unwrap()));
-                        out.insert(name.clone(), json!(id.display()));
+                        out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
                     }
                 }
             }
@@ -406,11 +432,13 @@ fn decode_struct_fields(
                     pos += 4;
                 }
             }
-            MemberDef::FormId { name, .. } => {
+            MemberDef::FormId {
+                name, valid_refs, ..
+            } => {
                 if pos + 4 <= data.len() {
                     let id =
                         FormId::new(u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()));
-                    struct_out.insert(name.clone(), json!(id.display()));
+                    struct_out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
                     pos += 4;
                 }
             }

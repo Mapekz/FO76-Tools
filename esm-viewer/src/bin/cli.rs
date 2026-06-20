@@ -32,6 +32,9 @@ enum Commands {
         /// Language code to use when loading string tables (default: "en")
         #[arg(long, default_value = "en")]
         lang: String,
+        /// Path to a Startup BA2 archive for inlining curve table data
+        #[arg(long)]
+        startup_ba2: Option<PathBuf>,
     },
     /// List records of a given type
     List {
@@ -88,7 +91,18 @@ fn main() -> anyhow::Result<()> {
             raw,
             strings,
             lang,
-        } => cmd_get(&file, formid, edid, json, pretty, raw, strings, &lang),
+            startup_ba2,
+        } => cmd_get(
+            &file,
+            formid,
+            edid,
+            json,
+            pretty,
+            raw,
+            strings,
+            &lang,
+            startup_ba2,
+        ),
         Commands::List {
             file,
             r#type,
@@ -161,9 +175,13 @@ fn cmd_get(
     raw: bool,
     strings: Option<PathBuf>,
     lang: &str,
+    startup_ba2: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let mut db = Database::open(file)?;
     apply_strings_override(&mut db, strings, lang);
+    if let Some(ba2_path) = startup_ba2 {
+        db.load_curves(&ba2_path)?;
+    }
 
     if raw {
         let form_id = resolve_form_id(&mut db, formid, edid)?;

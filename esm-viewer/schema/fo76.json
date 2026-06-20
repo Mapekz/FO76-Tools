@@ -18944,6 +18944,29 @@
           "valid_refs": []
         }
       ]
+    },
+    "CURV": {
+      "name": "Curve Table",
+      "members": [
+        {
+          "kind": "string",
+          "sig": "EDID",
+          "name": "Editor ID",
+          "keep_case": true
+        },
+        {
+          "kind": "string",
+          "sig": "CRVE",
+          "name": "Curve Path",
+          "keep_case": true
+        },
+        {
+          "kind": "string",
+          "sig": "JASF",
+          "name": "Curve Path (alt)",
+          "keep_case": true
+        }
+      ]
     }
   }
 }
