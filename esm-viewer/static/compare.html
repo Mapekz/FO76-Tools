@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FO76 ESM Diff</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Consolas', monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+  h1 { font-size: 16px; color: #4ec9b0; margin-bottom: 16px; }
+  h2 { font-size: 13px; color: #858585; text-transform: uppercase; margin: 16px 0 8px; }
+  .summary { display: flex; gap: 24px; margin-bottom: 16px; font-size: 13px; }
+  .added-count { color: #4ec9b0; }
+  .removed-count { color: #f44747; }
+  .changed-count { color: #dcdcaa; }
+  .section { margin-bottom: 24px; }
+  .record-row { padding: 4px 8px; border-radius: 3px; font-size: 12px; cursor: pointer; }
+  .record-row:hover { background: #2a2d2e; }
+  .record-row.added { border-left: 3px solid #4ec9b0; }
+  .record-row.removed { border-left: 3px solid #f44747; }
+  .record-row.changed { border-left: 3px solid #dcdcaa; }
+  .field-diff { padding: 4px 24px; font-size: 11px; display: none; }
+  .field-diff.open { display: block; }
+  .from { color: #f44747; }
+  .to { color: #4ec9b0; }
+  .arrow { color: #858585; margin: 0 8px; }
+  .type-group { margin-bottom: 16px; }
+  .type-header { font-size: 12px; color: #858585; padding: 4px 0; border-bottom: 1px solid #3c3c3c; margin-bottom: 4px; cursor: pointer; }
+  .type-header:hover { color: #d4d4d4; }
+  .error { color: #f44747; }
+</style>
+</head>
+<body>
+<h1>FO76 ESM Diff</h1>
+<div id="content">Loading diff&#8230;</div>
+<script>
+async function load() {
+  const el = document.getElementById('content');
+  try {
+    const resp = await fetch('/diff');
+    if (resp.status === 404) { el.innerHTML = '<div class="error">No compare file loaded. Start server with --compare &lt;file.esm&gt;</div>'; return; }
+    const diff = await resp.json();
+    render(diff, el);
+  } catch(e) { el.innerHTML = '<div class="error">' + e.message + '</div>'; }
+}
+
+function render(diff, el) {
+  const total_a = diff.added.length, total_r = diff.removed.length, total_c = diff.changed.length;
+  let html = '<div class="summary"><span>Added: <span class="added-count">' + total_a + '</span></span><span>Removed: <span class="removed-count">' + total_r + '</span></span><span>Changed: <span class="changed-count">' + total_c + '</span></span></div>';
+
+  // Group changed by type
+  const byType = {};
+  diff.changed.forEach(d => {
+    const t = d.stub.record_type;
+    (byType[t] = byType[t] || []).push(d);
+  });
+
+  if (total_a > 0) {
+    html += '<div class="section"><h2>Added (' + total_a + ')</h2>';
+    diff.added.forEach(s => {
+      html += '<div class="record-row added">[' + s.form_id + '] ' + (s.editor_id || '') + ' <span style="color:#858585">' + s.record_type + '</span></div>';
+    });
+    html += '</div>';
+  }
+
+  if (total_r > 0) {
+    html += '<div class="section"><h2>Removed (' + total_r + ')</h2>';
+    diff.removed.forEach(s => {
+      html += '<div class="record-row removed">[' + s.form_id + '] ' + (s.editor_id || '') + ' <span style="color:#858585">' + s.record_type + '</span></div>';
+    });
+    html += '</div>';
+  }
+
+  if (total_c > 0) {
+    html += '<div class="section"><h2>Changed (' + total_c + ')</h2>';
+    Object.entries(byType).sort().forEach(([type, records]) => {
+      html += '<div class="type-group"><div class="type-header" onclick="toggleType(this)">' + type + ' (' + records.length + ')</div><div class="type-records">';
+      records.forEach((d, i) => {
+        const id = 'changed-' + type + '-' + i;
+        html += '<div class="record-row changed" onclick="toggleFields(\'' + id + '\')">[' + d.stub.form_id + '] ' + (d.stub.editor_id || '') + '</div>';
+        html += '<div class="field-diff" id="' + id + '">' + renderFieldChanges(d.field_changes) + '</div>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function renderFieldChanges(changes) {
+  if (!changes || typeof changes !== 'object') return '';
+  let html = '';
+  Object.entries(changes).forEach(([k, v]) => {
+    if (v && typeof v === 'object' && 'from' in v && 'to' in v) {
+      html += '<div><b>' + k + '</b>: <span class="from">' + JSON.stringify(v.from) + '</span><span class="arrow">&#8594;</span><span class="to">' + JSON.stringify(v.to) + '</span></div>';
+    } else {
+      html += '<div><b>' + k + ':</b> ' + renderFieldChanges(v) + '</div>';
+    }
+  });
+  return html;
+}
+
+function toggleFields(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+}
+
+function toggleType(header) {
+  const records = header.nextElementSibling;
+  records.style.display = records.style.display === 'none' ? '' : 'none';
+}
+
+load();
+</script>
+</body>
+</html>
