@@ -220,6 +220,373 @@
         {"kind": "float", "sig": "FLTV", "name": "Float Value"},
         {"kind": "empty", "sig": "NTWK", "name": "Network Sync"}
       ]
+    },
+    "GMST": {
+      "name": "Game Setting",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "bytes", "sig": "DATA", "name": "Value"}
+      ]
+    },
+    "KYWD": {
+      "name": "Keyword",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "rarray", "name": "Form Tags", "element": {"kind": "string", "sig": "FTAG", "name": "Form Tag", "keep_case": false}},
+        {"kind": "byte_rgba", "sig": "CNAM", "name": "Color"},
+        {"kind": "string", "sig": "DNAM", "name": "Notes", "keep_case": false},
+        {"kind": "unknown", "sig": "FNAM", "name": "Unknown"},
+        {"kind": "integer", "sig": "TNAM", "name": "Type", "width": "u32", "signed": false},
+        {"kind": "string", "sig": "ENAM", "name": "Icon Name", "keep_case": false},
+        {"kind": "formid", "sig": "DATA", "name": "Attraction Rule", "valid_refs": ["AORU"]},
+        {"kind": "empty", "sig": "NTWK", "name": "Network Sync"},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "string", "sig": "NNAM", "name": "Display Name", "keep_case": false}
+      ]
+    },
+    "FLST": {
+      "name": "FormID List",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "rarray", "name": "FormIDs", "element": {"kind": "formid", "sig": "LNAM", "name": "FormID", "valid_refs": []}}
+      ]
+    },
+    "OTFT": {
+      "name": "Outfit",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "array", "sig": "INAM", "name": "Items", "element": {"kind": "formid", "name": "Item", "valid_refs": ["ARMO", "LVLI"]}},
+        {"kind": "formid", "sig": "KNAM", "name": "Keyword", "valid_refs": ["KYWD"]}
+      ]
+    },
+    "AVIF": {
+      "name": "Actor Value Information",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "string", "sig": "DURL", "name": "DURL", "keep_case": false},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "lstring", "sig": "ANAM", "name": "Abbreviation"},
+        {"kind": "float", "sig": "NAM0", "name": "Default Value"},
+        {"kind": "float", "sig": "NAM5", "name": "Minimum Value"},
+        {"kind": "float", "sig": "NAM6", "name": "Maximum Value"},
+        {"kind": "integer", "sig": "AVFL", "name": "Flags", "width": "u32", "signed": false, "format": {"flags": [
+          "Unused 0", "Skill", "Uses Enum", "No Modifiers From Scripts",
+          "Is Full AV Cached", "Is Permanant AV Cached", "No Modifiers",
+          "No Base Value Changes From Scripts", "Allow Local Edits", "Unused 9",
+          "Default to 0", "Default to 1.0", "Default to 100.0", "User Defined Default",
+          "Enforce Max On Modifiers", "Value Derived From Code Function", "Unused 16",
+          "Min Value Defined", "Max Value Defined", "Boolean", "Minimum 1",
+          "Maximum 10", "Maximum 100", "Multiply By 100", "Percentage (Scale By 100 In UI)",
+          "Damage Can't Go Below 0", "Damage Is Positive", "God Mode Immune",
+          "Does Not Recover", "Cannot Modify Directly", "Unused 30", "Hardcoded"
+        ]}},
+        {"kind": "integer", "sig": "NAM1", "name": "Type", "width": "u32", "signed": false, "format": {"enum": [
+          "Derived Attribute", "Special (Attribute)", "Skill", "AI Attribute",
+          "Resistance", "Condition", "Charge", "Int Value", "Variable",
+          "Resource", "Aggregate", "Reputation", "Unknown"
+        ]}},
+        {"kind": "integer", "sig": "NAM2", "name": "Networking Flags", "width": "u32", "signed": false, "format": {"flags": [
+          "Unknown 0", "Replicate all", "Replicate one", "Network Float Value",
+          "Only Modified Value", "Unknown 5", "Only Base Value", "Low Priority"
+        ]}},
+        {"kind": "formid", "sig": "NAM3", "name": "Actor Value Keyword", "valid_refs": ["KYWD"]},
+        {"kind": "formid", "sig": "NAM4", "name": "Associated List", "valid_refs": ["FLST"]},
+        {"kind": "string", "sig": "CNAM", "name": "Description", "keep_case": false}
+      ]
+    },
+    "AMDL": {
+      "name": "Aim Model",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "struct", "sig": "DNAM", "name": "Data", "fields": [
+          {"kind": "float", "name": "Cone of Fire - Min Angle"},
+          {"kind": "float", "name": "Cone of Fire - Max Angle"},
+          {"kind": "float", "name": "Cone of Fire - Increase Per Shot"},
+          {"kind": "float", "name": "Cone of Fire - Decrease Per Sec"},
+          {"kind": "integer", "name": "Cone of Fire - Decrease Delay MS", "width": "u32", "signed": false},
+          {"kind": "float", "name": "Cone of Fire - Sneak Mult"},
+          {"kind": "float", "name": "Recoil - Diminish Spring Force"},
+          {"kind": "float", "name": "Recoil - Diminish Sights Mult"},
+          {"kind": "float", "name": "Recoil - Max Per Shot"},
+          {"kind": "float", "name": "Recoil - Min Per Shot"},
+          {"kind": "float", "name": "Recoil - Hip Mult"},
+          {"kind": "integer", "name": "Runaway - Recoil Shots", "width": "u32", "signed": false},
+          {"kind": "float", "name": "Recoil - Arc"},
+          {"kind": "float", "name": "Recoil - Arc Rotate"},
+          {"kind": "float", "name": "Cone of Fire - Iron Sights Mult"},
+          {"kind": "float", "name": "Stability - Base Stability"}
+        ]},
+        {"kind": "unknown", "sig": "AMMR", "name": "Unknown"},
+        {"kind": "float", "sig": "AMRS", "name": "Unknown"}
+      ]
+    },
+    "DMGT": {
+      "name": "Damage Type Resist",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "struct", "sig": "DNAM", "name": "Damage Type Resistance", "fields": [
+          {"kind": "union", "name": "Actor Value", "decider": {"form_version": {"min": 78, "max": null}}, "variants": [
+            {"kind": "integer", "name": "Actor Value Index", "width": "u32", "signed": false},
+            {"kind": "formid", "name": "Actor Value", "valid_refs": []}
+          ]},
+          {"kind": "formid", "name": "Spell", "valid_refs": []}
+        ]},
+        {"kind": "formid", "sig": "DAMA", "name": "Actor Value", "valid_refs": ["AVIF", "NULL"]},
+        {"kind": "formid", "sig": "DSEB", "name": "Status Build Up Actor Value", "valid_refs": ["AVIF", "NULL"]},
+        {"kind": "formid", "sig": "DSES", "name": "Status Recovery Actor Value", "valid_refs": ["AVIF", "NULL"]},
+        {"kind": "formid", "sig": "DSEA", "name": "Status Spell", "valid_refs": ["SPEL", "NULL"]}
+      ]
+    },
+    "DFOB": {
+      "name": "Default Object",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "formid", "sig": "DATA", "name": "Object", "valid_refs": []}
+      ]
+    },
+    "MSWP": {
+      "name": "Material Swap",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "rarray", "name": "Form Tags", "element": {"kind": "string", "sig": "FTAG", "name": "Form Tag", "keep_case": false}},
+        {"kind": "string", "sig": "FNAM", "name": "Tree Folder", "keep_case": false}
+      ]
+    },
+    "RESO": {
+      "name": "Resource",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "formid", "sig": "NAM1", "name": "Actor Value", "valid_refs": ["AVIF"]},
+        {"kind": "formid", "sig": "NAM2", "name": "Produce", "valid_refs": ["LVLI", "NULL"]},
+        {"kind": "formid", "sig": "NAM4", "name": "Interval", "valid_refs": ["GLOB"]}
+      ]
+    },
+    "CNCY": {
+      "name": "Currency",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "string", "sig": "DURL", "name": "DURL", "keep_case": false},
+        {"kind": "struct", "sig": "OBND", "name": "Object Bounds", "fields": [
+          {"kind": "integer", "name": "X1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "X2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z2", "width": "s16", "signed": true}
+        ]},
+        {"kind": "formid", "sig": "PTRN", "name": "Preview Transform", "valid_refs": ["TRNS", "NULL"]},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "rstruct", "name": "Model", "members": [
+          {"kind": "string", "sig": "MODL", "name": "Model FileName", "keep_case": false},
+          {"kind": "bytes", "sig": "MODT", "name": "Model Information"},
+          {"kind": "bytes", "sig": "MODC", "name": "Model Color"},
+          {"kind": "bytes", "sig": "MODS", "name": "Model Data"},
+          {"kind": "bytes", "sig": "MODF", "name": "Model Flags"}
+        ]},
+        {"kind": "formid", "sig": "YNAM", "name": "Sound - Pickup", "valid_refs": ["SNDR", "NULL"]},
+        {"kind": "formid", "sig": "ZNAM", "name": "Sound - Putdown", "valid_refs": ["SNDR", "NULL"]},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "bytes", "sig": "VCRY", "name": "Voice Category"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "struct", "sig": "DATA", "name": "Data", "fields": [
+          {"kind": "integer", "name": "Value", "width": "s32", "signed": true},
+          {"kind": "float", "name": "Weight"}
+        ]},
+        {"kind": "unknown", "sig": "AQIC", "name": "Unknown"},
+        {"kind": "integer", "sig": "MXCT", "name": "Max Currency", "width": "u32", "signed": false},
+        {"kind": "lstring", "sig": "SNAM", "name": "Plural Name"},
+        {"kind": "integer", "sig": "CRTY", "name": "Collections Order", "width": "u16", "signed": false},
+        {"kind": "integer", "sig": "FNAM", "name": "Unknown Int", "width": "u32", "signed": false}
+      ]
+    },
+    "ENTM": {
+      "name": "Entitlement",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "rarray", "name": "Form Tags", "element": {"kind": "string", "sig": "FTAG", "name": "Form Tag", "keep_case": false}},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "string", "sig": "SWFI", "name": "SWF Image", "keep_case": false},
+        {"kind": "lstring", "sig": "NNAM", "name": "Display Name"},
+        {"kind": "empty", "sig": "BEVA", "name": "Has SWF Image"},
+        {"kind": "rstruct", "name": "Storefront Data", "members": [
+          {"kind": "string", "sig": "ETIP", "name": "Storefront Image Path", "keep_case": false},
+          {"kind": "string", "sig": "ETDI", "name": "Storefront Preview Image", "keep_case": false},
+          {"kind": "formid", "sig": "ETLG", "name": "Entitlement Loadout Reference", "valid_refs": []},
+          {"kind": "rarray", "name": "Storefront Confirm Image List", "element": {"kind": "string", "sig": "ECIL", "name": "Image", "keep_case": false}}
+        ]}
+      ]
+    },
+    "GMRW": {
+      "name": "Gameplay Reward",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "rarray", "name": "Form Tags", "element": {"kind": "string", "sig": "FTAG", "name": "Form Tag", "keep_case": false}},
+        {"kind": "formid", "sig": "ANAM", "name": "Parent Quest", "valid_refs": ["QUST"]},
+        {"kind": "integer", "sig": "RWDS", "name": "Rewards Count", "width": "u32", "signed": false},
+        {"kind": "raw_fallback", "name": "Rewards List", "reason": "wbReward closure structure"}
+      ]
+    },
+    "LGDI": {
+      "name": "Legendary Item",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "struct", "sig": "OBND", "name": "Object Bounds", "fields": [
+          {"kind": "integer", "name": "X1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z1", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "X2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Y2", "width": "s16", "signed": true},
+          {"kind": "integer", "name": "Z2", "width": "s16", "signed": true}
+        ]},
+        {"kind": "formid", "sig": "PTRN", "name": "Preview Transform", "valid_refs": ["TRNS", "NULL"]},
+        {"kind": "rstruct", "name": "Model", "members": [
+          {"kind": "string", "sig": "MODL", "name": "Model FileName", "keep_case": false},
+          {"kind": "bytes", "sig": "MODT", "name": "Model Information"},
+          {"kind": "bytes", "sig": "MODC", "name": "Model Color"},
+          {"kind": "bytes", "sig": "MODS", "name": "Model Data"},
+          {"kind": "bytes", "sig": "MODF", "name": "Model Flags"}
+        ]},
+        {"kind": "byte_rgba", "sig": "ENLT", "name": "Enlighten Transparency Color"},
+        {"kind": "float", "sig": "ENLS", "name": "Enlighten Simplified Shape Scale"},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "bytes", "sig": "VCRY", "name": "Voice Category"},
+        {"kind": "integer", "sig": "DATA", "name": "Scrip Cost", "width": "u32", "signed": false},
+        {"kind": "formid", "sig": "ANAM", "name": "Applicable Item List", "valid_refs": []},
+        {"kind": "array", "sig": "BNAM", "name": "Legendary Mods", "element": {"kind": "struct", "name": "Legendary Mod", "fields": [
+          {"kind": "integer", "name": "Star Slot", "width": "u32", "signed": false},
+          {"kind": "formid", "name": "Legendary Modifier", "valid_refs": []}
+        ]}},
+        {"kind": "array", "sig": "CNAM", "name": "Include Filters", "element": {"kind": "struct", "name": "Include Filter", "fields": [
+          {"kind": "integer", "name": "Star Slot", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Referenced Mod", "width": "u32", "signed": false},
+          {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD"]}
+        ]}},
+        {"kind": "array", "sig": "DNAM", "name": "Exclude Filters", "element": {"kind": "struct", "name": "Exclude Filter", "fields": [
+          {"kind": "integer", "name": "Star Slot", "width": "u32", "signed": false},
+          {"kind": "integer", "name": "Referenced Mod", "width": "u32", "signed": false},
+          {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD"]}
+        ]}},
+        {"kind": "formid", "sig": "ENAM", "name": "Legendary Template List", "valid_refs": []}
+      ]
+    },
+    "PCRD": {
+      "name": "Perk Card",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "bytes", "sig": "DATA", "name": "Unknown"},
+        {"kind": "formid", "sig": "PCDV", "name": "Perk Card Value", "valid_refs": ["GLOB"]},
+        {"kind": "formid", "sig": "SNAM", "name": "Sound", "valid_refs": ["SNDR"]},
+        {"kind": "string", "sig": "MNAM", "name": "Male Name", "keep_case": false},
+        {"kind": "string", "sig": "FNAM", "name": "Female Name", "keep_case": false},
+        {"kind": "integer", "sig": "ANAM", "name": "Perk Card Flags", "width": "u32", "signed": false, "format": {"flags": ["Legendary Perk"]}},
+        {"kind": "raw_fallback", "name": "Perks", "reason": "wbRArray nested rstruct with markers"}
+      ]
+    },
+    "PLYT": {
+      "name": "Player Title",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "lstring", "sig": "ANAM", "name": "Male Title"},
+        {"kind": "lstring", "sig": "BNAM", "name": "Female Title"},
+        {"kind": "integer", "sig": "PTPR", "name": "Is Prefix", "width": "u8", "signed": false},
+        {"kind": "integer", "sig": "PTSU", "name": "Is Suffix", "width": "u8", "signed": false},
+        {"kind": "unknown", "sig": "PTDS", "name": "Unknown"}
+      ]
+    },
+    "COEN": {
+      "name": "Consumable Entitlement",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "lstring", "sig": "FULL", "name": "Name"},
+        {"kind": "lstring", "sig": "DESC", "name": "Description"},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "formid", "sig": "CENT", "name": "Linked Object", "valid_refs": []},
+        {"kind": "unknown", "sig": "FNAM", "name": "Unknown"},
+        {"kind": "lstring", "sig": "NNAM", "name": "Display Name"},
+        {"kind": "rstruct", "name": "Storefront Data", "members": [
+          {"kind": "string", "sig": "ETIP", "name": "Storefront Image Path", "keep_case": false},
+          {"kind": "string", "sig": "ETDI", "name": "Storefront Preview Image", "keep_case": false},
+          {"kind": "formid", "sig": "ETLG", "name": "Entitlement Loadout Reference", "valid_refs": []},
+          {"kind": "rarray", "name": "Storefront Confirm Image List", "element": {"kind": "string", "sig": "ECIL", "name": "Image", "keep_case": false}}
+        ]}
+      ]
+    },
+    "PEPF": {
+      "name": "Event Playlist",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "formid", "sig": "EPEG", "name": "Playlist Enabled Global", "valid_refs": []},
+        {"kind": "integer", "sig": "EPCD", "name": "Cooldown", "width": "u32", "signed": false},
+        {"kind": "integer", "sig": "EPPR", "name": "Priority", "width": "u32", "signed": false},
+        {"kind": "integer", "sig": "EPNQ", "name": "Unknown Int", "width": "u32", "signed": false},
+        {"kind": "rarray", "name": "Playlist Quests", "element": {"kind": "rstruct", "name": "Quest Info", "members": [
+          {"kind": "formid", "sig": "EPQA", "name": "Quest", "valid_refs": []},
+          {"kind": "formid", "sig": "EPSI", "name": "Spell Modifier", "valid_refs": ["SPEL"]}
+        ]}},
+        {"kind": "integer", "sig": "EPFL", "name": "Unknown Byte", "width": "u8", "signed": false}
+      ]
+    },
+    "STHD": {
+      "name": "Spell Threshold Data",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "formid", "sig": "SPIT", "name": "Spell Item", "valid_refs": []},
+        {"kind": "formid", "sig": "SPLO", "name": "Spell Magic Effect", "valid_refs": []},
+        {"kind": "array", "sig": "NAM0", "name": "Stages", "element": {"kind": "struct", "name": "Stage", "fields": [
+          {"kind": "float", "name": "Unknown"},
+          {"kind": "formid", "name": "Message", "valid_refs": []},
+          {"kind": "formid", "name": "Secondary Message", "valid_refs": [], "from_version": 165},
+          {"kind": "formid", "name": "Global", "valid_refs": [], "from_version": 160}
+        ]}}
+      ]
+    },
+    "WAVE": {
+      "name": "Wave Encounter",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "rstruct", "name": "Keywords", "members": [
+          {"kind": "integer", "sig": "KSIZ", "name": "Keyword Count", "width": "u32", "signed": false},
+          {"kind": "array", "sig": "KWDA", "name": "Keywords", "element": {"kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"]}}
+        ]},
+        {"kind": "array", "sig": "WAVD", "name": "Wave Encounter Definitions", "element": {"kind": "struct", "name": "Wave Encounter Definition", "fields": [
+          {"kind": "integer", "name": "Spawn Order", "width": "u32", "signed": false},
+          {"kind": "formid", "name": "Spawn Reference", "valid_refs": []},
+          {"kind": "integer", "name": "Unknown", "width": "u32", "signed": false}
+        ]}},
+        {"kind": "unknown", "sig": "DNAM", "name": "Unknown"}
+      ]
+    },
+    "CMPT": {
+      "name": "Camp Title",
+      "members": [
+        {"kind": "string", "sig": "EDID", "name": "Editor ID", "keep_case": true},
+        {"kind": "integer", "sig": "XALG", "name": "Flags", "width": "u32", "signed": false},
+        {"kind": "lstring", "sig": "ANAM", "name": "Title"},
+        {"kind": "integer", "sig": "PTPR", "name": "Is Prefix", "width": "u8", "signed": false},
+        {"kind": "integer", "sig": "PTSU", "name": "Is Suffix", "width": "u8", "signed": false},
+        {"kind": "unknown", "sig": "PTDS", "name": "Unknown"}
+      ]
     }
   }
 }
