@@ -23,6 +23,7 @@ use anyhow::{bail, Context};
 pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
 pub use diff::{DiffResult, RecordDiff, RecordStub};
 pub use formid::FormId;
+pub use reader::RecordMeta;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
@@ -376,10 +377,7 @@ impl Database {
         })
     }
 
-    pub(crate) fn record_at_meta(
-        &self,
-        meta: &crate::reader::RecordMeta,
-    ) -> anyhow::Result<RecordResult> {
+    pub fn record_at_meta(&self, meta: &crate::reader::RecordMeta) -> anyhow::Result<RecordResult> {
         let parsed = self.esm.parse_record_at(meta.offset)?;
         let editor_id = edid_from_subrecords(&parsed.subrecords);
         let ctx = DecodeContext {
@@ -391,6 +389,7 @@ impl Database {
             resolve_depth: crate::decode::ResolveDepth::None,
             resolver: None,
             outer_struct: None,
+            record_edid_char: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
@@ -423,6 +422,7 @@ impl Database {
                 .as_ref()
                 .map(|r| r as &dyn crate::decode::FormIdRefResolver),
             outer_struct: None,
+            record_edid_char: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
@@ -512,6 +512,7 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             resolve_depth: crate::decode::ResolveDepth::Full,
             resolver: Some(&nested_resolver),
             outer_struct: None,
+            record_edid_char: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Some(serde_json::json!({

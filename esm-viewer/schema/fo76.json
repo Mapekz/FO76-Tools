@@ -771,7 +771,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -1018,9 +1018,251 @@
           "kind": "rarray",
           "name": "Condition Infos",
           "element": {
-            "kind": "raw_fallback",
+            "kind": "union",
             "name": "Record Union",
-            "reason": "wbRUnion not supported"
+            "decider": {
+              "present_signature": [
+                "CNDC",
+                "CITC"
+              ]
+            },
+            "variants": [
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Position",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CNDC"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -1392,9 +1634,30 @@
           ]
         },
         {
-          "kind": "raw_fallback",
-          "name": "Record Union",
-          "reason": "wbRUnion not supported"
+          "kind": "union",
+          "name": "Index",
+          "decider": {
+            "present_signature": [
+              "DATA",
+              "IKEK"
+            ]
+          },
+          "variants": [
+            {
+              "kind": "integer",
+              "name": "Node Index",
+              "width": "u32",
+              "signed": false,
+              "sig": "DATA"
+            },
+            {
+              "kind": "integer",
+              "name": "Node Index",
+              "width": "u32",
+              "signed": false,
+              "sig": "IKEK"
+            }
+          ]
         },
         {
           "kind": "formid",
@@ -3733,7 +3996,7 @@
           "name": "Resistances",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Resistance",
             "fields": [
               {
                 "kind": "formid",
@@ -5254,9 +5517,57 @@
               }
             },
             {
-              "kind": "raw_fallback",
+              "kind": "union",
               "name": "Teaches",
-              "reason": "closure union decider"
+              "decider": {
+                "field": "Flags",
+                "default_variant": 0,
+                "map": {},
+                "bits": [
+                  [
+                    1,
+                    1
+                  ],
+                  [
+                    4,
+                    2
+                  ],
+                  [
+                    16,
+                    3
+                  ]
+                ]
+              },
+              "variants": [
+                {
+                  "kind": "unused",
+                  "bytes": 4
+                },
+                {
+                  "kind": "formid",
+                  "name": "Actor Value",
+                  "valid_refs": [
+                    "AVIF",
+                    "NULL"
+                  ]
+                },
+                {
+                  "kind": "formid",
+                  "name": "Spell",
+                  "valid_refs": [
+                    "SPEL",
+                    "NULL"
+                  ]
+                },
+                {
+                  "kind": "formid",
+                  "name": "Perk",
+                  "valid_refs": [
+                    "PERK",
+                    "NULL"
+                  ]
+                }
+              ]
             },
             {
               "kind": "struct",
@@ -6938,7 +7249,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -7141,7 +7452,7 @@
           "name": "Weather Types",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Weather Type",
             "fields": [
               {
                 "kind": "formid",
@@ -7431,7 +7742,7 @@
           "name": "Junk Scrap Quantities",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Scrap Component Quantity",
             "fields": [
               {
                 "kind": "formid",
@@ -8124,7 +8435,7 @@
           "name": "Components",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Component",
             "fields": [
               {
                 "kind": "formid",
@@ -8155,7 +8466,7 @@
           "name": "Repair",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Component",
             "fields": [
               {
                 "kind": "formid",
@@ -8200,7 +8511,7 @@
           "name": "Scrap Recieved",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Scrap Recieved",
             "fields": [
               {
                 "kind": "formid",
@@ -8982,7 +9293,73 @@
           "element": {
             "kind": "rstruct",
             "name": "[1]",
-            "members": []
+            "members": [
+              {
+                "kind": "struct",
+                "name": "CNTO",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Item",
+                    "valid_refs": []
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Count",
+                    "width": "s32",
+                    "signed": true
+                  }
+                ],
+                "sig": "CNTO"
+              },
+              {
+                "kind": "struct",
+                "name": "COED",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Owner",
+                    "valid_refs": [
+                      "NPC_",
+                      "FACT",
+                      "NULL"
+                    ]
+                  },
+                  {
+                    "kind": "raw_fallback",
+                    "name": "union",
+                    "reason": "closure union decider"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Item Condition"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Curve Tables",
+                    "fields": [
+                      {
+                        "kind": "formid",
+                        "name": "Min",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Max",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "sig": "COED"
+              }
+            ]
           }
         },
         {
@@ -9118,7 +9495,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -10069,7 +10446,7 @@
           "name": "Objects",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Object",
             "fields": [
               {
                 "kind": "integer",
@@ -12260,7 +12637,7 @@
           "name": "Damage Types",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Damage Type",
             "fields": [
               {
                 "kind": "formid",
@@ -13328,7 +13705,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -14150,7 +14527,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -14302,9 +14679,251 @@
           "kind": "rarray",
           "name": "Condition Infos",
           "element": {
-            "kind": "raw_fallback",
+            "kind": "union",
             "name": "Record Union",
-            "reason": "wbRUnion not supported"
+            "decider": {
+              "present_signature": [
+                "CNDC",
+                "CITC"
+              ]
+            },
+            "variants": [
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Position",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CNDC"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -14366,7 +14985,73 @@
           "element": {
             "kind": "rstruct",
             "name": "[1]",
-            "members": []
+            "members": [
+              {
+                "kind": "struct",
+                "name": "CNTO",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Item",
+                    "valid_refs": []
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Count",
+                    "width": "s32",
+                    "signed": true
+                  }
+                ],
+                "sig": "CNTO"
+              },
+              {
+                "kind": "struct",
+                "name": "COED",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Owner",
+                    "valid_refs": [
+                      "NPC_",
+                      "FACT",
+                      "NULL"
+                    ]
+                  },
+                  {
+                    "kind": "raw_fallback",
+                    "name": "union",
+                    "reason": "closure union decider"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Item Condition"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Curve Tables",
+                    "fields": [
+                      {
+                        "kind": "formid",
+                        "name": "Min",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Max",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "sig": "COED"
+              }
+            ]
           }
         },
         {
@@ -15229,9 +15914,47 @@
           "sized": 0
         },
         {
-          "kind": "raw_fallback",
+          "kind": "union",
           "name": "Value",
-          "reason": "closure union decider"
+          "decider": {
+            "edid_prefix": {
+              "s": 0,
+              "f": 2,
+              "b": 3,
+              "u": 4
+            },
+            "edid_default": 1
+          },
+          "variants": [
+            {
+              "kind": "lstring",
+              "sig": "'Name'",
+              "name": "0"
+            },
+            {
+              "kind": "integer",
+              "name": "Int",
+              "width": "s32",
+              "signed": true
+            },
+            {
+              "kind": "float",
+              "name": "Float"
+            },
+            {
+              "kind": "integer",
+              "name": "Bool",
+              "width": "u32",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "UInt",
+              "width": "u32",
+              "signed": false
+            }
+          ],
+          "sig": "DATA"
         }
       ]
     },
@@ -16790,6 +17513,13 @@
       "name": "Image Space Adapter",
       "members": [
         {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
+        },
+        {
           "kind": "struct",
           "name": "Data",
           "fields": [
@@ -16945,7 +17675,7 @@
           "name": "Tint Color",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Data",
             "fields": [
               {
                 "kind": "float",
@@ -16982,7 +17712,7 @@
           "name": "Fade Color",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Data",
             "fields": [
               {
                 "kind": "float",
@@ -17396,6 +18126,12 @@
           "kind": "unknown",
           "name": "Unknown",
           "sig": "ZNAM"
+        },
+        {
+          "kind": "string",
+          "name": "LUT",
+          "keep_case": false,
+          "sig": "TX00"
         }
       ]
     },
@@ -18459,7 +19195,7 @@
           "variants": [
             {
               "kind": "struct",
-              "name": "Struct",
+              "name": "Decal Data",
               "fields": []
             }
           ],
@@ -19378,7 +20114,7 @@
           "name": "Added Persist Location References",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Reference",
             "fields": []
           },
           "sig": "ACPR"
@@ -19388,7 +20124,7 @@
           "name": "Master Persist Location References",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Reference",
             "fields": []
           },
           "sig": "LCPR"
@@ -19411,7 +20147,7 @@
           "name": "Added Unique NPCs",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Actor",
             "fields": []
           },
           "sig": "ACUN"
@@ -19421,7 +20157,7 @@
           "name": "Master Unique NPCs",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Actor",
             "fields": []
           },
           "sig": "LCUN"
@@ -19443,7 +20179,7 @@
           "name": "Added Special References",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Reference",
             "fields": []
           },
           "sig": "ACSR"
@@ -19453,7 +20189,7 @@
           "name": "Master Special References",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Reference",
             "fields": []
           },
           "sig": "LCSR"
@@ -19631,7 +20367,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -20731,7 +21467,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -21708,7 +22444,81 @@
                         "max": null
                       }
                     },
-                    "variants": []
+                    "variants": [
+                      {
+                        "kind": "struct",
+                        "name": "Base Data",
+                        "fields": [
+                          {
+                            "kind": "integer",
+                            "name": "Level",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 2
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Item",
+                            "valid_refs": []
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Count",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "empty",
+                            "sig": "'Chance None'",
+                            "name": "'Chance None'"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 2
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Base Data",
+                        "fields": [
+                          {
+                            "kind": "integer",
+                            "name": "Level",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 2
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Item",
+                            "valid_refs": []
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Count",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Chance None",
+                            "width": "u8",
+                            "signed": false
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 1
+                          }
+                        ]
+                      }
+                    ]
                   },
                   {
                     "kind": "formid",
@@ -21717,6 +22527,53 @@
                   }
                 ],
                 "sig": "LVLO"
+              },
+              {
+                "kind": "struct",
+                "name": "COED",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Owner",
+                    "valid_refs": [
+                      "NPC_",
+                      "FACT",
+                      "NULL"
+                    ]
+                  },
+                  {
+                    "kind": "raw_fallback",
+                    "name": "union",
+                    "reason": "closure union decider"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Item Condition"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Curve Tables",
+                    "fields": [
+                      {
+                        "kind": "formid",
+                        "name": "Min",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Max",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "sig": "COED"
               },
               {
                 "kind": "rarray",
@@ -21906,7 +22763,7 @@
           "name": "Filter Keyword Chances",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Filter",
             "fields": [
               {
                 "kind": "formid",
@@ -22388,6 +23245,46 @@
                 },
                 "variants": [
                   {
+                    "kind": "struct",
+                    "name": "Base Data",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Level",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 2
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "NPC",
+                        "valid_refs": [
+                          "NPC_",
+                          "LVLN"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Count",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Chance None",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      }
+                    ]
+                  },
+                  {
                     "kind": "formid",
                     "name": "Reference",
                     "valid_refs": [
@@ -22397,6 +23294,53 @@
                   }
                 ],
                 "sig": "LVLO"
+              },
+              {
+                "kind": "struct",
+                "name": "COED",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Owner",
+                    "valid_refs": [
+                      "NPC_",
+                      "FACT",
+                      "NULL"
+                    ]
+                  },
+                  {
+                    "kind": "raw_fallback",
+                    "name": "union",
+                    "reason": "closure union decider"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Item Condition"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Curve Tables",
+                    "fields": [
+                      {
+                        "kind": "formid",
+                        "name": "Min",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Max",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "sig": "COED"
               },
               {
                 "kind": "rarray",
@@ -22538,7 +23482,7 @@
           "name": "Filter Keyword Chances",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Filter",
             "fields": [
               {
                 "kind": "formid",
@@ -22920,6 +23864,45 @@
                 },
                 "variants": [
                   {
+                    "kind": "struct",
+                    "name": "Base Data",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Level",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 2
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Perk Card",
+                        "valid_refs": [
+                          "PCRD"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Count",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Chance None",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      }
+                    ]
+                  },
+                  {
                     "kind": "formid",
                     "name": "Reference",
                     "valid_refs": [
@@ -22928,6 +23911,53 @@
                   }
                 ],
                 "sig": "LVLO"
+              },
+              {
+                "kind": "struct",
+                "name": "COED",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Owner",
+                    "valid_refs": [
+                      "NPC_",
+                      "FACT",
+                      "NULL"
+                    ]
+                  },
+                  {
+                    "kind": "raw_fallback",
+                    "name": "union",
+                    "reason": "closure union decider"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Item Condition"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Curve Tables",
+                    "fields": [
+                      {
+                        "kind": "formid",
+                        "name": "Min",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Max",
+                        "valid_refs": [
+                          "CURV",
+                          "NULL"
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "sig": "COED"
               },
               {
                 "kind": "rarray",
@@ -23752,9 +24782,151 @@
                   "name": "Base Cost"
                 },
                 {
-                  "kind": "raw_fallback",
+                  "kind": "union",
                   "name": "Assoc. Item",
-                  "reason": "closure union decider"
+                  "decider": {
+                    "byte_offset": 56,
+                    "width_bytes": 4,
+                    "default_variant": 0,
+                    "map": {
+                      "0": 9,
+                      "1": 0,
+                      "4": 0,
+                      "5": 0,
+                      "6": 0,
+                      "7": 0,
+                      "8": 0,
+                      "9": 0,
+                      "11": 0,
+                      "12": 1,
+                      "17": 2,
+                      "18": 3,
+                      "20": 11,
+                      "21": 0,
+                      "25": 4,
+                      "28": 0,
+                      "31": 0,
+                      "33": 0,
+                      "34": 8,
+                      "35": 5,
+                      "36": 6,
+                      "37": 0,
+                      "39": 7,
+                      "40": 4,
+                      "45": 10,
+                      "46": 6,
+                      "47": 0,
+                      "48": 0,
+                      "49": 0,
+                      "50": 12
+                    }
+                  },
+                  "variants": [
+                    {
+                      "kind": "formid",
+                      "name": "Unused",
+                      "valid_refs": [
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "LIGH",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "WEAP",
+                        "ARMO",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "NPC_",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "HAZD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "SPEL",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "RACE",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "ENCH",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "KYWD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "STHD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "DMGT",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "EMOT",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Assoc. Item",
+                      "valid_refs": [
+                        "FLST",
+                        "NULL"
+                      ]
+                    }
+                  ]
                 },
                 {
                   "kind": "bytes",
@@ -24827,7 +25999,7 @@
           "name": "Components",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Component",
             "fields": [
               {
                 "kind": "formid",
@@ -24883,9 +26055,690 @@
           "sig": "MNAM"
         },
         {
-          "kind": "raw_fallback",
+          "kind": "union",
           "name": "Movement Data",
-          "reason": "closure union decider"
+          "decider": {
+            "form_version_thresholds": [
+              28,
+              60,
+              104
+            ]
+          },
+          "variants": [
+            {
+              "kind": "struct",
+              "name": "Struct",
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Left",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Right",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Forward",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Back",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pitch, Roll, Yaw",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Struct",
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Left",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Right",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Forward",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Back",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pitch, Roll, Yaw",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Struct",
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Left",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Right",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Forward",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Back",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pitch",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Roll",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Yaw",
+                  "fields": [
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "unused",
+                      "bytes": 0
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Struct",
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Left",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "Standing"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Sprint"
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Right",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "Standing"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Sprint"
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Forward",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "Standing"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Sprint"
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Back",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "Standing"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Sprint"
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pitch",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "Standing"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Sprint"
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Roll",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "Standing"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Sprint"
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Yaw",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "Standing"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Walk"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Run"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Sprint"
+                    }
+                  ]
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 0
+                }
+              ]
+            }
+          ],
+          "sig": "SPED"
         },
         {
           "kind": "struct",
@@ -25383,7 +27236,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -25487,6 +27340,34 @@
           "name": "Tree Folder",
           "keep_case": false,
           "sig": "FNAM"
+        },
+        {
+          "kind": "rarray",
+          "name": "Material Substitutions",
+          "element": {
+            "kind": "rstruct",
+            "name": "Substitution",
+            "members": [
+              {
+                "kind": "string",
+                "name": "Original Material",
+                "keep_case": false,
+                "sig": "BNAM"
+              },
+              {
+                "kind": "string",
+                "name": "Replacement Material",
+                "keep_case": false,
+                "sig": "SNAM"
+              },
+              {
+                "kind": "string",
+                "name": "Tree Folder (obsolete)",
+                "keep_case": false,
+                "sig": "FNAM"
+              }
+            ]
+          }
         }
       ]
     },
@@ -25843,7 +27724,7 @@
                 "name": "Door Links",
                 "element": {
                   "kind": "struct",
-                  "name": "Struct",
+                  "name": "Door Link",
                   "fields": [
                     {
                       "kind": "integer",
@@ -25934,7 +27815,7 @@
               "name": "Road Marker Index",
               "element": {
                 "kind": "struct",
-                "name": "Struct",
+                "name": "Road Marker",
                 "fields": [
                   {
                     "kind": "formid",
@@ -26346,9 +28227,46 @@
           "sig": "DATA"
         },
         {
-          "kind": "raw_fallback",
+          "kind": "union",
           "name": "SNAM",
-          "reason": "closure union decider"
+          "decider": {
+            "field": "Type",
+            "default_variant": 0,
+            "map": {
+              "0": 1,
+              "1": 2,
+              "3": 3
+            },
+            "bits": []
+          },
+          "variants": [
+            {
+              "kind": "unused",
+              "bytes": 4
+            },
+            {
+              "kind": "formid",
+              "name": "Sound",
+              "valid_refs": [
+                "SNDR"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Scene",
+              "valid_refs": [
+                "SCEN"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Terminal",
+              "valid_refs": [
+                "TERM"
+              ]
+            }
+          ],
+          "sig": "SNAM"
         },
         {
           "kind": "formid",
@@ -26590,9 +28508,33 @@
               "signed": true
             },
             {
-              "kind": "raw_fallback",
+              "kind": "union",
               "name": "Level",
-              "reason": "closure union decider"
+              "decider": {
+                "field": "Flags",
+                "default_variant": 0,
+                "map": {},
+                "bits": [
+                  [
+                    128,
+                    1
+                  ]
+                ]
+              },
+              "variants": [
+                {
+                  "kind": "integer",
+                  "name": "Level",
+                  "width": "u16",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Level Mult",
+                  "width": "u16",
+                  "signed": false
+                }
+              ]
             },
             {
               "kind": "integer",
@@ -27173,7 +29115,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -27263,7 +29205,73 @@
               "element": {
                 "kind": "rstruct",
                 "name": "[1]",
-                "members": []
+                "members": [
+                  {
+                    "kind": "struct",
+                    "name": "CNTO",
+                    "fields": [
+                      {
+                        "kind": "formid",
+                        "name": "Item",
+                        "valid_refs": []
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Count",
+                        "width": "s32",
+                        "signed": true
+                      }
+                    ],
+                    "sig": "CNTO"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "COED",
+                    "fields": [
+                      {
+                        "kind": "formid",
+                        "name": "Owner",
+                        "valid_refs": [
+                          "NPC_",
+                          "FACT",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "raw_fallback",
+                        "name": "union",
+                        "reason": "closure union decider"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Item Condition"
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Curve Tables",
+                        "fields": [
+                          {
+                            "kind": "formid",
+                            "name": "Min",
+                            "valid_refs": [
+                              "CURV",
+                              "NULL"
+                            ]
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Max",
+                            "valid_refs": [
+                              "CURV",
+                              "NULL"
+                            ]
+                          }
+                        ]
+                      }
+                    ],
+                    "sig": "COED"
+                  }
+                ]
               }
             }
           ]
@@ -27272,6 +29280,36 @@
           "kind": "struct",
           "name": "AI Data",
           "fields": [
+            {
+              "kind": "integer",
+              "name": "Aggression",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Confidence",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Energy Level",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Morality",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Mood",
+              "width": "u8",
+              "signed": false
+            },
             {
               "kind": "integer",
               "name": "Assistance",
@@ -28234,7 +30272,7 @@
               "name": "Properties",
               "element": {
                 "kind": "struct",
-                "name": "Struct",
+                "name": "Property",
                 "fields": [
                   {
                     "kind": "integer",
@@ -30992,7 +33030,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -32454,7 +34492,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -32500,9 +34538,232 @@
           "sig": "PRPS"
         },
         {
-          "kind": "raw_fallback",
-          "name": "Record Union",
-          "reason": "wbRUnion not supported"
+          "kind": "union",
+          "name": "General",
+          "decider": {
+            "present_signature": [
+              "DATA",
+              "DNAM"
+            ]
+          },
+          "variants": [
+            {
+              "kind": "struct",
+              "name": "General",
+              "fields": [
+                {
+                  "kind": "union",
+                  "name": "Flags",
+                  "decider": {
+                    "form_version": {
+                      "min": 202,
+                      "max": null
+                    }
+                  },
+                  "variants": [
+                    {
+                      "kind": "integer",
+                      "name": "Flags",
+                      "width": "u32",
+                      "signed": false,
+                      "format": {
+                        "flags": [
+                          "Start Game Enabled",
+                          "Completed",
+                          "Add Idle Topic To Hello",
+                          "Allow Repeat Stages",
+                          "Starts Enabled",
+                          "Displayed In HUD",
+                          "Failed",
+                          "Stage Wait",
+                          "Run Once",
+                          "Exclude From Dialogue Export",
+                          "Warn On Alias Fill Failure",
+                          "Tracked By UI",
+                          "Repeats Conditions",
+                          "Keep Instance Data",
+                          "Want Dormant",
+                          "Has Dialogue Data",
+                          "Unique Instance",
+                          "Sharable",
+                          "Always Tracked",
+                          "Holotape Only",
+                          "Saves Completion",
+                          "Unused 21",
+                          "Unique Per Player",
+                          "Can Be Rejected When Active",
+                          "Uses Custom Expire Time",
+                          "Not Autotracked",
+                          "Disabled Event Announcement",
+                          "Kick All Players From Instance On Shutdown",
+                          "Disable Greeting Precheck",
+                          "Incrementing Timer",
+                          "Is Random Encounter",
+                          "Not Tracked In UI After Completed"
+                        ]
+                      }
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Flags",
+                      "width": "u64",
+                      "signed": false,
+                      "format": {
+                        "flags": [
+                          "Start Game Enabled",
+                          "Completed",
+                          "Add Idle Topic To Hello",
+                          "Allow Repeat Stages",
+                          "Starts Enabled",
+                          "Displayed In HUD",
+                          "Failed",
+                          "Stage Wait",
+                          "Run Once",
+                          "Exclude From Dialogue Export",
+                          "Warn On Alias Fill Failure",
+                          "Tracked By UI",
+                          "Repeats Conditions",
+                          "Keep Instance Data",
+                          "Want Dormant",
+                          "Has Dialogue Data",
+                          "Unique Instance",
+                          "Sharable",
+                          "Always Tracked",
+                          "Holotape Only",
+                          "Saves Completion",
+                          "Unused 21",
+                          "Unique Per Player",
+                          "Can Be Rejected When Active",
+                          "Uses Custom Expire Time",
+                          "Not Autotracked",
+                          "Disabled Event Announcement",
+                          "Kick All Players From Instance On Shutdown",
+                          "Disable Greeting Precheck",
+                          "Incrementing Timer",
+                          "Is Random Encounter",
+                          "Not Tracked In UI After Completed"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "kind": "integer",
+                  "name": "Priority",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 3
+                },
+                {
+                  "kind": "float",
+                  "name": "Delay Time"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Quest Type",
+                  "width": "u8",
+                  "signed": false,
+                  "format": {
+                    "enum": [
+                      "None",
+                      "Primary",
+                      "Secondary",
+                      "Side Quest",
+                      "Server",
+                      "Daily",
+                      "Public Event",
+                      "Miscellaneous",
+                      "Event",
+                      "Daily Ops",
+                      "Expedition",
+                      "Module",
+                      "Caravan",
+                      "Raid"
+                    ]
+                  }
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 3
+                }
+              ],
+              "sig": "DATA"
+            },
+            {
+              "kind": "struct",
+              "name": "General",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u16",
+                  "signed": false,
+                  "format": {
+                    "flags": [
+                      "Start Game Enabled",
+                      "Completed",
+                      "Add Idle Topic To Hello",
+                      "Allow Repeat Stages",
+                      "Starts Enabled",
+                      "Displayed In HUD",
+                      "Failed",
+                      "Stage Wait",
+                      "Run Once",
+                      "Exclude From Dialogue Export",
+                      "Warn On Alias Fill Failure",
+                      "Tracked By UI",
+                      "Repeats Conditions"
+                    ]
+                  }
+                },
+                {
+                  "kind": "integer",
+                  "name": "Priority",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 1
+                },
+                {
+                  "kind": "float",
+                  "name": "Delay Time"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Quest Type",
+                  "width": "u8",
+                  "signed": false,
+                  "format": {
+                    "enum": [
+                      "None",
+                      "Primary",
+                      "Secondary",
+                      "Side Quest",
+                      "Server",
+                      "Daily",
+                      "Public Event",
+                      "Miscellaneous",
+                      "Event",
+                      "Daily Ops",
+                      "Expedition",
+                      "Module",
+                      "Caravan"
+                    ]
+                  }
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 3
+                }
+              ],
+              "sig": "DNAM"
+            }
+          ]
         },
         {
           "kind": "integer",
@@ -33788,9 +36049,968 @@
           "kind": "rarray",
           "name": "Aliases",
           "element": {
-            "kind": "raw_fallback",
-            "name": "Record Union",
-            "reason": "wbRUnion not supported"
+            "kind": "union",
+            "name": "Alias",
+            "decider": {
+              "present_signature": [
+                "ALST",
+                "ALLS",
+                "ALCS"
+              ]
+            },
+            "variants": [
+              {
+                "kind": "rstruct",
+                "name": "Reference Alias",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Alias ID",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "ALST"
+                  },
+                  {
+                    "kind": "string",
+                    "name": "Alias Name",
+                    "keep_case": false,
+                    "sig": "ALID"
+                  },
+                  {
+                    "kind": "rstruct",
+                    "name": "Event Score Data",
+                    "members": [
+                      {
+                        "kind": "float",
+                        "name": "Activate",
+                        "sig": "ESAV"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Damage",
+                        "sig": "ESDA"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Revive",
+                        "sig": "ESRV"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Repair",
+                        "sig": "ESRP"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Flags",
+                    "len": null,
+                    "sig": "FNAM"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Force Into Alias When Filled",
+                    "width": "s32",
+                    "signed": true,
+                    "sig": "ALFI"
+                  },
+                  {
+                    "kind": "union",
+                    "name": "Fill Type",
+                    "decider": {
+                      "present_signature": [
+                        "ALFR",
+                        "ALUA",
+                        "ALFA",
+                        "ALEQ",
+                        "ALCO",
+                        "ALNA"
+                      ]
+                    },
+                    "variants": [
+                      {
+                        "kind": "rstruct",
+                        "name": " Specific Reference",
+                        "members": [
+                          {
+                            "kind": "formid",
+                            "name": "Reference",
+                            "valid_refs": [
+                              "ACHR",
+                              "PARW",
+                              "PBAR",
+                              "PBAR",
+                              "PCON",
+                              "PFLA",
+                              "PGRE",
+                              "PHZD",
+                              "PLYR",
+                              "PMIS",
+                              "REFR"
+                            ],
+                            "sig": "ALFR"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "Unique Actor",
+                        "members": [
+                          {
+                            "kind": "formid",
+                            "name": "Actor",
+                            "valid_refs": [
+                              "NPC_"
+                            ],
+                            "sig": "ALUA"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "Location Alias Reference",
+                        "members": [
+                          {
+                            "kind": "integer",
+                            "name": "Alias",
+                            "width": "s32",
+                            "signed": true,
+                            "sig": "ALFA"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Ref Type",
+                            "valid_refs": [
+                              "LCRT"
+                            ],
+                            "sig": "ALRT"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "External Alias Reference",
+                        "members": [
+                          {
+                            "kind": "formid",
+                            "name": "Quest",
+                            "valid_refs": [
+                              "QUST"
+                            ],
+                            "sig": "ALEQ"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Alias",
+                            "width": "s32",
+                            "signed": true,
+                            "sig": "ALEA"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "Create Reference to Object",
+                        "members": [
+                          {
+                            "kind": "formid",
+                            "name": "Object",
+                            "valid_refs": [],
+                            "sig": "ALCO"
+                          },
+                          {
+                            "kind": "struct",
+                            "name": "Alias",
+                            "fields": [
+                              {
+                                "kind": "integer",
+                                "name": "Alias",
+                                "width": "s16",
+                                "signed": true
+                              },
+                              {
+                                "kind": "integer",
+                                "name": "Create",
+                                "width": "u16",
+                                "signed": false,
+                                "format": {
+                                  "enum": {
+                                    "0": "At",
+                                    "32768": "In"
+                                  }
+                                }
+                              }
+                            ],
+                            "sig": "ALCA"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Level",
+                            "width": "u32",
+                            "signed": false,
+                            "sig": "ALCL",
+                            "format": {
+                              "enum": [
+                                "Easy",
+                                "Medium",
+                                "Hard",
+                                "Very Hard",
+                                "None"
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "Find Matching Reference",
+                        "members": [
+                          {
+                            "kind": "union",
+                            "name": "Match Type",
+                            "decider": {
+                              "present_signature": [
+                                "ALNA",
+                                "ALFE",
+                                "ALCC"
+                              ]
+                            },
+                            "variants": [
+                              {
+                                "kind": "rstruct",
+                                "name": "Near Alias",
+                                "members": [
+                                  {
+                                    "kind": "integer",
+                                    "name": "Alias",
+                                    "width": "s32",
+                                    "signed": true,
+                                    "sig": "ALNA"
+                                  },
+                                  {
+                                    "kind": "integer",
+                                    "name": "Type",
+                                    "width": "u32",
+                                    "signed": false,
+                                    "sig": "ALNT",
+                                    "format": {
+                                      "enum": [
+                                        "Linked From",
+                                        "Linked Ref"
+                                      ]
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "rstruct",
+                                "name": "From Event",
+                                "members": [
+                                  {
+                                    "kind": "integer",
+                                    "name": "Event",
+                                    "width": "u32",
+                                    "signed": false,
+                                    "sig": "ALFE"
+                                  },
+                                  {
+                                    "kind": "integer",
+                                    "name": "Data",
+                                    "width": "u32",
+                                    "signed": false,
+                                    "sig": "ALFD"
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "rstruct",
+                                "name": "Closest To",
+                                "members": [
+                                  {
+                                    "kind": "integer",
+                                    "name": "Alias",
+                                    "width": "s32",
+                                    "signed": true,
+                                    "sig": "ALCC"
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "rstruct",
+                    "name": "Match Conditions",
+                    "members": [
+                      {
+                        "kind": "rarray",
+                        "name": "Conditions",
+                        "element": {
+                          "kind": "rstruct",
+                          "name": "Condition",
+                          "members": [
+                            {
+                              "kind": "struct",
+                              "name": "Condition Data",
+                              "fields": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Type",
+                                  "width": "u8",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "unused",
+                                  "bytes": 3
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Comparison Value",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "unused",
+                                  "bytes": 2
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Parameter #1",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Parameter #2",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Run On",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Subject",
+                                      "Target",
+                                      "Reference",
+                                      "Combat Target",
+                                      "Linked Reference",
+                                      "Quest Alias",
+                                      "Package Data",
+                                      "Event Data",
+                                      "Unknown 8",
+                                      "Command Target",
+                                      "Event Camera Ref",
+                                      "My Killer",
+                                      "Active Players",
+                                      "Potential Players",
+                                      "Player Teammates",
+                                      "Target List",
+                                      "Instance Owner"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Reference",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Parameter #3",
+                                  "len": 4
+                                }
+                              ],
+                              "sig": "CTDA"
+                            },
+                            {
+                              "kind": "string",
+                              "name": "Parameter #1",
+                              "keep_case": false,
+                              "sig": "CIS1"
+                            },
+                            {
+                              "kind": "string",
+                              "name": "Parameter #2",
+                              "keep_case": false,
+                              "sig": "CIS2"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "rstruct",
+                    "name": "Keywords",
+                    "members": [
+                      {
+                        "kind": "integer",
+                        "name": "Keyword Count",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "KSIZ"
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "formid",
+                          "name": "Keyword",
+                          "valid_refs": [
+                            "KYWD",
+                            "NULL"
+                          ]
+                        },
+                        "sig": "KWDA"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "COCT"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Items",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "[1]",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "CNTO",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Item",
+                              "valid_refs": []
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Count",
+                              "width": "s32",
+                              "signed": true
+                            }
+                          ],
+                          "sig": "CNTO"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "COED",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Owner",
+                              "valid_refs": [
+                                "NPC_",
+                                "FACT",
+                                "NULL"
+                              ]
+                            },
+                            {
+                              "kind": "raw_fallback",
+                              "name": "union",
+                              "reason": "closure union decider"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Item Condition"
+                            },
+                            {
+                              "kind": "struct",
+                              "name": "Curve Tables",
+                              "fields": [
+                                {
+                                  "kind": "formid",
+                                  "name": "Min",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Max",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "sig": "COED"
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Spectator override package list",
+                    "valid_refs": [
+                      "FLST"
+                    ],
+                    "sig": "SPOR"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Observe dead body override package list",
+                    "valid_refs": [
+                      "FLST"
+                    ],
+                    "sig": "OCOR"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Guard warn override package list",
+                    "valid_refs": [
+                      "FLST"
+                    ],
+                    "sig": "GWOR"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Combat override package list",
+                    "valid_refs": [
+                      "FLST"
+                    ],
+                    "sig": "ECOR"
+                  },
+                  {
+                    "kind": "array",
+                    "name": "Linked Aliases",
+                    "element": {
+                      "kind": "struct",
+                      "name": "Linked Alias",
+                      "fields": [
+                        {
+                          "kind": "formid",
+                          "name": "Keyword",
+                          "valid_refs": [
+                            "KYWD",
+                            "NULL"
+                          ]
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Alias",
+                          "width": "s32",
+                          "signed": true
+                        }
+                      ]
+                    },
+                    "sig": "ALLA"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Display Name",
+                    "valid_refs": [
+                      "MESG",
+                      "NULL"
+                    ],
+                    "sig": "ALDN"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Forced Voice",
+                    "valid_refs": [
+                      "VTYP"
+                    ],
+                    "sig": "ALFV"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Death Item",
+                    "valid_refs": [
+                      "LVLI"
+                    ],
+                    "sig": "ALDI"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Alias Spells",
+                    "element": {
+                      "kind": "formid",
+                      "name": "Spell",
+                      "valid_refs": [
+                        "SPEL"
+                      ],
+                      "sig": "ALSP"
+                    }
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Alias Factions",
+                    "element": {
+                      "kind": "formid",
+                      "name": "Faction",
+                      "valid_refs": [
+                        "FACT"
+                      ],
+                      "sig": "ALFC"
+                    }
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Alias Location Ref Type",
+                    "valid_refs": [
+                      "KYWD",
+                      "LCRT"
+                    ],
+                    "sig": "ALFF"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Alias Package Data",
+                    "element": {
+                      "kind": "formid",
+                      "name": "Package",
+                      "valid_refs": [
+                        "PACK"
+                      ],
+                      "sig": "ALPC"
+                    }
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Terminal",
+                    "valid_refs": [
+                      "TERM"
+                    ],
+                    "sig": "NAM7"
+                  },
+                  {
+                    "kind": "string",
+                    "name": "Comments",
+                    "keep_case": false,
+                    "sig": "SCCM"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Voice Types",
+                    "valid_refs": [
+                      "FACT",
+                      "FLST",
+                      "NPC_",
+                      "VTYP",
+                      "NULL"
+                    ],
+                    "sig": "VTCK"
+                  },
+                  {
+                    "kind": "empty",
+                    "sig": "ALED",
+                    "name": "Alias End"
+                  }
+                ]
+              },
+              {
+                "kind": "rstruct",
+                "name": "Location Alias",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Alias ID",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "ALLS"
+                  },
+                  {
+                    "kind": "string",
+                    "name": "Alias Name",
+                    "keep_case": false,
+                    "sig": "ALID"
+                  },
+                  {
+                    "kind": "rstruct",
+                    "name": "Event Score Data",
+                    "members": [
+                      {
+                        "kind": "float",
+                        "name": "Activate",
+                        "sig": "ESAV"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Damage",
+                        "sig": "ESDA"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Revive",
+                        "sig": "ESRV"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Repair",
+                        "sig": "ESRP"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Flags",
+                    "len": null,
+                    "sig": "FNAM"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Force Into Alias When Filled",
+                    "width": "s32",
+                    "signed": true,
+                    "sig": "ALFI"
+                  },
+                  {
+                    "kind": "union",
+                    "name": "Fill Type",
+                    "decider": {
+                      "present_signature": [
+                        "ALFL",
+                        "ALFA",
+                        "ALEQ",
+                        "ALFE"
+                      ]
+                    },
+                    "variants": [
+                      {
+                        "kind": "rstruct",
+                        "name": "Specific Location",
+                        "members": [
+                          {
+                            "kind": "formid",
+                            "name": "Location",
+                            "valid_refs": [
+                              "LCTN"
+                            ],
+                            "sig": "ALFL"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "Reference Alias Location",
+                        "members": [
+                          {
+                            "kind": "integer",
+                            "name": "Alias",
+                            "width": "s32",
+                            "signed": true,
+                            "sig": "ALFA"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Keyword",
+                            "valid_refs": [
+                              "KYWD"
+                            ],
+                            "sig": "KNAM"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "External Alias Location",
+                        "members": [
+                          {
+                            "kind": "formid",
+                            "name": "Quest",
+                            "valid_refs": [
+                              "QUST"
+                            ],
+                            "sig": "ALEQ"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Alias",
+                            "width": "s32",
+                            "signed": true,
+                            "sig": "ALEA"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "Find Matching Location",
+                        "members": [
+                          {
+                            "kind": "integer",
+                            "name": "From Event",
+                            "width": "u32",
+                            "signed": false,
+                            "sig": "ALFE"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Event Data",
+                            "width": "u32",
+                            "signed": false,
+                            "sig": "ALFD"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "rstruct",
+                    "name": "Match Conditions",
+                    "members": [
+                      {
+                        "kind": "rarray",
+                        "name": "Conditions",
+                        "element": {
+                          "kind": "rstruct",
+                          "name": "Condition",
+                          "members": [
+                            {
+                              "kind": "struct",
+                              "name": "Condition Data",
+                              "fields": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Type",
+                                  "width": "u8",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "unused",
+                                  "bytes": 3
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Comparison Value",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "unused",
+                                  "bytes": 2
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Parameter #1",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Parameter #2",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Run On",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Subject",
+                                      "Target",
+                                      "Reference",
+                                      "Combat Target",
+                                      "Linked Reference",
+                                      "Quest Alias",
+                                      "Package Data",
+                                      "Event Data",
+                                      "Unknown 8",
+                                      "Command Target",
+                                      "Event Camera Ref",
+                                      "My Killer",
+                                      "Active Players",
+                                      "Potential Players",
+                                      "Player Teammates",
+                                      "Target List",
+                                      "Instance Owner"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Reference",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "bytes",
+                                  "name": "Parameter #3",
+                                  "len": 4
+                                }
+                              ],
+                              "sig": "CTDA"
+                            },
+                            {
+                              "kind": "string",
+                              "name": "Parameter #1",
+                              "keep_case": false,
+                              "sig": "CIS1"
+                            },
+                            {
+                              "kind": "string",
+                              "name": "Parameter #2",
+                              "keep_case": false,
+                              "sig": "CIS2"
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "rstruct",
+                    "name": "Closest To",
+                    "members": [
+                      {
+                        "kind": "integer",
+                        "name": "Closest To Alias",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "ALCC"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "empty",
+                    "sig": "ALED",
+                    "name": "Alias End"
+                  }
+                ]
+              },
+              {
+                "kind": "rstruct",
+                "name": "Ref Collection Alias",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Alias ID",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "ALCS"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Max Initial Fill Count",
+                    "width": "u8",
+                    "signed": false,
+                    "sig": "ALMI"
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -34087,7 +37307,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -34661,6 +37881,11 @@
           "width": "u16",
           "signed": false,
           "sig": "TINL"
+        },
+        {
+          "kind": "float",
+          "name": "FaceGen - Main clamp",
+          "sig": "PNAM"
         },
         {
           "kind": "float",
@@ -35737,9 +38962,690 @@
                 "sig": "MTYP"
               },
               {
-                "kind": "raw_fallback",
+                "kind": "union",
                 "name": "Movement Data",
-                "reason": "closure union decider"
+                "decider": {
+                  "form_version_thresholds": [
+                    28,
+                    60,
+                    104
+                  ]
+                },
+                "variants": [
+                  {
+                    "kind": "struct",
+                    "name": "Struct",
+                    "fields": [
+                      {
+                        "kind": "struct",
+                        "name": "Left",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Right",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Forward",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Back",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Pitch, Roll, Yaw",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Unused",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Unused",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Struct",
+                    "fields": [
+                      {
+                        "kind": "struct",
+                        "name": "Left",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Right",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Forward",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Back",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Pitch, Roll, Yaw",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Unused",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Unused",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Struct",
+                    "fields": [
+                      {
+                        "kind": "struct",
+                        "name": "Left",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Right",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Forward",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Back",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Pitch",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Roll",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Yaw",
+                        "fields": [
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 0
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Struct",
+                    "fields": [
+                      {
+                        "kind": "struct",
+                        "name": "Left",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Standing"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Sprint"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Right",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Standing"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Sprint"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Forward",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Standing"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Sprint"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Back",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Standing"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Sprint"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Pitch",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Standing"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Sprint"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Roll",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Standing"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Sprint"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Yaw",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Standing"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Walk"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Run"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Sprint"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 0
+                      }
+                    ]
+                  }
+                ],
+                "sig": "SPED"
               }
             ]
           }
@@ -39917,6 +43823,59 @@
             "name": "Region Data Entry",
             "members": [
               {
+                "kind": "struct",
+                "name": "RDAT",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Type",
+                    "width": "u32",
+                    "signed": false,
+                    "format": {
+                      "enum": {
+                        "2": "Objects",
+                        "3": "Weather",
+                        "4": "Map",
+                        "5": "Land",
+                        "6": "Grass",
+                        "7": "Sound"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Override",
+                    "width": "u8",
+                    "signed": false
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Priority",
+                    "width": "u8",
+                    "signed": false
+                  },
+                  {
+                    "kind": "unused",
+                    "bytes": 2
+                  }
+                ],
+                "sig": "RDAT"
+              },
+              {
+                "kind": "string",
+                "name": "Icon Image",
+                "keep_case": false,
+                "sig": "ICON"
+              },
+              {
+                "kind": "formid",
+                "name": "Music",
+                "valid_refs": [
+                  "MUSC"
+                ],
+                "sig": "RDMO"
+              },
+              {
                 "kind": "rarray",
                 "name": "Sounds",
                 "element": {
@@ -39952,6 +43911,66 @@
                 }
               },
               {
+                "kind": "lstring",
+                "sig": "RDMP",
+                "name": "Map Name"
+              },
+              {
+                "kind": "array",
+                "name": "Grasses",
+                "element": {
+                  "kind": "struct",
+                  "name": "Grass",
+                  "fields": [
+                    {
+                      "kind": "formid",
+                      "name": "Grass",
+                      "valid_refs": [
+                        "GRAS"
+                      ]
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Unknown",
+                      "len": 4
+                    }
+                  ]
+                },
+                "sig": "RDGS"
+              },
+              {
+                "kind": "array",
+                "name": "Weather Types",
+                "element": {
+                  "kind": "struct",
+                  "name": "Weather Type",
+                  "fields": [
+                    {
+                      "kind": "formid",
+                      "name": "Weather",
+                      "valid_refs": [
+                        "WTHR"
+                      ]
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Chance",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Global",
+                      "valid_refs": [
+                        "GLOB",
+                        "NULL"
+                      ]
+                    }
+                  ]
+                },
+                "sig": "RDWT"
+              },
+              {
                 "kind": "unknown",
                 "name": "Unknown",
                 "sig": "RDWR"
@@ -39965,6 +43984,21 @@
                 "kind": "float",
                 "name": "Occlusion Accuracy Dist",
                 "sig": "ANAM"
+              },
+              {
+                "kind": "struct",
+                "name": "Workshop",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Unknown"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Unknown"
+                  }
+                ],
+                "sig": "RDWK"
               }
             ]
           }
@@ -40724,7 +44758,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -40923,9 +44957,26 @@
             "name": "Echo",
             "members": [
               {
-                "kind": "raw_fallback",
-                "name": "Record Union",
-                "reason": "wbRUnion not supported"
+                "kind": "union",
+                "name": "Echo Marker",
+                "decider": {
+                  "present_signature": [
+                    "ECHO",
+                    "ECHD"
+                  ]
+                },
+                "variants": [
+                  {
+                    "kind": "empty",
+                    "sig": "ECHO",
+                    "name": "Echo Start Marker"
+                  },
+                  {
+                    "kind": "empty",
+                    "sig": "ECHD",
+                    "name": "Echo Default Start Marker"
+                  }
+                ]
               },
               {
                 "kind": "formid",
@@ -41803,9 +45854,62 @@
           "sig": "LNAM"
         },
         {
-          "kind": "raw_fallback",
+          "kind": "union",
           "name": "Data",
-          "reason": "closure union decider"
+          "decider": {
+            "field": "Descriptor Type",
+            "default_variant": 0,
+            "map": {
+              "3977742051": 1
+            },
+            "bits": []
+          },
+          "variants": [
+            {
+              "kind": "struct",
+              "name": "Values",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "% Frequency Shift",
+                  "width": "s8",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "% Frequency Variance",
+                  "width": "s8",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "Priority",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "db Variance",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Static Attenuation (db)",
+                  "width": "u16",
+                  "signed": false
+                }
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Base Descriptor",
+              "valid_refs": [
+                "SNDR"
+              ]
+            }
+          ],
+          "sig": "BNAM"
         },
         {
           "kind": "integer",
@@ -43301,7 +47405,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -43477,6 +47581,12 @@
           "kind": "struct",
           "name": "Distant LOD",
           "fields": [
+            {
+              "kind": "string",
+              "name": "True",
+              "keep_case": false,
+              "sized": 260
+            },
             {
               "kind": "string",
               "name": "True",
@@ -44437,9 +48547,251 @@
           "kind": "rarray",
           "name": "Condition Infos",
           "element": {
-            "kind": "raw_fallback",
+            "kind": "union",
             "name": "Record Union",
-            "reason": "wbRUnion not supported"
+            "decider": {
+              "present_signature": [
+                "CNDC",
+                "CITC"
+              ]
+            },
+            "variants": [
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Position",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CNDC"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -44979,7 +49331,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -46118,7 +50470,7 @@
           "name": "Properties",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Property",
             "fields": [
               {
                 "kind": "union",
@@ -46365,9 +50717,251 @@
           "kind": "rarray",
           "name": "Condition Infos",
           "element": {
-            "kind": "raw_fallback",
+            "kind": "union",
             "name": "Record Union",
-            "reason": "wbRUnion not supported"
+            "decider": {
+              "present_signature": [
+                "CNDC",
+                "CITC"
+              ]
+            },
+            "variants": [
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Position",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CNDC"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "kind": "rstruct",
+                "name": "Condition Info",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -47071,6 +51665,12 @@
             },
             {
               "kind": "string",
+              "name": "Multilayer",
+              "keep_case": false,
+              "sig": "TX06"
+            },
+            {
+              "kind": "string",
               "name": "Smooth Spec",
               "keep_case": false,
               "sig": "TX07"
@@ -47107,7 +51707,7 @@
           "variants": [
             {
               "kind": "struct",
-              "name": "Struct",
+              "name": "Decal Data",
               "fields": []
             }
           ],
@@ -49292,7 +53892,7 @@
           "name": "Damage Types",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Damage Type",
             "fields": [
               {
                 "kind": "formid",
@@ -49396,7 +53996,7 @@
           "name": "Damage Type Condition Scalings",
           "element": {
             "kind": "struct",
-            "name": "Struct",
+            "name": "Damage Type Condition Scaling",
             "fields": [
               {
                 "kind": "formid",

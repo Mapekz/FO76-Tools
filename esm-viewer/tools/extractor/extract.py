@@ -109,6 +109,89 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
     },
     # wbRecordSizeDecider(1): QRRI is 0 bytes (empty) or 1 byte (u8 bool).
     "wbRecordSizeDecider": {"kind": "bytes", "name": None, "len": None},
+
+    # ---- Decider-only substitutions (no "kind" key): use Pascal variants as-is ----
+    # wbGMSTUnionDecider: first char of EDID → variant index.
+    #   's' → 0 (lstring Name), 'i' → 1 (s32 Int, default), 'f' → 2 (Float),
+    #   'b' → 3 (Bool u32), 'u' → 4 (UInt u32)
+    "wbGMSTUnionDecider": {
+        "edid_prefix": {"s": 0, "f": 2, "b": 3, "u": 4},
+        "edid_default": 1,
+    },
+
+    # wbBOOKTeachesDecider: bitmask on sibling 'Flags' (u8 in DNAM struct).
+    #   bit 0x01 → 1 (Actor Value), bit 0x04 → 2 (Spell), bit 0x10 → 3 (Perk), else 0 (Unused)
+    "wbBOOKTeachesDecider": {
+        "field": "Flags",
+        "default_variant": 0,
+        "map": {},
+        "bits": [[0x01, 1], [0x04, 2], [0x10, 3]],
+    },
+
+    # wbACBSLevelDecider: bitmask on sibling 'Flags' (u32 in NPC_ ACBS struct).
+    #   bit 0x80 → 1 (Level Mult / PC-Level-Mult), else 0 (absolute Level u16)
+    "wbACBSLevelDecider": {
+        "field": "Flags",
+        "default_variant": 0,
+        "map": {},
+        "bits": [[0x80, 1]],
+    },
+
+    # wbSNDRDataDecider: field-value check on 'Descriptor Type' (CNAM enum).
+    #   0xED157AE3 = 3977742051 = 'AutoWeapon' → 1 (Base Descriptor formid)
+    #   all other types → 0 (Values struct)
+    "wbSNDRDataDecider": {
+        "field": "Descriptor Type",
+        "default_variant": 0,
+        "map": {"3977742051": 1},
+        "bits": [],
+    },
+
+    # wbNoteTypeDecider: field-value check on sibling 'Type' (DNAM integer).
+    #   0 → 1 (Sound [SNDR]), 1 → 2 (Scene [SCEN]), 3 → 3 (Terminal [TERM])
+    #   else → 0 (Unused 4 bytes)
+    "wbNoteTypeDecider": {
+        "field": "Type",
+        "default_variant": 0,
+        "map": {"0": 1, "1": 2, "3": 3},
+        "bits": [],
+    },
+
+    # wbMGEFAssocItemDecider: reads Archetype at byte-offset 56 from the union's
+    # position in the DATA payload (4-byte LE u32); maps archetype → variant index.
+    # Variants: 0=Unused, 1=Light, 2=BoundItem, 3=Summon, 4=Hazd/Guide, 5=Cloak,
+    #           6=Race, 7=Ench, 8=Kywd, 9=Sthd(ValMod), 10=Dmgt, 11=Emot, 12=Flst
+    "wbMGEFAssocItemDecider": {
+        "kind": "union",  # full substitution — overrides name and variants too
+        "name": "Assoc. Item",
+        "decider": {
+            "byte_offset": 56,
+            "width_bytes": 4,
+            "default_variant": 0,
+            "map": {
+                "0": 9, "1": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 0, "9": 0,
+                "11": 0, "12": 1, "17": 2, "18": 3, "20": 11, "21": 0, "25": 4,
+                "28": 0, "31": 0, "33": 0, "34": 8, "35": 5, "36": 6, "37": 0,
+                "39": 7, "40": 4, "45": 10, "46": 6, "47": 0, "48": 0, "49": 0,
+                "50": 12,
+            },
+        },
+        "variants": [
+            {"kind": "formid", "name": "Unused", "valid_refs": ["NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["LIGH", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["WEAP", "ARMO", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["NPC_", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["HAZD", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["SPEL", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["RACE", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["ENCH", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["KYWD", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["STHD", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["DMGT", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["EMOT", "NULL"]},
+            {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["FLST", "NULL"]},
+        ],
+    },
 }
 
 # Property index → name enums for wbObjectModPropertyToStr.
@@ -688,6 +771,17 @@ class Extractor:
                     return "wbPLACEHOLDER" + v
                 return v
             return expr
+        # wbXxx.Method(...) pattern — var reference with trailing method chain.
+        # Strip the method chain and resolve just the var part.
+        # e.g. wbCNDC.IncludeFlag(dfNoReport) → wbInteger(CNDC, ...)
+        bare_m = re.match(r"^(wb[A-Za-z0-9_]+)\.", expr)
+        if bare_m:
+            bare = bare_m.group(1)
+            if bare not in HARD_RAW_VARS and bare in self.vars:
+                v = self.vars[bare]
+                if v.startswith("("):
+                    return "wbPLACEHOLDER" + v
+                return v
         # wbFromVersion / wbBelowVersion
         for gate, key in (
             (r"wbFromVersion\s*\(\s*(\d+)\s*,\s*", "from_version"),
@@ -798,8 +892,8 @@ class Extractor:
                     child["below_version"] = int(m.group(1))
                 return child
 
-        # wbStruct / wbStructSK
-        for prefix in ("wbStructSK", "wbStruct"):
+        # wbStruct / wbStructSK / wbStructExSK (ExSK has extra leading [exclude] arg)
+        for prefix in ("wbStructExSK", "wbStructSK", "wbStruct"):
             if expr.startswith(prefix + "("):
                 return self._parse_struct(expr)
         if expr.startswith("wbRStruct") or expr.startswith("wbRStructSK"):
@@ -839,9 +933,9 @@ class Extractor:
         # wbVec3 / wbVec3PosRot — vec3 support
         if expr.startswith("wbVec3") and "(" in expr:
             return self._parse_vec3(expr)
-        # wbRUnion — rstruct-level polymorphic union; no decoder support → raw_fallback.
+        # wbRUnion — record-level polymorphic union; use PresentSignature decider.
         if expr.startswith("wbRUnion"):
-            return {"kind": "raw_fallback", "name": "Record Union", "reason": "wbRUnion not supported"}
+            return self._parse_runion(expr)
         # wbLenString — length-prefixed string (all uses in FO76 are inside VMAD).
         if expr.startswith("wbLenString"):
             return {"kind": "raw_fallback", "name": "Length String", "reason": "wbLenString not supported"}
@@ -865,12 +959,17 @@ class Extractor:
                 if p.strip().startswith("["):
                     fields_part = p
                     break
-        if sig_id(parts[0].strip()):
-            sig = parts[0].strip()
-            if len(parts) > 1 and parts[1].strip().startswith("'"):
-                name = unquote(parts[1])
-        elif parts[0].strip().startswith("'"):
-            name = unquote(parts[0])
+        # Determine sig/name: skip leading [bracket] args (SK sort keys, ExSK exclude keys).
+        # Then the first sig-like token is the sig, and the next quoted string is the name.
+        idx = 0
+        while idx < len(parts) and parts[idx].strip().startswith("[") and not sig_id(parts[idx].strip()):
+            idx += 1
+        if idx < len(parts) and sig_id(parts[idx].strip()):
+            sig = parts[idx].strip()
+            if idx + 1 < len(parts) and parts[idx + 1].strip().startswith("'"):
+                name = unquote(parts[idx + 1])
+        elif idx < len(parts) and parts[idx].strip().startswith("'"):
+            name = unquote(parts[idx])
         fb = fields_part.index("[")
         fe = find_matching_bracket(fields_part, fb)
         fields = self._parse_member_list(fields_part[fb + 1 : fe])
@@ -967,36 +1066,44 @@ class Extractor:
         decider_expr = parts[idx + 1]
         decider: dict
         if "wbFormVersionDecider" in decider_expr:
+            # wbFormVersionDecider([N, M, ...]) — multi-threshold array form (check first).
+            ma = re.search(r"wbFormVersionDecider\(\[([^\]]+)\]\)", decider_expr)
             # wbFormVersionDecider(N) — single threshold
             m = re.search(r"wbFormVersionDecider\((\d+)(?:\s*,\s*(\d+))?\)", decider_expr)
-            # wbFormVersionDecider([N, M, ...]) — multi-threshold array form
-            ma = re.search(r"wbFormVersionDecider\(\[([^\]]+)\]\)", decider_expr)
-            if m:
+            if ma:
+                # Multi-threshold: N thresholds → N+1 variants.
+                # Returns the index of the first threshold that is > form_version.
+                thresholds = [int(x.strip()) for x in ma.group(1).split(",") if x.strip()]
+                decider = {"form_version_thresholds": thresholds}
+            elif m:
                 decider = {
                     "form_version": {
                         "min": int(m.group(1)),
                         "max": int(m.group(2)) if m.group(2) else None,
                     }
                 }
-            elif ma:
-                # Multi-threshold array form creates N+1 variants for N thresholds.
-                # This cannot be expressed as a binary form_version union, so we
-                # emit raw_fallback (there are only 2 occurrences in FO76.pas).
-                decider = {"raw": True}
             else:
                 decider = {"raw": True}
         elif "Decider" in decider_expr or "wbCondition" in decider_expr:
-            # Check for known closure deciders we can substitute with a fixed type.
+            # Check for known closure deciders.
+            # Entries with "kind" key → full union substitution (replace everything).
+            # Entries without "kind" key → decider-only substitution (keep Pascal variants).
+            decider = {"raw": True}
             for known_fn, subst in KNOWN_UNION_DECIDERS.items():
                 if known_fn in decider_expr:
-                    out = dict(subst)
-                    # Use the name from the union call when the substitution has None.
-                    if out.get("name") is None:
-                        out["name"] = name or sig or "union"
-                    if sig and "sig" not in out:
-                        out["sig"] = sig
-                    return out
-            decider = {"raw": True}
+                    if "kind" in subst:
+                        # Full substitution: return the pre-built union dict as-is.
+                        out = dict(subst)
+                        if out.get("name") is None:
+                            out["name"] = name or sig or "union"
+                        if sig and "sig" not in out:
+                            out["sig"] = sig
+                        return out
+                    else:
+                        # Decider-only: use the subst dict AS the decider,
+                        # and fall through to parse variants from Pascal.
+                        decider = dict(subst)
+                    break
         else:
             decider = {"raw": True}
         if decider.get("raw"):
@@ -1207,12 +1314,112 @@ class Extractor:
     def _parse_sig_ref(self, sig: str) -> dict:
         return {"kind": "unknown", "sig": sig, "name": sig}
 
+    def _extract_anchor_sig(self, member: dict | None) -> str | None:
+        """Return the first 4-char subrecord signature found in a parsed member dict.
+
+        Used by `_parse_runion` to determine the discriminant signature for each
+        wbRUnion variant (PresentSignature decider).
+        """
+        if member is None:
+            return None
+        sig = member.get("sig")
+        if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
+            return sig
+        # Recurse into rstruct/struct members, union variants, and array elements.
+        for child in member.get("members", []):
+            s = self._extract_anchor_sig(child)
+            if s:
+                return s
+        for child in member.get("fields", []):
+            s = self._extract_anchor_sig(child)
+            if s:
+                return s
+        for child in member.get("variants", []):
+            s = self._extract_anchor_sig(child)
+            if s:
+                return s
+        elem = member.get("element")
+        if elem:
+            s = self._extract_anchor_sig(elem)
+            if s:
+                return s
+        return None
+
+    def _parse_runion(self, expr: str) -> dict:
+        """Parse a wbRUnion(...) expression into a union MemberDef.
+
+        Signature forms:
+            wbRUnion('Name', [variants])                  — no decider (PresentSignature)
+            wbRUnion('Name', wbSomeDecider, [variants])   — explicit decider (check KNOWN_UNION_DECIDERS)
+
+        For the no-decider form, the anchor signature of each variant is determined
+        by the first sig-bearing member it contains, and a PresentSignature decider
+        is emitted.  For the explicit-decider form, KNOWN_UNION_DECIDERS is checked;
+        if not found, a raw_fallback is returned.
+        """
+        lparen = expr.index("(")
+        rparen = find_matching_paren(expr, lparen)
+        parts = split_top_level(expr[lparen + 1 : rparen])
+        if not parts:
+            return {"kind": "raw_fallback", "name": "Record Union", "reason": "wbRUnion empty args"}
+
+        name = unquote(parts[0]) if parts[0].strip().startswith("'") else parts[0].strip()
+
+        # Detect whether parts[1] is an explicit decider or the variant list.
+        # The variant list is a '[...]' expression; a decider is a wb* identifier/call.
+        decider: dict | None = None
+        variants_idx = 1
+        if len(parts) > 2 and not parts[1].strip().startswith("["):
+            decider_expr = parts[1].strip()
+            variants_idx = 2
+            for known_fn, subst in KNOWN_UNION_DECIDERS.items():
+                if known_fn in decider_expr:
+                    if "kind" in subst:
+                        # Full substitution includes its own variant list; but for
+                        # wbRUnion we still want the Pascal variants.  Extract only
+                        # the decider sub-dict.
+                        decider = dict(subst.get("decider", {})) or dict(subst)
+                    else:
+                        # Decider-only substitution: use the subst dict as-is.
+                        decider = dict(subst)
+                    break
+            if decider is None:
+                return {
+                    "kind": "raw_fallback",
+                    "name": name or "Record Union",
+                    "reason": f"wbRUnion decider not recognized: {decider_expr[:50]}",
+                }
+
+        if variants_idx >= len(parts):
+            return {"kind": "raw_fallback", "name": name or "Record Union", "reason": "wbRUnion missing variants"}
+        variants_expr = parts[variants_idx]
+        if "[" not in variants_expr:
+            return {"kind": "raw_fallback", "name": name or "Record Union", "reason": "wbRUnion variants not a list"}
+        vb = variants_expr.index("[")
+        ve = find_matching_bracket(variants_expr, vb)
+        variants = self._parse_member_list(variants_expr[vb + 1 : ve])
+        if not variants:
+            return {"kind": "raw_fallback", "name": name or "Record Union", "reason": "wbRUnion no variants parsed"}
+
+        if decider is None:
+            # Build PresentSignature from the first sig-bearing member of each variant.
+            anchors = [self._extract_anchor_sig(v) or "" for v in variants]
+            decider = {"present_signature": anchors}
+
+        return {"kind": "union", "name": name or "Record Union", "decider": decider, "variants": variants}
+
     def _parse_member_list(self, text: str) -> list[dict]:
         items = split_top_level(text)
         out: list[dict] = []
         for item in items:
             item = item.strip()
             if not item or item.startswith("//"):
+                continue
+            # Strip leading Pascal block-comment labels like {0}, {1}, {abc}
+            # that xEdit uses to annotate union variant indices. They must be
+            # removed before the wb* prefix check below can match.
+            item = re.sub(r"^\{[^}]*\}\s*", "", item).strip()
+            if not item:
                 continue
             m = re.match(r"^(wb[A-Za-z0-9_]+)\s*$", item)
             if m and m.group(1) in self.vars:

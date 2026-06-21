@@ -157,6 +157,7 @@ impl Index {
                 resolve_depth: ResolveDepth::None,
                 resolver: None,
                 outer_struct: None,
+                record_edid_char: None,
             };
             let fields = decode_record(&ctx, &rec.header.signature, &rec.subrecords);
             let mut refs = Vec::new();

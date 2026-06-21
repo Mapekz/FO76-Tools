@@ -207,11 +207,25 @@ pub enum ArrayCount {
     CountPrefix,
 }
 
+/// Default `width_bytes` value (1) for `ByteAtOffset`.
+fn default_width_bytes() -> usize {
+    1
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum UnionDecider {
+    /// Binary form-version decider: variant 1 when `form_version` is in `[min, max]`,
+    /// variant 0 otherwise. Matches Pascal `wbFormVersionDecider(N)`.
     FormVersion {
         form_version: FormVersionRange,
+    },
+    /// Multi-threshold form-version decider: `wbFormVersionDecider([N1, N2, ...])`.
+    /// Returns the index of the first threshold where `form_version < threshold`.
+    /// If `form_version >= all thresholds`, returns `thresholds.len()` (last variant).
+    /// N thresholds produce N+1 variants (indices 0..=N).
+    FormVersionThresholds {
+        form_version_thresholds: Vec<u16>,
     },
     FromVersion {
         from_version: u16,
@@ -219,21 +233,46 @@ pub enum UnionDecider {
     BelowVersion {
         below_version: u16,
     },
-    /// Select a variant by reading a single byte at a fixed offset in the payload.
-    /// `byte_offset` is the discriminating field (unique to this variant).
+    /// Select a variant by reading bytes at a fixed offset in the payload.
+    /// `byte_offset` is relative to the union's position in the enclosing struct data.
+    /// `width_bytes` controls how many bytes are read (1, 2, or 4, little-endian); default 1.
+    /// `map` keys are the decimal string representation of the raw integer value.
     ByteAtOffset {
         byte_offset: usize,
         #[serde(default)]
         default_variant: Option<usize>,
-        map: HashMap<u8, usize>,
+        map: HashMap<String, usize>,
+        #[serde(default = "default_width_bytes")]
+        width_bytes: usize,
     },
-    /// Select a variant by looking up an already-decoded sibling field's integer value.
-    /// `field` is the discriminating field (unique to this variant).
+    /// Select a variant by looking up an already-decoded sibling field's value.
+    /// `field` supports dot-separated paths (e.g. `"Struct.Field"`).
+    /// `bits` is checked first: ordered `[mask, variant_index]` pairs; first match wins.
+    /// `map` is checked next: string key of the integer/enum value → variant index.
     FieldValue {
         field: String,
         #[serde(default)]
         default_variant: Option<usize>,
+        #[serde(default)]
         map: HashMap<String, usize>,
+        /// Ordered bitmask checks: `[[mask, variant_index], ...]`.
+        /// First entry where `(int_value & mask) != 0` wins; checked before `map`.
+        #[serde(default)]
+        bits: Vec<[u64; 2]>,
+    },
+    /// Select variant by the first character of the record's EditorID (EDID subrecord).
+    /// `edid_prefix` maps single-char strings to variant indices.
+    EdidPrefix {
+        edid_prefix: HashMap<String, usize>,
+        #[serde(default)]
+        edid_default: Option<usize>,
+    },
+    /// Select variant by which anchor subrecord is present in the stream.
+    /// `anchors[i]` is the subrecord signature that selects variant `i`.
+    /// The first variant whose anchor is present wins.
+    /// Used for `wbRUnion` (record-level polymorphic unions).
+    PresentSignature {
+        present_signature: Vec<String>,
     },
     Raw,
 }

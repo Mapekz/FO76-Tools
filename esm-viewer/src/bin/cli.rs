@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
 use fo76_esm_parser::{parse_form_id_input, Database};
+use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -85,6 +87,28 @@ enum Commands {
         #[arg(long)]
         pretty: bool,
     },
+    /// Audit schema coverage: count raw_fallback / unmapped / unresolved markers per record type.
+    ///
+    /// Decodes every record in the ESM (or a sampled subset) and tallies the internal
+    /// coverage markers emitted when fields have no schema or use raw_fallback deciders.
+    /// Output is sorted by total markers descending (worst offenders first).
+    ///
+    /// Exit code is non-zero when --gate is specified and any raw_fallback markers are found.
+    Coverage {
+        file: PathBuf,
+        /// Audit only this record type (4-char signature, e.g. PACK).
+        #[arg(long = "type")]
+        record_type: Option<String>,
+        /// Max records to decode per type. 0 = all records (default).
+        #[arg(long, default_value_t = 0)]
+        sample: usize,
+        /// Emit results as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Exit non-zero if any raw_fallback markers remain.
+        #[arg(long)]
+        gate: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -138,6 +162,13 @@ fn main() -> anyhow::Result<()> {
             limit,
             pretty,
         } => cmd_tree(&file, record_type.as_deref(), offset, limit, pretty),
+        Commands::Coverage {
+            file,
+            record_type,
+            sample,
+            json,
+            gate,
+        } => cmd_coverage(&file, record_type.as_deref(), sample, json, gate),
     }
 }
 
@@ -322,7 +353,6 @@ fn cmd_diff(
     pretty: bool,
 ) -> anyhow::Result<()> {
     use fo76_esm_parser::diff::diff_databases;
-    use std::collections::BTreeMap;
 
     let db_a = Database::open(file_a)?;
     let db_b = Database::open(file_b)?;
@@ -481,4 +511,192 @@ fn print_json(value: &serde_json::Value, pretty: bool) {
     } else {
         println!("{}", serde_json::to_string(value).unwrap());
     }
+}
+
+// ─── Coverage audit ──────────────────────────────────────────────────────────
+
+/// Counts of schema-coverage markers found while walking a decoded record.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+struct Markers {
+    /// Records with no schema definition at all (`_unknown_record: true`).
+    unknown_record: u64,
+    /// Objects emitted by a `raw_fallback` schema member (`_raw:true` + `reason` key).
+    raw_fallback: u64,
+    /// Total subrecord payloads left in `_unmapped` (consumed nothing, schema was incomplete).
+    unmapped: u64,
+    /// Unresolved LString IDs (`_unresolved: true`).
+    unresolved: u64,
+    /// Total records sampled.
+    records: u64,
+}
+
+impl Markers {
+    fn total(&self) -> u64 {
+        self.unknown_record + self.raw_fallback + self.unmapped + self.unresolved
+    }
+
+    fn add(&mut self, other: &Markers) {
+        self.unknown_record += other.unknown_record;
+        self.raw_fallback += other.raw_fallback;
+        self.unmapped += other.unmapped;
+        self.unresolved += other.unresolved;
+        self.records += other.records;
+    }
+}
+
+/// Recursively walk a decoded JSON value and accumulate coverage markers.
+fn count_markers(v: &Value, m: &mut Markers) {
+    match v {
+        Value::Object(obj) => {
+            // Top-level unknown record
+            if obj.get("_unknown_record") == Some(&Value::Bool(true)) {
+                m.unknown_record += 1;
+            }
+            // raw_fallback: has "_raw": true AND "reason": "..." (but NOT from _unmapped)
+            if obj.get("_raw") == Some(&Value::Bool(true)) && obj.contains_key("reason") {
+                m.raw_fallback += 1;
+            }
+            // _unresolved LString
+            if obj.get("_unresolved") == Some(&Value::Bool(true)) {
+                m.unresolved += 1;
+            }
+            // _unmapped: count the total raw subrecord entries within
+            if let Some(Value::Object(unmapped)) = obj.get("_unmapped") {
+                for subs in unmapped.values() {
+                    if let Value::Array(arr) = subs {
+                        m.unmapped += arr.len() as u64;
+                    }
+                }
+                // Don't recurse into _unmapped (it's raw hex, nothing to count there)
+            }
+            // Recurse into all other fields
+            for (key, child) in obj {
+                if key == "_unmapped" {
+                    continue; // already handled
+                }
+                count_markers(child, m);
+            }
+        }
+        Value::Array(arr) => {
+            for child in arr {
+                count_markers(child, m);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn cmd_coverage(
+    file: &PathBuf,
+    record_type: Option<&str>,
+    sample: usize,
+    as_json: bool,
+    gate: bool,
+) -> anyhow::Result<()> {
+    let db = Database::open(file)?;
+
+    // Collect all distinct record types from the index (sorted)
+    let mut all_sigs: Vec<String> = db
+        .index
+        .form_index
+        .values()
+        .map(|m| m.signature.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    all_sigs.sort();
+
+    // Apply --type filter
+    if let Some(rt) = record_type {
+        let rt_upper = rt.to_uppercase();
+        all_sigs.retain(|s| *s == rt_upper);
+        if all_sigs.is_empty() {
+            anyhow::bail!("no records of type '{}' found", rt);
+        }
+    }
+
+    // Per-type marker tallies
+    let mut by_type: BTreeMap<String, Markers> = BTreeMap::new();
+
+    for sig in &all_sigs {
+        let metas: Vec<fo76_esm_parser::reader::RecordMeta> = db
+            .index
+            .records_by_type(sig)
+            .into_iter()
+            .map(|(_, m)| m.clone())
+            .take(if sample == 0 { usize::MAX } else { sample })
+            .collect();
+
+        let mut type_markers = Markers::default();
+        for meta in &metas {
+            match db.record_at_meta(meta) {
+                Ok(result) => {
+                    type_markers.records += 1;
+                    let mut rec_markers = Markers::default();
+                    count_markers(&result.fields, &mut rec_markers);
+                    type_markers.add(&rec_markers);
+                }
+                Err(e) => {
+                    eprintln!("Warning: failed to decode {} record: {}", sig, e);
+                }
+            }
+        }
+        by_type.insert(sig.clone(), type_markers);
+    }
+
+    // Sort by total markers descending (worst first)
+    let mut rows: Vec<(&String, &Markers)> = by_type.iter().collect();
+    rows.sort_by(|a, b| b.1.total().cmp(&a.1.total()).then(a.0.cmp(b.0)));
+
+    // Totals
+    let totals = rows.iter().fold(Markers::default(), |mut acc, (_, m)| {
+        acc.add(m);
+        acc
+    });
+
+    if as_json {
+        let out = serde_json::json!({
+            "by_type": by_type,
+            "totals": totals,
+        });
+        print_json(&out, true);
+    } else {
+        // Human-readable table
+        println!(
+            "{:<6}  {:>10}  {:>12}  {:>8}  {:>10}  {:>8}",
+            "SIG", "records", "raw_fallback", "unmapped", "unresolved", "unknown"
+        );
+        println!("{}", "-".repeat(64));
+        for (sig, m) in &rows {
+            if m.total() > 0 || record_type.is_some() {
+                println!(
+                    "{:<6}  {:>10}  {:>12}  {:>8}  {:>10}  {:>8}",
+                    sig, m.records, m.raw_fallback, m.unmapped, m.unresolved, m.unknown_record
+                );
+            }
+        }
+        println!("{}", "-".repeat(64));
+        println!(
+            "{:<6}  {:>10}  {:>12}  {:>8}  {:>10}  {:>8}",
+            "TOTAL",
+            totals.records,
+            totals.raw_fallback,
+            totals.unmapped,
+            totals.unresolved,
+            totals.unknown_record
+        );
+        if totals.total() == 0 {
+            println!("\n✓ Zero coverage markers — all records fully decoded.");
+        }
+    }
+
+    if gate && totals.raw_fallback > 0 {
+        anyhow::bail!(
+            "gate check failed: {} raw_fallback marker(s) found across {} record types",
+            totals.raw_fallback,
+            rows.iter().filter(|(_, m)| m.raw_fallback > 0).count()
+        );
+    }
+
+    Ok(())
 }

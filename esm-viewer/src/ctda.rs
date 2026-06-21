@@ -19,10 +19,23 @@ const OPERATORS: [&str; 6] = [
 ];
 
 const RUN_ON: [&str; 17] = [
-    "Subject", "Target", "Reference", "Combat Target", "Linked Reference",
-    "Quest Alias", "Package Data", "Event Data", "Unknown 8", "Command Target",
-    "Event Camera Ref", "My Killer", "Active Players", "Potential Players",
-    "Player Teammates", "Target List", "Instance Owner",
+    "Subject",
+    "Target",
+    "Reference",
+    "Combat Target",
+    "Linked Reference",
+    "Quest Alias",
+    "Package Data",
+    "Event Data",
+    "Unknown 8",
+    "Command Target",
+    "Event Camera Ref",
+    "My Killer",
+    "Active Players",
+    "Potential Players",
+    "Player Teammates",
+    "Target List",
+    "Instance Owner",
 ];
 
 // Parameter classification:
@@ -452,7 +465,13 @@ const FUNCTIONS: &[(u32, &str, char, char, char)] = &[
     (738_u32, "GetActorGunState", 'N', 'N', 'N'),
     (739_u32, "GetVoiceLineLength", 'N', 'N', 'N'),
     (741_u32, "ObjectTemplateItem_HasKeyword", 'R', 'N', 'N'),
-    (742_u32, "ObjectTemplateItem_HasUniqueKeyword", 'R', 'N', 'N'),
+    (
+        742_u32,
+        "ObjectTemplateItem_HasUniqueKeyword",
+        'R',
+        'N',
+        'N',
+    ),
     (743_u32, "ObjectTemplateItem_GetLevel", 'N', 'N', 'N'),
     (744_u32, "MovementIdleMatches", 'I', 'I', 'N'),
     (745_u32, "GetActionData", 'N', 'N', 'N'),
@@ -572,7 +591,13 @@ const FUNCTIONS: &[(u32, &str, char, char, char)] = &[
     (880_u32, "CHAL_IsTargetWeaponThrown", 'N', 'N', 'N'),
     (881_u32, "CHAL_GetTargetWeaponDamageType", 'R', 'N', 'N'),
     (882_u32, "CHAL_DoesTargetWeaponHaveKeyword", 'R', 'N', 'N'),
-    (884_u32, "CHAL_IsTargetWorkshopRecipeInCategory", 'R', 'N', 'N'),
+    (
+        884_u32,
+        "CHAL_IsTargetWorkshopRecipeInCategory",
+        'R',
+        'N',
+        'N',
+    ),
     (885_u32, "GetLastFallDamage", 'N', 'N', 'N'),
     (886_u32, "IsPlayerInCamp", 'N', 'N', 'N'),
     (887_u32, "GetLastHitLethal", 'N', 'N', 'N'),
@@ -597,7 +622,13 @@ const FUNCTIONS: &[(u32, &str, char, char, char)] = &[
     (906_u32, "HasCompletedChallenge", 'R', 'N', 'N'),
     (907_u32, "GetNumElementsInRefCollection", 'I', 'N', 'N'),
     (908_u32, "IsTeamLeader", 'N', 'N', 'N'),
-    (909_u32, "ActorPackageHasRandomConversationsFlagOn", 'N', 'N', 'N'),
+    (
+        909_u32,
+        "ActorPackageHasRandomConversationsFlagOn",
+        'N',
+        'N',
+        'N',
+    ),
     (910_u32, "IsInInstancedLocation", 'N', 'N', 'N'),
     (911_u32, "IsInstanceOwner", 'R', 'N', 'N'),
     (914_u32, "IsQuestTracked", 'R', 'N', 'N'),
@@ -623,7 +654,13 @@ const FUNCTIONS: &[(u32, &str, char, char, char)] = &[
     (934_u32, "IsLastDamageFromVATS", 'N', 'N', 'N'),
     (935_u32, "IsLastDamageCripplingLimb", 'N', 'N', 'N'),
     (936_u32, "GetCurrentCAMPWeatherHasKeyword", 'R', 'N', 'N'),
-    (937_u32, "GetCurrentWeatherOverrideHasKeyword", 'R', 'N', 'N'),
+    (
+        937_u32,
+        "GetCurrentWeatherOverrideHasKeyword",
+        'R',
+        'N',
+        'N',
+    ),
     (938_u32, "HasActiveChallenge", 'R', 'N', 'N'),
     (5000_u32, "IsInAirOrFloating", 'N', 'N', 'N'),
     (5001_u32, "GetIsForm", 'R', 'N', 'N'),
@@ -656,7 +693,13 @@ const FUNCTIONS: &[(u32, &str, char, char, char)] = &[
     (10005_u32, "IsExpeditionInProgress", 'R', 'N', 'N'),
     (10006_u32, "AbandonExpedition", 'N', 'N', 'N'),
     (10007_u32, "StartExpedition", 'R', 'N', 'N'),
-    (10008_u32, "GetExpeditionsInstanceNumOptbjectivesCompleted", 'N', 'N', 'N'),
+    (
+        10008_u32,
+        "GetExpeditionsInstanceNumOptbjectivesCompleted",
+        'N',
+        'N',
+        'N',
+    ),
     (10009_u32, "ResetExpedition", 'R', 'N', 'N'),
     (10010_u32, "StartNewExpedition", 'R', 'N', 'N'),
     (10011_u32, "ResumeExpedition", 'R', 'N', 'N'),
@@ -677,13 +720,10 @@ const FUNCTIONS: &[(u32, &str, char, char, char)] = &[
 ];
 
 fn lookup(idx: u32) -> Option<(/* name */ &'static str, char, char, char)> {
-    FUNCTIONS
-        .binary_search_by_key(&idx, |e| e.0)
-        .ok()
-        .map(|i| {
-            let e = &FUNCTIONS[i];
-            (e.1, e.2, e.3, e.4)
-        })
+    FUNCTIONS.binary_search_by_key(&idx, |e| e.0).ok().map(|i| {
+        let e = &FUNCTIONS[i];
+        (e.1, e.2, e.3, e.4)
+    })
 }
 
 fn decode_param(bytes: &[u8; 4], class: char, ctx: &DecodeContext<'_>) -> Value {
@@ -770,4 +810,3 @@ pub fn decode_ctda(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
 
     Value::Object(out)
 }
-

@@ -56,6 +56,9 @@ pub struct DecodeContext<'a> {
     /// elements so that `FieldValue` deciders in element structs can reach parent
     /// fields (e.g. "Form Type" for OMOD property enum selection).
     pub outer_struct: Option<Map<String, Value>>,
+    /// First character of the current record's EditorID subrecord.
+    /// Pre-scanned in `decode_record` for use by `EdidPrefix` union deciders.
+    pub record_edid_char: Option<char>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -70,6 +73,7 @@ impl<'a> DecodeContext<'a> {
             resolve_depth: self.resolve_depth,
             resolver: self.resolver,
             outer_struct: Some(outer),
+            record_edid_char: self.record_edid_char,
         }
     }
 }
@@ -129,6 +133,32 @@ pub fn decode_record(
     signature: &str,
     subrecords: &[OwnedSubrecord],
 ) -> Value {
+    // Pre-scan the EDID subrecord for EdidPrefix union deciders (e.g. GMST value type).
+    let edid_char = subrecords
+        .iter()
+        .find(|sr| sr.signature.as_str() == "EDID")
+        .and_then(|sr| std::str::from_utf8(&sr.data).ok())
+        .and_then(|s| s.trim_end_matches('\0').chars().next());
+
+    // Shadow ctx with an updated context that carries the EDID first char.
+    let ctx_with_edid;
+    let ctx: &DecodeContext<'_> = if edid_char != ctx.record_edid_char {
+        ctx_with_edid = DecodeContext {
+            record_edid_char: edid_char,
+            schema: ctx.schema,
+            form_version: ctx.form_version,
+            is_localized: ctx.is_localized,
+            localization: ctx.localization,
+            curves: ctx.curves,
+            resolve_depth: ctx.resolve_depth,
+            resolver: ctx.resolver,
+            outer_struct: None,
+        };
+        &ctx_with_edid
+    } else {
+        ctx
+    };
+
     let mut out = Map::new();
     let record_def = ctx.schema.record(signature);
 
@@ -194,10 +224,7 @@ fn decode_member(
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sig == "CTDA" {
-                        out.insert(
-                            name.clone(),
-                            crate::ctda::decode_ctda(&sr.data, ctx),
-                        );
+                        out.insert(name.clone(), crate::ctda::decode_ctda(&sr.data, ctx));
                     } else {
                         decode_struct_fields(ctx, name, fields, &sr.data, out);
                     }
@@ -443,23 +470,67 @@ fn decode_member(
                     field,
                     map,
                     default_variant,
-                } => field_value_key(out, field)
-                    .or_else(|| {
-                        ctx.outer_struct
-                            .as_ref()
-                            .and_then(|o| field_value_key(o, field))
-                    })
-                    .and_then(|k| map.get(&k).copied())
-                    .or(*default_variant),
+                    bits,
+                } => {
+                    // Bitmask check first (for flag-field deciders like wbBOOKTeachesDecider).
+                    let by_bits = if !bits.is_empty() {
+                        let raw = field_int_value(out, field).or_else(|| {
+                            ctx.outer_struct
+                                .as_ref()
+                                .and_then(|o| field_int_value(o, field))
+                        });
+                        raw.and_then(|v| {
+                            bits.iter().find_map(|[mask, var_idx]| {
+                                if v & mask != 0 {
+                                    Some(*var_idx as usize)
+                                } else {
+                                    None
+                                }
+                            })
+                        })
+                    } else {
+                        None
+                    };
+                    by_bits
+                        .or_else(|| {
+                            field_value_key(out, field)
+                                .or_else(|| {
+                                    ctx.outer_struct
+                                        .as_ref()
+                                        .and_then(|o| field_value_key(o, field))
+                                })
+                                .and_then(|k| map.get(&k).copied())
+                        })
+                        .or(*default_variant)
+                }
                 UnionDecider::ByteAtOffset {
                     byte_offset,
                     map,
                     default_variant,
+                    width_bytes,
                 } => effective_payload
-                    .and_then(|p| p.get(*byte_offset).copied())
-                    .and_then(|b| map.get(&b).copied())
+                    .and_then(|p| read_le_uint(p, *byte_offset, *width_bytes))
+                    .and_then(|b| map.get(&b.to_string()).copied())
                     .or(*default_variant),
-                _ => choose_union_variant(ctx.form_version, decider, variants.len()),
+                UnionDecider::PresentSignature { present_signature } => {
+                    // wbRUnion: select the variant whose anchor subrecord is present.
+                    present_signature
+                        .iter()
+                        .enumerate()
+                        .find_map(|(i, anchor)| {
+                            if by_sig.contains_key(anchor.as_str()) {
+                                Some(i)
+                            } else {
+                                None
+                            }
+                        })
+                }
+                _ => choose_union_variant(
+                    ctx.form_version,
+                    ctx.record_edid_char,
+                    decider,
+                    variants.len(),
+                ),
             };
             if let Some(idx) = chosen {
                 if let Some(variant) = variants.get(idx) {
@@ -624,24 +695,53 @@ fn decode_struct_fields(
                         byte_offset,
                         map,
                         default_variant,
-                    } => data
-                        .get(pos + byte_offset)
-                        .copied()
-                        .and_then(|b| map.get(&b).copied())
+                        width_bytes,
+                    } => read_le_uint(data, pos + byte_offset, *width_bytes)
+                        .and_then(|b| map.get(&b.to_string()).copied())
                         .or(*default_variant),
                     UnionDecider::FieldValue {
                         field,
                         map,
                         default_variant,
-                    } => field_value_key(&struct_out, field)
-                        .or_else(|| {
-                            ctx.outer_struct
-                                .as_ref()
-                                .and_then(|o| field_value_key(o, field))
-                        })
-                        .and_then(|k| map.get(&k).copied())
-                        .or(*default_variant),
-                    _ => choose_union_variant(ctx.form_version, decider, variants.len()),
+                        bits,
+                    } => {
+                        // Bitmask check first.
+                        let by_bits = if !bits.is_empty() {
+                            let raw = field_int_value(&struct_out, field).or_else(|| {
+                                ctx.outer_struct
+                                    .as_ref()
+                                    .and_then(|o| field_int_value(o, field))
+                            });
+                            raw.and_then(|v| {
+                                bits.iter().find_map(|[mask, var_idx]| {
+                                    if v & mask != 0 {
+                                        Some(*var_idx as usize)
+                                    } else {
+                                        None
+                                    }
+                                })
+                            })
+                        } else {
+                            None
+                        };
+                        by_bits
+                            .or_else(|| {
+                                field_value_key(&struct_out, field)
+                                    .or_else(|| {
+                                        ctx.outer_struct
+                                            .as_ref()
+                                            .and_then(|o| field_value_key(o, field))
+                                    })
+                                    .and_then(|k| map.get(&k).copied())
+                            })
+                            .or(*default_variant)
+                    }
+                    _ => choose_union_variant(
+                        ctx.form_version,
+                        ctx.record_edid_char,
+                        decider,
+                        variants.len(),
+                    ),
                 };
                 if let Some(idx) = chosen {
                     if let Some(variant) = variants.get(idx) {
@@ -673,20 +773,17 @@ fn decode_struct_fields(
                 let n: usize = match count {
                     Some(ArrayCount::CountPrefix) => {
                         if pos + 4 <= data.len() {
-                            let n = i32::from_le_bytes(
-                                data[pos..pos + 4].try_into().unwrap(),
-                            )
-                            .max(0) as usize;
+                            let n = i32::from_le_bytes(data[pos..pos + 4].try_into().unwrap())
+                                .max(0) as usize;
                             pos += 4;
                             n
                         } else {
                             0
                         }
                     }
-                    Some(ArrayCount::CountPath(path)) => struct_out
-                        .get(path)
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize,
+                    Some(ArrayCount::CountPath(path)) => {
+                        struct_out.get(path).and_then(|v| v.as_u64()).unwrap_or(0) as usize
+                    }
                     Some(ArrayCount::Fixed(n)) => *n,
                     _ => 0,
                 };
@@ -767,7 +864,12 @@ fn field_byte_size(ctx: &DecodeContext<'_>, field: &FieldDef) -> Option<usize> {
                 }
             }
             _ => {
-                let idx = choose_union_variant(ctx.form_version, decider, variants.len())?;
+                let idx = choose_union_variant(
+                    ctx.form_version,
+                    ctx.record_edid_char,
+                    decider,
+                    variants.len(),
+                )?;
                 variants.get(idx).and_then(|v| field_byte_size(ctx, v))
             }
         },
@@ -828,16 +930,45 @@ fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
     true
 }
 
-fn choose_union_variant(form_version: u16, decider: &UnionDecider, n: usize) -> Option<usize> {
+fn choose_union_variant(
+    form_version: u16,
+    record_edid: Option<char>,
+    decider: &UnionDecider,
+    n: usize,
+) -> Option<usize> {
     match decider {
         UnionDecider::FormVersion {
             form_version: range,
         } => {
+            // Pascal semantics (wbFormVersionDecider):
+            //   form_version IN [min, max] → variant 1  (new/larger struct)
+            //   form_version OUT of range  → variant 0  (old/smaller struct)
+            // This is the OPPOSITE of what the name "FormVersion" might suggest.
             if form_version >= range.min && range.max.is_none_or(|m| form_version <= m) {
-                Some(0)
-            } else {
                 Some(1.min(n.saturating_sub(1)))
+            } else {
+                Some(0)
             }
+        }
+        UnionDecider::FormVersionThresholds {
+            form_version_thresholds,
+        } => {
+            // Return the index of the first threshold that is > form_version.
+            // If all thresholds are ≤ form_version, return thresholds.len() (last variant).
+            let idx = form_version_thresholds
+                .iter()
+                .position(|&t| form_version < t)
+                .unwrap_or(form_version_thresholds.len());
+            Some(idx.min(n.saturating_sub(1)))
+        }
+        UnionDecider::EdidPrefix {
+            edid_prefix,
+            edid_default,
+        } => {
+            let variant = record_edid
+                .and_then(|c| edid_prefix.get(&c.to_string()).copied())
+                .or(*edid_default);
+            variant.map(|v| v.min(n.saturating_sub(1)))
         }
         UnionDecider::FromVersion { from_version } => {
             if form_version >= *from_version {
@@ -853,9 +984,59 @@ fn choose_union_variant(form_version: u16, decider: &UnionDecider, n: usize) -> 
                 None
             }
         }
-        // ByteAtOffset and FieldValue are handled by the callers before reaching here
-        UnionDecider::ByteAtOffset { .. } | UnionDecider::FieldValue { .. } => None,
+        // ByteAtOffset, FieldValue, and PresentSignature are handled by the callers
+        UnionDecider::ByteAtOffset { .. }
+        | UnionDecider::FieldValue { .. }
+        | UnionDecider::PresentSignature { .. } => None,
         UnionDecider::Raw => None,
+    }
+}
+
+/// Read `width` bytes starting at `offset` in `data` as a little-endian unsigned integer.
+/// Returns None if there isn't enough data.
+fn read_le_uint(data: &[u8], offset: usize, width: usize) -> Option<u64> {
+    let end = offset.checked_add(width)?;
+    let bytes = data.get(offset..end)?;
+    let v = match width {
+        1 => bytes[0] as u64,
+        2 => u16::from_le_bytes(bytes.try_into().ok()?) as u64,
+        4 => u32::from_le_bytes(bytes.try_into().ok()?) as u64,
+        8 => u64::from_le_bytes(bytes.try_into().ok()?),
+        _ => return None,
+    };
+    Some(v)
+}
+
+/// Resolve a field's raw integer value from an already-decoded output map.
+///
+/// Handles plain numbers, enum objects (`{"value": N, "name": "..."}`) and
+/// flags objects (`{"value": "0x...", "flags": [...]}`).
+fn field_int_value(out: &Map<String, Value>, field: &str) -> Option<u64> {
+    let val = if let Some((parent, child)) = field.split_once('.') {
+        out.get(parent)
+            .and_then(|v| v.as_object())
+            .and_then(|o| o.get(child))?
+    } else {
+        out.get(field)?
+    };
+    match val {
+        Value::Number(n) => n.as_u64(),
+        Value::String(s) => parse_uint_str(s),
+        Value::Object(o) => o.get("value").and_then(|v| match v {
+            Value::Number(n) => n.as_u64(),
+            Value::String(s) => parse_uint_str(s),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+/// Parse a decimal or `0x`-prefixed hexadecimal string to u64.
+fn parse_uint_str(s: &str) -> Option<u64> {
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        s.parse::<u64>().ok()
     }
 }
 
