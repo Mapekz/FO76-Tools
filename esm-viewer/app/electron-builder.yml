@@ -1,0 +1,18 @@
+appId: com.fo76.esm-browser
+productName: FO76 ESM Browser
+directories:
+  output: dist
+files:
+  - out/**/*
+  - node_modules/**/*
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/@fo76/esm-napi/**"
+npmRebuild: false
+linux:
+  target: AppImage
+mac:
+  target: dmg
+win:
+  target: nsis
