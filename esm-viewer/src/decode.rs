@@ -237,12 +237,13 @@ fn decode_member(
         } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
-                    let s = if let Some(n) = sized {
-                        String::from_utf8_lossy(&sr.data[..sr.data.len().min(*n as usize)])
-                            .trim_end_matches('\0')
-                            .to_string()
-                    } else {
-                        read_zstring(&sr.data)
+                    let s = match sized {
+                        Some(n) if *n > 0 => {
+                            String::from_utf8_lossy(&sr.data[..sr.data.len().min(*n as usize)])
+                                .trim_end_matches('\0')
+                                .to_string()
+                        }
+                        _ => read_zstring(&sr.data),
                     };
                     out.insert(name.clone(), json!(s));
                 }
@@ -366,9 +367,22 @@ fn decode_member(
                 out.insert(name.clone(), Value::Object(group));
             }
         }
-        MemberDef::RArray { name, element } => {
+        MemberDef::RArray {
+            name,
+            element,
+            stop_before,
+        } => {
             let mut items = Vec::new();
             loop {
+                // If stop_before is set, halt when a boundary sig precedes
+                // the element's anchor in document order.
+                if !stop_before.is_empty() {
+                    if let Some(anchor) = anchor_sig(element) {
+                        if stop_before_check(by_sig, anchor, stop_before) {
+                            break;
+                        }
+                    }
+                }
                 let before: usize = by_sig.values().map(|v| v.len()).sum();
                 let mut item = Map::new();
                 decode_member(ctx, element, &mut item, by_sig, None);
@@ -560,22 +574,26 @@ fn decode_struct_fields(
                 }
             }
             MemberDef::String { name, sized, .. } => {
-                if let Some(n) = sized {
-                    let end = (pos + *n as usize).min(data.len());
-                    let s = String::from_utf8_lossy(&data[pos..end])
-                        .trim_end_matches('\0')
-                        .to_string();
-                    struct_out.insert(name.clone(), json!(s));
-                    pos = end;
-                } else {
-                    let end = data[pos..]
-                        .iter()
-                        .position(|&b| b == 0)
-                        .map(|i| pos + i)
-                        .unwrap_or(data.len());
-                    let s = String::from_utf8_lossy(&data[pos..end]).to_string();
-                    struct_out.insert(name.clone(), json!(s));
-                    pos = if end < data.len() { end + 1 } else { end };
+                match sized {
+                    Some(n) if *n > 0 => {
+                        let end = (pos + *n as usize).min(data.len());
+                        let s = String::from_utf8_lossy(&data[pos..end])
+                            .trim_end_matches('\0')
+                            .to_string();
+                        struct_out.insert(name.clone(), json!(s));
+                        pos = end;
+                    }
+                    _ => {
+                        // None or sized=0 both mean null-terminated.
+                        let end = data[pos..]
+                            .iter()
+                            .position(|&b| b == 0)
+                            .map(|i| pos + i)
+                            .unwrap_or(data.len());
+                        let s = String::from_utf8_lossy(&data[pos..end]).to_string();
+                        struct_out.insert(name.clone(), json!(s));
+                        pos = if end < data.len() { end + 1 } else { end };
+                    }
                 }
             }
             MemberDef::Bytes { name, len, .. } => {
@@ -938,6 +956,49 @@ fn take_first<'a>(
         } else {
             Some(v.remove(0))
         }
+    })
+}
+
+/// Returns the first sig-bearing member's signature for `member`, if any.
+/// Used by the `stop_before` RArray check to identify each element's anchor.
+fn anchor_sig(member: &MemberDef) -> Option<&str> {
+    match member {
+        MemberDef::RStruct { members, .. } => members.iter().find_map(anchor_sig),
+        MemberDef::Struct { sig, .. }
+        | MemberDef::Integer { sig, .. }
+        | MemberDef::Float { sig, .. }
+        | MemberDef::String { sig, .. }
+        | MemberDef::LString { sig, .. }
+        | MemberDef::FormId { sig, .. }
+        | MemberDef::Bytes { sig, .. }
+        | MemberDef::ByteRgba { sig, .. }
+        | MemberDef::Vec3 { sig, .. }
+        | MemberDef::Empty { sig, .. }
+        | MemberDef::Unknown { sig, .. }
+        | MemberDef::Union { sig, .. }
+        | MemberDef::Vmad { sig, .. }
+        | MemberDef::RawFallback { sig, .. } => sig.as_deref(),
+        _ => None,
+    }
+}
+
+/// Returns `true` when at least one `stop_before` sig has a lower `doc_index`
+/// than the next occurrence of `anchor_sig` in `by_sig`. When this is true,
+/// the calling RArray should halt iteration.
+fn stop_before_check(
+    by_sig: &HashMap<String, Vec<&OwnedSubrecord>>,
+    anchor: &str,
+    stop_before: &[String],
+) -> bool {
+    let anchor_idx = match by_sig.get(anchor).and_then(|v| v.first()) {
+        Some(sr) => sr.doc_index,
+        None => return true, // nothing left to consume
+    };
+    stop_before.iter().any(|sig| {
+        by_sig
+            .get(sig.as_str())
+            .and_then(|v| v.first())
+            .is_some_and(|sr| sr.doc_index < anchor_idx)
     })
 }
 

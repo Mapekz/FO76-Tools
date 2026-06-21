@@ -69,6 +69,10 @@ pub struct RecordHeaderInfo {
 pub struct OwnedSubrecord {
     pub signature: Signature,
     pub data: Vec<u8>,
+    /// Position of this subrecord within its parent record's subrecord list
+    /// (0-based). Used by the decoder to resolve cross-signature ordering
+    /// when `stop_before` is set on an `rarray` schema member.
+    pub doc_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -277,9 +281,11 @@ where
 pub fn parse_subrecords_owned(data: &[u8]) -> anyhow::Result<Vec<OwnedSubrecord>> {
     parse_subrecords(data).map(|subs| {
         subs.into_iter()
-            .map(|s| OwnedSubrecord {
+            .enumerate()
+            .map(|(doc_index, s)| OwnedSubrecord {
                 signature: s.signature,
                 data: s.data.to_vec(),
+                doc_index,
             })
             .collect()
     })

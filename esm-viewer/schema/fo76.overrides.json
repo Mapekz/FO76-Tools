@@ -38,107 +38,6 @@
           "sig": "ICON"
         },
         {
-          "kind": "rarray",
-          "name": "Conditions",
-          "element": {
-            "kind": "rstruct",
-            "name": "Condition",
-            "members": [
-              {
-                "kind": "struct",
-                "name": "Condition Data",
-                "fields": [
-                  {
-                    "kind": "integer",
-                    "name": "Type",
-                    "width": "u8",
-                    "signed": false
-                  },
-                  {
-                    "kind": "unused",
-                    "bytes": 3
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "Comparison Value",
-                    "len": 4
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Function",
-                    "width": "u16",
-                    "signed": false
-                  },
-                  {
-                    "kind": "unused",
-                    "bytes": 2
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "Parameter #1",
-                    "len": 4
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "Parameter #2",
-                    "len": 4
-                  },
-                  {
-                    "kind": "integer",
-                    "name": "Run On",
-                    "width": "u32",
-                    "signed": false,
-                    "format": {
-                      "enum": [
-                        "Subject",
-                        "Target",
-                        "Reference",
-                        "Combat Target",
-                        "Linked Reference",
-                        "Quest Alias",
-                        "Package Data",
-                        "Event Data",
-                        "Unknown 8",
-                        "Command Target",
-                        "Event Camera Ref",
-                        "My Killer",
-                        "Active Players",
-                        "Potential Players",
-                        "Player Teammates",
-                        "Target List",
-                        "Instance Owner"
-                      ]
-                    }
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "Reference",
-                    "len": 4
-                  },
-                  {
-                    "kind": "bytes",
-                    "name": "Parameter #3",
-                    "len": 4
-                  }
-                ],
-                "sig": "CTDA"
-              },
-              {
-                "kind": "string",
-                "name": "Parameter #1",
-                "keep_case": false,
-                "sig": "CIS1"
-              },
-              {
-                "kind": "string",
-                "name": "Parameter #2",
-                "keep_case": false,
-                "sig": "CIS2"
-              }
-            ]
-          }
-        },
-        {
           "kind": "struct",
           "name": "Data",
           "fields": [
@@ -541,6 +440,126 @@
                     ]
                   }
                 ]
+              },
+              {
+                "kind": "rarray",
+                "name": "Perk Conditions",
+                "stop_before": ["EPFT"],
+                "element": {
+                  "kind": "rstruct",
+                  "name": "Perk Condition",
+                  "members": [
+                    {
+                      "kind": "integer",
+                      "sig": "PRKC",
+                      "name": "Run On (Tab Index)",
+                      "width": "s8",
+                      "signed": true
+                    },
+                    {
+                      "kind": "rarray",
+                      "name": "Conditions",
+                      "stop_before": ["PRKC", "EPFT"],
+                      "element": {
+                        "kind": "rstruct",
+                        "name": "Condition",
+                        "members": [
+                          {
+                            "kind": "struct",
+                            "name": "Condition Data",
+                            "sig": "CTDA",
+                            "fields": [
+                              {
+                                "kind": "integer",
+                                "name": "Type",
+                                "width": "u8",
+                                "signed": false
+                              },
+                              {
+                                "kind": "unused",
+                                "bytes": 3
+                              },
+                              {
+                                "kind": "bytes",
+                                "name": "Comparison Value",
+                                "len": 4
+                              },
+                              {
+                                "kind": "integer",
+                                "name": "Function",
+                                "width": "u16",
+                                "signed": false
+                              },
+                              {
+                                "kind": "unused",
+                                "bytes": 2
+                              },
+                              {
+                                "kind": "bytes",
+                                "name": "Parameter #1",
+                                "len": 4
+                              },
+                              {
+                                "kind": "bytes",
+                                "name": "Parameter #2",
+                                "len": 4
+                              },
+                              {
+                                "kind": "integer",
+                                "name": "Run On",
+                                "width": "u32",
+                                "signed": false,
+                                "format": {
+                                  "enum": [
+                                    "Subject",
+                                    "Target",
+                                    "Reference",
+                                    "Combat Target",
+                                    "Linked Reference",
+                                    "Quest Alias",
+                                    "Package Data",
+                                    "Event Data",
+                                    "Unknown 8",
+                                    "Command Target",
+                                    "Event Camera Ref",
+                                    "My Killer",
+                                    "Active Players",
+                                    "Potential Players",
+                                    "Player Teammates",
+                                    "Target List",
+                                    "Instance Owner"
+                                  ]
+                                }
+                              },
+                              {
+                                "kind": "bytes",
+                                "name": "Reference",
+                                "len": 4
+                              },
+                              {
+                                "kind": "bytes",
+                                "name": "Parameter #3",
+                                "len": 4
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "string",
+                            "name": "Parameter #1",
+                            "keep_case": false,
+                            "sig": "CIS1"
+                          },
+                          {
+                            "kind": "string",
+                            "name": "Parameter #2",
+                            "keep_case": false,
+                            "sig": "CIS2"
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
               },
               {
                 "kind": "integer",

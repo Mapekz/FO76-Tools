@@ -37,6 +37,12 @@ pub enum MemberDef {
     RArray {
         name: String,
         element: Box<MemberDef>,
+        /// Halt iteration before consuming the next element when any listed
+        /// signature has a lower `doc_index` than the element's first sig-bearing
+        /// member. Used for PERK condition groups that are interleaved with
+        /// other subrecords (EPFT/PRKC) and cannot be bounded by count alone.
+        #[serde(default)]
+        stop_before: Vec<String>,
     },
     #[serde(rename = "array")]
     Array {
