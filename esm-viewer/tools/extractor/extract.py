@@ -13,17 +13,30 @@ TES5 = ROOT.parent / "TES5Edit"
 FO76_PAS = TES5 / "Core" / "wbDefinitionsFO76.pas"
 COMMON_PAS = TES5 / "Core" / "wbDefinitionsCommon.pas"
 OUT = ROOT / "schema" / "fo76.json"
+OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
+# All 168 record types present in SeventySix.esm (excluding CELL and WRLD).
+# Generated from: fo76 tree SeventySix.esm | jq '[.[].label.sig] | unique | sort | .[]'
 WHITELIST = [
-    "AMMO", "ARMO", "PROJ", "EXPL", "WEAP", "SPEL", "MGEF", "PERK",
-    "GLOB", "GMST", "KYWD", "FLST", "OTFT", "AVIF", "AMDL", "DMGT",
-    "DFOB", "MSWP", "RESO", "CNCY", "ENTM", "GMRW", "LGDI", "PCRD",
-    "PLYT", "COEN", "PEPF", "STHD", "WAVE", "CMPT",
-    "BOOK", "MISC", "CMPO", "COBJ", "LVLI", "LVLN", "INNR",
-    "CONT", "FLOR", "FURN", "FISH", "HAZD", "BPTD",
-    "ENCH", "FACT", "CHAL", "TERM", "CNDF",
-    "NPC_", "RACE", "QUST", "WTHR",
-    "CURV",
+    "AACT", "AAMD", "AAPD", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
+    "ANIO", "AORU", "ARMA", "ARMO", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
+    "AUVF", "AVIF", "AVTR", "BNDS", "BOOK", "BPTD", "CAMS", "CHAL", "CLAS",
+    "CLFM", "CLMT", "CMPO", "CMPT", "CNCY", "CNDF", "COBJ", "COEN", "COLL",
+    "CONT", "CPRD", "CPTH", "CSEN", "CSTY", "CURV", "DCGF", "DEBR", "DFOB",
+    "DIST", "DLVW", "DMGT", "DOBJ", "DOOR", "ECAT", "EFSH", "EMOT", "ENCH",
+    "ENTM", "EQUP", "EXPL", "FACT", "FISH", "FLOR", "FLST", "FSTP", "FSTS",
+    "FURN", "GCVR", "GDRY", "GLOB", "GMRW", "GMST", "GRAS", "HAZD", "HDPT",
+    "IDLE", "IDLM", "IMAD", "IMGS", "INGR", "INNR", "IPCT", "IPDS", "KEYM",
+    "KSSM", "KYWD", "LAYR", "LCRT", "LCTN", "LENS", "LGDI", "LGTM", "LIGH",
+    "LOUT", "LSCR", "LTEX", "LVLI", "LVLN", "LVLP", "LVPC", "MATO", "MATT",
+    "MDSP", "MESG", "MGEF", "MISC", "MOVT", "MSTT", "MSWP", "MUSC", "MUST",
+    "NAVI", "NOCM", "NOTE", "NPC_", "OMOD", "OTFT", "OVIS", "PACH", "PACK",
+    "PCRD", "PEPF", "PERK", "PKIN", "PLYT", "PMFT", "PPAK", "PROJ", "QMDL",
+    "QUST", "RACE", "REGN", "RELA", "RESO", "REVB", "RFCT", "RFGP", "SCCO",
+    "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM",
+    "SOUN", "SPEL", "SPGD", "STAG", "STAT", "STHD", "STMP", "STND", "TACT",
+    "TEPF", "TERM", "TRAP", "TREE", "TRNS", "TXST", "UTIL", "VOLI", "VTYP",
+    "WATR", "WAVE", "WEAP", "WSPR", "WTHR", "ZOOM",
 ]
 
 # Closure decider names that we can substitute with a known fixed type.
@@ -39,20 +52,12 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
     "wbRecordSizeDecider": {"kind": "bytes", "name": None, "len": None},
 }
 
-# Vars that use runtime Pascal deciders — emit raw fallback at subrecord level.
+# Vars that use runtime Pascal deciders we cannot model — emit raw fallback.
+# VMAD, conditions, effects, and object templates are REMOVED from this list
+# because they are now modeled via injected helpers or the vmad decoder.
 HARD_RAW_VARS = {
-    "wbConditions",
-    "wbEffectsReq",
-    "wbEffect",
     "wbPerkEffect",
     "wbPERKData",
-    "wbVMAD",
-    "wbVMADFragmentedPERK",
-    "wbVMADFragmentedPACK",
-    "wbVMADFragmentedQUST",
-    "wbVMADFragmentedSCEN",
-    "wbVMADFragmentedINFO",
-    "wbObjectTemplate",
     # wbMagicEffectSounds is modeled via _inject_builtin_helpers below.
 }
 
@@ -93,6 +98,16 @@ def find_matching_paren(s: str, start: int) -> int:
             while i < len(s) and s[i] != "\n":
                 i += 1
             continue
+        # Skip Pascal (* ... *) block comments (used in REGN to comment out
+        # alternate struct variants). Pascal comments do NOT nest.
+        if c == "(" and i + 1 < len(s) and s[i + 1] == "*":
+            i += 2  # skip '(*'
+            while i < len(s):
+                if s[i] == "*" and i + 1 < len(s) and s[i + 1] == ")":
+                    i += 2  # skip '*)'
+                    break
+                i += 1
+            continue
         if c in ("'", '"'):
             in_str = True
             quote = c
@@ -127,6 +142,16 @@ def find_matching_bracket(s: str, start: int) -> int:
         # Skip // line comments — they can contain unbalanced parens/brackets.
         if c == "/" and i + 1 < len(s) and s[i + 1] == "/":
             while i < len(s) and s[i] != "\n":
+                i += 1
+            continue
+        # Skip Pascal (* ... *) block comments (used in REGN to comment out
+        # alternate struct variants). Pascal comments do NOT nest.
+        if c == "(" and i + 1 < len(s) and s[i + 1] == "*":
+            i += 2  # skip '(*'
+            while i < len(s):
+                if s[i] == "*" and i + 1 < len(s) and s[i + 1] == ")":
+                    i += 2  # skip '*)'
+                    break
                 i += 1
             continue
         if c in ("'", '"'):
@@ -167,6 +192,15 @@ def split_top_level(text: str) -> list[str]:
         # Skip // line comments — they can contain unbalanced parens/brackets/commas.
         if c == "/" and i + 1 < len(text) and text[i + 1] == "/":
             while i < len(text) and text[i] != "\n":
+                i += 1
+            continue
+        # Skip Pascal (* ... *) block comments. Pascal comments do NOT nest.
+        if c == "(" and i + 1 < len(text) and text[i + 1] == "*":
+            i += 2  # skip '(*'
+            while i < len(text):
+                if text[i] == "*" and i + 1 < len(text) and text[i + 1] == ")":
+                    i += 2  # skip '*)'
+                    break
                 i += 1
             continue
         if c in ("'", '"'):
@@ -219,7 +253,7 @@ def parse_enum_dense(text: str) -> list[str]:
 
 def parse_enum_sparse(text: str) -> dict[str, str]:
     out: dict[str, str] = {}
-    for m in re.finditer(r"(Int64\((\d+)\)|\$[0-9A-Fa-f]+|0x[0-9A-Fa-f]+|\d+)\s*,\s*'([^']*)'", text):
+    for m in re.finditer(r"(Int64\((\d+)\)|\$[0-9A-Fa-f]+|0x[0-9A-Fa-f]+|-?\d+)\s*,\s*'([^']*)'", text):
         key = m.group(1)
         if key.startswith("Int64("):
             key = m.group(2)
@@ -388,6 +422,130 @@ class Extractor:
             ),
         )
 
+        # ----------------------------------------------------------------
+        # wbDefinitionsCommon.pas functions — not collected by _collect_vars
+        # because that method only scans DefineFO76; inject them here.
+        # ----------------------------------------------------------------
+        # wbFaction: FO76 = FO4+, so IsFO4Plus(nil, wbUnused(3)) → wbUnused(3).
+        self.vars["wbFaction"] = (
+            "wbStructSK(SNAM, [0], 'Faction', ["
+            "wbFormIDCk('Faction', [FACT]),"
+            "wbInteger('Rank', itS8),"
+            "wbUnused(3)])"
+        )
+        # wbHeadPart: FO76 is not Oblivion/FO3, so uses HEAD formid variant.
+        self.vars["wbHeadPart"] = (
+            "wbRStructSK([0], 'Head Part', ["
+            "wbInteger(INDX, 'Head Part Number', itU32),"
+            "wbFormIDCk(HEAD, 'Head', [HDPT, NULL])])"
+        )
+
+        # ----------------------------------------------------------------
+        # IMAD color interpolator — used in wbArray(TNAM/NAM3, ...) calls.
+        # ----------------------------------------------------------------
+        self.vars["wbFloatRGBA"] = (
+            "wbStruct('Color', ["
+            "wbFloat('Red'), wbFloat('Green'), wbFloat('Blue'), wbFloat('Alpha')])"
+        )
+        self.vars["wbColorInterpolator"] = (
+            "wbStructSK([0], 'Data', [wbFloat('Time'), wbStruct('Value', ["
+            "wbFloat('Red'), wbFloat('Green'), wbFloat('Blue'), wbFloat('Alpha')])])"
+        )
+
+        # ----------------------------------------------------------------
+        # VMAD: emit the existing vmad decoder kind.  All wbVMAD* variants
+        # resolve to the __vmad__ sentinel which parse_member intercepts.
+        # ----------------------------------------------------------------
+        for vmad_var in (
+            "wbVMAD",
+            "wbVMADFragmentedPERK",
+            "wbVMADFragmentedPACK",
+            "wbVMADFragmentedQUST",
+            "wbVMADFragmentedSCEN",
+            "wbVMADFragmentedINFO",
+        ):
+            self.vars[vmad_var] = "__vmad__"
+
+        # ----------------------------------------------------------------
+        # CTDA / Conditions — modeled as a structural (no-Rust) helper.
+        # Comparison value and parameters use bytes (no per-function typing).
+        # ----------------------------------------------------------------
+        self.vars["wbConditions"] = (
+            "wbRArray('Conditions',"
+            "wbRStruct('Condition',["
+            "wbStruct(CTDA,'Condition Data',["
+            "wbInteger('Type',itU8),"
+            "wbUnused(3),"
+            "wbByteArray('Comparison Value',4),"
+            "wbInteger('Function',itU16),"
+            "wbUnused(2),"
+            "wbByteArray('Parameter #1',4),"
+            "wbByteArray('Parameter #2',4),"
+            "wbInteger('Run On',itU32,wbEnum(["
+            "'Subject','Target','Reference','Combat Target',"
+            "'Linked Reference','Quest Alias','Package Data','Event Data',"
+            "'Unknown 8','Command Target','Event Camera Ref','My Killer',"
+            "'Active Players','Potential Players','Player Teammates',"
+            "'Target List','Instance Owner'"
+            "])),"
+            "wbByteArray('Reference',4),"
+            "wbByteArray('Parameter #3',4)"
+            "]),"
+            "wbString(CIS1,'Parameter #1'),"
+            "wbString(CIS2,'Parameter #2')"
+            "]))"
+        )
+
+        # ----------------------------------------------------------------
+        # Effects — rstruct wrapping EFID + EFIT (bytes) + optional fields.
+        # wbConditions is already modeled above.
+        # ----------------------------------------------------------------
+        self.vars.setdefault("wbEFID", "wbFormIDCk(EFID,'Base Effect',[MGEF])")
+        # EFIT layout is version-conditional; use bytes for structural fidelity.
+        self.vars.setdefault("wbEFIT", "wbByteArray(EFIT,'Effect Item Data',0)")
+        self.vars["wbEffect"] = (
+            "wbRStruct('Effect',["
+            "wbFormIDCk(EFID,'Base Effect',[MGEF]),"
+            "wbByteArray(EFIT,'Effect Item Data',0),"
+            "wbFormIDCk(CVT0,'Curve Table',[CURV,NULL]),"
+            "wbFormIDCk(MAGA,'Actor Value',[AVIF,NULL]),"
+            "wbInteger(MAGF,'Effect Flags',itU32,wbFlags(["
+            "'Unknown 0','Unknown 1','Unknown 2','Unknown 3',"
+            "'Unknown 4','Unknown 5','Unknown 6','Unknown 7',"
+            "'Unknown 8','Unknown 9','Unknown 10','Unknown 11',"
+            "'Unknown 12','Unknown 13','Unknown 14','Unknown 15',"
+            "'Unknown 16','Unknown 17','Unknown 18','Unknown 19',"
+            "'Unknown 20','Unknown 21','Unknown 22','Unknown 23',"
+            "'Unknown 24','Unknown 25','Unknown 26','Unknown 27',"
+            "'Unknown 28','Unknown 29','Unknown 30','Unknown 31'"
+            "])),"
+            "wbConditions,"
+            "wbFormIDCk(DURG,'Duration',[GLOB,NULL]),"
+            "wbFormIDCk(MAGG,'Magnitude',[GLOB,NULL]),"
+            "wbFormIDCk(EIES,'Next Stage',[SPEL,NULL]),"
+            "wbFormIDCk(CODG,'Cooldown Global',[GLOB,NULL]),"
+            "wbInteger(CODV,'Cooldown Duration',itU32)"
+            "])"
+        )
+        self.vars["wbEffectsReq"] = "wbRArray('Effects',wbEffect)"
+
+        # ----------------------------------------------------------------
+        # Object Template — rstruct; OBTS internals modeled as bytes to
+        # avoid the count-path complexity inside the struct's arrays.
+        # ----------------------------------------------------------------
+        self.vars["wbOBTSReq"] = "wbByteArray(OBTS,'Object Mod Template Item',0)"
+        self.vars["wbObjectTemplate"] = (
+            "wbRStruct('Object Template',["
+            "wbInteger(OBTE,'Count',itU32),"
+            "wbRArray('Combinations',wbRStruct('Combination',["
+            "wbEmpty(OBTF,'Editor Only'),"
+            "wbLStringKC(FULL,'Name',0,cpTranslate),"
+            "wbByteArray(OBTS,'Object Mod Template Item',0)"
+            "])),"
+            "wbEmpty(STOP,'Marker')"
+            "])"
+        )
+
     def resolve(self, expr: str, depth: int = 0) -> str:
         expr = expr.strip()
         if depth > 20:
@@ -452,19 +610,58 @@ class Extractor:
                 parts = split_top_level(args)
                 sig = parts[0].strip() if parts else "MODT"
                 return f"wbByteArray({sig}, 'Model Information', 0)"
+            # wbVec3PosRot(SIG) → bytes (24 bytes = pos xyz + rot xyz)
+            if fn == "wbVec3PosRot":
+                parts = split_top_level(args)
+                sig2 = parts[0].strip() if parts else "DATA"
+                return f"wbByteArray({sig2}, 'Position/Rotation', 24)"
+            # wbDebrisModel(textureHashes) → rstruct with DATA struct + hashes
+            if fn == "wbDebrisModel":
+                return (
+                    "wbRStruct('Model',["
+                    "wbStruct(DATA,'Data',["
+                    "wbInteger('Percentage',itU8),"
+                    "wbString('Model FileName'),"
+                    "wbInteger('Has Collision',itU8,wbBoolEnum)]),"
+                    f"{args}])"
+                )
             if fn in self.vars:
                 return self.vars[fn]
             return expr
         return expr
 
+    def _strip_method_chain(self, expr: str) -> str:
+        """Strip Pascal method chains like .SetSummaryKey([...]).IncludeFlag(...)
+        that appear after the outermost closing paren of a wb* constructor call.
+        These are display/UI hints that carry no structural information."""
+        if "(" not in expr:
+            return expr
+        try:
+            lparen = expr.index("(")
+            rparen = find_matching_paren(expr, lparen)
+            # If the character immediately after the closing paren is '.', it's
+            # a method chain — truncate to just the constructor call.
+            rest = expr[rparen + 1 :].lstrip()
+            if rest.startswith("."):
+                return expr[: rparen + 1]
+        except ValueError:
+            pass
+        return expr
+
     def parse_member(self, expr: str) -> dict | None:
         expr = self.expand_call(expr)
+        # __vmad__ sentinel: reuse the existing vmad decoder in decode.rs.
+        if expr == "__vmad__":
+            return {"kind": "vmad", "sig": "VMAD", "name": "Virtual Machine Adapter"}
         if expr in HARD_RAW_VARS:
             return {
                 "kind": "raw_fallback",
                 "name": expr,
                 "reason": "runtime Pascal decider",
             }
+        # Strip trailing Pascal method chains before dispatch.
+        expr = self._strip_method_chain(expr)
+
         if expr.startswith("__from_version__"):
             m = re.match(r"__from_version__\((\d+),\s*(.+)\)\s*$", expr, re.DOTALL)
             if m:
@@ -515,6 +712,18 @@ class Extractor:
             return self._parse_empty(expr)
         if expr.startswith("wbUnknown"):
             return self._parse_unknown(expr)
+        # wbVec3 / wbVec3PosRot — vec3 support
+        if expr.startswith("wbVec3") and "(" in expr:
+            return self._parse_vec3(expr)
+        # wbRUnion — rstruct-level polymorphic union; no decoder support → raw_fallback.
+        if expr.startswith("wbRUnion"):
+            return {"kind": "raw_fallback", "name": "Record Union", "reason": "wbRUnion not supported"}
+        # wbLenString — length-prefixed string (all uses in FO76 are inside VMAD).
+        if expr.startswith("wbLenString"):
+            return {"kind": "raw_fallback", "name": "Length String", "reason": "wbLenString not supported"}
+        # wbRecursive — recursive record type; no decoder support.
+        if expr.startswith("wbRecursive"):
+            return {"kind": "raw_fallback", "name": "Recursive", "reason": "wbRecursive not supported"}
         if re.fullmatch(r"[A-Z0-9_]{4}", expr):
             return self._parse_sig_ref(expr)
         return None
@@ -577,7 +786,10 @@ class Extractor:
         rparen = find_matching_paren(expr, lparen)
         args = split_top_level(expr[lparen + 1 : rparen])
         name = unquote(args[0]) if args[0].strip().startswith("'") else args[0]
-        elem = self.parse_member(args[-1])
+        # FIX: element is always args[1] (name is args[0]).
+        # args[2:] may be count, priority, or other trailing options.
+        elem_expr = args[1] if len(args) > 1 else args[-1]
+        elem = self.parse_member(elem_expr)
         return {"kind": "rarray", "name": name, "element": elem or {"kind": "unknown", "name": "element"}}
 
     def _parse_array(self, expr: str) -> dict:
@@ -586,12 +798,19 @@ class Extractor:
         parts = split_top_level(expr[lparen + 1 : rparen])
         sig = None
         name = ""
-        elem_expr = parts[-1]
         if sig_id(parts[0].strip()):
             sig = parts[0].strip()
-            name = unquote(parts[1]) if len(parts) > 2 else ""
+            name = unquote(parts[1]) if len(parts) > 1 else ""
+            # FIX: element is at index 2 when leading sig is present.
+            elem_idx = 2
         else:
             name = unquote(parts[0])
+            # FIX: element is at index 1 when no leading sig.
+            elem_idx = 1
+        # Clamp to valid range.
+        if elem_idx >= len(parts):
+            elem_idx = len(parts) - 1
+        elem_expr = parts[elem_idx]
         elem = self.parse_member(elem_expr)
         out: dict = {
             "kind": "array",
@@ -630,7 +849,9 @@ class Extractor:
                     }
                 }
             elif ma:
-                # Multi-threshold array form — needs hand-modeling (no schema support yet).
+                # Multi-threshold array form creates N+1 variants for N thresholds.
+                # This cannot be expressed as a binary form_version union, so we
+                # emit raw_fallback (there are only 2 occurrences in FO76.pas).
                 decider = {"raw": True}
             else:
                 decider = {"raw": True}
@@ -679,7 +900,7 @@ class Extractor:
             sig = parts[0].strip()
             idx = 1
         name = unquote(parts[idx])
-        itype = parts[idx + 1].strip()
+        itype = parts[idx + 1].strip() if len(parts) > idx + 1 else "itU32"
         width, signed = INT_MAP.get(itype, ("u32", False))
         out: dict = {
             "kind": "integer",
@@ -754,7 +975,7 @@ class Extractor:
         rparen = find_matching_paren(expr, lparen)
         parts = split_top_level(expr[lparen + 1 : rparen])
         sig = parts[0].strip()
-        name = unquote(parts[1])
+        name = unquote(parts[1]) if len(parts) > 1 else sig
         return {"kind": "lstring", "sig": sig, "name": name}
 
     def _parse_bytes(self, expr: str) -> dict:
@@ -791,7 +1012,7 @@ class Extractor:
         rparen = find_matching_paren(expr, lparen)
         parts = split_top_level(expr[lparen + 1 : rparen])
         sig = parts[0].strip()
-        name = unquote(parts[1])
+        name = unquote(parts[1]) if len(parts) > 1 else sig
         return {"kind": "empty", "sig": sig, "name": name}
 
     def _parse_unknown(self, expr: str) -> dict:
@@ -803,6 +1024,22 @@ class Extractor:
             if sig_id(tok):
                 sig = tok
         out: dict = {"kind": "unknown", "name": name}
+        if sig:
+            out["sig"] = sig
+        return out
+
+    def _parse_vec3(self, expr: str) -> dict:
+        """wbVec3('Name') or wbVec3(SIG, 'Name') → {kind: vec3, ...}"""
+        lparen = expr.index("(")
+        rparen = find_matching_paren(expr, lparen)
+        parts = split_top_level(expr[lparen + 1 : rparen])
+        sig = None
+        idx = 0
+        if sig_id(parts[0].strip()):
+            sig = parts[0].strip()
+            idx = 1
+        name = unquote(parts[idx]) if idx < len(parts) and parts[idx].strip().startswith("'") else (sig or "Vec3")
+        out: dict = {"kind": "vec3", "name": name}
         if sig:
             out["sig"] = sig
         return out
@@ -863,6 +1100,20 @@ def main() -> None:
         sys.exit(1)
     ex = Extractor(read_text(FO76_PAS), read_text(COMMON_PAS) if COMMON_PAS.exists() else "")
     schema = ex.run()
+
+    # Merge overrides — hand-authored fixes that survive regeneration.
+    # Override wins at record-key level: the entire record entry is replaced.
+    if OVERRIDES.exists():
+        try:
+            overrides = json.loads(OVERRIDES.read_text(encoding="utf-8"))
+            merged = 0
+            for sig, rec in overrides.get("records", {}).items():
+                schema["records"][sig] = rec
+                merged += 1
+            print(f"merged {merged} override(s) from {OVERRIDES.name}", file=sys.stderr)
+        except Exception as e:
+            print(f"WARNING: failed to load overrides: {e}", file=sys.stderr)
+
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(schema, indent=2), encoding="utf-8")
     print(f"wrote {OUT}", file=sys.stderr)

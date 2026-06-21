@@ -135,7 +135,13 @@ pub enum MemberDef {
         name: String,
     },
     #[serde(rename = "unused")]
-    Unused { bytes: usize },
+    Unused {
+        bytes: usize,
+        #[serde(default)]
+        from_version: Option<u16>,
+        #[serde(default)]
+        below_version: Option<u16>,
+    },
     #[serde(rename = "unknown")]
     Unknown {
         #[serde(default)]

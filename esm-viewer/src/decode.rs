@@ -431,7 +431,7 @@ fn decode_member(
                 out.insert(name.clone(), json!(null));
             }
         }
-        MemberDef::Unused { bytes } => {
+        MemberDef::Unused { bytes, .. } => {
             if let Some(data) = payload {
                 let _ = data.get(..*bytes);
             }
@@ -495,8 +495,8 @@ fn decode_struct_fields(
             continue;
         }
         match field {
-            MemberDef::Unused { bytes } => {
-                pos = pos.saturating_add(*bytes);
+            MemberDef::Unused { bytes, .. } => {
+                pos = pos.saturating_add(*bytes).min(data.len());
             }
             MemberDef::Integer {
                 name,
@@ -556,7 +556,8 @@ fn decode_struct_fields(
                 pos = end;
             }
             MemberDef::Struct { name, fields, .. } => {
-                decode_struct_fields(ctx, name, fields, &data[pos..], &mut struct_out);
+                let sub_data = data.get(pos..).unwrap_or(&[]);
+                decode_struct_fields(ctx, name, fields, sub_data, &mut struct_out);
             }
             MemberDef::Union {
                 name,
@@ -624,13 +625,13 @@ fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos:
     match variant {
         MemberDef::Integer { width, .. } => p = int_size(*width),
         MemberDef::Float { .. } => p = 4,
-        MemberDef::Unused { bytes } => p = *bytes,
+        MemberDef::Unused { bytes, .. } => p = *bytes,
         MemberDef::Struct { fields, .. } => {
             let mut dummy = Map::new();
             decode_struct_fields(ctx, "_", fields, data, &mut dummy);
             // estimate consumed bytes from field sizes
             for f in fields {
-                if let MemberDef::Unused { bytes } = f {
+                if let MemberDef::Unused { bytes, .. } = f {
                     p += bytes;
                 } else if let MemberDef::Integer { width, .. } = f {
                     p += int_size(*width);
@@ -670,6 +671,11 @@ fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
             ..
         } => (*from_version, *below_version),
         MemberDef::Float {
+            from_version,
+            below_version,
+            ..
+        } => (*from_version, *below_version),
+        MemberDef::Unused {
             from_version,
             below_version,
             ..
