@@ -80,7 +80,7 @@ impl<'a> DecodeContext<'a> {
 /// the curve's path and point data are inlined into the output object.
 /// When `ctx.resolve_depth` is `Stub` or `Full` and a resolver is present,
 /// the referenced record is expanded inline. Otherwise, a bare hex string is returned.
-fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
+pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
     // Existing curve branch — unchanged
     if valid_refs.iter().any(|r| r == "CURV") {
         if let Some(curves) = ctx.curves {
@@ -193,7 +193,14 @@ fn decode_member(
                 decode_struct_fields(ctx, name, fields, payload, out);
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
-                    decode_struct_fields(ctx, name, fields, &sr.data, out);
+                    if sig == "CTDA" {
+                        out.insert(
+                            name.clone(),
+                            crate::ctda::decode_ctda(&sr.data, ctx),
+                        );
+                    } else {
+                        decode_struct_fields(ctx, name, fields, &sr.data, out);
+                    }
                 }
             }
         }
@@ -1159,7 +1166,7 @@ fn lstring_table_to_kind(table: &LStringTable) -> StringKind {
 }
 
 // Minimal hex encoding without extra dependency
-mod hex {
+pub(crate) mod hex {
     pub fn encode(data: &[u8]) -> String {
         data.iter().map(|b| format!("{:02x}", b)).collect()
     }

@@ -1,5 +1,6 @@
 pub mod ba2;
 pub mod compress;
+pub mod ctda;
 pub mod curves;
 pub mod decode;
 pub mod diff;
