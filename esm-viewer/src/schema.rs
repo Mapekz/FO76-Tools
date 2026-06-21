@@ -197,6 +197,8 @@ pub enum ArrayCount {
     FillToEnd,
     Fixed(usize),
     CountPath(String),
+    /// The array is prefixed by a 4-byte signed integer that gives the element count.
+    CountPrefix,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

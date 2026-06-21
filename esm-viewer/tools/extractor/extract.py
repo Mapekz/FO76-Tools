@@ -39,18 +39,124 @@ WHITELIST = [
     "WATR", "WAVE", "WEAP", "WSPR", "WTHR", "ZOOM",
 ]
 
-# Closure decider names that we can substitute with a known fixed type.
-# Used in _parse_union to avoid raw_fallback for simple all-same-width unions.
+# Closure decider names that we can substitute with a known type.
+# Values may be a flat field dict OR a full {"kind": "union", ...} dict.
+# Used in _parse_union to produce structured output for common OMOD deciders.
 KNOWN_UNION_DECIDERS: dict[str, dict] = {
-    # All four Function Type variants are itU8 integer — only the enum labels differ.
-    "wbOMODDataFunctionTypeDecider": {"kind": "integer", "name": "Function Type", "width": "u8"},
-    # Value 1 / Value 2 variants are all 4 bytes — emit raw bytes.
-    "wbOMODDataPropertyValue1Decider": {"kind": "bytes", "name": "Value 1", "len": 4},
-    "wbOMODDataPropertyValue2Decider": {"kind": "bytes", "name": "Value 2", "len": 4},
+    # Function Type: variant determined by Value Type.
+    #   0=Int/1=Float/6=FormID,Float → [SET, MUL+ADD, ADD]
+    #   2=Bool                        → [SET, AND, OR]
+    #   5=Enum                        → [SET]
+    #   4=FormID,Int                  → [SET, REM, ADD]
+    "wbOMODDataFunctionTypeDecider": {
+        "kind": "union",
+        "name": "Function Type",
+        "decider": {
+            "field": "Value Type",
+            "default_variant": 0,
+            "map": {"0": 0, "1": 0, "2": 1, "4": 3, "5": 2, "6": 0},
+        },
+        "variants": [
+            {"kind": "integer", "name": "Function Type", "width": "u8", "signed": False,
+             "format": {"enum": ["SET", "MUL+ADD", "ADD"]}},
+            {"kind": "integer", "name": "Function Type", "width": "u8", "signed": False,
+             "format": {"enum": ["SET", "AND", "OR"]}},
+            {"kind": "integer", "name": "Function Type", "width": "u8", "signed": False,
+             "format": {"enum": ["SET"]}},
+            {"kind": "integer", "name": "Function Type", "width": "u8", "signed": False,
+             "format": {"enum": ["SET", "REM", "ADD"]}},
+        ],
+    },
+    # Value 1: type determined by Value Type.
+    #   0=Int → s32,  1=Float → f32,  2=Bool → u32 bool,
+    #   4=FormID,Int / 6=FormID,Float → formid,  5=Enum → u32,  default → bytes(4)
+    "wbOMODDataPropertyValue1Decider": {
+        "kind": "union",
+        "name": "Value 1",
+        "decider": {
+            "field": "Value Type",
+            "default_variant": 0,
+            "map": {"0": 1, "1": 2, "2": 3, "4": 4, "5": 5, "6": 4},
+        },
+        "variants": [
+            {"kind": "bytes", "name": "Value 1", "len": 4},
+            {"kind": "integer", "name": "Value 1", "width": "s32", "signed": True},
+            {"kind": "float", "name": "Value 1"},
+            {"kind": "integer", "name": "Value 1", "width": "u32", "signed": False,
+             "format": {"enum": ["False", "True"]}},
+            {"kind": "formid", "name": "Value 1", "valid_refs": []},
+            {"kind": "integer", "name": "Value 1", "width": "u32", "signed": False},
+        ],
+    },
+    # Value 2: type determined by Value Type.
+    #   0=Int / 4=FormID,Int → u32,  1=Float / 6=FormID,Float → f32,
+    #   2=Bool → u32 bool,  default → unused (4 bytes)
+    "wbOMODDataPropertyValue2Decider": {
+        "kind": "union",
+        "name": "Value 2",
+        "decider": {
+            "field": "Value Type",
+            "default_variant": 0,
+            "map": {"0": 1, "1": 2, "2": 3, "4": 1, "6": 2},
+        },
+        "variants": [
+            {"kind": "unused", "bytes": 4},
+            {"kind": "integer", "name": "Value 2", "width": "u32", "signed": False},
+            {"kind": "float", "name": "Value 2"},
+            {"kind": "integer", "name": "Value 2", "width": "u32", "signed": False,
+             "format": {"enum": ["False", "True"]}},
+        ],
+    },
     # wbRecordSizeDecider(1): QRRI is 0 bytes (empty) or 1 byte (u8 bool).
-    # We model it as variable-length bytes; both cases are safe to read.
     "wbRecordSizeDecider": {"kind": "bytes", "name": None, "len": None},
 }
+
+# Property index → name enums for wbObjectModPropertyToStr.
+# Selected at decode time via FieldValue on "Form Type" (WEAP/ARMO/NPC_).
+# Note: TES5Edit has a typo labelling ImpactDataSet as {50}; it is index 60.
+_WEAPON_PROPERTIES: list[str] = [
+    "Speed", "Reach", "MinRange", "MaxRange", "AttackDelaySec",
+    "Unused 5", "OutOfRangeDamageMult", "SecondaryDamage", "CriticalChargeBonus",
+    "HitBehaviour", "Rank", "Unknown 11", "AmmoCapacity", "Unknown 13", "Unknown 14",
+    "Type", "IsPlayerOnly", "NPCsUseAmmo", "HasChargingReload", "IsMinorCrime",
+    "IsFixedRange", "HasEffectOnDeath", "HasAlternateRumble", "IsNonHostile",
+    "IgnoreResist", "IsAutomatic", "CantDrop", "IsNonPlayable", "AttackDamage",
+    "Value", "Weight", "Keywords", "AimModel", "AimModelMinConeDegrees",
+    "AimModelMaxConeDegrees", "AimModelConeIncreasePerShot", "AimModelConeDecreasePerSec",
+    "AimModelConeDecreaseDelayMs", "AimModelConeSneakMultiplier",
+    "AimModelRecoilDiminishSpringForce", "AimModelRecoilDiminishSightsMult",
+    "AimModelRecoilMaxDegPerShot", "AimModelRecoilMinDegPerShot",
+    "AimModelRecoilHipMult", "AimModelRecoilShotsForRunaway",
+    "AimModelRecoilArcDeg", "AimModelRecoilArcRotateDeg",
+    "AimModelConeIronSightsMultiplier", "HasScope", "ZoomDataFOVMult",
+    "FireSeconds", "NumProjectiles", "AttackSound", "AttackSound2D", "AttackLoop",
+    "AttackFailSound", "IdleSound", "EquipSound", "UnEquipSound", "SoundLevel",
+    "ImpactDataSet",  # index 60 (TES5Edit typo labels this {50})
+    "Ammo", "CritEffect", "BashImpactDataSet", "BlockMaterial", "Enchantments",
+    "AimModelBaseStability", "ZoomData", "ZoomDataOverlay", "ZoomDataImageSpace",
+    "ZoomDataCameraOffsetX", "ZoomDataCameraOffsetY", "ZoomDataCameraOffsetZ",
+    "EquipSlot", "SoundLevelMult", "NPCAmmoList", "ReloadSpeed", "DamageTypeValues",
+    "AccuracyBonus", "AttackActionPointCost", "OverrideProjectile", "HasBoltAction",
+    "StaggerValue", "SightedTransitionSeconds", "FullPowerSeconds", "HoldInputToPower",
+    "HasRepeatableSingleFire", "MinPowerPerShot", "ColorRemappingIndex", "MaterialSwaps",
+    "CriticalDamageMult", "FastEquipSound", "DisableShells", "HasChargingAttack",
+    "ActorValues", "ReachEngagementMult", "Health", "Durability", "NPCReloadDelay",
+    "ZoomDataFOVMultB", "ZoomDataFOVMultC", "UnsightedTransitionSeconds",
+    "MinWeaponDrawTime", "ModelSwap", "MinChargeTime", "PowerAffectsProjectileSpeed",
+    "DamageBonusMult", "AimAssistModel", "WeightMult", "AmmoConsumption",
+    "Overheating", "OverheatRateUp", "OverheatRateDown", "SoundTagSet",
+    "SneakAttackMult",
+]
+_ARMOR_PROPERTIES: list[str] = [
+    "Enchantments", "Bash Impact Data Set", "Block Material", "Keywords",
+    "Weight", "Value", "Rating", "Addon Index", "Body Part", "Damage Type Value",
+    "Actor Values", "Health", "Color Remapping Index", "Material Swaps",
+    "Durability", "Biped World Model", "Model Swap", "Weight Mult", "Perk",
+]
+_ACTOR_PROPERTIES: list[str] = [
+    "Keywords", "Forced Inventory", "XP Offset", "Enchantments",
+    "Color Remapping Index", "Material Swaps",
+]
 
 # Vars that use runtime Pascal deciders we cannot model — emit raw fallback.
 # VMAD, conditions, effects, and object templates are REMOVED from this list
@@ -253,6 +359,10 @@ def parse_enum_dense(text: str) -> list[str]:
 
 def parse_enum_sparse(text: str) -> dict[str, str]:
     out: dict[str, str] = {}
+    # Sig2Int(XXXX) — 4-char signature constant interpreted as little-endian u32
+    for m in re.finditer(r"Sig2Int\('?([A-Z0-9_]{4})'?\)\s*,\s*'([^']*)'", text):
+        key = str(int.from_bytes(m.group(1).encode("ascii"), "little"))
+        out[key] = m.group(2)
     for m in re.finditer(r"(Int64\((\d+)\)|\$[0-9A-Fa-f]+|0x[0-9A-Fa-f]+|-?\d+)\s*,\s*'([^']*)'", text):
         key = m.group(1)
         if key.startswith("Int64("):
@@ -355,7 +465,13 @@ class Extractor:
             "wbByteArray(MODT, 'Model Information', 0),"
             "wbByteArray(MODC, 'Model Color', 0),"
             "wbByteArray(MODS, 'Model Data', 0),"
-            "wbByteArray(MODF, 'Model Flags', 0)])"
+            "wbByteArray(MODF, 'Model Flags', 0),"
+            "wbENLM,"
+            "wbModelXFLG,"
+            "wbENLT,"
+            "wbENLS,"
+            "wbAUUV,"
+            "wbMODD])"
         )
         self.vars["wbDEST"] = (
             "wbStruct(DEST, 'Destructible', ["
@@ -659,6 +775,11 @@ class Extractor:
                 "name": expr,
                 "reason": "runtime Pascal decider",
             }
+        # Extract SetCountPath before stripping method chains.
+        count_path: str | None = None
+        cp = re.search(r"\.SetCountPath\s*\(\s*'([^']+)'", expr)
+        if cp:
+            count_path = cp.group(1)
         # Strip trailing Pascal method chains before dispatch.
         expr = self._strip_method_chain(expr)
 
@@ -686,7 +807,10 @@ class Extractor:
         if expr.startswith("wbRArray") or expr.startswith("wbRArrayS"):
             return self._parse_rarray(expr)
         if expr.startswith("wbArrayS") or expr.startswith("wbArray"):
-            return self._parse_array(expr)
+            result = self._parse_array(expr)
+            if count_path and isinstance(result, dict) and result.get("kind") == "array":
+                result["count"] = {"count_path": count_path}
+            return result
         if expr.startswith("wbUnion"):
             return self._parse_union(expr)
         if expr.startswith("wbInteger"):
@@ -819,6 +943,12 @@ class Extractor:
         }
         if sig:
             out["sig"] = sig
+        # Capture count argument: -1 → count_prefix (4-byte inline prefix in data).
+        count_arg_idx = elem_idx + 1
+        if count_arg_idx < len(parts):
+            count_str = parts[count_arg_idx].strip()
+            if count_str == "-1":
+                out["count"] = "count_prefix"
         return out
 
     def _parse_union(self, expr: str) -> dict:
@@ -911,7 +1041,37 @@ class Extractor:
         if sig:
             out["sig"] = sig
         if len(parts) > idx + 2:
-            fmt = parse_format_arg(parts[idx + 2])
+            fmt_arg = parts[idx + 2].strip()
+            if "wbObjectModPropertyToStr" in fmt_arg:
+                # Property index whose enum depends on the parent Data struct's Form Type.
+                # Emit a FieldValue union; the decoder resolves Form Type from outer context.
+                # Form Type keys are Sig2Int LE values: WEAP=1346454871, ARMO=1330467393, NPC_=1598246990.
+                union: dict = {
+                    "kind": "union",
+                    "name": name,
+                    "decider": {
+                        "field": "Form Type",
+                        "default_variant": 0,
+                        "map": {
+                            "1346454871": 1,
+                            "1330467393": 2,
+                            "1598246990": 3,
+                        },
+                    },
+                    "variants": [
+                        {"kind": "integer", "name": name, "width": "u16", "signed": False},
+                        {"kind": "integer", "name": name, "width": "u16", "signed": False,
+                         "format": {"enum": _WEAPON_PROPERTIES}},
+                        {"kind": "integer", "name": name, "width": "u16", "signed": False,
+                         "format": {"enum": _ARMOR_PROPERTIES}},
+                        {"kind": "integer", "name": name, "width": "u16", "signed": False,
+                         "format": {"enum": _ACTOR_PROPERTIES}},
+                    ],
+                }
+                if sig:
+                    union["sig"] = sig
+                return union
+            fmt = parse_format_arg(fmt_arg)
             if fmt:
                 out["format"] = fmt
         return out

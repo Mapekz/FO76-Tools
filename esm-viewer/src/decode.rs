@@ -52,6 +52,26 @@ pub struct DecodeContext<'a> {
     pub resolve_depth: ResolveDepth,
     /// Resolver implementation (None when resolve_depth == None).
     pub resolver: Option<&'a dyn FormIdRefResolver>,
+    /// Already-decoded fields of the enclosing struct, set when decoding array
+    /// elements so that `FieldValue` deciders in element structs can reach parent
+    /// fields (e.g. "Form Type" for OMOD property enum selection).
+    pub outer_struct: Option<Map<String, Value>>,
+}
+
+impl<'a> DecodeContext<'a> {
+    /// Return a new context identical to `self` but with `outer_struct` set.
+    fn with_outer_struct(&self, outer: Map<String, Value>) -> DecodeContext<'a> {
+        DecodeContext {
+            schema: self.schema,
+            form_version: self.form_version,
+            is_localized: self.is_localized,
+            localization: self.localization,
+            curves: self.curves,
+            resolve_depth: self.resolve_depth,
+            resolver: self.resolver,
+            outer_struct: Some(outer),
+        }
+    }
 }
 
 /// Resolve a FormID field to its JSON representation.
@@ -291,14 +311,18 @@ fn decode_member(
             }
         }
         MemberDef::Bytes { sig, name, len } => {
-            if let Some(sig) = sig {
+            if let Some(data) = payload {
+                let n = len.unwrap_or(data.len());
+                out.insert(
+                    name.clone(),
+                    json!({"hex": hex::encode(&data[..data.len().min(n)])}),
+                );
+            } else if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     let n = len.unwrap_or(sr.data.len());
                     out.insert(
                         name.clone(),
-                        json!({
-                            "hex": hex::encode(&sr.data[..sr.data.len().min(n)]),
-                        }),
+                        json!({"hex": hex::encode(&sr.data[..sr.data.len().min(n)])}),
                     );
                 }
             }
@@ -399,6 +423,11 @@ fn decode_member(
                     map,
                     default_variant,
                 } => field_value_key(out, field)
+                    .or_else(|| {
+                        ctx.outer_struct
+                            .as_ref()
+                            .and_then(|o| field_value_key(o, field))
+                    })
                     .and_then(|k| map.get(&k).copied())
                     .or(*default_variant),
                 UnionDecider::ByteAtOffset {
@@ -580,6 +609,11 @@ fn decode_struct_fields(
                         map,
                         default_variant,
                     } => field_value_key(&struct_out, field)
+                        .or_else(|| {
+                            ctx.outer_struct
+                                .as_ref()
+                                .and_then(|o| field_value_key(o, field))
+                        })
                         .and_then(|k| map.get(&k).copied())
                         .or(*default_variant),
                     _ => choose_union_variant(ctx.form_version, decider, variants.len()),
@@ -605,6 +639,57 @@ fn decode_struct_fields(
                     break;
                 }
             }
+            MemberDef::Array {
+                name,
+                element,
+                count,
+                ..
+            } => {
+                let n: usize = match count {
+                    Some(ArrayCount::CountPrefix) => {
+                        if pos + 4 <= data.len() {
+                            let n = i32::from_le_bytes(
+                                data[pos..pos + 4].try_into().unwrap(),
+                            )
+                            .max(0) as usize;
+                            pos += 4;
+                            n
+                        } else {
+                            0
+                        }
+                    }
+                    Some(ArrayCount::CountPath(path)) => struct_out
+                        .get(path)
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as usize,
+                    Some(ArrayCount::Fixed(n)) => *n,
+                    _ => 0,
+                };
+                if n > 0 {
+                    if let Some(elem_size) = field_byte_size(ctx, element) {
+                        let mut items = Vec::with_capacity(n.min(4096));
+                        // Snapshot current fields so element structs can resolve
+                        // FieldValue deciders that reference parent-scope fields
+                        // (e.g. "Form Type" for OMOD property enum selection).
+                        let child_ctx = ctx.with_outer_struct(struct_out.clone());
+                        for _ in 0..n {
+                            if pos + elem_size > data.len() {
+                                break;
+                            }
+                            let v = decode_field_value(
+                                &child_ctx,
+                                element,
+                                &data[pos..pos + elem_size],
+                            );
+                            items.push(v);
+                            pos += elem_size;
+                        }
+                        if !items.is_empty() {
+                            struct_out.insert(name.clone(), Value::Array(items));
+                        }
+                    }
+                }
+            }
             MemberDef::Unknown { name, .. } => {
                 struct_out.insert(
                     name.clone(),
@@ -620,30 +705,53 @@ fn decode_struct_fields(
     }
 }
 
-fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos: usize) -> usize {
-    let mut p = 0;
-    match variant {
-        MemberDef::Integer { width, .. } => p = int_size(*width),
-        MemberDef::Float { .. } => p = 4,
-        MemberDef::Unused { bytes, .. } => p = *bytes,
+/// Returns the fixed byte size of a field when it can be determined statically.
+/// Returns None for variable-length fields (NUL-terminated strings, fill-to-end bytes, etc.).
+fn field_byte_size(ctx: &DecodeContext<'_>, field: &FieldDef) -> Option<usize> {
+    if !member_version_ok(ctx.form_version, field) {
+        return Some(0);
+    }
+    match field {
+        MemberDef::Integer { width, .. } => Some(int_size(*width)),
+        MemberDef::Float { .. } => Some(4),
+        MemberDef::FormId { .. } => Some(4),
+        MemberDef::ByteRgba { .. } => Some(4),
+        MemberDef::Vec3 { .. } => Some(12),
+        MemberDef::Unused { bytes, .. } => Some(*bytes),
+        MemberDef::Empty { .. } => Some(0),
+        MemberDef::Bytes { len: Some(n), .. } => Some(*n),
         MemberDef::Struct { fields, .. } => {
-            let mut dummy = Map::new();
-            decode_struct_fields(ctx, "_", fields, data, &mut dummy);
-            // estimate consumed bytes from field sizes
+            let mut total = 0usize;
             for f in fields {
-                if let MemberDef::Unused { bytes, .. } = f {
-                    p += bytes;
-                } else if let MemberDef::Integer { width, .. } = f {
-                    p += int_size(*width);
-                } else if let MemberDef::Float { .. } = f {
-                    p += 4;
-                } else if let MemberDef::FormId { .. } = f {
-                    p += 4;
+                total = total.checked_add(field_byte_size(ctx, f)?)?;
+            }
+            Some(total)
+        }
+        MemberDef::Union {
+            decider, variants, ..
+        } => match decider {
+            UnionDecider::ByteAtOffset { .. } | UnionDecider::FieldValue { .. } => {
+                // Can't statically pick variant; check if all variants share the same size.
+                let sizes: Vec<Option<usize>> =
+                    variants.iter().map(|v| field_byte_size(ctx, v)).collect();
+                let first = (*sizes.first()?)?;
+                if sizes.iter().all(|s| *s == Some(first)) {
+                    Some(first)
+                } else {
+                    None
                 }
             }
-        }
-        _ => {}
+            _ => {
+                let idx = choose_union_variant(ctx.form_version, decider, variants.len())?;
+                variants.get(idx).and_then(|v| field_byte_size(ctx, v))
+            }
+        },
+        _ => None,
     }
+}
+
+fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos: usize) -> usize {
+    let p = field_byte_size(ctx, variant).unwrap_or(0);
     pos + p.min(data.len())
 }
 

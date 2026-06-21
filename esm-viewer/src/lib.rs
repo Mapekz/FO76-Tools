@@ -389,6 +389,7 @@ impl Database {
             curves: self.curves.as_ref(),
             resolve_depth: crate::decode::ResolveDepth::None,
             resolver: None,
+            outer_struct: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
@@ -420,6 +421,7 @@ impl Database {
             resolver: resolver
                 .as_ref()
                 .map(|r| r as &dyn crate::decode::FormIdRefResolver),
+            outer_struct: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
@@ -508,6 +510,7 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             curves: self.db.curves.as_ref(),
             resolve_depth: crate::decode::ResolveDepth::Full,
             resolver: Some(&nested_resolver),
+            outer_struct: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Some(serde_json::json!({
