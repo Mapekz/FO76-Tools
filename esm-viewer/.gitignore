@@ -4,3 +4,15 @@
 *.esm
 *.esm.idx
 *.ba2
+
+# napi binding build output (platform-specific binary)
+bindings/napi/*.node
+bindings/napi/node_modules/
+
+# Electron app build output and deps
+app/node_modules/
+app/out/
+app/dist/
+
+# Python bytecode
+__pycache__/

@@ -62,6 +62,15 @@ pub struct ListEntry {
     pub full_lstring_id: Option<String>,
 }
 
+/// A tree row combining FormID, EditorID, and resolved translated name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordRow {
+    pub form_id: String,
+    pub editor_id: Option<String>,
+    pub name: Option<String>,
+    pub offset: u64,
+}
+
 impl Database {
     /// Open an ESM file.
     ///
@@ -155,6 +164,87 @@ impl Database {
                 form_id: form_id.display(),
                 editor_id,
                 full_lstring_id,
+            });
+        }
+        Ok(out)
+    }
+
+    /// List records of the given 4-character type signature with pagination.
+    ///
+    /// Returns FormID, EditorID, and resolved translated name (from the
+    /// localization BA2 when available) for each record.
+    pub fn list_type_records(
+        &mut self,
+        sig: &str,
+        offset: usize,
+        limit: usize,
+    ) -> anyhow::Result<Vec<RecordRow>> {
+        if sig.len() != 4 {
+            bail!("record type must be a 4-character signature");
+        }
+        let records: Vec<(FormId, u64)> = self
+            .index
+            .records_by_type(sig)
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|(fid, meta)| (fid, meta.offset))
+            .collect();
+        let mut out = Vec::new();
+        for (form_id, rec_offset) in records {
+            let rec = self.esm.parse_record_at(rec_offset)?;
+            let editor_id = edid_from_subrecords(&rec.subrecords);
+            let name =
+                crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL").and_then(|id| {
+                    self.localization
+                        .as_ref()
+                        .and_then(|l| l.lookup(crate::strings::StringKind::Strings, id))
+                        .map(|s| s.to_owned())
+                });
+            out.push(RecordRow {
+                form_id: form_id.display(),
+                editor_id,
+                name,
+                offset: rec_offset,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Return the list of records that reference `form_id`, with FormID,
+    /// EditorID, and resolved name for each.
+    ///
+    /// The reverse-reference index is built lazily on the first call and
+    /// persisted to the `.esm.idx` cache so subsequent calls are instant.
+    pub fn referenced_by(&mut self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
+        self.index.ensure_xref_index(
+            &self.esm,
+            &self.schema,
+            self.is_localized,
+            self.localization.as_ref(),
+            self.curves.as_ref(),
+        )?;
+        let referencers: Vec<FormId> = self.index.get_xref(form_id).to_vec();
+        let mut out = Vec::new();
+        for referencer in referencers {
+            let meta = match self.index.get_by_formid(referencer) {
+                Some(m) => m.clone(),
+                None => continue,
+            };
+            let rec = self.esm.parse_record_at(meta.offset)?;
+            let editor_id = edid_from_subrecords(&rec.subrecords);
+            let name =
+                crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL").and_then(|id| {
+                    self.localization
+                        .as_ref()
+                        .and_then(|l| l.lookup(crate::strings::StringKind::Strings, id))
+                        .map(|s| s.to_owned())
+                });
+            out.push(RecordRow {
+                form_id: referencer.display(),
+                editor_id,
+                name,
+                offset: meta.offset,
             });
         }
         Ok(out)
