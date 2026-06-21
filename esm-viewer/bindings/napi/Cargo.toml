@@ -1,0 +1,18 @@
+[package]
+name = "fo76-esm-napi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", default-features = false, features = ["napi8", "serde-json", "async"] }
+napi-derive = { version = "2", features = ["type-def"] }
+fo76-esm-parser = { path = "../.." }
+anyhow = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+
+[build-dependencies]
+napi-build = "2"
