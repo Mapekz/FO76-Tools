@@ -513,17 +513,23 @@ fn decode_member(
                     .and_then(|b| map.get(&b.to_string()).copied())
                     .or(*default_variant),
                 UnionDecider::PresentSignature { present_signature } => {
-                    // wbRUnion: select the variant whose anchor subrecord is present.
+                    // wbRUnion: select the variant whose anchor subrecord appears
+                    // earliest in the document (lowest doc_index).  This handles
+                    // repeated polymorphic elements such as QUST Aliases, where
+                    // multiple anchor sigs (ALST/ALLS/ALCS) co-exist in by_sig
+                    // across different elements; a global `contains_key` check
+                    // would pick the wrong variant for inner Fill-Type unions.
                     present_signature
                         .iter()
                         .enumerate()
-                        .find_map(|(i, anchor)| {
-                            if by_sig.contains_key(anchor.as_str()) {
-                                Some(i)
-                            } else {
-                                None
-                            }
+                        .filter_map(|(i, anchor)| {
+                            by_sig
+                                .get(anchor.as_str())
+                                .and_then(|v| v.first())
+                                .map(|sr| (i, sr.doc_index))
                         })
+                        .min_by_key(|&(_, doc_idx)| doc_idx)
+                        .map(|(i, _)| i)
                 }
                 _ => choose_union_variant(
                     ctx.form_version,

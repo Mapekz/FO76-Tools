@@ -18,22 +18,22 @@ OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 # All 168 record types present in SeventySix.esm (excluding CELL and WRLD).
 # Generated from: fo76 tree SeventySix.esm | jq '[.[].label.sig] | unique | sort | .[]'
 WHITELIST = [
-    "AACT", "AAMD", "AAPD", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
+    "AACT", "AAMD", "AAPD", "ACHR", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
     "ANIO", "AORU", "ARMA", "ARMO", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
     "AUVF", "AVIF", "AVTR", "BNDS", "BOOK", "BPTD", "CAMS", "CHAL", "CLAS",
     "CLFM", "CLMT", "CMPO", "CMPT", "CNCY", "CNDF", "COBJ", "COEN", "COLL",
     "CONT", "CPRD", "CPTH", "CSEN", "CSTY", "CURV", "DCGF", "DEBR", "DFOB",
-    "DIST", "DLVW", "DMGT", "DOBJ", "DOOR", "ECAT", "EFSH", "EMOT", "ENCH",
+    "DIAL", "DIST", "DLVW", "DMGT", "DOBJ", "DOOR", "ECAT", "EFSH", "EMOT", "ENCH",
     "ENTM", "EQUP", "EXPL", "FACT", "FISH", "FLOR", "FLST", "FSTP", "FSTS",
     "FURN", "GCVR", "GDRY", "GLOB", "GMRW", "GMST", "GRAS", "HAZD", "HDPT",
-    "IDLE", "IDLM", "IMAD", "IMGS", "INGR", "INNR", "IPCT", "IPDS", "KEYM",
+    "IDLE", "IDLM", "IMAD", "IMGS", "INFO", "INGR", "INNR", "IPCT", "IPDS", "KEYM",
     "KSSM", "KYWD", "LAYR", "LCRT", "LCTN", "LENS", "LGDI", "LGTM", "LIGH",
     "LOUT", "LSCR", "LTEX", "LVLI", "LVLN", "LVLP", "LVPC", "MATO", "MATT",
     "MDSP", "MESG", "MGEF", "MISC", "MOVT", "MSTT", "MSWP", "MUSC", "MUST",
     "NAVI", "NOCM", "NOTE", "NPC_", "OMOD", "OTFT", "OVIS", "PACH", "PACK",
     "PCRD", "PEPF", "PERK", "PKIN", "PLYT", "PMFT", "PPAK", "PROJ", "QMDL",
-    "QUST", "RACE", "REGN", "RELA", "RESO", "REVB", "RFCT", "RFGP", "SCCO",
-    "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM",
+    "QUST", "RACE", "REFR", "REGN", "RELA", "RESO", "REVB", "RFCT", "RFGP", "SCCO",
+    "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM",
     "SOUN", "SPEL", "SPGD", "STAG", "STAT", "STHD", "STMP", "STND", "TACT",
     "TEPF", "TERM", "TRAP", "TREE", "TRNS", "TXST", "UTIL", "VOLI", "VTYP",
     "WATR", "WAVE", "WEAP", "WSPR", "WTHR", "ZOOM",
@@ -154,6 +154,26 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
         "field": "Type",
         "default_variant": 0,
         "map": {"0": 1, "1": 2, "3": 3},
+        "bits": [],
+    },
+
+    # wbSceneActionTypeDecider: field-value check on sibling ANAM 'Type' (u16).
+    #   0=Dialogue, 1=Package, 2=Timer, 3=Player Dialogue,
+    #   4=Start Scene, 5=NPC Response, 6=Radio
+    "wbSceneActionTypeDecider": {
+        "field": "Type",
+        "default_variant": 0,
+        "map": {"0": 0, "1": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6},
+        "bits": [],
+    },
+
+    # wbPubPackCNAMDecider: field-value check on sibling ANAM 'Type' (string).
+    #   'Bool' → 1 (u8 bool), 'Int' → 2 (u32 integer), 'Float' → 3 (float)
+    #   anything else (ObjectList, Location, Target, Topic, …) → 0 (bytes)
+    "wbPubPackCNAMDecider": {
+        "field": "Type",
+        "default_variant": 0,
+        "map": {"Bool": 1, "Int": 2, "Float": 3},
         "bits": [],
     },
 
@@ -556,10 +576,54 @@ class Extractor:
             "wbAUUV,"
             "wbMODD])"
         )
+        # wbDEST: full rstruct matching wbDefinitionsFO76.pas:6905-6991.
+        # Includes the Stages rarray with DSTD (Destruction Stage Data).
+        # wbConditions is resolved below via self.vars lookup.
         self.vars["wbDEST"] = (
-            "wbStruct(DEST, 'Destructible', ["
-            "wbInteger('Health', itU32), wbInteger('Count', itU8),"
-            "wbFormIDCk('Explosion', [EXPL,NULL]), wbFormIDCk('Debris', [DEBR,NULL])])"
+            "wbRStruct('Destructible',["
+            "wbStruct(DEST,'Header',["
+            "wbInteger('Health',itS32),"
+            "wbInteger('Stage Count',itU8),"
+            "wbUnused(3),"
+            "wbInteger('Flags',itU32,wbFlags(["
+            "'VATS Targetable','Large Actor Destroys','Unknown 3','Unknown 4',"
+            "'Unknown 5','Unknown 6','Unknown 7','Unknown 8',"
+            "'Unknown 9','Unknown 10','Unknown 11','Limit DPS Taken',"
+            "'Has Conditions','Unknown 14','Unknown 15','Unknown 16'"
+            "])),"
+            "wbFloat('DPS Limit')"
+            "]),"
+            "wbConditions,"
+            "wbEmpty(DSCF,'End Condition Marker'),"
+            "wbFormIDCk(HGLB,'Health Global',[GLOB,NULL]),"
+            "wbArrayS(DAMC,'Resistances',wbStructSK([0],'Resistance',["
+            "wbFormIDCk('Damage Type',[DMGT]),"
+            "wbInteger('Value',itU32)"
+            "])),"
+            "wbRArray('Stages',wbRStruct('Stage',["
+            "wbStruct(DSTD,'Destruction Stage Data',["
+            "wbInteger('Health %',itU8),"
+            "wbInteger('Index',itU8),"
+            "wbInteger('Model Damage Stage',itU8),"
+            "wbInteger('Flags',itU8,wbFlags(["
+            "'Cap Damage','Disable','Destroy','Ignore External Damage',"
+            "'Becomes Dynamic','Unknown 5','Disable Collision','Unknown 7'"
+            "])),"
+            "wbInteger('Self Damage per Second',itS32),"
+            "wbFormIDCk('Explosion',[EXPL,NULL]),"
+            "wbFormIDCk('Debris',[DEBR,NULL]),"
+            "wbInteger('Debris Count',itS32),"
+            "wbFormIDCk('Material Swap',[MSWP,NULL]),"
+            "wbFloat('Model Swap Delay')"
+            "]),"
+            "wbString(DSTA,'Sequence Name'),"
+            "wbRArray('Models',wbRStruct('Model',["
+            "wbString(DMDL,'Model FileName',0),"
+            "wbByteArray(DMDT,'Model Information',0)"
+            "])),"
+            "wbEmpty(DSTF,'End Marker')"
+            "]))"
+            "])"
         )
         self.vars["wbEnchantment"] = "wbFormIDCk(EITM, 'Enchantment', [ENCH,NULL])"
         self.vars["wbModelInfo"] = "wbByteArray(MODT, 'Model Information', 0)"
@@ -621,6 +685,13 @@ class Extractor:
             ),
         )
 
+        # wbSoundDescriptorSounds — wbDefinitionsCommon.pas:8761-8764.
+        # SNDR uses an RArray of ANAM strings (sound file paths), not a FormID.
+        self.vars.setdefault(
+            "wbSoundDescriptorSounds",
+            "wbRArray('Sounds', wbString(ANAM, 'Sound'))",
+        )
+
         # ----------------------------------------------------------------
         # wbDefinitionsCommon.pas functions — not collected by _collect_vars
         # because that method only scans DefineFO76; inject them here.
@@ -667,9 +738,14 @@ class Extractor:
 
         # ----------------------------------------------------------------
         # CTDA / Conditions — modeled as a structural (no-Rust) helper.
-        # Comparison value and parameters use bytes (no per-function typing).
+        # Wrapped in an RStruct so the preceding CITC count subrecord
+        # (wbDefinitionsFO76.pas:6888 SetCountPath(CITC)) is consumed and
+        # not left in _unmapped.  CITC is optional — records without it
+        # (e.g. direct CTDA blocks) simply skip the missing integer.
         # ----------------------------------------------------------------
         self.vars["wbConditions"] = (
+            "wbRStruct('Conditions',["
+            "wbInteger(CITC,'Condition Count',itU32),"
             "wbRArray('Conditions',"
             "wbRStruct('Condition',["
             "wbStruct(CTDA,'Condition Data',["
@@ -693,6 +769,7 @@ class Extractor:
             "wbString(CIS1,'Parameter #1'),"
             "wbString(CIS2,'Parameter #2')"
             "]))"
+            "])"
         )
 
         # ----------------------------------------------------------------
@@ -745,6 +822,192 @@ class Extractor:
             "])"
         )
 
+        # ----------------------------------------------------------------
+        # Common.pas function helpers not captured by _collect_vars.
+        # These are functions (not := assignments) in wbDefinitionsCommon.pas.
+        # ----------------------------------------------------------------
+
+        # wbWeatherMagic — wbDefinitionsCommon.pas:9183-9196
+        # UNAM 'Magic' struct: Lightning Strike spell/threshold + Weather Activate spell/threshold.
+        self.vars["wbWeatherMagic"] = (
+            "wbStruct(UNAM,'Magic',["
+            "wbStruct('Lighting Strike',["
+            "wbFormIDCk('Spell',[SPEL,NULL]),"
+            "wbFloat('Threshold')"
+            "]),"
+            "wbStruct('Weather Activate',["
+            "wbFormIDCk('Spell',[SPEL,NULL]),"
+            "wbFloat('Threshold')"
+            "])"
+            "])"
+        )
+
+        # wbRagdoll — wbDefinitionsCommon.pas:8694-8710
+        # Ragdoll bone data (XRGD) + biped rotation (XRGB, non-TES4 only).
+        self.vars["wbRagdoll"] = (
+            "wbRStruct('Ragdoll Data',["
+            "wbArray(XRGD,'Bones',wbStruct('Bone',["
+            "wbInteger('Bone Id',itU8),"
+            "wbUnused(3),"
+            "wbByteArray('Position/Rotation',24)"
+            "])),"
+            "wbVec3(XRGB,'Biped Rotation')"
+            "])"
+        )
+
+        # wbKWDAs — used in REFR/ACHR to add keywords.
+        # Minimal: array of keyword formids with KWDA sig.
+        self.vars["wbKWDAs"] = (
+            "wbRStruct('Keywords',["
+            "wbInteger(KSIZ,'Keyword Count',itU32),"
+            "wbArrayS(KWDA,'Keywords',wbFormIDCk('Keyword',[KYWD,NULL]))"
+            "])"
+        )
+
+        # wbOwnership — ownership data (owner ref + rank).
+        # wbDefinitionsCommon.pas:8655 (simplified: XOWN + XRNK).
+        self.vars["wbOwnership"] = (
+            "wbRStruct('Ownership',["
+            "wbFormIDCk(XOWN,'Owner',[FACT,NPC_,NULL]),"
+            "wbInteger(XRNK,'Faction Rank',itS32)"
+            "])"
+        )
+
+        # wbActionFlag — wbDefinitionsCommon.pas (single flag byte, XACT).
+        self.vars["wbActionFlag"] = "wbInteger(XACT,'Action Flag',itU32)"
+
+        # wbWaterData — water reflection/refraction data, XWAT/XXXX.
+        self.vars["wbWaterData"] = "wbByteArray(XWAT,'Water Data',0)"
+
+        # wbAmbientColors — ambient color block (XRLL).
+        self.vars["wbAmbientColors"] = "wbByteArray(XRLL,'Ambient Colors',0)"
+
+        # wbByteColors — byte-precision color block (XCLP).
+        self.vars["wbByteColors"] = "wbByteArray(XCLP,'Byte Colors',0)"
+
+        # wbSizePosRot — bounds size + position/rotation (used in XOCP).
+        self.vars["wbSizePosRot"] = "wbByteArray(XOCP,'Size/Pos/Rot',0)"
+
+        # ----------------------------------------------------------------
+        # WTHR (Weather) helper functions from wbDefinitionsCommon.pas.
+        # These are Common.pas functions missed by _collect_vars.
+        # ----------------------------------------------------------------
+
+        # wbWeatherCloudTextures — wbDefinitionsCommon.pas:8939-8991.
+        # FO76 uses a 32-layer cloud texture system with special 4-byte sigs.
+        # Layers 0-9: "00TX"-"90TX" (alphanumeric, injectable directly).
+        # Layers 17-31: "A0TX"-"O0TX" (alphanumeric, injectable directly).
+        # Layers 10-16: ":0TX"-"@0TX" (non-alphanumeric, added via record_additions).
+        _cloud_tex_parts = []
+        for _i in range(10):  # layers 0-9: sig = chr(0x30+i)+"0TX" = "00TX"-"90TX"
+            _sig = f"{_i}0TX"
+            _cloud_tex_parts.append(f"wbString({_sig},'Layer #{_i}')")
+        for _i in range(17, 32):  # layers 17-31: "A0TX"-"O0TX"
+            _sig = chr(ord("A") + _i - 17) + "0TX"
+            _cloud_tex_parts.append(f"wbString({_sig},'Layer #{_i}')")
+        self.vars["wbWeatherCloudTextures"] = (
+            "wbRStruct('Cloud Textures',[" + ",".join(_cloud_tex_parts) + "])"
+        )
+
+        # wbWeatherCloudSpeed — wbDefinitionsCommon.pas:8918-8937.
+        # RStruct with RNAM (Y Speeds) and QNAM (X Speeds), each a 32-element byte array.
+        self.vars["wbWeatherCloudSpeed"] = (
+            "wbRStruct('Cloud Speeds',["
+            "wbArray(RNAM,'Y Speeds',wbInteger('Layer',itU8),32),"
+            "wbArray(QNAM,'X Speeds',wbInteger('Layer',itU8),32)"
+            "])"
+        )
+
+        # wbWeatherCloudColors — wbDefinitionsCommon.pas:8906-8916.
+        # PNAM: array of cloud layer colors (wbWeatherTimeOfDay structs — complex union,
+        # use bytearray to consume the subrecord without version-conditional parsing).
+        self.vars["wbWeatherCloudColors"] = "wbByteArray(PNAM,'Cloud Colors',0)"
+
+        # wbWeatherCloudAlphas — wbDefinitionsCommon.pas:8863-8904.
+        # JNAM: array of 32 layers, each with 8 floats (time-of-day alpha values).
+        self.vars["wbWeatherCloudAlphas"] = (
+            "wbArray(JNAM,'Cloud Alphas',wbStruct('Layer',["
+            "wbFloat('Sunrise'),wbFloat('Day'),wbFloat('Sunset'),wbFloat('Night'),"
+            "wbFloat('Early Sunrise'),wbFloat('Late Sunrise'),"
+            "wbFloat('Early Sunset'),wbFloat('Late Sunset')"
+            "]),32)"
+        )
+
+        # wbWeatherColors — wbDefinitionsCommon.pas:8993-9043.
+        # NAM0: large struct of wbWeatherTimeOfDay entries — use bytearray.
+        self.vars["wbWeatherColors"] = "wbByteArray(NAM0,'Weather Colors',0)"
+
+        # wbWeatherFogDistance — wbDefinitionsCommon.pas:9081-9132.
+        # FNAM: fog near/far distances + powers + heights — use bytearray.
+        self.vars["wbWeatherFogDistance"] = "wbByteArray(FNAM,'Fog Distance',0)"
+
+        # wbWeatherDisabledLayers — wbDefinitionsCommon.pas:9068-9079.
+        # NAM1: 32-bit flags, one bit per cloud layer.
+        self.vars["wbWeatherDisabledLayers"] = (
+            "wbInteger(NAM1,'Disabled Cloud Layers',itU32)"
+        )
+
+        # wbWeatherImageSpaces — wbDefinitionsCommon.pas:9149-9170.
+        # IMSP: struct of 8 IMGS formids (Sunrise/Day/Sunset/Night + Early/Late variants).
+        self.vars["wbWeatherImageSpaces"] = (
+            "wbStruct(IMSP,'Image Spaces',["
+            "wbFormIDCk('Sunrise',[IMGS,NULL]),"
+            "wbFormIDCk('Day',[IMGS,NULL]),"
+            "wbFormIDCk('Sunset',[IMGS,NULL]),"
+            "wbFormIDCk('Night',[IMGS,NULL]),"
+            "wbFormIDCk('Early Sunrise',[IMGS,NULL]),"
+            "wbFormIDCk('Late Sunrise',[IMGS,NULL]),"
+            "wbFormIDCk('Early Sunset',[IMGS,NULL]),"
+            "wbFormIDCk('Late Sunset',[IMGS,NULL])"
+            "])"
+        )
+
+        # wbWeatherGodRays — wbDefinitionsCommon.pas:9134-9147.
+        # WGDR: struct of 8 GDRY formids.
+        self.vars["wbWeatherGodRays"] = (
+            "wbStruct(WGDR,'God Rays',["
+            "wbFormIDCk('Sunrise',[GDRY,NULL]),"
+            "wbFormIDCk('Day',[GDRY,NULL]),"
+            "wbFormIDCk('Sunset',[GDRY,NULL]),"
+            "wbFormIDCk('Night',[GDRY,NULL]),"
+            "wbFormIDCk('Early Sunrise',[GDRY,NULL]),"
+            "wbFormIDCk('Late Sunrise',[GDRY,NULL]),"
+            "wbFormIDCk('Early Sunset',[GDRY,NULL]),"
+            "wbFormIDCk('Late Sunset',[GDRY,NULL])"
+            "])"
+        )
+
+        # wbWeatherVolumetricLighting — wbDefinitionsCommon.pas:9219-9240.
+        # HNAM: struct of 8 VOLI formids.
+        self.vars["wbWeatherVolumetricLighting"] = (
+            "wbStruct(HNAM,'Volumetric Lighting',["
+            "wbFormIDCk('Sunrise',[VOLI,NULL]),"
+            "wbFormIDCk('Day',[VOLI,NULL]),"
+            "wbFormIDCk('Sunset',[VOLI,NULL]),"
+            "wbFormIDCk('Night',[VOLI,NULL]),"
+            "wbFormIDCk('Early Sunrise',[VOLI,NULL]),"
+            "wbFormIDCk('Late Sunrise',[VOLI,NULL]),"
+            "wbFormIDCk('Early Sunset',[VOLI,NULL]),"
+            "wbFormIDCk('Late Sunset',[VOLI,NULL])"
+            "])"
+        )
+
+        # wbWeatherDirectionalLighting — wbDefinitionsCommon.pas:9045-9066.
+        # Multiple DALC subrecords (one per time-of-day) in a wrapping RStruct.
+        # Each DALC is 28 bytes (6 byteColors directional + 4 unused + 4 unused in FO76).
+        self.vars["wbWeatherDirectionalLighting"] = (
+            "wbRStruct('Directional Ambient Lighting Colors',["
+            "wbByteArray(DALC,'Sunrise',0),"
+            "wbByteArray(DALC,'Day',0),"
+            "wbByteArray(DALC,'Sunset',0),"
+            "wbByteArray(DALC,'Night',0),"
+            "wbByteArray(DALC,'Early Sunrise',0),"
+            "wbByteArray(DALC,'Late Sunrise',0),"
+            "wbByteArray(DALC,'Early Sunset',0),"
+            "wbByteArray(DALC,'Late Sunset',0)"
+            "])"
+        )
+
     def resolve(self, expr: str, depth: int = 0) -> str:
         expr = expr.strip()
         if depth > 20:
@@ -774,7 +1037,9 @@ class Extractor:
         # wbXxx.Method(...) pattern — var reference with trailing method chain.
         # Strip the method chain and resolve just the var part.
         # e.g. wbCNDC.IncludeFlag(dfNoReport) → wbInteger(CNDC, ...)
-        bare_m = re.match(r"^(wb[A-Za-z0-9_]+)\.", expr)
+        # Allow optional whitespace/newline before the dot (Pascal line-continuation
+        # style: wbFULL\n    .SetAfterLoad(...)).
+        bare_m = re.match(r"^(wb[A-Za-z0-9_]+)\s*\.", expr)
         if bare_m:
             bare = bare_m.group(1)
             if bare not in HARD_RAW_VARS and bare in self.vars:
@@ -820,6 +1085,16 @@ class Extractor:
                 parts = split_top_level(args)
                 sig = parts[0].strip() if parts else "MODT"
                 return f"wbByteArray({sig}, 'Model Information', 0)"
+            # wbFloatRGBA(SIG) → wbStruct(SIG, 'Color', [...]) — substitute sig
+            if fn == "wbFloatRGBA":
+                parts = split_top_level(args)
+                sig2 = parts[0].strip() if parts else ""
+                if sig_id(sig2):
+                    return (
+                        f"wbStruct({sig2}, 'Color', ["
+                        f"wbFloat('Red'), wbFloat('Green'), wbFloat('Blue'), wbFloat('Alpha')])"
+                    )
+                return self.vars.get("wbFloatRGBA", expr)
             # wbVec3PosRot(SIG) → bytes (24 bytes = pos xyz + rot xyz)
             if fn == "wbVec3PosRot":
                 parts = split_top_level(args)
@@ -913,7 +1188,10 @@ class Extractor:
             return self._parse_float(expr)
         if expr.startswith("wbFormIDCk") or expr.startswith("wbFormIDCK"):
             return self._parse_formid(expr)
-        if expr.startswith("wbFormID"):
+        # wbFormId (lowercase 'd') is the unchecked variant — no valid_refs list.
+        # Must come before the wbFormID (uppercase) check because Python's
+        # startswith is case-sensitive; neither prefix is a prefix of the other.
+        if expr.startswith("wbFormId") or expr.startswith("wbFormID"):
             return self._parse_formid(expr, ck=False)
         if expr.startswith("wbStringKC") or expr.startswith("wbString"):
             return self._parse_string(expr)
@@ -1107,11 +1385,14 @@ class Extractor:
         else:
             decider = {"raw": True}
         if decider.get("raw"):
-            return {
+            out: dict = {
                 "kind": "raw_fallback",
                 "name": name or sig or "union",
                 "reason": "closure union decider",
             }
+            if sig:
+                out["sig"] = sig
+            return out
         variants_expr = parts[idx + 2]
         if "[" not in variants_expr:
             return {
@@ -1430,7 +1711,11 @@ class Extractor:
         return out
 
     def extract_record(self, sig: str) -> dict | None:
-        pattern = rf"\bwbRecord\s*\(\s*{sig}\s*,"
+        # Match both wbRecord(...) and wbRefRecord(...).
+        # wbRefRecord is used for placed-object records (REFR, ACHR) and has the
+        # same positional layout as wbRecord — the members list is always the
+        # last bracketed top-level argument.
+        pattern = rf"\bwbRe(?:cord|fRecord)\s*\(\s*{sig}\s*,"
         m = re.search(pattern, self.fo76)
         if not m:
             return None
@@ -1469,7 +1754,11 @@ def main() -> None:
     schema = ex.run()
 
     # Merge overrides — hand-authored fixes that survive regeneration.
-    # Override wins at record-key level: the entire record entry is replaced.
+    # Two mechanisms:
+    #   "records"          — whole-record replacement (wins over extractor output).
+    #   "record_additions" — member-append: members are appended to the extractor-
+    #                        generated record's members list without replacing it.
+    #                        Use for genuine xEdit gaps (subrecords absent from Pascal).
     if OVERRIDES.exists():
         try:
             overrides = json.loads(OVERRIDES.read_text(encoding="utf-8"))
@@ -1477,7 +1766,19 @@ def main() -> None:
             for sig, rec in overrides.get("records", {}).items():
                 schema["records"][sig] = rec
                 merged += 1
-            print(f"merged {merged} override(s) from {OVERRIDES.name}", file=sys.stderr)
+            additions = 0
+            for sig, extra_members in overrides.get("record_additions", {}).items():
+                if sig in schema["records"]:
+                    schema["records"][sig]["members"].extend(extra_members)
+                    additions += len(extra_members)
+                else:
+                    # No generated record to append to — treat as a full record.
+                    schema["records"][sig] = {"name": sig, "members": extra_members}
+                    merged += 1
+            print(
+                f"merged {merged} override(s), {additions} member addition(s) from {OVERRIDES.name}",
+                file=sys.stderr,
+            )
         except Exception as e:
             print(f"WARNING: failed to load overrides: {e}", file=sys.stderr)
 

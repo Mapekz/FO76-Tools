@@ -1,4 +1,22 @@
 {
+  "record_additions": {
+    "NPC_": [
+      {
+        "kind": "empty",
+        "sig": "AWPC",
+        "name": "AWPC"
+      }
+    ],
+    "WTHR": [
+      {"kind": "string", "sig": ":0TX", "name": "Layer #10"},
+      {"kind": "string", "sig": ";0TX", "name": "Layer #11"},
+      {"kind": "string", "sig": "<0TX", "name": "Layer #12"},
+      {"kind": "string", "sig": "=0TX", "name": "Layer #13"},
+      {"kind": "string", "sig": ">0TX", "name": "Layer #14"},
+      {"kind": "string", "sig": "?0TX", "name": "Layer #15"},
+      {"kind": "string", "sig": "@0TX", "name": "Layer #16"}
+    ]
+  },
   "records": {
     "PERK": {
       "name": "Perk",
