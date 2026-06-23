@@ -109,6 +109,39 @@ enum Commands {
         #[arg(long)]
         gate: bool,
     },
+    /// Find records that reference a given record (reverse FormID lookup).
+    ///
+    /// Builds (and caches) a reverse-reference index on first use, then lists every
+    /// record whose decoded fields point at the target FormID. Results are sorted by
+    /// FormID ascending and capped at --limit (default 100; 0 = unlimited).
+    ///
+    /// Note: the xref index only covers references between records that both exist
+    /// in this file, so references to FormIDs from master files will not appear.
+    /// The first run decodes every record (may take tens of seconds); subsequent
+    /// runs use the cached index and are instant.
+    Refs {
+        file: PathBuf,
+        #[arg(long, conflicts_with = "edid")]
+        formid: Option<String>,
+        #[arg(long, conflicts_with = "formid")]
+        edid: Option<String>,
+        /// Maximum number of results (default 100; 0 = unlimited).
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
+        /// Path to a localization BA2 (overrides auto-detected sibling BA2).
+        #[arg(long, conflicts_with = "strings_dir")]
+        strings: Option<PathBuf>,
+        /// Directory containing loose .strings/.dlstrings/.ilstrings files.
+        #[arg(long, conflicts_with = "strings")]
+        strings_dir: Option<PathBuf>,
+        /// Language code to use when loading string tables (default: "en").
+        #[arg(long, default_value = "en")]
+        lang: String,
+    },
     /// Search records by EditorID and/or display name using a wildcard pattern.
     ///
     /// Plain text is treated as a case-insensitive substring match.
@@ -216,6 +249,27 @@ fn main() -> anyhow::Result<()> {
             json,
             gate,
         } => cmd_coverage(&file, record_type.as_deref(), sample, json, gate),
+        Commands::Refs {
+            file,
+            formid,
+            edid,
+            limit,
+            json,
+            pretty,
+            strings,
+            strings_dir,
+            lang,
+        } => cmd_refs(
+            &file,
+            formid,
+            edid,
+            limit,
+            json,
+            pretty,
+            strings,
+            strings_dir,
+            &lang,
+        ),
         Commands::Search {
             file,
             pattern,
@@ -398,6 +452,97 @@ fn cmd_list(
     Ok(())
 }
 
+/// One referencer row, enriched with the record type for display.
+#[derive(serde::Serialize)]
+struct RefRow {
+    form_id: String,
+    record_type: Option<String>,
+    editor_id: Option<String>,
+    name: Option<String>,
+    offset: u64,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_refs(
+    file: &PathBuf,
+    formid: Option<String>,
+    edid: Option<String>,
+    limit: usize,
+    json: bool,
+    pretty: bool,
+    strings: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
+    lang: &str,
+) -> anyhow::Result<()> {
+    let mut db = Database::open(file)?;
+    apply_strings_override(&mut db, file, strings, strings_dir, lang);
+
+    let target = resolve_form_id(&mut db, formid, edid)?;
+    // referenced_by returns an owned Vec — the mutable borrow on db ends here.
+    let mut rows = db.referenced_by(target)?;
+
+    // Deterministic output: sort by FormID ascending.
+    rows.sort_by_key(|r| {
+        parse_form_id_input(&r.form_id)
+            .map(|f| f.0)
+            .unwrap_or(u32::MAX)
+    });
+
+    // Enrich each row with the referencer's record type via a cheap index lookup.
+    let enriched: Vec<RefRow> = rows
+        .into_iter()
+        .map(|r| {
+            let record_type = parse_form_id_input(&r.form_id)
+                .ok()
+                .and_then(|fid| db.index.get_by_formid(fid))
+                .map(|m| m.signature.clone());
+            RefRow {
+                form_id: r.form_id,
+                record_type,
+                editor_id: r.editor_id,
+                name: r.name,
+                offset: r.offset,
+            }
+        })
+        .collect();
+
+    let total = enriched.len();
+    let limited: Vec<RefRow> = if limit > 0 {
+        enriched.into_iter().take(limit).collect()
+    } else {
+        enriched
+    };
+    let capped = limit > 0 && total > limit;
+
+    if json {
+        print_json(&serde_json::to_value(&limited)?, pretty);
+    } else {
+        for row in &limited {
+            print!(
+                "{}  {}  {}",
+                row.form_id,
+                row.record_type.as_deref().unwrap_or("????"),
+                row.editor_id.as_deref().unwrap_or("<no edid>")
+            );
+            if let Some(ref name) = row.name {
+                print!("  {}", name);
+            }
+            println!();
+        }
+        if limited.is_empty() {
+            eprintln!("note: no records reference {}", target);
+        }
+    }
+
+    if capped {
+        eprintln!(
+            "note: output capped at {} of {} results; use --limit 0 to show all",
+            limit, total
+        );
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_search(
     file: &PathBuf,
@@ -491,10 +636,38 @@ fn cmd_diff(
     pretty: bool,
 ) -> anyhow::Result<()> {
     use fo76_esm_parser::diff::diff_databases;
+    use std::time::Instant;
 
+    let t0 = Instant::now();
     let db_a = Database::open(file_a)?;
+    let t1 = Instant::now();
+    eprintln!(
+        "timing: opened {:?} in {:.2}s",
+        file_a.file_name().unwrap_or_default(),
+        t1.duration_since(t0).as_secs_f64()
+    );
+
     let db_b = Database::open(file_b)?;
+    let t2 = Instant::now();
+    eprintln!(
+        "timing: opened {:?} in {:.2}s",
+        file_b.file_name().unwrap_or_default(),
+        t2.duration_since(t1).as_secs_f64()
+    );
+
     let mut result = diff_databases(&db_a, &db_b)?;
+    let t3 = Instant::now();
+    eprintln!(
+        "timing: diff computed in {:.2}s ({} added, {} removed, {} changed)",
+        t3.duration_since(t2).as_secs_f64(),
+        result.added.len(),
+        result.removed.len(),
+        result.changed.len()
+    );
+    eprintln!(
+        "timing: total elapsed {:.2}s",
+        t3.duration_since(t0).as_secs_f64()
+    );
 
     // Apply --type filter
     if let Some(sig) = record_type {
