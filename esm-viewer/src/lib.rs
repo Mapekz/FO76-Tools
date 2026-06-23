@@ -11,21 +11,25 @@ pub mod reader;
 pub mod schema;
 pub mod strings;
 pub mod tree;
+pub mod wildcard;
 
 use crate::decode::{decode_record, DecodeContext};
 use crate::formid::parse_formid;
 use crate::index::Index;
 use crate::reader::{edid_from_subrecords, EsmFile, FileInfo, ParsedRecord, RecordHeaderInfo};
 use crate::schema::Schema;
-use crate::strings::Localization;
+use crate::strings::{Localization, StringKind};
 use crate::tree::ChildRef;
+use crate::wildcard::wildcard_match;
 use anyhow::{bail, Context};
 pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
 pub use diff::{DiffResult, RecordDiff, RecordStub};
 pub use formid::FormId;
+pub use index::SearchMeta;
 pub use reader::RecordMeta;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashSet;
 use std::path::Path;
 
 // Re-export tree types. The tree module's RecordStub is distinct from
@@ -71,6 +75,17 @@ pub struct RecordRow {
     pub editor_id: Option<String>,
     pub name: Option<String>,
     pub offset: u64,
+}
+
+/// Which fields to match against in [`Database::search`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchField {
+    /// Match only the EditorID.
+    Edid,
+    /// Match only the display name (FULL) and description (DESC).
+    Name,
+    /// Match EditorID **or** display name / description (default).
+    Both,
 }
 
 impl Database {
@@ -167,6 +182,153 @@ impl Database {
                 editor_id,
                 full_lstring_id,
             });
+        }
+        Ok(out)
+    }
+
+    /// Search records by EditorID and/or display name using a wildcard pattern.
+    ///
+    /// `pattern` supports `*` as a multi-character wildcard. A plain string
+    /// (no `*`) is treated as a case-insensitive substring match. An empty
+    /// pattern or bare `"*"` matches everything.
+    ///
+    /// `types` restricts the search to the given 4-character record-type
+    /// signatures (uppercase). An empty slice searches all record types.
+    ///
+    /// `field` controls which fields are compared: [`SearchField::Edid`],
+    /// [`SearchField::Name`] (FULL + DESC), or [`SearchField::Both`].
+    ///
+    /// `limit` caps the number of results; pass `0` for no limit.
+    ///
+    /// Results are sorted by FormID for deterministic output.  When the result
+    /// count equals a non-zero `limit`, the caller should indicate to the user
+    /// that output was capped.
+    ///
+    /// Name search requires the localization BA2 to be loaded — if absent,
+    /// only EditorID matching produces results.  For non-localized ESMs,
+    /// names are inline strings and will not match via the lstring-ID path;
+    /// EditorID search still works for those files.
+    pub fn search(
+        &mut self,
+        pattern: &str,
+        types: &[String],
+        field: SearchField,
+        limit: usize,
+    ) -> anyhow::Result<Vec<RecordRow>> {
+        self.index
+            .ensure_search_index(&self.esm, self.is_localized)?;
+
+        let type_filter: Option<HashSet<&str>> = if types.is_empty() {
+            None
+        } else {
+            Some(types.iter().map(|s| s.as_str()).collect())
+        };
+
+        let search_index = self
+            .index
+            .search_index()
+            .expect("search_index must be populated after ensure_search_index");
+
+        // Collect matching entries. HashMap order is nondeterministic, so we
+        // accumulate into a Vec and sort by FormID before returning.
+        let mut matches: Vec<(u32, RecordRow)> = Vec::new();
+
+        for (form_id, smeta) in search_index {
+            // Type filter.
+            if let Some(ref filter) = type_filter {
+                let sig = self
+                    .index
+                    .get_by_formid(*form_id)
+                    .map(|m| m.signature.as_str())
+                    .unwrap_or("");
+                if !filter.contains(sig) {
+                    continue;
+                }
+            }
+
+            // Resolve display name: lstring ID for localized ESMs,
+            // inline text for non-localized ESMs.
+            let name: Option<String> = smeta
+                .full_id
+                .and_then(|id| {
+                    self.localization
+                        .as_ref()
+                        .and_then(|l| l.lookup(StringKind::Strings, id))
+                        .map(|s| s.to_owned())
+                })
+                .or_else(|| smeta.full_text.clone());
+
+            // Resolve description: lstring ID for localized ESMs,
+            // inline text for non-localized ESMs.
+            let desc: Option<String> = smeta
+                .desc_id
+                .and_then(|id| {
+                    self.localization
+                        .as_ref()
+                        .and_then(|l| l.lookup(StringKind::Strings, id))
+                        .map(|s| s.to_owned())
+                })
+                .or_else(|| smeta.desc_text.clone());
+
+            // Check if this record matches the pattern for the requested field.
+            let matched = match field {
+                SearchField::Edid => smeta
+                    .editor_id
+                    .as_deref()
+                    .map(|e| wildcard_match(pattern, e))
+                    .unwrap_or(false),
+                SearchField::Name => {
+                    name.as_deref()
+                        .map(|n| wildcard_match(pattern, n))
+                        .unwrap_or(false)
+                        || desc
+                            .as_deref()
+                            .map(|d| wildcard_match(pattern, d))
+                            .unwrap_or(false)
+                }
+                SearchField::Both => {
+                    smeta
+                        .editor_id
+                        .as_deref()
+                        .map(|e| wildcard_match(pattern, e))
+                        .unwrap_or(false)
+                        || name
+                            .as_deref()
+                            .map(|n| wildcard_match(pattern, n))
+                            .unwrap_or(false)
+                        || desc
+                            .as_deref()
+                            .map(|d| wildcard_match(pattern, d))
+                            .unwrap_or(false)
+                }
+            };
+
+            if !matched {
+                continue;
+            }
+
+            let offset = self
+                .index
+                .get_by_formid(*form_id)
+                .map(|m| m.offset)
+                .unwrap_or(0);
+
+            matches.push((
+                form_id.raw(),
+                RecordRow {
+                    form_id: form_id.display(),
+                    editor_id: smeta.editor_id.clone(),
+                    name,
+                    offset,
+                },
+            ));
+        }
+
+        matches.sort_by_key(|(raw, _)| *raw);
+
+        let mut out: Vec<RecordRow> = matches.into_iter().map(|(_, row)| row).collect();
+        if limit > 0 && out.len() > limit {
+            out.truncate(limit);
         }
         Ok(out)
     }

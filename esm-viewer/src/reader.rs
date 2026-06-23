@@ -407,6 +407,41 @@ pub fn lstring_id_from_subrecords(subs: &[OwnedSubrecord], sig: &str) -> Option<
         .map(|s| u32::from_le_bytes(s.data[0..4].try_into().unwrap()))
 }
 
+/// Read a subrecord's data as an inline NUL-terminated string (for
+/// non-localized ESMs), stripping an optional `<ID=XXXXXXXX>` prefix.
+///
+/// Returns `None` if the subrecord is absent or its data is empty.
+pub fn inline_string_from_subrecords(subs: &[OwnedSubrecord], sig: &str) -> Option<String> {
+    let sr = subs.iter().find(|s| s.signature.as_str() == sig)?;
+    if sr.data.is_empty() {
+        return None;
+    }
+    let nul_end = sr
+        .data
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(sr.data.len());
+    if nul_end == 0 {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&sr.data[..nul_end]);
+    // Strip the optional `<ID=XXXXXXXX>` reference marker.
+    let text = if s.starts_with("<ID=") {
+        if let Some(close) = s.find('>') {
+            let remainder = s[close + 1..].trim_start();
+            if remainder.is_empty() {
+                return None;
+            }
+            remainder.to_string()
+        } else {
+            s.into_owned()
+        }
+    } else {
+        s.into_owned()
+    };
+    Some(text)
+}
+
 #[cfg(test)]
 mod structural_tests {
     use super::*;

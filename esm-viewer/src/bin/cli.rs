@@ -1,5 +1,5 @@
-use clap::{Parser, Subcommand};
-use fo76_esm_parser::{parse_form_id_input, Database};
+use clap::{Parser, Subcommand, ValueEnum};
+use fo76_esm_parser::{parse_form_id_input, Database, SearchField};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -109,6 +109,53 @@ enum Commands {
         #[arg(long)]
         gate: bool,
     },
+    /// Search records by EditorID and/or display name using a wildcard pattern.
+    ///
+    /// Plain text is treated as a case-insensitive substring match.
+    /// Use `*` as a multi-character wildcard: `HTO_*` (prefix), `*Rifle` (suffix),
+    /// `Plasma*Rifle` (both anchors), `*` (match all).
+    ///
+    /// Results are sorted by FormID and capped at --limit (default 100; 0 = unlimited).
+    Search {
+        file: PathBuf,
+        /// Pattern to match (supports `*` wildcard and plain substring search).
+        pattern: String,
+        /// Restrict search to one or more record types (comma-separated or repeated).
+        /// Example: `--type WEAP,OMOD` or `--type WEAP --type OMOD`.
+        #[arg(long = "type", value_delimiter = ',')]
+        types: Vec<String>,
+        /// Which field(s) to match against.
+        #[arg(long = "in", value_enum, default_value = "both")]
+        search_in: SearchInArg,
+        /// Maximum number of results (default 100; 0 = unlimited).
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        /// Output results as JSON.
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
+        /// Path to a localization BA2 (overrides auto-detected sibling BA2).
+        #[arg(long, conflicts_with = "strings_dir")]
+        strings: Option<PathBuf>,
+        /// Directory containing loose .strings/.dlstrings/.ilstrings files.
+        #[arg(long, conflicts_with = "strings")]
+        strings_dir: Option<PathBuf>,
+        /// Language code to use when loading string tables (default: "en").
+        #[arg(long, default_value = "en")]
+        lang: String,
+    },
+}
+
+/// Controls which record fields are compared during a `search`.
+#[derive(Clone, Copy, ValueEnum)]
+enum SearchInArg {
+    /// Match only the EditorID.
+    Edid,
+    /// Match only the display name (FULL) and description (DESC).
+    Name,
+    /// Match EditorID or display name / description (default).
+    Both,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -169,6 +216,29 @@ fn main() -> anyhow::Result<()> {
             json,
             gate,
         } => cmd_coverage(&file, record_type.as_deref(), sample, json, gate),
+        Commands::Search {
+            file,
+            pattern,
+            types,
+            search_in,
+            limit,
+            json,
+            pretty,
+            strings,
+            strings_dir,
+            lang,
+        } => cmd_search(
+            &file,
+            &pattern,
+            types,
+            search_in,
+            limit,
+            json,
+            pretty,
+            strings,
+            strings_dir,
+            &lang,
+        ),
     }
 }
 
@@ -325,6 +395,74 @@ fn cmd_list(
         }
         println!();
     }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_search(
+    file: &PathBuf,
+    pattern: &str,
+    types: Vec<String>,
+    search_in: SearchInArg,
+    limit: usize,
+    json: bool,
+    pretty: bool,
+    strings: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
+    lang: &str,
+) -> anyhow::Result<()> {
+    if pattern.is_empty() {
+        anyhow::bail!("search pattern must not be empty (use \"*\" to match all records)");
+    }
+
+    // Validate and uppercase type filters.
+    let types: Vec<String> = types
+        .into_iter()
+        .map(|t| {
+            let up = t.to_uppercase();
+            if up.len() != 4 {
+                anyhow::bail!("record type '{}' must be a 4-character signature", t);
+            }
+            Ok(up)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let field = match search_in {
+        SearchInArg::Edid => SearchField::Edid,
+        SearchInArg::Name => SearchField::Name,
+        SearchInArg::Both => SearchField::Both,
+    };
+
+    let mut db = Database::open(file)?;
+    apply_strings_override(&mut db, file, strings, strings_dir, lang);
+
+    let results = db.search(pattern, &types, field, limit)?;
+
+    let capped = limit > 0 && results.len() == limit;
+
+    if json {
+        print_json(&serde_json::to_value(&results)?, pretty);
+    } else {
+        for row in &results {
+            print!(
+                "{}  {}",
+                row.form_id,
+                row.editor_id.as_deref().unwrap_or("<no edid>")
+            );
+            if let Some(ref name) = row.name {
+                print!("  {}", name);
+            }
+            println!();
+        }
+    }
+
+    if capped {
+        eprintln!(
+            "note: output capped at {} results; use --limit 0 to show all",
+            limit
+        );
+    }
+
     Ok(())
 }
 
