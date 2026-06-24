@@ -446,17 +446,23 @@ def unquote(s: str) -> str:
     return s
 
 
+def _pascal_str(m: re.Match) -> str:
+    """Unescape a Pascal string match (replace '' → ')."""
+    return m.group(1).replace("''", "'")
+
+
 def parse_flags_list(text: str) -> list[str]:
+    # Pascal strings use '' for a literal single-quote inside the string.
     names: list[str] = []
-    for m in re.finditer(r"'([^']*)'", text):
-        names.append(m.group(1))
+    for m in re.finditer(r"'((?:[^']|'')*)'", text):
+        names.append(_pascal_str(m))
     return names
 
 
 def parse_enum_dense(text: str) -> list[str]:
     names: list[str] = []
-    for m in re.finditer(r"(?:\{\d+\}\s*)?'([^']*)'", text):
-        names.append(m.group(1))
+    for m in re.finditer(r"(?:\{\d+\}\s*)?'((?:[^']|'')*)'", text):
+        names.append(_pascal_str(m))
     return names
 
 
@@ -504,14 +510,158 @@ def sig_id(token: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# stop_before annotation pass
+# ---------------------------------------------------------------------------
+
+def _anchor_sig(member: dict | None) -> str | None:
+    """Return the first 4-char subrecord signature found in a parsed member dict.
+
+    Mirrors decode.rs `anchor_sig`: recurses into rstruct members and rarray
+    elements to find the leading sig.  Used to set `stop_before` boundaries on
+    Conditions-style rarrays so they don't greedily consume CTDAs that belong
+    to following entries.
+    """
+    if member is None:
+        return None
+    sig = member.get("sig")
+    if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
+        return sig
+    kind = member.get("kind")
+    if kind == "rstruct":
+        for m in member.get("members", []):
+            s = _anchor_sig(m)
+            if s:
+                return s
+    elif kind == "rarray":
+        elem = member.get("element")
+        if elem:
+            return _anchor_sig(elem)
+    return None
+
+
+def _annotate_stop_before(members: list[dict], outer_stops: list[str]) -> None:
+    """Walk a member list and set `stop_before` on every Conditions rarray.
+
+    A "Conditions rarray" is an ``rarray`` whose element's leading sig is
+    ``CTDA``.  Without a boundary hint the decoder consumes CTDAs greedily from
+    the shared ``by_sig`` map, so per-entry conditions are stolen by the
+    record-level Conditions slot (the LVLI/LVLN bug).
+
+    ``stop_before`` is set to the union of:
+      • anchor sigs of all sibling members that follow this rarray, and
+      • ``outer_stops`` — boundaries propagated from enclosing rarrays.
+
+    The function recurses into rstruct members, rarray elements, and union
+    variants so every nesting depth is covered.
+    """
+    for i, member in enumerate(members):
+        # Collect anchor sigs of all siblings that follow position i.
+        sibling_stops: list[str] = []
+        for j in range(i + 1, len(members)):
+            s = _anchor_sig(members[j])
+            if s and s not in sibling_stops:
+                sibling_stops.append(s)
+
+        kind = member.get("kind")
+
+        if kind == "rarray":
+            elem = member.get("element")
+            elem_anchor = _anchor_sig(elem) if elem else None
+
+            if elem_anchor == "CTDA":
+                # Conditions rarray: add stop_before so consumption halts at
+                # the next structural boundary.
+                stops: list[str] = sibling_stops[:]
+                for s in outer_stops:
+                    if s not in stops:
+                        stops.append(s)
+                if stops:
+                    member["stop_before"] = stops
+
+            # Recurse into the element.  From inside the element the enclosing
+            # rarray's element anchor is itself a repeat boundary (e.g. LVLO
+            # marks the start of each new leveled-list entry).
+            if elem:
+                inner_outer: list[str] = []
+                if elem_anchor:
+                    inner_outer.append(elem_anchor)
+                for s in sibling_stops:
+                    if s not in inner_outer:
+                        inner_outer.append(s)
+                for s in outer_stops:
+                    if s not in inner_outer:
+                        inner_outer.append(s)
+                _annotate_stop_before_member(elem, inner_outer)
+
+        elif kind == "rstruct":
+            inner_outer = sibling_stops[:]
+            for s in outer_stops:
+                if s not in inner_outer:
+                    inner_outer.append(s)
+            _annotate_stop_before(member.get("members", []), inner_outer)
+
+        elif kind == "union":
+            inner_outer = sibling_stops[:]
+            for s in outer_stops:
+                if s not in inner_outer:
+                    inner_outer.append(s)
+            for variant in member.get("variants", []):
+                _annotate_stop_before_member(variant, inner_outer)
+
+
+def _annotate_stop_before_member(member: dict | None, outer_stops: list[str]) -> None:
+    """Recurse into a single member for stop_before annotation."""
+    if member is None:
+        return
+    kind = member.get("kind")
+    if kind == "rstruct":
+        _annotate_stop_before(member.get("members", []), outer_stops)
+    elif kind == "rarray":
+        elem = member.get("element")
+        elem_anchor = _anchor_sig(elem) if elem else None
+        if elem_anchor == "CTDA":
+            stops = list(outer_stops)
+            if stops:
+                member["stop_before"] = stops
+        if elem:
+            inner_outer: list[str] = []
+            if elem_anchor:
+                inner_outer.append(elem_anchor)
+            for s in outer_stops:
+                if s not in inner_outer:
+                    inner_outer.append(s)
+            _annotate_stop_before_member(elem, inner_outer)
+    elif kind == "union":
+        for variant in member.get("variants", []):
+            _annotate_stop_before_member(variant, outer_stops)
+
+
 class Extractor:
     def __init__(self, fo76: str, common: str):
         self.fo76 = fo76
         self.common = common
         self.vars: dict[str, str] = {}
+        self.sig_lists: dict[str, list[str]] = {}
+        self._collect_sig_lists(fo76)
         self._collect_vars(fo76)
         # Skip common.pas — helpers are injected below.
         self._inject_builtin_helpers()
+
+    def _collect_sig_lists(self, text: str) -> None:
+        """Parse named TwbSignatures array constants from the Pascal global scope.
+
+        These are declared as ``sigXxx : TwbSignatures = ['A', 'B', ...]`` and
+        used in ``wbFormIDCk`` calls instead of inline bracket lists.  The most
+        important one is ``sigBaseObjects``.
+        """
+        for m in re.finditer(
+            r"\b(sig[A-Za-z0-9_]+)\s*:\s*TwbSignatures\s*=\s*\[([^\]]+)\]",
+            text,
+        ):
+            sigs = re.findall(r"'([A-Z0-9_]{4})'", m.group(2))
+            if sigs:
+                self.sig_lists[m.group(1)] = sigs
 
     def _collect_vars(self, text: str) -> None:
         start = text.find("procedure DefineFO76")
@@ -1133,6 +1283,21 @@ class Extractor:
             pass
         return expr
 
+    def _strip_version_sig(self, inner_expr: str) -> tuple[str, str | None]:
+        """Handle the optional 3-arg form of wbBelowVersion/wbFromVersion.
+
+        Pascal allows ``wbBelowVersion(N, SIG, element)`` where ``SIG`` is a
+        4-char subrecord signature that should be attached to the element.
+        After ``expand_call`` extracts the version number and comma the
+        remainder is ``SIG, element`` — detect and strip the leading sig.
+
+        Returns ``(cleaned_expr, injected_sig_or_None)``.
+        """
+        sig_m = re.match(r"^([A-Z0-9_]{4})\s*,\s*", inner_expr)
+        if sig_m:
+            return inner_expr[sig_m.end():], sig_m.group(1)
+        return inner_expr, None
+
     def parse_member(self, expr: str) -> dict | None:
         expr = self.expand_call(expr)
         # __vmad__ sentinel: reuse the existing vmad decoder in decode.rs.
@@ -1155,16 +1320,24 @@ class Extractor:
         if expr.startswith("__from_version__"):
             m = re.match(r"__from_version__\((\d+),\s*(.+)\)\s*$", expr, re.DOTALL)
             if m:
-                child = self.parse_member(m.group(2))
+                ver = int(m.group(1))
+                inner_expr, injected_sig = self._strip_version_sig(m.group(2))
+                child = self.parse_member(inner_expr)
                 if child:
-                    child["from_version"] = int(m.group(1))
+                    child["from_version"] = ver
+                    if injected_sig and "sig" not in child:
+                        child["sig"] = injected_sig
                 return child
         if expr.startswith("__below_version__"):
             m = re.match(r"__below_version__\((\d+),\s*(.+)\)\s*$", expr, re.DOTALL)
             if m:
-                child = self.parse_member(m.group(2))
+                ver = int(m.group(1))
+                inner_expr, injected_sig = self._strip_version_sig(m.group(2))
+                child = self.parse_member(inner_expr)
                 if child:
-                    child["below_version"] = int(m.group(1))
+                    child["below_version"] = ver
+                    if injected_sig and "sig" not in child:
+                        child["sig"] = injected_sig
                 return child
 
         # wbStruct / wbStructSK / wbStructExSK (ExSK has extra leading [exclude] arg)
@@ -1430,6 +1603,10 @@ class Extractor:
             out["sig"] = sig
         if len(parts) > idx + 2:
             fmt_arg = parts[idx + 2].strip()
+            # Resolve a bare wb* variable reference (e.g. wbLVLFFlags → wbFlags([...]))
+            # before dispatching to parse_format_arg, which only handles literals.
+            if re.fullmatch(r"wb[A-Za-z0-9_]+", fmt_arg) and fmt_arg in self.vars:
+                fmt_arg = self.vars[fmt_arg]
             if "wbObjectModPropertyToStr" in fmt_arg:
                 # Property index whose enum depends on the parent Data struct's Form Type.
                 # Emit a FieldValue union; the decoder resolves Form Type from outer context.
@@ -1490,8 +1667,12 @@ class Extractor:
             idx = 1
         name = unquote(parts[idx])
         refs: list[str] = []
-        if ck and len(parts) > idx + 1 and "[" in parts[idx + 1]:
-            refs = re.findall(r"[A-Z0-9_]{4}", parts[idx + 1])
+        if ck and len(parts) > idx + 1:
+            raw_refs = parts[idx + 1]
+            if "[" in raw_refs:
+                refs = re.findall(r"[A-Z0-9_]{4}", raw_refs)
+            elif raw_refs.strip() in self.sig_lists:
+                refs = self.sig_lists[raw_refs.strip()]
         out: dict = {"kind": "formid", "name": name, "valid_refs": refs}
         if sig:
             out["sig"] = sig
@@ -1743,6 +1924,13 @@ class Extractor:
                 print(f"extracted {sig}: {len(rec['members'])} members", file=sys.stderr)
             else:
                 print(f"WARNING: missing {sig}", file=sys.stderr)
+
+        # Annotate Conditions rarrays with stop_before boundaries so the decoder
+        # does not greedily consume per-entry CTDAs into the record-level Conditions
+        # slot (the LVLI/LVLN/SPEL/etc. per-entry conditions bug).
+        for rec in records.values():
+            _annotate_stop_before(rec.get("members", []), [])
+
         return {"records": records}
 
 
