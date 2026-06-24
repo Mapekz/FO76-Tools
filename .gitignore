@@ -1,8 +1,5 @@
 # Rust build artifacts
 **/target/
 
-# dps-76 has its own git repo and is tracked there
-dps-76/
-
 # pyenv version file
 .python-version
