@@ -56,20 +56,88 @@
           "sig": "ICON"
         },
         {
+          "kind": "rstruct",
+          "name": "Conditions",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Condition Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "CITC"
+            },
+            {
+              "kind": "rarray",
+              "name": "Conditions",
+              "element": {
+                "kind": "rstruct",
+                "name": "Condition",
+                "members": [
+                  {
+                    "kind": "struct",
+                    "name": "Condition Data",
+                    "sig": "CTDA",
+                    "fields": [
+                      {"kind": "integer", "name": "Type", "width": "u8", "signed": false},
+                      {"kind": "unused", "bytes": 3},
+                      {"kind": "bytes", "name": "Comparison Value", "len": 4},
+                      {"kind": "integer", "name": "Function", "width": "u16", "signed": false},
+                      {"kind": "unused", "bytes": 2},
+                      {"kind": "bytes", "name": "Parameter #1", "len": 4},
+                      {"kind": "bytes", "name": "Parameter #2", "len": 4},
+                      {"kind": "integer", "name": "Run On", "width": "u32", "signed": false,
+                        "format": {"enum": ["Subject","Target","Reference","Combat Target",
+                          "Linked Reference","Quest Alias","Package Data","Event Data",
+                          "Unknown 8","Command Target","Event Camera Ref","My Killer",
+                          "Active Players","Potential Players","Player Teammates",
+                          "Target List","Instance Owner"]}},
+                      {"kind": "bytes", "name": "Reference", "len": 4},
+                      {"kind": "bytes", "name": "Parameter #3", "len": 4}
+                    ]
+                  },
+                  {"kind": "string", "name": "Parameter #1", "keep_case": false, "sig": "CIS1"},
+                  {"kind": "string", "name": "Parameter #2", "keep_case": false, "sig": "CIS2"}
+                ]
+              }
+            }
+          ]
+        },
+        {
           "kind": "struct",
           "name": "Data",
           "fields": [
             {
               "kind": "integer",
-              "name": "Playable",
+              "name": "Trait",
+              "width": "u8",
+              "signed": false,
+              "format": {"enum": ["False", "True"]}
+            },
+            {
+              "kind": "integer",
+              "name": "Level",
               "width": "u8",
               "signed": false
             },
             {
               "kind": "integer",
-              "name": "Hidden",
+              "name": "Num Ranks",
               "width": "u8",
               "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Playable",
+              "width": "u8",
+              "signed": false,
+              "format": {"enum": ["False", "True"]}
+            },
+            {
+              "kind": "integer",
+              "name": "Hidden",
+              "width": "u8",
+              "signed": false,
+              "format": {"enum": ["False", "True"]}
             },
             {
               "kind": "bytes",

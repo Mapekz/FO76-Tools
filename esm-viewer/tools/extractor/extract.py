@@ -282,6 +282,32 @@ INT_MAP = {
 }
 
 
+class CoverageReport:
+    """Accumulates extraction diagnostics for the fail-loud coverage report.
+
+    Threaded through the ``Extractor`` instance as ``self.report``.  Non-zero
+    ``defaulted_int_tokens`` is the loudest signal: it means an integer type
+    token was not found in ``INT_MAP`` and silently defaulted to ``(u32,
+    False)`` — the same class of bug that caused the OBTS +2-byte offset skew.
+    """
+
+    def __init__(self, strict: bool = False) -> None:
+        self.strict = strict
+        self.failed_records: int = 0
+        self.missing_int_type: int = 0
+        # Tokens not in INT_MAP → silently defaulted to (u32, False).
+        # MUST be empty after a correct extraction; non-empty = width-skew risk.
+        self.defaulted_int_tokens: dict[str, int] = {}
+        # Pascal constructs that hit parse_member's terminal ``return None``
+        # (silent member drop).  Populated for visibility; --strict does not
+        # fail on these because some drops are expected (unmodelled helpers).
+        self.unrecognized_constructs: dict[str, int] = {}
+        # Per-record breakdown of unrecognized construct drops.
+        # Keys are record sig strings; values are {construct_key: count} dicts.
+        # Used by audit.py to emit per-record dropped findings with path context.
+        self.unrecognized_by_record: dict[str, dict[str, int]] = {}
+
+
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
@@ -513,6 +539,12 @@ def parse_format_arg(arg: str) -> dict | None:
 
 
 def sig_id(token: str) -> str | None:
+    # Binary IAD-type sigs must be checked BEFORE strip() because some first
+    # bytes are ASCII whitespace (e.g. \x09=tab, \x0a=newline, \x0d=CR) and
+    # strip() would corrupt them.  These come from Pascal constants like
+    # _09_IAD = #$09'IAD', injected into self.vars by _inject_builtin_helpers.
+    if len(token) == 4 and token[1:] == "IAD":
+        return token
     token = token.strip()
     if re.fullmatch(r"[A-Z0-9_]{4}", token):
         return token
@@ -656,6 +688,29 @@ class Extractor:
         self._collect_vars(fo76)
         # Skip common.pas — helpers are injected below.
         self._inject_builtin_helpers()
+        # Case-insensitive lookup map: lowercase(var_name) → canonical var_name.
+        # Pascal identifiers are case-insensitive; some usage sites (e.g. wbDesc vs
+        # wbDESC) use a different case than the `:=` assignment that _collect_vars
+        # recorded.  Rebuilt lazily via _vars_lower_map property.
+        self._vars_lower: dict[str, str] | None = None
+        # Coverage / fail-loud diagnostics.  Set report.strict = True before
+        # calling run() to enable strict mode (also via EXTRACT_STRICT=1 env).
+        self.report: CoverageReport = CoverageReport()
+        # Tracks the record sig currently being extracted for error attribution.
+        self._current_record: str = ""
+        # Inline member cache: pre-built schema dicts returned via __inline__:KEY
+        # sentinel from expand_call → parse_member.  Used for members whose sigs
+        # contain bytes that split_top_level.strip() would destroy (e.g. \x09=tab,
+        # \x0a=newline, \x0d=CR as the first byte of a binary IAD sig).
+        self._inline_members: dict[str, dict] = {}
+        self._inline_counter: int = 0
+
+    @property
+    def _vars_lower_map(self) -> dict[str, str]:
+        """Lazily built lowercase → canonical-key map for case-insensitive var lookup."""
+        if self._vars_lower is None:
+            self._vars_lower = {k.lower(): k for k in self.vars}
+        return self._vars_lower
 
     def _collect_sig_lists(self, text: str) -> None:
         """Parse named TwbSignatures array constants from the Pascal global scope.
@@ -1182,6 +1237,164 @@ class Extractor:
             "])"
         )
 
+        # ----------------------------------------------------------------
+        # wbXLOD — wbDefinitionsCommon.pas:9624-9629.
+        # XLOD subrecord: fixed array of 3 floats (Distant LOD data).
+        # ----------------------------------------------------------------
+        self.vars.setdefault("wbXLOD", "wbArray(XLOD,'Distant LOD Data',wbFloat('Unknown'),3)")
+
+        # ----------------------------------------------------------------
+        # wbWeatherLightningColor — wbDefinitionsCommon.pas:9172-9179.
+        # Sigless struct field: Red/Green/Blue u8.  Used bare (no parens)
+        # inside a wbArray element struct in WTHR.
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbWeatherLightningColor",
+            "wbStruct('Lightning Color',["
+            "wbInteger('Red',itU8),"
+            "wbInteger('Green',itU8),"
+            "wbInteger('Blue',itU8)"
+            "])"
+        )
+
+        # ----------------------------------------------------------------
+        # wbVec3PosRot — bare (sigless) usage inside struct member lists.
+        # The (SIG) form is handled in expand_call; the bare var reference
+        # (e.g. wbVec3PosRot inside wbStruct XTEL) needs the var map.
+        # wbDefinitionsCommon.pas:8715-8720 — 24-byte position+rotation block.
+        # ----------------------------------------------------------------
+        self.vars.setdefault("wbVec3PosRot", "wbByteArray('Position/Rotation', 24)")
+
+        # ----------------------------------------------------------------
+        # wbINOA / wbINOM — editor-only INFO-order arrays (DIAL record).
+        # wbDefinitionsCommon.pas:8164-8182.  These are flagged dfDontSave
+        # and should not appear in binary ESM data, but we model them anyway.
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbINOA",
+            "wbArray(INOA,'INFO Order (All previous modules)',wbFormIDCk('INFO',[INFO]))"
+        )
+        self.vars.setdefault(
+            "wbINOM",
+            "wbArray(INOM,'INFO Order (Masters only)',wbFormIDCk('INFO',[INFO]))"
+        )
+
+        # ----------------------------------------------------------------
+        # wbFactionRelations — wbDefinitionsCommon.pas:8100-8117.
+        # RArrayS of XNAM structs: faction/race formid + s32 modifier + enum.
+        # IsTES4(nil, ...) → FO76 includes the Group Combat Reaction field.
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbFactionRelations",
+            (
+                "wbRArrayS('Relations',"
+                "wbStructSK(XNAM,[0],'Relation',["
+                "wbFormIDCk('Faction',[FACT,RACE]),"
+                "wbInteger('Modifier',itS32),"
+                "wbInteger('Group Combat Reaction',itU32,wbEnum(["
+                "'Neutral','Enemy','Ally','Friend'"
+                "]))]))"
+            ),
+        )
+
+        # ----------------------------------------------------------------
+        # wbActorSounds — wbDefinitionsCommon.pas:7959-7975.
+        # RArrayS of (CS2K keyword + CS2D sound) pairs, count from CS2H.
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbActorSounds",
+            (
+                "wbRArrayS('Sounds',"
+                "wbRStructSK([0],'Sound',["
+                "wbFormIDCk(CS2K,'Keyword',[KYWD]),"
+                "wbFormIDCk(CS2D,'Sound',[SNDR])]))"
+            ),
+        )
+
+        # ----------------------------------------------------------------
+        # wbIdleAnimation — wbDefinitionsCommon.pas:8186-8223.
+        # FO76 branch: IDLF flags (u8) + IDLC animation count (u8) +
+        # IDLT timer float + IDLA animations array + IDLB unknown.
+        # IsFO3(a, b) → b for FO76; IsSF1(a, b) → b for FO76.
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbIdleAnimation",
+            (
+                "wbRStruct('Idle Animations',["
+                "wbInteger(IDLF,'Flags',itU8,wbFlags(["
+                "'Run In Sequence','','Do Once','Loose Only',"
+                "'','','','',"
+                "'Ignored By Sandbox'])),"
+                "wbInteger(IDLC,'Animation Count',itU8),"
+                "wbFloat(IDLT,'Idle Timer Setting'),"
+                "wbArray(IDLA,'Animations',wbFormIDCk('Animation',[IDLE,NULL])),"
+                "wbUnknown(IDLB)"
+                "])"
+            ),
+        )
+
+        # ----------------------------------------------------------------
+        # Binary IAD sig constants for IMAD record.
+        # Pascal: _00_IAD : TwbSignature = #$00'IAD', …, _54_IAD : TwbSignature = #$54'IAD'.
+        # wbDefinitionsSignatures.pas:1808-1866.
+        # Stored as 4-char Python strings; sig_id() accepts them via the IAD rule.
+        # ----------------------------------------------------------------
+        for _iad_i in range(0x15):   # 0x00 .. 0x14 (Mult)
+            self.vars.setdefault(f"_{_iad_i:02X}_IAD", chr(_iad_i) + "IAD")
+        for _iad_i in range(0x40, 0x55):  # 0x40 .. 0x54 (Add)
+            self.vars.setdefault(f"_{_iad_i:02X}_IAD", chr(_iad_i) + "IAD")
+
+        # ----------------------------------------------------------------
+        # wbRegionAreas — wbDefinitionsCommon.pas:8712-8728.
+        # FO76 branch includes ANAM (unknown extra bytes).
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbRegionAreas",
+            (
+                "wbRArray('Region Areas',"
+                "wbRStruct('Region Area',["
+                "wbInteger(RPLI,'Edge Fall-off',itU32),"
+                "wbArray(RPLD,'Points',wbStruct('Point',[wbFloat('X'),wbFloat('Y')])),"
+                "wbByteArray(ANAM,'Unknown',0)"
+                "]))"
+            ),
+        )
+
+        # ----------------------------------------------------------------
+        # wbRegionSounds — wbDefinitionsCommon.pas:8729-8766.
+        # FO76 branch: RDSA sig, wbFloat('Chance') (not wbScaledInt4).
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbRegionSounds",
+            (
+                "wbArrayS(RDSA,'Sounds',"
+                "wbStructSK([0],'Sound',["
+                "wbFormIDCk('Sound',[SNDR,SOUN,NULL]),"
+                "wbInteger('Flags',itU32,wbFlags(["
+                "'Pleasant','Cloudy','Rainy','Snowy'"
+                "])),"
+                "wbFloat('Chance')"
+                "]))"
+            ),
+        )
+
+        # ----------------------------------------------------------------
+        # wbStaticPartPlacements — wbDefinitionsCommon.pas:8784-8800.
+        # DATA array of Placement structs: position (3 floats) + rotation
+        # (3 floats, same wire format as floats) + scale float.
+        # ----------------------------------------------------------------
+        self.vars.setdefault(
+            "wbStaticPartPlacements",
+            (
+                "wbArrayS(DATA,'Placements',"
+                "wbStruct('Placement',["
+                "wbStruct('Position',[wbFloat('X'),wbFloat('Y'),wbFloat('Z')]),"
+                "wbStruct('Rotation',[wbFloat('X'),wbFloat('Y'),wbFloat('Z')]),"
+                "wbFloat('Scale')"
+                "]))"
+            ),
+        )
+
     def resolve(self, expr: str, depth: int = 0) -> str:
         expr = expr.strip()
         if depth > 20:
@@ -1322,8 +1535,186 @@ class Extractor:
                             if e:
                                 members_out.append(e)
                 return f"wbRStruct('{t_name}',[{','.join(members_out)}])"
+            # wbStructs(sig, groupName, elementName, [fields]) →
+            # wbArrayS(sig, groupName, wbStruct(elementName, [fields]))
+            # wbDefinitionsCommon.pas interface lines 4467-4475.
+            if fn == "wbStructs":
+                ws_parts = split_top_level(args)
+                if len(ws_parts) >= 4 and sig_id(ws_parts[0].strip()):
+                    sig2 = ws_parts[0].strip()
+                    ws_name = unquote(ws_parts[1])
+                    ws_elem = unquote(ws_parts[2])
+                    ws_fields = ws_parts[3].strip()
+                    return f"wbArrayS({sig2},'{ws_name}',wbStruct('{ws_elem}',{ws_fields}))"
+                elif len(ws_parts) >= 3:
+                    ws_name = unquote(ws_parts[0])
+                    ws_elem = unquote(ws_parts[1])
+                    ws_fields = ws_parts[2].strip()
+                    return f"wbArray('{ws_name}',wbStruct('{ws_elem}',{ws_fields}))"
+                return expr
+            # wbClimateTiming(timeCallback, phaseCallback) →
+            # wbStruct(TNAM, 'Timing', [...]).  Callbacks are display-only;
+            # the FO76 phase field is always present (callback is non-nil).
+            # wbDefinitionsCommon.pas:7995-8010.
+            if fn == "wbClimateTiming":
+                return (
+                    "wbStruct(TNAM,'Timing',["
+                    "wbStruct('Sunrise',["
+                    "wbInteger('Begin',itU8),"
+                    "wbInteger('End',itU8)]),"
+                    "wbStruct('Sunset',["
+                    "wbInteger('Begin',itU8),"
+                    "wbInteger('End',itU8)]),"
+                    "wbInteger('Volatility',itU8),"
+                    "wbInteger('Moons / Phase Length',itU8)"
+                    "])"
+                )
+            # wbRFloatColors(name, [sig0, sig1, sig2]) →
+            # wbRStruct(name, [wbFloat(sig0,'Red'), wbFloat(sig1,'Green'), wbFloat(sig2,'Blue')])
+            # wbDefinitionsCommon.pas:6450-6465.
+            if fn == "wbRFloatColors":
+                rf_parts = split_top_level(args)
+                rf_name = unquote(rf_parts[0]) if rf_parts else "Color"
+                sigs = ["ENAM", "FNAM", "GNAM"]
+                if len(rf_parts) > 1:
+                    sig_str = rf_parts[1].strip()
+                    if sig_str.startswith("["):
+                        found = re.findall(r"[A-Z0-9_]{4}", sig_str)
+                        if len(found) >= 3:
+                            sigs = found[:3]
+                return (
+                    f"wbRStruct('{rf_name}',"
+                    f"[wbFloat({sigs[0]},'Red'),"
+                    f"wbFloat({sigs[1]},'Green'),"
+                    f"wbFloat({sigs[2]},'Blue')])"
+                )
+            # wbNPCTemplateActorEntry('Name') → wbFormIDCk('Name', [BMMO, LVLN, NPC_, NULL])
+            # wbDefinitionsCommon.pas:7834-7836.
+            if fn == "wbNPCTemplateActorEntry":
+                t_parts = split_top_level(args)
+                t_name = unquote(t_parts[0]) if t_parts else "Actor"
+                return f"wbFormIDCk('{t_name}', [BMMO, LVLN, NPC_, NULL])"
+            # wbFromSize(size, value) or wbFromSize(size, sig, value) —
+            # conditionally decoded based on total record data length.
+            # For FO76 (always the latest game version) the record is always
+            # large enough, so we emit the inner value directly and skip
+            # the size-guard union.
+            # wbDefinitionsCommon.pas:5981-6010.
+            if fn == "wbFromSize":
+                fs_parts = split_top_level(args)
+                if not fs_parts:
+                    return expr
+                # fs_parts[0] is the size threshold (integer literal)
+                # If fs_parts[1] is a sig-id, the form is (size, sig, value).
+                # Otherwise it is (size, value).
+                if len(fs_parts) >= 3 and sig_id(fs_parts[1].strip()):
+                    sig2 = fs_parts[1].strip()
+                    value_expr = self.expand_call(fs_parts[2].strip())
+                    # Inject the sig into the value if the value is a plain
+                    # wb* call (strip any existing leading sig first).
+                    # Simplest: wrap the value in a struct-member call with sig.
+                    # Because this is a subrecord-level member, just return
+                    # the inner value expression — the sig already identifies it.
+                    # We rewrite wbSomething('name', ...) → wbSomething(SIG, 'name', ...)
+                    m2 = re.match(r"^(wb[A-Za-z0-9_]+)\s*\(", value_expr)
+                    if m2:
+                        inner_fn = m2.group(1)
+                        inner_args_start = value_expr.index("(")
+                        inner_rparen = find_matching_paren(value_expr, inner_args_start)
+                        inner_args = value_expr[inner_args_start + 1 : inner_rparen]
+                        inner_parts = split_top_level(inner_args)
+                        # Only inject sig if the first inner arg is NOT already a sig.
+                        if inner_parts and not sig_id(inner_parts[0].strip()):
+                            return f"{inner_fn}({sig2}, {inner_args})"
+                    return value_expr
+                elif len(fs_parts) >= 2:
+                    # (size, value) — return the value expression directly
+                    return self.expand_call(fs_parts[-1].strip())
+                return expr
+            # wbIMADMultAddCount(name) → wbStruct with Mult Count + Add Count u32 fields.
+            # wbDefinitionsCommon.pas:7768-7789.
+            if fn == "wbIMADMultAddCount":
+                imad_parts = split_top_level(args)
+                imad_name = unquote(imad_parts[0]) if imad_parts else "Unknown"
+                return (
+                    f"wbStruct('{imad_name}',"
+                    f"[wbInteger('Mult Count',itU32),wbInteger('Add Count',itU32)])"
+                )
+            # wbTimeInterpolators(sig, name)  — array of {Time float, Value float} structs.
+            # wbTimeInterpolators(name)       — sigless form used inside wbFromVersion wrappers.
+            # wbDefinitionsCommon.pas:7886-7893 (no-sig), 8832-8841 (with-sig).
+            if fn == "wbTimeInterpolators":
+                ti_parts = split_top_level(args)
+                _elem = "wbStruct('Data',[wbFloat('Time'),wbFloat('Value')])"
+                if len(ti_parts) >= 2 and sig_id(ti_parts[0].strip()):
+                    ti_sig = ti_parts[0].strip()
+                    ti_name = unquote(ti_parts[1])
+                    return f"wbArray({ti_sig},'{ti_name}',{_elem})"
+                elif ti_parts:
+                    ti_name = unquote(ti_parts[0])
+                    return f"wbArray('{ti_name}',{_elem})"
+                return expr
+            # wbTimeInterpolatorsMultAdd(multSig, addSig, name) →
+            # wbRStruct(name, [wbArray(multSig,'Mult',...), wbArray(addSig,'Add',...)]).
+            # Mult/Add arrays hold time-interpolated floats for IMAD HDR/Cinematic parameters.
+            # wbDefinitionsCommon.pas:8842-8862.
+            # multSig / addSig may be binary IAD constants (_00_IAD → chr(0)+'IAD', etc.)
+            # resolved from self.vars.  Because split_top_level.strip() destroys bytes
+            # like \x09=tab, \x0a=newline, \x0d=CR when they are the first byte of a sig,
+            # we build the result dict DIRECTLY and cache it as an __inline__:KEY sentinel
+            # rather than returning a Pascal-like string for further parsing.
+            if fn == "wbTimeInterpolatorsMultAdd":
+                tma_parts = split_top_level(args)
+                if len(tma_parts) < 3:
+                    return expr
+                tma_mult_id = tma_parts[0].strip()
+                tma_add_id = tma_parts[1].strip()
+                tma_name = unquote(tma_parts[2])
+                # Resolve binary sig constants (e.g. _00_IAD → '\x00IAD').
+                tma_mult_sig = self.vars.get(tma_mult_id, tma_mult_id)
+                tma_add_sig = self.vars.get(tma_add_id, tma_add_id)
+                # Fall back: case-insensitive lookup.
+                if tma_mult_sig == tma_mult_id:
+                    _k = self._vars_lower_map.get(tma_mult_id.lower())
+                    if _k:
+                        tma_mult_sig = self.vars[_k]
+                if tma_add_sig == tma_add_id:
+                    _k = self._vars_lower_map.get(tma_add_id.lower())
+                    if _k:
+                        tma_add_sig = self.vars[_k]
+                if not sig_id(tma_mult_sig) or not sig_id(tma_add_sig):
+                    return expr
+                _elem_def: dict = {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                        {"kind": "float", "name": "Time"},
+                        {"kind": "float", "name": "Value"},
+                    ],
+                }
+                _unused = tma_name == "Unused"
+                _mname = tma_name if _unused else "Mult"
+                _aname = tma_name if _unused else "Add"
+                _built: dict = {
+                    "kind": "rstruct",
+                    "name": tma_name,
+                    "members": [
+                        {"kind": "array", "sig": tma_mult_sig, "name": _mname,
+                         "element": _elem_def},
+                        {"kind": "array", "sig": tma_add_sig, "name": _aname,
+                         "element": _elem_def},
+                    ],
+                }
+                self._inline_counter += 1
+                _key = f"tma_{self._inline_counter}"
+                self._inline_members[_key] = _built
+                return f"__inline__:{_key}"
             if fn in self.vars:
                 return self.vars[fn]
+            # Case-insensitive var fallback (Pascal is case-insensitive).
+            fn_key = self._vars_lower_map.get(fn.lower())
+            if fn_key:
+                return self.vars[fn_key]
             return expr
         return expr
 
@@ -1362,6 +1753,12 @@ class Extractor:
 
     def parse_member(self, expr: str) -> dict | None:
         expr = self.expand_call(expr)
+        # __inline__:KEY sentinel: a pre-built schema dict cached in _inline_members.
+        # Used for members whose sigs contain bytes that would be stripped by
+        # split_top_level (e.g. \x09=tab, \x0a=newline, \x0d=CR as an IAD sig byte).
+        if expr.startswith("__inline__:"):
+            key = expr[len("__inline__:"):]
+            return self._inline_members.get(key)
         # __vmad__ sentinel: reuse the existing vmad decoder in decode.rs.
         if expr == "__vmad__":
             return {"kind": "vmad", "sig": "VMAD", "name": "Virtual Machine Adapter"}
@@ -1419,8 +1816,12 @@ class Extractor:
             return self._parse_union(expr)
         if expr.startswith("wbInteger"):
             return self._parse_integer(expr)
-        if expr.startswith("wbFloat") and "(" in expr:
-            return self._parse_float(expr)
+        if expr.startswith("wbFloat"):
+            if "(" in expr:
+                return self._parse_float(expr)
+            # bare wbFloat / wbFloatAngle (no parens) — anonymous struct field
+            name = "Angle" if expr.startswith("wbFloatAngle") else "Float"
+            return {"kind": "float", "name": name}
         if expr.startswith("wbFormIDCk") or expr.startswith("wbFormIDCK"):
             return self._parse_formid(expr)
         # wbFormId (lowercase 'd') is the unchecked variant — no valid_refs list.
@@ -1457,6 +1858,20 @@ class Extractor:
             return {"kind": "raw_fallback", "name": "Recursive", "reason": "wbRecursive not supported"}
         if re.fullmatch(r"[A-Z0-9_]{4}", expr):
             return self._parse_sig_ref(expr)
+        # Unrecognized construct — record for the coverage report, then drop
+        # the member.  A non-empty, non-whitespace expression that matches
+        # nothing means a Pascal DSL construct we haven't modelled.
+        if expr and not expr.isspace():
+            _m = re.match(r"^(wb[A-Za-z0-9_]+)", expr)
+            _key = _m.group(1) if _m else expr[:40].replace("\n", "\\n")
+            self.report.unrecognized_constructs[_key] = (
+                self.report.unrecognized_constructs.get(_key, 0) + 1
+            )
+            # Also track per-record attribution for audit.py.
+            rec_key = getattr(self, "_current_record", "")
+            if rec_key:
+                by_rec = self.report.unrecognized_by_record.setdefault(rec_key, {})
+                by_rec[_key] = by_rec.get(_key, 0) + 1
         return None
 
     def _parse_struct(self, expr: str) -> dict:
@@ -1466,12 +1881,6 @@ class Extractor:
         parts = split_top_level(args)
         sig = None
         name = ""
-        fields_part = parts[-1]
-        if not fields_part.strip().startswith("["):
-            for p in parts:
-                if p.strip().startswith("["):
-                    fields_part = p
-                    break
         # Determine sig/name: skip leading [bracket] args (SK sort keys, ExSK exclude keys).
         # Then the first sig-like token is the sig, and the next quoted string is the name.
         idx = 0
@@ -1479,10 +1888,44 @@ class Extractor:
             idx += 1
         if idx < len(parts) and sig_id(parts[idx].strip()):
             sig = parts[idx].strip()
-            if idx + 1 < len(parts) and parts[idx + 1].strip().startswith("'"):
-                name = unquote(parts[idx + 1])
+            # Sig is followed by possible sort-key arrays, then the name.
+            name_idx = idx + 1
+            while name_idx < len(parts) and parts[name_idx].strip().startswith("[") and not sig_id(parts[name_idx].strip()):
+                name_idx += 1
+            if name_idx < len(parts) and parts[name_idx].strip().startswith("'"):
+                name = unquote(parts[name_idx])
+                fields_search_start = name_idx + 1
+            else:
+                fields_search_start = name_idx
         elif idx < len(parts) and parts[idx].strip().startswith("'"):
             name = unquote(parts[idx])
+            fields_search_start = idx + 1
+        else:
+            fields_search_start = idx
+        # Find the fields list: the FIRST []-starting arg at or after fields_search_start
+        # that is not a sort-key array (sort keys contain only digits and commas; field
+        # lists contain wb* calls or quoted strings).  wbStructSK can have a trailing
+        # summary-sort-key array [0, 1, 2, ...] as its last argument — taking parts[-1]
+        # would incorrectly pick that sort key as the fields list.
+        fields_part: str | None = None
+        for p in parts[fields_search_start:]:
+            ps = p.strip()
+            if ps.startswith("["):
+                # Heuristic: a sort-key array is short and contains only ints/spaces/commas.
+                # A fields list contains wb* identifiers or quoted strings.
+                inner = ps[1:].rstrip("]").strip()
+                if inner and re.match(r"^[\d\s,]+$", inner):
+                    continue  # looks like a sort-key array — skip it
+                fields_part = p
+                break
+        if fields_part is None:
+            # Fallback: use the last part (or the first []-starting part if last isn't []).
+            fields_part = parts[-1]
+            if not fields_part.strip().startswith("["):
+                for p in parts:
+                    if p.strip().startswith("["):
+                        fields_part = p
+                        break
         fb = fields_part.index("[")
         fe = find_matching_bracket(fields_part, fb)
         fields = self._parse_member_list(fields_part[fb + 1 : fe])
@@ -1496,20 +1939,27 @@ class Extractor:
         rparen = find_matching_paren(expr, lparen)
         args = expr[lparen + 1 : rparen]
         parts = split_top_level(args)
-        # skip summary keys for SK variant
+        # skip leading [sort_key] array for SK variant
         idx = 0
-        if parts[0].strip().startswith("["):
-            idx = 1
-        name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[idx]
+        while idx < len(parts) and parts[idx].strip().startswith("["):
+            idx += 1
+        name = unquote(parts[idx]) if idx < len(parts) and parts[idx].strip().startswith("'") else (parts[idx] if idx < len(parts) else "")
         # wbRStruct/wbRStructSK can have trailing args after the member list
-        # (e.g., [], cpNormal, False, nil, True).  Mirror _parse_struct: take the
-        # LAST arg as a first guess and fall back to the first arg that contains '['.
-        members_expr = parts[-1]
-        if not members_expr.strip().startswith("["):
-            for p in parts:
-                if p.strip().startswith("["):
-                    members_expr = p
-                    break
+        # (e.g., [], cpNormal, False, nil, True).  The member list is the FIRST
+        # []-starting part after the name that looks like a member list (not a
+        # numeric sort-key array).  The same heuristic as _parse_struct applies.
+        members_expr: str | None = None
+        for p in parts[idx + 1:]:
+            ps = p.strip()
+            if ps.startswith("["):
+                inner = ps[1:].rstrip("]").strip()
+                if inner and re.match(r"^[\d\s,]+$", inner):
+                    continue  # numeric sort-key array — skip
+                members_expr = p
+                break
+        if members_expr is None:
+            # Fallback: first []-starting arg anywhere in parts
+            members_expr = next((p for p in parts if p.strip().startswith("[")), parts[-1])
         if "[" not in members_expr:
             return {"kind": "raw_fallback", "name": name or "rstruct", "reason": "rstruct variable ref"}
         start = members_expr.index("[")
@@ -1660,7 +2110,26 @@ class Extractor:
             sig = parts[0].strip()
             idx = 1
         name = unquote(parts[idx])
-        itype = parts[idx + 1].strip() if len(parts) > idx + 1 else "itU32"
+        if len(parts) > idx + 1:
+            itype = parts[idx + 1].strip()
+            # Pascal identifiers are case-insensitive, so normalise the
+            # it[su]NN form (e.g. 'its32' → 'itS32', 'itu16' → 'itU16').
+            # Without this, a lowercase variant silently defaults to u32 —
+            # the same class of bug as the OBTS itS16{…} offset skew.
+            itype = re.sub(
+                r"^it([su])(\d+)$",
+                lambda m: f"it{m.group(1).upper()}{m.group(2)}",
+                itype,
+            )
+            # Instrument: if itype is still not a known token after normalisation
+            # it will silently default to (u32, False) — OBTS-class width-skew risk.
+            if itype not in INT_MAP:
+                self.report.defaulted_int_tokens[itype] = (
+                    self.report.defaulted_int_tokens.get(itype, 0) + 1
+                )
+        else:
+            itype = "itU32"
+            self.report.missing_int_type += 1
         width, signed = INT_MAP.get(itype, ("u32", False))
         out: dict = {
             "kind": "integer",
@@ -1809,9 +2278,15 @@ class Extractor:
         lparen = expr.index("(")
         rparen = find_matching_paren(expr, lparen)
         parts = split_top_level(expr[lparen + 1 : rparen])
-        sig = parts[0].strip()
-        name = unquote(parts[1]) if len(parts) > 1 else sig
-        return {"kind": "empty", "sig": sig, "name": name}
+        out: dict = {"kind": "empty", "name": "Empty"}
+        if not parts:
+            return out
+        if sig_id(parts[0].strip()):
+            out["sig"] = parts[0].strip()
+            out["name"] = unquote(parts[1]) if len(parts) > 1 else out["sig"]
+        else:
+            out["name"] = unquote(parts[0])
+        return out
 
     def _parse_unknown(self, expr: str) -> dict:
         m = re.match(r"wbUnknown\((.*)\)", expr)
@@ -1953,14 +2428,25 @@ class Extractor:
             if not item:
                 continue
             m = re.match(r"^(wb[A-Za-z0-9_]+)\s*$", item)
-            if m and m.group(1) in self.vars:
-                item = self.vars[m.group(1)]
+            if m:
+                var_name = m.group(1)
+                if var_name in self.vars:
+                    item = self.vars[var_name]
+                else:
+                    # Pascal identifiers are case-insensitive.  Fall back to the
+                    # O(1) cached lowercase map so that e.g. 'wbDesc' resolves to
+                    # the 'wbDESC' var collected from the `:=` assignment.
+                    var_key = self._vars_lower_map.get(var_name.lower())
+                    if var_key:
+                        item = self.vars[var_key]
             parsed = self.parse_member(item)
             if parsed:
                 out.append(parsed)
         return out
 
     def extract_record(self, sig: str) -> dict | None:
+        # Track current record for error attribution in the coverage report.
+        self._current_record = sig
         # Match both wbRecord(...) and wbRefRecord(...).
         # wbRefRecord is used for placed-object records (REFR, ACHR) and has the
         # same positional layout as wbRecord — the members list is always the
@@ -1986,7 +2472,8 @@ class Extractor:
             try:
                 rec = self.extract_record(sig)
             except Exception as e:
-                print(f"WARNING: failed {sig}: {e}", file=sys.stderr)
+                self.report.failed_records += 1
+                print(f"WARNING: failed to extract {sig}: {e}", file=sys.stderr)
                 rec = None
             if rec:
                 records[sig] = rec
@@ -2011,6 +2498,55 @@ class Extractor:
             dv = _OBTS_PROP_DEFAULT.get(sig)
             if dv is not None:
                 _fixup_obts_property_default(rec.get("members", []), dv)
+
+        # ── Extraction coverage summary ──────────────────────────────────────
+        # Count total raw_fallback members across all extracted records.
+        def _count_rf(mlist: list) -> int:
+            c = 0
+            for _m in mlist:
+                if not isinstance(_m, dict):
+                    continue
+                if _m.get("kind") == "raw_fallback":
+                    c += 1
+                for _k in ("members", "fields", "variants"):
+                    c += _count_rf(_m.get(_k, []))
+                _elem = _m.get("element")
+                if isinstance(_elem, dict):
+                    c += _count_rf([_elem])
+            return c
+
+        total_raw = sum(_count_rf(r.get("members", [])) for r in records.values())
+        print("=== extraction coverage ===", file=sys.stderr)
+        print(
+            f"records: {len(records)} ok, {self.report.failed_records} failed",
+            file=sys.stderr,
+        )
+        if self.report.defaulted_int_tokens:
+            # Non-empty means an integer type token was not in INT_MAP and
+            # silently defaulted to (u32, False) — OBTS-class width-skew risk.
+            print(
+                f"defaulted int tokens (OBTS-class width-skew risk!): "
+                f"{dict(self.report.defaulted_int_tokens)}",
+                file=sys.stderr,
+            )
+        else:
+            print("defaulted int tokens: {}  (good — no silent u32 defaults)", file=sys.stderr)
+        if self.report.unrecognized_constructs:
+            _top = sorted(self.report.unrecognized_constructs.items(), key=lambda x: -x[1])[:10]
+            print(f"unrecognized constructs (top-10): {dict(_top)}", file=sys.stderr)
+        print(f"raw_fallbacks: {total_raw}", file=sys.stderr)
+
+        # Strict-mode enforcement: fail on critical diagnostics.
+        if self.report.strict:
+            if self.report.defaulted_int_tokens:
+                raise RuntimeError(
+                    f"[strict] unknown integer type token(s): "
+                    f"{list(self.report.defaulted_int_tokens)}"
+                )
+            if self.report.failed_records > 0:
+                raise RuntimeError(
+                    f"[strict] {self.report.failed_records} record(s) failed to extract"
+                )
 
         return {"records": records}
 
@@ -2052,10 +2588,26 @@ def _patch_property_union(node: dict, dv: int) -> None:
 
 
 def main() -> None:
+    import argparse as _argparse
+    import os as _os
+
+    ap = _argparse.ArgumentParser(
+        description="Extract FO76 record schemas from xEdit Pascal → schema/fo76.json"
+    )
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        default=_os.environ.get("EXTRACT_STRICT") == "1",
+        help="Fail on unexpected extraction warnings "
+             "(also enabled by EXTRACT_STRICT=1 env var)",
+    )
+    args = ap.parse_args()
+
     if not FO76_PAS.exists():
         print(f"Missing {FO76_PAS}", file=sys.stderr)
         sys.exit(1)
     ex = Extractor(read_text(FO76_PAS), read_text(COMMON_PAS) if COMMON_PAS.exists() else "")
+    ex.report.strict = args.strict
     schema = ex.run()
 
     # Merge overrides — hand-authored fixes that survive regeneration.
@@ -2085,7 +2637,10 @@ def main() -> None:
                 file=sys.stderr,
             )
         except Exception as e:
-            print(f"WARNING: failed to load overrides: {e}", file=sys.stderr)
+            # Overrides are load-bearing (e.g. the hand-authored PERK record).
+            # A failure here means the shipped schema is missing critical members.
+            print(f"ERROR: failed to load overrides: {e}", file=sys.stderr)
+            sys.exit(1)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(schema, indent=2), encoding="utf-8")

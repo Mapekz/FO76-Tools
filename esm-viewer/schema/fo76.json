@@ -224,8 +224,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "AAAP",
-              "name": "Attach Point Marker"
+              "name": "Attach Point Marker",
+              "sig": "AAAP"
             },
             {
               "kind": "string",
@@ -400,8 +400,8 @@
             },
             {
               "kind": "empty",
-              "sig": "XPPA",
-              "name": "Patrol Script Marker"
+              "name": "Patrol Script Marker",
+              "sig": "XPPA"
             },
             {
               "kind": "formid",
@@ -490,8 +490,46 @@
           "name": "Linked References",
           "element": {
             "kind": "struct",
-            "name": "XLKR",
-            "fields": [],
+            "name": "Linked Reference",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Keyword/Ref",
+                "valid_refs": [
+                  "KYWD",
+                  "PLYR",
+                  "ACHR",
+                  "REFR",
+                  "PGRE",
+                  "PHZD",
+                  "PMIS",
+                  "PARW",
+                  "PBAR",
+                  "PBEA",
+                  "PCON",
+                  "PFLA",
+                  "NULL"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Ref",
+                "valid_refs": [
+                  "NULL",
+                  "PLYR",
+                  "ACHR",
+                  "REFR",
+                  "PGRE",
+                  "PHZD",
+                  "PMIS",
+                  "PARW",
+                  "PBAR",
+                  "PBEA",
+                  "PCON",
+                  "PFLA"
+                ]
+              }
+            ],
             "sig": "XLKR"
           }
         },
@@ -517,7 +555,7 @@
               "name": "Activate Parent Refs",
               "element": {
                 "kind": "struct",
-                "name": "XAPR",
+                "name": "Activate Parent Ref",
                 "fields": [
                   {
                     "kind": "formid",
@@ -549,13 +587,13 @@
         },
         {
           "kind": "empty",
-          "sig": "XATP",
-          "name": "Activation Point"
+          "name": "Activation Point",
+          "sig": "XATP"
         },
         {
           "kind": "empty",
-          "sig": "XLKT",
-          "name": "Linked Ref Transient"
+          "name": "Linked Ref Transient",
+          "sig": "XLKT"
         },
         {
           "kind": "formid",
@@ -804,8 +842,8 @@
         },
         {
           "kind": "empty",
-          "sig": "XIS2",
-          "name": "Ignored by Sandbox"
+          "name": "Ignored by Sandbox",
+          "sig": "XIS2"
         },
         {
           "kind": "rarray",
@@ -934,8 +972,8 @@
         },
         {
           "kind": "empty",
-          "sig": "XIBS",
-          "name": "Ignored By Sandbox"
+          "name": "Ignored By Sandbox",
+          "sig": "XIBS"
         },
         {
           "kind": "float",
@@ -1615,8 +1653,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -1771,8 +1809,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -3488,8 +3526,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -3644,8 +3682,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -4622,8 +4660,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -4778,8 +4816,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -6541,8 +6579,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -6697,8 +6735,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -6970,8 +7008,8 @@
                 "members": [
                   {
                     "kind": "empty",
-                    "sig": "OBTF",
-                    "name": "Editor Only"
+                    "name": "Editor Only",
+                    "sig": "OBTF"
                   },
                   {
                     "kind": "lstring",
@@ -7539,8 +7577,8 @@
             },
             {
               "kind": "empty",
-              "sig": "STOP",
-              "name": "Marker"
+              "name": "Marker",
+              "sig": "STOP"
             }
           ]
         },
@@ -8925,6 +8963,11 @@
           "sig": "MICO"
         },
         {
+          "kind": "lstring",
+          "sig": "DESC",
+          "name": "Description"
+        },
+        {
           "kind": "rstruct",
           "name": "Destructible",
           "members": [
@@ -9115,8 +9158,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -9271,8 +9314,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -10868,8 +10911,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "NEXT",
-              "name": "Marker"
+              "name": "Marker",
+              "sig": "NEXT"
             },
             {
               "kind": "rstruct",
@@ -11245,8 +11288,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "ITME",
-                "name": "Reward End Marker"
+                "name": "Reward End Marker",
+                "sig": "ITME"
               }
             ]
           }
@@ -11756,6 +11799,61 @@
               }
             }
           ]
+        },
+        {
+          "kind": "struct",
+          "name": "Timing",
+          "fields": [
+            {
+              "kind": "struct",
+              "name": "Sunrise",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Begin",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "End",
+                  "width": "u8",
+                  "signed": false
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Sunset",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Begin",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "End",
+                  "width": "u8",
+                  "signed": false
+                }
+              ]
+            },
+            {
+              "kind": "integer",
+              "name": "Volatility",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Moons / Phase Length",
+              "width": "u8",
+              "signed": false
+            }
+          ],
+          "sig": "TNAM"
         }
       ]
     },
@@ -13713,11 +13811,11 @@
           "name": "Items",
           "element": {
             "kind": "rstruct",
-            "name": "[1]",
+            "name": "Item",
             "members": [
               {
                 "kind": "struct",
-                "name": "CNTO",
+                "name": "Item",
                 "fields": [
                   {
                     "kind": "formid",
@@ -13792,7 +13890,7 @@
               },
               {
                 "kind": "struct",
-                "name": "COED",
+                "name": "Extra Data",
                 "fields": [
                   {
                     "kind": "formid",
@@ -14030,8 +14128,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -14186,8 +14284,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -14959,7 +15057,20 @@
         {
           "kind": "struct",
           "name": "CSTG",
-          "fields": [],
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Float"
+            },
+            {
+              "kind": "float",
+              "name": "Float"
+            },
+            {
+              "kind": "float",
+              "name": "Float"
+            }
+          ],
           "sig": "CSTG"
         },
         {
@@ -15467,6 +15578,30 @@
           "width": "u32",
           "signed": false,
           "sig": "TIFC"
+        },
+        {
+          "kind": "array",
+          "name": "INFO Order (Masters only)",
+          "element": {
+            "kind": "formid",
+            "name": "INFO",
+            "valid_refs": [
+              "INFO"
+            ]
+          },
+          "sig": "INOM"
+        },
+        {
+          "kind": "array",
+          "name": "INFO Order (All previous modules)",
+          "element": {
+            "kind": "formid",
+            "name": "INFO",
+            "valid_refs": [
+              "INFO"
+            ]
+          },
+          "sig": "INOA"
         }
       ]
     },
@@ -15517,7 +15652,16 @@
         {
           "kind": "struct",
           "name": "Position",
-          "fields": [],
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Float"
+            },
+            {
+              "kind": "float",
+              "name": "Float"
+            }
+          ],
           "sig": "DPOS"
         },
         {
@@ -16191,8 +16335,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -16347,8 +16491,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -17741,8 +17885,8 @@
         },
         {
           "kind": "empty",
-          "sig": "BEVA",
-          "name": "Has SWF Image"
+          "name": "Has SWF Image",
+          "sig": "BEVA"
         },
         {
           "kind": "rstruct",
@@ -18360,6 +18504,11 @@
               "kind": "float",
               "name": "Base Weapon Damage Mult",
               "from_version": 173
+            },
+            {
+              "kind": "float",
+              "name": "Float",
+              "from_version": 206
             }
           ],
           "sig": "DATA"
@@ -18413,6 +18562,45 @@
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
+        },
+        {
+          "kind": "rarray",
+          "name": "Relations",
+          "element": {
+            "kind": "struct",
+            "name": "Relation",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Faction",
+                "valid_refs": [
+                  "FACT",
+                  "RACE"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Modifier",
+                "width": "s32",
+                "signed": true
+              },
+              {
+                "kind": "integer",
+                "name": "Group Combat Reaction",
+                "width": "u32",
+                "signed": false,
+                "format": {
+                  "enum": [
+                    "Neutral",
+                    "Enemy",
+                    "Ally",
+                    "Friend"
+                  ]
+                }
+              }
+            ],
+            "sig": "XNAM"
+          }
         },
         {
           "kind": "struct",
@@ -18657,8 +18845,8 @@
         },
         {
           "kind": "empty",
-          "sig": "VREN",
-          "name": "Unknown"
+          "name": "Unknown",
+          "sig": "VREN"
         },
         {
           "kind": "struct",
@@ -18855,7 +19043,163 @@
           "element": {
             "kind": "rstruct",
             "name": "Entry Check",
-            "members": []
+            "members": [
+              {
+                "kind": "empty",
+                "name": "Start Marker",
+                "sig": "FCNR"
+              },
+              {
+                "kind": "formid",
+                "name": "Referenced Faction",
+                "valid_refs": [
+                  "FACT"
+                ],
+                "sig": "FCRF"
+              },
+              {
+                "kind": "unknown",
+                "name": "Unknown",
+                "sig": "FCOR"
+              },
+              {
+                "kind": "formid",
+                "name": "Blocked Message",
+                "valid_refs": [],
+                "sig": "FCBM"
+              },
+              {
+                "kind": "integer",
+                "name": "Condition Count",
+                "width": "u32",
+                "signed": false,
+                "sig": "CITC"
+              },
+              {
+                "kind": "rstruct",
+                "name": "Conditions",
+                "members": [
+                  {
+                    "kind": "integer",
+                    "name": "Condition Count",
+                    "width": "u32",
+                    "signed": false,
+                    "sig": "CITC"
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Conditions",
+                    "element": {
+                      "kind": "rstruct",
+                      "name": "Condition",
+                      "members": [
+                        {
+                          "kind": "struct",
+                          "name": "Condition Data",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Type",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Comparison Value",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Function",
+                              "width": "u16",
+                              "signed": false
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #1",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #2",
+                              "len": 4
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Run On",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Subject",
+                                  "Target",
+                                  "Reference",
+                                  "Combat Target",
+                                  "Linked Reference",
+                                  "Quest Alias",
+                                  "Package Data",
+                                  "Event Data",
+                                  "Unknown 8",
+                                  "Command Target",
+                                  "Event Camera Ref",
+                                  "My Killer",
+                                  "Active Players",
+                                  "Potential Players",
+                                  "Player Teammates",
+                                  "Target List",
+                                  "Instance Owner"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Reference",
+                              "len": 4
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Parameter #3",
+                              "len": 4
+                            }
+                          ],
+                          "sig": "CTDA"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #1",
+                          "keep_case": false,
+                          "sig": "CIS1"
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Parameter #2",
+                          "keep_case": false,
+                          "sig": "CIS2"
+                        }
+                      ]
+                    },
+                    "stop_before": [
+                      "FCAF",
+                      "FCNR",
+                      "CITC"
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "unknown",
+                "name": "Unknown",
+                "sig": "FCAF"
+              }
+            ]
           }
         },
         {
@@ -19687,8 +20031,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -19843,8 +20187,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -20919,8 +21263,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -21075,8 +21419,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -21692,11 +22036,11 @@
           "name": "Items",
           "element": {
             "kind": "rstruct",
-            "name": "[1]",
+            "name": "Item",
             "members": [
               {
                 "kind": "struct",
-                "name": "CNTO",
+                "name": "Item",
                 "fields": [
                   {
                     "kind": "formid",
@@ -21771,7 +22115,7 @@
               },
               {
                 "kind": "struct",
-                "name": "COED",
+                "name": "Extra Data",
                 "fields": [
                   {
                     "kind": "formid",
@@ -22223,8 +22567,8 @@
                 "members": [
                   {
                     "kind": "empty",
-                    "sig": "OBTF",
-                    "name": "Editor Only"
+                    "name": "Editor Only",
+                    "sig": "OBTF"
                   },
                   {
                     "kind": "lstring",
@@ -22792,8 +23136,8 @@
             },
             {
               "kind": "empty",
-              "sig": "STOP",
-              "name": "Marker"
+              "name": "Marker",
+              "sig": "STOP"
             }
           ]
         },
@@ -22964,8 +23308,8 @@
         },
         {
           "kind": "empty",
-          "sig": "NTWK",
-          "name": "Network? Marker"
+          "name": "Network? Marker",
+          "sig": "NTWK"
         }
       ]
     },
@@ -23251,8 +23595,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "ITME",
-                "name": "Reward End Marker"
+                "name": "Reward End Marker",
+                "sig": "ITME"
               }
             ]
           }
@@ -24895,6 +25239,62 @@
           ]
         },
         {
+          "kind": "rstruct",
+          "name": "Idle Animations",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u8",
+              "signed": false,
+              "sig": "IDLF",
+              "format": {
+                "flags": [
+                  "Run In Sequence",
+                  "",
+                  "Do Once",
+                  "Loose Only",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "Ignored By Sandbox"
+                ]
+              }
+            },
+            {
+              "kind": "integer",
+              "name": "Animation Count",
+              "width": "u8",
+              "signed": false,
+              "sig": "IDLC"
+            },
+            {
+              "kind": "float",
+              "name": "Idle Timer Setting",
+              "sig": "IDLT"
+            },
+            {
+              "kind": "array",
+              "name": "Animations",
+              "element": {
+                "kind": "formid",
+                "name": "Animation",
+                "valid_refs": [
+                  "IDLE",
+                  "NULL"
+                ]
+              },
+              "sig": "IDLA"
+            },
+            {
+              "kind": "unknown",
+              "name": "Unknown",
+              "sig": "IDLB"
+            }
+          ]
+        },
+        {
           "kind": "formid",
           "name": "Animation Flavor Keyword",
           "valid_refs": [
@@ -25110,12 +25510,392 @@
             {
               "kind": "struct",
               "name": "HDR",
-              "fields": []
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Eye Adapt Speed",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Bloom Blur Radius",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Bloom Threshold",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Scale",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Target Lum Min",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Target Lum Max",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Sunlight Scale",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Sky Scale",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                }
+              ]
             },
             {
               "kind": "struct",
               "name": "Cinematic",
-              "fields": []
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Saturation",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Brightness",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Contrast",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Unused",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Mult Count",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Add Count",
+                      "width": "u32",
+                      "signed": false
+                    }
+                  ]
+                }
+              ]
             },
             {
               "kind": "integer",
@@ -25246,6 +26026,18 @@
               "name": "Motion Blur Strength",
               "width": "u32",
               "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Vignette Radius",
+              "width": "u32",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Vignette Strength",
+              "width": "u32",
+              "signed": false
             }
           ],
           "sig": "DNAM"
@@ -25255,6 +26047,44 @@
           "name": "Texture",
           "keep_case": false,
           "sig": "LNAM"
+        },
+        {
+          "kind": "array",
+          "name": "Blur Radius",
+          "element": {
+            "kind": "struct",
+            "name": "Data",
+            "fields": [
+              {
+                "kind": "float",
+                "name": "Time"
+              },
+              {
+                "kind": "float",
+                "name": "Value"
+              }
+            ]
+          },
+          "sig": "BNAM"
+        },
+        {
+          "kind": "array",
+          "name": "Double Vision Strength",
+          "element": {
+            "kind": "struct",
+            "name": "Data",
+            "fields": [
+              {
+                "kind": "float",
+                "name": "Time"
+              },
+              {
+                "kind": "float",
+                "name": "Value"
+              }
+            ]
+          },
+          "sig": "VNAM"
         },
         {
           "kind": "array",
@@ -25333,22 +26163,1161 @@
         {
           "kind": "rstruct",
           "name": "Radial Blur",
-          "members": []
+          "members": [
+            {
+              "kind": "array",
+              "name": "Strength",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "RNAM"
+            },
+            {
+              "kind": "array",
+              "name": "Ramp Up",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "SNAM"
+            },
+            {
+              "kind": "array",
+              "name": "Start",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "UNAM"
+            },
+            {
+              "kind": "array",
+              "name": "Ramp Down",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "NAM1"
+            },
+            {
+              "kind": "array",
+              "name": "Down Start",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "NAM2"
+            }
+          ]
         },
         {
           "kind": "rstruct",
           "name": "Depth of Field",
-          "members": []
+          "members": [
+            {
+              "kind": "array",
+              "name": "Strength",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "WNAM"
+            },
+            {
+              "kind": "array",
+              "name": "Distance",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "XNAM"
+            },
+            {
+              "kind": "array",
+              "name": "Range",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "sig": "YNAM"
+            },
+            {
+              "kind": "array",
+              "name": "Vignette Radius",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "from_version": 118,
+              "sig": "NAM5"
+            },
+            {
+              "kind": "array",
+              "name": "Vignette Strength",
+              "element": {
+                "kind": "struct",
+                "name": "Data",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Time"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Value"
+                  }
+                ]
+              },
+              "from_version": 118,
+              "sig": "NAM6"
+            }
+          ]
+        },
+        {
+          "kind": "array",
+          "name": "Motion Blur Strength",
+          "element": {
+            "kind": "struct",
+            "name": "Data",
+            "fields": [
+              {
+                "kind": "float",
+                "name": "Time"
+              },
+              {
+                "kind": "float",
+                "name": "Value"
+              }
+            ]
+          },
+          "sig": "NAM4"
         },
         {
           "kind": "rstruct",
           "name": "HDR",
-          "members": []
+          "members": [
+            {
+              "kind": "rstruct",
+              "name": "Eye Adapt Speed",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0000IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "@IAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Bloom Blur Radius",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0001IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "AIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Bloom Threshold",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0002IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "BIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Bloom Scale",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0003IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "CIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Target Lum Min",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0004IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "DIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Target Lum Max",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0005IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "EIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Sunlight Scale",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0006IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "FIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Sky Scale",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0007IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "GIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\bIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "HIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\tIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "IIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\nIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "JIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u000bIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "KIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\fIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "LIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\rIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "MIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u000eIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "NIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u000fIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "OIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0010IAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "PIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
           "kind": "rstruct",
           "name": "Cinematic",
-          "members": []
+          "members": [
+            {
+              "kind": "rstruct",
+              "name": "Saturation",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0011IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "QIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Brightness",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0012IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "RIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Contrast",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0013IAD",
+                  "name": "Mult",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "SIAD",
+                  "name": "Add",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Unused",
+              "members": [
+                {
+                  "kind": "array",
+                  "sig": "\u0014IAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "array",
+                  "sig": "TIAD",
+                  "name": "Unused",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Data",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Time"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Value"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
         },
         {
           "kind": "string",
@@ -26000,8 +27969,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "WZMD",
-                "name": "Stop on Scene End"
+                "name": "Stop on Scene End",
+                "sig": "WZMD"
               }
             ]
           }
@@ -26785,8 +28754,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -26941,8 +28910,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -27791,7 +29760,74 @@
             {
               "kind": "struct",
               "name": "Decal Data",
-              "fields": []
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Min Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Min Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Depth"
+                },
+                {
+                  "kind": "empty",
+                  "name": "Unused"
+                },
+                {
+                  "kind": "float",
+                  "name": "Parallax - Scale"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u8",
+                  "signed": false,
+                  "format": {
+                    "flags": [
+                      "POM Shadows",
+                      "No Subtextures",
+                      "Multiplicative Blending",
+                      "No G-Buffer Normals"
+                    ]
+                  }
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Unknown",
+                  "len": 1
+                },
+                {
+                  "kind": "integer",
+                  "name": "Parallax - Passes",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Unknown",
+                  "len": 1
+                },
+                {
+                  "kind": "empty",
+                  "name": "Unused"
+                },
+                {
+                  "kind": "empty",
+                  "name": "Unused"
+                }
+              ]
             }
           ],
           "sig": "DODT"
@@ -28403,8 +30439,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -28559,8 +30595,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -28717,7 +30753,7 @@
           "name": "Sounds",
           "element": {
             "kind": "struct",
-            "name": "RNAM",
+            "name": "Sound",
             "fields": [
               {
                 "kind": "integer",
@@ -28851,8 +30887,8 @@
         },
         {
           "kind": "empty",
-          "sig": "NTWK",
-          "name": "Network? Marker"
+          "name": "Network? Marker",
+          "sig": "NTWK"
         },
         {
           "kind": "lstring",
@@ -29158,7 +31194,46 @@
           "element": {
             "kind": "struct",
             "name": "Reference",
-            "fields": []
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Ref",
+                "valid_refs": [
+                  "NULL",
+                  "PLYR",
+                  "ACHR",
+                  "REFR",
+                  "PGRE",
+                  "PHZD",
+                  "PMIS",
+                  "PARW",
+                  "PBAR",
+                  "PBEA",
+                  "PCON",
+                  "PFLA"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "World/Cell",
+                "valid_refs": [
+                  "WRLD",
+                  "CELL"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Grid Y",
+                "width": "s16",
+                "signed": true
+              },
+              {
+                "kind": "integer",
+                "name": "Grid X",
+                "width": "s16",
+                "signed": true
+              }
+            ]
           },
           "sig": "ACPR"
         },
@@ -29168,7 +31243,46 @@
           "element": {
             "kind": "struct",
             "name": "Reference",
-            "fields": []
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Ref",
+                "valid_refs": [
+                  "NULL",
+                  "PLYR",
+                  "ACHR",
+                  "REFR",
+                  "PGRE",
+                  "PHZD",
+                  "PMIS",
+                  "PARW",
+                  "PBAR",
+                  "PBEA",
+                  "PCON",
+                  "PFLA"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "World/Cell",
+                "valid_refs": [
+                  "WRLD",
+                  "CELL"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Grid Y",
+                "width": "s16",
+                "signed": true
+              },
+              {
+                "kind": "integer",
+                "name": "Grid X",
+                "width": "s16",
+                "signed": true
+              }
+            ]
           },
           "sig": "LCPR"
         },
@@ -29191,7 +31305,30 @@
           "element": {
             "kind": "struct",
             "name": "Actor",
-            "fields": []
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "NPC",
+                "valid_refs": [
+                  "NPC_"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Actor Ref",
+                "valid_refs": [
+                  "ACHR"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Location",
+                "valid_refs": [
+                  "LCTN",
+                  "NULL"
+                ]
+              }
+            ]
           },
           "sig": "ACUN"
         },
@@ -29201,7 +31338,30 @@
           "element": {
             "kind": "struct",
             "name": "Actor",
-            "fields": []
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "NPC",
+                "valid_refs": [
+                  "NPC_"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Actor Ref",
+                "valid_refs": [
+                  "ACHR"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Location",
+                "valid_refs": [
+                  "LCTN",
+                  "NULL"
+                ]
+              }
+            ]
           },
           "sig": "LCUN"
         },
@@ -29223,7 +31383,53 @@
           "element": {
             "kind": "struct",
             "name": "Reference",
-            "fields": []
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Loc Ref Type",
+                "valid_refs": [
+                  "LCRT"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Ref",
+                "valid_refs": [
+                  "NULL",
+                  "PLYR",
+                  "ACHR",
+                  "REFR",
+                  "PGRE",
+                  "PHZD",
+                  "PMIS",
+                  "PARW",
+                  "PBAR",
+                  "PBEA",
+                  "PCON",
+                  "PFLA"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "World/Cell",
+                "valid_refs": [
+                  "WRLD",
+                  "CELL"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Grid Y",
+                "width": "s16",
+                "signed": true
+              },
+              {
+                "kind": "integer",
+                "name": "Grid X",
+                "width": "s16",
+                "signed": true
+              }
+            ]
           },
           "sig": "ACSR"
         },
@@ -29233,7 +31439,53 @@
           "element": {
             "kind": "struct",
             "name": "Reference",
-            "fields": []
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Loc Ref Type",
+                "valid_refs": [
+                  "LCRT"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Ref",
+                "valid_refs": [
+                  "NULL",
+                  "PLYR",
+                  "ACHR",
+                  "REFR",
+                  "PGRE",
+                  "PHZD",
+                  "PMIS",
+                  "PARW",
+                  "PBAR",
+                  "PBEA",
+                  "PCON",
+                  "PFLA"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "World/Cell",
+                "valid_refs": [
+                  "WRLD",
+                  "CELL"
+                ]
+              },
+              {
+                "kind": "integer",
+                "name": "Grid Y",
+                "width": "s16",
+                "signed": true
+              },
+              {
+                "kind": "integer",
+                "name": "Grid X",
+                "width": "s16",
+                "signed": true
+              }
+            ]
           },
           "sig": "LCSR"
         },
@@ -29255,8 +31507,38 @@
           "name": "Added Worldspace Cells",
           "element": {
             "kind": "struct",
-            "name": "ACEC",
-            "fields": [],
+            "name": "Worldspace",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "World",
+                "valid_refs": [
+                  "WRLD"
+                ]
+              },
+              {
+                "kind": "array",
+                "name": "Cells",
+                "element": {
+                  "kind": "struct",
+                  "name": "Coords",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Grid Y",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Grid X",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                }
+              }
+            ],
             "sig": "ACEC"
           }
         },
@@ -29265,8 +31547,38 @@
           "name": "Master Worldspace Cells",
           "element": {
             "kind": "struct",
-            "name": "LCEC",
-            "fields": [],
+            "name": "Worldspace",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "World",
+                "valid_refs": [
+                  "WRLD"
+                ]
+              },
+              {
+                "kind": "array",
+                "name": "Cells",
+                "element": {
+                  "kind": "struct",
+                  "name": "Coords",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Grid Y",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Grid X",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                }
+              }
+            ],
             "sig": "LCEC"
           }
         },
@@ -29275,8 +31587,38 @@
           "name": "Removed Worldspace Cells",
           "element": {
             "kind": "struct",
-            "name": "RCEC",
-            "fields": [],
+            "name": "Worldspace",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "World",
+                "valid_refs": [
+                  "WRLD"
+                ]
+              },
+              {
+                "kind": "array",
+                "name": "Cells",
+                "element": {
+                  "kind": "struct",
+                  "name": "Coords",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Grid Y",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Grid X",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                }
+              }
+            ],
             "sig": "RCEC"
           }
         },
@@ -30858,8 +33200,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -31014,8 +33356,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -32178,8 +34520,7 @@
                           },
                           {
                             "kind": "empty",
-                            "sig": "'Chance None'",
-                            "name": "'Chance None'"
+                            "name": "Chance None"
                           },
                           {
                             "kind": "unused",
@@ -32350,7 +34691,7 @@
               },
               {
                 "kind": "struct",
-                "name": "COED",
+                "name": "Extra Data",
                 "fields": [
                   {
                     "kind": "formid",
@@ -33233,7 +35574,7 @@
               },
               {
                 "kind": "struct",
-                "name": "COED",
+                "name": "Extra Data",
                 "fields": [
                   {
                     "kind": "formid",
@@ -33778,7 +36119,7 @@
           "name": "Leveled List Entries",
           "element": {
             "kind": "rstruct",
-            "name": "[1]",
+            "name": "Leveled List Entry",
             "members": [
               {
                 "kind": "formid",
@@ -34132,7 +36473,7 @@
           "name": "Leveled List Entries",
           "element": {
             "kind": "rstruct",
-            "name": "[1]",
+            "name": "Leveled List Entry",
             "members": [
               {
                 "kind": "union",
@@ -34195,7 +36536,7 @@
               },
               {
                 "kind": "struct",
-                "name": "COED",
+                "name": "Extra Data",
                 "fields": [
                   {
                     "kind": "formid",
@@ -35045,8 +37386,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "MBNR",
-                "name": "No Response"
+                "name": "No Response",
+                "sig": "MBNR"
               }
             ]
           }
@@ -36540,6 +38881,7 @@
                     "VCRY",
                     "DESC",
                     "DATA",
+                    "MCQP",
                     "AQIC",
                     "DIQO",
                     "CVPA",
@@ -36550,8 +38892,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -36706,8 +39048,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -36792,6 +39134,86 @@
             }
           ],
           "sig": "DATA"
+        },
+        {
+          "kind": "array",
+          "name": "Components",
+          "element": {
+            "kind": "struct",
+            "name": "Component",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Component",
+                "valid_refs": [
+                  "NULL",
+                  "ACTI",
+                  "ADDN",
+                  "ALCH",
+                  "AMMO",
+                  "ARMO",
+                  "ARTO",
+                  "ASPC",
+                  "BNDS",
+                  "BOOK",
+                  "CMPO",
+                  "CNCY",
+                  "COBJ",
+                  "CONT",
+                  "DEBR",
+                  "DOOR",
+                  "EXPL",
+                  "FLST",
+                  "FLOR",
+                  "FURN",
+                  "HAZD",
+                  "IDLM",
+                  "INGR",
+                  "KEYM",
+                  "LGDI",
+                  "LIGH",
+                  "LVLI",
+                  "LVLN",
+                  "LVSP",
+                  "MISC",
+                  "MSTT",
+                  "NOTE",
+                  "NPC_",
+                  "OMOD",
+                  "PACH",
+                  "PKIN",
+                  "PPAK",
+                  "PROJ",
+                  "SCOL",
+                  "SCRL",
+                  "SECH",
+                  "SOUN",
+                  "SPEL",
+                  "STAT",
+                  "TACT",
+                  "TERM",
+                  "TREE",
+                  "TXST",
+                  "UTIL",
+                  "WATR",
+                  "WEAP",
+                  "FISH",
+                  "CHAL",
+                  "DMGT",
+                  "AVIF",
+                  "MGEF"
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Component Count Keyword",
+                "valid_refs": [
+                  "KYWD"
+                ]
+              }
+            ]
+          },
+          "sig": "MCQP"
         },
         {
           "kind": "unknown",
@@ -37265,6 +39687,10 @@
                   ]
                 },
                 {
+                  "kind": "float",
+                  "name": "Angle"
+                },
+                {
                   "kind": "unused",
                   "bytes": 0
                 },
@@ -37431,6 +39857,18 @@
                       "bytes": 0
                     }
                   ]
+                },
+                {
+                  "kind": "float",
+                  "name": "Angle"
+                },
+                {
+                  "kind": "float",
+                  "name": "Angle"
+                },
+                {
+                  "kind": "float",
+                  "name": "Angle"
                 }
               ]
             },
@@ -38229,8 +40667,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -38385,8 +40823,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -38912,7 +41350,7 @@
           "name": "Navmesh Infos",
           "element": {
             "kind": "struct",
-            "name": "NVMI",
+            "name": "Navmesh Info",
             "fields": [
               {
                 "kind": "formid",
@@ -39910,7 +42348,7 @@
           "name": "Factions",
           "element": {
             "kind": "struct",
-            "name": "SNAM",
+            "name": "Faction",
             "fields": [
               {
                 "kind": "formid",
@@ -39978,7 +42416,148 @@
         {
           "kind": "struct",
           "name": "Template Actors",
-          "fields": [],
+          "fields": [
+            {
+              "kind": "formid",
+              "name": "Traits",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Stats",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Factions",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Spell List",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "AI Data",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "AI Packages",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Model/Animation",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Base Data",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Inventory",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Script",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Def Package List",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Attack Data",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Keywords",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            },
+            {
+              "kind": "formid",
+              "name": "Gender",
+              "valid_refs": [
+                "BMMO",
+                "LVLN",
+                "NPC_",
+                "NULL"
+              ]
+            }
+          ],
           "sig": "TPTA"
         },
         {
@@ -40246,8 +42825,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -40402,8 +42981,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -40807,7 +43386,7 @@
           "name": "Perks",
           "element": {
             "kind": "struct",
-            "name": "PRKR",
+            "name": "Perk",
             "fields": [
               {
                 "kind": "formid",
@@ -40926,11 +43505,11 @@
               "name": "Items",
               "element": {
                 "kind": "rstruct",
-                "name": "[1]",
+                "name": "Item",
                 "members": [
                   {
                     "kind": "struct",
-                    "name": "CNTO",
+                    "name": "Item",
                     "fields": [
                       {
                         "kind": "formid",
@@ -41005,7 +43584,7 @@
                   },
                   {
                     "kind": "struct",
-                    "name": "COED",
+                    "name": "Extra Data",
                     "fields": [
                       {
                         "kind": "formid",
@@ -41223,8 +43802,8 @@
                 "members": [
                   {
                     "kind": "empty",
-                    "sig": "OBTF",
-                    "name": "Editor Only"
+                    "name": "Editor Only",
+                    "sig": "OBTF"
                   },
                   {
                     "kind": "lstring",
@@ -41792,8 +44371,8 @@
             },
             {
               "kind": "empty",
-              "sig": "STOP",
-              "name": "Marker"
+              "name": "Marker",
+              "sig": "STOP"
             }
           ]
         },
@@ -41817,8 +44396,8 @@
         },
         {
           "kind": "empty",
-          "sig": "DATA",
-          "name": "Marker"
+          "name": "Marker",
+          "sig": "DATA"
         },
         {
           "kind": "struct",
@@ -41942,9 +44521,35 @@
               "sig": "CS2H"
             },
             {
+              "kind": "rarray",
+              "name": "Sounds",
+              "element": {
+                "kind": "rstruct",
+                "name": "Sound",
+                "members": [
+                  {
+                    "kind": "formid",
+                    "name": "Keyword",
+                    "valid_refs": [
+                      "KYWD"
+                    ],
+                    "sig": "CS2K"
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Sound",
+                    "valid_refs": [
+                      "SNDR"
+                    ],
+                    "sig": "CS2D"
+                  }
+                ]
+              }
+            },
+            {
               "kind": "empty",
-              "sig": "CS2E",
-              "name": "End Marker"
+              "name": "End Marker",
+              "sig": "CS2E"
             },
             {
               "kind": "bytes",
@@ -42109,7 +44714,7 @@
             "members": [
               {
                 "kind": "struct",
-                "name": "TETI",
+                "name": "Index",
                 "fields": [
                   {
                     "kind": "integer",
@@ -43716,6 +46321,7 @@
                 ]
               },
               "stop_before": [
+                "IDLF",
                 "CNAM",
                 "QNAM",
                 "PKCU",
@@ -43726,6 +46332,62 @@
                 "POEA",
                 "POCA"
               ]
+            }
+          ]
+        },
+        {
+          "kind": "rstruct",
+          "name": "Idle Animations",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u8",
+              "signed": false,
+              "sig": "IDLF",
+              "format": {
+                "flags": [
+                  "Run In Sequence",
+                  "",
+                  "Do Once",
+                  "Loose Only",
+                  "",
+                  "",
+                  "",
+                  "",
+                  "Ignored By Sandbox"
+                ]
+              }
+            },
+            {
+              "kind": "integer",
+              "name": "Animation Count",
+              "width": "u8",
+              "signed": false,
+              "sig": "IDLC"
+            },
+            {
+              "kind": "float",
+              "name": "Idle Timer Setting",
+              "sig": "IDLT"
+            },
+            {
+              "kind": "array",
+              "name": "Animations",
+              "element": {
+                "kind": "formid",
+                "name": "Animation",
+                "valid_refs": [
+                  "IDLE",
+                  "NULL"
+                ]
+              },
+              "sig": "IDLA"
+            },
+            {
+              "kind": "unknown",
+              "name": "Unknown",
+              "sig": "IDLB"
             }
           ]
         },
@@ -44430,8 +47092,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "POBA",
-              "name": "OnBegin Marker"
+              "name": "OnBegin Marker",
+              "sig": "POBA"
             },
             {
               "kind": "formid",
@@ -44478,8 +47140,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "POEA",
-              "name": "OnEnd Marker"
+              "name": "OnEnd Marker",
+              "sig": "POEA"
             },
             {
               "kind": "formid",
@@ -44526,8 +47188,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "POCA",
-              "name": "OnChange Marker"
+              "name": "OnChange Marker",
+              "sig": "POCA"
             },
             {
               "kind": "formid",
@@ -44687,8 +47349,8 @@
             "members": [
               {
                 "kind": "empty",
-                "sig": "PRKE",
-                "name": "Start Marker"
+                "name": "Start Marker",
+                "sig": "PRKE"
               },
               {
                 "kind": "integer",
@@ -44715,8 +47377,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "PRKF",
-                "name": "End Marker"
+                "name": "End Marker",
+                "sig": "PRKF"
               }
             ]
           }
@@ -44831,20 +47493,170 @@
           "sig": "ICON"
         },
         {
+          "kind": "rstruct",
+          "name": "Conditions",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Condition Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "CITC"
+            },
+            {
+              "kind": "rarray",
+              "name": "Conditions",
+              "element": {
+                "kind": "rstruct",
+                "name": "Condition",
+                "members": [
+                  {
+                    "kind": "struct",
+                    "name": "Condition Data",
+                    "sig": "CTDA",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Type",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 3
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Comparison Value",
+                        "len": 4
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Function",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 2
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Parameter #1",
+                        "len": 4
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Parameter #2",
+                        "len": 4
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Run On",
+                        "width": "u32",
+                        "signed": false,
+                        "format": {
+                          "enum": [
+                            "Subject",
+                            "Target",
+                            "Reference",
+                            "Combat Target",
+                            "Linked Reference",
+                            "Quest Alias",
+                            "Package Data",
+                            "Event Data",
+                            "Unknown 8",
+                            "Command Target",
+                            "Event Camera Ref",
+                            "My Killer",
+                            "Active Players",
+                            "Potential Players",
+                            "Player Teammates",
+                            "Target List",
+                            "Instance Owner"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Reference",
+                        "len": 4
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Parameter #3",
+                        "len": 4
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "string",
+                    "name": "Parameter #1",
+                    "keep_case": false,
+                    "sig": "CIS1"
+                  },
+                  {
+                    "kind": "string",
+                    "name": "Parameter #2",
+                    "keep_case": false,
+                    "sig": "CIS2"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
           "kind": "struct",
           "name": "Data",
           "fields": [
             {
               "kind": "integer",
-              "name": "Playable",
+              "name": "Trait",
+              "width": "u8",
+              "signed": false,
+              "format": {
+                "enum": [
+                  "False",
+                  "True"
+                ]
+              }
+            },
+            {
+              "kind": "integer",
+              "name": "Level",
               "width": "u8",
               "signed": false
             },
             {
               "kind": "integer",
-              "name": "Hidden",
+              "name": "Num Ranks",
               "width": "u8",
               "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Playable",
+              "width": "u8",
+              "signed": false,
+              "format": {
+                "enum": [
+                  "False",
+                  "True"
+                ]
+              }
+            },
+            {
+              "kind": "integer",
+              "name": "Hidden",
+              "width": "u8",
+              "signed": false,
+              "format": {
+                "enum": [
+                  "False",
+                  "True"
+                ]
+              }
             },
             {
               "kind": "bytes",
@@ -46488,8 +49300,8 @@
             "members": [
               {
                 "kind": "empty",
-                "sig": "PRKE",
-                "name": "Perk Card Start"
+                "name": "Perk Card Start",
+                "sig": "PRKE"
               },
               {
                 "kind": "bytes",
@@ -46507,8 +49319,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "PRKF",
-                "name": "Perk Card End"
+                "name": "Perk Card End",
+                "sig": "PRKF"
               }
             ]
           }
@@ -47058,6 +49870,7 @@
                     "DSTD",
                     "DATA",
                     "DNAM",
+                    "NAM1",
                     "VNAM",
                     "PSCT",
                     "PSSC",
@@ -47069,8 +49882,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -47225,8 +50038,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -47425,7 +50238,19 @@
         {
           "kind": "rstruct",
           "name": "Muzzle Flash Model",
-          "members": []
+          "members": [
+            {
+              "kind": "string",
+              "name": "Model FileName",
+              "keep_case": false,
+              "sig": "NAM1"
+            },
+            {
+              "kind": "bytes",
+              "name": "Model Information",
+              "sig": "NAM2"
+            }
+          ]
         },
         {
           "kind": "integer",
@@ -48242,8 +51067,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "NEXT",
-              "name": "Marker"
+              "name": "Marker",
+              "sig": "NEXT"
             },
             {
               "kind": "rstruct",
@@ -48383,8 +51208,8 @@
               "members": [
                 {
                   "kind": "empty",
-                  "sig": "NEXT",
-                  "name": "Marker"
+                  "name": "Marker",
+                  "sig": "NEXT"
                 },
                 {
                   "kind": "rstruct",
@@ -48524,8 +51349,8 @@
                   "members": [
                     {
                       "kind": "empty",
-                      "sig": "NEXT",
-                      "name": "Marker"
+                      "name": "Marker",
+                      "sig": "NEXT"
                     },
                     {
                       "kind": "rstruct",
@@ -48673,7 +51498,7 @@
             "members": [
               {
                 "kind": "struct",
-                "name": "INDX",
+                "name": "Stage Index",
                 "fields": [
                   {
                     "kind": "integer",
@@ -49154,8 +51979,8 @@
                           },
                           {
                             "kind": "empty",
-                            "sig": "ITME",
-                            "name": "Reward End Marker"
+                            "name": "Reward End Marker",
+                            "sig": "ITME"
                           }
                         ]
                       }
@@ -50015,11 +52840,11 @@
                     "name": "Items",
                     "element": {
                       "kind": "rstruct",
-                      "name": "[1]",
+                      "name": "Item",
                       "members": [
                         {
                           "kind": "struct",
-                          "name": "CNTO",
+                          "name": "Item",
                           "fields": [
                             {
                               "kind": "formid",
@@ -50094,7 +52919,7 @@
                         },
                         {
                           "kind": "struct",
-                          "name": "COED",
+                          "name": "Extra Data",
                           "fields": [
                             {
                               "kind": "formid",
@@ -50297,8 +53122,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "ALED",
-                    "name": "Alias End"
+                    "name": "Alias End",
+                    "sig": "ALED"
                   }
                 ]
               },
@@ -50615,16 +53440,16 @@
                       {
                         "kind": "integer",
                         "name": "Closest To Alias",
-                        "width": "u32",
-                        "signed": false,
+                        "width": "s32",
+                        "signed": true,
                         "sig": "ALCC"
                       }
                     ]
                   },
                   {
                     "kind": "empty",
-                    "sig": "ALED",
-                    "name": "Alias End"
+                    "name": "Alias End",
+                    "sig": "ALED"
                   }
                 ]
               },
@@ -51496,8 +54321,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "MNAM",
-              "name": "Male Marker"
+              "name": "Male Marker",
+              "sig": "MNAM"
             },
             {
               "kind": "rstruct",
@@ -51518,8 +54343,8 @@
             },
             {
               "kind": "empty",
-              "sig": "FNAM",
-              "name": "Female Marker"
+              "name": "Female Marker",
+              "sig": "FNAM"
             },
             {
               "kind": "rstruct",
@@ -51907,8 +54732,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "NAM1",
-              "name": "Body Data Marker"
+              "name": "Body Data Marker",
+              "sig": "NAM1"
             },
             {
               "kind": "rstruct",
@@ -51916,8 +54741,8 @@
               "members": [
                 {
                   "kind": "empty",
-                  "sig": "MNAM",
-                  "name": "Male Data Marker"
+                  "name": "Male Data Marker",
+                  "sig": "MNAM"
                 },
                 {
                   "kind": "rarray",
@@ -52114,8 +54939,8 @@
               "members": [
                 {
                   "kind": "empty",
-                  "sig": "FNAM",
-                  "name": "Female Data Marker"
+                  "name": "Female Data Marker",
+                  "sig": "FNAM"
                 },
                 {
                   "kind": "rarray",
@@ -52330,8 +55155,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "NAM3",
-              "name": "Behavior Graph Marker"
+              "name": "Behavior Graph Marker",
+              "sig": "NAM3"
             },
             {
               "kind": "rstruct",
@@ -52339,8 +55164,8 @@
               "members": [
                 {
                   "kind": "empty",
-                  "sig": "MNAM",
-                  "name": "Male Data Marker"
+                  "name": "Male Data Marker",
+                  "sig": "MNAM"
                 },
                 {
                   "kind": "rstruct",
@@ -52523,8 +55348,8 @@
               "members": [
                 {
                   "kind": "empty",
-                  "sig": "FNAM",
-                  "name": "Female Data Marker"
+                  "name": "Female Data Marker",
+                  "sig": "FNAM"
                 },
                 {
                   "kind": "rstruct",
@@ -53157,6 +55982,10 @@
                         ]
                       },
                       {
+                        "kind": "float",
+                        "name": "Angle"
+                      },
+                      {
                         "kind": "unused",
                         "bytes": 0
                       },
@@ -53323,6 +56152,18 @@
                             "bytes": 0
                           }
                         ]
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Angle"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Angle"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Angle"
                       }
                     ]
                   },
@@ -57107,8 +59948,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "NAM0",
-              "name": "Head Data Marker"
+              "name": "Head Data Marker",
+              "sig": "NAM0"
             },
             {
               "kind": "rstruct",
@@ -57116,8 +59957,8 @@
               "members": [
                 {
                   "kind": "empty",
-                  "sig": "MNAM",
-                  "name": "Male Data Marker"
+                  "name": "Male Data Marker",
+                  "sig": "MNAM"
                 },
                 {
                   "kind": "struct",
@@ -57222,8 +60063,8 @@
             },
             {
               "kind": "empty",
-              "sig": "NAM0",
-              "name": "Head Data Marker"
+              "name": "Head Data Marker",
+              "sig": "NAM0"
             },
             {
               "kind": "rstruct",
@@ -57231,8 +60072,8 @@
               "members": [
                 {
                   "kind": "empty",
-                  "sig": "FNAM",
-                  "name": "Female Data Marker"
+                  "name": "Female Data Marker",
+                  "sig": "FNAM"
                 },
                 {
                   "kind": "struct",
@@ -57952,8 +60793,8 @@
         },
         {
           "kind": "empty",
-          "sig": "XMBP",
-          "name": "MultiBound Primitive Marker"
+          "name": "MultiBound Primitive Marker",
+          "sig": "XMBP"
         },
         {
           "kind": "rstruct",
@@ -58085,6 +60926,11 @@
               ]
             },
             {
+              "kind": "bytes",
+              "name": "Position/Rotation",
+              "len": 24
+            },
+            {
               "kind": "integer",
               "name": "Flags",
               "width": "u32",
@@ -58139,8 +60985,8 @@
         },
         {
           "kind": "empty",
-          "sig": "XATP",
-          "name": "Activation Point"
+          "name": "Activation Point",
+          "sig": "XATP"
         },
         {
           "kind": "integer",
@@ -58151,8 +60997,8 @@
         },
         {
           "kind": "empty",
-          "sig": "XLKT",
-          "name": "Linked Ref Transient"
+          "name": "Linked Ref Transient",
+          "sig": "XLKT"
         },
         {
           "kind": "formid",
@@ -58537,6 +61383,11 @@
             {
               "kind": "float",
               "name": "Height Scale"
+            },
+            {
+              "kind": "byte_rgba",
+              "sig": "'Color'",
+              "name": "Color"
             }
           ],
           "sig": "XPDD"
@@ -58571,7 +61422,7 @@
               "name": "Activate Parent Refs",
               "element": {
                 "kind": "struct",
-                "name": "XAPR",
+                "name": "Activate Parent Ref",
                 "fields": [
                   {
                     "kind": "formid",
@@ -58764,8 +61615,8 @@
         },
         {
           "kind": "empty",
-          "sig": "XIS2",
-          "name": "Ignored by Sandbox"
+          "name": "Ignored by Sandbox",
+          "sig": "XIS2"
         },
         {
           "kind": "rstruct",
@@ -58907,8 +61758,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "XPPA",
-                "name": "Patrol Script Marker"
+                "name": "Patrol Script Marker",
+                "sig": "XPPA"
               },
               {
                 "kind": "formid",
@@ -58969,8 +61820,8 @@
         },
         {
           "kind": "empty",
-          "sig": "ONAM",
-          "name": "Open by Default"
+          "name": "Open by Default",
+          "sig": "ONAM"
         },
         {
           "kind": "rstruct",
@@ -58978,8 +61829,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "XMRK",
-              "name": "Map Marker Data"
+              "name": "Map Marker Data",
+              "sig": "XMRK"
             },
             {
               "kind": "integer",
@@ -59190,6 +62041,11 @@
                   "REFR",
                   "ACHR"
                 ]
+              },
+              {
+                "kind": "bytes",
+                "name": "Link Type",
+                "len": 4
               }
             ],
             "sig": "XPLK"
@@ -59308,6 +62164,15 @@
               }
             ]
           }
+        },
+        {
+          "kind": "array",
+          "name": "Distant LOD Data",
+          "element": {
+            "kind": "float",
+            "name": "Unknown"
+          },
+          "sig": "XLOD"
         },
         {
           "kind": "struct",
@@ -59493,8 +62358,7 @@
               "variants": [
                 {
                   "kind": "empty",
-                  "sig": "'Unused'",
-                  "name": "'Unused'"
+                  "name": "Unused"
                 },
                 {
                   "kind": "integer",
@@ -59519,8 +62383,8 @@
           "members": [
             {
               "kind": "empty",
-              "sig": "XWPK",
-              "name": "Start Marker"
+              "name": "Start Marker",
+              "sig": "XWPK"
             },
             {
               "kind": "formid",
@@ -59549,8 +62413,8 @@
             },
             {
               "kind": "empty",
-              "sig": "XWPK",
-              "name": "End Marker"
+              "name": "End Marker",
+              "sig": "XWPK"
             }
           ]
         },
@@ -59708,6 +62572,47 @@
         },
         {
           "kind": "rarray",
+          "name": "Region Areas",
+          "element": {
+            "kind": "rstruct",
+            "name": "Region Area",
+            "members": [
+              {
+                "kind": "integer",
+                "name": "Edge Fall-off",
+                "width": "u32",
+                "signed": false,
+                "sig": "RPLI"
+              },
+              {
+                "kind": "array",
+                "name": "Points",
+                "element": {
+                  "kind": "struct",
+                  "name": "Point",
+                  "fields": [
+                    {
+                      "kind": "float",
+                      "name": "X"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Y"
+                    }
+                  ]
+                },
+                "sig": "RPLD"
+              },
+              {
+                "kind": "bytes",
+                "name": "Unknown",
+                "sig": "ANAM"
+              }
+            ]
+          }
+        },
+        {
+          "kind": "rarray",
           "name": "Region Data Entries",
           "element": {
             "kind": "rstruct",
@@ -59715,7 +62620,7 @@
             "members": [
               {
                 "kind": "struct",
-                "name": "RDAT",
+                "name": "Data Header",
                 "fields": [
                   {
                     "kind": "integer",
@@ -59771,6 +62676,44 @@
                   "MUSC"
                 ],
                 "sig": "RDMO"
+              },
+              {
+                "kind": "array",
+                "name": "Sounds",
+                "element": {
+                  "kind": "struct",
+                  "name": "Sound",
+                  "fields": [
+                    {
+                      "kind": "formid",
+                      "name": "Sound",
+                      "valid_refs": [
+                        "SNDR",
+                        "SOUN",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Flags",
+                      "width": "u32",
+                      "signed": false,
+                      "format": {
+                        "flags": [
+                          "Pleasant",
+                          "Cloudy",
+                          "Rainy",
+                          "Snowy"
+                        ]
+                      }
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Chance"
+                    }
+                  ]
+                },
+                "sig": "RDSA"
               },
               {
                 "kind": "rarray",
@@ -60520,8 +63463,8 @@
             "members": [
               {
                 "kind": "empty",
-                "sig": "HNAM",
-                "name": "Marker Phase Start"
+                "name": "Marker Phase Start",
+                "sig": "HNAM"
               },
               {
                 "kind": "string",
@@ -60676,8 +63619,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "NEXT",
-                "name": "Marker Start Conditions"
+                "name": "Marker Start Conditions",
+                "sig": "NEXT"
               },
               {
                 "kind": "rstruct",
@@ -60826,8 +63769,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "NEXT",
-                "name": "Marker Completion Conditions"
+                "name": "Marker Completion Conditions",
+                "sig": "NEXT"
               },
               {
                 "kind": "integer",
@@ -60892,8 +63835,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "HNAM",
-                "name": "Marker Phase End"
+                "name": "Marker Phase End",
+                "sig": "HNAM"
               }
             ]
           }
@@ -61235,8 +64178,8 @@
                           },
                           {
                             "kind": "empty",
-                            "sig": "ACBS",
-                            "name": "Action Comes Before Start"
+                            "name": "Action Comes Before Start",
+                            "sig": "ACBS"
                           }
                         ]
                       }
@@ -61427,8 +64370,8 @@
                       },
                       {
                         "kind": "empty",
-                        "sig": "HTID",
-                        "name": "End Scene Say Greeting"
+                        "name": "End Scene Say Greeting",
+                        "sig": "HTID"
                       }
                     ]
                   },
@@ -61610,8 +64553,8 @@
                               },
                               {
                                 "kind": "empty",
-                                "sig": "ACBS",
-                                "name": "Action Comes Before Start"
+                                "name": "Action Comes Before Start",
+                                "sig": "ACBS"
                               }
                             ]
                           }
@@ -61664,8 +64607,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "ANAM",
-                "name": "End Marker"
+                "name": "End Marker",
+                "sig": "ANAM"
               }
             ]
           }
@@ -62350,9 +65293,69 @@
                       "SCOL",
                       "FLOR"
                     ]
+                  },
+                  {
+                    "kind": "formid",
+                    "name": "Material Swap",
+                    "valid_refs": [
+                      "MSWP",
+                      "REFR",
+                      "NULL"
+                    ]
                   }
                 ],
                 "sig": "ONAM"
+              },
+              {
+                "kind": "array",
+                "name": "Placements",
+                "element": {
+                  "kind": "struct",
+                  "name": "Placement",
+                  "fields": [
+                    {
+                      "kind": "struct",
+                      "name": "Position",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "X"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Y"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Z"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Rotation",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "X"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Y"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Z"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Scale"
+                    }
+                  ]
+                },
+                "sig": "DATA"
               }
             ]
           }
@@ -62478,13 +65481,13 @@
                 "variants": [
                   {
                     "kind": "empty",
-                    "sig": "ECHO",
-                    "name": "Echo Start Marker"
+                    "name": "Echo Start Marker",
+                    "sig": "ECHO"
                   },
                   {
                     "kind": "empty",
-                    "sig": "ECHD",
-                    "name": "Echo Default Start Marker"
+                    "name": "Echo Default Start Marker",
+                    "sig": "ECHD"
                   }
                 ]
               },
@@ -62537,8 +65540,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "ECHE",
-                "name": "Echo End Marker"
+                "name": "Echo End Marker",
+                "sig": "ECHE"
               }
             ]
           }
@@ -63553,8 +66556,8 @@
             "members": [
               {
                 "kind": "empty",
-                "sig": "ITMS",
-                "name": "Marker Start"
+                "name": "Marker Start",
+                "sig": "ITMS"
               },
               {
                 "kind": "integer",
@@ -63575,8 +66578,8 @@
               },
               {
                 "kind": "empty",
-                "sig": "ITME",
-                "name": "Marker End"
+                "name": "Marker End",
+                "sig": "ITME"
               }
             ]
           }
@@ -65320,8 +68323,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -65476,8 +68479,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -66643,6 +69646,7 @@
                     "DSTD",
                     "KSIZ",
                     "NAM1",
+                    "DESC",
                     "PNAM",
                     "SNAM",
                     "QSTI",
@@ -66658,8 +69662,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -66814,8 +69818,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -66874,6 +69878,11 @@
               }
             }
           ]
+        },
+        {
+          "kind": "lstring",
+          "sig": "DESC",
+          "name": "Description"
         },
         {
           "kind": "byte_rgba",
@@ -67851,6 +70860,7 @@
                     "KSIZ",
                     "NAM1",
                     "PRPS",
+                    "DESC",
                     "PNAM",
                     "AIID",
                     "SNAM",
@@ -67877,8 +70887,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -68033,8 +71043,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -68148,6 +71158,11 @@
             ]
           },
           "sig": "PRPS"
+        },
+        {
+          "kind": "lstring",
+          "sig": "DESC",
+          "name": "Description"
         },
         {
           "kind": "byte_rgba",
@@ -69431,8 +72446,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -69587,8 +72602,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -70817,6 +73832,11 @@
           "name": "Data",
           "fields": [
             {
+              "kind": "bytes",
+              "name": "Position/Rotation",
+              "len": 24
+            },
+            {
               "kind": "float",
               "name": "Scale"
             },
@@ -71113,7 +74133,74 @@
             {
               "kind": "struct",
               "name": "Decal Data",
-              "fields": []
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Min Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Min Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Depth"
+                },
+                {
+                  "kind": "empty",
+                  "name": "Unused"
+                },
+                {
+                  "kind": "float",
+                  "name": "Parallax - Scale"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u8",
+                  "signed": false,
+                  "format": {
+                    "flags": [
+                      "POM Shadows",
+                      "No Subtextures",
+                      "Multiplicative Blending",
+                      "No G-Buffer Normals"
+                    ]
+                  }
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Unknown",
+                  "len": 1
+                },
+                {
+                  "kind": "integer",
+                  "name": "Parallax - Passes",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Unknown",
+                  "len": 1
+                },
+                {
+                  "kind": "empty",
+                  "name": "Unused"
+                },
+                {
+                  "kind": "empty",
+                  "name": "Unused"
+                }
+              ]
             }
           ],
           "sig": "DODT"
@@ -71546,6 +74633,27 @@
           "sig": "DNAM"
         },
         {
+          "kind": "rstruct",
+          "name": "Colors",
+          "members": [
+            {
+              "kind": "float",
+              "name": "Red",
+              "sig": "ENAM"
+            },
+            {
+              "kind": "float",
+              "name": "Green",
+              "sig": "FNAM"
+            },
+            {
+              "kind": "float",
+              "name": "Blue",
+              "sig": "GNAM"
+            }
+          ]
+        },
+        {
           "kind": "float",
           "name": "Density - Contribution",
           "sig": "HNAM"
@@ -71704,8 +74812,8 @@
         },
         {
           "kind": "empty",
-          "sig": "DATA",
-          "name": "Unused"
+          "name": "Unused",
+          "sig": "DATA"
         },
         {
           "kind": "struct",
@@ -72633,6 +75741,7 @@
                     "CVT5",
                     "MASE",
                     "DAMS",
+                    "WTDT",
                     "WSAM"
                   ]
                 }
@@ -72640,8 +75749,8 @@
             },
             {
               "kind": "empty",
-              "sig": "DSCF",
-              "name": "End Condition Marker"
+              "name": "End Condition Marker",
+              "sig": "DSCF"
             },
             {
               "kind": "formid",
@@ -72796,8 +75905,8 @@
                   },
                   {
                     "kind": "empty",
-                    "sig": "DSTF",
-                    "name": "End Marker"
+                    "name": "End Marker",
+                    "sig": "DSTF"
                   }
                 ]
               }
@@ -72930,8 +76039,8 @@
                 "members": [
                   {
                     "kind": "empty",
-                    "sig": "OBTF",
-                    "name": "Editor Only"
+                    "name": "Editor Only",
+                    "sig": "OBTF"
                   },
                   {
                     "kind": "lstring",
@@ -73499,8 +76608,8 @@
             },
             {
               "kind": "empty",
-              "sig": "STOP",
-              "name": "Marker"
+              "name": "Marker",
+              "sig": "STOP"
             }
           ]
         },
@@ -74460,7 +77569,25 @@
         {
           "kind": "rstruct",
           "name": "Telegraph Data",
-          "members": []
+          "members": [
+            {
+              "kind": "float",
+              "name": "Time",
+              "sig": "WTDT"
+            },
+            {
+              "kind": "formid",
+              "name": "Visual",
+              "valid_refs": [],
+              "sig": "WTDA"
+            },
+            {
+              "kind": "formid",
+              "name": "Sound",
+              "valid_refs": [],
+              "sig": "WTDS"
+            }
+          ]
         },
         {
           "kind": "float",
@@ -74925,6 +78052,30 @@
                   "HUD Rain Effects"
                 ]
               }
+            },
+            {
+              "kind": "struct",
+              "name": "Lightning Color",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Red",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Green",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Blue",
+                  "width": "u8",
+                  "signed": false
+                }
+              ]
             },
             {
               "kind": "integer",
