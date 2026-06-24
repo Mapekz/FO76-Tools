@@ -1,0 +1,24 @@
+[package]
+name = "ba2"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ba2"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ba2"
+path = "src/bin/cli.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+lz4_flex = "0.11"
+flate2 = "1"
+memmap2 = "0.9"
+walkdir = "2"
+globset = "0.4"
+tempfile = "3"
+
+[dev-dependencies]
