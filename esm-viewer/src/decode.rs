@@ -438,17 +438,33 @@ fn decode_member(
         } => {
             if let Some(sig) = sig {
                 let taken = take_all(by_sig, sig);
-                let items: Vec<Value> = match count {
-                    Some(ArrayCount::Fixed(n)) => taken
-                        .into_iter()
-                        .take(*n)
-                        .map(|sr| decode_field_value(ctx, element, &sr.data))
-                        .collect(),
-                    _ => taken
-                        .into_iter()
-                        .map(|sr| decode_field_value(ctx, element, &sr.data))
-                        .collect(),
-                };
+                // A single subrecord may pack multiple fixed-size elements (e.g. KWDA
+                // packs every keyword FormID into one subrecord, counted by KSIZ; APPR
+                // packs attach-parent-slot FormIDs similarly).  Split each subrecord by
+                // the element's static byte size when it is known and the subrecord is
+                // strictly larger; otherwise fall back to one element per subrecord so
+                // variable-size element arrays are unaffected.
+                let elem_size = field_byte_size(ctx, element);
+                let mut items: Vec<Value> = Vec::new();
+                for sr in taken {
+                    match elem_size {
+                        Some(sz) if sz > 0 && sr.data.len() > sz => {
+                            let mut pos = 0;
+                            while pos + sz <= sr.data.len() {
+                                items.push(decode_field_value(
+                                    ctx,
+                                    element,
+                                    &sr.data[pos..pos + sz],
+                                ));
+                                pos += sz;
+                            }
+                        }
+                        _ => items.push(decode_field_value(ctx, element, &sr.data)),
+                    }
+                }
+                if let Some(ArrayCount::Fixed(n)) = count {
+                    items.truncate(*n);
+                }
                 if !items.is_empty() {
                     out.insert(name.clone(), Value::Array(items));
                 }
@@ -778,10 +794,13 @@ fn decode_struct_fields(
             } => {
                 let n: usize = match count {
                     Some(ArrayCount::CountPrefix) => {
-                        if pos + 4 <= data.len() {
-                            let n = i32::from_le_bytes(data[pos..pos + 4].try_into().unwrap())
-                                .max(0) as usize;
-                            pos += 4;
+                        // Bethesda's inline count prefix is 1 byte (not 4).
+                        // The Pascal -1/-4 annotations both map to CountPrefix,
+                        // and the actual binary (confirmed by 18-byte OBTS analysis)
+                        // stores the count as a single unsigned byte.
+                        if pos < data.len() {
+                            let n = data[pos] as usize;
+                            pos += 1;
                             n
                         } else {
                             0

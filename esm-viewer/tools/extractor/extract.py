@@ -412,6 +412,15 @@ def split_top_level(text: str) -> list[str]:
                     break
                 i += 1
             continue
+        # Skip Pascal { } block comments (e.g. itS16{, wbOBTEAddonIndexToStr, ...}).
+        # These are NOT nested and must not be treated as argument separators.
+        if c == "{":
+            i += 1
+            while i < len(text) and text[i] != "}":
+                i += 1
+            if i < len(text):
+                i += 1  # skip '}'
+            continue
         if c in ("'", '"'):
             in_str = True
             quote = c
@@ -777,18 +786,38 @@ class Extractor:
         )
         self.vars["wbEnchantment"] = "wbFormIDCk(EITM, 'Enchantment', [ENCH,NULL])"
         self.vars["wbModelInfo"] = "wbByteArray(MODT, 'Model Information', 0)"
+        # wbDamageTypeArray — includes the form-version 152 Curve Table field.
+        # wbDefinitionsCommon.pas:8014-8024.
         self.vars["wbDamageTypeArray"] = (
             "wbArrayS(DAMA, 'Resistances', wbStructSK([0], 'Resistance', ["
-            "wbFormIDCk('Type', [DMGT]), wbInteger('Amount', itU32)]))"
+            "wbFormIDCk('Type', [DMGT]),"
+            "wbInteger('Amount', itU32),"
+            "wbFromVersion(152, wbFormIDCk('Curve Table', [CURV, NULL]))]))"
         )
         self.vars["wbPTRN"] = "wbFormIDCk(PTRN, 'Preview Transform', [TRNS,NULL])"
         self.vars["wbPHST"] = "wbByteArray(PHST, 'Photo Studio', 0)"
         self.vars["wbSNTP"] = "wbFormIDCk(SNTP, 'Snap Template', [STMP])"
         self.vars["wbXALG"] = "wbInteger(XALG, 'Flags', itU32)"
         self.vars["wbFTAGs"] = "wbRArray('Form Tags', wbString(FTAG, 'Form Tag'))"
+        # wbBipedObjectFlags — wbDefinitionsFO76.pas:4312-4345.
+        # FO76's BOD2 is a single u32 of biped-object flags (no Armor Type byte).
+        self.vars["wbBipedObjectFlags"] = (
+            "wbFlags(["
+            "'30 - Hair Top','31 - Hair Long','32 - FaceGen Head','33 - BODY',"
+            "'34 - L Hand','35 - R Hand','36 - [U] Torso','37 - [U] L Arm',"
+            "'38 - [U] R Arm','39 - [U] L Leg','40 - [U] R Leg','41 - [A] Torso',"
+            "'42 - [A] L Arm','43 - [A] R Arm','44 - [A] L Leg','45 - [A] R Leg',"
+            "'46 - Headband','47 - Eyes','48 - Beard','49 - Mouth',"
+            "'50 - Neck','51 - Ring','52 - Scalp','53 - Decapitation',"
+            "'54 - Backpack','55 - EyeOfRa','56 - Unnamed','57 - Coverall',"
+            "'58 - Unnamed','59 - Shield','60 - Pipboy','61 - FX'"
+            "])"
+        )
+        # wbBOD2 — wbDefinitionsFO76.pas:4347-4351.
+        # Single u32 of biped flags; wbBipedObjectFlags var is resolved by _parse_integer.
         self.vars["wbBOD2"] = (
-            "wbStruct(BOD2, 'Body Part Data', ["
-            "wbInteger('Armor Type', itU8), wbInteger('First Person Flags', itU8)])"
+            "wbStruct(BOD2, 'Biped Body Template', ["
+            "wbInteger('First Person Flags', itU32, wbBipedObjectFlags)])"
         )
         self.vars["wbETYP"] = "wbFormIDCk(ETYP, 'Equipment Type', [EQUP,NULL])"
         self.vars["wbYNAM"] = "wbFormIDCk(YNAM, 'Sound - Pickup', [SNDR,NULL])"
@@ -799,7 +828,11 @@ class Extractor:
         self.vars["wbINRD"] = "wbFormIDCk(INRD, 'Instance Naming', [INNR])"
         self.vars["wbEILV"] = "wbByteArray(EILV, 'EILV', 0)"
         self.vars["wbIBSD"] = "wbByteArray(IBSD, 'IBSD', 0)"
-        self.vars["wbAPPR"] = "wbByteArray(APPR, 'Appearance', 0)"
+        # wbAPPR — wbDefinitionsFO76.pas:7136.
+        # Sorted array of KYWD FormIDs (attach-parent slots).  Decoded as a packed
+        # array of 4-byte FormIDs via the record-context Array path (fixed by the
+        # packed-array decode fix in decode.rs).
+        self.vars["wbAPPR"] = "wbArrayS(APPR, 'Attach Parent Slots', wbFormIDCk('Keyword', [KYWD]))"
         self.vars["wbMDOB"] = "wbByteArray(MDOB, 'Menu Display Object', 0)"
         self.vars["wbMIID"] = "wbByteArray(MIID, 'Menu Item ID', 0)"
         self.vars["wbDEFL"] = "wbFormIDCk(DEFL, 'Default Layer', [LAYR])"
@@ -955,22 +988,13 @@ class Extractor:
         )
         self.vars["wbEffectsReq"] = "wbRArray('Effects',wbEffect)"
 
-        # ----------------------------------------------------------------
-        # Object Template — rstruct; OBTS internals modeled as bytes to
-        # avoid the count-path complexity inside the struct's arrays.
-        # ----------------------------------------------------------------
-        self.vars["wbOBTSReq"] = "wbByteArray(OBTS,'Object Mod Template Item',0)"
-        self.vars["wbObjectTemplate"] = (
-            "wbRStruct('Object Template',["
-            "wbInteger(OBTE,'Count',itU32),"
-            "wbRArray('Combinations',wbRStruct('Combination',["
-            "wbEmpty(OBTF,'Editor Only'),"
-            "wbLStringKC(FULL,'Name',0,cpTranslate),"
-            "wbByteArray(OBTS,'Object Mod Template Item',0)"
-            "])),"
-            "wbEmpty(STOP,'Marker')"
-            "])"
-        )
+        # wbOBTSReq and wbObjectTemplate are no longer stubbed here.
+        # _collect_vars picks them up from the Pascal assignments in DefineFO76
+        # (wbDefinitionsFO76.pas:7399-7430).  The real OBTS struct includes
+        # Includes→OMOD references and a Keywords count-prefix array whose
+        # -4 count argument is now handled by _parse_array.  wbObjectModProperties
+        # is also collected from Pascal and provides the Properties array with
+        # SetCountPath('Property Count').
 
         # ----------------------------------------------------------------
         # Common.pas function helpers not captured by _collect_vars.
@@ -1227,9 +1251,13 @@ class Extractor:
             if fn == "wbDamageTypeArray":
                 parts = split_top_level(args)
                 name = unquote(parts[0]) if parts else "Item"
+                # Include the form-version 152 Curve Table field.
+                # wbDefinitionsCommon.pas:8014-8024.
                 return (
                     f"wbArrayS(DAMA, '{name}s', wbStructSK([0], '{name}', ["
-                    f"wbFormIDCk('Type', [DMGT]), wbInteger('Amount', itU32)]))"
+                    f"wbFormIDCk('Type', [DMGT]),"
+                    f"wbInteger('Amount', itU32),"
+                    f"wbFromVersion(152, wbFormIDCk('Curve Table', [CURV, NULL]))]))"
                 )
             if fn == "wbModelInfo":
                 parts = split_top_level(args)
@@ -1260,6 +1288,40 @@ class Extractor:
                     "wbInteger('Has Collision',itU8,wbBoolEnum)]),"
                     f"{args}])"
                 )
+            # wbTexturedModel('Name', [modSig, txtSig], [extras...])
+            # wbDefinitionsCommon.pas:8799-8830 (FO76 branch = filename + model-info + extras).
+            # Emits an rstruct with: model filename string, model-info bytes, then the
+            # extra subrecord members (MODC, MO2S/MO4S, ENLT, ENLS, AUUV, etc.).
+            if fn == "wbTexturedModel":
+                t_parts = split_top_level(args)
+                t_name = unquote(t_parts[0]) if t_parts else "Model"
+                # Parse signature list: [MOD2, MO2T]
+                mod_sig, txt_sig = "MODL", "MODT"
+                if len(t_parts) > 1:
+                    sig_part = t_parts[1].strip()
+                    if sig_part.startswith("["):
+                        sig_end = find_matching_bracket(sig_part, 0)
+                        sig_inner = sig_part[1:sig_end]
+                        sig_list = [s.strip() for s in split_top_level(sig_inner)]
+                        if len(sig_list) >= 1:
+                            mod_sig = sig_list[0]
+                        if len(sig_list) >= 2:
+                            txt_sig = sig_list[1]
+                members_out = [
+                    f"wbString({mod_sig},'Model Filename')",
+                    f"wbByteArray({txt_sig},'Model Information',0)",
+                ]
+                # Parse extras list: [wbMODC, wbMO2S, ...]
+                if len(t_parts) > 2:
+                    extras_part = t_parts[2].strip()
+                    if extras_part.startswith("["):
+                        ext_end = find_matching_bracket(extras_part, 0)
+                        extras_inner = extras_part[1:ext_end]
+                        for e in split_top_level(extras_inner):
+                            e = e.strip()
+                            if e:
+                                members_out.append(e)
+                return f"wbRStruct('{t_name}',[{','.join(members_out)}])"
             if fn in self.vars:
                 return self.vars[fn]
             return expr
@@ -1493,12 +1555,19 @@ class Extractor:
         }
         if sig:
             out["sig"] = sig
-        # Capture count argument: -1 → count_prefix (4-byte inline prefix in data).
+        # Capture count argument.  xEdit uses negative integers to signal an inline
+        # count prefix stored directly in the subrecord data.  The decoder reads
+        # CountPrefix as a 1-byte unsigned integer (confirmed by 18-byte OBTS binary
+        # analysis: keyword count = 0 occupies exactly 1 byte regardless of Pascal
+        # -1 vs -4 annotation).  Map any negative count to count_prefix.
         count_arg_idx = elem_idx + 1
         if count_arg_idx < len(parts):
             count_str = parts[count_arg_idx].strip()
-            if count_str == "-1":
-                out["count"] = "count_prefix"
+            try:
+                if int(count_str) < 0:
+                    out["count"] = "count_prefix"
+            except ValueError:
+                pass
         return out
 
     def _parse_union(self, expr: str) -> dict:
@@ -1931,7 +2000,55 @@ class Extractor:
         for rec in records.values():
             _annotate_stop_before(rec.get("members", []), [])
 
+        # Fixup OBTS "Property" union default_variant per record type.
+        # OBTS contains wbObjectModProperties whose "Property" field is a FieldValue
+        # union keyed on "Form Type" (an OMOD DATA field absent in OBTS).  The decoder
+        # falls back to default_variant when "Form Type" is not in scope; patch it to
+        # the correct variant for the owning record type so property names are labelled.
+        # WEAP→1 (weapon props), ARMO→2 (armor props), NPC_→3 (actor props).
+        _OBTS_PROP_DEFAULT: dict[str, int] = {"ARMO": 2, "WEAP": 1, "NPC_": 3}
+        for sig, rec in records.items():
+            dv = _OBTS_PROP_DEFAULT.get(sig)
+            if dv is not None:
+                _fixup_obts_property_default(rec.get("members", []), dv)
+
         return {"records": records}
+
+
+def _fixup_obts_property_default(members: list, default_variant: int) -> None:
+    """Walk schema members and set the OBTS 'Property' union default_variant.
+
+    Finds any 'Object Template' rstruct at any level and patches every
+    FieldValue union named 'Property' (keyed on 'Form Type') inside OBTS
+    so that the decoder picks the record-specific property enum when 'Form
+    Type' is absent from the decode context.
+    """
+    for m in members:
+        if not isinstance(m, dict):
+            continue
+        if m.get("kind") == "rstruct" and m.get("name") == "Object Template":
+            _patch_property_union(m, default_variant)
+        else:
+            _fixup_obts_property_default(m.get("members", []), default_variant)
+            elem = m.get("element")
+            if isinstance(elem, dict):
+                _fixup_obts_property_default([elem], default_variant)
+
+
+def _patch_property_union(node: dict, dv: int) -> None:
+    """Recursively find and patch every 'Property' FieldValue union in node."""
+    for key in ("members", "fields", "variants"):
+        for child in node.get(key, []):
+            if isinstance(child, dict):
+                if (child.get("kind") == "union"
+                        and child.get("name") == "Property"
+                        and isinstance(child.get("decider"), dict)
+                        and "field" in child["decider"]):
+                    child["decider"]["default_variant"] = dv
+                _patch_property_union(child, dv)
+    elem = node.get("element")
+    if isinstance(elem, dict):
+        _patch_property_union(elem, dv)
 
 
 def main() -> None:

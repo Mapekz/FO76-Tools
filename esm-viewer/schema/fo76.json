@@ -5196,19 +5196,49 @@
         },
         {
           "kind": "struct",
-          "name": "Body Part Data",
+          "name": "Biped Body Template",
           "fields": [
             {
               "kind": "integer",
-              "name": "Armor Type",
-              "width": "u8",
-              "signed": false
-            },
-            {
-              "kind": "integer",
               "name": "First Person Flags",
-              "width": "u8",
-              "signed": false
+              "width": "u32",
+              "signed": false,
+              "format": {
+                "flags": [
+                  "30 - Hair Top",
+                  "31 - Hair Long",
+                  "32 - FaceGen Head",
+                  "33 - BODY",
+                  "34 - L Hand",
+                  "35 - R Hand",
+                  "36 - [U] Torso",
+                  "37 - [U] L Arm",
+                  "38 - [U] R Arm",
+                  "39 - [U] L Leg",
+                  "40 - [U] R Leg",
+                  "41 - [A] Torso",
+                  "42 - [A] L Arm",
+                  "43 - [A] R Arm",
+                  "44 - [A] L Leg",
+                  "45 - [A] R Leg",
+                  "46 - Headband",
+                  "47 - Eyes",
+                  "48 - Beard",
+                  "49 - Mouth",
+                  "50 - Neck",
+                  "51 - Ring",
+                  "52 - Scalp",
+                  "53 - Decapitation",
+                  "54 - Backpack",
+                  "55 - EyeOfRa",
+                  "56 - Unnamed",
+                  "57 - Coverall",
+                  "58 - Unnamed",
+                  "59 - Shield",
+                  "60 - Pipboy",
+                  "61 - FX"
+                ]
+              }
             }
           ],
           "sig": "BOD2"
@@ -5287,12 +5317,428 @@
         {
           "kind": "rstruct",
           "name": "Biped Model",
-          "members": []
+          "members": [
+            {
+              "kind": "rstruct",
+              "name": "Male",
+              "members": [
+                {
+                  "kind": "string",
+                  "name": "Model Filename",
+                  "keep_case": false,
+                  "sig": "MOD2"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Information",
+                  "sig": "MO2T"
+                },
+                {
+                  "kind": "float",
+                  "name": "Color Remapping Index",
+                  "sig": "MO2C"
+                },
+                {
+                  "kind": "formid",
+                  "name": "Material Swap",
+                  "valid_refs": [
+                    "MSWP"
+                  ],
+                  "sig": "MO2S"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u8",
+                  "signed": false,
+                  "sig": "XFLG",
+                  "format": {
+                    "flags": [
+                      "Has Facebones Data",
+                      "Has Upper Body Skin",
+                      "Has Right Hand Skin",
+                      "Has Left Hand Skin",
+                      "Has Hand Tagged Enlighten Mode",
+                      "Has Enlighten Transparency",
+                      "Has Enlighten Simplified Geom",
+                      "Has Enlighten Unique Geom"
+                    ]
+                  }
+                },
+                {
+                  "kind": "byte_rgba",
+                  "sig": "ENLT",
+                  "name": "Enlighten Transparency Color"
+                },
+                {
+                  "kind": "float",
+                  "name": "Enlighten Simplified Shape Scale",
+                  "sig": "ENLS"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Enlighten Auto UV",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max DIstance"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max Initial Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max General Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Expansion Factor"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Significant Area Ratio"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    }
+                  ],
+                  "sig": "AUUV"
+                },
+                {
+                  "kind": "unknown",
+                  "name": "Unknown",
+                  "sig": "MO2F"
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Female",
+              "members": [
+                {
+                  "kind": "string",
+                  "name": "Model Filename",
+                  "keep_case": false,
+                  "sig": "MOD3"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Information",
+                  "sig": "MO3T"
+                },
+                {
+                  "kind": "float",
+                  "name": "Color Remapping Index",
+                  "sig": "MO3C"
+                },
+                {
+                  "kind": "formid",
+                  "name": "Material Swap",
+                  "valid_refs": [
+                    "MSWP"
+                  ],
+                  "sig": "MO3S"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u8",
+                  "signed": false,
+                  "sig": "XFLG",
+                  "format": {
+                    "flags": [
+                      "Has Facebones Data",
+                      "Has Upper Body Skin",
+                      "Has Right Hand Skin",
+                      "Has Left Hand Skin",
+                      "Has Hand Tagged Enlighten Mode",
+                      "Has Enlighten Transparency",
+                      "Has Enlighten Simplified Geom",
+                      "Has Enlighten Unique Geom"
+                    ]
+                  }
+                },
+                {
+                  "kind": "byte_rgba",
+                  "sig": "ENLT",
+                  "name": "Enlighten Transparency Color"
+                },
+                {
+                  "kind": "float",
+                  "name": "Enlighten Simplified Shape Scale",
+                  "sig": "ENLS"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Enlighten Auto UV",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max DIstance"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max Initial Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max General Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Expansion Factor"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Significant Area Ratio"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    }
+                  ],
+                  "sig": "AUUV"
+                },
+                {
+                  "kind": "unknown",
+                  "name": "Unknown",
+                  "sig": "MO3F"
+                }
+              ]
+            }
+          ]
         },
         {
           "kind": "rstruct",
           "name": "1st Person",
-          "members": []
+          "members": [
+            {
+              "kind": "rstruct",
+              "name": "Male",
+              "members": [
+                {
+                  "kind": "string",
+                  "name": "Model Filename",
+                  "keep_case": false,
+                  "sig": "MOD4"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Information",
+                  "sig": "MO4T"
+                },
+                {
+                  "kind": "float",
+                  "name": "Color Remapping Index",
+                  "sig": "MO4C"
+                },
+                {
+                  "kind": "formid",
+                  "name": "Material Swap",
+                  "valid_refs": [
+                    "MSWP"
+                  ],
+                  "sig": "MO4S"
+                },
+                {
+                  "kind": "byte_rgba",
+                  "sig": "ENLT",
+                  "name": "Enlighten Transparency Color"
+                },
+                {
+                  "kind": "float",
+                  "name": "Enlighten Simplified Shape Scale",
+                  "sig": "ENLS"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Enlighten Auto UV",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max DIstance"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max Initial Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max General Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Expansion Factor"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Significant Area Ratio"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    }
+                  ],
+                  "sig": "AUUV"
+                },
+                {
+                  "kind": "unknown",
+                  "name": "Unknown",
+                  "sig": "MO4F"
+                }
+              ]
+            },
+            {
+              "kind": "rstruct",
+              "name": "Female",
+              "members": [
+                {
+                  "kind": "string",
+                  "name": "Model Filename",
+                  "keep_case": false,
+                  "sig": "MOD5"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Information",
+                  "sig": "MO5T"
+                },
+                {
+                  "kind": "float",
+                  "name": "Color Remapping Index",
+                  "sig": "MO5C"
+                },
+                {
+                  "kind": "formid",
+                  "name": "Material Swap",
+                  "valid_refs": [
+                    "MSWP"
+                  ],
+                  "sig": "MO5S"
+                },
+                {
+                  "kind": "byte_rgba",
+                  "sig": "ENLT",
+                  "name": "Enlighten Transparency Color"
+                },
+                {
+                  "kind": "float",
+                  "name": "Enlighten Simplified Shape Scale",
+                  "sig": "ENLS"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Enlighten Auto UV",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max DIstance"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max Initial Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max General Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Expansion Factor"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Significant Area Ratio"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    }
+                  ],
+                  "sig": "AUUV"
+                },
+                {
+                  "kind": "unknown",
+                  "name": "Unknown",
+                  "sig": "MO5F"
+                }
+              ]
+            }
+          ]
         },
         {
           "kind": "formid",
@@ -5633,6 +6079,95 @@
           "name": "Male",
           "members": [
             {
+              "kind": "rstruct",
+              "name": "World Model",
+              "members": [
+                {
+                  "kind": "string",
+                  "name": "Model Filename",
+                  "keep_case": false,
+                  "sig": "MOD2"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Information",
+                  "sig": "MO2T"
+                },
+                {
+                  "kind": "float",
+                  "name": "Color Remapping Index",
+                  "sig": "MODC"
+                },
+                {
+                  "kind": "formid",
+                  "name": "Material Swap",
+                  "valid_refs": [
+                    "MSWP"
+                  ],
+                  "sig": "MO2S"
+                },
+                {
+                  "kind": "byte_rgba",
+                  "sig": "ENLT",
+                  "name": "Enlighten Transparency Color"
+                },
+                {
+                  "kind": "float",
+                  "name": "Enlighten Simplified Shape Scale",
+                  "sig": "ENLS"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Enlighten Auto UV",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max DIstance"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max Initial Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max General Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Expansion Factor"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Significant Area Ratio"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    }
+                  ],
+                  "sig": "AUUV"
+                }
+              ]
+            },
+            {
               "kind": "string",
               "name": "Icon Image",
               "keep_case": false,
@@ -5651,6 +6186,95 @@
           "name": "Female",
           "members": [
             {
+              "kind": "rstruct",
+              "name": "World Model",
+              "members": [
+                {
+                  "kind": "string",
+                  "name": "Model Filename",
+                  "keep_case": false,
+                  "sig": "MOD4"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Information",
+                  "sig": "MO4T"
+                },
+                {
+                  "kind": "float",
+                  "name": "Color Remapping Index",
+                  "sig": "MODC"
+                },
+                {
+                  "kind": "formid",
+                  "name": "Material Swap",
+                  "valid_refs": [
+                    "MSWP"
+                  ],
+                  "sig": "MO4S"
+                },
+                {
+                  "kind": "byte_rgba",
+                  "sig": "ENLT",
+                  "name": "Enlighten Transparency Color"
+                },
+                {
+                  "kind": "float",
+                  "name": "Enlighten Simplified Shape Scale",
+                  "sig": "ENLS"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Enlighten Auto UV",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max DIstance"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max Initial Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max General Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Expansion Factor"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Significant Area Ratio"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    }
+                  ],
+                  "sig": "AUUV"
+                }
+              ]
+            },
+            {
               "kind": "string",
               "name": "Icon Image",
               "keep_case": false,
@@ -5666,19 +6290,49 @@
         },
         {
           "kind": "struct",
-          "name": "Body Part Data",
+          "name": "Biped Body Template",
           "fields": [
             {
               "kind": "integer",
-              "name": "Armor Type",
-              "width": "u8",
-              "signed": false
-            },
-            {
-              "kind": "integer",
               "name": "First Person Flags",
-              "width": "u8",
-              "signed": false
+              "width": "u32",
+              "signed": false,
+              "format": {
+                "flags": [
+                  "30 - Hair Top",
+                  "31 - Hair Long",
+                  "32 - FaceGen Head",
+                  "33 - BODY",
+                  "34 - L Hand",
+                  "35 - R Hand",
+                  "36 - [U] Torso",
+                  "37 - [U] L Arm",
+                  "38 - [U] R Arm",
+                  "39 - [U] L Leg",
+                  "40 - [U] R Leg",
+                  "41 - [A] Torso",
+                  "42 - [A] L Arm",
+                  "43 - [A] R Arm",
+                  "44 - [A] L Leg",
+                  "45 - [A] R Leg",
+                  "46 - Headband",
+                  "47 - Eyes",
+                  "48 - Beard",
+                  "49 - Mouth",
+                  "50 - Neck",
+                  "51 - Ring",
+                  "52 - Scalp",
+                  "53 - Decapitation",
+                  "54 - Backpack",
+                  "55 - EyeOfRa",
+                  "56 - Unnamed",
+                  "57 - Coverall",
+                  "58 - Unnamed",
+                  "59 - Shield",
+                  "60 - Pipboy",
+                  "61 - FX"
+                ]
+              }
             }
           ],
           "sig": "BOD2"
@@ -6262,6 +6916,15 @@
                 "name": "Amount",
                 "width": "u32",
                 "signed": false
+              },
+              {
+                "kind": "formid",
+                "name": "Curve Table",
+                "valid_refs": [
+                  "CURV",
+                  "NULL"
+                ],
+                "from_version": 152
               }
             ]
           },
@@ -6276,8 +6939,15 @@
           "sig": "TNAM"
         },
         {
-          "kind": "bytes",
-          "name": "Appearance",
+          "kind": "array",
+          "name": "Attach Parent Slots",
+          "element": {
+            "kind": "formid",
+            "name": "Keyword",
+            "valid_refs": [
+              "KYWD"
+            ]
+          },
           "sig": "APPR"
         },
         {
@@ -6309,8 +6979,559 @@
                     "name": "Name"
                   },
                   {
-                    "kind": "bytes",
+                    "kind": "struct",
                     "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false,
+                        "format": {
+                          "enum": [
+                            "False",
+                            "True"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "formid",
+                          "name": "Keyword",
+                          "valid_refs": [
+                            "KYWD",
+                            "NULL"
+                          ]
+                        },
+                        "count": "count_prefix"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Include Count"
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Property",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Function Type",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 0,
+                                  "1": 0,
+                                  "2": 1,
+                                  "4": 3,
+                                  "5": 2,
+                                  "6": 0
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "MUL+ADD",
+                                      "ADD"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "AND",
+                                      "OR"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "REM",
+                                      "ADD"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Property",
+                              "decider": {
+                                "field": "Form Type",
+                                "default_variant": 2,
+                                "map": {
+                                  "1346454871": 1,
+                                  "1330467393": 2,
+                                  "1598246990": 3
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Speed",
+                                      "Reach",
+                                      "MinRange",
+                                      "MaxRange",
+                                      "AttackDelaySec",
+                                      "Unused 5",
+                                      "OutOfRangeDamageMult",
+                                      "SecondaryDamage",
+                                      "CriticalChargeBonus",
+                                      "HitBehaviour",
+                                      "Rank",
+                                      "Unknown 11",
+                                      "AmmoCapacity",
+                                      "Unknown 13",
+                                      "Unknown 14",
+                                      "Type",
+                                      "IsPlayerOnly",
+                                      "NPCsUseAmmo",
+                                      "HasChargingReload",
+                                      "IsMinorCrime",
+                                      "IsFixedRange",
+                                      "HasEffectOnDeath",
+                                      "HasAlternateRumble",
+                                      "IsNonHostile",
+                                      "IgnoreResist",
+                                      "IsAutomatic",
+                                      "CantDrop",
+                                      "IsNonPlayable",
+                                      "AttackDamage",
+                                      "Value",
+                                      "Weight",
+                                      "Keywords",
+                                      "AimModel",
+                                      "AimModelMinConeDegrees",
+                                      "AimModelMaxConeDegrees",
+                                      "AimModelConeIncreasePerShot",
+                                      "AimModelConeDecreasePerSec",
+                                      "AimModelConeDecreaseDelayMs",
+                                      "AimModelConeSneakMultiplier",
+                                      "AimModelRecoilDiminishSpringForce",
+                                      "AimModelRecoilDiminishSightsMult",
+                                      "AimModelRecoilMaxDegPerShot",
+                                      "AimModelRecoilMinDegPerShot",
+                                      "AimModelRecoilHipMult",
+                                      "AimModelRecoilShotsForRunaway",
+                                      "AimModelRecoilArcDeg",
+                                      "AimModelRecoilArcRotateDeg",
+                                      "AimModelConeIronSightsMultiplier",
+                                      "HasScope",
+                                      "ZoomDataFOVMult",
+                                      "FireSeconds",
+                                      "NumProjectiles",
+                                      "AttackSound",
+                                      "AttackSound2D",
+                                      "AttackLoop",
+                                      "AttackFailSound",
+                                      "IdleSound",
+                                      "EquipSound",
+                                      "UnEquipSound",
+                                      "SoundLevel",
+                                      "ImpactDataSet",
+                                      "Ammo",
+                                      "CritEffect",
+                                      "BashImpactDataSet",
+                                      "BlockMaterial",
+                                      "Enchantments",
+                                      "AimModelBaseStability",
+                                      "ZoomData",
+                                      "ZoomDataOverlay",
+                                      "ZoomDataImageSpace",
+                                      "ZoomDataCameraOffsetX",
+                                      "ZoomDataCameraOffsetY",
+                                      "ZoomDataCameraOffsetZ",
+                                      "EquipSlot",
+                                      "SoundLevelMult",
+                                      "NPCAmmoList",
+                                      "ReloadSpeed",
+                                      "DamageTypeValues",
+                                      "AccuracyBonus",
+                                      "AttackActionPointCost",
+                                      "OverrideProjectile",
+                                      "HasBoltAction",
+                                      "StaggerValue",
+                                      "SightedTransitionSeconds",
+                                      "FullPowerSeconds",
+                                      "HoldInputToPower",
+                                      "HasRepeatableSingleFire",
+                                      "MinPowerPerShot",
+                                      "ColorRemappingIndex",
+                                      "MaterialSwaps",
+                                      "CriticalDamageMult",
+                                      "FastEquipSound",
+                                      "DisableShells",
+                                      "HasChargingAttack",
+                                      "ActorValues",
+                                      "ReachEngagementMult",
+                                      "Health",
+                                      "Durability",
+                                      "NPCReloadDelay",
+                                      "ZoomDataFOVMultB",
+                                      "ZoomDataFOVMultC",
+                                      "UnsightedTransitionSeconds",
+                                      "MinWeaponDrawTime",
+                                      "ModelSwap",
+                                      "MinChargeTime",
+                                      "PowerAffectsProjectileSpeed",
+                                      "DamageBonusMult",
+                                      "AimAssistModel",
+                                      "WeightMult",
+                                      "AmmoConsumption",
+                                      "Overheating",
+                                      "OverheatRateUp",
+                                      "OverheatRateDown",
+                                      "SoundTagSet",
+                                      "SneakAttackMult"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Enchantments",
+                                      "Bash Impact Data Set",
+                                      "Block Material",
+                                      "Keywords",
+                                      "Weight",
+                                      "Value",
+                                      "Rating",
+                                      "Addon Index",
+                                      "Body Part",
+                                      "Damage Type Value",
+                                      "Actor Values",
+                                      "Health",
+                                      "Color Remapping Index",
+                                      "Material Swaps",
+                                      "Durability",
+                                      "Biped World Model",
+                                      "Model Swap",
+                                      "Weight Mult",
+                                      "Perk"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Keywords",
+                                      "Forced Inventory",
+                                      "XP Offset",
+                                      "Enchantments",
+                                      "Color Remapping Index",
+                                      "Material Swaps"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 1",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 4,
+                                  "5": 5,
+                                  "6": 4
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "bytes",
+                                  "name": "Value 1",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "s32",
+                                  "signed": true
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 1"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Value 1",
+                                  "valid_refs": []
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 2",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 1,
+                                  "6": 2
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "unused",
+                                  "bytes": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 2"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Property Count"
+                        }
+                      }
+                    ],
                     "sig": "OBTS"
                   }
                 ]
@@ -10177,6 +11398,20 @@
           "width": "u32",
           "signed": false,
           "sig": "CNAM"
+        },
+        {
+          "kind": "integer",
+          "name": "Flags",
+          "width": "u32",
+          "signed": false,
+          "sig": "FNAM",
+          "format": {
+            "flags": [
+              "Playable",
+              "Remapping Index",
+              "Extended LUT"
+            ]
+          }
         },
         {
           "kind": "rstruct",
@@ -15155,8 +16390,15 @@
           "sig": "NTRM"
         },
         {
-          "kind": "bytes",
-          "name": "Appearance",
+          "kind": "array",
+          "name": "Attach Parent Slots",
+          "element": {
+            "kind": "formid",
+            "name": "Keyword",
+            "valid_refs": [
+              "KYWD"
+            ]
+          },
           "sig": "APPR"
         },
         {
@@ -17141,6 +18383,15 @@
                 "name": "Amount",
                 "width": "u32",
                 "signed": false
+              },
+              {
+                "kind": "formid",
+                "name": "Curve Table",
+                "valid_refs": [
+                  "CURV",
+                  "NULL"
+                ],
+                "from_version": 152
               }
             ]
           },
@@ -20941,8 +22192,15 @@
           ]
         },
         {
-          "kind": "bytes",
-          "name": "Appearance",
+          "kind": "array",
+          "name": "Attach Parent Slots",
+          "element": {
+            "kind": "formid",
+            "name": "Keyword",
+            "valid_refs": [
+              "KYWD"
+            ]
+          },
           "sig": "APPR"
         },
         {
@@ -20974,8 +22232,559 @@
                     "name": "Name"
                   },
                   {
-                    "kind": "bytes",
+                    "kind": "struct",
                     "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false,
+                        "format": {
+                          "enum": [
+                            "False",
+                            "True"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "formid",
+                          "name": "Keyword",
+                          "valid_refs": [
+                            "KYWD",
+                            "NULL"
+                          ]
+                        },
+                        "count": "count_prefix"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Include Count"
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Property",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Function Type",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 0,
+                                  "1": 0,
+                                  "2": 1,
+                                  "4": 3,
+                                  "5": 2,
+                                  "6": 0
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "MUL+ADD",
+                                      "ADD"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "AND",
+                                      "OR"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "REM",
+                                      "ADD"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Property",
+                              "decider": {
+                                "field": "Form Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "1346454871": 1,
+                                  "1330467393": 2,
+                                  "1598246990": 3
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Speed",
+                                      "Reach",
+                                      "MinRange",
+                                      "MaxRange",
+                                      "AttackDelaySec",
+                                      "Unused 5",
+                                      "OutOfRangeDamageMult",
+                                      "SecondaryDamage",
+                                      "CriticalChargeBonus",
+                                      "HitBehaviour",
+                                      "Rank",
+                                      "Unknown 11",
+                                      "AmmoCapacity",
+                                      "Unknown 13",
+                                      "Unknown 14",
+                                      "Type",
+                                      "IsPlayerOnly",
+                                      "NPCsUseAmmo",
+                                      "HasChargingReload",
+                                      "IsMinorCrime",
+                                      "IsFixedRange",
+                                      "HasEffectOnDeath",
+                                      "HasAlternateRumble",
+                                      "IsNonHostile",
+                                      "IgnoreResist",
+                                      "IsAutomatic",
+                                      "CantDrop",
+                                      "IsNonPlayable",
+                                      "AttackDamage",
+                                      "Value",
+                                      "Weight",
+                                      "Keywords",
+                                      "AimModel",
+                                      "AimModelMinConeDegrees",
+                                      "AimModelMaxConeDegrees",
+                                      "AimModelConeIncreasePerShot",
+                                      "AimModelConeDecreasePerSec",
+                                      "AimModelConeDecreaseDelayMs",
+                                      "AimModelConeSneakMultiplier",
+                                      "AimModelRecoilDiminishSpringForce",
+                                      "AimModelRecoilDiminishSightsMult",
+                                      "AimModelRecoilMaxDegPerShot",
+                                      "AimModelRecoilMinDegPerShot",
+                                      "AimModelRecoilHipMult",
+                                      "AimModelRecoilShotsForRunaway",
+                                      "AimModelRecoilArcDeg",
+                                      "AimModelRecoilArcRotateDeg",
+                                      "AimModelConeIronSightsMultiplier",
+                                      "HasScope",
+                                      "ZoomDataFOVMult",
+                                      "FireSeconds",
+                                      "NumProjectiles",
+                                      "AttackSound",
+                                      "AttackSound2D",
+                                      "AttackLoop",
+                                      "AttackFailSound",
+                                      "IdleSound",
+                                      "EquipSound",
+                                      "UnEquipSound",
+                                      "SoundLevel",
+                                      "ImpactDataSet",
+                                      "Ammo",
+                                      "CritEffect",
+                                      "BashImpactDataSet",
+                                      "BlockMaterial",
+                                      "Enchantments",
+                                      "AimModelBaseStability",
+                                      "ZoomData",
+                                      "ZoomDataOverlay",
+                                      "ZoomDataImageSpace",
+                                      "ZoomDataCameraOffsetX",
+                                      "ZoomDataCameraOffsetY",
+                                      "ZoomDataCameraOffsetZ",
+                                      "EquipSlot",
+                                      "SoundLevelMult",
+                                      "NPCAmmoList",
+                                      "ReloadSpeed",
+                                      "DamageTypeValues",
+                                      "AccuracyBonus",
+                                      "AttackActionPointCost",
+                                      "OverrideProjectile",
+                                      "HasBoltAction",
+                                      "StaggerValue",
+                                      "SightedTransitionSeconds",
+                                      "FullPowerSeconds",
+                                      "HoldInputToPower",
+                                      "HasRepeatableSingleFire",
+                                      "MinPowerPerShot",
+                                      "ColorRemappingIndex",
+                                      "MaterialSwaps",
+                                      "CriticalDamageMult",
+                                      "FastEquipSound",
+                                      "DisableShells",
+                                      "HasChargingAttack",
+                                      "ActorValues",
+                                      "ReachEngagementMult",
+                                      "Health",
+                                      "Durability",
+                                      "NPCReloadDelay",
+                                      "ZoomDataFOVMultB",
+                                      "ZoomDataFOVMultC",
+                                      "UnsightedTransitionSeconds",
+                                      "MinWeaponDrawTime",
+                                      "ModelSwap",
+                                      "MinChargeTime",
+                                      "PowerAffectsProjectileSpeed",
+                                      "DamageBonusMult",
+                                      "AimAssistModel",
+                                      "WeightMult",
+                                      "AmmoConsumption",
+                                      "Overheating",
+                                      "OverheatRateUp",
+                                      "OverheatRateDown",
+                                      "SoundTagSet",
+                                      "SneakAttackMult"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Enchantments",
+                                      "Bash Impact Data Set",
+                                      "Block Material",
+                                      "Keywords",
+                                      "Weight",
+                                      "Value",
+                                      "Rating",
+                                      "Addon Index",
+                                      "Body Part",
+                                      "Damage Type Value",
+                                      "Actor Values",
+                                      "Health",
+                                      "Color Remapping Index",
+                                      "Material Swaps",
+                                      "Durability",
+                                      "Biped World Model",
+                                      "Model Swap",
+                                      "Weight Mult",
+                                      "Perk"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Keywords",
+                                      "Forced Inventory",
+                                      "XP Offset",
+                                      "Enchantments",
+                                      "Color Remapping Index",
+                                      "Material Swaps"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 1",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 4,
+                                  "5": 5,
+                                  "6": 4
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "bytes",
+                                  "name": "Value 1",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "s32",
+                                  "signed": true
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 1"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Value 1",
+                                  "valid_refs": []
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 2",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 1,
+                                  "6": 2
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "unused",
+                                  "bytes": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 2"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Property Count"
+                        }
+                      }
+                    ],
                     "sig": "OBTS"
                   }
                 ]
@@ -21797,6 +23606,81 @@
               }
             }
           ]
+        },
+        {
+          "kind": "struct",
+          "name": "DNAM",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Unknown"
+            },
+            {
+              "kind": "float",
+              "name": "Unknown"
+            },
+            {
+              "kind": "float",
+              "name": "Height Range"
+            },
+            {
+              "kind": "float",
+              "name": "Color Range"
+            },
+            {
+              "kind": "float",
+              "name": "Wave Period"
+            },
+            {
+              "kind": "bytes",
+              "name": "Unknown",
+              "len": 4
+            },
+            {
+              "kind": "integer",
+              "name": "Density",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Min Slope",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Max Slope",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u8",
+              "signed": false,
+              "format": {
+                "flags": [
+                  "Vertex Lighting",
+                  "Uniform Scaling",
+                  "Fit to Slope",
+                  "Billboard",
+                  "LOD Land Blend"
+                ]
+              }
+            },
+            {
+              "kind": "float",
+              "name": "Unknown",
+              "from_version": 137
+            },
+            {
+              "kind": "float",
+              "name": "Position Range",
+              "from_version": 175
+            }
+          ],
+          "sig": "DNAM"
         }
       ]
     },
@@ -22834,7 +24718,7 @@
             {
               "kind": "integer",
               "name": "Animation Group Section",
-              "width": "u32",
+              "width": "u8",
               "signed": false
             },
             {
@@ -25837,6 +27721,73 @@
             }
           },
           "variants": [
+            {
+              "kind": "struct",
+              "name": "Decal Data",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Min Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Min Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Depth"
+                },
+                {
+                  "kind": "float",
+                  "name": "Shininess"
+                },
+                {
+                  "kind": "float",
+                  "name": "Parallax - Scale"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Parallax - Passes",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u8",
+                  "signed": false,
+                  "format": {
+                    "flags": [
+                      "POM Shadows",
+                      "Alpha - Blending",
+                      "Alpha - Testing",
+                      "No Subtextures",
+                      "Multiplicative Blending",
+                      "No G-Buffer Normals"
+                    ]
+                  }
+                },
+                {
+                  "kind": "integer",
+                  "name": "Alpha Threshold?",
+                  "width": "u16",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Byte Colors",
+                  "sig": "XCLP"
+                }
+              ]
+            },
             {
               "kind": "struct",
               "name": "Decal Data",
@@ -31027,6 +32978,14 @@
           "sig": "LVLM"
         },
         {
+          "kind": "formid",
+          "name": "Use Global",
+          "valid_refs": [
+            "GLOB"
+          ],
+          "sig": "LVLG"
+        },
+        {
           "kind": "union",
           "name": "Flags",
           "decider": {
@@ -31901,6 +33860,179 @@
               }
             ]
           }
+        },
+        {
+          "kind": "rstruct",
+          "name": "Model",
+          "members": [
+            {
+              "kind": "string",
+              "name": "Model FileName",
+              "keep_case": false,
+              "sig": "MODL"
+            },
+            {
+              "kind": "bytes",
+              "name": "Model Information",
+              "sig": "MODT"
+            },
+            {
+              "kind": "bytes",
+              "name": "Model Color",
+              "sig": "MODC"
+            },
+            {
+              "kind": "bytes",
+              "name": "Model Data",
+              "sig": "MODS"
+            },
+            {
+              "kind": "bytes",
+              "name": "Model Flags",
+              "sig": "MODF"
+            },
+            {
+              "kind": "union",
+              "name": "Enlighten Mode",
+              "decider": {
+                "form_version": {
+                  "min": 156,
+                  "max": null
+                }
+              },
+              "variants": [
+                {
+                  "kind": "integer",
+                  "name": "Mode",
+                  "width": "u8",
+                  "signed": false,
+                  "format": {
+                    "enum": [
+                      "Default",
+                      "Light Map",
+                      "Light Map UV",
+                      "Albedo",
+                      "Indirect Specular (Cubemaps)",
+                      "Unknown 5",
+                      "Unknown 6"
+                    ]
+                  }
+                },
+                {
+                  "kind": "integer",
+                  "name": "Mode",
+                  "width": "u32",
+                  "signed": false,
+                  "format": {
+                    "enum": {
+                      "2147483649": "Light Map?",
+                      "2147483651": "Albedo?",
+                      "2147483653": "Unknown 5?",
+                      "2147483654": "Unknown 6?"
+                    }
+                  }
+                }
+              ],
+              "sig": "ENLM"
+            },
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u8",
+              "signed": false,
+              "sig": "XFLG",
+              "format": {
+                "flags": [
+                  "Has Facebones Data",
+                  "Has Upper Body Skin",
+                  "Has Right Hand Skin",
+                  "Has Left Hand Skin",
+                  "Has Hand Tagged Enlighten Mode",
+                  "Has Enlighten Transparency",
+                  "Has Enlighten Simplified Geom",
+                  "Has Enlighten Unique Geom"
+                ]
+              }
+            },
+            {
+              "kind": "byte_rgba",
+              "sig": "ENLT",
+              "name": "Enlighten Transparency Color"
+            },
+            {
+              "kind": "float",
+              "name": "Enlighten Simplified Shape Scale",
+              "sig": "ENLS"
+            },
+            {
+              "kind": "struct",
+              "name": "Enlighten Auto UV",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Unknown",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Padding?",
+                  "len": 3
+                },
+                {
+                  "kind": "float",
+                  "name": "Max DIstance"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Initial Normal Deviation"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max General Normal Deviation"
+                },
+                {
+                  "kind": "float",
+                  "name": "Expansion Factor"
+                },
+                {
+                  "kind": "float",
+                  "name": "Significant Area Ratio"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Unknown",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Padding?",
+                  "len": 3
+                }
+              ],
+              "sig": "AUUV"
+            },
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u8",
+              "signed": false,
+              "sig": "MODD",
+              "format": {
+                "flags": [
+                  "Has Facebones Data",
+                  "Has Upper Body Skin",
+                  "Has Right Hand Skin",
+                  "Has Left Hand Skin",
+                  "Has Hand Tagged Enlighten Mode",
+                  "Has Enlighten Transparency",
+                  "Has Enlighten Simplified Geom",
+                  "Has Enlighten Unique Geom"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -36363,8 +38495,15 @@
           "sig": "PRPS"
         },
         {
-          "kind": "bytes",
-          "name": "Appearance",
+          "kind": "array",
+          "name": "Attach Parent Slots",
+          "element": {
+            "kind": "formid",
+            "name": "Keyword",
+            "valid_refs": [
+              "KYWD"
+            ]
+          },
           "sig": "APPR"
         },
         {
@@ -36452,6 +38591,11 @@
                 "name": "Tree Folder (obsolete)",
                 "keep_case": false,
                 "sig": "FNAM"
+              },
+              {
+                "kind": "float",
+                "name": "Color Remapping Index",
+                "sig": "CNAM"
               }
             ]
           }
@@ -39048,8 +41192,15 @@
           ]
         },
         {
-          "kind": "bytes",
-          "name": "Appearance",
+          "kind": "array",
+          "name": "Attach Parent Slots",
+          "element": {
+            "kind": "formid",
+            "name": "Keyword",
+            "valid_refs": [
+              "KYWD"
+            ]
+          },
           "sig": "APPR"
         },
         {
@@ -39081,8 +41232,559 @@
                     "name": "Name"
                   },
                   {
-                    "kind": "bytes",
+                    "kind": "struct",
                     "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false,
+                        "format": {
+                          "enum": [
+                            "False",
+                            "True"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "formid",
+                          "name": "Keyword",
+                          "valid_refs": [
+                            "KYWD",
+                            "NULL"
+                          ]
+                        },
+                        "count": "count_prefix"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Include Count"
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Property",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Function Type",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 0,
+                                  "1": 0,
+                                  "2": 1,
+                                  "4": 3,
+                                  "5": 2,
+                                  "6": 0
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "MUL+ADD",
+                                      "ADD"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "AND",
+                                      "OR"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "REM",
+                                      "ADD"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Property",
+                              "decider": {
+                                "field": "Form Type",
+                                "default_variant": 3,
+                                "map": {
+                                  "1346454871": 1,
+                                  "1330467393": 2,
+                                  "1598246990": 3
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Speed",
+                                      "Reach",
+                                      "MinRange",
+                                      "MaxRange",
+                                      "AttackDelaySec",
+                                      "Unused 5",
+                                      "OutOfRangeDamageMult",
+                                      "SecondaryDamage",
+                                      "CriticalChargeBonus",
+                                      "HitBehaviour",
+                                      "Rank",
+                                      "Unknown 11",
+                                      "AmmoCapacity",
+                                      "Unknown 13",
+                                      "Unknown 14",
+                                      "Type",
+                                      "IsPlayerOnly",
+                                      "NPCsUseAmmo",
+                                      "HasChargingReload",
+                                      "IsMinorCrime",
+                                      "IsFixedRange",
+                                      "HasEffectOnDeath",
+                                      "HasAlternateRumble",
+                                      "IsNonHostile",
+                                      "IgnoreResist",
+                                      "IsAutomatic",
+                                      "CantDrop",
+                                      "IsNonPlayable",
+                                      "AttackDamage",
+                                      "Value",
+                                      "Weight",
+                                      "Keywords",
+                                      "AimModel",
+                                      "AimModelMinConeDegrees",
+                                      "AimModelMaxConeDegrees",
+                                      "AimModelConeIncreasePerShot",
+                                      "AimModelConeDecreasePerSec",
+                                      "AimModelConeDecreaseDelayMs",
+                                      "AimModelConeSneakMultiplier",
+                                      "AimModelRecoilDiminishSpringForce",
+                                      "AimModelRecoilDiminishSightsMult",
+                                      "AimModelRecoilMaxDegPerShot",
+                                      "AimModelRecoilMinDegPerShot",
+                                      "AimModelRecoilHipMult",
+                                      "AimModelRecoilShotsForRunaway",
+                                      "AimModelRecoilArcDeg",
+                                      "AimModelRecoilArcRotateDeg",
+                                      "AimModelConeIronSightsMultiplier",
+                                      "HasScope",
+                                      "ZoomDataFOVMult",
+                                      "FireSeconds",
+                                      "NumProjectiles",
+                                      "AttackSound",
+                                      "AttackSound2D",
+                                      "AttackLoop",
+                                      "AttackFailSound",
+                                      "IdleSound",
+                                      "EquipSound",
+                                      "UnEquipSound",
+                                      "SoundLevel",
+                                      "ImpactDataSet",
+                                      "Ammo",
+                                      "CritEffect",
+                                      "BashImpactDataSet",
+                                      "BlockMaterial",
+                                      "Enchantments",
+                                      "AimModelBaseStability",
+                                      "ZoomData",
+                                      "ZoomDataOverlay",
+                                      "ZoomDataImageSpace",
+                                      "ZoomDataCameraOffsetX",
+                                      "ZoomDataCameraOffsetY",
+                                      "ZoomDataCameraOffsetZ",
+                                      "EquipSlot",
+                                      "SoundLevelMult",
+                                      "NPCAmmoList",
+                                      "ReloadSpeed",
+                                      "DamageTypeValues",
+                                      "AccuracyBonus",
+                                      "AttackActionPointCost",
+                                      "OverrideProjectile",
+                                      "HasBoltAction",
+                                      "StaggerValue",
+                                      "SightedTransitionSeconds",
+                                      "FullPowerSeconds",
+                                      "HoldInputToPower",
+                                      "HasRepeatableSingleFire",
+                                      "MinPowerPerShot",
+                                      "ColorRemappingIndex",
+                                      "MaterialSwaps",
+                                      "CriticalDamageMult",
+                                      "FastEquipSound",
+                                      "DisableShells",
+                                      "HasChargingAttack",
+                                      "ActorValues",
+                                      "ReachEngagementMult",
+                                      "Health",
+                                      "Durability",
+                                      "NPCReloadDelay",
+                                      "ZoomDataFOVMultB",
+                                      "ZoomDataFOVMultC",
+                                      "UnsightedTransitionSeconds",
+                                      "MinWeaponDrawTime",
+                                      "ModelSwap",
+                                      "MinChargeTime",
+                                      "PowerAffectsProjectileSpeed",
+                                      "DamageBonusMult",
+                                      "AimAssistModel",
+                                      "WeightMult",
+                                      "AmmoConsumption",
+                                      "Overheating",
+                                      "OverheatRateUp",
+                                      "OverheatRateDown",
+                                      "SoundTagSet",
+                                      "SneakAttackMult"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Enchantments",
+                                      "Bash Impact Data Set",
+                                      "Block Material",
+                                      "Keywords",
+                                      "Weight",
+                                      "Value",
+                                      "Rating",
+                                      "Addon Index",
+                                      "Body Part",
+                                      "Damage Type Value",
+                                      "Actor Values",
+                                      "Health",
+                                      "Color Remapping Index",
+                                      "Material Swaps",
+                                      "Durability",
+                                      "Biped World Model",
+                                      "Model Swap",
+                                      "Weight Mult",
+                                      "Perk"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Keywords",
+                                      "Forced Inventory",
+                                      "XP Offset",
+                                      "Enchantments",
+                                      "Color Remapping Index",
+                                      "Material Swaps"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 1",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 4,
+                                  "5": 5,
+                                  "6": 4
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "bytes",
+                                  "name": "Value 1",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "s32",
+                                  "signed": true
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 1"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Value 1",
+                                  "valid_refs": []
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 2",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 1,
+                                  "6": 2
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "unused",
+                                  "bytes": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 2"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Property Count"
+                        }
+                      }
+                    ],
                     "sig": "OBTS"
                   }
                 ]
@@ -41448,6 +44150,7 @@
                           "PNAM",
                           "FNAM",
                           "PKC2",
+                          "PFO2",
                           "PFOR",
                           "ANAM",
                           "UNAM",
@@ -41510,6 +44213,100 @@
                       "width": "u8",
                       "signed": false,
                       "sig": "PKC2"
+                    }
+                  },
+                  {
+                    "kind": "rarray",
+                    "name": "Flags Override",
+                    "element": {
+                      "kind": "struct",
+                      "name": "Data",
+                      "fields": [
+                        {
+                          "kind": "integer",
+                          "name": "Set General Flags",
+                          "width": "u32",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Clear General Flags",
+                          "width": "u32",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Set Interrupt Flags",
+                          "width": "u16",
+                          "signed": false,
+                          "format": {
+                            "flags": [
+                              "Hellos to player",
+                              "Random conversations",
+                              "Observe combat behavior",
+                              "Greet corpse behavior",
+                              "Reaction to player actions",
+                              "Friendly fire comments",
+                              "Aggro Radius Behavior",
+                              "Allow Idle Chatter",
+                              "Unknown 8",
+                              "World Interactions",
+                              "Off For Important Scene",
+                              "Unknown 11",
+                              "Unknown 12",
+                              "Unknown 13",
+                              "Unknown 14",
+                              "Unknown 15"
+                            ]
+                          }
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Clear Interrupt Flags",
+                          "width": "u16",
+                          "signed": false,
+                          "format": {
+                            "flags": [
+                              "Hellos to player",
+                              "Random conversations",
+                              "Observe combat behavior",
+                              "Greet corpse behavior",
+                              "Reaction to player actions",
+                              "Friendly fire comments",
+                              "Aggro Radius Behavior",
+                              "Allow Idle Chatter",
+                              "Unknown 8",
+                              "World Interactions",
+                              "Off For Important Scene",
+                              "Unknown 11",
+                              "Unknown 12",
+                              "Unknown 13",
+                              "Unknown 14",
+                              "Unknown 15"
+                            ]
+                          }
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Preferred Speed Override",
+                          "width": "u8",
+                          "signed": false,
+                          "format": {
+                            "enum": [
+                              "Walk",
+                              "Jog",
+                              "Run",
+                              "Fast Walk"
+                            ]
+                          }
+                        },
+                        {
+                          "kind": "bytes",
+                          "name": "Unknown",
+                          "len": 3
+                        }
+                      ],
+                      "sig": "PFO2"
                     }
                   },
                   {
@@ -48100,19 +50897,49 @@
         },
         {
           "kind": "struct",
-          "name": "Body Part Data",
+          "name": "Biped Body Template",
           "fields": [
             {
               "kind": "integer",
-              "name": "Armor Type",
-              "width": "u8",
-              "signed": false
-            },
-            {
-              "kind": "integer",
               "name": "First Person Flags",
-              "width": "u8",
-              "signed": false
+              "width": "u32",
+              "signed": false,
+              "format": {
+                "flags": [
+                  "30 - Hair Top",
+                  "31 - Hair Long",
+                  "32 - FaceGen Head",
+                  "33 - BODY",
+                  "34 - L Hand",
+                  "35 - R Hand",
+                  "36 - [U] Torso",
+                  "37 - [U] L Arm",
+                  "38 - [U] R Arm",
+                  "39 - [U] L Leg",
+                  "40 - [U] R Leg",
+                  "41 - [A] Torso",
+                  "42 - [A] L Arm",
+                  "43 - [A] R Arm",
+                  "44 - [A] L Leg",
+                  "45 - [A] R Leg",
+                  "46 - Headband",
+                  "47 - Eyes",
+                  "48 - Beard",
+                  "49 - Mouth",
+                  "50 - Neck",
+                  "51 - Ring",
+                  "52 - Scalp",
+                  "53 - Decapitation",
+                  "54 - Backpack",
+                  "55 - EyeOfRa",
+                  "56 - Unnamed",
+                  "57 - Coverall",
+                  "58 - Unnamed",
+                  "59 - Shield",
+                  "60 - Pipboy",
+                  "61 - FX"
+                ]
+              }
             }
           ],
           "sig": "BOD2"
@@ -48199,8 +51026,15 @@
           "sig": "PRPS"
         },
         {
-          "kind": "bytes",
-          "name": "Appearance",
+          "kind": "array",
+          "name": "Attach Parent Slots",
+          "element": {
+            "kind": "formid",
+            "name": "Keyword",
+            "valid_refs": [
+              "KYWD"
+            ]
+          },
           "sig": "APPR"
         },
         {
@@ -54927,6 +57761,11 @@
           ]
         },
         {
+          "kind": "vec3",
+          "name": "Bound Half Extents",
+          "sig": "XMBO"
+        },
+        {
           "kind": "struct",
           "name": "Primitive",
           "fields": [
@@ -56972,6 +59811,129 @@
                 "kind": "lstring",
                 "sig": "RDMP",
                 "name": "Map Name"
+              },
+              {
+                "kind": "struct",
+                "name": "Region Data Object",
+                "fields": [
+                  {
+                    "kind": "array",
+                    "name": "Unknown",
+                    "element": {
+                      "kind": "struct",
+                      "name": "Unknown",
+                      "fields": [
+                        {
+                          "kind": "bytes",
+                          "name": "Unknown",
+                          "len": 4
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Unknown"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Unknown"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Unknown"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Unknown"
+                        },
+                        {
+                          "kind": "bytes",
+                          "name": "Unknown",
+                          "len": 24
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Unknown"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Unknown"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Unknown"
+                        },
+                        {
+                          "kind": "bytes",
+                          "name": "Unknown",
+                          "len": 8
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Clustering",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Min Slope",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Max Slope",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Flags",
+                          "width": "u8",
+                          "signed": false,
+                          "format": {
+                            "flags": [
+                              "Conform to slope",
+                              "Paint Vertices",
+                              "Size Variance +/-",
+                              "X +/-",
+                              "Y +/-",
+                              "Z +/-",
+                              "Tree",
+                              "Huge Rock"
+                            ]
+                          }
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Object",
+                          "valid_refs": [
+                            "TREE",
+                            "FLOR",
+                            "STAT",
+                            "LTEX",
+                            "MSTT",
+                            "PKIN",
+                            "SCOL"
+                          ]
+                        },
+                        {
+                          "kind": "bytes",
+                          "name": "Unknown",
+                          "len": 2
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "array",
+                    "name": "Unknown",
+                    "element": {
+                      "kind": "bytes",
+                      "name": "Unknown",
+                      "len": 2
+                    }
+                  }
+                ],
+                "sig": "RDOT"
               },
               {
                 "kind": "array",
@@ -68084,6 +71046,73 @@
             {
               "kind": "struct",
               "name": "Decal Data",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Min Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Width"
+                },
+                {
+                  "kind": "float",
+                  "name": "Min Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Max Height"
+                },
+                {
+                  "kind": "float",
+                  "name": "Depth"
+                },
+                {
+                  "kind": "float",
+                  "name": "Shininess"
+                },
+                {
+                  "kind": "float",
+                  "name": "Parallax - Scale"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Parallax - Passes",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u8",
+                  "signed": false,
+                  "format": {
+                    "flags": [
+                      "POM Shadows",
+                      "Alpha - Blending",
+                      "Alpha - Testing",
+                      "No Subtextures",
+                      "Multiplicative Blending",
+                      "No G-Buffer Normals"
+                    ]
+                  }
+                },
+                {
+                  "kind": "integer",
+                  "name": "Alpha Threshold?",
+                  "width": "u16",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Byte Colors",
+                  "sig": "XCLP"
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Decal Data",
               "fields": []
             }
           ],
@@ -69870,8 +72899,15 @@
           "sig": "IBSD"
         },
         {
-          "kind": "bytes",
-          "name": "Appearance",
+          "kind": "array",
+          "name": "Attach Parent Slots",
+          "element": {
+            "kind": "formid",
+            "name": "Keyword",
+            "valid_refs": [
+              "KYWD"
+            ]
+          },
           "sig": "APPR"
         },
         {
@@ -69903,8 +72939,559 @@
                     "name": "Name"
                   },
                   {
-                    "kind": "bytes",
+                    "kind": "struct",
                     "name": "Object Mod Template Item",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Include Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Property Count",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Min",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Level Max",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "unused",
+                        "bytes": 1
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Parent Combination Index",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Default",
+                        "width": "u8",
+                        "signed": false,
+                        "format": {
+                          "enum": [
+                            "False",
+                            "True"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Keywords",
+                        "element": {
+                          "kind": "formid",
+                          "name": "Keyword",
+                          "valid_refs": [
+                            "KYWD",
+                            "NULL"
+                          ]
+                        },
+                        "count": "count_prefix"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Min Level For Ranks",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Alt Levels Per Tier",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Includes",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Include",
+                          "fields": [
+                            {
+                              "kind": "formid",
+                              "name": "Mod",
+                              "valid_refs": [
+                                "OMOD"
+                              ]
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Attach Point Index",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Optional",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Don't Use All",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Include Count"
+                        }
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Properties",
+                        "element": {
+                          "kind": "struct",
+                          "name": "Property",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Value Type",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Int",
+                                  "Float",
+                                  "Bool",
+                                  "String",
+                                  "FormID,Int",
+                                  "Enum",
+                                  "FormID,Float"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Function Type",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 0,
+                                  "1": 0,
+                                  "2": 1,
+                                  "4": 3,
+                                  "5": 2,
+                                  "6": 0
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "MUL+ADD",
+                                      "ADD"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "AND",
+                                      "OR"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Function Type",
+                                  "width": "u8",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "SET",
+                                      "REM",
+                                      "ADD"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 3
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Property",
+                              "decider": {
+                                "field": "Form Type",
+                                "default_variant": 1,
+                                "map": {
+                                  "1346454871": 1,
+                                  "1330467393": 2,
+                                  "1598246990": 3
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Speed",
+                                      "Reach",
+                                      "MinRange",
+                                      "MaxRange",
+                                      "AttackDelaySec",
+                                      "Unused 5",
+                                      "OutOfRangeDamageMult",
+                                      "SecondaryDamage",
+                                      "CriticalChargeBonus",
+                                      "HitBehaviour",
+                                      "Rank",
+                                      "Unknown 11",
+                                      "AmmoCapacity",
+                                      "Unknown 13",
+                                      "Unknown 14",
+                                      "Type",
+                                      "IsPlayerOnly",
+                                      "NPCsUseAmmo",
+                                      "HasChargingReload",
+                                      "IsMinorCrime",
+                                      "IsFixedRange",
+                                      "HasEffectOnDeath",
+                                      "HasAlternateRumble",
+                                      "IsNonHostile",
+                                      "IgnoreResist",
+                                      "IsAutomatic",
+                                      "CantDrop",
+                                      "IsNonPlayable",
+                                      "AttackDamage",
+                                      "Value",
+                                      "Weight",
+                                      "Keywords",
+                                      "AimModel",
+                                      "AimModelMinConeDegrees",
+                                      "AimModelMaxConeDegrees",
+                                      "AimModelConeIncreasePerShot",
+                                      "AimModelConeDecreasePerSec",
+                                      "AimModelConeDecreaseDelayMs",
+                                      "AimModelConeSneakMultiplier",
+                                      "AimModelRecoilDiminishSpringForce",
+                                      "AimModelRecoilDiminishSightsMult",
+                                      "AimModelRecoilMaxDegPerShot",
+                                      "AimModelRecoilMinDegPerShot",
+                                      "AimModelRecoilHipMult",
+                                      "AimModelRecoilShotsForRunaway",
+                                      "AimModelRecoilArcDeg",
+                                      "AimModelRecoilArcRotateDeg",
+                                      "AimModelConeIronSightsMultiplier",
+                                      "HasScope",
+                                      "ZoomDataFOVMult",
+                                      "FireSeconds",
+                                      "NumProjectiles",
+                                      "AttackSound",
+                                      "AttackSound2D",
+                                      "AttackLoop",
+                                      "AttackFailSound",
+                                      "IdleSound",
+                                      "EquipSound",
+                                      "UnEquipSound",
+                                      "SoundLevel",
+                                      "ImpactDataSet",
+                                      "Ammo",
+                                      "CritEffect",
+                                      "BashImpactDataSet",
+                                      "BlockMaterial",
+                                      "Enchantments",
+                                      "AimModelBaseStability",
+                                      "ZoomData",
+                                      "ZoomDataOverlay",
+                                      "ZoomDataImageSpace",
+                                      "ZoomDataCameraOffsetX",
+                                      "ZoomDataCameraOffsetY",
+                                      "ZoomDataCameraOffsetZ",
+                                      "EquipSlot",
+                                      "SoundLevelMult",
+                                      "NPCAmmoList",
+                                      "ReloadSpeed",
+                                      "DamageTypeValues",
+                                      "AccuracyBonus",
+                                      "AttackActionPointCost",
+                                      "OverrideProjectile",
+                                      "HasBoltAction",
+                                      "StaggerValue",
+                                      "SightedTransitionSeconds",
+                                      "FullPowerSeconds",
+                                      "HoldInputToPower",
+                                      "HasRepeatableSingleFire",
+                                      "MinPowerPerShot",
+                                      "ColorRemappingIndex",
+                                      "MaterialSwaps",
+                                      "CriticalDamageMult",
+                                      "FastEquipSound",
+                                      "DisableShells",
+                                      "HasChargingAttack",
+                                      "ActorValues",
+                                      "ReachEngagementMult",
+                                      "Health",
+                                      "Durability",
+                                      "NPCReloadDelay",
+                                      "ZoomDataFOVMultB",
+                                      "ZoomDataFOVMultC",
+                                      "UnsightedTransitionSeconds",
+                                      "MinWeaponDrawTime",
+                                      "ModelSwap",
+                                      "MinChargeTime",
+                                      "PowerAffectsProjectileSpeed",
+                                      "DamageBonusMult",
+                                      "AimAssistModel",
+                                      "WeightMult",
+                                      "AmmoConsumption",
+                                      "Overheating",
+                                      "OverheatRateUp",
+                                      "OverheatRateDown",
+                                      "SoundTagSet",
+                                      "SneakAttackMult"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Enchantments",
+                                      "Bash Impact Data Set",
+                                      "Block Material",
+                                      "Keywords",
+                                      "Weight",
+                                      "Value",
+                                      "Rating",
+                                      "Addon Index",
+                                      "Body Part",
+                                      "Damage Type Value",
+                                      "Actor Values",
+                                      "Health",
+                                      "Color Remapping Index",
+                                      "Material Swaps",
+                                      "Durability",
+                                      "Biped World Model",
+                                      "Model Swap",
+                                      "Weight Mult",
+                                      "Perk"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Property",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Keywords",
+                                      "Forced Inventory",
+                                      "XP Offset",
+                                      "Enchantments",
+                                      "Color Remapping Index",
+                                      "Material Swaps"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "unused",
+                              "bytes": 2
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 1",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 4,
+                                  "5": 5,
+                                  "6": 4
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "bytes",
+                                  "name": "Value 1",
+                                  "len": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "s32",
+                                  "signed": true
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 1"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Value 1",
+                                  "valid_refs": []
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 1",
+                                  "width": "u32",
+                                  "signed": false
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Value 2",
+                              "decider": {
+                                "field": "Value Type",
+                                "default_variant": 0,
+                                "map": {
+                                  "0": 1,
+                                  "1": 2,
+                                  "2": 3,
+                                  "4": 1,
+                                  "6": 2
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "unused",
+                                  "bytes": 4
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "float",
+                                  "name": "Value 2"
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Value 2",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "False",
+                                      "True"
+                                    ]
+                                  }
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "union",
+                              "name": "Step",
+                              "decider": {
+                                "form_version": {
+                                  "min": 192,
+                                  "max": null
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "float",
+                                  "name": "Step"
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Curve Table",
+                                  "valid_refs": [
+                                    "CURV",
+                                    "NULL"
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Property Count"
+                        }
+                      }
+                    ],
                     "sig": "OBTS"
                   }
                 ]
@@ -70743,6 +74330,15 @@
                 "name": "Amount",
                 "width": "u32",
                 "signed": false
+              },
+              {
+                "kind": "formid",
+                "name": "Curve Table",
+                "valid_refs": [
+                  "CURV",
+                  "NULL"
+                ],
+                "from_version": 152
               }
             ]
           },

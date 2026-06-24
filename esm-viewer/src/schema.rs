@@ -203,7 +203,8 @@ pub enum ArrayCount {
     FillToEnd,
     Fixed(usize),
     CountPath(String),
-    /// The array is prefixed by a 4-byte signed integer that gives the element count.
+    /// The array is prefixed by a 1-byte unsigned integer that gives the element count.
+    /// Bethesda stores these as a single byte regardless of the Pascal `-1`/`-4` annotation.
     CountPrefix,
 }
 
