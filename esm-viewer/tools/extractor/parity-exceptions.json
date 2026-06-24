@@ -1,0 +1,166 @@
+{
+  "_comment": "Allowlist of intentional parity divergences between the Pascal DSL and our schema/decoder. Each entry must include a 'reason' and the 'commit' that introduced or documented the divergence. Applied by audit.py --gate to suppress known-good findings.",
+  "exceptions": [
+    {
+      "record": "PERK",
+      "class_": "kind-mismatch",
+      "path": "PERK[1:Effects][elem]",
+      "reason": "wbPerkEffect is a HARD_RAW_VAR (runtime Pascal decider that cannot be statically resolved). The schema uses a hand-written rstruct override that is more useful than raw_fallback and has been validated against real ESM data. Divergence is intentional.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "RACE",
+      "class_": "dropped",
+      "path": "RACE/?/wbFaceMorphs",
+      "reason": "wbFaceMorphs is complex character-creation appearance data (FMRI/FMRN sub-records per morph entry). Not decoded by current tools; schema omits it. Low risk — RACE records are editor metadata not used at runtime.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "RACE",
+      "class_": "dropped",
+      "path": "RACE/?/wbMorphGroups",
+      "reason": "wbMorphGroups is complex character-creation morph preset data (MPGN/MPPC/MPPI/MPPN/MPPM/MPPT/MPPF/MPPK/MPGS sub-records). Not decoded by current tools; schema omits it. Low risk — RACE records are editor metadata.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "RACE",
+      "class_": "dropped",
+      "path": "RACE/?/wbTintTemplateGroups",
+      "reason": "wbTintTemplateGroups is complex character-creation tint/overlay data (TETI/TTGP/TTEF/TTET/TTEB/TTEC/TTED sub-records with nested conditions and texture arrays). Not decoded by current tools; schema omits it. Low risk — RACE records are editor metadata.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "ACHR",
+      "class_": "fell-back-to-raw",
+      "path": "ACHR[2:Patrol Data][0:Topic][elem][1:Data]",
+      "reason": "Runtime Pascal closure union decider (wbTopicDataDecider) — variant depends on Dialog Topic type which is only known at runtime. Static schema cannot resolve; raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "AECH",
+      "class_": "fell-back-to-raw",
+      "path": "AECH[0:Effects][elem]/DNAM[1:Value]",
+      "reason": "Runtime Pascal closure union decider — DNAM value type depends on effect type resolved at runtime. raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "CONT",
+      "class_": "fell-back-to-raw",
+      "path": "CONT[2:Items][elem]/COED[1:union]",
+      "reason": "Runtime Pascal closure union decider (wbCOEDOwnerDecider) — COED owner union variant depends on owner record type resolved at runtime. raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "FACT",
+      "class_": "fell-back-to-raw",
+      "path": "FACT/PLVD[1:Location Value]",
+      "reason": "Runtime Pascal closure union decider (wbPLDTLocationTypeDecider) — PLVD value type depends on location type resolved at runtime. raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "FURN",
+      "class_": "fell-back-to-raw",
+      "path": "FURN[8:Items][elem]/COED[1:union]",
+      "reason": "Runtime Pascal closure union decider (wbCOEDOwnerDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "LVLI",
+      "class_": "fell-back-to-raw",
+      "path": "LVLI[3:Leveled List Entries][elem]/COED[1:union]",
+      "reason": "Runtime Pascal closure union decider (wbCOEDOwnerDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "LVLN",
+      "class_": "fell-back-to-raw",
+      "path": "LVLN[2:Leveled List Entries][elem]/COED[1:union]",
+      "reason": "Runtime Pascal closure union decider (wbCOEDOwnerDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "LVPC",
+      "class_": "fell-back-to-raw",
+      "path": "LVPC[0:Leveled List Entries][elem]/COED[1:union]",
+      "reason": "Runtime Pascal closure union decider (wbCOEDOwnerDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "NAVI",
+      "class_": "fell-back-to-raw",
+      "path": "NAVI[0:Navmesh Infos][elem][7:Optional Island Data][1:Island Data]",
+      "reason": "Runtime Pascal closure union decider — island data type resolved at runtime. raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "NAVI",
+      "class_": "fell-back-to-raw",
+      "path": "NAVI[0:Navmesh Infos][elem][8:Pathing Cell][2:union]",
+      "reason": "Runtime Pascal closure union decider — pathing cell type resolved at runtime. raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "NPC_",
+      "class_": "fell-back-to-raw",
+      "path": "NPC_[8:Inventory][0:Items][elem]/COED[1:union]",
+      "reason": "Runtime Pascal closure union decider (wbCOEDOwnerDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "PACK",
+      "class_": "fell-back-to-raw",
+      "path": "PACK[3:Package Data][0:Data Input Values][elem]/PLDT[1:Location Value]",
+      "reason": "Runtime Pascal closure union decider (wbPLDTLocationTypeDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "PACK",
+      "class_": "fell-back-to-raw",
+      "path": "PACK[3:Package Data][0:Data Input Values][elem]/PTDA[0:Target Data][1:Target]",
+      "reason": "Runtime Pascal closure union decider (wbPTDADecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "PACK",
+      "class_": "fell-back-to-raw",
+      "path": "PACK[3:Package Data][0:Data Input Values][elem][0:Topic][elem][1:Data]",
+      "reason": "Runtime Pascal closure union decider (wbTopicDataDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "PACK",
+      "class_": "fell-back-to-raw",
+      "path": "PACK[6:OnBegin][0:Topic][elem][1:Data]",
+      "reason": "Runtime Pascal closure union decider (wbTopicDataDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "PACK",
+      "class_": "fell-back-to-raw",
+      "path": "PACK[7:OnEnd][0:Topic][elem][1:Data]",
+      "reason": "Runtime Pascal closure union decider (wbTopicDataDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "PACK",
+      "class_": "fell-back-to-raw",
+      "path": "PACK[8:OnChange][0:Topic][elem][1:Data]",
+      "reason": "Runtime Pascal closure union decider (wbTopicDataDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "QUST",
+      "class_": "fell-back-to-raw",
+      "path": "QUST[7:Aliases][elem][v0][4:Items][elem]/COED[1:union]",
+      "reason": "Runtime Pascal closure union decider (wbCOEDOwnerDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    },
+    {
+      "record": "REFR",
+      "class_": "fell-back-to-raw",
+      "path": "REFR[7:Patrol][elem][0:Topic][elem][1:Data]",
+      "reason": "Runtime Pascal closure union decider (wbTopicDataDecider). raw_fallback is the correct representation.",
+      "commit": "HEAD (parity-audit pass)"
+    }
+  ]
+}
