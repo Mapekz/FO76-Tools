@@ -1,4 +1,4 @@
-# CLAUDE.md — esm-viewer
+# CLAUDE.md — esm
 
 Guidance for Claude Code when working in this Rust workspace.
 

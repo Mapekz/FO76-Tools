@@ -7,7 +7,7 @@ A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master file
 ## Workspace layout
 
 ```
-esm-viewer/
+esm/
   src/             Engine library + two binaries (esm CLI, esm-server)
   bindings/napi/   N-API addon (esm-napi) for Electron/Node.js
   app/             Electron GUI ("FO76 ESM Viewer")
