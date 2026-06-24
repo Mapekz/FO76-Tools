@@ -16,7 +16,7 @@
 ///
 /// # Examples
 /// ```
-/// use fo76_esm_parser::wildcard::wildcard_match;
+/// use esm::wildcard::wildcard_match;
 /// assert!(wildcard_match("plasma", "Plasma Rifle"));
 /// assert!(wildcard_match("HTO_*", "HTO_AlignedFrame"));
 /// assert!(!wildcard_match("HTO_*", "NotHTO_Frame"));

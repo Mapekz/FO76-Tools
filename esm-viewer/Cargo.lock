@@ -255,30 +255,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "flate2"
-version = "1.1.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
-dependencies = [
- "crc32fast",
- "miniz_oxide",
-]
-
-[[package]]
-name = "fo76-esm-napi"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "fo76-esm-parser",
- "napi",
- "napi-build",
- "napi-derive",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "fo76-esm-parser"
+name = "esm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -294,6 +271,29 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower-http",
+]
+
+[[package]]
+name = "esm-napi"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "esm",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "flate2"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide",
 ]
 
 [[package]]

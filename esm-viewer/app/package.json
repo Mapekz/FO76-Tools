@@ -1,7 +1,8 @@
 {
-  "name": "@fo76/esm-browser",
+  "name": "@fo76/esm-viewer",
   "version": "0.1.0",
-  "description": "Fallout 76 ESM browser",
+  "description": "FO76 ESM Viewer — Fallout 76 ESM record browser",
+  "productName": "FO76 ESM Viewer",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

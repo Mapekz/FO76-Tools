@@ -4,6 +4,7 @@ import { registerIpc } from './ipc'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
+    title: 'FO76 ESM Viewer',
     width: 1400,
     height: 900,
     webPreferences: {

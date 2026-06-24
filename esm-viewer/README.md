@@ -1,143 +1,220 @@
-# fo76-esm-parser
+# esm — FO76 ESM Reader
 
-Cross-platform Rust library and CLI for reading Fallout 76 plugin files (`*.esm`). Parses the binary record format, indexes records by FormID and EditorID, and decodes fields to JSON using a schema derived from [xEdit](https://github.com/TES5Edit/TES5Edit) FO76 definitions.
+A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 173 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, and schema coverage auditing.
 
-Designed as a reusable core for tooling (DPS calculators, data browsers, MCP agents) without the Windows-only Pascal UI.
+> **Read-only.** This tool never modifies your `.esm` files. The only file it writes is a sidecar `<name>.esm.idx` index cache (next to the ESM) to accelerate subsequent opens. Game data files (`*.esm`, `*.ba2`, `*.esm.idx`) are gitignored and non-redistributable — obtain them from your own game install.
 
-## Features
+## Workspace layout
 
-- **Memory-mapped parsing** of large plugins (~880 MB `SeventySix.esm`)
-- **Fast structural index** — FormID → file offset for all records (~5.8M in the main ESM)
-- **EditorID index** — built on demand and cached to disk
-- **Zlib decompression** for compressed records (`0x00040000` flag)
-- **Schema-driven decode** — human-readable JSON for AMMO, ARMO, PROJ, EXPL, WEAP, SPEL, MGEF, PERK
-- **Graceful fallback** — unknown records/fields emit raw hex instead of failing
-
-### Not yet implemented
-
-See [todos.md](todos.md) for the full roadmap. Highlights:
-
-- Localized strings (`FULL`, `DESC`) from `SeventySix - Localization.ba2`
-- Curve tables from `SeventySix - Startup.ba2` via `CURV` records
-- Multi-plugin load order, reference following, write support
+```
+esm-viewer/
+  src/             Engine library + two binaries (esm CLI, esm-server)
+  bindings/napi/   N-API addon (esm-napi) for Electron/Node.js
+  app/             Electron GUI ("FO76 ESM Viewer")
+  schema/          fo76.json (173 record types, embedded at compile time)
+  tools/           Schema extractor (xEdit Pascal → JSON) + patch-note scripts
+  static/          Embedded HTML for the HTTP server UI
+  todos/           Deferred work backlog
+```
 
 ## Requirements
 
-- [Rust](https://rustup.rs/) 1.70+ (2021 edition)
-- A copy of `SeventySix.esm` (and optionally the BA2 archives for future string/curve support)
+- Rust stable (recent; edition 2021, uses let-else/inline format args)
+- No `rust-toolchain.toml` — any recent stable toolchain works
 
 ## Build
 
-```bash
-cargo build --release
+```sh
+cargo build --release          # esm CLI → target/release/esm
+cargo build --release --features server  # also builds esm-server
+cargo test                     # run all inline unit tests (~35 tests)
 ```
 
-The CLI binary is `target/release/fo76`.
+## CLI — `esm`
 
-## CLI usage
-
-```bash
-ESM=SeventySix.esm
-
-# TES4 header: version, record count, masters, flags
-./target/release/fo76 info "$ESM"
-
-# List weapons (FormID, EditorID, FULL string id)
-./target/release/fo76 list "$ESM" --type WEAP --limit 20
-
-# Fetch a record by EditorID or FormID (hex or decimal)
-./target/release/fo76 get "$ESM" --edid AssaultRifle --pretty
-./target/release/fo76 get "$ESM" --formid 0x463F --pretty
-
-# Raw subrecord dump (no schema decode)
-./target/release/fo76 get "$ESM" --formid 0x463F --raw --pretty
+```sh
+esm <subcommand> [options] <ESM-FILE> [...]
 ```
 
-### Index cache
+### `info` — TES4 header summary
 
-The first query builds a sidecar index at `SeventySix.esm.idx` (keyed by file path, size, and mtime). Subsequent runs reuse it. The EditorID index is added to the same cache after the first `--edid` lookup or `list` call.
+```sh
+esm info SeventySix.esm
+```
+
+Prints version, record count, next object ID, ESM/Localization flags, author, description, and master dependencies.
+
+### `get` — Fetch a single record
+
+```sh
+# By EditorID (decoded JSON)
+esm get SeventySix.esm --edid AssaultRifle --pretty
+
+# By FormID (hex or decimal)
+esm get SeventySix.esm --formid 0x463F --pretty
+
+# Raw subrecords (no schema decoding)
+esm get SeventySix.esm --formid 0x463F --raw --pretty
+
+# With localized strings resolved
+esm get SeventySix.esm --edid AssaultRifle --strings "SeventySix - Localization.ba2"
+
+# Control FormID cross-reference depth
+esm get SeventySix.esm --edid AssaultRifle --resolve full   # inline referenced records
+esm get SeventySix.esm --edid AssaultRifle --resolve stub   # referenced records as stubs
+esm get SeventySix.esm --edid AssaultRifle --resolve none   # leave FormIDs as hex (default)
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--formid <ID>` | — | Hex (`0x1234`) or decimal FormID |
+| `--edid <ID>` | — | EditorID string |
+| `--json` | false | Emit JSON (implied by `--pretty`) |
+| `--pretty` | false | Pretty-print JSON |
+| `--raw` | false | Skip schema decode; dump raw subrecords |
+| `--strings <BA2>` | — | Localization BA2 to resolve LStrings |
+| `--strings-dir <DIR>` | — | Directory of loose `.strings` / `.dlstrings` files |
+| `--lang <code>` | `en` | Language code for string tables |
+| `--startup-ba2 <BA2>` | — | Startup BA2 for curve table evaluation |
+| `--resolve <depth>` | `none` | FormID cross-reference depth: `none`, `stub`, `full` |
+
+### `list` — List records of a type
+
+```sh
+esm list SeventySix.esm --type WEAP --limit 20
+esm list SeventySix.esm --type GLOB --strings "SeventySix - Localization.ba2" --pretty
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--type <SIG>` | required | 4-char record type signature |
+| `--limit <N>` | 50 | Max records to return |
+| `--strings <BA2>` | — | Resolve LStrings |
+| `--strings-dir <DIR>` | — | Loose string files |
+| `--lang <code>` | `en` | Language |
+
+### `search` — Wildcard search over EditorIDs and names
+
+```sh
+esm search SeventySix.esm "*Rifle*" --type WEAP --in both --pretty
+esm search SeventySix.esm "Assault*" --in edid
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `<pattern>` | required | Wildcard pattern (`*` = any substring, case-insensitive) |
+| `--type <SIG,...>` | all | Comma-separated record types to search |
+| `--in <field>` | `both` | `edid`, `name`, or `both` |
+| `--limit <N>` | 100 | Max results |
+| `--json` / `--pretty` | — | Output format |
+| `--strings`, `--strings-dir`, `--lang` | — | String resolution |
+
+### `refs` — Reverse FormID lookup
+
+```sh
+esm refs SeventySix.esm --edid AssaultRifle --limit 50
+esm refs SeventySix.esm --formid 0x463F --json --pretty
+```
+
+Find all records that reference a given FormID. Builds and caches an xref index on first run.
+
+### `tree` — Browse the GRUP hierarchy
+
+```sh
+esm tree SeventySix.esm --type WEAP --limit 50 --pretty
+esm tree SeventySix.esm --offset 0 --limit 20
+```
+
+### `diff` — Compare two ESM versions
+
+```sh
+esm diff old.esm new.esm --type GLOB --json --pretty
+esm diff SeventySix_20260612.esm SeventySix_20260619.esm
+```
+
+Aligns records by FormID, uses byte-equality fast-path, decodes only changed records, and emits a sparse `{from, to}` diff per changed field. Prints a per-type summary and timing to stderr.
+
+### `coverage` — Schema audit
+
+```sh
+esm coverage SeventySix.esm --type WEAP
+esm coverage SeventySix.esm --gate   # exits non-zero on any raw_fallback
+```
+
+Counts `_raw`, `_unmapped`, `_unknown_record`, and `_unresolved` markers across decoded records. Use `--gate` in CI to enforce full decode coverage.
+
+## Server — `esm-server`
+
+Feature-gated HTTP REST + MCP stdio server. Build with `--features server`:
+
+```sh
+cargo run --release --features server --bin esm-server -- SeventySix.esm
+cargo run --release --features server --bin esm-server -- SeventySix.esm --compare SeventySix_prev.esm --port 3000
+cargo run --release --features server --bin esm-server -- SeventySix.esm --mcp-stdio
+```
+
+HTTP routes: `GET /info`, `/records/{formid}`, `/records?edid=|type=&limit=`, `/groups`, `/groups/{sig}/children`, `/stub/{offset}`, `/diff`, `/health`. Serves embedded HTML viewer at `/` and `/compare`.
+
+MCP stdio mode implements JSON-RPC 2.0 with three tools: `esm_file_info`, `esm_get_record`, `esm_list_records`.
 
 ## Library API
 
+The `esm` crate exposes a `Database` facade for library consumers:
+
 ```rust
-use fo76_esm_parser::{Database, FormId};
+use esm::{Database, FormId, ResolveDepth};
 
-let mut db = Database::open("SeventySix.esm")?;
+let db = Database::open("SeventySix.esm")?;
 
-let info = db.file_info()?;
-println!("records: {}", info.record_count);
+// File metadata
+let info = db.file_info();
 
-let record = db.record_by_edid("AssaultRifle")?;
-println!("{}", serde_json::to_string_pretty(&record.fields)?);
+// Fetch by EditorID (decoded JSON)
+let record = db.record_by_edid("AssaultRifle", ResolveDepth::None)?;
 
-let by_id = db.record_by_formid(FormId::new(0x463F))?;
-let weapons = db.list_by_type("WEAP", 10)?;
+// Fetch by FormID
+let record = db.record_by_formid(FormId(0x463F), ResolveDepth::Stub)?;
+
+// List all records of a type
+let weapons = db.list_by_type("WEAP")?;
+
+// Reverse FormID lookup
+let referencing = db.referenced_by(FormId(0x463F), 100)?;
+
+// Diff two databases
+use esm::diff::diff_databases;
+let diff = diff_databases(&db_a, &db_b)?;
 ```
 
-`Database::open` embeds `schema/fo76.json` at compile time. Decoding is read-only.
-
-## Project layout
-
-```
-esm-parser/
-├── src/
-│   ├── lib.rs          # Database API
-│   ├── format.rs       # Record / GRUP / subrecord headers
-│   ├── reader.rs       # mmap walk, TES4 header, subrecord parse
-│   ├── compress.rs     # zlib record decompression
-│   ├── formid.rs       # FormID parse/display
-│   ├── index.rs        # FormID + EditorID index, bincode cache
-│   ├── schema.rs       # JSON schema types
-│   ├── decode.rs       # Schema-driven decoder → serde_json::Value
-│   └── bin/cli.rs      # `fo76` CLI
-├── schema/
-│   └── fo76.json       # Record field definitions (committed)
-├── tools/
-│   └── extractor/
-│       └── extract.py  # Pascal DSL → fo76.json (build-time tool)
-└── todos.md            # Post-POC follow-ups
-```
+Key re-exports: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`.
 
 ## Schema
 
-Field layouts are defined in `schema/fo76.json`, initially hand-crafted for eight record types and expandable via `tools/extractor/extract.py`, which reads `TES5Edit/Core/wbDefinitionsFO76.pas`.
+`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers 173 FO76 record types derived from xEdit Pascal definitions. An `fo76.overrides.json` is merged on top for manual corrections.
 
-Decoded output uses `serde_json::Value`. LString fields currently show unresolved IDs when string tables are not loaded:
+To regenerate or extend coverage:
 
-```json
-"Name": { "lstring_id": "0x00012DE9", "_unresolved": true }
-```
-
-## Game data files
-
-| File | Purpose | Status |
-|------|---------|--------|
-| `SeventySix.esm` | Main plugin | Required |
-| `SeventySix - Localization.ba2` | English string tables | Planned ([todos.md](todos.md)) |
-| `SeventySix - Startup.ba2` | Curve JSON (`misc/curvetables/json/…`) | Planned ([todos.md](todos.md)) |
-
-These files are large (hundreds of MB to ~1 GB total) and are not redistributable; obtain them from your own game install.
-
-## Binary format reference
-
-Ported from xEdit / FO76Edit:
-
-- Record header: 24 bytes (signature, dataSize, flags, formID, formVersion, …)
-- GRUP header: 24 bytes; `groupSize` includes the header
-- Subrecords: 6-byte header + payload; **XXXX** oversized rule supported
-- FO76 FormIDs: full-slot (`high byte` = master index, low 24 bits = object ID)
-
-See `TES5Edit/Core/wbImplementation.pas` and `TES5Edit/Core/wbDefinitionsFO76.pas` for the canonical definitions.
-
-## Regenerating the schema
-
-```bash
+```sh
+# Requires a TES5Edit/FO76Edit checkout at ../TES5Edit
 python3 tools/extractor/extract.py
-# writes schema/fo76.json (requires TES5Edit sources at ../TES5Edit)
+
+# Audit schema parity against Pascal source (exits non-zero on HIGH drops)
+python3 tools/extractor/audit.py --gate
 ```
 
-The extractor is best-effort; some Pascal closure deciders (conditions, perk effects) still need hand-modeling.
+## Tests
 
-## License
+~35 inline unit tests + 1 ignored integration test. Run all:
 
-No license file is included yet. xEdit/TES5Edit is used read-only as a reference for format and field definitions.
+```sh
+cargo test
+
+# Integration test (needs real ESM files via env vars)
+RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored
+```
+
+Tests cover: structural record parsing, wildcard matching, diff logic, tree arena, and curve interpolation. Tests never need game data — they build synthetic byte buffers in-memory.
+
+## Index cache
+
+On first open, the tool writes a `<name>.esm.idx` file next to the ESM. Subsequent opens skip re-parsing and load the index from this cache (keyed by file path, size, and mtime). The cache regenerates automatically when the ESM changes or `CACHE_VERSION` is bumped. These files are gitignored.

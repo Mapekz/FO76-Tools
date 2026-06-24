@@ -2,7 +2,7 @@
 members = [".", "bindings/napi"]
 
 [package]
-name = "fo76-esm-parser"
+name = "esm"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,15 +10,15 @@ edition = "2021"
 server = ["dep:tokio", "dep:axum", "dep:tower-http"]
 
 [lib]
-name = "fo76_esm_parser"
+name = "esm"
 path = "src/lib.rs"
 
 [[bin]]
-name = "fo76"
+name = "esm"
 path = "src/bin/cli.rs"
 
 [[bin]]
-name = "fo76-server"
+name = "esm-server"
 path = "src/bin/server.rs"
 required-features = ["server"]
 

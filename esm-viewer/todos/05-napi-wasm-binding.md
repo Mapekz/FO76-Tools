@@ -145,8 +145,8 @@ This task is item `- [ ] napi-rs / WASM binding for Electron/TS frontend` under
 
 ## Current state
 
-- Single crate `fo76-esm-parser` (`Cargo.toml` at repo root): lib
-  `fo76_esm_parser` (`src/lib.rs`) + bin `fo76` (`src/bin/cli.rs`). No
+- Single crate `esm` (`Cargo.toml` at repo root): lib
+  `esm` (`src/lib.rs`) + bin `fo76` (`src/bin/cli.rs`). No
   workspace.
 - Public API (all `anyhow::Result`, all on `&mut Database` except `file_info`):
   - `Database::open(path: impl AsRef<Path>) -> Result<Database>`
@@ -179,11 +179,11 @@ use the mmap path as-is.
 ### Workspace conversion
 
 Promote the repo to a Cargo workspace so the bindings are separate crates that
-depend on the core lib, keeping `fo76-esm-parser` free of binding deps. Root
+depend on the core lib, keeping `esm` free of binding deps. Root
 `Cargo.toml` becomes a virtual manifest listing three members:
 
 ```
-fo76-esm-parser/                 (workspace root)
+esm/                 (workspace root)
 ├── Cargo.toml                   # [workspace] only
 ├── crates/
 │   └── core/                    # moved from root: the existing lib + CLI
@@ -211,7 +211,7 @@ assumes the move; Step 1 notes the relative-path adjustments.
   ```rust
   #[napi]
   pub struct EsmDatabase {
-      inner: std::sync::Mutex<fo76_esm_parser::Database>,
+      inner: std::sync::Mutex<esm::Database>,
   }
   ```
 
@@ -252,10 +252,10 @@ assumes the move; Step 1 notes the relative-path adjustments.
   ```rust
   struct OpenTask { path: String }
   impl napi::Task for OpenTask {
-      type Output = fo76_esm_parser::Database;
+      type Output = esm::Database;
       type JsValue = EsmDatabase;
       fn compute(&mut self) -> napi::Result<Self::Output> {
-          fo76_esm_parser::Database::open(&self.path).map_err(to_napi_err)
+          esm::Database::open(&self.path).map_err(to_napi_err)
       }
       fn resolve(&mut self, _env: Env, db: Self::Output) -> napi::Result<Self::JsValue> {
           Ok(EsmDatabase { inner: Mutex::new(db) })
@@ -337,7 +337,7 @@ assumes the move; Step 1 notes the relative-path adjustments.
 
 **Create — napi**
 - `bindings/napi/Cargo.toml` — `[package] name = "fo76-esm-napi"`, crate-type
-  `["cdylib"]`, deps `fo76-esm-parser` (path), `napi = { version = "2", features
+  `["cdylib"]`, deps `esm` (path), `napi = { version = "2", features
   = ["napi6", "serde-json"] }`, `napi-derive = "2"`; `[build-dependencies]
   napi-build = "2"`.
 - `bindings/napi/build.rs` — `napi_build::setup();`
@@ -353,7 +353,7 @@ assumes the move; Step 1 notes the relative-path adjustments.
 
 **Create — wasm**
 - `bindings/wasm/Cargo.toml` — `[package] name = "fo76-esm-wasm"`, crate-type
-  `["cdylib"]`, deps `fo76-esm-parser` (path), `wasm-bindgen = "0.2"`,
+  `["cdylib"]`, deps `esm` (path), `wasm-bindgen = "0.2"`,
   `serde-wasm-bindgen = "0.6"`, optional `tsify = "0.4"`,
   `console_error_panic_hook` (dev).
 - `bindings/wasm/src/lib.rs` — `WasmDatabase` from `Uint8Array`, method set,
@@ -367,7 +367,7 @@ assumes the move; Step 1 notes the relative-path adjustments.
    `crates/core/Cargo.toml`. Write a new root `Cargo.toml` as a virtual
    `[workspace]` with `members = ["crates/core", "bindings/napi",
    "bindings/wasm"]` and a `[workspace.dependencies]` table. Confirm
-   `cargo build -p fo76-esm-parser` and the `fo76` bin still build and that
+   `cargo build -p esm` and the `fo76` bin still build and that
    `include_str!` resolves. Run `cargo fmt --check` and
    `cargo clippy --all-targets -- -D warnings`.
 
@@ -378,7 +378,7 @@ assumes the move; Step 1 notes the relative-path adjustments.
    the mmap call. In `index.rs` cfg-gate disk cache I/O. In `lib.rs` add
    `Database::from_bytes`. Verify the native build is byte-for-byte behavior-
    unchanged (`cargo test`, CLI smoke test against the local ESM). Optionally
-   add `wasm32-unknown-unknown` target and `cargo check -p fo76-esm-parser
+   add `wasm32-unknown-unknown` target and `cargo check -p esm
    --target wasm32-unknown-unknown` to prove core compiles for wasm.
 
 3. **napi crate scaffold.** `cargo new --lib bindings/napi`; install
@@ -484,7 +484,7 @@ assumes the move; Step 1 notes the relative-path adjustments.
 - `cargo build` / `cargo test` / `cargo clippy --all-targets -- -D warnings` /
   `cargo fmt --check` pass across the whole workspace; the existing `fo76` CLI
   still builds and runs against the local ESM (no behavior change in core).
-- `cargo check -p fo76-esm-parser --target wasm32-unknown-unknown` succeeds
+- `cargo check -p esm --target wasm32-unknown-unknown` succeeds
   (proves the mmap/fs cfg-gating is correct).
 - `napi build --platform --release` produces a loadable `.node` plus
   `index.js` + `index.d.ts`; the TS smoke harness (Step 8) opens the local ESM,

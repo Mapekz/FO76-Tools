@@ -1,7 +1,7 @@
 {
   "name": "@fo76/esm-napi",
   "version": "0.1.0",
-  "description": "Native napi-rs binding for fo76-esm-parser",
+  "description": "Native N-API binding for the esm crate",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
@@ -9,7 +9,7 @@
     "build:debug": "napi build --platform"
   },
   "napi": {
-    "binaryName": "fo76-esm-napi",
+    "binaryName": "esm-napi",
     "targets": [
       "x86_64-unknown-linux-gnu"
     ]

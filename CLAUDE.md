@@ -7,12 +7,14 @@ This repository contains two **independent** Fallout 76 tools. They share no cod
 | Directory | Language | Guidance |
 |---|---|---|
 | [`ba2/`](ba2/CLAUDE.md) | Rust / Cargo | BA2 archive CLI + library |
+| [`esm-viewer/`](esm-viewer/CLAUDE.md) | Rust / Cargo + Electron | FO76 ESM reader: CLI, HTTP/MCP server, Electron GUI |
 | [`dps-76/`](dps-76/CLAUDE.md) | TypeScript / pnpm | FO76 DPS calculator web app |
 
 ## Working in this repo
 
 - **Always `cd` into the relevant subdirectory** before running commands — there are no root-level build scripts.
 - `ba2/` uses `cargo`. See [`ba2/CLAUDE.md`](ba2/CLAUDE.md).
+- `esm-viewer/` uses `cargo` (Rust workspace) + `npm` (Electron app in `app/`). See [`esm-viewer/CLAUDE.md`](esm-viewer/CLAUDE.md).
 - `dps-76/` uses `pnpm`. See [`dps-76/CLAUDE.md`](dps-76/CLAUDE.md).
 
 ## Git boundary

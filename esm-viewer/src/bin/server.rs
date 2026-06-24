@@ -1,6 +1,6 @@
-//! fo76-server: HTTP REST + MCP stdio server for the FO76 ESM parser.
+//! esm-server: HTTP REST + MCP stdio server for the FO76 ESM reader.
 //!
-//! Start with: `cargo run --features server --bin fo76-server -- <ESM> [--compare <ESM2>]`
+//! Start with: `cargo run --features server --bin esm-server -- <ESM> [--compare <ESM2>]`
 //! MCP stdio mode: add `--mcp-stdio`
 
 use axum::{
@@ -11,7 +11,7 @@ use axum::{
     Router,
 };
 use clap::Parser;
-use fo76_esm_parser::Database;
+use esm::Database;
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -19,7 +19,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 // ── Config ───────────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "fo76-server", about = "FO76 ESM HTTP/MCP server")]
+#[command(name = "esm-server", about = "FO76 ESM HTTP/MCP server")]
 struct Cli {
     /// Path to the ESM file
     esm: PathBuf,
@@ -104,7 +104,7 @@ async fn record_by_formid(
     State(state): State<AppState>,
     Path(formid): Path<String>,
 ) -> impl IntoResponse {
-    let fid = match fo76_esm_parser::parse_form_id_input(&formid) {
+    let fid = match esm::parse_form_id_input(&formid) {
         Ok(f) => f,
         Err(e) => return ApiError::bad_request(e).into_response(),
     };
@@ -195,7 +195,7 @@ async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
     // Both db and compare_db must be locked. diff_databases takes &Database.
     let db_a = state.db.lock().await;
     let db_b = cmp.lock().await;
-    match fo76_esm_parser::diff::diff_databases(&db_a, &db_b) {
+    match esm::diff::diff_databases(&db_a, &db_b) {
         Ok(result) => Json(serde_json::to_value(&result).unwrap_or_default()).into_response(),
         Err(e) => ApiError::from(e).into_response(),
     }
@@ -206,7 +206,7 @@ async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
 async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
     use std::io::{BufRead, Write};
 
-    eprintln!("fo76-server: MCP stdio mode. Send JSON-RPC 2.0 messages on stdin.");
+    eprintln!("esm-server: MCP stdio mode. Send JSON-RPC 2.0 messages on stdin.");
 
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -245,18 +245,18 @@ async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
             "initialize" => serde_json::json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "fo76-server", "version": "0.1.0"}
+                "serverInfo": {"name": "esm-server", "version": "0.1.0"}
             }),
             "ping" => serde_json::json!({}),
             "tools/list" => serde_json::json!({
                 "tools": [
                     {
-                        "name": "fo76_file_info",
+                        "name": "esm_file_info",
                         "description": "Get ESM file metadata (version, record count, masters)",
                         "inputSchema": {"type": "object", "properties": {}}
                     },
                     {
-                        "name": "fo76_get_record",
+                        "name": "esm_get_record",
                         "description": "Get a decoded record by FormID or EditorID",
                         "inputSchema": {
                             "type": "object",
@@ -267,7 +267,7 @@ async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
                         }
                     },
                     {
-                        "name": "fo76_list_records",
+                        "name": "esm_list_records",
                         "description": "List records of a given 4-character type signature",
                         "inputSchema": {
                             "type": "object",
@@ -320,17 +320,17 @@ async fn call_tool(
     args: &serde_json::Value,
 ) -> anyhow::Result<String> {
     match name {
-        "fo76_file_info" => {
+        "esm_file_info" => {
             let db = db.lock().await;
             let info = db.file_info()?;
             Ok(serde_json::to_string_pretty(&info)?)
         }
-        "fo76_get_record" => {
+        "esm_get_record" => {
             let formid = args.get("formid").and_then(|v| v.as_str());
             let edid = args.get("edid").and_then(|v| v.as_str());
             let mut db = db.lock().await;
             let rec = if let Some(fid_str) = formid {
-                let fid = fo76_esm_parser::parse_form_id_input(fid_str)?;
+                let fid = esm::parse_form_id_input(fid_str)?;
                 db.record_by_formid(fid)?
             } else if let Some(e) = edid {
                 db.record_by_edid(e)?
@@ -339,7 +339,7 @@ async fn call_tool(
             };
             Ok(serde_json::to_string_pretty(&rec)?)
         }
-        "fo76_list_records" => {
+        "esm_list_records" => {
             let sig = args
                 .get("type")
                 .and_then(|v| v.as_str())
@@ -395,7 +395,7 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    eprintln!("fo76-server listening on http://localhost:{}", cli.port);
+    eprintln!("esm-server listening on http://localhost:{}", cli.port);
     if cli.compare.is_some() {
         eprintln!("  Diff view: http://localhost:{}/compare", cli.port);
     }

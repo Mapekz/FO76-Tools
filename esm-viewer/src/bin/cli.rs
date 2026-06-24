@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use fo76_esm_parser::{parse_form_id_input, Database, SearchField};
+use esm::{parse_form_id_input, Database, SearchField};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(name = "fo76", about = "Fallout 76 ESM parser")]
+#[command(name = "esm", about = "Read and inspect Fallout 76 ESM files")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -339,7 +339,7 @@ fn apply_strings_override(
     lang: &str,
 ) {
     if let Some(ba2_path) = strings {
-        match fo76_esm_parser::strings::Localization::from_ba2(&ba2_path, lang, "seventysix") {
+        match esm::strings::Localization::from_ba2(&ba2_path, lang, "seventysix") {
             Ok(loc) => db.set_localization(loc),
             Err(e) => eprintln!(
                 "Warning: failed to load localization from {}: {}",
@@ -349,7 +349,7 @@ fn apply_strings_override(
         }
     } else if let Some(dir) = strings_dir {
         let prefix = esm_string_prefix(esm_path);
-        match fo76_esm_parser::strings::Localization::from_loose_files(&dir, lang, &prefix) {
+        match esm::strings::Localization::from_loose_files(&dir, lang, &prefix) {
             Ok(loc) => db.set_localization(loc),
             Err(e) => eprintln!(
                 "Warning: failed to load string tables from {}: {}",
@@ -396,12 +396,12 @@ fn cmd_get(
     }
 
     let depth = match resolve.as_str() {
-        "stub" => fo76_esm_parser::ResolveDepth::Stub,
-        "full" => fo76_esm_parser::ResolveDepth::Full,
-        _ => fo76_esm_parser::ResolveDepth::None,
+        "stub" => esm::ResolveDepth::Stub,
+        "full" => esm::ResolveDepth::Full,
+        _ => esm::ResolveDepth::None,
     };
 
-    let result = if depth != fo76_esm_parser::ResolveDepth::None {
+    let result = if depth != esm::ResolveDepth::None {
         if let Some(fid) = formid {
             db.record_by_formid_resolved(parse_form_id_input(&fid)?, depth)?
         } else if let Some(e) = edid {
@@ -615,7 +615,7 @@ fn resolve_form_id(
     db: &mut Database,
     formid: Option<String>,
     edid: Option<String>,
-) -> anyhow::Result<fo76_esm_parser::FormId> {
+) -> anyhow::Result<esm::FormId> {
     if let Some(fid) = formid {
         parse_form_id_input(&fid)
     } else if let Some(e) = edid {
@@ -635,7 +635,7 @@ fn cmd_diff(
     as_json: bool,
     pretty: bool,
 ) -> anyhow::Result<()> {
-    use fo76_esm_parser::diff::diff_databases;
+    use esm::diff::diff_databases;
     use std::time::Instant;
 
     let t0 = Instant::now();
@@ -930,7 +930,7 @@ fn cmd_coverage(
     let mut by_type: BTreeMap<String, Markers> = BTreeMap::new();
 
     for sig in &all_sigs {
-        let metas: Vec<fo76_esm_parser::reader::RecordMeta> = db
+        let metas: Vec<esm::reader::RecordMeta> = db
             .index
             .records_by_type(sig)
             .into_iter()

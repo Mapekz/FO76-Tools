@@ -1,6 +1,6 @@
 #![deny(clippy::all)]
 
-use fo76_esm_parser::{Database, FormId, ResolveDepth};
+use esm::{Database, FormId, ResolveDepth};
 use napi_derive::napi;
 use std::sync::Mutex;
 
