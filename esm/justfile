@@ -1,0 +1,33 @@
+# Run from esm/.  Mirrors the CI checks exactly.
+# Install `just` once: cargo install just
+#
+# Usage:
+#   just          -> fmt + clippy + test  (the full local CI pass)
+#   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
+#   just test-esm /path/a.esm /path/b.esm  -> env-gated diff integration test
+
+default: check
+
+# Run the full check suite (same as CI rust matrix).
+check: fmt clippy test
+
+# Verify formatting.
+fmt:
+    cargo fmt --check
+
+# Lint with all features so the server bin is included.
+clippy:
+    cargo clippy --all-targets -- -D warnings
+    cargo clippy --all-targets --features server -- -D warnings
+
+# Run all tests (game-data tests are #[ignore]-gated).
+test:
+    cargo test
+
+# Schema parity audit against the Pascal source in ../TES5Edit.
+audit:
+    python3 tools/extractor/audit.py --gate
+
+# Diff two ESM versions (integration test normally skipped by #[ignore]).
+test-esm a b:
+    RUST_TEST_ESM_A={{a}} RUST_TEST_ESM_B={{b}} cargo test -- --ignored

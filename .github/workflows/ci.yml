@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  # ── Rust: fmt / clippy / test ──────────────────────────────────────────────
+  #
+  # Matrix covers both independent Rust crates.  Each crate has its own
+  # rust-toolchain.toml (both currently pin 1.96.0); setup-rust-toolchain reads
+  # that file automatically so CI always matches the pinned local toolchain.
+  rust:
+    name: ${{ matrix.crate }} (fmt / clippy / test)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [esm, ba2]
+    defaults:
+      run:
+        working-directory: ${{ matrix.crate }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads rust-toolchain.toml from $working-directory automatically.
+      # rustflags: "" prevents the action from injecting its own -D warnings
+      # (we pass that flag explicitly per-step so it shows up in the log).
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+          cache-workspaces: ${{ matrix.crate }}
+
+      - name: fmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # The esm-server binary has `required-features = ["server"]`, so
+      # --all-targets alone silently skips it.  Lint it explicitly.
+      - name: clippy (server feature)
+        if: matrix.crate == 'esm'
+        run: cargo clippy --all-targets --features server -- -D warnings
+
+      - name: test
+        run: cargo test
+        # The one game-data test is #[ignore]-gated, so no env vars needed here.
+
+  # ── N-API binding: build + smoke ──────────────────────────────────────────
+  #
+  # Builds the native addon (catches Rust↔JS API drift) and runs the smoke test.
+  # Without FO76_ESM set, smoke.mjs exits 0 (SKIP), so no game data is required.
+  # continue-on-error while the napi build environment is being stabilised in CI.
+  napi:
+    name: napi (build + smoke)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: esm/bindings/napi
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+          cache-workspaces: esm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: install napi cli
+        run: npm ci
+
+      - name: build (debug)
+        run: npm run build:debug
+
+      - name: smoke test (skips without FO76_ESM)
+        run: npm test
+
+  # ── Schema parity audit ───────────────────────────────────────────────────
+  #
+  # audit.py --gate checks schema/fo76.json against the Pascal source in
+  # TES5Edit.  That source lives outside this repo, so CI clones it as a
+  # sibling (extract.py expects it at ../TES5Edit relative to esm/).
+  #
+  # continue-on-error: true until a specific TES5Edit commit is pinned below —
+  # cloning master means upstream Pascal changes can flip this gate red without
+  # any change in this repo.  Once the first green run is confirmed, replace
+  # `--depth 1` with `--branch <tag>` and set continue-on-error: false.
+  audit:
+    name: schema parity audit (esm)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches the .python-version file (3.14.5).
+          python-version: "3.14"
+
+      # Clone TES5Edit as a sibling of esm/ (the path extract.py hard-codes).
+      # TODO: pin to a specific commit/tag once the gate is confirmed green.
+      - name: fetch TES5Edit (Pascal truth source)
+        run: git clone --depth 1 https://github.com/TES5Edit/TES5Edit.git TES5Edit
+        working-directory: .
+
+      - name: audit --gate
+        working-directory: esm
+        run: python3 tools/extractor/audit.py --gate
