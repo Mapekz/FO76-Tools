@@ -104,7 +104,8 @@ pub fn extract_one(
     out_dir: &Path,
     codec: Codec,
 ) -> Result<PathBuf> {
-    let name_lower = name.to_lowercase();
+    // Normalise the same way Ba2Archive::read() does: lowercase + `/` → `\`.
+    let name_lower = name.to_lowercase().replace('/', "\\");
     let entry = archive
         .list()
         .iter()
@@ -115,7 +116,10 @@ pub fn extract_one(
 
 fn should_extract(entry: &Ba2Entry, opts: &ExtractOptions) -> bool {
     if let Some(gs) = &opts.filter {
-        gs.is_match(&entry.name)
+        // Archive entry names use backslash separators; globset on Unix expects
+        // forward slashes, so normalise before matching.
+        let fwd = entry.name.replace('\\', "/");
+        gs.is_match(&fwd)
     } else {
         true
     }
@@ -141,11 +145,14 @@ fn extract_entry(
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+//
+// Only `safe_output_path` tests live here — that function is module-private so
+// integration tests in `tests/extract.rs` cannot reach it.  The public-API
+// tests (extract_all, extract_one) live in `tests/extract.rs`.
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn safe_path_normal() {
@@ -168,72 +175,28 @@ mod tests {
     }
 
     #[test]
-    fn safe_path_rejects_absolute() {
+    fn safe_path_rejects_absolute_forward_slash() {
         let base = Path::new("/tmp/out");
         assert!(safe_output_path(base, "/etc/passwd").is_err());
     }
 
     #[test]
-    fn extract_all_writes_files() {
-        use crate::format::{write_header, write_record, Record, RECORD_FLAGS};
-        use crate::reader::Ba2Archive;
-        use std::io::Write;
-        use tempfile::NamedTempFile;
+    fn safe_path_rejects_absolute_backslash() {
+        let base = Path::new("/tmp/out");
+        // A leading backslash in an archive path must be rejected.
+        assert!(safe_output_path(base, "\\etc\\passwd").is_err());
+    }
 
-        let content_a = b"file A content";
-        let content_b = b"file B content";
-        let entries: &[(&str, &[u8])] = &[("dir/a.txt", content_a), ("dir/b.txt", content_b)];
-
-        // Build archive.
-        let file_count = entries.len() as u32;
-        let data_start = 24u64 + 36 * file_count as u64;
-        let mut cursor = data_start;
-        let mut offsets = Vec::new();
-        for (_, d) in entries {
-            offsets.push(cursor);
-            cursor += d.len() as u64;
-        }
-        let name_table_offset = cursor;
-
-        let mut tmp = NamedTempFile::new().unwrap();
-        tmp.write_all(&write_header(1, file_count, name_table_offset))
-            .unwrap();
-        for (i, (path, data)) in entries.iter().enumerate() {
-            let (name_hash, dir_hash, ext) = crate::hash::hash_path(path);
-            let r = Record {
-                name_hash,
-                ext,
-                dir_hash,
-                flags: RECORD_FLAGS,
-                data_offset: offsets[i],
-                packed_size: 0,
-                unpacked_size: data.len() as u32,
-            };
-            tmp.write_all(&write_record(&r)).unwrap();
-        }
-        for (_, d) in entries {
-            tmp.write_all(d).unwrap();
-        }
-        // Name table.
-        for (path, _) in entries {
-            let p = path.to_lowercase().replace('/', "\\");
-            tmp.write_all(&(p.len() as u16).to_le_bytes()).unwrap();
-            tmp.write_all(p.as_bytes()).unwrap();
-        }
-        tmp.flush().unwrap();
-
-        let archive = Ba2Archive::open(tmp.path()).unwrap();
-        let out = TempDir::new().unwrap();
-        let opts = ExtractOptions::default();
-        let count = extract_all(&archive, out.path(), &opts).unwrap();
-        assert_eq!(count, 2);
-        assert_eq!(
-            std::fs::read(out.path().join("dir/a.txt")).unwrap(),
-            content_a
-        );
-        assert_eq!(
-            std::fs::read(out.path().join("dir/b.txt")).unwrap(),
-            content_b
-        );
+    /// Empty segments (`dir//file`) and CurDir components (`./file`) are
+    /// silently skipped, producing a clean path under `out_dir`.
+    #[test]
+    fn safe_path_skips_empty_and_dot_segments() {
+        let base = Path::new("/tmp/out");
+        // Empty segment between two slashes.
+        let p = safe_output_path(base, "dir//file.txt").unwrap();
+        assert_eq!(p, PathBuf::from("/tmp/out/dir/file.txt"));
+        // CurDir segment (`.`) is skipped.
+        let p2 = safe_output_path(base, "./dir/file.txt").unwrap();
+        assert_eq!(p2, PathBuf::from("/tmp/out/dir/file.txt"));
     }
 }

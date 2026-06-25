@@ -8,12 +8,12 @@ Guidance for Claude Code when working in this Rust crate.
 cargo build                    # debug build
 cargo build --release          # release build (binary: target/release/ba2)
 cargo run --bin ba2 -- <args>  # run CLI (e.g. -- info archive.ba2)
-cargo test                     # run all tests (colocated inline unit tests)
+cargo test                     # run all tests (~71 across tests/ and inline modules)
 cargo clippy                   # lint
 cargo fmt                      # format
 ```
 
-No test framework beyond `cargo test` is used; no integration test directory exists.
+No test framework beyond `cargo test` is used.
 
 ## Architecture
 
@@ -36,7 +36,7 @@ Public API re-exported from `lib.rs`: `Codec`, `Ba2Archive`, `Ba2Entry`, `extrac
 - **Error handling**: `anyhow` everywhere — `Result<T>` (no `Box<dyn Error>`), `bail!` for validation failures, `.context()`/`.with_context()` to attach path/operation info. **No custom error enum** — do not add one.
 - **Serialization**: explicit little-endian byte reads/writes (no `serde`, no `binrw`). This keeps the on-disk layout "crystal-clear and testable" — do not introduce derive-based serialization.
 - **Documentation**: every module gets a `//!` module-level doc comment explaining purpose and design rationale; public items get `///` doc comments. Maintain this density when adding code.
-- **Tests**: colocated `#[cfg(test)] mod tests` in each source file. No separate `tests/` directory. Keep tests next to the code they exercise.
+- **Tests**: most tests live in `tests/` (one file per module: `format`, `hash`, `compress`, `reader`, `writer`, `extract`), plus shared helpers in `tests/common/mod.rs`.  Tests that exercise **private** symbols stay colocated as `#[cfg(test)]` blocks: `extract.rs` (`safe_output_path`) and `bin/cli.rs` (source collectors).  All tests use synthetic in-memory data — no real BA2 file required.  Run with `cargo test`.
 - **Style**: section-divider comments (`// ── ... ─`) used throughout — match existing style.
 
 ## Critical Invariants — Do Not Break

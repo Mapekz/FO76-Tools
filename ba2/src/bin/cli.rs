@@ -369,3 +369,131 @@ fn derive_archive_path(src: &Path, base: Option<&Path>) -> Result<String> {
         .collect::<Vec<_>>()
         .join("\\"))
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+//
+// The collector functions are binary-private, so these tests must live inline.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::{NamedTempFile, TempDir};
+
+    // ── derive_archive_path ──────────────────────────────────────────────────
+
+    #[test]
+    fn derive_path_no_base_uses_filename() {
+        let src = Path::new("/some/dir/strings.dlstrings");
+        let ap = derive_archive_path(src, None).unwrap();
+        assert_eq!(ap, "strings.dlstrings");
+    }
+
+    #[test]
+    fn derive_path_with_base_strips_prefix() {
+        let src = Path::new("/assets/data/strings/en.strings");
+        let base = Path::new("/assets");
+        let ap = derive_archive_path(src, Some(base)).unwrap();
+        assert_eq!(ap, "data\\strings\\en.strings");
+    }
+
+    #[test]
+    fn derive_path_lowercases_result() {
+        let src = Path::new("/root/Strings/EN.STRINGS");
+        let base = Path::new("/root");
+        let ap = derive_archive_path(src, Some(base)).unwrap();
+        assert_eq!(ap, "strings\\en.strings");
+    }
+
+    #[test]
+    fn derive_path_base_mismatch_returns_error() {
+        let src = Path::new("/other/file.txt");
+        let base = Path::new("/assets");
+        assert!(derive_archive_path(src, Some(base)).is_err());
+    }
+
+    // ── collect_from_list ────────────────────────────────────────────────────
+
+    fn make_list_file(content: &str) -> NamedTempFile {
+        let mut tmp = NamedTempFile::new().unwrap();
+        tmp.write_all(content.as_bytes()).unwrap();
+        tmp.flush().unwrap();
+        tmp
+    }
+
+    #[test]
+    fn collect_list_tab_separated_explicit_archive_path() {
+        let list = make_list_file("data\\strings.bin\t/src/strings.bin\n");
+        let pairs = collect_from_list(list.path(), None).unwrap();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "data\\strings.bin");
+        assert_eq!(pairs[0].1, PathBuf::from("/src/strings.bin"));
+    }
+
+    #[test]
+    fn collect_list_skips_comments_and_blank_lines() {
+        let list = make_list_file(
+            "# this is a comment\n\n  \n/src/file.txt\n",
+        );
+        // The non-TAB line uses derive_archive_path(no base) → filename only.
+        let pairs = collect_from_list(list.path(), None).unwrap();
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "file.txt");
+    }
+
+    #[test]
+    fn collect_list_tab_path_is_lowercased_and_normalised() {
+        // Archive path in the list file uses forward slashes and mixed case.
+        let list = make_list_file("Data/Strings/EN.bin\t/src/en.bin\n");
+        let pairs = collect_from_list(list.path(), None).unwrap();
+        assert_eq!(pairs[0].0, "data\\strings\\en.bin");
+    }
+
+    // ── collect_from_files ───────────────────────────────────────────────────
+
+    #[test]
+    fn collect_files_no_base_uses_filenames() {
+        let dir = TempDir::new().unwrap();
+        let f1 = dir.path().join("Alpha.txt");
+        let f2 = dir.path().join("beta.bin");
+        std::fs::write(&f1, b"a").unwrap();
+        std::fs::write(&f2, b"b").unwrap();
+
+        let pairs = collect_from_files(&[f1, f2], None).unwrap();
+        assert_eq!(pairs.len(), 2);
+        assert_eq!(pairs[0].0, "alpha.txt");
+        assert_eq!(pairs[1].0, "beta.bin");
+    }
+
+    #[test]
+    fn collect_files_with_base_strips_prefix() {
+        let dir = TempDir::new().unwrap();
+        let sub = dir.path().join("strings");
+        std::fs::create_dir(&sub).unwrap();
+        let f = sub.join("en.strings");
+        std::fs::write(&f, b"data").unwrap();
+
+        let pairs = collect_from_files(&[f], Some(dir.path())).unwrap();
+        assert_eq!(pairs[0].0, "strings\\en.strings");
+    }
+
+    // ── collect_from_dir ─────────────────────────────────────────────────────
+
+    #[test]
+    fn collect_dir_produces_relative_backslash_paths() {
+        let dir = TempDir::new().unwrap();
+        let sub = dir.path().join("Data").join("Strings");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("EN.strings"), b"").unwrap();
+        std::fs::write(dir.path().join("readme.txt"), b"").unwrap();
+
+        let mut pairs = collect_from_dir(dir.path()).unwrap();
+        pairs.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // All paths lowercased, backslash-separated, relative to dir.
+        assert!(pairs.iter().any(|(ap, _)| ap == "data\\strings\\en.strings"),
+            "expected data\\strings\\en.strings in {:?}", pairs);
+        assert!(pairs.iter().any(|(ap, _)| ap == "readme.txt"),
+            "expected readme.txt in {:?}", pairs);
+    }
+}

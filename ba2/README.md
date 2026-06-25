@@ -122,7 +122,21 @@ write_ba2("output.ba2", &files, &opts)?;
 
 ## Tests
 
-All tests are colocated inline (`#[cfg(test)]`) in each module and cover the binary format, hashing, compression round-trips, reader, writer, and path-traversal hardening:
+~71 tests across `tests/` (integration, one file per module) and two inline
+`#[cfg(test)]` modules for private-symbol coverage:
+
+| File | What it covers |
+|---|---|
+| `tests/format.rs` | Header and record (de)serialization, byte-layout pins |
+| `tests/hash.rs` | `beth_crc` golden value, `hash_path` vectors + edge cases |
+| `tests/compress.rs` | LZ4/zlib round-trips, `is_zlib` sniffing, store-fallback |
+| `tests/reader.rs` | Happy-path reads, compressed entries, all `open()` error branches |
+| `tests/writer.rs` | Codec round-trips, empty archive, mixed compress+store |
+| `tests/extract.rs` | `extract_all`, `extract_one`, glob filter |
+| `src/extract.rs` (inline) | `safe_output_path` path-traversal hardening (private fn) |
+| `src/bin/cli.rs` (inline) | `collect_from_dir/files/list`, `derive_archive_path` (binary-private) |
+
+All tests use synthetic in-memory data — no real BA2 archive file required.
 
 ```sh
 cargo test

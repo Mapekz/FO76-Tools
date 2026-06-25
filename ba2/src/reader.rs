@@ -99,7 +99,9 @@ impl Ba2Archive {
 
         // Parse name table.
         let nt_start = header.name_table_offset as usize;
-        if nt_start >= data.len() {
+        // Use strict greater-than so an empty archive (nt_start == data.len(),
+        // zero entries to read) is accepted rather than incorrectly rejected.
+        if nt_start > data.len() {
             bail!("BA2 name table offset out of range");
         }
         let mut pos = nt_start;
@@ -193,89 +195,3 @@ impl Ba2Archive {
     }
 }
 
-// ── Tests ────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::format::{write_header, write_record, Record, RECORD_FLAGS};
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    fn make_test_archive(entries: &[(&str, &[u8])]) -> NamedTempFile {
-        // Build a minimal stored (uncompressed) GNRL BA2.
-        let file_count = entries.len() as u32;
-        let data_start = 24u64 + 36 * file_count as u64;
-
-        // Compute per-entry data offsets.
-        let mut offsets = Vec::new();
-        let mut cursor = data_start;
-        for (_, data) in entries {
-            offsets.push(cursor);
-            cursor += data.len() as u64;
-        }
-        let name_table_offset = cursor;
-
-        let header_bytes = write_header(1, file_count, name_table_offset);
-
-        // Build records.
-        let mut records_bytes: Vec<u8> = Vec::new();
-        for (i, (path, data)) in entries.iter().enumerate() {
-            let (name_hash, dir_hash, ext) = crate::hash::hash_path(path);
-            let r = Record {
-                name_hash,
-                ext,
-                dir_hash,
-                flags: RECORD_FLAGS,
-                data_offset: offsets[i],
-                packed_size: 0,
-                unpacked_size: data.len() as u32,
-            };
-            records_bytes.extend_from_slice(&write_record(&r));
-        }
-
-        // Name table.
-        let mut name_table: Vec<u8> = Vec::new();
-        for (path, _) in entries {
-            let p = path.to_lowercase().replace('/', "\\");
-            let len = p.len() as u16;
-            name_table.extend_from_slice(&len.to_le_bytes());
-            name_table.extend_from_slice(p.as_bytes());
-        }
-
-        let mut tmp = NamedTempFile::new().unwrap();
-        tmp.write_all(&header_bytes).unwrap();
-        tmp.write_all(&records_bytes).unwrap();
-        for (_, data) in entries {
-            tmp.write_all(data).unwrap();
-        }
-        tmp.write_all(&name_table).unwrap();
-        tmp.flush().unwrap();
-        tmp
-    }
-
-    #[test]
-    fn open_and_read_stored_entries() {
-        let entries = &[
-            ("interface/test.txt", b"hello world" as &[u8]),
-            ("data/config.bin", b"\x00\x01\x02\x03"),
-        ];
-        let tmp = make_test_archive(entries);
-        let archive = Ba2Archive::open(tmp.path()).unwrap();
-        assert_eq!(archive.list().len(), 2);
-
-        let txt = archive.read("interface/test.txt", Codec::Auto).unwrap();
-        assert_eq!(txt, b"hello world");
-
-        let bin = archive.read("DATA/CONFIG.BIN", Codec::Auto).unwrap();
-        assert_eq!(bin, b"\x00\x01\x02\x03");
-    }
-
-    #[test]
-    fn missing_entry_returns_error() {
-        let entries = &[("foo/bar.txt", b"data" as &[u8])];
-        let tmp = make_test_archive(entries);
-        let archive = Ba2Archive::open(tmp.path()).unwrap();
-        assert!(archive.read("foo/missing.txt", Codec::Auto).is_err());
-    }
-}

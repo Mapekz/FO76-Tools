@@ -23,3 +23,5 @@ globset = "0.4"
 tempfile = "3"
 
 [dev-dependencies]
+globset = "0.4"
+tempfile = "3"
