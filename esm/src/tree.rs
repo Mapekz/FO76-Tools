@@ -189,6 +189,9 @@ impl TreeIndex {
 }
 
 #[cfg(test)]
+// `decode_label` is `pub(crate)` and not reachable from an external `tests/`
+// integration crate, so these unit tests stay colocated (two-tier convention
+// documented in CLAUDE.md).
 mod tests {
     use super::*;
 

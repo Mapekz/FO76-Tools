@@ -1,32 +1,10 @@
-use esm::decode::{decode_record, DecodeContext, ResolveDepth};
+mod common;
+
+use common::{bare_ctx, sr};
+use esm::decode::decode_record;
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
 use esm::schema::Schema;
-
-fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
-    DecodeContext {
-        schema,
-        form_version: 208,
-        is_localized: false,
-        localization: None,
-        curves: None,
-        resolve_depth: ResolveDepth::None,
-        resolver: None,
-        outer_struct: None,
-        record_edid_char: None,
-    }
-}
-
-fn sr(sig: &str, hex: &str, idx: usize) -> OwnedSubrecord {
-    OwnedSubrecord {
-        signature: Signature::from_slice(sig.as_bytes()),
-        data: (0..hex.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
-            .collect(),
-        doc_index: idx,
-    }
-}
 
 /// MGEF DATA decodes to the expected structure with all fields correctly aligned.
 ///
@@ -144,13 +122,21 @@ fn omod_legendary_weapon_data_decodes_correctly() {
     // Verbatim subrecords from `esm get SeventySix_20260619.esm
     // --formid 0x0085B998 --raw` (form_version 208, flags 0x10 = Legendary Mod).
     let subrecords = vec![
-        sr("EDID", "48544f5f6d6f645f4c6567656e646172795f576561706f6e345f5461726e697368656400", 0),
+        sr(
+            "EDID",
+            "48544f5f6d6f645f4c6567656e646172795f576561706f6e345f5461726e697368656400",
+            0,
+        ),
         sr("DURL", "3000", 1),
         sr("FULL", "3c49443d37313031343730303e5461726e697368656400", 2),
         sr("DESC", "00", 3),
         sr("ENLT", "ffffffff", 4),
         sr("ENLS", "0000803f", 5),
-        sr("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000", 6),
+        sr(
+            "AUUV",
+            "01000000000048420000f04100009c429a99193fcdcccc3d00000000",
+            6,
+        ),
         sr("INDX", "00", 7),
         // 131-byte DATA subrecord (verbatim from the ESM):
         //   +0   Include Count (u32 LE)              = 1
@@ -165,36 +151,36 @@ fn omod_legendary_weapon_data_decodes_correctly() {
         //   +24  Items count (u32 LE)                = 0  ← 4-byte prefix (-1)
         //   +28  Includes[0] (7 bytes): Mod=0x004519F7, MinLevel=0, Opt=0, DontUseAll=1
         //   +35  Properties[0..3]: 4 × 24 bytes (see assertions below)
-        sr("DATA", concat!(
-            "01000000",                         // Include Count = 1
-            "04000000",                         // Property Count = 4
-            "00",                               // Unknown Bool 1 = False
-            "00",                               // Unknown Bool 2 = False
-            "57454150",                         // Form Type = WEAP (Weapon)
-            "00",                               // Max Rank = 0
-            "00",                               // Level Tier Scaled Offset = 0
-            "aa894e00",                         // Attach Point = 0x004E89AA
-            "00000000",                         // Attach Parent Slots count (u32) = 0
-            "00000000",                         // Items count (u32) = 0
-            // Includes[0]: Mod, MinLevel, Optional, Don't Use All
-            "f7194500", "00", "00", "01",
-            // Property[0]: VT=4(FormID,Int) Func=2(ADD) Prop=65(Enchantments)
-            //              Value1=0x0085B97F  Value2=1  Step=CurveTable(null)
-            "04", "000000", "02", "000000", "4100", "0000",
-            "7fb98500", "01000000", "00000000",
-            // Property[1]: VT=4(FormID,Int) Func=2(ADD) Prop=31(Keywords)
-            //              Value1=0x0085B984  Value2=2  Step=CurveTable(null)
-            "04", "000000", "02", "000000", "1f00", "0000",
-            "84b98500", "02000000", "00000000",
-            // Property[2]: VT=4(FormID,Int) Func=2(ADD) Prop=31(Keywords)
-            //              Value1=0x005380CA  Value2=2  Step=CurveTable(null)
-            "04", "000000", "02", "000000", "1f00", "0000",
-            "ca805300", "02000000", "00000000",
-            // Property[3]: VT=4(FormID,Int) Func=2(ADD) Prop=31(Keywords)
-            //              Value1=0x001B3FAC  Value2=2  Step=CurveTable(null)
-            "04", "000000", "02", "000000", "1f00", "0000",
-            "ac3f1b00", "02000000", "00000000",
-        ), 8),
+        sr(
+            "DATA",
+            concat!(
+                "01000000", // Include Count = 1
+                "04000000", // Property Count = 4
+                "00",       // Unknown Bool 1 = False
+                "00",       // Unknown Bool 2 = False
+                "57454150", // Form Type = WEAP (Weapon)
+                "00",       // Max Rank = 0
+                "00",       // Level Tier Scaled Offset = 0
+                "aa894e00", // Attach Point = 0x004E89AA
+                "00000000", // Attach Parent Slots count (u32) = 0
+                "00000000", // Items count (u32) = 0
+                // Includes[0]: Mod, MinLevel, Optional, Don't Use All
+                "f7194500", "00", "00", "01",
+                // Property[0]: VT=4(FormID,Int) Func=2(ADD) Prop=65(Enchantments)
+                //              Value1=0x0085B97F  Value2=1  Step=CurveTable(null)
+                "04", "000000", "02", "000000", "4100", "0000", "7fb98500", "01000000", "00000000",
+                // Property[1]: VT=4(FormID,Int) Func=2(ADD) Prop=31(Keywords)
+                //              Value1=0x0085B984  Value2=2  Step=CurveTable(null)
+                "04", "000000", "02", "000000", "1f00", "0000", "84b98500", "02000000", "00000000",
+                // Property[2]: VT=4(FormID,Int) Func=2(ADD) Prop=31(Keywords)
+                //              Value1=0x005380CA  Value2=2  Step=CurveTable(null)
+                "04", "000000", "02", "000000", "1f00", "0000", "ca805300", "02000000", "00000000",
+                // Property[3]: VT=4(FormID,Int) Func=2(ADD) Prop=31(Keywords)
+                //              Value1=0x001B3FAC  Value2=2  Step=CurveTable(null)
+                "04", "000000", "02", "000000", "1f00", "0000", "ac3f1b00", "02000000", "00000000",
+            ),
+            8,
+        ),
         sr("MNAM", "6e7e7800", 9),
         sr("NAM1", "64", 10),
     ];
@@ -236,7 +222,9 @@ fn omod_legendary_weapon_data_decodes_correctly() {
         "Include[0].Mod"
     );
     assert_eq!(
-        includes[0].pointer("/Optional/name").and_then(|v| v.as_str()),
+        includes[0]
+            .pointer("/Optional/name")
+            .and_then(|v| v.as_str()),
         Some("False"),
         "Include[0].Optional"
     );

@@ -1416,6 +1416,9 @@ mod tests {
     use serde_json::Map;
 
     /// Build a minimal `DecodeContext` around a borrowed `Schema`.
+    ///
+    /// Private-side twin of `tests/common::bare_ctx` — if `DecodeContext` gains
+    /// or loses a field, update both copies.
     fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
         DecodeContext {
             schema,
@@ -1458,6 +1461,14 @@ mod tests {
     /// `CountPrefix(4)`: regression test for the OMOD `Attach Parent Slots` /
     /// `Items` bug.  With a 4-byte prefix the decoder must consume all 4 bytes
     /// and leave the trailing sentinel value intact.
+    ///
+    /// This is the hermetic, byte-exact mirror of the public-API integration
+    /// test `omod_legendary_weapon_data_decodes_correctly` in
+    /// `tests/decode_records.rs` — the 4-byte path is intentionally covered by
+    /// both.  This unit test calls `decode_struct_fields` directly and pins the
+    /// return value (bytes consumed), which is invisible at the `decode_record`
+    /// boundary.  The `count_prefix_u8` test below is the *only* guard for the
+    /// 1-byte / OBTS `Keywords` path.
     ///
     /// Buffer layout:
     ///   [00 00 00 00]  — u32 LE count prefix = 0  (no items)
