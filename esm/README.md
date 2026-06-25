@@ -19,8 +19,8 @@ esm/
 
 ## Requirements
 
-- Rust stable (recent; edition 2021, uses let-else/inline format args)
-- No `rust-toolchain.toml` — any recent stable toolchain works
+- Toolchain pinned to **Rust 1.96.0** via `rust-toolchain.toml` (rustup installs it automatically).
+- MSRV **1.82** (`Option::is_none_or`), declared as `rust-version` in `Cargo.toml`.
 
 ## Build
 

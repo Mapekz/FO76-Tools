@@ -8,7 +8,8 @@ A Rust CLI and library for reading, extracting, and creating Bethesda **BA2 / BT
 
 ## Requirements
 
-- Rust stable **~1.87 or newer** (uses `u16::is_multiple_of`, stabilised in 1.87; no `rust-toolchain.toml` is present).
+- Toolchain pinned to **Rust 1.96.0** via `rust-toolchain.toml` (rustup installs it automatically).
+- MSRV **1.87** (`u16::is_multiple_of`), declared as `rust-version` in `Cargo.toml`.
 
 ## Build
 

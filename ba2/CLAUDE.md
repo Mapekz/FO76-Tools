@@ -50,4 +50,4 @@ Public API re-exported from `lib.rs`: `Codec`, `Ba2Archive`, `Ba2Entry`, `extrac
 
 ## Toolchain
 
-Requires **Rust stable ~1.87+** (uses `u16::is_multiple_of`, stabilised in 1.87). There is no `rust-toolchain.toml` — if adding one, pin to `stable` and at least 1.87.
+Pinned to **Rust 1.96.0** via `rust-toolchain.toml` (components: `rustfmt`, `clippy`). MSRV **1.87** (`u16::is_multiple_of`), declared via `rust-version = "1.87"` in `Cargo.toml` and mirrored in `clippy.toml`.
