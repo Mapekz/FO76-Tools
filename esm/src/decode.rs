@@ -624,13 +624,36 @@ fn decode_member(
     }
 }
 
+/// Insert `value` into `map` under `key`. If `key` is already present, try
+/// `"key 2"`, `"key 3"`, … to avoid silently clobbering an earlier value.
+///
+/// This handles schema patterns where the same `wbXxx` definition is reused
+/// for two different struct slots (e.g. MGEF's two `wbActorValue` fields).
+fn insert_unique(map: &mut Map<String, Value>, key: String, value: Value) {
+    if !map.contains_key(&key) {
+        map.insert(key, value);
+        return;
+    }
+    let mut n = 2usize;
+    loop {
+        let candidate = format!("{key} {n}");
+        if !map.contains_key(&candidate) {
+            map.insert(candidate, value);
+            return;
+        }
+        n += 1;
+    }
+}
+
+/// Decode the fields of a struct payload into `out` under the key `struct_name`.
+/// Returns the number of bytes consumed from `data`.
 fn decode_struct_fields(
     ctx: &DecodeContext<'_>,
     struct_name: &str,
     fields: &[FieldDef],
     data: &[u8],
     out: &mut Map<String, Value>,
-) {
+) -> usize {
     let mut pos = 0usize;
     let mut struct_out = Map::new();
     for field in fields {
@@ -704,7 +727,8 @@ fn decode_struct_fields(
             }
             MemberDef::Struct { name, fields, .. } => {
                 let sub_data = data.get(pos..).unwrap_or(&[]);
-                decode_struct_fields(ctx, name, fields, sub_data, &mut struct_out);
+                let consumed = decode_struct_fields(ctx, name, fields, sub_data, &mut struct_out);
+                pos = (pos + consumed).min(data.len());
             }
             MemberDef::Union {
                 name,
@@ -768,13 +792,15 @@ fn decode_struct_fields(
                 if let Some(idx) = chosen {
                     if let Some(variant) = variants.get(idx) {
                         let mut dummy = HashMap::new();
-                        decode_member(
-                            ctx,
-                            variant,
-                            &mut struct_out,
-                            &mut dummy,
-                            Some(&data[pos..]),
-                        );
+                        // Decode into a temporary map so we can insert_unique
+                        // each key, avoiding silent clobbers when two union
+                        // slots share the same variant name (e.g. MGEF's two
+                        // `wbActorValue` fields both named "Actor Value").
+                        let mut tmp = Map::new();
+                        decode_member(ctx, variant, &mut tmp, &mut dummy, Some(&data[pos..]));
+                        for (k, v) in tmp {
+                            insert_unique(&mut struct_out, k, v);
+                        }
                         // advance pos heuristically for known variants
                         pos = advance_union(ctx, variant, &data[pos..], pos);
                     }
@@ -783,6 +809,7 @@ fn decode_struct_fields(
                         name.clone(),
                         json!({"hex": hex::encode(&data[pos..]), "_raw": true}),
                     );
+                    pos = data.len();
                     break;
                 }
             }
@@ -853,6 +880,7 @@ fn decode_struct_fields(
     if !struct_out.is_empty() {
         out.insert(struct_name.to_string(), Value::Object(struct_out));
     }
+    pos
 }
 
 /// Returns the fixed byte size of a field when it can be determined statically.

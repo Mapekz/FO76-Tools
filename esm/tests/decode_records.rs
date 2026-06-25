@@ -28,6 +28,94 @@ fn sr(sig: &str, hex: &str, idx: usize) -> OwnedSubrecord {
     }
 }
 
+/// MGEF DATA decodes to the expected structure with all fields correctly aligned.
+///
+/// Uses the real embedded schema with a synthetic DATA payload so no game file
+/// is required. Catches structural regressions as the decoder evolves:
+///
+///   - Fields after the `Spellmaking` nested struct (offset 48, 8 bytes) must
+///     be present and correctly positioned. If the nested-struct pos-advance
+///     regresses, every field from Taper Curve onward shifts 8 bytes early and
+///     "Explosion" would read from the Actor Value slot.
+///
+///   - Both `wbActorValue` union slots (offsets 72 and 92) must appear under
+///     distinct keys. If the duplicate-name de-dup regresses, the second slot
+///     silently overwrites the first.
+#[test]
+fn mgef_data_decodes_correct_structure() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx(&schema);
+
+    // 96-byte DATA payload (form_version 208: Flags 2 present, Actor Value is
+    // an AVIF FormID). Actor Value (offset 72) and Explosion (offset 80) carry
+    // distinct non-null values so the test can tell them apart.
+    let mut payload = vec![0u8; 96];
+    payload[72..76].copy_from_slice(&1u32.to_le_bytes()); // Actor Value  = FormID(1)
+    payload[80..84].copy_from_slice(&2u32.to_le_bytes()); // Explosion    = FormID(2)
+
+    let subrecords = vec![OwnedSubrecord {
+        signature: Signature::from_slice(b"DATA"),
+        data: payload,
+        doc_index: 0,
+    }];
+
+    let result = decode_record(&ctx, "MGEF", &subrecords);
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Magic Effect"),
+    );
+
+    let data = result
+        .get("Magic Effect Data")
+        .and_then(|v| v.get("Data"))
+        .and_then(|v| v.as_object())
+        .expect("Magic Effect Data.Data must decode");
+
+    // All fields that follow the Spellmaking nested struct must be present.
+    for field in [
+        "Taper Curve",
+        "Taper Duration",
+        "Second AV Weight",
+        "Archetype",
+        "Actor Value",
+        "Projectile",
+        "Explosion",
+        "Casting Type",
+        "Delivery",
+        "Actor Value 2",
+    ] {
+        assert!(
+            data.contains_key(field),
+            "'{field}' must be present after Spellmaking"
+        );
+    }
+
+    // Archetype at offset 68 must decode as Value Modifier (0), not shifted
+    // to whatever bytes were at offset 60 before the alignment fix.
+    assert_eq!(
+        data.get("Archetype")
+            .and_then(|v| v.get("name"))
+            .and_then(|v| v.as_str()),
+        Some("Value Modifier"),
+    );
+
+    // Actor Value (offset 72) and Explosion (offset 80) must occupy different
+    // byte positions — before the fix both would resolve from offset 72.
+    assert_ne!(
+        data.get("Actor Value"),
+        data.get("Explosion"),
+        "Actor Value and Explosion must be distinct fields"
+    );
+
+    // The second wbActorValue slot must survive as "Actor Value 2" without
+    // clobbering the primary "Actor Value".
+    assert_ne!(
+        data.get("Actor Value"),
+        data.get("Actor Value 2"),
+        "both Actor Value slots must have distinct output keys"
+    );
+}
+
 /// OMOD 0x0085B998 — `HTO_mod_Legendary_Weapon4_Tarnished` — decodes to the
 /// expected structure and values.
 ///
