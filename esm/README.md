@@ -204,7 +204,7 @@ python3 tools/extractor/audit.py --gate
 
 ## Tests
 
-~35 inline unit tests + 1 ignored integration test. Run all:
+~40 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
 
 ```sh
 cargo test
@@ -213,7 +213,17 @@ cargo test
 RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored
 ```
 
-Tests cover: structural record parsing, wildcard matching, diff logic, tree arena, and curve interpolation. Tests never need game data — they build synthetic byte buffers in-memory.
+| File | What it covers |
+|---|---|
+| `tests/wildcard.rs` | Wildcard matching (substring, prefix, suffix, multi-star) |
+| `tests/curves.rs` | Curve evaluation: clamping, interpolation, edge cases |
+| `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs game data) |
+| `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF and OMOD records |
+| `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
+| `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width (private function) |
+
+Tests never need game data — they build synthetic byte buffers in-memory.
 
 ## Index cache
 
