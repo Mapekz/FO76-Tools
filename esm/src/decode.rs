@@ -793,14 +793,17 @@ fn decode_struct_fields(
                 ..
             } => {
                 let n: usize = match count {
-                    Some(ArrayCount::CountPrefix) => {
-                        // Bethesda's inline count prefix is 1 byte (not 4).
-                        // The Pascal -1/-4 annotations both map to CountPrefix,
-                        // and the actual binary (confirmed by 18-byte OBTS analysis)
-                        // stores the count as a single unsigned byte.
-                        if pos < data.len() {
-                            let n = data[pos] as usize;
-                            pos += 1;
+                    Some(ArrayCount::CountPrefix(width)) => {
+                        // The prefix byte width comes from the xEdit wbArray count arg:
+                        //   -1 → 4 bytes (u32), -2 → 2 bytes (u16), -4 → 1 byte (u8).
+                        // Read `width` bytes as a little-endian unsigned integer.
+                        let w = *width;
+                        if w > 0 && pos + w <= data.len() {
+                            let mut n: usize = 0;
+                            for i in 0..w {
+                                n |= (data[pos + i] as usize) << (8 * i);
+                            }
+                            pos += w;
                             n
                         } else {
                             0
@@ -1375,5 +1378,127 @@ fn lstring_table_to_kind(table: &LStringTable) -> StringKind {
 pub(crate) mod hex {
     pub fn encode(data: &[u8]) -> String {
         data.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::{ArrayCount, IntegerWidth, MemberDef, Schema};
+    use serde_json::Map;
+
+    /// Build a minimal `DecodeContext` around a borrowed `Schema`.
+    fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
+        DecodeContext {
+            schema,
+            form_version: 208,
+            is_localized: false,
+            localization: None,
+            curves: None,
+            resolve_depth: crate::ResolveDepth::None,
+            resolver: None,
+            outer_struct: None,
+            record_edid_char: None,
+        }
+    }
+
+    fn empty_schema() -> Schema {
+        serde_json::from_str(r#"{"records":{}}"#).unwrap()
+    }
+
+    fn int_field(name: &str, width: IntegerWidth) -> MemberDef {
+        MemberDef::Integer {
+            sig: None,
+            name: name.to_string(),
+            width,
+            signed: false,
+            format: None,
+            from_version: None,
+            below_version: None,
+        }
+    }
+
+    fn prefix_array(name: &str, width: usize, elem: MemberDef) -> MemberDef {
+        MemberDef::Array {
+            sig: None,
+            name: name.to_string(),
+            element: Box::new(elem),
+            count: Some(ArrayCount::CountPrefix(width)),
+        }
+    }
+
+    /// `CountPrefix(4)`: regression test for the OMOD `Attach Parent Slots` /
+    /// `Items` bug.  With a 4-byte prefix the decoder must consume all 4 bytes
+    /// and leave the trailing sentinel value intact.
+    ///
+    /// Buffer layout:
+    ///   [00 00 00 00]  — u32 LE count prefix = 0  (no items)
+    ///   [2A]           — sentinel u8 = 42
+    #[test]
+    fn count_prefix_u32_consumes_four_bytes() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let fields = vec![
+            prefix_array("Items", 4, int_field("item", IntegerWidth::U32)),
+            int_field("Sentinel", IntegerWidth::U8),
+        ];
+        let data: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00, 0x2A];
+        let mut out = Map::new();
+        decode_struct_fields(&ctx, "Test", &fields, &data, &mut out);
+        // decode_struct_fields nests all fields under the struct name key.
+        let inner = out
+            .get("Test")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
+        // Items absent (count=0, nothing inserted).
+        assert!(
+            inner.get("Items").is_none(),
+            "empty Items array should be absent"
+        );
+        // Sentinel must land at offset 4, not 1.
+        assert_eq!(
+            inner.get("Sentinel").and_then(|v| v.as_u64()),
+            Some(42),
+            "Sentinel should be 42 (4-byte prefix consumed correctly)"
+        );
+    }
+
+    /// `CountPrefix(1)`: lock the OBTS `Keywords` path — was already 1 byte,
+    /// must not regress.
+    ///
+    /// Buffer layout:
+    ///   [01]           — u8 count prefix = 1
+    ///   [07 00 00 00]  — one u32 item = 7
+    ///   [FF]           — sentinel u8 = 255
+    #[test]
+    fn count_prefix_u8_consumes_one_byte() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let fields = vec![
+            prefix_array("Keywords", 1, int_field("kwd", IntegerWidth::U32)),
+            int_field("Sentinel", IntegerWidth::U8),
+        ];
+        let data: Vec<u8> = vec![0x01, 0x07, 0x00, 0x00, 0x00, 0xFF];
+        let mut out = Map::new();
+        decode_struct_fields(&ctx, "Test", &fields, &data, &mut out);
+        let inner = out
+            .get("Test")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            inner
+                .get("Keywords")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len()),
+            Some(1),
+            "should decode 1 keyword"
+        );
+        assert_eq!(
+            inner.get("Sentinel").and_then(|v| v.as_u64()),
+            Some(255),
+            "Sentinel should be 255 (1-byte prefix consumed correctly)"
+        );
     }
 }

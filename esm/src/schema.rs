@@ -203,9 +203,11 @@ pub enum ArrayCount {
     FillToEnd,
     Fixed(usize),
     CountPath(String),
-    /// The array is prefixed by a 1-byte unsigned integer that gives the element count.
-    /// Bethesda stores these as a single byte regardless of the Pascal `-1`/`-4` annotation.
-    CountPrefix,
+    /// The array is prefixed by a little-endian unsigned integer that gives the element count.
+    /// The prefix byte width is encoded in xEdit's negative `wbArray` count argument:
+    /// `-1` → 4 bytes (u32), `-2` → 2 bytes (u16), `-4` → 1 byte (u8).
+    /// See `TwbArrayDef::GetPrefixLength` in `TES5Edit/Core/wbInterface.pas`.
+    CountPrefix(usize),
 }
 
 /// Default `width_bytes` value (1) for `ByteAtOffset`.

@@ -39,6 +39,14 @@ WHITELIST = [
     "WATR", "WAVE", "WEAP", "WSPR", "WTHR", "ZOOM",
 ]
 
+# xEdit encodes the inline count-prefix byte width in the negative wbArray count
+# argument; see TwbArrayDef.GetPrefixLength in TES5Edit/Core/wbInterface.pas.
+#   -1  →  4-byte (u32) prefix
+#   -2  →  2-byte (u16) prefix
+#   -4  →  1-byte (u8)  prefix
+# Any other negative value defaults to 4 (safe fallback; emits a warning).
+_PREFIX_WIDTHS: dict[int, int] = {-1: 4, -2: 2, -4: 1}
+
 # Closure decider names that we can substitute with a known type.
 # Values may be a flat field dict OR a full {"kind": "union", ...} dict.
 # Used in _parse_union to produce structured output for common OMOD deciders.
@@ -2006,18 +2014,27 @@ class Extractor:
         if sig:
             out["sig"] = sig
         # Capture count argument.  xEdit uses negative integers to signal an inline
-        # count prefix stored directly in the subrecord data.  The decoder reads
-        # CountPrefix as a 1-byte unsigned integer (confirmed by 18-byte OBTS binary
-        # analysis: keyword count = 0 occupies exactly 1 byte regardless of Pascal
-        # -1 vs -4 annotation).  Map any negative count to count_prefix.
+        # count prefix stored directly in the subrecord data.  The prefix byte width
+        # is encoded in the magnitude: -1 → 4 bytes, -2 → 2 bytes, -4 → 1 byte
+        # (see _PREFIX_WIDTHS and TwbArrayDef.GetPrefixLength in wbInterface.pas).
         count_arg_idx = elem_idx + 1
         if count_arg_idx < len(parts):
             count_str = parts[count_arg_idx].strip()
             try:
-                if int(count_str) < 0:
-                    out["count"] = "count_prefix"
+                cval = int(count_str)
             except ValueError:
-                pass
+                cval = None
+            if cval is not None and cval < 0:
+                width = _PREFIX_WIDTHS.get(cval)
+                if width is None:
+                    import sys as _sys
+                    print(
+                        f"warning: unhandled negative array count {cval} "
+                        f"for {out.get('name')!r}; defaulting prefix width to 4",
+                        file=_sys.stderr,
+                    )
+                    width = 4
+                out["count"] = {"count_prefix": width}
         return out
 
     def _parse_union(self, expr: str) -> dict:

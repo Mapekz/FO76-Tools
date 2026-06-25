@@ -7081,7 +7081,9 @@
                             "NULL"
                           ]
                         },
-                        "count": "count_prefix"
+                        "count": {
+                          "count_prefix": 1
+                        }
                       },
                       {
                         "kind": "integer",
@@ -22640,7 +22642,9 @@
                             "NULL"
                           ]
                         },
-                        "count": "count_prefix"
+                        "count": {
+                          "count_prefix": 1
+                        }
                       },
                       {
                         "kind": "integer",
@@ -41389,7 +41393,9 @@
                     "NAVM"
                   ]
                 },
-                "count": "count_prefix"
+                "count": {
+                  "count_prefix": 4
+                }
               },
               {
                 "kind": "array",
@@ -41401,7 +41407,9 @@
                     "NAVM"
                   ]
                 },
-                "count": "count_prefix"
+                "count": {
+                  "count_prefix": 4
+                }
               },
               {
                 "kind": "array",
@@ -41425,7 +41433,9 @@
                     }
                   ]
                 },
-                "count": "count_prefix"
+                "count": {
+                  "count_prefix": 4
+                }
               },
               {
                 "kind": "struct",
@@ -41496,9 +41506,13 @@
                     "NAVM"
                   ]
                 },
-                "count": "count_prefix"
+                "count": {
+                  "count_prefix": 4
+                }
               },
-              "count": "count_prefix"
+              "count": {
+                "count_prefix": 4
+              }
             },
             {
               "kind": "array",
@@ -41522,7 +41536,9 @@
                   }
                 ]
               },
-              "count": "count_prefix"
+              "count": {
+                "count_prefix": 4
+              }
             }
           ],
           "sig": "NVPP"
@@ -43875,7 +43891,9 @@
                             "NULL"
                           ]
                         },
-                        "count": "count_prefix"
+                        "count": {
+                          "count_prefix": 1
+                        }
                       },
                       {
                         "kind": "integer",
@@ -45216,7 +45234,9 @@
                   "NULL"
                 ]
               },
-              "count": "count_prefix"
+              "count": {
+                "count_prefix": 4
+              }
             },
             {
               "kind": "array",
@@ -45237,7 +45257,9 @@
                   }
                 ]
               },
-              "count": "count_prefix"
+              "count": {
+                "count_prefix": 4
+              }
             },
             {
               "kind": "array",
@@ -62740,7 +62762,9 @@
                           "KYWD"
                         ]
                       },
-                      "count": "count_prefix"
+                      "count": {
+                        "count_prefix": 4
+                      }
                     },
                     {
                       "kind": "float",
@@ -76112,7 +76136,9 @@
                             "NULL"
                           ]
                         },
-                        "count": "count_prefix"
+                        "count": {
+                          "count_prefix": 1
+                        }
                       },
                       {
                         "kind": "integer",
