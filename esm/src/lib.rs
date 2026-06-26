@@ -1,4 +1,5 @@
 pub mod ba2;
+pub mod backend;
 pub mod compress;
 pub mod ctda;
 pub mod curves;
@@ -7,7 +8,9 @@ pub mod diff;
 pub mod format;
 pub mod formid;
 pub mod index;
+pub mod ipc;
 pub mod reader;
+pub mod registry;
 pub mod schema;
 pub mod strings;
 pub mod tree;
@@ -26,6 +29,10 @@ pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
 pub use diff::{DiffResult, RecordDiff, RecordStub};
 pub use formid::FormId;
 pub use index::SearchMeta;
+pub use ipc::{
+    CoverageReport, Markers, Op, RawRecordView, RawSubrecordView, RefList, RefRow, Request,
+    Response,
+};
 pub use reader::RecordMeta;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -78,7 +85,8 @@ pub struct RecordRow {
 }
 
 /// Which fields to match against in [`Database::search`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SearchField {
     /// Match only the EditorID.
     Edid,
@@ -165,7 +173,7 @@ impl Database {
         self.record_by_formid(form_id)
     }
 
-    pub fn list_by_type(&mut self, sig: &str, limit: usize) -> anyhow::Result<Vec<ListEntry>> {
+    pub fn list_by_type(&self, sig: &str, limit: usize) -> anyhow::Result<Vec<ListEntry>> {
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
@@ -414,7 +422,7 @@ impl Database {
         Ok(out)
     }
 
-    pub fn record_raw(&mut self, form_id: FormId) -> anyhow::Result<ParsedRecord> {
+    pub fn record_raw(&self, form_id: FormId) -> anyhow::Result<ParsedRecord> {
         let meta = self
             .index
             .get_by_formid(form_id)
@@ -438,7 +446,7 @@ impl Database {
     /// Returns an empty vec if the group doesn't exist. Applies `offset`/`limit`
     /// for pagination over children.
     pub fn list_type_children(
-        &mut self,
+        &self,
         sig: &str,
         offset: usize,
         limit: usize,

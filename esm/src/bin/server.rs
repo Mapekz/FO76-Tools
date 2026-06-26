@@ -1,19 +1,26 @@
 //! esm-server: HTTP REST + MCP stdio server for the FO76 ESM reader.
 //!
-//! Start with: `cargo run --features server --bin esm-server -- <ESM> [--compare <ESM2>]`
-//! MCP stdio mode: add `--mcp-stdio`
+//! Daemon mode: `esm-server --daemon` (loopback, OS-assigned port, discovery file)
+//! Legacy UI:    `esm-server <ESM> [--compare <ESM2>] [--port 3000]`
+//! MCP proxy:    `esm-server --mcp-stdio <ESM>`
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Json, Response},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use clap::Parser;
+use esm::backend::{
+    generate_token, remove_daemon_info, shared_registry, write_daemon_info, DaemonInfo,
+    QueryBackend, RemoteBackend, SharedRegistry,
+};
+use esm::ipc::{dispatch, Request, Response as OpResponse};
 use esm::Database;
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::sync::Mutex;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex as StdMutex};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -21,25 +28,35 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 #[derive(Parser)]
 #[command(name = "esm-server", about = "FO76 ESM HTTP/MCP server")]
 struct Cli {
-    /// Path to the ESM file
-    esm: PathBuf,
-    /// Optional second ESM for diff/compare mode
+    /// Path to the ESM file (optional in daemon mode)
+    esm: Option<PathBuf>,
+    /// Optional second ESM for diff/compare mode (legacy UI)
     #[arg(long)]
     compare: Option<PathBuf>,
-    /// HTTP port (default 3000)
+    /// HTTP port for legacy UI mode (default 3000)
     #[arg(long, default_value_t = 3000)]
     port: u16,
-    /// Run as MCP server over stdio (disables HTTP)
+    /// Run as resident daemon on loopback with OS-assigned port
+    #[arg(long)]
+    daemon: bool,
+    /// Run as MCP server over stdio (proxies to resident daemon)
     #[arg(long)]
     mcp_stdio: bool,
+    /// Eagerly warm the xref index on ESM open
+    #[arg(long)]
+    warm_xref: bool,
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct AppState {
-    db: Arc<Mutex<Database>>,
-    compare_db: Option<Arc<Mutex<Database>>>,
+    registry: SharedRegistry,
+    token: String,
+    /// Legacy single-ESM path for browser UI routes
+    default_esm: Option<PathBuf>,
+    compare_esm: Option<PathBuf>,
+    shutdown: Arc<tokio::sync::Mutex<bool>>,
 }
 
 // ── Error ────────────────────────────────────────────────────────────────────
@@ -52,6 +69,9 @@ impl ApiError {
     }
     fn bad_request(msg: impl std::fmt::Display) -> Self {
         Self(StatusCode::BAD_REQUEST, msg.to_string())
+    }
+    fn unauthorized(msg: impl std::fmt::Display) -> Self {
+        Self(StatusCode::UNAUTHORIZED, msg.to_string())
     }
 }
 
@@ -73,6 +93,19 @@ impl IntoResponse for ApiError {
     }
 }
 
+fn check_auth(headers: &HeaderMap, token: &str) -> Result<(), ApiError> {
+    let auth = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let expected = format!("Bearer {}", token);
+    if auth == expected || token.is_empty() {
+        Ok(())
+    } else {
+        Err(ApiError::unauthorized("invalid or missing bearer token"))
+    }
+}
+
 // ── Static assets ─────────────────────────────────────────────────────────────
 
 static INDEX_HTML: &str = include_str!("../../static/index.html");
@@ -88,12 +121,62 @@ async fn compare_page() -> Html<&'static str> {
     Html(COMPARE_HTML)
 }
 
-async fn health() -> StatusCode {
-    StatusCode::OK
+async fn health(State(state): State<AppState>, headers: HeaderMap) -> Result<StatusCode, ApiError> {
+    check_auth(&headers, &state.token)?;
+    Ok(StatusCode::OK)
+}
+
+async fn status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    check_auth(&headers, &state.token)?;
+    let residents = state.registry.list_resident();
+    Ok(Json(serde_json::json!({
+        "resident_esms": residents,
+    })))
+}
+
+async fn op_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<Request>,
+) -> Result<Json<OpResponse>, ApiError> {
+    check_auth(&headers, &state.token)?;
+
+    if matches!(&req.op, esm::Op::Shutdown) {
+        *state.shutdown.lock().await = true;
+        let registry = state.registry.clone();
+        tokio::spawn(async move {
+            registry.clear();
+            let _ = remove_daemon_info();
+        });
+        return Ok(Json(OpResponse::Ok {
+            data: serde_json::Value::Null,
+        }));
+    }
+
+    let registry = state.registry.clone();
+    let response = tokio::task::spawn_blocking(move || dispatch(&registry, &req))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(response))
+}
+
+async fn db_for_legacy(state: &AppState) -> Result<Arc<StdMutex<Database>>, ApiError> {
+    let path = state.default_esm.as_ref().ok_or_else(|| {
+        ApiError::bad_request("no default ESM; use POST /op or start with an ESM path")
+    })?;
+    state.registry.get_or_open(path).map_err(ApiError::from)
 }
 
 async fn info(State(state): State<AppState>) -> impl IntoResponse {
-    let db = state.db.lock().await;
+    let db_arc = match db_for_legacy(&state).await {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+    let db = db_arc.lock().unwrap();
     match db.file_info() {
         Ok(info) => Json(serde_json::to_value(info).unwrap_or_default()).into_response(),
         Err(e) => ApiError::from(e).into_response(),
@@ -104,11 +187,15 @@ async fn record_by_formid(
     State(state): State<AppState>,
     Path(formid): Path<String>,
 ) -> impl IntoResponse {
+    let db_arc = match db_for_legacy(&state).await {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
     let fid = match esm::parse_form_id_input(&formid) {
         Ok(f) => f,
         Err(e) => return ApiError::bad_request(e).into_response(),
     };
-    let mut db = state.db.lock().await;
+    let mut db = db_arc.lock().unwrap();
     match db.record_by_formid(fid) {
         Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
         Err(e) => {
@@ -133,7 +220,11 @@ async fn records_query(
     State(state): State<AppState>,
     Query(params): Query<RecordsQuery>,
 ) -> impl IntoResponse {
-    let mut db = state.db.lock().await;
+    let db_arc = match db_for_legacy(&state).await {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+    let mut db = db_arc.lock().unwrap();
     if let Some(edid) = params.edid {
         return match db.record_by_edid(&edid) {
             Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
@@ -151,7 +242,11 @@ async fn records_query(
 }
 
 async fn list_groups(State(state): State<AppState>) -> impl IntoResponse {
-    let db = state.db.lock().await;
+    let db_arc = match db_for_legacy(&state).await {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+    let db = db_arc.lock().unwrap();
     let groups = db.list_groups();
     Json(serde_json::to_value(&groups).unwrap_or_default()).into_response()
 }
@@ -167,9 +262,13 @@ async fn group_children(
     Path(sig): Path<String>,
     Query(params): Query<ChildrenQuery>,
 ) -> impl IntoResponse {
+    let db_arc = match db_for_legacy(&state).await {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
     let offset = params.offset.unwrap_or(0);
     let limit = params.limit.unwrap_or(100).min(500);
-    let mut db = state.db.lock().await;
+    let db = db_arc.lock().unwrap();
     match db.list_type_children(&sig, offset, limit) {
         Ok(children) => Json(serde_json::to_value(&children).unwrap_or_default()).into_response(),
         Err(e) => ApiError::from(e).into_response(),
@@ -180,7 +279,11 @@ async fn record_stub_at_offset(
     State(state): State<AppState>,
     Path(offset): Path<u64>,
 ) -> impl IntoResponse {
-    let db = state.db.lock().await;
+    let db_arc = match db_for_legacy(&state).await {
+        Ok(a) => a,
+        Err(e) => return e.into_response(),
+    };
+    let db = db_arc.lock().unwrap();
     match db.record_stub_at(offset) {
         Ok(stub) => Json(serde_json::to_value(&stub).unwrap_or_default()).into_response(),
         Err(e) => ApiError::from(e).into_response(),
@@ -188,25 +291,46 @@ async fn record_stub_at_offset(
 }
 
 async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
-    let Some(ref cmp) = state.compare_db else {
-        return ApiError::not_found("no compare file loaded; start with --compare <file.esm>")
-            .into_response();
+    let cmp_path = match &state.compare_esm {
+        Some(p) => p.clone(),
+        None => {
+            return ApiError::not_found("no compare file loaded; start with --compare <file.esm>")
+                .into_response();
+        }
     };
-    // Both db and compare_db must be locked. diff_databases takes &Database.
-    let db_a = state.db.lock().await;
-    let db_b = cmp.lock().await;
-    match esm::diff::diff_databases(&db_a, &db_b) {
-        Ok(result) => Json(serde_json::to_value(&result).unwrap_or_default()).into_response(),
-        Err(e) => ApiError::from(e).into_response(),
+    let default = match &state.default_esm {
+        Some(p) => p.clone(),
+        None => return ApiError::bad_request("no default ESM loaded").into_response(),
+    };
+    let registry = state.registry.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let arc_a = registry.get_or_open(&default)?;
+        let arc_b = registry.get_or_open(&cmp_path)?;
+        let db_a = arc_a.lock().unwrap();
+        let db_b = arc_b.lock().unwrap();
+        esm::diff::diff_databases(&db_a, &db_b)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(diff)) => Json(serde_json::to_value(&diff).unwrap_or_default()).into_response(),
+        Ok(Err(e)) => ApiError::from(e).into_response(),
+        Err(e) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
 }
 
-// ── MCP stdio ────────────────────────────────────────────────────────────────
+// ── MCP stdio (proxy to daemon) ──────────────────────────────────────────────
 
-async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
+async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
+    use esm::backend::QueryBackend;
+    use esm::ipc::Op;
     use std::io::{BufRead, Write};
 
-    eprintln!("esm-server: MCP stdio mode. Send JSON-RPC 2.0 messages on stdin.");
+    eprintln!("esm-server: MCP stdio mode (proxying to resident daemon).");
+
+    let mut backend = RemoteBackend::connect_or_spawn()?;
+    // Warm the ESM in the daemon
+    let _ = backend.run(&esm_path, Op::FileInfo)?;
 
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -236,7 +360,6 @@ async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
             .cloned()
             .unwrap_or(serde_json::Value::Null);
 
-        // Notifications don't get a response
         if method == "notifications/initialized" {
             continue;
         }
@@ -261,8 +384,8 @@ async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "formid": {"type": "string", "description": "FormID in hex, e.g. 0x1234ABCD"},
-                                "edid": {"type": "string", "description": "EditorID string, e.g. AssaultRifle"}
+                                "formid": {"type": "string"},
+                                "edid": {"type": "string"}
                             }
                         }
                     },
@@ -272,10 +395,35 @@ async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "type": {"type": "string", "description": "4-char record signature, e.g. WEAP"},
-                                "limit": {"type": "integer", "description": "Max records to return (default 50, max 500)"}
+                                "type": {"type": "string"},
+                                "limit": {"type": "integer"}
                             },
                             "required": ["type"]
+                        }
+                    },
+                    {
+                        "name": "esm_search",
+                        "description": "Search records by EditorID and/or display name",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "pattern": {"type": "string"},
+                                "types": {"type": "array", "items": {"type": "string"}},
+                                "limit": {"type": "integer"}
+                            },
+                            "required": ["pattern"]
+                        }
+                    },
+                    {
+                        "name": "esm_refs",
+                        "description": "List records that reference a given FormID or EditorID",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "formid": {"type": "string"},
+                                "edid": {"type": "string"},
+                                "limit": {"type": "integer"}
+                            }
                         }
                     }
                 ]
@@ -286,7 +434,7 @@ async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
                     .get("arguments")
                     .cloned()
                     .unwrap_or(serde_json::Value::Null);
-                match call_tool(&db, tool_name, &args).await {
+                match call_tool_proxy(&mut backend, &esm_path, tool_name, &args) {
                     Ok(text) => serde_json::json!({
                         "content": [{"type": "text", "text": text}],
                         "isError": false
@@ -314,30 +462,38 @@ async fn run_mcp_stdio(db: Arc<Mutex<Database>>) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn call_tool(
-    db: &Arc<Mutex<Database>>,
+fn call_tool_proxy(
+    backend: &mut RemoteBackend,
+    esm_path: &std::path::Path,
     name: &str,
     args: &serde_json::Value,
 ) -> anyhow::Result<String> {
+    use esm::ipc::{Op, RecordSel};
+    use esm::SearchField;
+
     match name {
         "esm_file_info" => {
-            let db = db.lock().await;
-            let info = db.file_info()?;
+            let info = backend.file_info(esm_path)?;
             Ok(serde_json::to_string_pretty(&info)?)
         }
         "esm_get_record" => {
             let formid = args.get("formid").and_then(|v| v.as_str());
             let edid = args.get("edid").and_then(|v| v.as_str());
-            let mut db = db.lock().await;
-            let rec = if let Some(fid_str) = formid {
-                let fid = esm::parse_form_id_input(fid_str)?;
-                db.record_by_formid(fid)?
+            let sel = if let Some(fid_str) = formid {
+                RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
             } else if let Some(e) = edid {
-                db.record_by_edid(e)?
+                RecordSel::Edid(e.to_string())
             } else {
                 anyhow::bail!("specify 'formid' or 'edid' argument");
             };
-            Ok(serde_json::to_string_pretty(&rec)?)
+            let v = backend.run(
+                esm_path,
+                Op::Record {
+                    sel,
+                    depth: esm::ResolveDepth::None,
+                },
+            )?;
+            Ok(serde_json::to_string_pretty(&v)?)
         }
         "esm_list_records" => {
             let sig = args
@@ -345,10 +501,40 @@ async fn call_tool(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("'type' argument is required"))?;
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
-            let limit = limit.min(500);
-            let mut db = db.lock().await;
-            let entries = db.list_by_type(sig, limit)?;
+            let entries = backend.list_by_type(esm_path, sig, limit.min(500))?;
             Ok(serde_json::to_string_pretty(&entries)?)
+        }
+        "esm_search" => {
+            let pattern = args
+                .get("pattern")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("'pattern' argument is required"))?;
+            let types: Vec<String> = args
+                .get("types")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_uppercase()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+            let results = backend.search(esm_path, pattern, types, SearchField::Both, limit)?;
+            Ok(serde_json::to_string_pretty(&results)?)
+        }
+        "esm_refs" => {
+            let formid = args.get("formid").and_then(|v| v.as_str());
+            let edid = args.get("edid").and_then(|v| v.as_str());
+            let sel = if let Some(fid_str) = formid {
+                RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
+            } else if let Some(e) = edid {
+                RecordSel::Edid(e.to_string())
+            } else {
+                anyhow::bail!("specify 'formid' or 'edid' argument");
+            };
+            let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
+            let refs = backend.referenced_by(esm_path, sel, limit)?;
+            Ok(serde_json::to_string_pretty(&refs)?)
         }
         _ => anyhow::bail!("unknown tool: {}", name),
     }
@@ -356,32 +542,13 @@ async fn call_tool(
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
-
-    eprintln!("Opening ESM: {}", cli.esm.display());
-    let db = Database::open(&cli.esm)?;
-    let db = Arc::new(Mutex::new(db));
-
-    let compare_db = if let Some(cmp_path) = &cli.compare {
-        eprintln!("Opening compare ESM: {}", cmp_path.display());
-        let cmp = Database::open(cmp_path)?;
-        Some(Arc::new(Mutex::new(cmp)))
-    } else {
-        None
-    };
-
-    if cli.mcp_stdio {
-        return run_mcp_stdio(db).await;
-    }
-
-    let state = AppState { db, compare_db };
-
-    let app = Router::new()
+fn build_router(state: AppState) -> Router {
+    Router::new()
         .route("/", get(index))
         .route("/compare", get(compare_page))
         .route("/health", get(health))
+        .route("/status", get(status))
+        .route("/op", post(op_handler))
         .route("/info", get(info))
         .route("/records/{formid}", get(record_by_formid))
         .route("/records", get(records_query))
@@ -391,15 +558,100 @@ async fn main() -> anyhow::Result<()> {
         .route("/diff", get(diff_route))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
+        .with_state(state)
+}
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], cli.port));
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    if cli.mcp_stdio {
+        let esm = cli
+            .esm
+            .ok_or_else(|| anyhow::anyhow!("--mcp-stdio requires an ESM path"))?;
+        return run_mcp_stdio(esm).await;
+    }
+
+    if cli.daemon {
+        return run_daemon(cli.warm_xref).await;
+    }
+
+    // Legacy UI mode: require ESM path
+    let esm = cli
+        .esm
+        .ok_or_else(|| anyhow::anyhow!("ESM path required (or use --daemon)"))?;
+
+    eprintln!("Opening ESM: {}", esm.display());
+    let registry = shared_registry(cli.warm_xref);
+    registry.get_or_open(&esm)?;
+    if let Some(ref cmp_path) = cli.compare {
+        eprintln!("Opening compare ESM: {}", cmp_path.display());
+        registry.get_or_open(cmp_path)?;
+    }
+
+    let has_compare = cli.compare.is_some();
+    let state = AppState {
+        registry,
+        token: String::new(),
+        default_esm: Some(esm),
+        compare_esm: cli.compare,
+        shutdown: Arc::new(tokio::sync::Mutex::new(false)),
+    };
+
+    let app = build_router(state);
+    let addr = SocketAddr::from(([127, 0, 0, 1], cli.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    eprintln!("esm-server listening on http://localhost:{}", cli.port);
-    if cli.compare.is_some() {
-        eprintln!("  Diff view: http://localhost:{}/compare", cli.port);
+    eprintln!("esm-server listening on http://127.0.0.1:{}", cli.port);
+    if has_compare {
+        eprintln!("  Diff view: http://127.0.0.1:{}/compare", cli.port);
     }
 
     axum::serve(listener, app).await?;
+    Ok(())
+}
+
+async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
+    let token = generate_token();
+    let registry = shared_registry(warm_xref);
+    let shutdown = Arc::new(tokio::sync::Mutex::new(false));
+
+    let state = AppState {
+        registry: registry.clone(),
+        token: token.clone(),
+        default_esm: None,
+        compare_esm: None,
+        shutdown: shutdown.clone(),
+    };
+
+    let app = build_router(state);
+    let addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let port = listener.local_addr()?.port();
+
+    let info = DaemonInfo {
+        port,
+        token: token.clone(),
+        pid: std::process::id(),
+    };
+    write_daemon_info(&info)?;
+
+    eprintln!(
+        "esm-daemon listening on http://127.0.0.1:{} (pid {})",
+        port, info.pid
+    );
+
+    let shutdown_flag = shutdown.clone();
+    let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
+        loop {
+            if *shutdown_flag.lock().await {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        registry.clear();
+        let _ = remove_daemon_info();
+    });
+
+    serve.await?;
     Ok(())
 }

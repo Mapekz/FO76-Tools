@@ -10,7 +10,8 @@ use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 
 /// Controls how deeply FormID references are followed during decode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ResolveDepth {
     /// Emit raw hex string — no resolution (default).
     #[default]
