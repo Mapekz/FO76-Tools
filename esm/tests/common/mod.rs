@@ -18,6 +18,7 @@ use esm::decode::{DecodeContext, ResolveDepth};
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
 use esm::schema::Schema;
+use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -31,9 +32,25 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// `decode_struct_fields` function.  If `DecodeContext` gains or loses a field,
 /// update both copies.
 pub fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
+    bare_ctx_fv(schema, 208)
+}
+
+/// Like [`bare_ctx`] but with an explicit `form_version`.
+///
+/// Records carry their own form_version in the record header, and the decoder
+/// uses it to gate version-conditional fields.  When a test embeds the verbatim
+/// bytes of a real record, it must decode them at that record's form_version —
+/// not the 208 default — or version-gated fields shift and the decode diverges
+/// from what the CLI produced.  The matching `--raw` dump prints
+/// `header.form_version`.
+///
+/// `is_localized` stays `false`: the reference ESM is non-localized, so FULL /
+/// DESC subrecords carry inline (optionally `<ID=…>`-prefixed) strings rather
+/// than string-table IDs.
+pub fn bare_ctx_fv(schema: &Schema, form_version: u16) -> DecodeContext<'_> {
     DecodeContext {
         schema,
-        form_version: 208,
+        form_version,
         is_localized: false,
         localization: None,
         curves: None,
@@ -54,6 +71,21 @@ pub fn sr(sig: &str, hex: &str, idx: usize) -> OwnedSubrecord {
         data: hex_bytes(hex),
         doc_index: idx,
     }
+}
+
+/// Build a `Vec<OwnedSubrecord>` from an ordered slice of `(signature, hex)`
+/// pairs, assigning `doc_index` by position.
+///
+/// This mirrors the order subrecords appear on disk, which the decoder relies
+/// on (it consumes subrecords in schema order).  Pairs are typically the
+/// verbatim output of `esm get <FILE> --formid <ID> --raw` — copy each
+/// subrecord's `signature` and `hex` straight in.
+pub fn subrecords_from(pairs: &[(&str, &str)]) -> Vec<OwnedSubrecord> {
+    pairs
+        .iter()
+        .enumerate()
+        .map(|(i, (sig, hex))| sr(sig, hex, i))
+        .collect()
 }
 
 /// Decode a lowercase hex string into a `Vec<u8>`.
@@ -111,6 +143,94 @@ pub fn make_minimal_esm() -> Vec<u8> {
     buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
 
     buf
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Decode-quality assertions
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Recursively collect every "decode problem" from a decoded record JSON value.
+///
+/// Three marker types indicate a decode gap:
+///
+/// | Marker | Key(s) present | Meaning |
+/// |---|---|---|
+/// | `_unknown_record` | `_unknown_record: true` | Signature not in schema |
+/// | `raw_fallback` | `_raw: true` + `reason: "…"` | Field used a raw-bytes fallback |
+/// | `_unmapped` | `_unmapped: { … }` | Subrecords not consumed by any schema member |
+///
+/// The third column intentionally excludes `_unresolved: true` (unresolved
+/// LString IDs from localized ESMs) — that marker indicates a missing string
+/// table, not a decode bug.  Tests in this suite run against a non-localized
+/// ESM, so `_unresolved` cannot appear.
+///
+/// Returns a list of human-readable problem strings.  An empty return means the
+/// record decoded fully with no markers.
+pub fn collect_decode_problems(v: &Value) -> Vec<String> {
+    let mut problems = Vec::new();
+    collect_decode_problems_inner(v, "", &mut problems);
+    problems
+}
+
+fn collect_decode_problems_inner(v: &Value, path: &str, out: &mut Vec<String>) {
+    match v {
+        Value::Object(map) => {
+            // _unknown_record
+            if map.get("_unknown_record") == Some(&Value::Bool(true)) {
+                let sig = map
+                    .get("_record_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<unknown>");
+                out.push(format!("[{path}] _unknown_record for signature '{sig}'"));
+            }
+            // raw_fallback: _raw=true AND reason key present (but NOT inside _unmapped)
+            if map.get("_raw") == Some(&Value::Bool(true)) && map.contains_key("reason") {
+                let reason = map
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("<no reason>");
+                out.push(format!("[{path}] raw_fallback: {reason}"));
+            }
+            // _unmapped: count the entry sigs, don't recurse into their raw hex
+            if let Some(Value::Object(unmapped)) = map.get("_unmapped") {
+                for sig in unmapped.keys() {
+                    out.push(format!("[{path}] _unmapped subrecord sig '{sig}'"));
+                }
+            }
+            // Recurse into non-_unmapped children
+            for (k, child) in map {
+                if k == "_unmapped" {
+                    continue;
+                }
+                let child_path = if path.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{path}.{k}")
+                };
+                collect_decode_problems_inner(child, &child_path, out);
+            }
+        }
+        Value::Array(arr) => {
+            for (i, child) in arr.iter().enumerate() {
+                let child_path = format!("{path}[{i}]");
+                collect_decode_problems_inner(child, &child_path, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Assert that `decoded` contains no `_unknown_record`, `raw_fallback`, or
+/// `_unmapped` markers anywhere in its JSON tree.  Panics with a detailed
+/// listing of every problem found.
+pub fn assert_fully_decoded(decoded: &Value) {
+    let problems = collect_decode_problems(decoded);
+    assert!(
+        problems.is_empty(),
+        "record did not decode fully — {} problem(s) found:\n{}",
+        problems.len(),
+        problems.join("\n")
+    );
 }
 
 /// Return a collision-free path under the system temp dir, suitable for a
