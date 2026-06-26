@@ -299,7 +299,7 @@ fn main() -> anyhow::Result<()> {
     } else {
         make_backend(cli.local, cli.addr.as_deref(), cli.port)?
     };
-    let remote_mode = matches!(backend, Backend::Remote(_));
+    let daemon_mode = matches!(backend, Backend::Remote(_));
 
     if let Some(cmd) = cli.command {
         let esm_for_repl = match &cmd {
@@ -340,7 +340,7 @@ fn main() -> anyhow::Result<()> {
                 &lang,
                 startup_ba2,
                 resolve,
-                remote_mode,
+                daemon_mode,
             )?,
             Commands::List {
                 file,
@@ -357,7 +357,7 @@ fn main() -> anyhow::Result<()> {
                 strings,
                 strings_dir,
                 &lang,
-                remote_mode,
+                daemon_mode,
             )?,
             Commands::Diff {
                 file_a,
@@ -422,7 +422,7 @@ fn main() -> anyhow::Result<()> {
                 strings,
                 strings_dir,
                 &lang,
-                remote_mode,
+                daemon_mode,
             )?,
             Commands::Search {
                 file,
@@ -447,7 +447,7 @@ fn main() -> anyhow::Result<()> {
                 strings,
                 strings_dir,
                 &lang,
-                remote_mode,
+                daemon_mode,
             )?,
             Commands::Daemon { .. } => unreachable!(),
         }
@@ -654,10 +654,10 @@ fn cmd_get(
     lang: &str,
     startup_ba2: Option<PathBuf>,
     resolve: String,
-    remote_mode: bool,
+    daemon_mode: bool,
 ) -> anyhow::Result<()> {
     let has_overrides = strings.is_some() || strings_dir.is_some() || startup_ba2.is_some();
-    if has_overrides && remote_mode {
+    if has_overrides && daemon_mode {
         anyhow::bail!(
             "--strings/--strings-dir/--startup-ba2 are not supported in daemon mode; \
              use --local to open the ESM directly"
@@ -733,10 +733,10 @@ fn cmd_list(
     strings: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
-    remote_mode: bool,
+    daemon_mode: bool,
 ) -> anyhow::Result<()> {
     if strings.is_some() || strings_dir.is_some() {
-        if remote_mode {
+        if daemon_mode {
             anyhow::bail!(
                 "--strings/--strings-dir are not supported in daemon mode; \
                  use --local to open the ESM directly"
@@ -786,10 +786,10 @@ fn cmd_refs(
     strings: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
-    remote_mode: bool,
+    daemon_mode: bool,
 ) -> anyhow::Result<()> {
     if strings.is_some() || strings_dir.is_some() {
-        if remote_mode {
+        if daemon_mode {
             anyhow::bail!(
                 "--strings/--strings-dir are not supported in daemon mode; \
                  use --local to open the ESM directly"
@@ -851,7 +851,7 @@ fn cmd_search(
     strings: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
-    remote_mode: bool,
+    daemon_mode: bool,
 ) -> anyhow::Result<()> {
     let field = match search_in {
         SearchInArg::Edid => SearchField::Edid,
@@ -860,7 +860,7 @@ fn cmd_search(
     };
 
     if strings.is_some() || strings_dir.is_some() {
-        if remote_mode {
+        if daemon_mode {
             anyhow::bail!(
                 "--strings/--strings-dir are not supported in daemon mode; \
                  use --local to open the ESM directly"

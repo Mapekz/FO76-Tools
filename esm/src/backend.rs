@@ -159,8 +159,10 @@ impl RemoteBackend {
     }
 
     /// Connect with optional address/port override (skips discovery file for addr).
+    /// `--port` alone defaults to `127.0.0.1`.
     pub fn connect_with_override(addr: Option<&str>, port: Option<u16>) -> anyhow::Result<Self> {
-        if let (Some(a), Some(p)) = (addr, port) {
+        if let Some(p) = port {
+            let a = addr.unwrap_or("127.0.0.1");
             let info = read_daemon_info().ok();
             let token = info
                 .as_ref()
@@ -176,11 +178,13 @@ impl RemoteBackend {
     }
 
     /// Connect to an already-running daemon without auto-spawning one.
+    /// `--port` alone defaults to `127.0.0.1`.
     pub fn connect_existing_with_override(
         addr: Option<&str>,
         port: Option<u16>,
     ) -> anyhow::Result<Self> {
-        if let (Some(a), Some(p)) = (addr, port) {
+        if let Some(p) = port {
+            let a = addr.unwrap_or("127.0.0.1");
             let info = read_daemon_info().ok();
             let token = info
                 .as_ref()

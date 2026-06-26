@@ -99,9 +99,12 @@ pub enum SearchField {
 impl Database {
     /// Open an ESM file.
     ///
-    /// If a `SeventySix - Localization.ba2` file is found next to the ESM, it is
-    /// loaded silently.  Failures to load the BA2 produce a `stderr` warning but
-    /// do not abort.
+    /// Sibling BA2 files are loaded automatically if present next to the ESM:
+    /// - `SeventySix - Localization.ba2` → string tables (English)
+    /// - `SeventySix - Startup.ba2` → curve index
+    ///
+    /// Missing files are silently skipped; load failures print a warning to
+    /// stderr but do not abort.
     pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
         let esm = EsmFile::open(path)?;
@@ -109,12 +112,26 @@ impl Database {
         let schema = Schema::load_embedded().context("load embedded schema")?;
 
         // Auto-detect sibling localization BA2.
-        let sibling_ba2 = path.with_file_name("SeventySix - Localization.ba2");
-        let localization = if sibling_ba2.exists() {
-            match Localization::from_ba2(&sibling_ba2, "en", "seventysix") {
+        let sibling_loc = path.with_file_name("SeventySix - Localization.ba2");
+        let localization = if sibling_loc.exists() {
+            match Localization::from_ba2(&sibling_loc, "en", "seventysix") {
                 Ok(loc) => Some(loc),
                 Err(e) => {
                     eprintln!("Warning: failed to load localization: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Auto-detect sibling startup BA2 for the curve index.
+        let sibling_startup = path.with_file_name("SeventySix - Startup.ba2");
+        let curves = if sibling_startup.exists() {
+            match crate::curves::CurveIndex::build(&esm, &index, &sibling_startup) {
+                Ok(ci) => Some(ci),
+                Err(e) => {
+                    eprintln!("Warning: failed to load curves: {}", e);
                     None
                 }
             }
@@ -130,7 +147,7 @@ impl Database {
             schema,
             is_localized,
             localization,
-            curves: None,
+            curves,
         })
     }
 
