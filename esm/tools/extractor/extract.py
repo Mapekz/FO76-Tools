@@ -220,6 +220,13 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
             {"kind": "formid", "name": "Assoc. Item", "valid_refs": ["FLST", "NULL"]},
         ],
     },
+    # wbCOEDOwnerDecider: resolve sibling Owner FormID → NPC_=Global Variable,
+    # FACT=Required Rank, else Unused(4).
+    "wbCOEDOwnerDecider": {
+        "form_id_target_type": "Owner",
+        "default_variant": 0,
+        "map": {"NPC_": 1, "FACT": 2},
+    },
 }
 
 # Property index → name enums for wbObjectModPropertyToStr.
@@ -939,6 +946,70 @@ class Extractor:
         )
 
         # ----------------------------------------------------------------
+        # RACE character-creation builders — Pascal functions (not variables)
+        # at wbDefinitionsFO76.pas:3940/4007/4028; expanded via expand_call.
+        # ----------------------------------------------------------------
+        _blend_op_enum = (
+            "wbEnum(['Default','Multiply','Overlay','Soft Light','Hard Light'])"
+        )
+        _tint_slot_enum = (
+            "wbEnum(["
+            "'Forehead Mask','Eyes Mask','Nose Mask','Ears Mask',"
+            "'Cheeks Mask','Mouth Mask','Neck Mask','Lip Color',"
+            "'Cheek Color','Eyeliner','Eye Socket Upper','Eye Socket Lower',"
+            "'Skin Tone','Paint','Laugh Lines','Cheek Color Lower',"
+            "'Nose','Chin','Neck','Forehead','Dirt','Scars',"
+            "'Face Detail','Brows','Wrinkles','Beards'"
+            "])"
+        )
+        self.vars["wbFaceMorphElement"] = (
+            "wbRStruct('Face Morph',["
+            "wbInteger(FMRI,'Index',itU32),"
+            "wbLString(FMRN,'Name')])"
+        )
+        self.vars["wbMorphPreset"] = (
+            "wbRStruct('Morph Preset',["
+            "wbInteger(MPPI,'Index',itU32),"
+            "wbLString(MPPN,'Name'),"
+            "wbString(MPPM,'Morph Type'),"
+            "wbFormIDCk(MPPT,'Texture',[TXST]),"
+            "wbInteger(MPPF,'Playable',itU8,wbBoolEnum)])"
+        )
+        self.vars["wbMorphGroupElement"] = (
+            "wbRStruct('Morph Group',["
+            "wbString(MPGN,'Name'),"
+            "wbInteger(MPPC,'Count',itU32),"
+            "wbRArray('Morph Presets',wbMorphPreset).SetCountPath('Count'),"
+            "wbInteger(MPPK,'Tint Layer Face Region Index',itU16),"
+            "wbArray(MPGS,'Morph Value Indexs',wbInteger('Index',itU32))])"
+        )
+        self.vars["wbTintTemplateOption"] = (
+            "wbRStruct('Option',["
+            "wbStruct(TETI,'Index',["
+            f"wbInteger('Slot',itU16,{_tint_slot_enum}),"
+            "wbInteger('Index',itU16)]),"
+            "wbLString(TTGP,'Name'),"
+            "wbInteger(TTEF,'Flags',itU16,wbFlags(["
+            "'On/Off only','Chargen Detail','Takes Skin Tone','Unknown 3'"
+            "])),"
+            "wbConditions,"
+            "wbRArray('Textures',wbString(TTET,'Texture')),"
+            f"wbInteger(TTEB,'Blend Operation',itU32,{_blend_op_enum}),"
+            "wbArray(TTEC,'Template Colors',wbStruct('Template Color',["
+            "wbFormIDCk('Color',[CLFM]),"
+            "wbFloat('Alpha'),"
+            "wbInteger('Template Index',itU16),"
+            f"wbInteger('Blend Operation',itU32,{_blend_op_enum})])),"
+            "wbFloat(TTED,'Default')])"
+        )
+        self.vars["wbTintTemplateGroupElement"] = (
+            "wbRStruct('Group',["
+            "wbLString(TTGP,'Group Name'),"
+            "wbRArray('Options',wbTintTemplateOption),"
+            "wbInteger(TTGE,'Category Index',itU32)])"
+        )
+
+        # ----------------------------------------------------------------
         # wbDefinitionsCommon.pas functions — not collected by _collect_vars
         # because that method only scans DefineFO76; inject them here.
         # ----------------------------------------------------------------
@@ -1602,6 +1673,18 @@ class Extractor:
                 t_parts = split_top_level(args)
                 t_name = unquote(t_parts[0]) if t_parts else "Actor"
                 return f"wbFormIDCk('{t_name}', [BMMO, LVLN, NPC_, NULL])"
+            if fn == "wbFaceMorphs":
+                fm_parts = split_top_level(args)
+                fm_name = unquote(fm_parts[0]) if fm_parts else "Face Morphs"
+                return f"wbRArray('{fm_name}',wbFaceMorphElement)"
+            if fn == "wbMorphGroups":
+                mg_parts = split_top_level(args)
+                mg_name = unquote(mg_parts[0]) if mg_parts else "Morph Groups"
+                return f"wbRArray('{mg_name}',wbMorphGroupElement)"
+            if fn == "wbTintTemplateGroups":
+                tt_parts = split_top_level(args)
+                tt_name = unquote(tt_parts[0]) if tt_parts else "Tint Layers"
+                return f"wbRArray('{tt_name}',wbTintTemplateGroupElement)"
             # wbFromSize(size, value) or wbFromSize(size, sig, value) —
             # conditionally decoded based on total record data length.
             # For FO76 (always the latest game version) the record is always
@@ -1814,7 +1897,10 @@ class Extractor:
         if expr.startswith("wbRStruct") or expr.startswith("wbRStructSK"):
             return self._parse_rstruct(expr)
         if expr.startswith("wbRArray") or expr.startswith("wbRArrayS"):
-            return self._parse_rarray(expr)
+            result = self._parse_rarray(expr)
+            if count_path and isinstance(result, dict) and result.get("kind") == "rarray":
+                result["count"] = {"count_path": count_path}
+            return result
         if expr.startswith("wbArrayS") or expr.startswith("wbArray"):
             result = self._parse_array(expr)
             if count_path and isinstance(result, dict) and result.get("kind") == "array":

@@ -1,4 +1,4 @@
-use crate::formid::FormId;
+use crate::formid::{parse_formid, FormId};
 use crate::reader::OwnedSubrecord;
 use crate::schema::{
     ArrayCount, EnumFormat, FieldDef, IntegerWidth, LStringTable, MemberDef, Schema, UnionDecider,
@@ -405,10 +405,12 @@ fn decode_member(
         MemberDef::RArray {
             name,
             element,
+            count,
             stop_before,
         } => {
             let mut items = Vec::new();
-            loop {
+            let target_count = rarray_count(count.as_ref(), out, ctx);
+            while target_count.is_none_or(|n| items.len() < n) {
                 // If stop_before is set, halt when a boundary sig precedes
                 // the element's anchor in document order.
                 if !stop_before.is_empty() {
@@ -548,6 +550,20 @@ fn decode_member(
                         .min_by_key(|&(_, doc_idx)| doc_idx)
                         .map(|(i, _)| i)
                 }
+                UnionDecider::FormIdTargetType {
+                    form_id_target_type,
+                    map,
+                    default_variant,
+                } => out
+                    .get(form_id_target_type)
+                    .or_else(|| {
+                        ctx.outer_struct
+                            .as_ref()
+                            .and_then(|o| o.get(form_id_target_type))
+                    })
+                    .and_then(|v| sibling_target_sig(v, ctx))
+                    .and_then(|sig| map.get(&sig).copied())
+                    .or(*default_variant),
                 _ => choose_union_variant(
                     ctx.form_version,
                     ctx.record_edid_char,
@@ -783,6 +799,20 @@ fn decode_struct_fields(
                             })
                             .or(*default_variant)
                     }
+                    UnionDecider::FormIdTargetType {
+                        form_id_target_type,
+                        map,
+                        default_variant,
+                    } => struct_out
+                        .get(form_id_target_type)
+                        .or_else(|| {
+                            ctx.outer_struct
+                                .as_ref()
+                                .and_then(|o| o.get(form_id_target_type))
+                        })
+                        .and_then(|v| sibling_target_sig(v, ctx))
+                        .and_then(|sig| map.get(&sig).copied())
+                        .or(*default_variant),
                     _ => choose_union_variant(
                         ctx.form_version,
                         ctx.record_edid_char,
@@ -1041,12 +1071,32 @@ fn choose_union_variant(
                 None
             }
         }
-        // ByteAtOffset, FieldValue, and PresentSignature are handled by the callers
+        // ByteAtOffset, FieldValue, PresentSignature, and FormIdTargetType are
+        // handled by the callers
         UnionDecider::ByteAtOffset { .. }
         | UnionDecider::FieldValue { .. }
-        | UnionDecider::PresentSignature { .. } => None,
+        | UnionDecider::PresentSignature { .. }
+        | UnionDecider::FormIdTargetType { .. } => None,
         UnionDecider::Raw => None,
     }
+}
+
+/// Resolve the target record signature for a decoded sibling FormID field.
+fn sibling_target_sig(value: &Value, ctx: &DecodeContext<'_>) -> Option<String> {
+    if let Value::Object(o) = value {
+        if let Some(rt) = o.get("record_type").and_then(|v| v.as_str()) {
+            return Some(rt.to_string());
+        }
+    }
+    let id = match value {
+        Value::String(s) => parse_formid(s).ok(),
+        Value::Object(o) => o
+            .get("formid")
+            .and_then(|v| v.as_str())
+            .and_then(|s| parse_formid(s).ok()),
+        _ => None,
+    }?;
+    ctx.resolver.and_then(|r| r.stub(id).map(|s| s.record_type))
 }
 
 /// Read `width` bytes starting at `offset` in `data` as a little-endian unsigned integer.
@@ -1227,6 +1277,26 @@ fn anchor_sig(member: &MemberDef) -> Option<&str> {
     }
 }
 
+fn rarray_count(
+    count: Option<&ArrayCount>,
+    out: &Map<String, Value>,
+    ctx: &DecodeContext<'_>,
+) -> Option<usize> {
+    match count {
+        Some(ArrayCount::Fixed(n)) => Some(*n),
+        Some(ArrayCount::CountPath(path)) => field_int_value(out, path)
+            .or_else(|| {
+                ctx.outer_struct
+                    .as_ref()
+                    .and_then(|o| field_int_value(o, path))
+            })
+            .map(|n| n as usize),
+        // Prefix counts live inside a single payload-backed `Array`; repeated
+        // subrecord arrays are bounded by sibling fields or document order.
+        Some(ArrayCount::CountPrefix(_)) | Some(ArrayCount::FillToEnd) | None => None,
+    }
+}
+
 /// Returns `true` when at least one `stop_before` sig has a lower `doc_index`
 /// than the next occurrence of `anchor_sig` in `by_sig`. When this is true,
 /// the calling RArray should halt iteration.
@@ -1321,77 +1391,94 @@ pub fn decode_vmad(data: &[u8]) -> Value {
 }
 
 fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format: u16) -> Value {
-    let read_object = |data: &[u8], pos: &mut usize, obj_format: u16| -> Value {
-        if obj_format == 2 {
-            if *pos + 4 > data.len() {
-                return json!(null);
+    fn read_scalar(data: &[u8], pos: &mut usize, base_type: u8, obj_format: u16) -> Value {
+        match base_type {
+            1 => {
+                // Scripted object: always 8 bytes (FormID + Alias + Unused).
+                if *pos + 8 > data.len() {
+                    return json!(null);
+                }
+                let form_off = if obj_format == 2 { 0 } else { 4 };
+                let form_id = u32::from_le_bytes([
+                    data[*pos + form_off],
+                    data[*pos + form_off + 1],
+                    data[*pos + form_off + 2],
+                    data[*pos + form_off + 3],
+                ]);
+                *pos += 8;
+                json!(format!("{:#010X}", form_id))
             }
-            let form_id =
-                u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
-            *pos += 4;
-            json!(format!("{:#010X}", form_id))
-        } else {
-            if *pos + 6 > data.len() {
-                return json!(null);
+            2 => {
+                if *pos + 2 > data.len() {
+                    return json!(null);
+                }
+                let len = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
+                *pos += 2;
+                if *pos + len > data.len() {
+                    return json!(null);
+                }
+                let s = String::from_utf8_lossy(&data[*pos..*pos + len]).into_owned();
+                *pos += len;
+                json!(s)
             }
-            *pos += 2; // unused alias field
-            let form_id =
-                u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
-            *pos += 4;
-            json!(format!("{:#010X}", form_id))
-        }
-    };
-
-    match prop_type {
-        1 => read_object(data, pos, obj_format),
-        2 => {
-            // String
-            if *pos + 2 > data.len() {
-                return json!(null);
+            3 => {
+                if *pos + 4 > data.len() {
+                    return json!(null);
+                }
+                let v = i32::from_le_bytes([
+                    data[*pos],
+                    data[*pos + 1],
+                    data[*pos + 2],
+                    data[*pos + 3],
+                ]);
+                *pos += 4;
+                json!(v)
             }
-            let len = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
-            *pos += 2;
-            if *pos + len > data.len() {
-                return json!(null);
+            4 => {
+                if *pos + 4 > data.len() {
+                    return json!(null);
+                }
+                let v = f32::from_le_bytes([
+                    data[*pos],
+                    data[*pos + 1],
+                    data[*pos + 2],
+                    data[*pos + 3],
+                ]);
+                *pos += 4;
+                json!(v)
             }
-            let s = String::from_utf8_lossy(&data[*pos..*pos + len]).into_owned();
-            *pos += len;
-            json!(s)
-        }
-        3 => {
-            // Int
-            if *pos + 4 > data.len() {
-                return json!(null);
+            5 => {
+                if *pos >= data.len() {
+                    return json!(null);
+                }
+                let v = data[*pos] != 0;
+                *pos += 1;
+                json!(v)
             }
-            let v =
-                i32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
-            *pos += 4;
-            json!(v)
-        }
-        4 => {
-            // Float
-            if *pos + 4 > data.len() {
-                return json!(null);
-            }
-            let v =
-                f32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
-            *pos += 4;
-            json!(v)
-        }
-        5 => {
-            // Bool
-            if *pos >= data.len() {
-                return json!(null);
-            }
-            let v = data[*pos] != 0;
-            *pos += 1;
-            json!(v)
-        }
-        _ => {
-            // Array types and unknown — emit type tag as raw fallback
-            json!({"_raw": true, "type": prop_type})
+            _ => json!({"_raw": true, "type": base_type}),
         }
     }
+
+    if (11..=15).contains(&prop_type) {
+        let base_type = prop_type - 10;
+        if *pos + 4 > data.len() {
+            return json!(null);
+        }
+        let count = u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]])
+            as usize;
+        *pos += 4;
+        let mut items = Vec::with_capacity(count.min(1024));
+        for _ in 0..count {
+            let before = *pos;
+            items.push(read_scalar(data, pos, base_type, obj_format));
+            if *pos == before {
+                break;
+            }
+        }
+        return json!(items);
+    }
+
+    read_scalar(data, pos, prop_type, obj_format)
 }
 
 /// Map a schema [`LStringTable`] selector to the runtime [`StringKind`].
@@ -1415,6 +1502,7 @@ mod tests {
     use super::*;
     use crate::schema::{ArrayCount, IntegerWidth, MemberDef, Schema};
     use serde_json::Map;
+    use std::collections::HashMap;
 
     /// Build a minimal `DecodeContext` around a borrowed `Schema`.
     ///
@@ -1456,6 +1544,26 @@ mod tests {
             name: name.to_string(),
             element: Box::new(elem),
             count: Some(ArrayCount::CountPrefix(width)),
+        }
+    }
+
+    fn sig_int_field(sig: &str, name: &str, width: IntegerWidth) -> MemberDef {
+        MemberDef::Integer {
+            sig: Some(sig.to_string()),
+            name: name.to_string(),
+            width,
+            signed: false,
+            format: None,
+            from_version: None,
+            below_version: None,
+        }
+    }
+
+    fn subrecord(sig: &str, data: Vec<u8>, doc_index: usize) -> OwnedSubrecord {
+        OwnedSubrecord {
+            signature: crate::format::Signature::from_slice(sig.as_bytes()),
+            data,
+            doc_index,
         }
     }
 
@@ -1540,5 +1648,280 @@ mod tests {
             Some(255),
             "Sentinel should be 255 (1-byte prefix consumed correctly)"
         );
+    }
+
+    #[test]
+    fn rarray_count_path_bounds_repeated_subrecord_groups() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let morph_groups = MemberDef::RArray {
+            name: "Morph Groups".into(),
+            element: Box::new(MemberDef::RStruct {
+                name: "Morph Group".into(),
+                members: vec![
+                    sig_int_field("MPPC", "Count", IntegerWidth::U32),
+                    MemberDef::RArray {
+                        name: "Morph Presets".into(),
+                        element: Box::new(MemberDef::RStruct {
+                            name: "Morph Preset".into(),
+                            members: vec![sig_int_field("MPPI", "Index", IntegerWidth::U32)],
+                        }),
+                        count: Some(ArrayCount::CountPath("Count".into())),
+                        stop_before: Vec::new(),
+                    },
+                    sig_int_field("MPPK", "Tail", IntegerWidth::U16),
+                ],
+            }),
+            count: None,
+            stop_before: Vec::new(),
+        };
+
+        let subrecords = [
+            subrecord("MPPC", 1u32.to_le_bytes().to_vec(), 0),
+            subrecord("MPPI", 10u32.to_le_bytes().to_vec(), 1),
+            subrecord("MPPK", 100u16.to_le_bytes().to_vec(), 2),
+            subrecord("MPPC", 1u32.to_le_bytes().to_vec(), 3),
+            subrecord("MPPI", 20u32.to_le_bytes().to_vec(), 4),
+            subrecord("MPPK", 200u16.to_le_bytes().to_vec(), 5),
+        ];
+        let mut by_sig: HashMap<String, Vec<&OwnedSubrecord>> = HashMap::new();
+        for sr in &subrecords {
+            by_sig
+                .entry(sr.signature.as_str().to_string())
+                .or_default()
+                .push(sr);
+        }
+
+        let mut out = Map::new();
+        decode_member(&ctx, &morph_groups, &mut out, &mut by_sig, None);
+        let groups = out
+            .get("Morph Groups")
+            .and_then(|v| v.as_array())
+            .expect("morph groups");
+
+        assert_eq!(groups.len(), 2);
+        for (idx, expected_index) in [10u64, 20u64].into_iter().enumerate() {
+            let presets = groups[idx]
+                .pointer("/Morph Group/Morph Presets")
+                .and_then(|v| v.as_array())
+                .expect("presets");
+            assert_eq!(presets.len(), 1, "group {idx} should consume one preset");
+            assert_eq!(
+                presets[0]
+                    .pointer("/Morph Preset/Index")
+                    .and_then(|v| v.as_u64()),
+                Some(expected_index)
+            );
+        }
+    }
+
+    fn vmad_wstring(s: &str) -> Vec<u8> {
+        let mut out = (s.len() as u16).to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    fn vmad_header(obj_format: u16, script_count: u16) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&2u16.to_le_bytes()); // version
+        out.extend_from_slice(&obj_format.to_le_bytes());
+        out.extend_from_slice(&script_count.to_le_bytes());
+        out
+    }
+
+    /// Object format 2: FormID at offset 0 within the 8-byte object.
+    #[test]
+    fn vmad_object_format2_reads_eight_bytes() {
+        let mut data = vmad_header(2, 1);
+        data.extend(vmad_wstring("TestScript"));
+        data.push(0); // status
+        data.extend_from_slice(&2u16.to_le_bytes()); // prop_count
+        data.extend(vmad_wstring("MyRef"));
+        data.push(1); // type = object
+        data.push(0); // status
+
+        // FormID @0, Alias i16, Unused u16
+        data.extend_from_slice(&0x00000042u32.to_le_bytes());
+        data.extend_from_slice(&3i16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
+        // Second property: int32 — must not be misaligned
+        data.extend(vmad_wstring("Count"));
+        data.push(3); // type = int
+        data.push(0); // status
+        data.extend_from_slice(&7i32.to_le_bytes());
+
+        let decoded = decode_vmad(&data);
+        assert!(
+            decoded.get("_raw").is_none(),
+            "must not truncate: {decoded}"
+        );
+        let props = decoded
+            .pointer("/scripts/0/properties")
+            .and_then(|v| v.as_array())
+            .expect("properties");
+        assert_eq!(
+            props[0].pointer("/value").and_then(|v| v.as_str()),
+            Some("0x00000042")
+        );
+        assert_eq!(props[1].pointer("/value").and_then(|v| v.as_i64()), Some(7));
+    }
+
+    /// Object format 1: FormID at offset 4 within the 8-byte object.
+    #[test]
+    fn vmad_object_format1_reads_eight_bytes() {
+        let mut data = vmad_header(1, 1);
+        data.extend(vmad_wstring("TestScript"));
+        data.push(0);
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend(vmad_wstring("MyRef"));
+        data.push(1);
+        data.push(0);
+        // Unused u16, Alias i16, FormID @4
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&1i16.to_le_bytes());
+        data.extend_from_slice(&0x00000099u32.to_le_bytes());
+
+        let decoded = decode_vmad(&data);
+        assert!(
+            decoded.get("_raw").is_none(),
+            "must not truncate: {decoded}"
+        );
+        let value = decoded
+            .pointer("/scripts/0/properties/0/value")
+            .and_then(|v| v.as_str());
+        assert_eq!(value, Some("0x00000099"));
+    }
+
+    /// Array property type 11 = count + N objects.
+    #[test]
+    fn vmad_object_array_decodes_without_truncation() {
+        let mut data = vmad_header(2, 1);
+        data.extend(vmad_wstring("TestScript"));
+        data.push(0);
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend(vmad_wstring("Refs"));
+        data.push(11); // type = object array
+        data.push(0);
+        data.extend_from_slice(&2u32.to_le_bytes()); // count
+        for fid in [0x11u32, 0x22u32] {
+            data.extend_from_slice(&fid.to_le_bytes());
+            data.extend_from_slice(&0i16.to_le_bytes());
+            data.extend_from_slice(&0u16.to_le_bytes());
+        }
+
+        let decoded = decode_vmad(&data);
+        assert!(
+            decoded.get("_raw").is_none(),
+            "must not truncate: {decoded}"
+        );
+        let arr = decoded
+            .pointer("/scripts/0/properties/0/value")
+            .and_then(|v| v.as_array())
+            .expect("object array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].as_str(), Some("0x00000011"));
+        assert_eq!(arr[1].as_str(), Some("0x00000022"));
+    }
+
+    struct StubResolver {
+        stubs: std::collections::HashMap<FormId, FormIdStub>,
+    }
+
+    impl FormIdRefResolver for StubResolver {
+        fn stub(&self, id: FormId) -> Option<FormIdStub> {
+            self.stubs.get(&id).cloned()
+        }
+
+        fn decode_full(&self, _id: FormId) -> Option<Value> {
+            None
+        }
+    }
+
+    /// COED owner-decider: NPC_ owner → Global Variable variant; no resolver → Unused.
+    #[test]
+    fn coed_owner_decider_selects_variant_by_target_signature() {
+        use crate::schema::UnionDecider;
+        use std::collections::HashMap;
+
+        let owner_id = FormId::new(0x0000_1234);
+        let glob_id = FormId::new(0x0000_00AB);
+        let resolver = StubResolver {
+            stubs: HashMap::from([(
+                owner_id,
+                FormIdStub {
+                    formid: owner_id.display(),
+                    editor_id: Some("TestNPC".into()),
+                    record_type: "NPC_".into(),
+                },
+            )]),
+        };
+
+        let fields = vec![
+            MemberDef::FormId {
+                sig: None,
+                name: "Owner".into(),
+                valid_refs: vec!["NPC_".into(), "FACT".into(), "NULL".into()],
+            },
+            MemberDef::Union {
+                sig: None,
+                name: "union".into(),
+                decider: UnionDecider::FormIdTargetType {
+                    form_id_target_type: "Owner".into(),
+                    map: HashMap::from([("NPC_".into(), 1), ("FACT".into(), 2)]),
+                    default_variant: Some(0),
+                },
+                variants: vec![
+                    MemberDef::Unused {
+                        bytes: 4,
+                        from_version: None,
+                        below_version: None,
+                    },
+                    MemberDef::FormId {
+                        sig: None,
+                        name: "Global Variable".into(),
+                        valid_refs: vec!["GLOB".into(), "NULL".into()],
+                    },
+                    MemberDef::Integer {
+                        sig: None,
+                        name: "Required Rank".into(),
+                        width: crate::schema::IntegerWidth::S32,
+                        signed: true,
+                        format: None,
+                        from_version: None,
+                        below_version: None,
+                    },
+                ],
+            },
+        ];
+
+        let mut payload = vec![0u8; 8];
+        payload[0..4].copy_from_slice(&owner_id.raw().to_le_bytes());
+        payload[4..8].copy_from_slice(&glob_id.raw().to_le_bytes());
+
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.resolve_depth = ResolveDepth::Stub;
+        ctx.resolver = Some(&resolver);
+
+        let mut out = Map::new();
+        decode_struct_fields(&ctx, "Extra Data", &fields, &payload, &mut out);
+        let inner = out
+            .get("Extra Data")
+            .and_then(|v| v.as_object())
+            .expect("struct");
+        assert_eq!(
+            inner.get("Global Variable").and_then(|v| v.as_str()),
+            Some(glob_id.display().as_str())
+        );
+
+        // Without resolver, default variant 0 (Unused) — no Global Variable key.
+        let ctx_no_resolver = bare_ctx(&schema);
+        let mut out2 = Map::new();
+        decode_struct_fields(&ctx_no_resolver, "Extra Data", &fields, &payload, &mut out2);
+        let inner2 = out2
+            .get("Extra Data")
+            .and_then(|v| v.as_object())
+            .expect("struct");
+        assert!(inner2.get("Global Variable").is_none());
     }
 }

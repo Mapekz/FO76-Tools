@@ -37,6 +37,8 @@ pub enum MemberDef {
     RArray {
         name: String,
         element: Box<MemberDef>,
+        #[serde(default)]
+        count: Option<ArrayCount>,
         /// Halt iteration before consuming the next element when any listed
         /// signature has a lower `doc_index` than the element's first sig-bearing
         /// member. Used for PERK condition groups that are interleaved with
@@ -262,6 +264,13 @@ pub enum UnionDecider {
         /// First entry where `(int_value & mask) != 0` wins; checked before `map`.
         #[serde(default)]
         bits: Vec<[u64; 2]>,
+    },
+    /// Select variant by resolving a sibling FormID field to its target record signature.
+    FormIdTargetType {
+        form_id_target_type: String,
+        map: HashMap<String, usize>,
+        #[serde(default)]
+        default_variant: Option<usize>,
     },
     /// Select variant by the first character of the record's EditorID (EDID subrecord).
     /// `edid_prefix` maps single-char strings to variant indices.

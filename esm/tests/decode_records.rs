@@ -1,6 +1,8 @@
 mod common;
 
-use common::{assert_fully_decoded, bare_ctx, bare_ctx_fv, sr, subrecords_from};
+use common::{
+    assert_fully_decoded, assert_only_drift_markers, bare_ctx, bare_ctx_fv, sr, subrecords_from,
+};
 use esm::decode::decode_record;
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
@@ -834,4 +836,446 @@ fn avif_strength_decodes_correctly() {
         (def - 0.0).abs() < 1e-6,
         "Default Value should be 0.0, got {def}"
     );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Fix A / Fix B / Fix D — per-type regression tests added alongside the
+// VMAD/COED/RACE-morph decode fixes (HEAD commit).
+//
+// Five clean-type tests (assert_fully_decoded) lock the no-marker status.
+// Three drift-type tests (assert_only_drift_markers) lock the drift boundary
+// so that future regressions introducing NEW unexpected markers fail.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// ENCH 0x00002B4F — `zzzcrEnchFireflyIchorSplatterFX` — decodes to
+/// Enchantment fully.
+///
+/// 8-subrecord record (EDID OBND ENIT EFID EFIT MAGF CODV MIID); form_version
+/// 208.  Exercises the ENIT struct and magic-effect entry (EFID/EFIT) without
+/// any raw fallbacks.  Before the COED/VMAD fixes this type was in the dirty
+/// list; this test locks it as clean.
+#[test]
+fn ench_firefly_ichor_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 208);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x00002B4F --raw` (form_version 208).
+    let subs = subrecords_from(&[
+        (
+            "EDID",
+            "7a7a7a6372456e636846697265666c794963686f7253706c6174746572465800",
+        ),
+        ("OBND", "000000000000000000000000"),
+        (
+            "ENIT",
+            "000000000100000000000000000000000000000006000000000000000000000000000000",
+        ),
+        ("EFID", "502b0000"),
+        ("EFIT", "000000000000e0400000000005000000"),
+        ("MAGF", "00000000"),
+        ("CODV", "00000000"),
+        ("MIID", "00000000"),
+    ]);
+
+    let result = decode_record(&ctx, "ENCH", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Enchantment"),
+    );
+    assert_fully_decoded(&result);
+
+    // Effects[0].Effect.Base Effect = 0x00002B50 (EFID value).
+    assert_eq!(
+        result
+            .pointer("/Effects/0/Effect/Base Effect")
+            .and_then(|v| v.as_str()),
+        Some("0x00002B50"),
+        "first effect Base Effect FormID"
+    );
+}
+
+/// BOOK 0x00000871 — `recipe_mod_AssaultRifle_Receiver_FastTrigger-CritDMG` —
+/// decodes to Book fully.
+///
+/// 19-subrecord record (EDID OBND PTRN XALG FULL MODL MODT ENLT ENLS AUUV
+/// DESC YNAM KSIZ KWDA DATA DNAM CNAM INAM BTOF); form_version 185.  The XALG
+/// subrecord is mapped in the BOOK schema (unlike GMRW where it is drift) —
+/// this test confirms that XALG decodes cleanly here.
+#[test]
+fn book_assault_rifle_recipe_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 185);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x00000871 --raw` (form_version 185).
+    let subs = subrecords_from(&[
+        ("EDID", "7265636970655f6d6f645f41737361756c745269666c655f52656365697665725f46617374547269676765722d43726974444d4700"),
+        ("OBND", "f9fff2ff00000d000e000100"),
+        ("PTRN", "ad2e1e00"),
+        ("XALG", "8000000000000000"),
+        ("FULL", "3c49443d30303034313635303e506c616e3a2041737361756c74205269666c652046696572636520526563656976657200"),
+        ("MODL", "50726f70735c496e7374523033426c75655072696e742e6e696600"),
+        ("MODT", "040000000400000000000000010000000100000067993c1664647300b7d70ce104a433ec64647300b7d70ce14bf832f864647300b7d70ce15511e71864647300b7d70ce12f8f53536267736daeef2e19"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "0189da2f000048420000f04100009c429a99193fcdcccc3d00a8becb"),
+        ("DESC", "00"),
+        ("YNAM", "0f4c1d00"),
+        ("KSIZ", "02000000"),
+        ("KWDA", "67153e0027433d00"),
+        ("DATA", "fa0000000000803e"),
+        ("DNAM", "20000000000000000000000000"),
+        ("CNAM", "00"),
+        ("INAM", "32491100"),
+        ("BTOF", "00000000"),
+    ]);
+
+    let result = decode_record(&ctx, "BOOK", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Book"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("recipe_mod_AssaultRifle_Receiver_FastTrigger-CritDMG"),
+        "Editor ID"
+    );
+}
+
+/// WEAP 0x000001F6 — `GasTrapDummy` — decodes to Weapon fully.
+///
+/// 8-subrecord record (EDID OBND FULL ENLT ENLS DESC DNAM CRDT); form_version
+/// 176.  Simple weapon with a DNAM struct; exercises the weapon-data decode
+/// path without any raw fallbacks.
+#[test]
+fn weap_gas_trap_dummy_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 176);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x000001F6 --raw` (form_version 176).
+    let subs = subrecords_from(&[
+        ("EDID", "4761735472617044756d6d7900"),
+        ("OBND", "000000000000000000000000"),
+        ("FULL", "3c49443d30303032333945383e476173547261702044756d6d7900"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("DESC", "00"),
+        ("DNAM", "000000000000803f0000803f0000803f0000803f0000fa430000fa440000000000000000000000000000003f000000000000000000000000400100000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000009a99993e00000000a041000000000000000002000000ffff7f7f00000000"),
+        ("CRDT", "000000400000803f00000000"),
+    ]);
+
+    let result = decode_record(&ctx, "WEAP", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Weapon"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("GasTrapDummy"),
+        "Editor ID"
+    );
+}
+
+/// PERK 0x00004168 — `TestTamePerk` — decodes to Perk fully (includes VMAD).
+///
+/// 17-subrecord record; form_version 175.  Carries a VMAD header (version 6,
+/// object_format 2, 0 scripts) as well as PRKE/PRKC/CTDA/EPF2/EPF3/PRKF perk
+/// entry blocks.  Before Fix A, records carrying VMAD hit a raw_fallback
+/// "VMAD truncated"; this test locks the clean path.
+#[test]
+fn perk_test_tame_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 175);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x00004168 --raw` (form_version 175).
+    let subs = subrecords_from(&[
+        ("EDID", "5465737454616d655065726b00"),
+        ("VMAD", "060002000000042a00467261676d656e74733a5065726b733a50524b465f5465737454616d655065726b5f3030303034313638000200090053515f4d617374657201010000ffffb8250500160053515f416e696d616c54616d696e674b6579776f726401010000ffff66410000010000000000012a00467261676d656e74733a5065726b733a50524b465f5465737454616d655065726b5f30303030343136381100467261676d656e745f456e7472795f30300300"),
+        ("FULL", "3c49443d30303033423545353e54616d6520416e696d616c00"),
+        ("DESC", "3c49443d30303033423545363e436f6d6d756e652077697468206265617374732100"),
+        ("DATA", "0000030100"),
+        ("SNAM", "27761a00"),
+        ("PRKE", "020000"),
+        ("DATA", "0e090200"),
+        ("PRKC", "01"),
+        ("CTDA", "000000000000000047002f4367410000000000000000000000000000ffffffff"),
+        ("CTDA", "000000000000803f30022f4366410000000000000000000000000000ffffffff"),
+        ("CTDA", "00000000000000002e002f4300000000000000000000000000000000ffffffff"),
+        ("EPFT", "04"),
+        ("EPFB", "0000"),
+        ("EPF2", "3c49443d30303033423545373e54414d4500"),
+        ("EPF3", "0200"),
+        ("PRKF", ""),
+    ]);
+
+    let result = decode_record(&ctx, "PERK", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Perk"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("TestTamePerk"),
+        "Editor ID"
+    );
+}
+
+/// RACE 0x0001D31E (`PowerArmorRace`) morph subset — Fix B ported RACE morph
+/// and face-morph builders; this test locks those schema paths.
+///
+/// Instead of embedding the full ~72 KB record, only EDID + one morph-group
+/// element (MPGN/MPPC/MPPK/MPGS) + one face-morph element (FMRI/FMRN) are
+/// provided.  Before Fix B these six sigs went to `_unmapped`; after the fix
+/// they decode via the ported RArray schemas.  form_version 209.
+#[test]
+fn race_power_armor_morph_subset_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Selective real bytes from `esm get SeventySix_20260619.esm
+    // --formid 0x0001D31E --raw` (form_version 209).
+    // Only the morph/face-morph sigs are included; the rest of the record's
+    // ~500 other subrecords are omitted (they decode as null/absent — no markers).
+    let subs = subrecords_from(&[
+        ("EDID", "506f77657241726d6f725261636500"), // "PowerArmorRace"
+        // Morph Groups Male — first element: name="Nose", 0 presets, MPPK=-1, MPGS=[0]
+        ("MPGN", "4e6f736500"),
+        ("MPPC", "00000000"),
+        ("MPPK", "ffff"),
+        ("MPGS", "0100000000000000"),
+        // Face Morphs Male — first element: index=0, name="EyeBrow Main"
+        ("FMRI", "00000000"),
+        (
+            "FMRN",
+            "3c49443d34313031313632393e45796562726f77204d61696e00",
+        ),
+    ]);
+
+    let result = decode_record(&ctx, "RACE", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Race"),
+    );
+    // No _unmapped markers: MPGN/MPPC/MPPK/MPGS/FMRI/FMRN are all in the
+    // schema after Fix B.  Any regression that removes these sigs from the
+    // schema would surface as _unmapped here.
+    assert_fully_decoded(&result);
+}
+
+// ── Drift-type regression tests ──────────────────────────────────────────────
+//
+// These three types remain intentionally partial: they carry subrecords that
+// are absent from or version-gated out of the TES5Edit Pascal reference.
+// The tests lock the drift boundary: exactly the documented sigs appear as
+// _unmapped, and no NEW unexpected markers (raw_fallback, additional _unmapped)
+// should emerge from future decoder changes.
+
+/// GMRW 0x008B2016 — `WorldPets_Reward_PetLevelling_Generic_CUR_Goldbullions01`
+/// — XALG is the documented drift subrecord.
+///
+/// form_version 209.  XALG is absent from the TES5Edit GMRW definition (which
+/// covers only EDID/FTAGs/ANAM/RWDS/Rewards); it is newer than the reference
+/// and intentionally left _unmapped.
+#[test]
+fn gmrw_xalg_drift_locked() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x008B2016 --raw` (form_version 209).
+    let subs = subrecords_from(&[
+        ("EDID", "576f726c64506574735f5265776172645f5065744c6576656c6c696e675f47656e657269635f4355525f476f6c6462756c6c696f6e73303100"),
+        ("XALG", "0010000000000000"),
+        ("RWDS", "01000000"),
+        ("ESRE", "00000000"),
+        ("QRCO", "c8c15500"),
+        ("NAM8", "ad1f8b00"),
+        ("QRLR", "01000000"),
+        ("ITME", ""),
+    ]);
+
+    let result = decode_record(&ctx, "GMRW", &subs);
+
+    // XALG must be the sole _unmapped sig — no other unexpected markers.
+    assert_only_drift_markers(&result, &["XALG"]);
+}
+
+/// LVLI 0x0000129C — `LL_Flora_Corn` — LVLD is the documented drift subrecord.
+///
+/// form_version 197 (≥174).  `wbBelowVersion(174, LVLD …)` means LVLD is only
+/// in the schema for form_version < 174; live data is ≥174, so LVLD is
+/// _unmapped.  All other subrecords (OBND, ONAM, LVMV, LVCV, LVLF, LLCT, LVLO,
+/// CTDA, LVOV, LVIV, LVLV, MODL, MODT, ENLT, ENLS, AUUV) are correctly
+/// decoded.
+#[test]
+fn lvli_lvld_drift_locked() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 197);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x0000129C --raw` (form_version 197).
+    let subs = subrecords_from(&[
+        ("EDID", "4c4c5f466c6f72615f436f726e00"),
+        ("OBND", "fefffefff8ff020002000800"),
+        ("LVLD", ""),
+        ("ONAM", "00"),
+        ("LVMV", "00000000"),
+        ("LVCV", "00000000"),
+        ("LVLF", "0400"),
+        ("LLCT", "04"),
+        ("LVLO", "f8300300"),
+        (
+            "CTDA",
+            "40000000000000004e0300009d12000044b009000000000000000000ffffffff",
+        ),
+        (
+            "CTDA",
+            "a4000000a8c443004d00000000000000000000000000000000000000ffffffff",
+        ),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "f8300300"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "f8300300"),
+        (
+            "CTDA",
+            "000000000000803f5603000042d82e00000000000100000000000000ffffffff",
+        ),
+        (
+            "CTDA",
+            "000000000000803f1403000000000000000000000000000000000000ffffffff",
+        ),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "f8300300"),
+        (
+            "CTDA",
+            "a4000000c4ba6b004d00000000000000000000000000000000000000ffffffff",
+        ),
+        (
+            "CTDA",
+            "000000000000803f5603000042d82e00000000000100000000000000ffffffff",
+        ),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        (
+            "MODL",
+            "4c616e6473636170655c506c616e74735c496e6772656469656e74735c436f726e2e6e696600",
+        ),
+        ("MODT", "0400000000000000000000000000000000000000"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        (
+            "AUUV",
+            "01000000000048420000f04100009c429a99193fcdcccc3d00000000",
+        ),
+    ]);
+
+    let result = decode_record(&ctx, "LVLI", &subs);
+
+    // LVLD must be the sole _unmapped sig — no other unexpected markers.
+    assert_only_drift_markers(&result, &["LVLD"]);
+}
+
+/// NPC_ 0x0084FB8F — `ATX_CAMPPets_Actor_RadHog_Standard` — AWPB and CTDA are
+/// documented drift subrecords.
+///
+/// form_version 209.  AWPB is absent from the entire TES5Edit FO76 reference
+/// (newer than the reference); CTDA in NPC_ context is absent from the NPC_
+/// definition (appears only as a sub-condition in NPC_-adjacent records in the
+/// Pascal source).  Both remain _unmapped intentionally.  No VMAD raw_fallback
+/// appears, confirming Fix A applies cleanly to this record too.
+#[test]
+fn npc_awpb_ctda_drift_locked() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x0084FB8F --raw` (form_version 209).
+    let subs = subrecords_from(&[
+        ("EDID", "4154585f43414d50506574735f4163746f725f526164486f675f5374616e6461726400"),
+        ("OBND", "eaffbbff0000160061005600"),
+        ("PHST", "00000000"),
+        ("ACBS", "7a8000a8000001000000000023007e2f00000000"),
+        ("AJNG", "c6c28d00"),
+        ("AJXG", "c7c28d00"),
+        ("SNAM", "c8e0030000"),
+        ("SNAM", "306c100000"),
+        ("SNAM", "f337030000"),
+        ("VTCK", "147a8200"),
+        ("TPLT", "90fb8400"),
+        ("TPTA", "0000000090fb840090fb840090fb840090fb840090fb840090fb84000000000090fb840090fb840090fb840090fb84000000000090fb8400"),
+        ("RNAM", "91fb8400"),
+        ("SPCT", "01000000"),
+        ("SPLO", "54078400"),
+        ("WNAM", "88fb8400"),
+        ("ATKR", "91fb8400"),
+        ("ECOR", "3f220400"),
+        ("PRKZ", "04000000"),
+        ("PRKR", "75270a00"),
+        ("PRKR", "cbc28d00"),
+        ("PRKR", "cac28d00"),
+        ("PRKR", "13218f00"),
+        ("PRPS", "da0200000000c84200000000"),
+        ("INRD", "02715b00"),
+        ("AIDT", "000332030001000000000000000000000000000000000000"),
+        ("PKID", "09058b00"),
+        ("PKID", "f7be8a00"),
+        ("PKID", "4f957900"),
+        ("PKID", "14be7a00"),
+        ("PKID", "4e957900"),
+        ("PKID", "4d957900"),
+        ("PKID", "27cd3800"),
+        ("KSIZ", "0b000000"),
+        ("KWDA", "94707900ff7982008cfb84008dfb8400b6c54f0011962400fba9440018825300126252002ad50a00164b6300"),
+        ("APPR", "64a24700"),
+        ("CNAM", "64a58d00"),
+        ("FULL", "3c49443d36313032383230303e526164686f6700"),
+        ("DATA", ""),
+        ("DNAM", "c201960000000100"),
+        ("ZNAM", "f64d8f00"),
+        ("NAM5", "ff00"),
+        ("NAM6", "6666663f"),
+        ("NAM4", "6666663f"),
+        ("NAM8", "01000000"),
+        ("CSCR", "8f9a8600"),
+        ("DPLT", "332b0200"),
+        ("HCLF", "2e040a00"),
+        ("MWGT", "0000003f0000003f00000000"),
+        ("QNAM", "8180003f8180003f8180003f0000803f"),
+        ("AWPB", "d3a68b00"),
+        ("AWPC", ""),
+        ("CITC", "06000000"),
+        ("CTDA", "000000000000803f5b0300008afb8400000000000000000000000000ffffffff"),
+        ("CTDA", "000000000000803f5b0300008afb8400000000000000000000000000ffffffff"),
+        ("CTDA", "000000000000803f5b0300008afb8400000000000000000000000000ffffffff"),
+        ("CTDA", "000000000000803f5b0300008afb8400000000000000000000000000ffffffff"),
+        ("CTDA", "000000000000803f5b0300008afb8400000000000000000000000000ffffffff"),
+        ("CTDA", "000000000000803f5b0300008afb8400000000000000000000000000ffffffff"),
+    ]);
+
+    let result = decode_record(&ctx, "NPC_", &subs);
+
+    // AWPB and CTDA are the only _unmapped sigs — no raw_fallback or other
+    // unexpected markers, confirming Fix A cleared VMAD truncation on NPC_ too.
+    assert_only_drift_markers(&result, &["AWPB", "CTDA"]);
 }

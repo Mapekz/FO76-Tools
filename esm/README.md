@@ -234,7 +234,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `AVIF` | Actor Value Information | full | basic |
 | `AVTR` | Avatar | full | none |
 | `BNDS` | Bendable Spline | full | none |
-| `BOOK` | Book | partial | none |
+| `BOOK` | Book | full | basic |
 | `BPTD` | Body Part Data | full | basic |
 | `CAMS` | Camera Shot | full | none |
 | `CELL` | Cell | none | none |
@@ -268,7 +268,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `ECAT` | Emote Category | full | none |
 | `EFSH` | Effect Shader | full | none |
 | `EMOT` | Emote | full | none |
-| `ENCH` | Enchantment | partial | none |
+| `ENCH` | Enchantment | full | basic |
 | `ENTM` | Entitlement | full | basic |
 | `EQUP` | Equip Type | full | none |
 | `EXPL` | Explosion | full | basic |
@@ -282,7 +282,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `GCVR` | Ground Cover | full | none |
 | `GDRY` | God Rays | full | none |
 | `GLOB` | Global | full | basic |
-| `GMRW` | Gameplay Reward | partial | none |
+| `GMRW` | Gameplay Reward | partial | basic |
 | `GMST` | Game Setting | full | basic |
 | `GRAS` | Grass | full | none |
 | `HAZD` | Hazard | full | basic |
@@ -309,7 +309,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `LOUT` | Loadout | full | none |
 | `LSCR` | Load Screen | full | none |
 | `LTEX` | Landscape Texture | full | none |
-| `LVLI` | Leveled Item | partial | none |
+| `LVLI` | Leveled Item | partial | basic |
 | `LVLN` | Leveled NPC | partial | none |
 | `LVLP` | Leveled Pack In | partial | none |
 | `LVPC` | Leveled Perk Card | partial | none |
@@ -317,7 +317,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `MATT` | Material Type | full | none |
 | `MDSP` | Model Swap | full | basic |
 | `MESG` | Message | full | none |
-| `MGEF` | Magic Effect | partial | basic |
+| `MGEF` | Magic Effect | full | basic |
 | `MISC` | Misc. Item | partial | none |
 | `MOVT` | Movement Type | full | none |
 | `MSTT` | Moveable Static | partial | none |
@@ -328,7 +328,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `NAVM` | Navigation Mesh | none | none |
 | `NOCM` | Navmesh Obstacle Manager | full | none |
 | `NOTE` | Note | partial | none |
-| `NPC_` | Non-Player Character | partial | none |
+| `NPC_` | Non-Player Character | partial | basic |
 | `OMOD` | Object Modification | full | basic |
 | `OTFT` | Outfit | full | basic |
 | `OVIS` | Object Visibility Manager | full | none |
@@ -336,7 +336,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `PACK` | Package | full | none |
 | `PCRD` | Perk Card | full | basic |
 | `PEPF` | Event Playlist | full | basic |
-| `PERK` | Perk | partial | none |
+| `PERK` | Perk | full | basic |
 | `PGRE` | Placed Grenade | none | none |
 | `PHZD` | Placed Hazard | none | none |
 | `PKIN` | Pack-In | full | none |
@@ -348,7 +348,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `PROJ` | Projectile | full | basic |
 | `QMDL` | Quest Module | partial | none |
 | `QUST` | Quest | partial | none |
-| `RACE` | Race | partial | none |
+| `RACE` | Race | full | basic |
 | `REFR` | Placed Object | partial | none |
 | `REGN` | Region | full | none |
 | `RELA` | Relationship | full | none |
@@ -387,7 +387,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `VTYP` | Voice Type | full | none |
 | `WATR` | Water | full | none |
 | `WAVE` | Wave Encounter | full | basic |
-| `WEAP` | Weapon | partial | none |
+| `WEAP` | Weapon | full | basic |
 | `WRLD` | Worldspace | none | none |
 | `WSPR` | Workshop Permissions | full | none |
 | `WTHR` | Weather | full | basic |
@@ -395,7 +395,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 
 ## Tests
 
-~50 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
+~69 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
 
 ```sh
 cargo test
@@ -413,10 +413,10 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored diff_two
 | `tests/curves.rs` | Curve evaluation: clamping, interpolation, edge cases |
 | `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs two ESM versions) |
 | `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
-| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF using verbatim record bytes |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE (clean), GMRW, LVLI, NPC_ (drift-locked) using verbatim record bytes |
 | `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 38 fully-clean types (ignored, needs game data) |
 | `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
-| `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width (private function) |
+| `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width; VMAD object decoding (both object formats, FormID offset); VMAD array property types 11–15 (count + elements); COED `FormIdTargetType` owner-decider with and without resolver; `RArray` `CountPath` boundary |
 
 `tests/decode_records.rs` tests use verbatim subrecord bytes from `esm get --raw` and run entirely in CI without game data. See the **Supported record types** table in [Schema](#schema) for per-type coverage status.
 

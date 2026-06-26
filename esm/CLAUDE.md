@@ -31,7 +31,7 @@ Clean layering — edit at the right level:
 | `src/ba2.rs` | Minimal BTDX/GNRL BA2 reader (memory-mapped); used by strings + curves |
 | `src/strings.rs` | `.strings`/`.dlstrings`/`.ilstrings` parser; `Localization::from_ba2` / `from_loose_files` |
 | `src/curves.rs` | `CurveIndex` (FormID → `Curve`); loads JSON from Startup BA2; `Curve::eval` (linear interp) |
-| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; `bincode` disk cache (`*.esm.idx`, `CACHE_VERSION = 7`) |
+| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; `bincode` disk cache (`*.esm.idx`, `CACHE_VERSION = 8`) |
 | `src/tree.rs` | GRUP tree arena (`TreeIndex`); `GroupNode`, `RecordStub`, `GroupLabel` enum |
 | `src/schema.rs` | Serde model for `schema/fo76.json`; `MemberDef` enum (18 variants, `#[serde(tag="kind")]`); `load_embedded()` |
 | `src/decode.rs` | Schema-driven decoder → `serde_json::Value`; `DecodeContext<'a>`, `FormIdRefResolver` trait; never panics |
@@ -80,3 +80,13 @@ The app loads the addon via `app/src/main/addon.ts`. The `app/src/shared/api-typ
 ## Game Data
 
 `SeventySix.esm`, `SeventySix - Localization.ba2`, `SeventySix - Startup.ba2`, and `*.esm.idx` are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via CLI args or `Database::open(path)`.
+
+## Known coverage drift (vs TES5Edit)
+
+These `_unmapped` markers are intentional — the live ESM contains subrecords newer than or version-gated relative to the TES5Edit Pascal reference (`../TES5Edit/Core/wbDefinitionsFO76.pas`). Do not treat them as decode bugs:
+
+| Record | Subrecord | Reason |
+|---|---|---|
+| LVLI | `LVLD` | `wbBelowVersion(174, LVLD …)` — live data is form-version ≥174, so LVLD is correctly out of schema scope. |
+| NPC_ | `AWPB`, `CTDA` | Absent from the entire TES5Edit reference; newer than the reference. |
+| GMRW | `XALG` | Absent from the TES5Edit GMRW definition (EDID/FTAGs/ANAM/RWDS/Rewards only); newer than the reference. |

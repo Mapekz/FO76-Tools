@@ -233,6 +233,41 @@ pub fn assert_fully_decoded(decoded: &Value) {
     );
 }
 
+/// Assert that `decoded` contains **only** the documented drift markers and
+/// nothing else — and that at least one drift marker is present.
+///
+/// Each entry in `allowed_sigs` is a subrecord signature (e.g. `"XALG"`,
+/// `"LVLD"`, `"AWPB"`) that is known version-drift: it is present in the raw
+/// ESM bytes but intentionally absent from the schema (newer than the TES5Edit
+/// Pascal reference, or gated by a version condition that excludes live data).
+///
+/// The function:
+/// 1. Asserts at least one problem exists — so the test cannot pass silently on
+///    a record that carries none of the drift sigs.
+/// 2. Asserts every problem string contains `'<sig>'` (the quoted form produced
+///    by [`collect_decode_problems`] for `_unmapped` markers) for one of the
+///    `allowed_sigs`.  Any unexpected problem — a raw fallback, a new unmapped
+///    sig, or an unknown-record marker — fails the test, locking the drift
+///    boundary against regressions.
+pub fn assert_only_drift_markers(decoded: &Value, allowed_sigs: &[&str]) {
+    let problems = collect_decode_problems(decoded);
+    assert!(
+        !problems.is_empty(),
+        "expected at least one drift marker ({allowed_sigs:?}) but found none; \
+         the test record must carry at least one of the documented drift subrecords"
+    );
+    for problem in &problems {
+        let allowed = allowed_sigs
+            .iter()
+            .any(|sig| problem.contains(&format!("'{sig}'")));
+        assert!(
+            allowed,
+            "unexpected decode problem (not a documented drift marker): {problem}\n\
+             allowed drift sigs: {allowed_sigs:?}"
+        );
+    }
+}
+
 /// Return a collision-free path under the system temp dir, suitable for a
 /// synthetic `.esm` file that `EsmFile::open` can mmap.
 ///

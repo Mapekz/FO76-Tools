@@ -13904,9 +13904,36 @@
                     ]
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "union",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "form_id_target_type": "Owner",
+                      "default_variant": 0,
+                      "map": {
+                        "NPC_": 1,
+                        "FACT": 2
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "unused",
+                        "bytes": 4
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Global Variable",
+                        "valid_refs": [
+                          "GLOB",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Required Rank",
+                        "width": "s32",
+                        "signed": true
+                      }
+                    ]
                   },
                   {
                     "kind": "float",
@@ -22129,9 +22156,36 @@
                     ]
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "union",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "form_id_target_type": "Owner",
+                      "default_variant": 0,
+                      "map": {
+                        "NPC_": 1,
+                        "FACT": 2
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "unused",
+                        "bytes": 4
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Global Variable",
+                        "valid_refs": [
+                          "GLOB",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Required Rank",
+                        "width": "s32",
+                        "signed": true
+                      }
+                    ]
                   },
                   {
                     "kind": "float",
@@ -34707,9 +34761,36 @@
                     ]
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "union",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "form_id_target_type": "Owner",
+                      "default_variant": 0,
+                      "map": {
+                        "NPC_": 1,
+                        "FACT": 2
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "unused",
+                        "bytes": 4
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Global Variable",
+                        "valid_refs": [
+                          "GLOB",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Required Rank",
+                        "width": "s32",
+                        "signed": true
+                      }
+                    ]
                   },
                   {
                     "kind": "float",
@@ -35590,9 +35671,36 @@
                     ]
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "union",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "form_id_target_type": "Owner",
+                      "default_variant": 0,
+                      "map": {
+                        "NPC_": 1,
+                        "FACT": 2
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "unused",
+                        "bytes": 4
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Global Variable",
+                        "valid_refs": [
+                          "GLOB",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Required Rank",
+                        "width": "s32",
+                        "signed": true
+                      }
+                    ]
                   },
                   {
                     "kind": "float",
@@ -36552,9 +36660,36 @@
                     ]
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "union",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "form_id_target_type": "Owner",
+                      "default_variant": 0,
+                      "map": {
+                        "NPC_": 1,
+                        "FACT": 2
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "unused",
+                        "bytes": 4
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Global Variable",
+                        "valid_refs": [
+                          "GLOB",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Required Rank",
+                        "width": "s32",
+                        "signed": true
+                      }
+                    ]
                   },
                   {
                     "kind": "float",
@@ -38090,6 +38225,9 @@
               "MGEF"
             ],
             "sig": "ESCE"
+          },
+          "count": {
+            "count_path": "DATA\\Couner Effect Count"
           }
         },
         {
@@ -43612,9 +43750,36 @@
                         ]
                       },
                       {
-                        "kind": "raw_fallback",
+                        "kind": "union",
                         "name": "union",
-                        "reason": "closure union decider"
+                        "decider": {
+                          "form_id_target_type": "Owner",
+                          "default_variant": 0,
+                          "map": {
+                            "NPC_": 1,
+                            "FACT": 2
+                          }
+                        },
+                        "variants": [
+                          {
+                            "kind": "unused",
+                            "bytes": 4
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Global Variable",
+                            "valid_refs": [
+                              "GLOB",
+                              "NULL"
+                            ]
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Required Rank",
+                            "width": "s32",
+                            "signed": true
+                          }
+                        ]
                       },
                       {
                         "kind": "float",
@@ -52953,9 +53118,36 @@
                               ]
                             },
                             {
-                              "kind": "raw_fallback",
+                              "kind": "union",
                               "name": "union",
-                              "reason": "closure union decider"
+                              "decider": {
+                                "form_id_target_type": "Owner",
+                                "default_variant": 0,
+                                "map": {
+                                  "NPC_": 1,
+                                  "FACT": 2
+                                }
+                              },
+                              "variants": [
+                                {
+                                  "kind": "unused",
+                                  "bytes": 4
+                                },
+                                {
+                                  "kind": "formid",
+                                  "name": "Global Variable",
+                                  "valid_refs": [
+                                    "GLOB",
+                                    "NULL"
+                                  ]
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Required Rank",
+                                  "width": "s32",
+                                  "signed": true
+                                }
+                              ]
                             },
                             {
                               "kind": "float",
@@ -60076,6 +60268,440 @@
                   "sig": "DFTM"
                 },
                 {
+                  "kind": "rarray",
+                  "name": "Male Tint Layers",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Group",
+                    "members": [
+                      {
+                        "kind": "lstring",
+                        "sig": "TTGP",
+                        "name": "Group Name"
+                      },
+                      {
+                        "kind": "rarray",
+                        "name": "Options",
+                        "element": {
+                          "kind": "rstruct",
+                          "name": "Option",
+                          "members": [
+                            {
+                              "kind": "struct",
+                              "name": "Index",
+                              "fields": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Slot",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Forehead Mask",
+                                      "Eyes Mask",
+                                      "Nose Mask",
+                                      "Ears Mask",
+                                      "Cheeks Mask",
+                                      "Mouth Mask",
+                                      "Neck Mask",
+                                      "Lip Color",
+                                      "Cheek Color",
+                                      "Eyeliner",
+                                      "Eye Socket Upper",
+                                      "Eye Socket Lower",
+                                      "Skin Tone",
+                                      "Paint",
+                                      "Laugh Lines",
+                                      "Cheek Color Lower",
+                                      "Nose",
+                                      "Chin",
+                                      "Neck",
+                                      "Forehead",
+                                      "Dirt",
+                                      "Scars",
+                                      "Face Detail",
+                                      "Brows",
+                                      "Wrinkles",
+                                      "Beards"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Index",
+                                  "width": "u16",
+                                  "signed": false
+                                }
+                              ],
+                              "sig": "TETI"
+                            },
+                            {
+                              "kind": "lstring",
+                              "sig": "TTGP",
+                              "name": "Name"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Flags",
+                              "width": "u16",
+                              "signed": false,
+                              "sig": "TTEF",
+                              "format": {
+                                "flags": [
+                                  "On/Off only",
+                                  "Chargen Detail",
+                                  "Takes Skin Tone",
+                                  "Unknown 3"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "rstruct",
+                              "name": "Conditions",
+                              "members": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Condition Count",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "sig": "CITC"
+                                },
+                                {
+                                  "kind": "rarray",
+                                  "name": "Conditions",
+                                  "element": {
+                                    "kind": "rstruct",
+                                    "name": "Condition",
+                                    "members": [
+                                      {
+                                        "kind": "struct",
+                                        "name": "Condition Data",
+                                        "fields": [
+                                          {
+                                            "kind": "integer",
+                                            "name": "Type",
+                                            "width": "u8",
+                                            "signed": false
+                                          },
+                                          {
+                                            "kind": "unused",
+                                            "bytes": 3
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Comparison Value",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "integer",
+                                            "name": "Function",
+                                            "width": "u16",
+                                            "signed": false
+                                          },
+                                          {
+                                            "kind": "unused",
+                                            "bytes": 2
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Parameter #1",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Parameter #2",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "integer",
+                                            "name": "Run On",
+                                            "width": "u32",
+                                            "signed": false,
+                                            "format": {
+                                              "enum": [
+                                                "Subject",
+                                                "Target",
+                                                "Reference",
+                                                "Combat Target",
+                                                "Linked Reference",
+                                                "Quest Alias",
+                                                "Package Data",
+                                                "Event Data",
+                                                "Unknown 8",
+                                                "Command Target",
+                                                "Event Camera Ref",
+                                                "My Killer",
+                                                "Active Players",
+                                                "Potential Players",
+                                                "Player Teammates",
+                                                "Target List",
+                                                "Instance Owner"
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Reference",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Parameter #3",
+                                            "len": 4
+                                          }
+                                        ],
+                                        "sig": "CTDA"
+                                      },
+                                      {
+                                        "kind": "string",
+                                        "name": "Parameter #1",
+                                        "keep_case": false,
+                                        "sig": "CIS1"
+                                      },
+                                      {
+                                        "kind": "string",
+                                        "name": "Parameter #2",
+                                        "keep_case": false,
+                                        "sig": "CIS2"
+                                      }
+                                    ]
+                                  },
+                                  "stop_before": [
+                                    "TTET",
+                                    "TTEB",
+                                    "TTEC",
+                                    "TTED",
+                                    "TETI",
+                                    "TTGE",
+                                    "TTGP",
+                                    "MPGN",
+                                    "FMRI",
+                                    "WMAP",
+                                    "NAM0",
+                                    "FNAM",
+                                    "NAM8",
+                                    "RNAM",
+                                    "CVT1",
+                                    "SRAC",
+                                    "SADD",
+                                    "SAKD",
+                                    "PTOP",
+                                    "NTOP",
+                                    "MSID",
+                                    "MLSI",
+                                    "HNAM",
+                                    "HLTX",
+                                    "QSTI",
+                                    "BSMP",
+                                    "SNAM",
+                                    "TSLT"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "rarray",
+                              "name": "Textures",
+                              "element": {
+                                "kind": "string",
+                                "name": "Texture",
+                                "keep_case": false,
+                                "sig": "TTET"
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Blend Operation",
+                              "width": "u32",
+                              "signed": false,
+                              "sig": "TTEB",
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Multiply",
+                                  "Overlay",
+                                  "Soft Light",
+                                  "Hard Light"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "array",
+                              "name": "Template Colors",
+                              "element": {
+                                "kind": "struct",
+                                "name": "Template Color",
+                                "fields": [
+                                  {
+                                    "kind": "formid",
+                                    "name": "Color",
+                                    "valid_refs": [
+                                      "CLFM"
+                                    ]
+                                  },
+                                  {
+                                    "kind": "float",
+                                    "name": "Alpha"
+                                  },
+                                  {
+                                    "kind": "integer",
+                                    "name": "Template Index",
+                                    "width": "u16",
+                                    "signed": false
+                                  },
+                                  {
+                                    "kind": "integer",
+                                    "name": "Blend Operation",
+                                    "width": "u32",
+                                    "signed": false,
+                                    "format": {
+                                      "enum": [
+                                        "Default",
+                                        "Multiply",
+                                        "Overlay",
+                                        "Soft Light",
+                                        "Hard Light"
+                                      ]
+                                    }
+                                  }
+                                ]
+                              },
+                              "sig": "TTEC"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Default",
+                              "sig": "TTED"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Category Index",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "TTGE"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Male Morph Groups",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Morph Group",
+                    "members": [
+                      {
+                        "kind": "string",
+                        "name": "Name",
+                        "keep_case": false,
+                        "sig": "MPGN"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Count",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "MPPC"
+                      },
+                      {
+                        "kind": "rarray",
+                        "name": "Morph Presets",
+                        "element": {
+                          "kind": "rstruct",
+                          "name": "Morph Preset",
+                          "members": [
+                            {
+                              "kind": "integer",
+                              "name": "Index",
+                              "width": "u32",
+                              "signed": false,
+                              "sig": "MPPI"
+                            },
+                            {
+                              "kind": "lstring",
+                              "sig": "MPPN",
+                              "name": "Name"
+                            },
+                            {
+                              "kind": "string",
+                              "name": "Morph Type",
+                              "keep_case": false,
+                              "sig": "MPPM"
+                            },
+                            {
+                              "kind": "formid",
+                              "name": "Texture",
+                              "valid_refs": [
+                                "TXST"
+                              ],
+                              "sig": "MPPT"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Playable",
+                              "width": "u8",
+                              "signed": false,
+                              "sig": "MPPF",
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Count"
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Tint Layer Face Region Index",
+                        "width": "u16",
+                        "signed": false,
+                        "sig": "MPPK"
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Morph Value Indexs",
+                        "element": {
+                          "kind": "integer",
+                          "name": "Index",
+                          "width": "u32",
+                          "signed": false
+                        },
+                        "sig": "MPGS"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Male Face Morphs",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Face Morph",
+                    "members": [
+                      {
+                        "kind": "integer",
+                        "name": "Index",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "FMRI"
+                      },
+                      {
+                        "kind": "lstring",
+                        "sig": "FMRN",
+                        "name": "Name"
+                      }
+                    ]
+                  }
+                },
+                {
                   "kind": "string",
                   "name": "Male Wrinkle Map Path",
                   "keep_case": false,
@@ -60189,6 +60815,438 @@
                     "TXST"
                   ],
                   "sig": "DFTF"
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Female Tint Layers",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Group",
+                    "members": [
+                      {
+                        "kind": "lstring",
+                        "sig": "TTGP",
+                        "name": "Group Name"
+                      },
+                      {
+                        "kind": "rarray",
+                        "name": "Options",
+                        "element": {
+                          "kind": "rstruct",
+                          "name": "Option",
+                          "members": [
+                            {
+                              "kind": "struct",
+                              "name": "Index",
+                              "fields": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Slot",
+                                  "width": "u16",
+                                  "signed": false,
+                                  "format": {
+                                    "enum": [
+                                      "Forehead Mask",
+                                      "Eyes Mask",
+                                      "Nose Mask",
+                                      "Ears Mask",
+                                      "Cheeks Mask",
+                                      "Mouth Mask",
+                                      "Neck Mask",
+                                      "Lip Color",
+                                      "Cheek Color",
+                                      "Eyeliner",
+                                      "Eye Socket Upper",
+                                      "Eye Socket Lower",
+                                      "Skin Tone",
+                                      "Paint",
+                                      "Laugh Lines",
+                                      "Cheek Color Lower",
+                                      "Nose",
+                                      "Chin",
+                                      "Neck",
+                                      "Forehead",
+                                      "Dirt",
+                                      "Scars",
+                                      "Face Detail",
+                                      "Brows",
+                                      "Wrinkles",
+                                      "Beards"
+                                    ]
+                                  }
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Index",
+                                  "width": "u16",
+                                  "signed": false
+                                }
+                              ],
+                              "sig": "TETI"
+                            },
+                            {
+                              "kind": "lstring",
+                              "sig": "TTGP",
+                              "name": "Name"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Flags",
+                              "width": "u16",
+                              "signed": false,
+                              "sig": "TTEF",
+                              "format": {
+                                "flags": [
+                                  "On/Off only",
+                                  "Chargen Detail",
+                                  "Takes Skin Tone",
+                                  "Unknown 3"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "rstruct",
+                              "name": "Conditions",
+                              "members": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Condition Count",
+                                  "width": "u32",
+                                  "signed": false,
+                                  "sig": "CITC"
+                                },
+                                {
+                                  "kind": "rarray",
+                                  "name": "Conditions",
+                                  "element": {
+                                    "kind": "rstruct",
+                                    "name": "Condition",
+                                    "members": [
+                                      {
+                                        "kind": "struct",
+                                        "name": "Condition Data",
+                                        "fields": [
+                                          {
+                                            "kind": "integer",
+                                            "name": "Type",
+                                            "width": "u8",
+                                            "signed": false
+                                          },
+                                          {
+                                            "kind": "unused",
+                                            "bytes": 3
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Comparison Value",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "integer",
+                                            "name": "Function",
+                                            "width": "u16",
+                                            "signed": false
+                                          },
+                                          {
+                                            "kind": "unused",
+                                            "bytes": 2
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Parameter #1",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Parameter #2",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "integer",
+                                            "name": "Run On",
+                                            "width": "u32",
+                                            "signed": false,
+                                            "format": {
+                                              "enum": [
+                                                "Subject",
+                                                "Target",
+                                                "Reference",
+                                                "Combat Target",
+                                                "Linked Reference",
+                                                "Quest Alias",
+                                                "Package Data",
+                                                "Event Data",
+                                                "Unknown 8",
+                                                "Command Target",
+                                                "Event Camera Ref",
+                                                "My Killer",
+                                                "Active Players",
+                                                "Potential Players",
+                                                "Player Teammates",
+                                                "Target List",
+                                                "Instance Owner"
+                                              ]
+                                            }
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Reference",
+                                            "len": 4
+                                          },
+                                          {
+                                            "kind": "bytes",
+                                            "name": "Parameter #3",
+                                            "len": 4
+                                          }
+                                        ],
+                                        "sig": "CTDA"
+                                      },
+                                      {
+                                        "kind": "string",
+                                        "name": "Parameter #1",
+                                        "keep_case": false,
+                                        "sig": "CIS1"
+                                      },
+                                      {
+                                        "kind": "string",
+                                        "name": "Parameter #2",
+                                        "keep_case": false,
+                                        "sig": "CIS2"
+                                      }
+                                    ]
+                                  },
+                                  "stop_before": [
+                                    "TTET",
+                                    "TTEB",
+                                    "TTEC",
+                                    "TTED",
+                                    "TETI",
+                                    "TTGE",
+                                    "TTGP",
+                                    "MPGN",
+                                    "FMRI",
+                                    "WMAP",
+                                    "NAM8",
+                                    "RNAM",
+                                    "CVT1",
+                                    "SRAC",
+                                    "SADD",
+                                    "SAKD",
+                                    "PTOP",
+                                    "NTOP",
+                                    "MSID",
+                                    "MLSI",
+                                    "HNAM",
+                                    "HLTX",
+                                    "QSTI",
+                                    "BSMP",
+                                    "SNAM",
+                                    "TSLT"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "kind": "rarray",
+                              "name": "Textures",
+                              "element": {
+                                "kind": "string",
+                                "name": "Texture",
+                                "keep_case": false,
+                                "sig": "TTET"
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Blend Operation",
+                              "width": "u32",
+                              "signed": false,
+                              "sig": "TTEB",
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Multiply",
+                                  "Overlay",
+                                  "Soft Light",
+                                  "Hard Light"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "array",
+                              "name": "Template Colors",
+                              "element": {
+                                "kind": "struct",
+                                "name": "Template Color",
+                                "fields": [
+                                  {
+                                    "kind": "formid",
+                                    "name": "Color",
+                                    "valid_refs": [
+                                      "CLFM"
+                                    ]
+                                  },
+                                  {
+                                    "kind": "float",
+                                    "name": "Alpha"
+                                  },
+                                  {
+                                    "kind": "integer",
+                                    "name": "Template Index",
+                                    "width": "u16",
+                                    "signed": false
+                                  },
+                                  {
+                                    "kind": "integer",
+                                    "name": "Blend Operation",
+                                    "width": "u32",
+                                    "signed": false,
+                                    "format": {
+                                      "enum": [
+                                        "Default",
+                                        "Multiply",
+                                        "Overlay",
+                                        "Soft Light",
+                                        "Hard Light"
+                                      ]
+                                    }
+                                  }
+                                ]
+                              },
+                              "sig": "TTEC"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Default",
+                              "sig": "TTED"
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Category Index",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "TTGE"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Female Morph Groups",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Morph Group",
+                    "members": [
+                      {
+                        "kind": "string",
+                        "name": "Name",
+                        "keep_case": false,
+                        "sig": "MPGN"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Count",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "MPPC"
+                      },
+                      {
+                        "kind": "rarray",
+                        "name": "Morph Presets",
+                        "element": {
+                          "kind": "rstruct",
+                          "name": "Morph Preset",
+                          "members": [
+                            {
+                              "kind": "integer",
+                              "name": "Index",
+                              "width": "u32",
+                              "signed": false,
+                              "sig": "MPPI"
+                            },
+                            {
+                              "kind": "lstring",
+                              "sig": "MPPN",
+                              "name": "Name"
+                            },
+                            {
+                              "kind": "string",
+                              "name": "Morph Type",
+                              "keep_case": false,
+                              "sig": "MPPM"
+                            },
+                            {
+                              "kind": "formid",
+                              "name": "Texture",
+                              "valid_refs": [
+                                "TXST"
+                              ],
+                              "sig": "MPPT"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Playable",
+                              "width": "u8",
+                              "signed": false,
+                              "sig": "MPPF",
+                              "format": {
+                                "enum": [
+                                  "False",
+                                  "True"
+                                ]
+                              }
+                            }
+                          ]
+                        },
+                        "count": {
+                          "count_path": "Count"
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Tint Layer Face Region Index",
+                        "width": "u16",
+                        "signed": false,
+                        "sig": "MPPK"
+                      },
+                      {
+                        "kind": "array",
+                        "name": "Morph Value Indexs",
+                        "element": {
+                          "kind": "integer",
+                          "name": "Index",
+                          "width": "u32",
+                          "signed": false
+                        },
+                        "sig": "MPGS"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Female Face Morphs",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Face Morph",
+                    "members": [
+                      {
+                        "kind": "integer",
+                        "name": "Index",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "FMRI"
+                      },
+                      {
+                        "kind": "lstring",
+                        "sig": "FMRN",
+                        "name": "Name"
+                      }
+                    ]
+                  }
                 },
                 {
                   "kind": "string",
@@ -60809,6 +61867,9 @@
                   "REFR"
                 ],
                 "sig": "XLRM"
+              },
+              "count": {
+                "count_path": "XRMR\\Linked Rooms Count"
               }
             }
           ]
