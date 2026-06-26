@@ -289,155 +289,179 @@ fn main() -> anyhow::Result<()> {
         };
     }
 
-    if cli.command.is_none() {
-        let esm = cli
-            .esm
-            .ok_or_else(|| anyhow::anyhow!("ESM path required for REPL session"))?;
-        let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
-        return run_repl(&esm, &mut backend);
+    // -p  → one-shot print; use an already-running daemon if available, else cold local load.
+    // no -p → REPL mode; always daemon-backed (spawns one if not running).
+    let mut backend = if cli.print && !cli.local {
+        match RemoteBackend::connect_existing_with_override(cli.addr.as_deref(), cli.port) {
+            Ok(r) => Backend::Remote(r),
+            Err(_) => Backend::Local(LocalBackend::new()),
+        }
+    } else {
+        make_backend(cli.local, cli.addr.as_deref(), cli.port)?
+    };
+    let remote_mode = matches!(backend, Backend::Remote(_));
+
+    if let Some(cmd) = cli.command {
+        let esm_for_repl = match &cmd {
+            Commands::Info { file } => file.clone(),
+            Commands::Get { file, .. } => file.clone(),
+            Commands::List { file, .. } => file.clone(),
+            Commands::Diff { file_a, .. } => file_a.clone(),
+            Commands::Tree { file, .. } => file.clone(),
+            Commands::Coverage { file, .. } => file.clone(),
+            Commands::Refs { file, .. } => file.clone(),
+            Commands::Search { file, .. } => file.clone(),
+            Commands::Daemon { .. } => unreachable!(),
+        };
+        match cmd {
+            Commands::Info { file } => cmd_info(&mut backend, &file)?,
+            Commands::Get {
+                file,
+                formid,
+                edid,
+                json,
+                pretty,
+                raw,
+                strings,
+                strings_dir,
+                lang,
+                startup_ba2,
+                resolve,
+            } => cmd_get(
+                &mut backend,
+                &file,
+                formid,
+                edid,
+                json,
+                pretty,
+                raw,
+                strings,
+                strings_dir,
+                &lang,
+                startup_ba2,
+                resolve,
+                remote_mode,
+            )?,
+            Commands::List {
+                file,
+                r#type,
+                limit,
+                strings,
+                strings_dir,
+                lang,
+            } => cmd_list(
+                &mut backend,
+                &file,
+                &r#type,
+                limit,
+                strings,
+                strings_dir,
+                &lang,
+                remote_mode,
+            )?,
+            Commands::Diff {
+                file_a,
+                file_b,
+                record_type,
+                json,
+                pretty,
+            } => cmd_diff(
+                &mut backend,
+                &file_a,
+                &file_b,
+                record_type.as_deref(),
+                json,
+                pretty,
+            )?,
+            Commands::Tree {
+                file,
+                record_type,
+                offset,
+                limit,
+                pretty,
+            } => cmd_tree(
+                &mut backend,
+                &file,
+                record_type.as_deref(),
+                offset,
+                limit,
+                pretty,
+            )?,
+            Commands::Coverage {
+                file,
+                record_type,
+                sample,
+                json,
+                gate,
+            } => cmd_coverage(
+                &mut backend,
+                &file,
+                record_type.as_deref(),
+                sample,
+                json,
+                gate,
+            )?,
+            Commands::Refs {
+                file,
+                formid,
+                edid,
+                limit,
+                json,
+                pretty,
+                strings,
+                strings_dir,
+                lang,
+            } => cmd_refs(
+                &mut backend,
+                &file,
+                formid,
+                edid,
+                limit,
+                json,
+                pretty,
+                strings,
+                strings_dir,
+                &lang,
+                remote_mode,
+            )?,
+            Commands::Search {
+                file,
+                pattern,
+                types,
+                search_in,
+                limit,
+                json,
+                pretty,
+                strings,
+                strings_dir,
+                lang,
+            } => cmd_search(
+                &mut backend,
+                &file,
+                &pattern,
+                types,
+                search_in,
+                limit,
+                json,
+                pretty,
+                strings,
+                strings_dir,
+                &lang,
+                remote_mode,
+            )?,
+            Commands::Daemon { .. } => unreachable!(),
+        }
+        if !cli.print {
+            return run_repl(&esm_for_repl, &mut backend);
+        }
+        return Ok(());
     }
 
-    let use_daemon = cli.print && !cli.local;
-    let mut backend = make_backend(!use_daemon, cli.addr.as_deref(), cli.port)?;
-
-    match cli.command.unwrap() {
-        Commands::Info { file } => cmd_info(&mut backend, &file),
-        Commands::Get {
-            file,
-            formid,
-            edid,
-            json,
-            pretty,
-            raw,
-            strings,
-            strings_dir,
-            lang,
-            startup_ba2,
-            resolve,
-        } => cmd_get(
-            &mut backend,
-            &file,
-            formid,
-            edid,
-            json,
-            pretty,
-            raw,
-            strings,
-            strings_dir,
-            &lang,
-            startup_ba2,
-            resolve,
-            use_daemon,
-        ),
-        Commands::List {
-            file,
-            r#type,
-            limit,
-            strings,
-            strings_dir,
-            lang,
-        } => cmd_list(
-            &mut backend,
-            &file,
-            &r#type,
-            limit,
-            strings,
-            strings_dir,
-            &lang,
-            use_daemon,
-        ),
-        Commands::Diff {
-            file_a,
-            file_b,
-            record_type,
-            json,
-            pretty,
-        } => cmd_diff(
-            &mut backend,
-            &file_a,
-            &file_b,
-            record_type.as_deref(),
-            json,
-            pretty,
-        ),
-        Commands::Tree {
-            file,
-            record_type,
-            offset,
-            limit,
-            pretty,
-        } => cmd_tree(
-            &mut backend,
-            &file,
-            record_type.as_deref(),
-            offset,
-            limit,
-            pretty,
-        ),
-        Commands::Coverage {
-            file,
-            record_type,
-            sample,
-            json,
-            gate,
-        } => cmd_coverage(
-            &mut backend,
-            &file,
-            record_type.as_deref(),
-            sample,
-            json,
-            gate,
-        ),
-        Commands::Refs {
-            file,
-            formid,
-            edid,
-            limit,
-            json,
-            pretty,
-            strings,
-            strings_dir,
-            lang,
-        } => cmd_refs(
-            &mut backend,
-            &file,
-            formid,
-            edid,
-            limit,
-            json,
-            pretty,
-            strings,
-            strings_dir,
-            &lang,
-            use_daemon,
-        ),
-        Commands::Search {
-            file,
-            pattern,
-            types,
-            search_in,
-            limit,
-            json,
-            pretty,
-            strings,
-            strings_dir,
-            lang,
-        } => cmd_search(
-            &mut backend,
-            &file,
-            &pattern,
-            types,
-            search_in,
-            limit,
-            json,
-            pretty,
-            strings,
-            strings_dir,
-            &lang,
-            use_daemon,
-        ),
-        Commands::Daemon { .. } => unreachable!(),
-    }
+    // No subcommand: pure REPL
+    let esm = cli
+        .esm
+        .ok_or_else(|| anyhow::anyhow!("ESM path required for REPL session"))?;
+    run_repl(&esm, &mut backend)
 }
 
 fn run_repl(esm: &Path, backend: &mut Backend) -> anyhow::Result<()> {
