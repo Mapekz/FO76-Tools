@@ -202,28 +202,223 @@ python3 tools/extractor/extract.py
 python3 tools/extractor/audit.py --gate
 ```
 
+### Supported record types
+
+**Decode** — `full`: every subrecord and field consumed with no fallbacks; `partial`: some subrecords or fields hit a raw-bytes fallback or are left unmapped (schema gaps); `none`: record type has no schema entry — all subrecords are unmapped.  
+**Tests** — `robust`: ≥ 3 handpicked records tested end-to-end; `basic`: 1–2 records or covered by the exhaustive env-gated sweep; `none`: no dedicated test.
+
+Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. Run the exhaustive integration test locally with `RUST_TEST_ESM=<path> cargo test -- --ignored`.
+
+| Sig | Name | Decode | Tests |
+|-----|------|:------:|:-----:|
+| `AACT` | Action | full | none |
+| `AAMD` | Aim Assist Model Data | full | none |
+| `AAPD` | Aim Assist Pose Data | partial | none |
+| `ACHR` | Placed NPC | partial | none |
+| `ACTI` | Activator | partial | none |
+| `ADDN` | Addon Node | full | none |
+| `AECH` | Audio Effect Chain | full | none |
+| `ALCH` | Ingestible | full | basic |
+| `AMDL` | Aim Model | full | basic |
+| `AMMO` | Ammunition | full | basic |
+| `ANIO` | Animated Object | full | none |
+| `AORU` | Attraction Rule | full | none |
+| `ARMA` | Armor Addon | full | none |
+| `ARMO` | Armor | full | basic |
+| `ARTO` | Art Object | full | none |
+| `ASPC` | Acoustic Space | full | none |
+| `ASTM` | Unknown - ASTM | full | none |
+| `ASTP` | Association Type | full | none |
+| `ATXO` | ATX Default Object | full | none |
+| `AUVF` | AUVF - Unknown | full | none |
+| `AVIF` | Actor Value Information | full | basic |
+| `AVTR` | Avatar | full | none |
+| `BNDS` | Bendable Spline | full | none |
+| `BOOK` | Book | partial | none |
+| `BPTD` | Body Part Data | full | basic |
+| `CAMS` | Camera Shot | full | none |
+| `CELL` | Cell | none | none |
+| `CHAL` | Challenge | full | basic |
+| `CLAS` | Class | full | none |
+| `CLFM` | Color | full | none |
+| `CLMT` | Climate | full | none |
+| `CMPO` | Component | full | basic |
+| `CMPT` | Camp Title | full | basic |
+| `CNCY` | Currency | full | none |
+| `CNDF` | Condition Form | full | none |
+| `COBJ` | Constructible Object | full | basic |
+| `COEN` | Consumable Entitlement | full | basic |
+| `COLL` | Collision Layer | partial | none |
+| `CONT` | Container | partial | none |
+| `CPRD` | Challenge Pass Reward Data | full | none |
+| `CPTH` | Camera Path | full | none |
+| `CSEN` | Crate Service Entitlement | full | none |
+| `CSTY` | Combat Style | full | none |
+| `CURV` | Curve Table | full | basic |
+| `DCGF` | Daily Content Group | full | none |
+| `DEBR` | Debris | full | none |
+| `DFOB` | Default Object | full | basic |
+| `DIAL` | Dialog Topic | full | none |
+| `DIST` | District | full | none |
+| `DLBR` | Dialog Branch | none | none |
+| `DLVW` | Dialog View | full | none |
+| `DMGT` | Damage Type Resist | full | basic |
+| `DOBJ` | Default Object Manager | full | none |
+| `DOOR` | Door | partial | none |
+| `ECAT` | Emote Category | full | none |
+| `EFSH` | Effect Shader | full | none |
+| `EMOT` | Emote | full | none |
+| `ENCH` | Enchantment | partial | none |
+| `ENTM` | Entitlement | full | basic |
+| `EQUP` | Equip Type | full | none |
+| `EXPL` | Explosion | full | basic |
+| `FACT` | Faction | full | basic |
+| `FISH` | Fish | full | basic |
+| `FLOR` | Flora | partial | none |
+| `FLST` | FormID List | full | basic |
+| `FSTP` | Footstep | full | none |
+| `FSTS` | Footstep Set | full | none |
+| `FURN` | Furniture | partial | none |
+| `GCVR` | Ground Cover | full | none |
+| `GDRY` | God Rays | full | none |
+| `GLOB` | Global | full | basic |
+| `GMRW` | Gameplay Reward | partial | none |
+| `GMST` | Game Setting | full | basic |
+| `GRAS` | Grass | full | none |
+| `HAZD` | Hazard | full | basic |
+| `HDPT` | Head Part | full | none |
+| `IDLE` | Idle Animation | full | none |
+| `IDLM` | Idle Marker | full | none |
+| `IMAD` | Image Space Adapter | full | none |
+| `IMGS` | Image Space | full | none |
+| `INFO` | Dialog response | partial | none |
+| `INGR` | Ingredient | full | none |
+| `INNR` | Instance Naming Rules | full | basic |
+| `IPCT` | Impact | full | none |
+| `IPDS` | Impact Data Set | full | none |
+| `KEYM` | Key | partial | none |
+| `KSSM` | Sound Keyword Mapping | full | none |
+| `KYWD` | Keyword | full | basic |
+| `LAYR` | Layer | full | none |
+| `LCRT` | Location Reference Type | full | none |
+| `LCTN` | Location | full | none |
+| `LENS` | Lens Flare | full | none |
+| `LGDI` | Legendary Item | full | basic |
+| `LGTM` | Lighting Template | partial | none |
+| `LIGH` | Light | partial | none |
+| `LOUT` | Loadout | full | none |
+| `LSCR` | Load Screen | full | none |
+| `LTEX` | Landscape Texture | full | none |
+| `LVLI` | Leveled Item | partial | none |
+| `LVLN` | Leveled NPC | partial | none |
+| `LVLP` | Leveled Pack In | partial | none |
+| `LVPC` | Leveled Perk Card | partial | none |
+| `MATO` | Material Object | full | none |
+| `MATT` | Material Type | full | none |
+| `MDSP` | Model Swap | full | basic |
+| `MESG` | Message | full | none |
+| `MGEF` | Magic Effect | partial | basic |
+| `MISC` | Misc. Item | partial | none |
+| `MOVT` | Movement Type | full | none |
+| `MSTT` | Moveable Static | partial | none |
+| `MSWP` | Material Swap | full | basic |
+| `MUSC` | Music Type | full | none |
+| `MUST` | Music Track | full | none |
+| `NAVI` | Navmesh Info Map | full | none |
+| `NAVM` | Navigation Mesh | none | none |
+| `NOCM` | Navmesh Obstacle Manager | full | none |
+| `NOTE` | Note | partial | none |
+| `NPC_` | Non-Player Character | partial | none |
+| `OMOD` | Object Modification | full | basic |
+| `OTFT` | Outfit | full | basic |
+| `OVIS` | Object Visibility Manager | full | none |
+| `PACH` | Power Armor Chassis | full | none |
+| `PACK` | Package | full | none |
+| `PCRD` | Perk Card | full | basic |
+| `PEPF` | Event Playlist | full | basic |
+| `PERK` | Perk | partial | none |
+| `PGRE` | Placed Grenade | none | none |
+| `PHZD` | Placed Hazard | none | none |
+| `PKIN` | Pack-In | full | none |
+| `PLYR` | Player Reference | none | none |
+| `PLYT` | Player Title | full | basic |
+| `PMFT` | Photo Mode Feature | full | none |
+| `PMIS` | Placed Missile | none | none |
+| `PPAK` | Perk Card Pack | full | none |
+| `PROJ` | Projectile | full | basic |
+| `QMDL` | Quest Module | partial | none |
+| `QUST` | Quest | partial | none |
+| `RACE` | Race | partial | none |
+| `REFR` | Placed Object | partial | none |
+| `REGN` | Region | full | none |
+| `RELA` | Relationship | full | none |
+| `RESO` | Resource | partial | none |
+| `REVB` | Reverb Parameters | full | none |
+| `RFCT` | Visual Effect | full | none |
+| `RFGP` | Reference Group | full | none |
+| `SCCO` | Scene Collection | partial | none |
+| `SCEN` | Scene | full | none |
+| `SCOL` | Static Collection | full | none |
+| `SCSN` | Sound Category Snapshot | full | none |
+| `SECH` | Sound Echo Marker | full | none |
+| `SMBN` | Story Manager Branch Node | full | none |
+| `SMEN` | Story Manager Event Node | full | none |
+| `SMQN` | Story Manager Quest Node | full | none |
+| `SNCT` | Sound Category | full | none |
+| `SNDR` | Sound Descriptor | full | none |
+| `SOPM` | Sound Output Model | full | none |
+| `SOUN` | Sound Marker | full | none |
+| `SPEL` | Spell | full | basic |
+| `SPGD` | Shader Particle Geometry | full | none |
+| `STAG` | Animation Sound Tag Set | full | none |
+| `STAT` | Static | partial | none |
+| `STHD` | Spell Threshold Data | full | none |
+| `STMP` | Snap Template | full | none |
+| `STND` | Snap Template Node | full | none |
+| `TACT` | Talking Activator | partial | none |
+| `TEPF` | Infestation Event Playlist | full | basic |
+| `TERM` | Terminal | partial | none |
+| `TRAP` | Trap | full | basic |
+| `TREE` | Tree | full | none |
+| `TRNS` | Transform | full | none |
+| `TXST` | Texture Set | full | none |
+| `UTIL` | Utility | full | none |
+| `VOLI` | Volumetric Lighting | full | none |
+| `VTYP` | Voice Type | full | none |
+| `WATR` | Water | full | none |
+| `WAVE` | Wave Encounter | full | basic |
+| `WEAP` | Weapon | partial | none |
+| `WRLD` | Worldspace | none | none |
+| `WSPR` | Workshop Permissions | full | none |
+| `WTHR` | Weather | full | basic |
+| `ZOOM` | Zoom | full | none |
+
 ## Tests
 
-~40 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
+~50 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
 
 ```sh
 cargo test
 
-# Integration test (needs real ESM files via env vars)
-RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored
+# Exhaustive decode sweep (needs real ESM — 38 types, ~93k records)
+RUST_TEST_ESM=SeventySix.esm cargo test -- --ignored decode_all_clean_types_fully
+
+# Diff integration test (needs two ESM versions)
+RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored diff_two_esm_versions_glob
 ```
 
 | File | What it covers |
 |---|---|
 | `tests/wildcard.rs` | Wildcard matching (substring, prefix, suffix, multi-star) |
 | `tests/curves.rs` | Curve evaluation: clamping, interpolation, edge cases |
-| `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs game data) |
+| `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs two ESM versions) |
 | `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
-| `tests/decode_records.rs` | Schema-driven decode of MGEF and OMOD records |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF using verbatim record bytes |
+| `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 38 fully-clean types (ignored, needs game data) |
 | `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
 | `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width (private function) |
 
-Tests never need game data — they build synthetic byte buffers in-memory.
+`tests/decode_records.rs` tests use verbatim subrecord bytes from `esm get --raw` and run entirely in CI without game data. See the **Supported record types** table in [Schema](#schema) for per-type coverage status.
 
 ## Index cache
 
