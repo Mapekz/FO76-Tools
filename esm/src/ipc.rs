@@ -38,8 +38,11 @@ impl Response {
 }
 
 /// Record selector: FormID or EditorID.
+///
+/// Adjacently tagged so primitive-newtype variants (FormId wraps u32, Edid wraps String)
+/// survive JSON round-trips. Internally-tagged enums cannot serialize non-map payloads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum RecordSel {
     FormId(FormId),
     Edid(String),

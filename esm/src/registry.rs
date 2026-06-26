@@ -9,21 +9,28 @@ use std::sync::{Arc, Mutex};
 /// Lazily opened ESM databases keyed by canonical path.
 pub struct Registry {
     inner: Mutex<HashMap<PathBuf, Arc<Mutex<Database>>>>,
-    /// When true, eagerly build the xref index on open.
+    /// When true, eagerly build the edid + search indexes on open (daemon behaviour).
+    auto_warm: bool,
+    /// When true, also eagerly build the xref index (slow, opt-in).
     pub warm_xref: bool,
 }
 
 impl Registry {
+    /// New registry without auto-warm — used by `LocalBackend` for short-lived processes.
+    /// Lazy indexes are still built on demand when an op needs them.
     pub fn new() -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
+            auto_warm: false,
             warm_xref: false,
         }
     }
 
+    /// New registry for the daemon: auto-warms edid + search on open, and optionally xref.
     pub fn with_warm_xref(warm_xref: bool) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
+            auto_warm: true,
             warm_xref,
         }
     }
@@ -74,6 +81,9 @@ impl Registry {
     }
 
     fn warm_indexes(&self, db_arc: &Arc<Mutex<Database>>) -> anyhow::Result<()> {
+        if !self.auto_warm && !self.warm_xref {
+            return Ok(());
+        }
         let mut db = db_arc.lock().unwrap();
         let crate::Database {
             esm,

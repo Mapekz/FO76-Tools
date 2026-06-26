@@ -162,3 +162,31 @@ fn local_backend_parity_with_dispatch() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+/// Regression: `RecordSel` must survive a JSON round-trip.
+///
+/// Before the fix, `#[serde(tag = "kind")]` (internally-tagged) on a newtype enum
+/// whose payload is a primitive (u32 / String) caused serde_json to error at
+/// runtime with "cannot serialize tagged newtype variant … containing an integer".
+/// The fix switches to adjacently-tagged (`tag = "kind", content = "value"`).
+#[test]
+fn record_sel_json_round_trip() {
+    let formid_sel = RecordSel::FormId(esm::FormId(0x0010_ABCD));
+    let edid_sel = RecordSel::Edid("AssaultRifle".to_string());
+
+    for sel in [formid_sel, edid_sel] {
+        let op = Op::Record {
+            sel: sel.clone(),
+            depth: ResolveDepth::None,
+        };
+        let req = Request {
+            esm: PathBuf::from("SeventySix.esm"),
+            op,
+        };
+        let json = serde_json::to_string(&req).expect("serialize");
+        let back: Request = serde_json::from_str(&json).expect("deserialize");
+        // Re-serialize the round-tripped value and compare JSON strings.
+        let json2 = serde_json::to_string(&back).expect("re-serialize");
+        assert_eq!(json, json2, "round-trip mismatch for {:?}", sel);
+    }
+}

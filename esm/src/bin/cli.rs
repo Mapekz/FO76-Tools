@@ -632,7 +632,14 @@ fn cmd_get(
     resolve: String,
     remote_mode: bool,
 ) -> anyhow::Result<()> {
-    if !remote_mode && (strings.is_some() || strings_dir.is_some() || startup_ba2.is_some()) {
+    let has_overrides = strings.is_some() || strings_dir.is_some() || startup_ba2.is_some();
+    if has_overrides && remote_mode {
+        anyhow::bail!(
+            "--strings/--strings-dir/--startup-ba2 are not supported in daemon mode; \
+             use --local to open the ESM directly"
+        );
+    }
+    if has_overrides {
         let mut db = Database::open(file)?;
         apply_strings_override(&mut db, file, strings, strings_dir, lang);
         if let Some(ba2_path) = startup_ba2 {
@@ -704,7 +711,13 @@ fn cmd_list(
     lang: &str,
     remote_mode: bool,
 ) -> anyhow::Result<()> {
-    if !remote_mode && (strings.is_some() || strings_dir.is_some()) {
+    if strings.is_some() || strings_dir.is_some() {
+        if remote_mode {
+            anyhow::bail!(
+                "--strings/--strings-dir are not supported in daemon mode; \
+                 use --local to open the ESM directly"
+            );
+        }
         let mut db = Database::open(file)?;
         apply_strings_override(&mut db, file, strings, strings_dir, lang);
         let entries = db.list_by_type(sig, limit)?;
@@ -751,7 +764,13 @@ fn cmd_refs(
     lang: &str,
     remote_mode: bool,
 ) -> anyhow::Result<()> {
-    if !remote_mode && (strings.is_some() || strings_dir.is_some()) {
+    if strings.is_some() || strings_dir.is_some() {
+        if remote_mode {
+            anyhow::bail!(
+                "--strings/--strings-dir are not supported in daemon mode; \
+                 use --local to open the ESM directly"
+            );
+        }
         let mut db = Database::open(file)?;
         apply_strings_override(&mut db, file, strings, strings_dir, lang);
         let target = resolve_form_id_local(&mut db, formid, edid)?;
@@ -816,7 +835,13 @@ fn cmd_search(
         SearchInArg::Both => SearchField::Both,
     };
 
-    if !remote_mode && (strings.is_some() || strings_dir.is_some()) {
+    if strings.is_some() || strings_dir.is_some() {
+        if remote_mode {
+            anyhow::bail!(
+                "--strings/--strings-dir are not supported in daemon mode; \
+                 use --local to open the ESM directly"
+            );
+        }
         let mut db = Database::open(file)?;
         apply_strings_override(&mut db, file, strings, strings_dir, lang);
         let results = db.search(pattern, &types, field, limit)?;
