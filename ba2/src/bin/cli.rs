@@ -432,9 +432,7 @@ mod tests {
 
     #[test]
     fn collect_list_skips_comments_and_blank_lines() {
-        let list = make_list_file(
-            "# this is a comment\n\n  \n/src/file.txt\n",
-        );
+        let list = make_list_file("# this is a comment\n\n  \n/src/file.txt\n");
         // The non-TAB line uses derive_archive_path(no base) → filename only.
         let pairs = collect_from_list(list.path(), None).unwrap();
         assert_eq!(pairs.len(), 1);
@@ -491,9 +489,17 @@ mod tests {
         pairs.sort_by(|a, b| a.0.cmp(&b.0));
 
         // All paths lowercased, backslash-separated, relative to dir.
-        assert!(pairs.iter().any(|(ap, _)| ap == "data\\strings\\en.strings"),
-            "expected data\\strings\\en.strings in {:?}", pairs);
-        assert!(pairs.iter().any(|(ap, _)| ap == "readme.txt"),
-            "expected readme.txt in {:?}", pairs);
+        assert!(
+            pairs
+                .iter()
+                .any(|(ap, _)| ap == "data\\strings\\en.strings"),
+            "expected data\\strings\\en.strings in {:?}",
+            pairs
+        );
+        assert!(
+            pairs.iter().any(|(ap, _)| ap == "readme.txt"),
+            "expected readme.txt in {:?}",
+            pairs
+        );
     }
 }

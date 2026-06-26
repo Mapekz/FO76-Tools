@@ -58,7 +58,10 @@ fn read_lz4_compressed_entry() {
 
     let out = NamedTempFile::new().unwrap();
     let files = vec![("data/payload.bin".to_string(), src_file)];
-    let opts = WriteOptions { codec: Codec::Lz4, ..Default::default() };
+    let opts = WriteOptions {
+        codec: Codec::Lz4,
+        ..Default::default()
+    };
     write_ba2(out.path(), &files, &opts).unwrap();
 
     let archive = Ba2Archive::open(out.path()).unwrap();
@@ -79,7 +82,10 @@ fn read_zlib_compressed_entry() {
 
     let out = NamedTempFile::new().unwrap();
     let files = vec![("data/payload.bin".to_string(), src_file)];
-    let opts = WriteOptions { codec: Codec::Zlib, ..Default::default() };
+    let opts = WriteOptions {
+        codec: Codec::Zlib,
+        ..Default::default()
+    };
     write_ba2(out.path(), &files, &opts).unwrap();
 
     let archive = Ba2Archive::open(out.path()).unwrap();
@@ -93,7 +99,12 @@ fn read_zlib_compressed_entry() {
 // ── Error branches on open ────────────────────────────────────────────────
 
 /// Build the 24-byte raw header bytes for an otherwise valid archive header.
-fn make_raw_header(version: u32, archive_type: &[u8; 4], file_count: u32, nt_offset: u64) -> Vec<u8> {
+fn make_raw_header(
+    version: u32,
+    archive_type: &[u8; 4],
+    file_count: u32,
+    nt_offset: u64,
+) -> Vec<u8> {
     let mut v = Vec::with_capacity(24);
     v.extend_from_slice(b"BTDX");
     v.extend_from_slice(&version.to_le_bytes());
@@ -119,7 +130,11 @@ fn rejects_dx10() {
     assert!(result.is_err(), "DX10 archive must be rejected");
     // Verify the error message mentions DX10 or texture so it's diagnosable.
     let msg = result.err().unwrap().to_string();
-    assert!(msg.contains("DX10") || msg.contains("texture"), "error should mention DX10: {}", msg);
+    assert!(
+        msg.contains("DX10") || msg.contains("texture"),
+        "error should mention DX10: {}",
+        msg
+    );
 }
 
 #[test]
@@ -134,7 +149,10 @@ fn rejects_bad_version() {
 fn rejects_non_gnrl_type() {
     let header = make_raw_header(1, b"XXXX", 0, 24);
     let tmp = write_tmp(&header);
-    assert!(Ba2Archive::open(tmp.path()).is_err(), "unknown archive type must be rejected");
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "unknown archive type must be rejected"
+    );
 }
 
 #[test]
@@ -143,7 +161,10 @@ fn rejects_records_past_eof() {
     // records_end = 24 + 100*36 = 3624 > 24 → bail.
     let header = make_raw_header(1, b"GNRL", 100, 99_999);
     let tmp = write_tmp(&header);
-    assert!(Ba2Archive::open(tmp.path()).is_err(), "records extending past EOF must be rejected");
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "records extending past EOF must be rejected"
+    );
 }
 
 #[test]
@@ -152,7 +173,10 @@ fn rejects_nametable_offset_out_of_range() {
     let mut data = make_raw_header(1, b"GNRL", 0, 999_999);
     data.extend_from_slice(&[0u8; 10]); // some extra bytes, but not 999999 of them
     let tmp = write_tmp(&data);
-    assert!(Ba2Archive::open(tmp.path()).is_err(), "out-of-range name table offset must be rejected");
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "out-of-range name table offset must be rejected"
+    );
 }
 
 #[test]
@@ -169,13 +193,24 @@ fn rejects_truncated_name_length_prefix() {
     use ba2::format::{write_record, Record, RECORD_FLAGS};
     use ba2::hash::hash_path;
     let (name_hash, dir_hash, ext) = hash_path("a.txt");
-    let r = Record { name_hash, ext, dir_hash, flags: RECORD_FLAGS, data_offset: data_start, packed_size: 0, unpacked_size: 1 };
+    let r = Record {
+        name_hash,
+        ext,
+        dir_hash,
+        flags: RECORD_FLAGS,
+        data_offset: data_start,
+        packed_size: 0,
+        unpacked_size: 1,
+    };
     buf.extend_from_slice(&write_record(&r));
     buf.extend_from_slice(entry_data); // 1 byte of data
     buf.push(0xAB); // only 1 byte for the name-table length prefix (needs 2)
 
     let tmp = write_tmp(&buf);
-    assert!(Ba2Archive::open(tmp.path()).is_err(), "truncated name-length prefix must be rejected");
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "truncated name-length prefix must be rejected"
+    );
 }
 
 #[test]
@@ -190,14 +225,25 @@ fn rejects_truncated_name_bytes() {
     use ba2::format::{write_record, Record, RECORD_FLAGS};
     use ba2::hash::hash_path;
     let (name_hash, dir_hash, ext) = hash_path("a.txt");
-    let r = Record { name_hash, ext, dir_hash, flags: RECORD_FLAGS, data_offset: data_start, packed_size: 0, unpacked_size: 1 };
+    let r = Record {
+        name_hash,
+        ext,
+        dir_hash,
+        flags: RECORD_FLAGS,
+        data_offset: data_start,
+        packed_size: 0,
+        unpacked_size: 1,
+    };
     buf.extend_from_slice(&write_record(&r));
     buf.extend_from_slice(entry_data);
     buf.extend_from_slice(&100u16.to_le_bytes()); // claims 100-char name
-    // …but writes 0 name bytes
+                                                  // …but writes 0 name bytes
 
     let tmp = write_tmp(&buf);
-    assert!(Ba2Archive::open(tmp.path()).is_err(), "truncated name string must be rejected");
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "truncated name string must be rejected"
+    );
 }
 
 // ── read() error branch ───────────────────────────────────────────────────
@@ -217,7 +263,9 @@ fn read_data_out_of_range() {
     use ba2::hash::hash_path;
     let (name_hash, dir_hash, ext) = hash_path("data/x.bin");
     let r = Record {
-        name_hash, ext, dir_hash,
+        name_hash,
+        ext,
+        dir_hash,
         flags: RECORD_FLAGS,
         data_offset: data_start,
         packed_size: 0,

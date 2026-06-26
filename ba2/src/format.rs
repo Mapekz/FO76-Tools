@@ -122,4 +122,3 @@ pub fn write_record(r: &Record) -> [u8; RECORD_SIZE] {
     buf[32..36].copy_from_slice(&PADDING.to_le_bytes());
     buf
 }
-

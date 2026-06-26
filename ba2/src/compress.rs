@@ -112,4 +112,3 @@ pub fn compress_entry(data: &[u8], codec: Codec, min_shrink_ratio: f32) -> Resul
         Ok((data.to_vec(), 0))
     }
 }
-

@@ -103,7 +103,10 @@ fn hash_path_trailing_dot() {
 #[test]
 fn hash_path_multiple_dots() {
     let (_, _, ext) = hash_path("dir/file.tar.gz");
-    assert_eq!(&ext, b"gz\0\0", "extension is only the segment after the last dot");
+    assert_eq!(
+        &ext, b"gz\0\0",
+        "extension is only the segment after the last dot"
+    );
 }
 
 /// Empty string must not panic.

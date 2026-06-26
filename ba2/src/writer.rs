@@ -198,4 +198,3 @@ pub fn write_ba2(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions
     out.flush().context("failed to flush output archive")?;
     Ok(())
 }
-

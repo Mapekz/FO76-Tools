@@ -21,8 +21,14 @@ fn extract_all_writes_files() {
     let count = extract_all(&archive, out.path(), &opts).unwrap();
 
     assert_eq!(count, 2);
-    assert_eq!(std::fs::read(out.path().join("dir/a.txt")).unwrap(), content_a);
-    assert_eq!(std::fs::read(out.path().join("dir/b.txt")).unwrap(), content_b);
+    assert_eq!(
+        std::fs::read(out.path().join("dir/a.txt")).unwrap(),
+        content_a
+    );
+    assert_eq!(
+        std::fs::read(out.path().join("dir/b.txt")).unwrap(),
+        content_b
+    );
 }
 
 #[test]
@@ -41,7 +47,10 @@ fn extract_all_with_glob_filter() {
     builder.add(glob);
     let gs = builder.build().unwrap();
 
-    let opts = ExtractOptions { codec: Codec::Auto, filter: Some(gs) };
+    let opts = ExtractOptions {
+        codec: Codec::Auto,
+        filter: Some(gs),
+    };
     let count = extract_all(&archive, out.path(), &opts).unwrap();
 
     assert_eq!(count, 1, "only the strings/* entry should be extracted");

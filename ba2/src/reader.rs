@@ -194,4 +194,3 @@ impl Ba2Archive {
         }
     }
 }
-

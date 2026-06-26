@@ -56,9 +56,18 @@ fn is_zlib_detects_correctly() {
 #[test]
 fn is_zlib_boundary_valid_headers() {
     // These are the three most common zlib CMF+FLG pairs, all valid.
-    assert!(is_zlib(&[0x78, 0x9C, 0x00]), "0x789C is a valid zlib header");
-    assert!(is_zlib(&[0x78, 0x01, 0x00]), "0x7801 is a valid zlib header");
-    assert!(is_zlib(&[0x78, 0xDA, 0x00]), "0x78DA is a valid zlib header");
+    assert!(
+        is_zlib(&[0x78, 0x9C, 0x00]),
+        "0x789C is a valid zlib header"
+    );
+    assert!(
+        is_zlib(&[0x78, 0x01, 0x00]),
+        "0x7801 is a valid zlib header"
+    );
+    assert!(
+        is_zlib(&[0x78, 0xDA, 0x00]),
+        "0x78DA is a valid zlib header"
+    );
 }
 
 /// Bytes that start with 0x78 but fail the % 31 check must NOT be detected.

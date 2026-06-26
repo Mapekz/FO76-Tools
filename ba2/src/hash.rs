@@ -70,4 +70,3 @@ pub fn hash_path(path: &str) -> (u32, u32, [u8; 4]) {
 
     (name_hash, dir_hash, ext)
 }
-

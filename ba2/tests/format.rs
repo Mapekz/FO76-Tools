@@ -27,12 +27,18 @@ fn header_round_trip() {
 fn bad_magic_rejected() {
     let mut bytes = write_header(1, 0, HEADER_SIZE as u64);
     bytes[0] = b'X';
-    assert!(read_header(&bytes).is_err(), "corrupted magic must be rejected");
+    assert!(
+        read_header(&bytes).is_err(),
+        "corrupted magic must be rejected"
+    );
 }
 
 #[test]
 fn too_small_rejected() {
-    assert!(read_header(&[0u8; 10]).is_err(), "slice shorter than HEADER_SIZE must be rejected");
+    assert!(
+        read_header(&[0u8; 10]).is_err(),
+        "slice shorter than HEADER_SIZE must be rejected"
+    );
 }
 
 /// Pin the exact byte position of every field in the 24-byte header.
@@ -46,7 +52,11 @@ fn write_header_byte_layout() {
     // [8..12] archive type
     assert_eq!(&bytes[8..12], b"GNRL", "archive_type at [8..12]");
     // [12..16] file count (LE u32)
-    assert_eq!(&bytes[12..16], &99u32.to_le_bytes(), "file_count at [12..16]");
+    assert_eq!(
+        &bytes[12..16],
+        &99u32.to_le_bytes(),
+        "file_count at [12..16]"
+    );
     // [16..24] name_table_offset (LE u64)
     assert_eq!(
         &bytes[16..24],
@@ -105,13 +115,25 @@ fn write_record_byte_layout() {
     let bytes = write_record(&r);
     assert_eq!(bytes.len(), RECORD_SIZE);
     // [0..4]   name_hash (LE u32)
-    assert_eq!(&bytes[0..4], &0x1234_5678u32.to_le_bytes(), "name_hash at [0..4]");
+    assert_eq!(
+        &bytes[0..4],
+        &0x1234_5678u32.to_le_bytes(),
+        "name_hash at [0..4]"
+    );
     // [4..8]   ext ([u8;4])
     assert_eq!(&bytes[4..8], b"bin\0", "ext at [4..8]");
     // [8..12]  dir_hash (LE u32)
-    assert_eq!(&bytes[8..12], &0xABCD_EF01u32.to_le_bytes(), "dir_hash at [8..12]");
+    assert_eq!(
+        &bytes[8..12],
+        &0xABCD_EF01u32.to_le_bytes(),
+        "dir_hash at [8..12]"
+    );
     // [12..16] flags (LE u32)
-    assert_eq!(&bytes[12..16], &RECORD_FLAGS.to_le_bytes(), "flags at [12..16]");
+    assert_eq!(
+        &bytes[12..16],
+        &RECORD_FLAGS.to_le_bytes(),
+        "flags at [12..16]"
+    );
     // [16..24] data_offset (LE u64)
     assert_eq!(
         &bytes[16..24],
@@ -119,11 +141,23 @@ fn write_record_byte_layout() {
         "data_offset at [16..24]"
     );
     // [24..28] packed_size (LE u32)
-    assert_eq!(&bytes[24..28], &256u32.to_le_bytes(), "packed_size at [24..28]");
+    assert_eq!(
+        &bytes[24..28],
+        &256u32.to_le_bytes(),
+        "packed_size at [24..28]"
+    );
     // [28..32] unpacked_size (LE u32)
-    assert_eq!(&bytes[28..32], &1024u32.to_le_bytes(), "unpacked_size at [28..32]");
+    assert_eq!(
+        &bytes[28..32],
+        &1024u32.to_le_bytes(),
+        "unpacked_size at [28..32]"
+    );
     // [32..36] padding sentinel
-    assert_eq!(&bytes[32..36], &PADDING.to_le_bytes(), "padding at [32..36]");
+    assert_eq!(
+        &bytes[32..36],
+        &PADDING.to_le_bytes(),
+        "padding at [32..36]"
+    );
 }
 
 /// Verify that `read_record(data, base)` reads from `base`, not from 0.
@@ -144,8 +178,17 @@ fn read_record_at_nonzero_base() {
     buf.extend_from_slice(&write_record(&r));
 
     let r2 = read_record(&buf, 8); // base offset = length of prefix
-    assert_eq!(r2.name_hash, r.name_hash, "name_hash must be read from base+0");
+    assert_eq!(
+        r2.name_hash, r.name_hash,
+        "name_hash must be read from base+0"
+    );
     assert_eq!(r2.dir_hash, r.dir_hash, "dir_hash must be read from base+8");
-    assert_eq!(r2.data_offset, r.data_offset, "data_offset must be read from base+16");
-    assert_eq!(r2.unpacked_size, r.unpacked_size, "unpacked_size must be read from base+28");
+    assert_eq!(
+        r2.data_offset, r.data_offset,
+        "data_offset must be read from base+16"
+    );
+    assert_eq!(
+        r2.unpacked_size, r.unpacked_size,
+        "unpacked_size must be read from base+28"
+    );
 }

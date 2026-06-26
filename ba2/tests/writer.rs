@@ -23,7 +23,10 @@ fn round_trip(codec: Codec) -> (Vec<u8>, Vec<u8>) {
         ("data/a.txt".to_string(), file_a),
         ("data/b.bin".to_string(), file_b),
     ];
-    let opts = WriteOptions { codec, min_shrink_ratio: 1.0 };
+    let opts = WriteOptions {
+        codec,
+        min_shrink_ratio: 1.0,
+    };
     write_ba2(out.path(), &files, &opts).unwrap();
 
     let archive = Ba2Archive::open(out.path()).unwrap();
@@ -106,15 +109,28 @@ fn mixed_compress_and_store() {
         ("test/c.bin".to_string(), file_c),
         ("test/i.bin".to_string(), file_i),
     ];
-    write_ba2(out.path(), &files, &WriteOptions { codec: Codec::Lz4, min_shrink_ratio: 1.0 })
-        .unwrap();
+    write_ba2(
+        out.path(),
+        &files,
+        &WriteOptions {
+            codec: Codec::Lz4,
+            min_shrink_ratio: 1.0,
+        },
+    )
+    .unwrap();
 
     let archive = Ba2Archive::open(out.path()).unwrap();
     let entry_c = &archive.list()[0];
     let entry_i = &archive.list()[1];
 
-    assert!(entry_c.is_compressed(), "compressible file must be LZ4-compressed");
-    assert!(!entry_i.is_compressed(), "incompressible 1-byte file must be stored");
+    assert!(
+        entry_c.is_compressed(),
+        "compressible file must be LZ4-compressed"
+    );
+    assert!(
+        !entry_i.is_compressed(),
+        "incompressible 1-byte file must be stored"
+    );
 
     let data_c = archive.read("test/c.bin", Codec::Auto).unwrap();
     let data_i = archive.read("test/i.bin", Codec::Auto).unwrap();
