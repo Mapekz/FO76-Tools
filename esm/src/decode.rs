@@ -533,19 +533,22 @@ fn decode_member(
                     .or(*default_variant),
                 UnionDecider::PresentSignature { present_signature } => {
                     // wbRUnion: select the variant whose anchor subrecord appears
-                    // earliest in the document (lowest doc_index).  This handles
-                    // repeated polymorphic elements such as QUST Aliases, where
-                    // multiple anchor sigs (ALST/ALLS/ALCS) co-exist in by_sig
-                    // across different elements; a global `contains_key` check
-                    // would pick the wrong variant for inner Fill-Type unions.
+                    // earliest in the document (lowest doc_index).  Each variant
+                    // may have multiple anchor sigs (nested-union branches).
                     present_signature
                         .iter()
                         .enumerate()
-                        .filter_map(|(i, anchor)| {
-                            by_sig
-                                .get(anchor.as_str())
-                                .and_then(|v| v.first())
-                                .map(|sr| (i, sr.doc_index))
+                        .filter_map(|(i, anchors)| {
+                            anchors
+                                .iter()
+                                .filter_map(|anchor| {
+                                    by_sig
+                                        .get(anchor.as_str())
+                                        .and_then(|v| v.first())
+                                        .map(|sr| sr.doc_index)
+                                })
+                                .min()
+                                .map(|doc_idx| (i, doc_idx))
                         })
                         .min_by_key(|&(_, doc_idx)| doc_idx)
                         .map(|(i, _)| i)
@@ -1391,6 +1394,52 @@ pub fn decode_vmad(data: &[u8]) -> Value {
 }
 
 fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format: u16) -> Value {
+    fn read_vmad_wstring(data: &[u8], pos: &mut usize) -> Option<String> {
+        if *pos + 2 > data.len() {
+            return None;
+        }
+        let len = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
+        *pos += 2;
+        if *pos + len > data.len() {
+            return None;
+        }
+        let s = String::from_utf8_lossy(&data[*pos..*pos + len]).into_owned();
+        *pos += len;
+        Some(s)
+    }
+
+    fn decode_vmad_struct(data: &[u8], pos: &mut usize, obj_format: u16) -> Value {
+        if *pos + 4 > data.len() {
+            return json!(null);
+        }
+        let count = u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]])
+            as usize;
+        *pos += 4;
+        let mut members = Vec::with_capacity(count.min(256));
+        for _ in 0..count {
+            let Some(name) = read_vmad_wstring(data, pos) else {
+                break;
+            };
+            if *pos >= data.len() {
+                break;
+            }
+            let member_type = data[*pos];
+            *pos += 1;
+            if *pos >= data.len() {
+                break;
+            }
+            let _member_status = data[*pos];
+            *pos += 1;
+            let before = *pos;
+            let value = decode_vmad_property(data, pos, member_type, obj_format);
+            if *pos == before {
+                break;
+            }
+            members.push(json!({"name": name, "type": member_type, "value": value}));
+        }
+        json!(members)
+    }
+
     fn read_scalar(data: &[u8], pos: &mut usize, base_type: u8, obj_format: u16) -> Value {
         match base_type {
             1 => {
@@ -1455,8 +1504,13 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
                 *pos += 1;
                 json!(v)
             }
+            6 => decode_vmad_struct(data, pos, obj_format),
             _ => json!({"_raw": true, "type": base_type}),
         }
+    }
+
+    if prop_type == 6 {
+        return decode_vmad_struct(data, pos, obj_format);
     }
 
     if (11..=15).contains(&prop_type) {
@@ -1476,6 +1530,47 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
             }
         }
         return json!(items);
+    }
+
+    if prop_type == 17 {
+        if *pos + 4 > data.len() {
+            return json!(null);
+        }
+        let count = u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]])
+            as usize;
+        *pos += 4;
+        let mut items = Vec::with_capacity(count.min(1024));
+        for _ in 0..count {
+            let before = *pos;
+            items.push(decode_vmad_struct(data, pos, obj_format));
+            if *pos == before {
+                break;
+            }
+        }
+        return json!(items);
+    }
+
+    if prop_type == 16 {
+        if *pos + 4 > data.len() {
+            return json!(null);
+        }
+        let count = u32::from_le_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]])
+            as usize;
+        *pos += 4;
+        let mut items = Vec::with_capacity(count.min(1024));
+        for _ in 0..count {
+            if *pos >= data.len() {
+                break;
+            }
+            let elem_type = data[*pos];
+            *pos += 1;
+            let before = *pos;
+            items.push(decode_vmad_property(data, pos, elem_type, obj_format));
+            if *pos == before {
+                break;
+            }
+        }
+        return json!({"_variable_array": true, "items": items});
     }
 
     read_scalar(data, pos, prop_type, obj_format)
@@ -1821,6 +1916,80 @@ mod tests {
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0].as_str(), Some("0x00000011"));
         assert_eq!(arr[1].as_str(), Some("0x00000022"));
+    }
+
+    /// Struct property type 6 = member-count + (wstring name + u8 type + value)*.
+    #[test]
+    fn vmad_struct_property_decodes_without_truncation() {
+        let mut data = vmad_header(2, 1);
+        data.extend(vmad_wstring("TestScript"));
+        data.push(0);
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend(vmad_wstring("Config"));
+        data.push(6); // type = struct
+        data.push(0);
+        data.extend_from_slice(&2u32.to_le_bytes()); // member count
+        data.extend(vmad_wstring("Count"));
+        data.push(3); // type = int
+        data.push(0); // status
+        data.extend_from_slice(&42i32.to_le_bytes());
+        data.extend(vmad_wstring("Label"));
+        data.push(2); // string
+        data.push(0); // status
+        data.extend(vmad_wstring("hello"));
+
+        let decoded = decode_vmad(&data);
+        assert!(
+            decoded.get("_raw").is_none(),
+            "must not truncate: {decoded}"
+        );
+        let members = decoded
+            .pointer("/scripts/0/properties/0/value")
+            .and_then(|v| v.as_array())
+            .expect("struct members");
+        assert_eq!(members.len(), 2);
+        assert_eq!(
+            members[0].pointer("/value").and_then(|v| v.as_i64()),
+            Some(42)
+        );
+        assert_eq!(
+            members[1].pointer("/value").and_then(|v| v.as_str()),
+            Some("hello")
+        );
+    }
+
+    /// Array-of-struct property type 17 = count + N struct payloads.
+    #[test]
+    fn vmad_struct_array_decodes_without_truncation() {
+        let mut data = vmad_header(2, 1);
+        data.extend(vmad_wstring("TestScript"));
+        data.push(0);
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend(vmad_wstring("Rows"));
+        data.push(17); // type = array of struct
+        data.push(0);
+        data.extend_from_slice(&2u32.to_le_bytes()); // count
+        for (name, val) in [("A", 1i32), ("B", 2i32)] {
+            let _ = name;
+            data.extend_from_slice(&1u32.to_le_bytes()); // one member per struct
+            data.extend(vmad_wstring("X"));
+            data.push(3);
+            data.push(0);
+            data.extend_from_slice(&val.to_le_bytes());
+        }
+
+        let decoded = decode_vmad(&data);
+        assert!(
+            decoded.get("_raw").is_none(),
+            "must not truncate: {decoded}"
+        );
+        let arr = decoded
+            .pointer("/scripts/0/properties/0/value")
+            .and_then(|v| v.as_array())
+            .expect("struct array");
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].pointer("/0/value").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(arr[1].pointer("/0/value").and_then(|v| v.as_i64()), Some(2));
     }
 
     struct StubResolver {

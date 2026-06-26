@@ -1803,6 +1803,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -2146,8 +2262,12 @@
             "name": "Record Union",
             "decider": {
               "present_signature": [
-                "CNDC",
-                "CITC"
+                [
+                  "CNDC"
+                ],
+                [
+                  "CITC"
+                ]
               ]
             },
             "variants": [
@@ -2830,8 +2950,12 @@
           "name": "Index",
           "decider": {
             "present_signature": [
-              "DATA",
-              "IKEK"
+              [
+                "DATA"
+              ],
+              [
+                "IKEK"
+              ]
             ]
           },
           "variants": [
@@ -3676,6 +3800,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -4810,6 +5050,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -6729,6 +7085,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -9310,6 +9782,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -14307,6 +14895,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -16514,6 +17218,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -20210,6 +21030,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -21442,6 +22378,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -21678,8 +22730,12 @@
             "name": "Record Union",
             "decider": {
               "present_signature": [
-                "CNDC",
-                "CITC"
+                [
+                  "CNDC"
+                ],
+                [
+                  "CITC"
+                ]
               ]
             },
             "variants": [
@@ -28962,6 +30018,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -30647,6 +31819,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -33408,6 +34696,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -39184,6 +40588,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -40959,6 +42479,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -43129,6 +44765,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -50219,6 +51971,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -50729,8 +52597,12 @@
           "name": "General",
           "decider": {
             "present_signature": [
-              "DATA",
-              "DNAM"
+              [
+                "DATA"
+              ],
+              [
+                "DNAM"
+              ]
             ]
           },
           "variants": [
@@ -52467,9 +54339,16 @@
             "name": "Alias",
             "decider": {
               "present_signature": [
-                "ALST",
-                "ALLS",
-                "ALCS"
+                [
+                  "ALST"
+                ],
+                [
+                  "ALLS"
+                ],
+                [
+                  "ALCS",
+                  "ALMI"
+                ]
               ]
             },
             "variants": [
@@ -52534,12 +54413,30 @@
                     "name": "Fill Type",
                     "decider": {
                       "present_signature": [
-                        "ALFR",
-                        "ALUA",
-                        "ALFA",
-                        "ALEQ",
-                        "ALCO",
-                        "ALNA"
+                        [
+                          "ALFR"
+                        ],
+                        [
+                          "ALUA"
+                        ],
+                        [
+                          "ALFA",
+                          "ALRT"
+                        ],
+                        [
+                          "ALEQ",
+                          "ALEA"
+                        ],
+                        [
+                          "ALCO"
+                        ],
+                        [
+                          "ALNA",
+                          "ALNT",
+                          "ALFE",
+                          "ALFD",
+                          "ALCC"
+                        ]
                       ]
                     },
                     "variants": [
@@ -52742,9 +54639,17 @@
                             "name": "Match Type",
                             "decider": {
                               "present_signature": [
-                                "ALNA",
-                                "ALFE",
-                                "ALCC"
+                                [
+                                  "ALNA",
+                                  "ALNT"
+                                ],
+                                [
+                                  "ALFE",
+                                  "ALFD"
+                                ],
+                                [
+                                  "ALCC"
+                                ]
                               ]
                             },
                             "variants": [
@@ -53402,10 +55307,21 @@
                     "name": "Fill Type",
                     "decider": {
                       "present_signature": [
-                        "ALFL",
-                        "ALFA",
-                        "ALEQ",
-                        "ALFE"
+                        [
+                          "ALFL"
+                        ],
+                        [
+                          "ALFA",
+                          "KNAM"
+                        ],
+                        [
+                          "ALEQ",
+                          "ALEA"
+                        ],
+                        [
+                          "ALFE",
+                          "ALFD"
+                        ]
                       ]
                     },
                     "variants": [
@@ -63206,8 +65122,12 @@
                 "name": "Record Union",
                 "decider": {
                   "present_signature": [
-                    "XCZR",
-                    "XCZC"
+                    [
+                      "XCZR"
+                    ],
+                    [
+                      "XCZC"
+                    ]
                   ]
                 },
                 "variants": [
@@ -66559,8 +68479,12 @@
                 "name": "Echo Marker",
                 "decider": {
                   "present_signature": [
-                    "ECHO",
-                    "ECHD"
+                    [
+                      "ECHO"
+                    ],
+                    [
+                      "ECHD"
+                    ]
                   ]
                 },
                 "variants": [
@@ -69558,6 +71482,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -70897,6 +72937,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -71018,8 +73174,12 @@
             "name": "Record Union",
             "decider": {
               "present_signature": [
-                "CNDC",
-                "CITC"
+                [
+                  "CNDC"
+                ],
+                [
+                  "CITC"
+                ]
               ]
             },
             "variants": [
@@ -72122,6 +74282,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -73681,6 +75957,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }
@@ -74024,8 +76416,12 @@
             "name": "Record Union",
             "decider": {
               "present_signature": [
-                "CNDC",
-                "CITC"
+                [
+                  "CNDC"
+                ],
+                [
+                  "CITC"
+                ]
               ]
             },
             "variants": [
@@ -76984,6 +79380,122 @@
                           "kind": "bytes",
                           "name": "Model Information",
                           "sig": "DMDT"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Color Remapping Index",
+                          "sig": "DMDC"
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Material Swap",
+                          "valid_refs": [
+                            "MSWP"
+                          ],
+                          "sig": "DMDS"
+                        },
+                        {
+                          "kind": "union",
+                          "name": "Enlighten Mode",
+                          "decider": {
+                            "form_version": {
+                              "min": 156,
+                              "max": null
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u8",
+                              "signed": false,
+                              "format": {
+                                "enum": [
+                                  "Default",
+                                  "Light Map",
+                                  "Light Map UV",
+                                  "Albedo",
+                                  "Indirect Specular (Cubemaps)",
+                                  "Unknown 5",
+                                  "Unknown 6"
+                                ]
+                              }
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Mode",
+                              "width": "u32",
+                              "signed": false,
+                              "format": {
+                                "enum": {
+                                  "2147483649": "Light Map?",
+                                  "2147483651": "Albedo?",
+                                  "2147483653": "Unknown 5?",
+                                  "2147483654": "Unknown 6?"
+                                }
+                              }
+                            }
+                          ],
+                          "sig": "ENLM"
+                        },
+                        {
+                          "kind": "byte_rgba",
+                          "sig": "ENLT",
+                          "name": "Enlighten Transparency Color"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Enlighten Simplified Shape Scale",
+                          "sig": "ENLS"
+                        },
+                        {
+                          "kind": "struct",
+                          "name": "Enlighten Auto UV",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max DIstance"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max Initial Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Max General Normal Deviation"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Expansion Factor"
+                            },
+                            {
+                              "kind": "float",
+                              "name": "Significant Area Ratio"
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Unknown",
+                              "width": "u8",
+                              "signed": false
+                            },
+                            {
+                              "kind": "bytes",
+                              "name": "Padding?",
+                              "len": 3
+                            }
+                          ],
+                          "sig": "AUUV"
                         }
                       ]
                     }

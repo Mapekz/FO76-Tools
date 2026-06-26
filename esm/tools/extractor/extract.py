@@ -693,6 +693,21 @@ def _annotate_stop_before_member(member: dict | None, outer_stops: list[str]) ->
             _annotate_stop_before_member(variant, outer_stops)
 
 
+def _rebuild_present_signature(variants: list[dict], extractor: Extractor) -> list[list[str]]:
+    from collections import Counter
+
+    anchors = [extractor._extract_anchor_sigs(v) for v in variants]
+    freq = Counter(sig for a in anchors for sig in a)
+    shared = {sig for sig, n in freq.items() if n > 1}
+    if shared:
+        anchors = [[sig for sig in a if sig not in shared] for a in anchors]
+    for i, a in enumerate(anchors):
+        if not a:
+            first = extractor._extract_first_anchor_sig(variants[i])
+            anchors[i] = [first] if first else []
+    return anchors
+
+
 class Extractor:
     def __init__(self, fo76: str, common: str):
         self.fo76 = fo76
@@ -848,7 +863,8 @@ class Extractor:
             "wbString(DSTA,'Sequence Name'),"
             "wbRArray('Models',wbRStruct('Model',["
             "wbString(DMDL,'Model FileName',0),"
-            "wbByteArray(DMDT,'Model Information',0)"
+            "wbByteArray(DMDT,'Model Information',0),"
+            "wbDMDC,wbDMDS,wbENLM,wbENLT,wbENLS,wbAUUV"
             "])),"
             "wbEmpty(DSTF,'End Marker')"
             "]))"
@@ -2424,34 +2440,94 @@ class Extractor:
         return {"kind": "unknown", "sig": sig, "name": sig}
 
     def _extract_anchor_sig(self, member: dict | None) -> str | None:
-        """Return the first 4-char subrecord signature found in a parsed member dict.
+        """Return the first 4-char subrecord signature found in a parsed member dict."""
+        sigs = self._extract_anchor_sigs(member)
+        return sigs[0] if sigs else None
 
-        Used by `_parse_runion` to determine the discriminant signature for each
-        wbRUnion variant (PresentSignature decider).
+    def _unwrap_member_list(self, member: dict | None) -> list[dict]:
+        if member is None:
+            return []
+        if member.get("kind") in ("rstruct", "struct"):
+            return member.get("members") or member.get("fields") or []
+        return [member]
+
+    def _direct_sibling_sigs(self, member: dict | None) -> list[str]:
+        """Top-level sig members of an rstruct/struct variant branch (stops at nested rstruct/union)."""
+        sigs: list[str] = []
+        for child in self._unwrap_member_list(member):
+            if child.get("kind") == "union":
+                break
+            if child.get("kind") in ("rstruct", "struct"):
+                break
+            sig = child.get("sig")
+            if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
+                sigs.append(sig)
+        return sigs
+
+    def _extract_anchor_sigs(self, member: dict | None) -> list[str]:
+        """Return discriminant subrecord signatures for a wbRUnion variant.
+
+        Normally the first sig-bearing member selects the variant.  When a variant
+        begins with a nested wbRUnion (QUST Alias Fill-Type → Match Type), collect
+        the first sig (plus any sibling sigs) from each nested branch so ALNA/ALFE/
+        ALFD/ALCC all resolve to the same parent variant.
         """
+        if member is None:
+            return []
+
+        sig = member.get("sig")
+        if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
+            return [sig]
+
+        members = self._unwrap_member_list(member)
+        if members and members[0].get("kind") == "union":
+            sigs: list[str] = []
+            for branch in members[0].get("variants", []):
+                for sig in self._direct_sibling_sigs(branch):
+                    if sig not in sigs:
+                        sigs.append(sig)
+            return sigs
+
+        sigs: list[str] = []
+        for child in members:
+            if child.get("kind") == "union":
+                break
+            if child.get("kind") in ("rstruct", "struct"):
+                break
+            sig = child.get("sig")
+            if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
+                sigs.append(sig)
+        if sigs:
+            return sigs
+
+        # Variant may lead with a nested union/struct (QUST General → DATA); fall back
+        # to the first sig anywhere in the variant subtree.
+        first = self._extract_first_anchor_sig(member)
+        if first:
+            return [first]
+        return []
+
+    def _extract_first_anchor_sig(self, member: dict | None) -> str | None:
         if member is None:
             return None
         sig = member.get("sig")
         if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
             return sig
-        # Recurse into rstruct/struct members, union variants, and array elements.
         for child in member.get("members", []):
-            s = self._extract_anchor_sig(child)
-            if s:
-                return s
+            found = self._extract_first_anchor_sig(child)
+            if found:
+                return found
         for child in member.get("fields", []):
-            s = self._extract_anchor_sig(child)
-            if s:
-                return s
+            found = self._extract_first_anchor_sig(child)
+            if found:
+                return found
         for child in member.get("variants", []):
-            s = self._extract_anchor_sig(child)
-            if s:
-                return s
+            found = self._extract_first_anchor_sig(child)
+            if found:
+                return found
         elem = member.get("element")
         if elem:
-            s = self._extract_anchor_sig(elem)
-            if s:
-                return s
+            return self._extract_first_anchor_sig(elem)
         return None
 
     def _parse_runion(self, expr: str) -> dict:
@@ -2511,8 +2587,20 @@ class Extractor:
             return {"kind": "raw_fallback", "name": name or "Record Union", "reason": "wbRUnion no variants parsed"}
 
         if decider is None:
-            # Build PresentSignature from the first sig-bearing member of each variant.
-            anchors = [self._extract_anchor_sig(v) or "" for v in variants]
+            # Build PresentSignature from all reachable anchor sigs of each variant.
+            anchors = [self._extract_anchor_sigs(v) for v in variants]
+            # Drop sigs shared across variants (e.g. ALID on every QUST Alias type) so
+            # only discriminant anchors remain.
+            from collections import Counter
+
+            freq = Counter(sig for a in anchors for sig in a)
+            shared = {sig for sig, n in freq.items() if n > 1}
+            if shared:
+                anchors = [[sig for sig in a if sig not in shared] for a in anchors]
+            for i, a in enumerate(anchors):
+                if not a:
+                    first = self._extract_first_anchor_sig(variants[i])
+                    anchors[i] = [first] if first else []
             decider = {"present_signature": anchors}
 
         return {"kind": "union", "name": name or "Record Union", "decider": decider, "variants": variants}

@@ -280,11 +280,12 @@ pub enum UnionDecider {
         edid_default: Option<usize>,
     },
     /// Select variant by which anchor subrecord is present in the stream.
-    /// `anchors[i]` is the subrecord signature that selects variant `i`.
-    /// The first variant whose anchor is present wins.
+    /// `present_signature[i]` is the set of subrecord signatures that select
+    /// variant `i` (any match counts).  The variant whose earliest-matching
+    /// anchor has the lowest `doc_index` wins.
     /// Used for `wbRUnion` (record-level polymorphic unions).
     PresentSignature {
-        present_signature: Vec<String>,
+        present_signature: Vec<Vec<String>>,
     },
     Raw,
 }

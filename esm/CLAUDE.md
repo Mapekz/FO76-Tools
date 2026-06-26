@@ -88,5 +88,9 @@ These `_unmapped` markers are intentional — the live ESM contains subrecords n
 | Record | Subrecord | Reason |
 |---|---|---|
 | LVLI | `LVLD` | `wbBelowVersion(174, LVLD …)` — live data is form-version ≥174, so LVLD is correctly out of schema scope. |
+| LVLN | `LVLD` | Same as LVLI — empty `LVLD` on form-version ≥174 records. |
+| LVPC | `LVLD` | Same as LVLI/LVLN. |
+| LVLP | `LVLD` | Same as LVLI/LVLN. |
+| RESO | `NAM5` | Absent from the TES5Edit reference; newer than the reference. |
 | NPC_ | `AWPB`, `CTDA` | Absent from the entire TES5Edit reference; newer than the reference. |
 | GMRW | `XALG` | Absent from the TES5Edit GMRW definition (EDID/FTAGs/ANAM/RWDS/Rewards only); newer than the reference. |

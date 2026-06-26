@@ -204,7 +204,7 @@ python3 tools/extractor/audit.py --gate
 
 ### Supported record types
 
-**Decode** — `full`: every subrecord and field consumed with no fallbacks; `partial`: some subrecords or fields hit a raw-bytes fallback or are left unmapped (schema gaps); `none`: record type has no schema entry — all subrecords are unmapped.  
+**Decode** — `full`: every subrecord and field consumed with no fallbacks; `partial`: some subrecords or fields hit a raw-bytes fallback or are left unmapped (schema gaps); `partial†`: only documented newer-than-reference drift subrecords remain `_unmapped` (see [Known coverage drift](CLAUDE.md#known-coverage-drift-vs-tes5edit)); `none`: record type has no schema entry — all subrecords are unmapped.  
 **Tests** — `robust`: ≥ 3 handpicked records tested end-to-end; `basic`: 1–2 records or covered by the exhaustive env-gated sweep; `none`: no dedicated test.
 
 Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. Run the exhaustive integration test locally with `RUST_TEST_ESM=<path> cargo test -- --ignored`.
@@ -274,11 +274,11 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `EXPL` | Explosion | full | basic |
 | `FACT` | Faction | full | basic |
 | `FISH` | Fish | full | basic |
-| `FLOR` | Flora | partial | none |
+| `FLOR` | Flora | full | none |
 | `FLST` | FormID List | full | basic |
 | `FSTP` | Footstep | full | none |
 | `FSTS` | Footstep Set | full | none |
-| `FURN` | Furniture | partial | none |
+| `FURN` | Furniture | full | none |
 | `GCVR` | Ground Cover | full | none |
 | `GDRY` | God Rays | full | none |
 | `GLOB` | Global | full | basic |
@@ -291,7 +291,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `IDLM` | Idle Marker | full | none |
 | `IMAD` | Image Space Adapter | full | none |
 | `IMGS` | Image Space | full | none |
-| `INFO` | Dialog response | partial | none |
+| `INFO` | Dialog response | full | none |
 | `INGR` | Ingredient | full | none |
 | `INNR` | Instance Naming Rules | full | basic |
 | `IPCT` | Impact | full | none |
@@ -310,15 +310,15 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `LSCR` | Load Screen | full | none |
 | `LTEX` | Landscape Texture | full | none |
 | `LVLI` | Leveled Item | partial | basic |
-| `LVLN` | Leveled NPC | partial | none |
-| `LVLP` | Leveled Pack In | partial | none |
-| `LVPC` | Leveled Perk Card | partial | none |
+| `LVLN` | Leveled NPC | partial† | none |
+| `LVLP` | Leveled Pack In | partial† | none |
+| `LVPC` | Leveled Perk Card | partial† | none |
 | `MATO` | Material Object | full | none |
 | `MATT` | Material Type | full | none |
 | `MDSP` | Model Swap | full | basic |
 | `MESG` | Message | full | none |
 | `MGEF` | Magic Effect | full | basic |
-| `MISC` | Misc. Item | partial | none |
+| `MISC` | Misc. Item | full | none |
 | `MOVT` | Movement Type | full | none |
 | `MSTT` | Moveable Static | partial | none |
 | `MSWP` | Material Swap | full | basic |
@@ -327,7 +327,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `NAVI` | Navmesh Info Map | full | none |
 | `NAVM` | Navigation Mesh | none | none |
 | `NOCM` | Navmesh Obstacle Manager | full | none |
-| `NOTE` | Note | partial | none |
+| `NOTE` | Note | full | none |
 | `NPC_` | Non-Player Character | partial | basic |
 | `OMOD` | Object Modification | full | basic |
 | `OTFT` | Outfit | full | basic |
@@ -346,13 +346,13 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `PMIS` | Placed Missile | none | none |
 | `PPAK` | Perk Card Pack | full | none |
 | `PROJ` | Projectile | full | basic |
-| `QMDL` | Quest Module | partial | none |
+| `QMDL` | Quest Module | full | none |
 | `QUST` | Quest | partial | none |
 | `RACE` | Race | full | basic |
 | `REFR` | Placed Object | partial | none |
 | `REGN` | Region | full | none |
 | `RELA` | Relationship | full | none |
-| `RESO` | Resource | partial | none |
+| `RESO` | Resource | partial† | none |
 | `REVB` | Reverb Parameters | full | none |
 | `RFCT` | Visual Effect | full | none |
 | `RFGP` | Reference Group | full | none |
@@ -377,7 +377,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `STND` | Snap Template Node | full | none |
 | `TACT` | Talking Activator | partial | none |
 | `TEPF` | Infestation Event Playlist | full | basic |
-| `TERM` | Terminal | partial | none |
+| `TERM` | Terminal | full | none |
 | `TRAP` | Trap | full | basic |
 | `TREE` | Tree | full | none |
 | `TRNS` | Transform | full | none |
