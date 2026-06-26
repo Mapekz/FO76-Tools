@@ -1279,3 +1279,515 @@ fn npc_awpb_ctda_drift_locked() {
     // unexpected markers, confirming Fix A cleared VMAD truncation on NPC_ too.
     assert_only_drift_markers(&result, &["AWPB", "CTDA"]);
 }
+// Part 2 — basic decode tests for partial-record fix plan (QUST deferred to part 3).
+
+/// TERM 0x00001676 — `<no edid>` — basic decode regression.
+#[test]
+fn term_intel_room_exams_sub_terminal_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 201);
+
+    let subs = subrecords_from(&[
+        ("EDID", "454e30325f496e74656c526f6f6d4578616d735375625465726d696e616c303300"),
+        ("VMAD",
+            "0600020001001700454e30325f4578616d5175657374696f6e5363726970740002000d00546172676574416e7377657273110105000000020000000c0069416e7377657256616c75650301010000000700694d656e754944030101000000020000000c0069416e7377657256616c75650301030000000700694d656e754944030102000000020000000c0069416e7377657256616c75650301020000000700694d656e754944030103000000020000000700694d656e7549440301040000000c0069416e7377657256616c7565030100000000020000000c0069416e7377657256616c75650301010000000700694d656e7549440301050000000b0064656a614368616e6e656c02010400454e3032"),
+        ("OBND", "ecffdeff0000130010006100"),
+        ("NAM0", "3c49443d30303033433833353e5768697465737072696e675f4e6574202d2d20762e303800"),
+        ("FULL", "3c49443d30303033433833363e5175657374696f6e6e61697265205465726d696e616c00"),
+        ("MODL",
+            "4675726e69747572655c5465726d696e616c735c5465726d696e616c436f6e736f6c654f6e2e6e696600"),
+        ("MODT",
+            "0400000019000000000000000a000000050000000f192fb864647300514b85776c24204264647300514b85772378215664647300514b8577886afdda64647300b5aa259deb57f22064647300b5aa259da40bf33464647300b5aa259df399858864647300b5aa259d90a48a7264647300b5aa259ddff88b6664647300b5aa259d74e31e5d64647300514b857717de11a764647300514b8577588210b364647300514b8577f0a1333264647300514b8577939c3cc864647300514b8577dcc03ddc64647300514b8577c229e83c64647300514b8577466bc55364647300514b8577839c30dc6464730038973ceac1115e8664647300b5aa259dbae226d464647300b5aa259db0a5a86e64647300b5aa259d3d91f4b664647300514b8577ff6512fd6464730038973cea7eef02fc64647300582c5533c80fd0fc6464730038973cea9a7f25c36267736de25d598b1f0637246267736de25d598b404118cb6267736d6070f9eddaa82f006267736d6070f9ed7de3679b6267736dde5ee364"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("KSIZ", "03000000"),
+        ("KWDA", "e686020012cb0f00d7560a00"),
+        ("PNAM", "cc4c3300"),
+        ("AIID", "00"),
+        ("FNAM", "0000"),
+        ("PAHD", "00000000"),
+        ("CTRN", "00000000000000000000000000"),
+        ("COCT", "00000000"),
+        ("MNAM", "01000040"),
+        ("WBDT", "0000"),
+        ("XMRK", "4d61726b6572735c4d61726b65724465736b5465726d696e616c30312e6e696600"),
+        ("ZNAM", "00000000000088c2000000000000000000000000ff010000"),
+        ("FFEF", "00000000"),
+        ("BSIZ", "01000000"),
+        ("BTXT",
+            "3c49443d30303033433833373e5c5c5c5c20504552534f4e414c20494e464f524d4154494f4e202f2f2f2f0d0a0d0a5768696368206f662074686520666f6c6c6f77696e67207468696e6b657273272062656c6965662073797374656d73206d6f737420636c6f73656c79206d61746368657320796f7572206f776e3f0d0a5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f0d0a00"),
+        ("TDAT", "0100"),
+        ("ISIZ", "05000000"),
+        ("ITXT", "3c49443d30303033433833383e53742e2054686f6d617320417175696e617300"),
+        ("RNAM", "3c49443d30303033433833393e2e2e2e616e73776572207265636f726465642e2e2e00"),
+        ("ANAM", "04"),
+        ("ITID", "0100"),
+        ("TNAM", "45160000"),
+        ("ITXT", "3c49443d30303033433833413e4164616d20536d69746800"),
+        ("RNAM", "3c49443d30303033433833423e2e2e2e20616e73776572207265636f72646564202e2e2e00"),
+        ("ANAM", "04"),
+        ("ITID", "0200"),
+        ("TNAM", "45160000"),
+        ("ITXT", "3c49443d30303033433833433e4a6f686e20537475617274204d696c6c00"),
+        ("RNAM", "3c49443d30303033433833443e2e2e2e20616e73776572207265636f72646564202e2e2e00"),
+        ("ANAM", "04"),
+        ("ITID", "0300"),
+        ("TNAM", "45160000"),
+        ("ITXT", "3c49443d30303034353133343e4b61726c204d61727800"),
+        ("RNAM", "3c49443d30303034353133353e2e2e2e20616e73776572207265636f72646564202e2e2e00"),
+        ("ANAM", "04"),
+        ("ITID", "0400"),
+        ("TNAM", "45160000"),
+        ("ITXT", "3c49443d30303034353133363e456c76697320507265736c657900"),
+        ("RNAM", "3c49443d30303034353133373e2e2e2e20616e73776572207265636f72646564202e2e00"),
+        ("ANAM", "04"),
+        ("ITID", "0500"),
+        ("TNAM", "45160000"),
+    ]);
+
+    let result = decode_record(&ctx, "TERM", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Terminal"),
+    );
+    assert_fully_decoded(&result);
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("EN02_IntelRoomExamsSubTerminal03"),
+    );
+}
+
+/// NOTE 0x00002CBA — `<no edid>` — basic decode regression.
+#[test]
+fn note_fs_jacob_part01_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 192);
+
+    let subs = subrecords_from(&[
+        ("EDID", "46535f4a61636f6250617274303100"),
+        ("OBND", "fdfffeff0000030002000000"),
+        ("PTRN", "a5950900"),
+        ("SNTP", "74705300"),
+        ("FULL", "3c49443d30303033443938383e4a61636f62277320486f6c6f7461706500"),
+        ("MODL", "50726f70735c486f6c6f746170655f50726f702e6e696600"),
+        ("MODT",
+            "0400000005000000010000000100000001000000aae4fd56646473007b24d06cc9d9f2ac646473007b24d06c223d2fc1646473007b24d06c8685f3b8646473007b24d06c986c2658646473007b24d06c4a040000bd0d0a246267736daeef2e19"),
+        ("YNAM", "a8bf0b00"),
+        ("ZNAM", "a9bf0b00"),
+        ("KSIZ", "01000000"),
+        ("KWDA", "27433d00"),
+        ("VCRY", "0f000000"),
+        ("DNAM", "01"),
+        ("DATA", "0000000000000000"),
+        ("SNAM", "5b902a00"),
+    ]);
+
+    let result = decode_record(&ctx, "NOTE", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Note"),
+    );
+    assert_fully_decoded(&result);
+}
+
+/// FLOR 0x000017F8 — `<no edid>` — basic decode regression.
+#[test]
+fn flor_firecap_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 192);
+
+    let subs = subrecords_from(&[
+        ("EDID", "5573654c50495f466c6f726146697265436170303100"),
+        ("OBND", "e9ffe8fffcff170018002c00"),
+        ("OPDS",
+            "0100000000000000000000000000803f0000803ec2b8b23dc2b8b23dc2b8323ec2b8323edb0fc93fdb0f4940"),
+        ("PTRN", "521a4400"),
+        ("OPDS",
+            "0100000000000000000000000000803f0000803ec2b8b23dc2b8b23dc2b8323ec2b8323edb0fc93fdb0f4940"),
+        ("DEFL", "2cd61e00"),
+        ("FULL", "3c49443d30303033454236413e4669726563617000"),
+        ("MODL", "6c616e6473636170652f706c616e74732f6669726563617030312e6e696600"),
+        ("MODT",
+            "0400000004000000000000000100000001000000eb474cff646473008a103af0887a4305646473008a103af0c7264211646473008a103af0d9cf97f1646473008a103af037df72446267736dd28d2cde"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01774a62000048420000f04100009c429a99193fcdcccc3d00d4a379"),
+        ("KSIZ", "03000000"),
+        ("KWDA", "35fe2e0027724e000e684100"),
+        ("PRPS", "834348000000803f00000000"),
+        ("PNAM", "cc4c3300"),
+        ("ATTX", "3c49443d30303033454236423e4861727665737400"),
+        ("FNAM", "0000"),
+        ("PFIG", "fffc0500"),
+        ("SNAM", "053d2200"),
+        ("CITC", "00000000"),
+        ("FLFG", "00000000"),
+        ("FMAH", "00000000"),
+        ("FMIH", "00000000"),
+    ]);
+
+    let result = decode_record(&ctx, "FLOR", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Flora"),
+    );
+    assert_fully_decoded(&result);
+}
+
+/// FURN 0x00002C9E — `<no edid>` — basic decode regression.
+#[test]
+fn furn_power_armor_raider_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    let subs = subrecords_from(&[
+        ("EDID", "506f77657241726d6f724675726e69747572655261696465724d544e5a303400"),
+        ("VMAD",
+            "06000200010012004d544e5a30345f41726d6f725363726970740003000f004d544e5a30345f4d656c74646f776e01010000ffff942c00001d004d544e5a30345f4d656c74646f776e5f51756573745f4b6579776f726401010000ffffa22c00000b0041726d6f724c6f636b6564050101"),
+        ("OBND", "d8ffe1ff000028000e008a00"),
+        ("FULL", "3c49443d30303033453942313e506f7765722041726d6f7200"),
+        ("MODL",
+            "4675726e69747572655c506f77657241726d6f725c4368617261637465724173736574735c506f77657241726d6f724675726e69747572652e6e696600"),
+        ("MODT",
+            "040000000400000000000000010000000100000078ebd765646473000024eaaa1bd6d89f646473000024eaaa548ad98b646473000024eaaa4a630c6b646473000024eaaac4f8f4ef6267736d5beb74cf"),
+        ("ENLM", "01000000"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("KSIZ", "04000000"),
+        ("KWDA", "0b430300f6a20b0002ff160048f81200"),
+        ("DESC", "00"),
+        ("PNAM", "00000000"),
+        ("AIID", "00"),
+        ("ATTX", "3c49443d30303033453942323e456e74657200"),
+        ("FNAM", "0200"),
+        ("PAHD", "00000000"),
+        ("CTRN", "00000000000000000000000000"),
+        ("COCT", "02000000"),
+        ("CNTO", "43ae180001000000"),
+        ("CNTO", "027b380001000000"),
+        ("MNAM", "03000040"),
+        ("WBDT", "0800"),
+        ("XMRK",
+            "4675726e69747572655c506f77657241726d6f725c4368617261637465724173736574735c506f77657241726d6f724675726e69747572652e6e696600"),
+        ("ZNAM",
+            "0000000000000000000000000000000000000000ff0100000000000042a097c20000000000000000a8bd0500ff010000"),
+        ("APPR", "8c5f05008d5f05008e5f05008f5f0500905f0500fcda030020670500"),
+        ("OBTE", "01000000"),
+        ("OBTS",
+            "050000000000000000000000ffff000000001f6705000000017d7b13000000017e7b13000000017f7b1300000001807b1300000001"),
+        ("STOP", ""),
+        ("FFEF", "00000000"),
+        ("NVNM", ""),
+    ]);
+
+    let result = decode_record(&ctx, "FURN", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Furniture"),
+    );
+    assert_fully_decoded(&result);
+}
+
+/// MISC 0x0000000A — `<no edid>` — basic decode regression.
+#[test]
+fn misc_bobby_pin_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 187);
+
+    let subs = subrecords_from(&[
+        ("EDID", "426f62627950696e00"),
+        ("OBND", "fbfffeff0000030004000000"),
+        ("PTRN", "8b882400"),
+        ("FULL", "3c49443d30303031444236423e426f6262792050696e00"),
+        ("MODL", "50726f70735c426f62627950696e2e6e696600"),
+        ("MODT",
+            "04000000040000000000000001000000010000004054c76664647300cfe14e232369c89c64647300cfe14e236c35c98864647300cfe14e2372dc1c6864647300cfe14e23056489426267736d528aab77"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("YNAM", "649d2400"),
+        ("KSIZ", "02000000"),
+        ("KWDA", "47940e006ac41c00"),
+        ("DATA", "050000006f12833a"),
+        ("AQIC", "000000000000baba"),
+    ]);
+
+    let result = decode_record(&ctx, "MISC", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Misc. Item"),
+    );
+    assert_fully_decoded(&result);
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("BobbyPin"),
+    );
+}
+
+/// INFO 0x0000219A — `<no edid>` — basic decode regression.
+#[test]
+fn info_dialog_response_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 195);
+
+    let subs = subrecords_from(&[
+        ("ENAM", "0000010000000000"),
+        ("GNAM", "9e210000"),
+        ("TRDA", "ffffffff0100000000000000ffffffffffffffff"),
+        ("NAM1",
+            "3c49443d30303033384139443e2a736967682a2049277665206e65766572207365656e2061206368696c6420736f2072656c756374616e742061626f757420706c61792074696d652e00"),
+        ("NAM2", "00"),
+        ("NAM3", "00"),
+        ("NAM4", "00"),
+        ("NAM9", "c0081683ec78d201"),
+        ("CTDA", "002111e40000803f3602c94300000000000000000000000000000000ffffffff"),
+        ("CTDA", "002111e40000803f3b00c94364000000000000000000000000000000ffffffff"),
+        ("CTDA", "002111e4000000003b00c94358020000000000000000000000000000ffffffff"),
+        ("NAM0", "00"),
+        ("INAM", "01000000"),
+        ("NAM8", "10664c00362cd401"),
+    ]);
+
+    let result = decode_record(&ctx, "INFO", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Dialog response"),
+    );
+    assert_fully_decoded(&result);
+}
+
+/// QMDL 0x006496AB — `<no edid>` — basic decode regression.
+#[test]
+fn qmdl_object_destruction_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 197);
+
+    let subs = subrecords_from(&[
+        ("EDID", "4f626a6563744465737472756374696f6e00"),
+        ("QMDI", "0000"),
+        ("QMDQ", "ff5d6400"),
+        ("QMDP", "005e6400"),
+        ("QMDT", "100e"),
+        ("QMPO", "0000"),
+        ("QMAD", "00000000"),
+        ("QMSD", "00000000"),
+    ]);
+
+    let result = decode_record(&ctx, "QMDL", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Quest Module"),
+    );
+    assert_fully_decoded(&result);
+}
+
+/// LVLN 0x00004073 — `<no edid>` — basic decode regression.
+#[test]
+fn lvln_test_essl_char_short_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 175);
+
+    let subs = subrecords_from(&[
+        ("EDID", "546573744553534c4368617253686f727400"),
+        ("OBND", "000000000000000000000000"),
+        ("LVLD", ""),
+        ("LVMV", "00000000"),
+        ("LVCV", "00000000"),
+        ("LVLF", "00"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+    ]);
+
+    let result = decode_record(&ctx, "LVLN", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Leveled NPC"),
+    );
+    assert_only_drift_markers(&result, &["LVLD"]);
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("TestESSLCharShort"),
+    );
+}
+
+/// LVPC 0x006DE9E3 — `NPE_Loadout_CommandoSelectionList` — basic decode regression.
+#[test]
+fn lvpc_loadout_commando_selection_list_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 204);
+
+    let subs = subrecords_from(&[
+        (
+            "EDID",
+            "4e50455f4c6f61646f75745f436f6d6d616e646f53656c656374696f6e4c69737400",
+        ),
+        ("LVLD", ""),
+        ("ONAM", "00"),
+        ("LVMV", "00000000"),
+        ("LVCV", "00000000"),
+        ("LVLF", "0c00"),
+        ("LLCT", "12"),
+        ("LVLO", "cebc1000"),
+        ("LVUD", "01"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "e5070900"),
+        ("LVUD", "01"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "6c203500"),
+        ("LVUD", "01"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "f6ae3100"),
+        ("LVUD", "02"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "93e53d00"),
+        ("LVUD", "01"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "53ad0800"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "3beb0300"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "893f3200"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "843e0900"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "9e0b3300"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "5a0d3100"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "e0a72500"),
+        ("LVUD", "01"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "47d20800"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "6bd03900"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "903f3200"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "056a3500"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "9bab3800"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVLO", "46a52b00"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("LVCL", ""),
+        ("LVUO", "0000"),
+    ]);
+
+    let result = decode_record(&ctx, "LVPC", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Leveled Perk Card"),
+    );
+    assert_only_drift_markers(&result, &["LVLD"]);
+}
+
+/// LVLP 0x003A1255 — `<no edid>` — basic decode regression.
+#[test]
+fn lvlp_frag_mine_owned_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 178);
+
+    let subs = subrecords_from(&[
+        ("EDID", "4c50414b5f467261674d696e655f4f776e65644d61696e00"),
+        ("OBND", "f9fff9ff0000070007000400"),
+        ("LVLD", ""),
+        ("LVMV", "00000000"),
+        ("LVCV", "00000000"),
+        ("LVLF", "00"),
+        ("LLCT", "01"),
+        ("LVLO", "54123a00"),
+        ("LVOV", "00000000"),
+        ("LVIV", "0000803f"),
+        ("LVLV", "0000803f"),
+        ("MODL", "576561706f6e735c4d696e655c467261674d696e6550726f6a656374696c652e6e696600"),
+        ("MODT",
+            "040000000400000000000000010000000100000081a1769c64647300fefd0268e29c796664647300fefd0268adc0787264647300fefd0268b329ad9264647300fefd0268131325cd6267736d6cf7e8e6"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+    ]);
+
+    let result = decode_record(&ctx, "LVLP", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Leveled Pack In"),
+    );
+    assert_only_drift_markers(&result, &["LVLD"]);
+}
+
+/// RESO 0x008B53B3 — `ATX_Resource_TeaWizard_resource` — drift-locked NAM5.
+#[test]
+fn reso_tea_wizard_resource_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    let subs = subrecords_from(&[
+        (
+            "EDID",
+            "4154585f5265736f757263655f54656157697a6172645f7265736f7572636500",
+        ),
+        ("NAM1", "47548b00"),
+        ("NAM2", "fe538b00"),
+        ("NAM4", "01548b00"),
+        ("NAM5", "01"),
+    ]);
+
+    let result = decode_record(&ctx, "RESO", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Resource"),
+    );
+    assert_only_drift_markers(&result, &["NAM5"]);
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("ATX_Resource_TeaWizard_resource"),
+    );
+}

@@ -26,30 +26,27 @@
 //!
 //! # Skipped (dirty) types
 //!
-//! The following 18 types are **excluded** because they currently emit
-//! `raw_fallback` or `_unmapped` markers on at least some records in the
-//! reference ESM (SeventySix_20260619.esm, coverage run 2026-06-26):
+//! The following types are **excluded** from `CLEAN_TYPES` because they still
+//! emit `raw_fallback` or undocumented `_unmapped` markers on at least some
+//! records in the reference ESM (`SeventySix_20260619.esm`, coverage run 2026-06-26).
+//! Types marked partial† in the README decode only with documented drift
+//! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records.rs`.
+//!
+//! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
+//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK.
 //!
 //! | Type | raw_fallback | _unmapped | Notes |
 //! |------|-------------|-----------|-------|
-//! | WEAP |           9 |         1 | Some weapon subrecords use undocumented sigs |
-//! | PERK |          12 |         0 | Condition data in some perks hits raw fallback |
 //! | LVLI |           0 |     10150 | Leveled-list LLCT/LLSD variants unmapped |
-//! | BOOK |         291 |         0 | Some book CNAM raw fallback |
-//! | FLOR |           9 |       438 | Flora has unmapped XMBO/XRGD etc. in placed refs |
-//! | ENCH |           0 |         2 | Two ENCH records have unmapped subrecords |
-//! | FURN |         172 |        66 | Furniture has raw_fallback + unmapped sigs |
-//! | NOTE |           9 |         0 | Some notes hit raw_fallback on SNAM |
 //! | NPC_ |         346 |       273 | NPC data has multiple unmapped sigs |
 //! | CONT |          79 |       279 | Container CNTO/COED variants partially unmapped |
-//! | MISC |          86 |        30 | Misc item CVPA and others unmapped |
-//! | TERM |         172 |        33 | Terminal TNAM/ITXT/SNAM variants |
-//! | LVLN |           0 |      1060 | Leveled NPC same as LVLI |
-//! | RESO |           0 |         1 | One RESO record has an unmapped subrecord |
-//! | RACE |           0 |     11017 | RACE data subrecords largely unmapped |
-//! | QUST |        3150 |      1689 | Quest conditions/stages hit raw fallback widely |
-//! | QMDL |          34 |         0 | Quest module condition raw fallback |
-//! | GMRW |           0 |         1 | One GMRW record unmapped |
+//! | QUST |        1015 |         3 | Quest alias fill-type unions (part 3) |
+//! | LVLN |           0 |      1060 | partial† — empty `LVLD` drift only |
+//! | LVPC |           0 |        15 | partial† — empty `LVLD` drift only |
+//! | LVLP |           0 |         1 | partial† — empty `LVLD` drift only |
+//! | RESO |           0 |         1 | partial† — `NAM5` drift only |
+//! | RACE |           0 |     11017 | RACE morph subset clean; full record still partial |
+//! | GMRW |           0 |         1 | `XALG` drift only (drift-locked test) |
 
 mod common;
 
@@ -63,7 +60,8 @@ const CLEAN_TYPES: &[&str] = &[
     "ARMO", "SPEL", "GLOB", "KYWD", "OMOD", "AMMO", "PROJ", "EXPL", "ALCH", "COBJ", "ENTM", "DMGT",
     "FISH", "FACT", "FLST", "WTHR", "WAVE", "OTFT", "MSWP", "CURV", "DFOB", "CHAL", "CMPO", "CMPT",
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
-    "GMST", "AMDL",
+    "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
+    "NOTE",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`

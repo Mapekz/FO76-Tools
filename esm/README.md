@@ -274,11 +274,11 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `EXPL` | Explosion | full | basic |
 | `FACT` | Faction | full | basic |
 | `FISH` | Fish | full | basic |
-| `FLOR` | Flora | full | none |
+| `FLOR` | Flora | full | basic |
 | `FLST` | FormID List | full | basic |
 | `FSTP` | Footstep | full | none |
 | `FSTS` | Footstep Set | full | none |
-| `FURN` | Furniture | full | none |
+| `FURN` | Furniture | full | basic |
 | `GCVR` | Ground Cover | full | none |
 | `GDRY` | God Rays | full | none |
 | `GLOB` | Global | full | basic |
@@ -291,7 +291,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `IDLM` | Idle Marker | full | none |
 | `IMAD` | Image Space Adapter | full | none |
 | `IMGS` | Image Space | full | none |
-| `INFO` | Dialog response | full | none |
+| `INFO` | Dialog response | full | basic |
 | `INGR` | Ingredient | full | none |
 | `INNR` | Instance Naming Rules | full | basic |
 | `IPCT` | Impact | full | none |
@@ -310,15 +310,15 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `LSCR` | Load Screen | full | none |
 | `LTEX` | Landscape Texture | full | none |
 | `LVLI` | Leveled Item | partial | basic |
-| `LVLN` | Leveled NPC | partial† | none |
-| `LVLP` | Leveled Pack In | partial† | none |
-| `LVPC` | Leveled Perk Card | partial† | none |
+| `LVLN` | Leveled NPC | partial† | basic |
+| `LVLP` | Leveled Pack In | partial† | basic |
+| `LVPC` | Leveled Perk Card | partial† | basic |
 | `MATO` | Material Object | full | none |
 | `MATT` | Material Type | full | none |
 | `MDSP` | Model Swap | full | basic |
 | `MESG` | Message | full | none |
 | `MGEF` | Magic Effect | full | basic |
-| `MISC` | Misc. Item | full | none |
+| `MISC` | Misc. Item | full | basic |
 | `MOVT` | Movement Type | full | none |
 | `MSTT` | Moveable Static | partial | none |
 | `MSWP` | Material Swap | full | basic |
@@ -327,7 +327,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `NAVI` | Navmesh Info Map | full | none |
 | `NAVM` | Navigation Mesh | none | none |
 | `NOCM` | Navmesh Obstacle Manager | full | none |
-| `NOTE` | Note | full | none |
+| `NOTE` | Note | full | basic |
 | `NPC_` | Non-Player Character | partial | basic |
 | `OMOD` | Object Modification | full | basic |
 | `OTFT` | Outfit | full | basic |
@@ -346,13 +346,13 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `PMIS` | Placed Missile | none | none |
 | `PPAK` | Perk Card Pack | full | none |
 | `PROJ` | Projectile | full | basic |
-| `QMDL` | Quest Module | full | none |
+| `QMDL` | Quest Module | full | basic |
 | `QUST` | Quest | partial | none |
 | `RACE` | Race | full | basic |
 | `REFR` | Placed Object | partial | none |
 | `REGN` | Region | full | none |
 | `RELA` | Relationship | full | none |
-| `RESO` | Resource | partial† | none |
+| `RESO` | Resource | partial† | basic |
 | `REVB` | Reverb Parameters | full | none |
 | `RFCT` | Visual Effect | full | none |
 | `RFGP` | Reference Group | full | none |
@@ -377,7 +377,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `STND` | Snap Template Node | full | none |
 | `TACT` | Talking Activator | partial | none |
 | `TEPF` | Infestation Event Playlist | full | basic |
-| `TERM` | Terminal | full | none |
+| `TERM` | Terminal | full | basic |
 | `TRAP` | Trap | full | basic |
 | `TREE` | Tree | full | none |
 | `TRNS` | Transform | full | none |
@@ -395,12 +395,12 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 
 ## Tests
 
-~69 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
+~80 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
 
 ```sh
 cargo test
 
-# Exhaustive decode sweep (needs real ESM — 38 types, ~93k records)
+# Exhaustive decode sweep (needs real ESM — 45 clean types, ~93k records)
 RUST_TEST_ESM=SeventySix.esm cargo test -- --ignored decode_all_clean_types_fully
 
 # Diff integration test (needs two ESM versions)
@@ -413,10 +413,10 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored diff_two
 | `tests/curves.rs` | Curve evaluation: clamping, interpolation, edge cases |
 | `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs two ESM versions) |
 | `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
-| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE (clean), GMRW, LVLI, NPC_ (drift-locked) using verbatim record bytes |
-| `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 38 fully-clean types (ignored, needs game data) |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE (morph subset), GMRW/LVLI/NPC_ (drift-locked), TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN/LVPC/LVLP/RESO (drift-locked) using verbatim record bytes |
+| `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 45 clean types (ignored, needs game data) |
 | `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
-| `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width; VMAD object decoding (both object formats, FormID offset); VMAD array property types 11–15 (count + elements); COED `FormIdTargetType` owner-decider with and without resolver; `RArray` `CountPath` boundary |
+| `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width; VMAD object decoding (both object formats, FormID offset); VMAD array property types 11–15 and struct types 6/17 (count + elements); COED `FormIdTargetType` owner-decider with and without resolver; `RArray` `CountPath` boundary |
 
 `tests/decode_records.rs` tests use verbatim subrecord bytes from `esm get --raw` and run entirely in CI without game data. See the **Supported record types** table in [Schema](#schema) for per-type coverage status.
 
