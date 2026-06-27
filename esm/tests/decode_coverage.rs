@@ -28,18 +28,17 @@
 //!
 //! The following types are **excluded** from `CLEAN_TYPES` because they still
 //! emit `raw_fallback` or undocumented `_unmapped` markers on at least some
-//! records in the reference ESM (`SeventySix_20260619.esm`, coverage run 2026-06-26).
+//! records in the reference ESM (`SeventySix_20260619.esm`, coverage run 2026-06-27).
 //! Types marked partial† in the README decode only with documented drift
 //! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records.rs`.
 //!
 //! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
-//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE.
+//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT.
 //!
 //! | Type | raw_fallback | _unmapped | Notes |
 //! |------|-------------|-----------|-------|
 //! | LVLI |           0 |     10150 | Leveled-list LLCT/LLSD variants unmapped |
-//! | NPC_ |         346 |       273 | NPC data has multiple unmapped sigs |
-//! | CONT |          79 |       279 | Container CNTO/COED variants partially unmapped |
+//! | NPC_ |           1 |       273 | NPC data has multiple unmapped sigs |
 //! | QUST |           6 |         0 | partial† — fragmented `VMAD` on 6 records only |
 //! | LVLN |           0 |      1060 | partial† — empty `LVLD` drift only |
 //! | LVPC |           0 |        15 | partial† — empty `LVLD` drift only |
@@ -54,13 +53,13 @@ use esm::{Database, FormId};
 
 /// All record types verified (via `esm coverage`) to decode with zero markers
 /// on every record in
-/// SeventySix_20260619.esm (coverage run 2026-06-26).
+/// SeventySix_20260619.esm (coverage run 2026-06-27).
 const CLEAN_TYPES: &[&str] = &[
     "ARMO", "SPEL", "GLOB", "KYWD", "OMOD", "AMMO", "PROJ", "EXPL", "ALCH", "COBJ", "ENTM", "DMGT",
     "FISH", "FACT", "FLST", "WTHR", "WAVE", "OTFT", "MSWP", "CURV", "DFOB", "CHAL", "CMPO", "CMPT",
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
     "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
-    "NOTE", "RACE",
+    "NOTE", "RACE", "CONT",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`

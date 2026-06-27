@@ -27,7 +27,7 @@ esm/
 ```sh
 cargo build --release          # esm CLI → target/release/esm
 cargo build --release --features server  # also builds esm-server
-cargo test                     # run all inline unit tests (~35 tests)
+cargo test                     # run all tests (~100 run; 2 env-gated ignored)
 ```
 
 ## CLI — `esm`
@@ -259,7 +259,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `COBJ` | Constructible Object | full | basic |
 | `COEN` | Consumable Entitlement | full | basic |
 | `COLL` | Collision Layer | partial | none |
-| `CONT` | Container | partial | none |
+| `CONT` | Container | full | basic |
 | `CPRD` | Challenge Pass Reward Data | full | none |
 | `CPTH` | Camera Path | full | none |
 | `CSEN` | Crate Service Entitlement | full | none |
@@ -346,7 +346,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `PACK` | Package | full | none |
 | `PCRD` | Perk Card | full | basic |
 | `PEPF` | Event Playlist | full | basic |
-| `PERK` | Perk | full | basic |
+| `PERK` | Perk | full | robust |
 | `PGRE` | Placed Grenade | none | none |
 | `PHZD` | Placed Hazard | none | none |
 | `PKIN` | Pack-In | full | none |
@@ -397,7 +397,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `VTYP` | Voice Type | full | none |
 | `WATR` | Water | full | none |
 | `WAVE` | Wave Encounter | full | basic |
-| `WEAP` | Weapon | full | basic |
+| `WEAP` | Weapon | full | robust |
 | `WRLD` | Worldspace | none | none |
 | `WSPR` | Workshop Permissions | full | none |
 | `WTHR` | Weather | full | basic |
@@ -405,12 +405,12 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 
 ## Tests
 
-~82 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
+~100 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
 
 ```sh
 cargo test
 
-# Exhaustive decode sweep (needs real ESM — 45 clean types, ~93k records)
+# Exhaustive decode sweep (needs real ESM — 51 clean types, ~181k records)
 RUST_TEST_ESM=SeventySix.esm cargo test -- --ignored decode_all_clean_types_fully
 
 # Diff integration test (needs two ESM versions)
@@ -423,8 +423,9 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored diff_two
 | `tests/curves.rs` | Curve evaluation: clamping, interpolation, edge cases |
 | `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs two ESM versions) |
 | `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
-| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE (morph subset), GMRW/LVLI/NPC_ (drift-locked), TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN/LVPC/LVLP/RESO (drift-locked), QUST (alias fill) using verbatim record bytes |
-| `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 45 clean types (ignored, needs game data) |
+| `tests/ipc.rs` | IPC dispatch: `Op` routing, `RecordSel` auto-detection, `Registry`, `LocalBackend` parity, `looks_like_formid` |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE, GMRW/LVLI/NPC_ (drift-locked), TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN/LVPC/LVLP/RESO (drift-locked), QUST (alias fill) using verbatim record bytes |
+| `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 51 clean types (ignored, needs game data) |
 | `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
 | `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width; VMAD object decoding (both object formats, FormID offset); VMAD array property types 11–15 and struct types 6/17 (count + elements); COED `FormIdTargetType` owner-decider with and without resolver; `RArray` `CountPath` boundary |
 
