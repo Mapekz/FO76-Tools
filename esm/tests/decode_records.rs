@@ -1,7 +1,7 @@
 mod common;
 
 use common::{
-    assert_fully_decoded, bare_ctx, bare_ctx_fv, collect_decode_problems, sr, subrecords_from,
+    assert_fully_decoded, bare_ctx, bare_ctx_fv, sr, subrecords_from,
 };
 use esm::decode::decode_record;
 use esm::format::Signature;
@@ -44,15 +44,9 @@ fn mgef_data_decodes_correct_structure() {
         result.get("_record_type").and_then(|v| v.as_str()),
         Some("Magic Effect"),
     );
-    // Synthetic DATA payload should decode cleanly — no raw_fallback, _unknown_record,
-    // or _unmapped markers. (assert_fully_decoded is inappropriate here since the record
-    // is intentionally missing most subrecords; collect_decode_problems is the right tool.)
-    let problems = collect_decode_problems(&result);
-    assert!(
-        problems.is_empty(),
-        "MGEF DATA should decode without problems; found:\n{}",
-        problems.join("\n")
-    );
+    // Only DATA is provided; the full record is covered by the CLEAN_TYPES sweep.
+    // This test guards the DATA structural invariants independently of game data.
+    assert_fully_decoded(&result);
 
     let data = result
         .get("Magic Effect Data")
@@ -4579,4 +4573,210 @@ fn npc_comp_super_mutant_maul_vmad_decodes_correctly() {
     assert_eq!(struct_prop["type"], 7);
     let members = struct_prop["value"].as_array().expect("struct members");
     assert_eq!(members.len(), 2);
+}
+
+/// SPEL 0x00004381 — `AbNemesisRank00` — decodes to Spell fully.
+///
+/// Simple ability spell: EDID, OBND, ETYP, DESC, SPIT + one effect (EFID/EFIT).
+/// Exercises the SPIT Data struct (Type = Ability) and the Effects array.
+/// form_version 131.
+///
+/// Verbatim subrecords from `esm get SeventySix_20260619.esm 0x00004381 --raw`.
+#[test]
+fn spel_ab_nemesis_rank00_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 131);
+
+    let subs = subrecords_from(&[
+        ("EDID", "41624e656d6573697352616e6b303000"),
+        ("OBND", "000000000000000000000000"),
+        ("ETYP", "443f0100"),
+        ("DESC", "00"),
+        (
+            "SPIT",
+            "000000000000000004000000000000000000000000000000000000000000000000000000",
+        ),
+        ("EFID", "82430000"),
+        ("EFIT", "0000f0410000000000000000"),
+    ]);
+
+    let result = decode_record(&ctx, "SPEL", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Spell"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("AbNemesisRank00"),
+        "Editor ID"
+    );
+    // SPIT Type field: 4 = Ability.
+    assert_eq!(
+        result.pointer("/Data/Type/name").and_then(|v| v.as_str()),
+        Some("Ability"),
+        "Spell Type"
+    );
+    // One EFID/EFIT pair → one entry in Effects.
+    let effects = result
+        .get("Effects")
+        .and_then(|v| v.as_array())
+        .expect("Effects must be an array");
+    assert_eq!(effects.len(), 1, "Effects count");
+    assert_eq!(
+        effects[0].pointer("/Effect/Base Effect").and_then(|v| v.as_str()),
+        Some("0x00004382"),
+        "Effects[0] Base Effect FormID"
+    );
+}
+
+/// EXPL 0x000001F5 — `ExplosionDefaultWater` — decodes to Explosion fully.
+///
+/// Six subrecords: EDID, OBND, DESC, MODL, MODT, DATA (92 bytes).  Exercises
+/// the DATA struct including the Sound 1 FormID and Sound Level enum.
+/// form_version 202.
+///
+/// Verbatim subrecords from `esm get SeventySix_20260619.esm 0x000001F5 --raw`.
+#[test]
+fn expl_explosion_default_water_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 202);
+
+    let subs = subrecords_from(&[
+        ("EDID", "4578706c6f73696f6e44656661756c74576174657200"),
+        ("OBND", "01fff7fe58ffff00f400bf00"),
+        ("DESC", "00"),
+        (
+            "MODL",
+            "456666656374735c556e64657257617465724578706c6f73696f6e2e6e696600",
+        ),
+        (
+            "MODT",
+            "04000000050000000000000005000000000000003450abb06464730038973cea\
+             1bd7c6c464647300582c55330d670eb76464730038973ceaf10eee3e6464730038973cea\
+             3ea5ff086464730038973cea",
+        ),
+        (
+            "DATA",
+            "000000002c420500000000000000000000000000000000000000000000000000\
+             000000000000000000000000000000000000000000000000010000000000000000\
+             000000000000000000000000000000000000000000000000000000",
+        ),
+    ]);
+
+    let result = decode_record(&ctx, "EXPL", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Explosion"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("ExplosionDefaultWater"),
+        "Editor ID"
+    );
+    // DATA offset 4: Sound 1 = FormID 0x0005422C.
+    assert_eq!(
+        result.pointer("/Data/Sound 1").and_then(|v| v.as_str()),
+        Some("0x0005422C"),
+        "DATA Sound 1"
+    );
+    // Sound Level enum: 1 = Normal.
+    assert_eq!(
+        result
+            .pointer("/Data/Sound Level/name")
+            .and_then(|v| v.as_str()),
+        Some("Normal"),
+        "Sound Level"
+    );
+}
+
+/// COBJ 0x00004170 — `co_Weapon_Ranged_AlienBlaster` — decodes to Constructible Object fully.
+///
+/// 13 subrecords: EDID, FVPA (7 components × 12 B = 84 B), REPR (4 repair entries × 12 B),
+/// REPM, LRNM, DESC, CNAM, BNAM, GNAM, FNAM, DNAM, CIFK, RECF.  Exercises the
+/// FVPA and REPR struct arrays plus the LRNM learn-method enum.  form_version 195.
+///
+/// Verbatim subrecords from `esm get SeventySix_20260619.esm 0x00004170 --raw`.
+#[test]
+fn cobj_weapon_ranged_alien_blaster_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 195);
+
+    let subs = subrecords_from(&[
+        (
+            "EDID",
+            "636f5f576561706f6e5f52616e6765645f416c69656e426c617374657200",
+        ),
+        (
+            "FVPA",
+            "a5fa010002000000ef531f0091fa01000a000000f3531f009bfa010004000000fc531f00\
+             a0fa0100030000002c541f00a4fa0100040000002e541f00b7fa01000c000000b1541f00\
+             94d2030009000000bf541f00",
+        ),
+        (
+            "REPR",
+            "a5fa010001000000ef531f00b7fa010002000000b1541f00\
+             9bfa010001000000fc531f009ffa01000100000029541f00",
+        ),
+        ("REPM", "05"),
+        ("LRNM", "04"),
+        ("DESC", "00"),
+        ("CNAM", "95f90f00"),
+        ("BNAM", "49601f00"),
+        ("GNAM", "0c704300"),
+        ("FNAM", "241f2400"),
+        ("DNAM", "0000000001000079"),
+        ("CIFK", "04041600"),
+        ("RECF", "0000000000000000"),
+    ]);
+
+    let result = decode_record(&ctx, "COBJ", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Constructible Object"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("co_Weapon_Ranged_AlienBlaster"),
+        "Editor ID"
+    );
+    // FVPA: 7 component entries (7 × 12 B = 84 B).
+    let components = result
+        .get("Components")
+        .and_then(|v| v.as_array())
+        .expect("Components must be an array");
+    assert_eq!(components.len(), 7, "Components count");
+    assert_eq!(
+        components[0].get("Component").and_then(|v| v.as_str()),
+        Some("0x0001FAA5"),
+        "Components[0] FormID"
+    );
+    // REPR: 4 repair entries (4 × 12 B = 48 B).
+    let repair = result
+        .get("Repair")
+        .and_then(|v| v.as_array())
+        .expect("Repair must be an array");
+    assert_eq!(repair.len(), 4, "Repair count");
+    // LRNM: 4 = Learned From Plan.
+    assert_eq!(
+        result
+            .pointer("/Learn Method/name")
+            .and_then(|v| v.as_str()),
+        Some("Learned From Plan"),
+        "Learn Method"
+    );
+    // CNAM: Created Object FormID.
+    assert_eq!(
+        result.get("Created Object").and_then(|v| v.as_str()),
+        Some("0x000FF995"),
+        "Created Object"
+    );
 }

@@ -35,6 +35,18 @@
 //! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
 //! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT,
 //! LVLI, LVLN, LVPC, LVLP, RESO, GMRW, QUST, NPC_.
+//! Batch-promoted 2026-06-27: 97 additional types confirmed zero-marker on
+//! SeventySix_20260619.esm — AACT, AAMD, ADDN, AECH, ANIO, AORU, ARMA, ARTO,
+//! ASPC, ASTM, ASTP, ATXO, AUVF, AVTR, BNDS, CAMS, CLAS, CLFM, CLMT, CNCY,
+//! CNDF, CPRD, CPTH, CSEN, CSTY, DCGF, DEBR, DIAL, DIST, DOBJ, ECAT, EFSH,
+//! EMOT, EQUP, FSTP, FSTS, GCVR, GRAS, HDPT, IDLE, IDLM, IMAD, IMGS, INGR,
+//! IPCT, IPDS, KSSM, LAYR, LCRT, LCTN, LENS, LOUT, LSCR, LTEX, MATO, MATT,
+//! MESG, MOVT, MUSC, MUST, NAVI, NOCM, OVIS, PACH, PACK, PKIN, PMFT, PPAK,
+//! REGN, RELA, REVB, RFCT, RFGP, SCEN, SCOL, SCSN, SECH, SMBN, SMEN, SMQN,
+//! SNCT, SNDR, SOPM, SOUN, SPGD, STAG, STHD, STMP, STND, TRNS, TXST, UTIL,
+//! VOLI, VTYP, WATR, WSPR, ZOOM.
+//! Also promoted: MGEF (3109 records, zero markers — prior exclusion was stale).
+//! DLVW, GDRY, TREE absent from this ESM version (no records); deferred.
 
 mod common;
 
@@ -42,14 +54,25 @@ use common::collect_decode_problems;
 use esm::{Database, FormId};
 
 /// All record types verified (via `esm coverage`) to decode with zero markers
-/// on every record in
-/// SeventySix_20260619.esm (coverage run 2026-06-27).
+/// on every record in SeventySix_20260619.esm (coverage runs through 2026-06-27).
 const CLEAN_TYPES: &[&str] = &[
+    // Original + incrementally promoted batch
     "ARMO", "SPEL", "GLOB", "KYWD", "OMOD", "AMMO", "PROJ", "EXPL", "ALCH", "COBJ", "ENTM", "DMGT",
     "FISH", "FACT", "FLST", "WTHR", "WAVE", "OTFT", "MSWP", "CURV", "DFOB", "CHAL", "CMPO", "CMPT",
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
     "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
     "NOTE", "RACE", "CONT", "LVLI", "LVLN", "LVPC", "LVLP", "RESO", "GMRW", "QUST", "NPC_",
+    // Batch-promoted 2026-06-27 (97 types confirmed zero-marker on SeventySix_20260619.esm)
+    "AACT", "AAMD", "ADDN", "AECH", "ANIO", "AORU", "ARMA", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
+    "AUVF", "AVTR", "BNDS", "CAMS", "CLAS", "CLFM", "CLMT", "CNCY", "CNDF", "CPRD", "CPTH", "CSEN",
+    "CSTY", "DCGF", "DEBR", "DIAL", "DIST", "DOBJ", "ECAT", "EFSH", "EMOT", "EQUP", "FSTP", "FSTS",
+    "GCVR", "GRAS", "HDPT", "IDLE", "IDLM", "IMAD", "IMGS", "INGR", "IPCT", "IPDS", "KSSM", "LAYR",
+    "LCRT", "LCTN", "LENS", "LOUT", "LSCR", "LTEX", "MATO", "MATT", "MESG", "MOVT", "MUSC", "MUST",
+    "NAVI", "NOCM", "OVIS", "PACH", "PACK", "PKIN", "PMFT", "PPAK", "REGN", "RELA", "REVB", "RFCT",
+    "RFGP", "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM", "SOUN",
+    "SPGD", "STAG", "STHD", "STMP", "STND", "TRNS", "TXST", "UTIL", "VOLI", "VTYP", "WATR", "WSPR",
+    "ZOOM",
+    "MGEF",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`
