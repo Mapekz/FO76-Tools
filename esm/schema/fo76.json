@@ -63534,6 +63534,33 @@
           "kind": "unknown",
           "name": "Unknown",
           "sig": "TSLT"
+        },
+        {
+          "kind": "rarray",
+          "name": "Pet Commands",
+          "element": {
+            "kind": "rstruct",
+            "name": "Pet Command",
+            "members": [
+              {
+                "kind": "integer",
+                "name": "Command Type",
+                "width": "u8",
+                "signed": false,
+                "sig": "CMDT"
+              },
+              {
+                "kind": "lstring",
+                "name": "Command Name",
+                "sig": "CMDN"
+              },
+              {
+                "kind": "string",
+                "name": "Command ID",
+                "sig": "CMDI"
+              }
+            ]
+          }
         }
       ]
     },

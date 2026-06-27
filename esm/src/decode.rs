@@ -950,10 +950,13 @@ fn decode_struct_fields(
                 }
             }
             MemberDef::Unknown { name, .. } => {
-                struct_out.insert(
-                    name.clone(),
-                    json!({"hex": hex::encode(&data[pos..]), "_raw": true}),
-                );
+                if pos < data.len() {
+                    insert_unique(
+                        &mut struct_out,
+                        name.clone(),
+                        json!({"hex": hex::encode(&data[pos..]), "_raw": true}),
+                    );
+                }
                 break;
             }
             _ => {}

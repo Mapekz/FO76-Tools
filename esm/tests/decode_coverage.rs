@@ -33,7 +33,7 @@
 //! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records.rs`.
 //!
 //! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
-//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK.
+//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE.
 //!
 //! | Type | raw_fallback | _unmapped | Notes |
 //! |------|-------------|-----------|-------|
@@ -45,7 +45,6 @@
 //! | LVPC |           0 |        15 | partial† — empty `LVLD` drift only |
 //! | LVLP |           0 |         1 | partial† — empty `LVLD` drift only |
 //! | RESO |           0 |         1 | partial† — `NAM5` drift only |
-//! | RACE |           0 |     11017 | RACE morph subset clean; full record still partial |
 //! | GMRW |           0 |         1 | `XALG` drift only (drift-locked test) |
 
 mod common;
@@ -61,7 +60,7 @@ const CLEAN_TYPES: &[&str] = &[
     "FISH", "FACT", "FLST", "WTHR", "WAVE", "OTFT", "MSWP", "CURV", "DFOB", "CHAL", "CMPO", "CMPT",
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
     "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
-    "NOTE",
+    "NOTE", "RACE",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`
