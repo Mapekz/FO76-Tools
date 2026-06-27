@@ -25,6 +25,8 @@ test:
     cargo test
 
 # Schema parity audit against the Pascal source in ../TES5Edit.
+# Expects ../TES5Edit = Eckserah/TES5Edit @ 80a2c3c6 (branch dev-4.1.6).
+#   git clone https://github.com/Eckserah/TES5Edit.git ../TES5Edit && git -C ../TES5Edit checkout 80a2c3c6
 audit:
     python3 tools/extractor/audit.py --gate
 

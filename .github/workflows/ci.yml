@@ -89,14 +89,13 @@ jobs:
   # TES5Edit.  That source lives outside this repo, so CI clones it as a
   # sibling (extract.py expects it at ../TES5Edit relative to esm/).
   #
-  # continue-on-error: true until a specific TES5Edit commit is pinned below —
-  # cloning master means upstream Pascal changes can flip this gate red without
-  # any change in this repo.  Once the first green run is confirmed, replace
-  # `--depth 1` with `--branch <tag>` and set continue-on-error: false.
+  # schema/fo76.json is generated from the Eckserah FO76 fork (not upstream
+  # TES5Edit/TES5Edit) which carries detailed FO76 record definitions.  We pin
+  # to an exact commit so Pascal drift can't flip this gate without a deliberate
+  # bump here paired with a schema regeneration.
   audit:
     name: schema parity audit (esm)
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v7
@@ -106,10 +105,14 @@ jobs:
           # Matches the .python-version file (3.14.5).
           python-version: "3.14"
 
-      # Clone TES5Edit as a sibling of esm/ (the path extract.py hard-codes).
-      # TODO: pin to a specific commit/tag once the gate is confirmed green.
+      # Clone the Eckserah FO76 fork — the source schema/fo76.json is generated
+      # from — as a sibling of esm/ (the path extract.py hard-codes).  Pinned
+      # to an exact commit; bump this together with a schema regeneration when
+      # updating the Pascal reference.
       - name: fetch TES5Edit (Pascal truth source)
-        run: git clone --depth 1 https://github.com/TES5Edit/TES5Edit.git TES5Edit
+        run: |
+          git clone --no-checkout --filter=blob:none https://github.com/Eckserah/TES5Edit.git TES5Edit
+          git -C TES5Edit checkout 80a2c3c67e629f46b9320aca54adc706e58ea76c
         working-directory: .
 
       - name: audit --gate
