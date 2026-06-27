@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import copy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -691,6 +692,51 @@ def _annotate_stop_before_member(member: dict | None, outer_stops: list[str]) ->
     elif kind == "union":
         for variant in member.get("variants", []):
             _annotate_stop_before_member(variant, outer_stops)
+
+
+def _patch_qust_location_fill_type(rec: dict, extractor: "Extractor") -> None:
+    """Live Location aliases sometimes use ALFA+ALRT fill (Reference-style).
+
+    The Pascal ALLS union only documents ALFA+KNAM; append the Reference Alias
+    'Location Alias Reference' fill variant so those records decode.
+    """
+    aliases = None
+    for member in rec.get("members", []):
+        if member.get("kind") == "rarray" and member.get("name") == "Aliases":
+            aliases = member.get("element")
+            break
+    if not aliases or aliases.get("kind") != "union":
+        return
+
+    ref_alrt_variant: dict | None = None
+    loc_fill: dict | None = None
+    for variant in aliases.get("variants", []):
+        vname = variant.get("name", "")
+        for member in variant.get("members", []):
+            if member.get("kind") != "union" or member.get("name") != "Fill Type":
+                continue
+            if "Reference Alias" in vname:
+                for fv in member.get("variants", []):
+                    if any(c.get("sig") == "ALRT" for c in fv.get("members", [])):
+                        ref_alrt_variant = fv
+            elif "Location Alias" in vname:
+                loc_fill = member
+
+    if not ref_alrt_variant or not loc_fill:
+        return
+    if any(
+        any(c.get("sig") == "ALRT" for c in fv.get("members", []))
+        for fv in loc_fill.get("variants", [])
+    ):
+        return
+
+    loc_fill["variants"].append(copy.deepcopy(ref_alrt_variant))
+    anchors = [extractor._extract_anchor_sigs(v) for v in loc_fill["variants"]]
+    for i, a in enumerate(anchors):
+        if not a:
+            first = extractor._extract_first_anchor_sig(loc_fill["variants"][i])
+            anchors[i] = [first] if first else []
+    loc_fill["decider"]["present_signature"] = anchors
 
 
 class Extractor:
@@ -2674,6 +2720,9 @@ class Extractor:
             dv = _OBTS_PROP_DEFAULT.get(sig)
             if dv is not None:
                 _fixup_obts_property_default(rec.get("members", []), dv)
+
+        if "QUST" in records:
+            _patch_qust_location_fill_type(records["QUST"], self)
 
         # ── Extraction coverage summary ──────────────────────────────────────
         # Count total raw_fallback members across all extracted records.

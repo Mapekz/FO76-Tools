@@ -347,7 +347,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 | `PPAK` | Perk Card Pack | full | none |
 | `PROJ` | Projectile | full | basic |
 | `QMDL` | Quest Module | full | basic |
-| `QUST` | Quest | partial | none |
+| `QUST` | Quest | partial† | basic |
 | `RACE` | Race | full | basic |
 | `REFR` | Placed Object | partial | none |
 | `REGN` | Region | full | none |
@@ -395,7 +395,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 
 ## Tests
 
-~80 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
+~82 tests across `tests/` (integration test files) and two inline `#[cfg(test)]` blocks (for `tree` and `decode` internals that are not public). Run all:
 
 ```sh
 cargo test
@@ -413,7 +413,7 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored diff_two
 | `tests/curves.rs` | Curve evaluation: clamping, interpolation, edge cases |
 | `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs two ESM versions) |
 | `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
-| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE (morph subset), GMRW/LVLI/NPC_ (drift-locked), TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN/LVPC/LVLP/RESO (drift-locked) using verbatim record bytes |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE (morph subset), GMRW/LVLI/NPC_ (drift-locked), TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN/LVPC/LVLP/RESO (drift-locked), QUST (alias fill) using verbatim record bytes |
 | `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 45 clean types (ignored, needs game data) |
 | `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
 | `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width; VMAD object decoding (both object formats, FormID offset); VMAD array property types 11–15 and struct types 6/17 (count + elements); COED `FormIdTargetType` owner-decider with and without resolver; `RArray` `CountPath` boundary |

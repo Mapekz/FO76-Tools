@@ -55347,6 +55347,10 @@
                         [
                           "ALFE",
                           "ALFD"
+                        ],
+                        [
+                          "ALFA",
+                          "ALRT"
                         ]
                       ]
                     },
@@ -55448,6 +55452,27 @@
                                 "2147483647": "All"
                               }
                             }
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "rstruct",
+                        "name": "Location Alias Reference",
+                        "members": [
+                          {
+                            "kind": "integer",
+                            "name": "Alias",
+                            "width": "s32",
+                            "signed": true,
+                            "sig": "ALFA"
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Ref Type",
+                            "valid_refs": [
+                              "LCRT"
+                            ],
+                            "sig": "ALRT"
                           }
                         ]
                       }

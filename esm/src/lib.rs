@@ -577,6 +577,8 @@ impl Database {
             resolver: None,
             outer_struct: None,
             record_edid_char: None,
+            scope_min_doc_index: None,
+            scope_max_doc_index: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
@@ -610,6 +612,8 @@ impl Database {
                 .map(|r| r as &dyn crate::decode::FormIdRefResolver),
             outer_struct: None,
             record_edid_char: None,
+            scope_min_doc_index: None,
+            scope_max_doc_index: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
@@ -700,6 +704,8 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             resolver: Some(&nested_resolver),
             outer_struct: None,
             record_edid_char: None,
+            scope_min_doc_index: None,
+            scope_max_doc_index: None,
         };
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Some(serde_json::json!({

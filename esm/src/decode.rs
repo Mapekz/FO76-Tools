@@ -60,6 +60,12 @@ pub struct DecodeContext<'a> {
     /// First character of the current record's EditorID subrecord.
     /// Pre-scanned in `decode_record` for use by `EdidPrefix` union deciders.
     pub record_edid_char: Option<char>,
+    /// When set, `PresentSignature` union deciders only consider anchor subrecords
+    /// at or after this document index (inclusive).
+    pub scope_min_doc_index: Option<usize>,
+    /// When set, `PresentSignature` union deciders only consider anchor subrecords
+    /// strictly before this document index (typically the enclosing `ALED`).
+    pub scope_max_doc_index: Option<usize>,
 }
 
 impl<'a> DecodeContext<'a> {
@@ -75,6 +81,24 @@ impl<'a> DecodeContext<'a> {
             resolver: self.resolver,
             outer_struct: Some(outer),
             record_edid_char: self.record_edid_char,
+            scope_min_doc_index: self.scope_min_doc_index,
+            scope_max_doc_index: self.scope_max_doc_index,
+        }
+    }
+
+    fn with_scope(&self, min: Option<usize>, max: Option<usize>) -> DecodeContext<'a> {
+        DecodeContext {
+            schema: self.schema,
+            form_version: self.form_version,
+            is_localized: self.is_localized,
+            localization: self.localization,
+            curves: self.curves,
+            resolve_depth: self.resolve_depth,
+            resolver: self.resolver,
+            outer_struct: self.outer_struct.clone(),
+            record_edid_char: self.record_edid_char,
+            scope_min_doc_index: min,
+            scope_max_doc_index: max,
         }
     }
 }
@@ -154,6 +178,8 @@ pub fn decode_record(
             resolve_depth: ctx.resolve_depth,
             resolver: ctx.resolver,
             outer_struct: None,
+            scope_min_doc_index: ctx.scope_min_doc_index,
+            scope_max_doc_index: ctx.scope_max_doc_index,
         };
         &ctx_with_edid
     } else {
@@ -394,9 +420,15 @@ fn decode_member(
             }
         }
         MemberDef::RStruct { name, members } => {
+            let (scope_min, scope_max) = rstruct_present_signature_scope(by_sig, members);
+            let scoped_ctx = if scope_min.is_some() || scope_max.is_some() {
+                &ctx.with_scope(scope_min, scope_max)
+            } else {
+                ctx
+            };
             let mut group = Map::new();
             for m in members {
-                decode_member(ctx, m, &mut group, by_sig, None);
+                decode_member(scoped_ctx, m, &mut group, by_sig, None);
             }
             if !group.is_empty() {
                 out.insert(name.clone(), Value::Object(group));
@@ -535,6 +567,10 @@ fn decode_member(
                     // wbRUnion: select the variant whose anchor subrecord appears
                     // earliest in the document (lowest doc_index).  Each variant
                     // may have multiple anchor sigs (nested-union branches).
+                    // When `scope_*_doc_index` is set (QUST alias bodies), only
+                    // anchors inside that range are considered so later aliases
+                    // cannot steal fill-type subrecords.
+                    let in_scope = |idx: usize| doc_index_in_present_signature_scope(ctx, idx);
                     present_signature
                         .iter()
                         .enumerate()
@@ -542,10 +578,11 @@ fn decode_member(
                             anchors
                                 .iter()
                                 .filter_map(|anchor| {
-                                    by_sig
-                                        .get(anchor.as_str())
-                                        .and_then(|v| v.first())
-                                        .map(|sr| sr.doc_index)
+                                    by_sig.get(anchor.as_str()).and_then(|subs| {
+                                        subs.iter()
+                                            .map(|sr| sr.doc_index)
+                                            .find(|&idx| in_scope(idx))
+                                    })
                                 })
                                 .min()
                                 .map(|doc_idx| (i, doc_idx))
@@ -577,6 +614,17 @@ fn decode_member(
             if let Some(idx) = chosen {
                 if let Some(variant) = variants.get(idx) {
                     decode_member(ctx, variant, out, by_sig, effective_payload);
+                    return;
+                }
+            }
+            if let UnionDecider::PresentSignature { present_signature } = decider {
+                let in_scope = |idx: usize| doc_index_in_present_signature_scope(ctx, idx);
+                let any_anchor_in_scope = present_signature.iter().flatten().any(|anchor| {
+                    by_sig
+                        .get(anchor.as_str())
+                        .is_some_and(|subs| subs.iter().any(|sr| in_scope(sr.doc_index)))
+                });
+                if !any_anchor_in_scope {
                     return;
                 }
             }
@@ -1257,6 +1305,69 @@ fn take_first<'a>(
     })
 }
 
+fn doc_index_in_present_signature_scope(ctx: &DecodeContext<'_>, doc_index: usize) -> bool {
+    if let Some(min) = ctx.scope_min_doc_index {
+        if doc_index < min {
+            return false;
+        }
+    }
+    if let Some(max) = ctx.scope_max_doc_index {
+        if doc_index >= max {
+            return false;
+        }
+    }
+    true
+}
+
+fn first_anchor_doc_index(
+    by_sig: &HashMap<String, Vec<&OwnedSubrecord>>,
+    member: &MemberDef,
+) -> Option<usize> {
+    match member {
+        MemberDef::Struct { sig: Some(sig), .. }
+        | MemberDef::Integer { sig: Some(sig), .. }
+        | MemberDef::Float { sig: Some(sig), .. }
+        | MemberDef::String { sig: Some(sig), .. }
+        | MemberDef::LString { sig: Some(sig), .. }
+        | MemberDef::FormId { sig: Some(sig), .. }
+        | MemberDef::Bytes { sig: Some(sig), .. }
+        | MemberDef::ByteRgba { sig: Some(sig), .. }
+        | MemberDef::Vec3 { sig: Some(sig), .. }
+        | MemberDef::Empty { sig: Some(sig), .. }
+        | MemberDef::Unknown { sig: Some(sig), .. }
+        | MemberDef::Union { sig: Some(sig), .. }
+        | MemberDef::Vmad { sig: Some(sig), .. }
+        | MemberDef::RawFallback { sig: Some(sig), .. } => by_sig
+            .get(sig.as_str())
+            .and_then(|v| v.first())
+            .map(|sr| sr.doc_index),
+        MemberDef::RStruct { members, .. } => members
+            .iter()
+            .find_map(|m| first_anchor_doc_index(by_sig, m)),
+        _ => None,
+    }
+}
+
+/// Bounds for `PresentSignature` inside repeated QUST alias bodies: from the
+/// struct's opening anchor subrecord up to (but not including) the next `ALED`.
+fn rstruct_present_signature_scope(
+    by_sig: &HashMap<String, Vec<&OwnedSubrecord>>,
+    members: &[MemberDef],
+) -> (Option<usize>, Option<usize>) {
+    let scope_min = members
+        .iter()
+        .find_map(|member| first_anchor_doc_index(by_sig, member));
+    let scope_max = scope_min.and_then(|min| {
+        by_sig.get("ALED").and_then(|subs| {
+            subs.iter()
+                .map(|sr| sr.doc_index)
+                .filter(|&idx| idx > min)
+                .min()
+        })
+    });
+    (scope_min, scope_max)
+}
+
 /// Returns the first sig-bearing member's signature for `member`, if any.
 /// Used by the `stop_before` RArray check to identify each element's anchor.
 fn anchor_sig(member: &MemberDef) -> Option<&str> {
@@ -1614,6 +1725,8 @@ mod tests {
             resolver: None,
             outer_struct: None,
             record_edid_char: None,
+            scope_min_doc_index: None,
+            scope_max_doc_index: None,
         }
     }
 

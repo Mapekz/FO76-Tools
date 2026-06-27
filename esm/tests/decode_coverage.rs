@@ -40,7 +40,7 @@
 //! | LVLI |           0 |     10150 | Leveled-list LLCT/LLSD variants unmapped |
 //! | NPC_ |         346 |       273 | NPC data has multiple unmapped sigs |
 //! | CONT |          79 |       279 | Container CNTO/COED variants partially unmapped |
-//! | QUST |        1015 |         3 | Quest alias fill-type unions (part 3) |
+//! | QUST |           6 |         0 | partial† — fragmented `VMAD` on 6 records only |
 //! | LVLN |           0 |      1060 | partial† — empty `LVLD` drift only |
 //! | LVPC |           0 |        15 | partial† — empty `LVLD` drift only |
 //! | LVLP |           0 |         1 | partial† — empty `LVLD` drift only |

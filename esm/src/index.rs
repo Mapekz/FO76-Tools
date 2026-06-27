@@ -189,6 +189,8 @@ impl Index {
                 resolver: None,
                 outer_struct: None,
                 record_edid_char: None,
+                scope_min_doc_index: None,
+                scope_max_doc_index: None,
             };
             let fields = decode_record(&ctx, &rec.header.signature, &rec.subrecords);
             let mut refs = Vec::new();

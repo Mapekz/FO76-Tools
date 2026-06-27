@@ -94,3 +94,4 @@ These `_unmapped` markers are intentional — the live ESM contains subrecords n
 | RESO | `NAM5` | Absent from the TES5Edit reference; newer than the reference. |
 | NPC_ | `AWPB`, `CTDA` | Absent from the entire TES5Edit reference; newer than the reference. |
 | GMRW | `XALG` | Absent from the TES5Edit GMRW definition (EDID/FTAGs/ANAM/RWDS/Rewards only); newer than the reference. |
+| QUST | `VMAD` (fragmented) | Six quests use `wbVMADFragmentedQUST` payloads the flat VMAD decoder does not parse yet. |
