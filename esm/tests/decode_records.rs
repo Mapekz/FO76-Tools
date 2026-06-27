@@ -779,6 +779,75 @@ fn armo_skin_naked_decodes_correctly() {
     );
 }
 
+/// ARMO 0x005DD339 — `Armor_BOSInfantry_Torso` — Brotherhood Recon Chest Piece
+/// decodes to Armor fully.
+///
+/// 43-subrecord record; form_version 208.  Exercises model info (MOD2/MO2T),
+/// dual Enlighten blocks, BOD2 biped template, KSIZ/KWDA keywords, damage
+/// resistances (DAMA), appearance (APPR), 2-entry OBTE/OBTF/FULL/OBTS object
+/// template chain, and CVT1–CVT3 curve refs.
+#[test]
+fn armo_bos_recon_chest_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 208);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x005DD339 --raw` (form_version 208).
+    let subs = subrecords_from(&[
+        ("EDID", "41726d6f725f424f53496e66616e7472795f546f72736f00"),
+        ("OBND", "f0fff1ff000010000c003100"),
+        ("PTRN", "f1ea5e00"),
+        ("FULL", "3c49443d34313030314242343e42726f74686572686f6f64205265636f6e20436865737420506965636500"),
+        ("MOD2", "41726d6f722f424f535f496e66616e7472792f424f535f496e66616e7472795f41726d6f725f546f72736f5f474f2e6e696600"),
+        ("MO2T", "0400000000000000000000000000000000000000"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("BOD2", "00080000"),
+        ("RNAM", "46370100"),
+        ("KSIZ", "0e000000"),
+        ("KWDA", "cafa07003bd35d0045d35d007a9f4900f42e4500e94a0f0039c44300ecc006003ad35d00169a5200f6f55f00d6146200825418007ace7a00"),
+        ("DESC", "00"),
+        ("INRD", "c14b1800"),
+        ("EILV", "2800000032000000"),
+        ("IBSD", "35d24e00"),
+        ("INDX", "0000"),
+        ("MODL", "34d35d00"),
+        ("DATA", "3c000000d7a3204064000000"),
+        ("FNAM", "0f0000000000000000000000"),
+        ("DAMA", "810a060000000000d56b8400850a060000000000d06b8400870a060000000000e16b8400840a060000000000ce6b8400820a060000000000d46b8400830a060000000000d06b8400"),
+        ("APPR", "c6360500212802005a2e1800c8321e00a8894e00a9894e00aa894e00ab894e001e7043009bb91c00d814620064a24700"),
+        ("OBTE", "02000000"),
+        ("OBTF", ""),
+        ("FULL", "3c49443d38313030314438373e44656661756c7400"),
+        ("OBTS", "030000000000000000000000ffff01000000ced65d000000019ce5180000000172f43c00000001"),
+        ("OBTS", "0400000000000000000000000000000181418a0000008a418a0000000148e54e00000001856d4f0000000160da8300000001"),
+        ("STOP", ""),
+        ("CVT1", "97ab1f00"),
+        ("CVT2", "c9bc1800"),
+        ("CVT3", "565a3400"),
+        ("ABPO", "bbe45400"),
+        ("VCRY", "0f000000"),
+    ]);
+
+    let result = decode_record(&ctx, "ARMO", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Armor"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("Armor_BOSInfantry_Torso"),
+        "Editor ID"
+    );
+}
+
 /// AVIF 0x000002C2 — `Strength` — decodes to Actor Value Information fully.
 ///
 /// 8-subrecord record (EDID DURL FULL DESC ANAM NAM0 NAM5 NAM6).  Exercises
