@@ -1357,6 +1357,95 @@ fn race_power_armor_morph_subset_decodes_correctly() {
     assert_fully_decoded(&result);
 }
 
+/// RACE 0x00013746 — `HumanRace` — morph/keyword subset decodes cleanly.
+///
+/// The full record (~4790 subrecords) has raw_fallback in Attack Data structs;
+/// this test exercises the header fields, biped template, keywords, one morph
+/// group element (MPGN/MPPC/MPPK/MPGS), and one face morph pair (FMRI/FMRN).
+/// form_version 209.
+#[test]
+fn race_human_race_subset_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Selective real bytes from `esm get SeventySix_20260619.esm
+    // --formid 0x00013746 --raw` (form_version 209).
+    let subs = subrecords_from(&[
+        ("EDID", "48756d616e5261636500"),
+        ("FULL", "3c49443d34313031313637363e48756d616e00"),
+        ("BOD2", "383020e0"),
+        ("KSIZ", "06000000"),
+        ("KWDA", "9437010072cb0200534d1d0012962400b0b86f0080fc2200"),
+        // Morph Groups Male — first element: "Eyes", 55 presets
+        ("MPGN", "4579657300"),
+        ("MPPC", "37000000"),
+        ("MPPK", "9404"),
+        ("MPGS", "d335ef36d435ef36d535ef36d635ef36"),
+        // Face Morphs Male — first element: index=0, name="Eyebrows - Full"
+        ("FMRI", "00000000"),
+        ("FMRN", "3c49443d34313031313744323e457962726f7773202d2046756c6c00"),
+    ]);
+
+    let result = decode_record(&ctx, "RACE", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Race"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("HumanRace"),
+        "Editor ID"
+    );
+}
+
+/// RACE 0x0079CCE7 — `GHL_PlayerGhoulRace` — morph/keyword subset decodes cleanly.
+///
+/// The full record (~1885 subrecords) has raw_fallback in Attack Data structs;
+/// this test exercises the header fields, biped template, keywords, one morph
+/// group element (MPGN/MPPC/MPPK/MPGS), one face morph pair (FMRI/FMRN), and
+/// the default race link (RNAM).  form_version 209.
+#[test]
+fn race_ghoul_race_subset_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Selective real bytes from `esm get SeventySix_20260619.esm
+    // --formid 0x0079CCE7 --raw` (form_version 209).
+    let subs = subrecords_from(&[
+        ("EDID", "47484c5f506c6179657247686f756c5261636500"),
+        ("FULL", "3c49443d36313032354131303e47686f756c00"),
+        ("BOD2", "383020e0"),
+        ("KSIZ", "09000000"),
+        ("KWDA", "94370100534d1d0012962400b0b86f00e5cc7900b7af0e0072cb02002d3030009ba01000"),
+        // Morph Groups Male — first element: "Eyes", 0 presets
+        ("MPGN", "4579657300"),
+        ("MPPC", "00000000"),
+        ("MPPK", "9404"),
+        ("MPGS", "cb36ef36cc36ef36cd36ef36ce36ef36"),
+        // Face Morphs Male — first element: index=0, name="Eyebrows - Full"
+        ("FMRI", "00000000"),
+        ("FMRN", "3c49443d36313032354136433e457962726f7773202d2046756c6c00"),
+        ("RNAM", "46370100"),
+    ]);
+
+    let result = decode_record(&ctx, "RACE", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Race"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("GHL_PlayerGhoulRace"),
+        "Editor ID"
+    );
+}
+
 // ── Drift-type regression tests ──────────────────────────────────────────────
 //
 // These three types remain intentionally partial: they carry subrecords that
