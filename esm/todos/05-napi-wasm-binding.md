@@ -23,6 +23,8 @@
   `app/src/main/addon.ts`.
 - Electron IPC calls into the N-API object in `app/src/main/ipc.ts`.
 - Electron packaging unpacks `.node` files and `node_modules/@fo76/esm-napi`.
+- `bindings/napi/smoke.mjs` is now environment-gated with `FO76_ESM`
+  instead of hardcoding a local absolute ESM path.
 
 ### Not Implemented
 
@@ -36,7 +38,6 @@
 
 - `bindings/napi/index.d.ts` is empty even though `package.json` advertises it in
   `"types"`.
-- `bindings/napi/smoke.mjs` hardcodes a local absolute ESM path.
 - `bindings/napi/src/lib.rs` uses `Mutex::lock().unwrap()` and
   `serde_json::to_value(...).unwrap()`.
 - `recordByEdid` and `referencedBy` are synchronous after DB open and can block
@@ -65,13 +66,11 @@ workspace style is adequate.
    error mapping.
 4. Move expensive binding calls that can build large indexes (`recordByEdid`,
    `referencedBy`) onto blocking tasks or expose async variants.
-5. Make `bindings/napi/smoke.mjs` read `process.env.ESM` and fail with a useful
-   message when it is not set.
-6. Decide supported native targets and update `bindings/napi/package.json`,
+5. Decide supported native targets and update `bindings/napi/package.json`,
    build scripts, release docs, and Electron packaging accordingly.
-7. Replace loose native-object casts in `app/src/main/ipc.ts` with the generated
+6. Replace loose native-object casts in `app/src/main/ipc.ts` with the generated
    package types once `index.d.ts` is valid.
-8. Document how to build the native addon before running the Electron app.
+7. Document how to build the native addon before running the Electron app.
 
 ## Optional WASM Follow-Up
 
@@ -95,7 +94,8 @@ If WASM remains desired, create a separate todo for:
   locks or serialization failures.
 - The Electron main process does not block on first-time EditorID or xref index
   builds.
-- The smoke test runs on any machine with `ESM=/path/to/SeventySix.esm`.
+- The smoke test remains portable and runs only when
+  `FO76_ESM=/path/to/SeventySix.esm` is set.
 - Supported platforms are explicit and match the Electron packaging targets, or
   packaging is narrowed to the actually supported target.
 - WASM is either split into a new todo or explicitly closed as not planned.
@@ -105,7 +105,7 @@ If WASM remains desired, create a separate todo for:
 - `cargo test`
 - `cargo clippy --all-targets -- -D warnings`
 - `npm run build` in `bindings/napi` or equivalent `napi build --platform --release`
-- `ESM=/path/to/SeventySix.esm node bindings/napi/smoke.mjs`
+- `FO76_ESM=/path/to/SeventySix.esm node bindings/napi/smoke.mjs`
 - `npm run build` in `app/`
 
 ---

@@ -1,5 +1,12 @@
 # 12 — Split GUI to top-level FO76-Tools folder
 
+## Status
+
+Still relevant if the product still wants the GUI separated from the headless
+engine. This split has not been implemented: the Electron app still lives in
+`esm/app`, and `esm/app/package.json` still depends on
+`@fo76/esm-napi` via `file:../bindings/napi`.
+
 ## Goal
 
 Extract the Electron app (`app/`) from inside `esm/` into its own top-level folder under the FO76-Tools monorepo (e.g. `FO76-Tools/esm-viewer-app/` or `FO76-Tools/fo76-esm/`), so the product ("FO76 ESM Viewer") and the headless engine (`esm` lib + CLI + server) are visually and structurally distinct at the repo root.
@@ -33,9 +40,11 @@ The app is coupled to the engine via two seams:
 
 1. Move `app/` to the new top-level location (e.g. `git mv esm/app fo76-esm-viewer` from FO76-Tools root, or `mkdir -p fo76-esm-viewer && git mv esm/app/* fo76-esm/`).
 2. Update `app/package.json` `dependencies["@fo76/esm-napi"]` path.
-3. Verify `npm install && npm run build` (or `electron-vite build`) in the new location.
-4. Update the root `FO76-Tools/README.md` and `FO76-Tools/CLAUDE.md` to list the new folder.
-5. Consider whether the new folder needs its own `.gitignore` (for `node_modules/`, `out/`, `dist/`).
+3. Update the app lockfile after the local file dependency path changes.
+4. Verify `npm install && npm run build` (or `electron-vite build`) in the new location.
+5. Update the root `FO76-Tools/README.md` and `FO76-Tools/CLAUDE.md` to list the new folder.
+6. Update `esm/README.md` and `esm/CLAUDE.md` so they describe the headless engine, server, static UI, and N-API binding without implying the Electron app still lives under `esm/app`.
+7. Add or move ignore rules for the new app folder (`node_modules/`, `out/`, `dist/`, `*.tsbuildinfo`).
 
 ## Why not a separate git repo?
 
