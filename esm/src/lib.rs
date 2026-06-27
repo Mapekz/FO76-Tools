@@ -637,6 +637,7 @@ impl Database {
             resolve_depth: crate::decode::ResolveDepth::None,
             resolver: None,
             outer_struct: None,
+            record_signature: None,
             record_edid_char: None,
             scope_min_doc_index: None,
             scope_max_doc_index: None,
@@ -672,6 +673,7 @@ impl Database {
                 .as_ref()
                 .map(|r| r as &dyn crate::decode::FormIdRefResolver),
             outer_struct: None,
+            record_signature: None,
             record_edid_char: None,
             scope_min_doc_index: None,
             scope_max_doc_index: None,
@@ -761,6 +763,7 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             resolve_depth: crate::decode::ResolveDepth::Full,
             resolver: Some(&nested_resolver),
             outer_struct: None,
+            record_signature: None,
             record_edid_char: None,
             scope_min_doc_index: None,
             scope_max_doc_index: None,

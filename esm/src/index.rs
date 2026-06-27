@@ -215,6 +215,7 @@ impl Index {
                 resolve_depth: ResolveDepth::None,
                 resolver: None,
                 outer_struct: None,
+                record_signature: None,
                 record_edid_char: None,
                 scope_min_doc_index: None,
                 scope_max_doc_index: None,

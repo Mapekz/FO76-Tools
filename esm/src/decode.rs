@@ -57,6 +57,10 @@ pub struct DecodeContext<'a> {
     /// elements so that `FieldValue` deciders in element structs can reach parent
     /// fields (e.g. "Form Type" for OMOD property enum selection).
     pub outer_struct: Option<Map<String, Value>>,
+    /// Signature of the record type currently being decoded (e.g. `"QUST"`, `"NPC_"`).
+    /// Set at the top of `decode_record` so record-type-aware sub-decoders can
+    /// branch on it (e.g. `decode_vmad_qust` vs `decode_vmad`).
+    pub record_signature: Option<&'a str>,
     /// First character of the current record's EditorID subrecord.
     /// Pre-scanned in `decode_record` for use by `EdidPrefix` union deciders.
     pub record_edid_char: Option<char>,
@@ -80,6 +84,7 @@ impl<'a> DecodeContext<'a> {
             resolve_depth: self.resolve_depth,
             resolver: self.resolver,
             outer_struct: Some(outer),
+            record_signature: self.record_signature,
             record_edid_char: self.record_edid_char,
             scope_min_doc_index: self.scope_min_doc_index,
             scope_max_doc_index: self.scope_max_doc_index,
@@ -96,6 +101,7 @@ impl<'a> DecodeContext<'a> {
             resolve_depth: self.resolve_depth,
             resolver: self.resolver,
             outer_struct: self.outer_struct.clone(),
+            record_signature: self.record_signature,
             record_edid_char: self.record_edid_char,
             scope_min_doc_index: min,
             scope_max_doc_index: max,
@@ -166,25 +172,27 @@ pub fn decode_record(
         .and_then(|s| s.trim_end_matches('\0').chars().next());
 
     // Shadow ctx with an updated context that carries the EDID first char.
-    let ctx_with_edid;
-    let ctx: &DecodeContext<'_> = if edid_char != ctx.record_edid_char {
-        ctx_with_edid = DecodeContext {
-            record_edid_char: edid_char,
-            schema: ctx.schema,
-            form_version: ctx.form_version,
-            is_localized: ctx.is_localized,
-            localization: ctx.localization,
-            curves: ctx.curves,
-            resolve_depth: ctx.resolve_depth,
-            resolver: ctx.resolver,
-            outer_struct: None,
-            scope_min_doc_index: ctx.scope_min_doc_index,
-            scope_max_doc_index: ctx.scope_max_doc_index,
+    let ctx_with_meta;
+    let ctx: &DecodeContext<'_> =
+        if edid_char != ctx.record_edid_char || ctx.record_signature != Some(signature) {
+            ctx_with_meta = DecodeContext {
+                record_signature: Some(signature),
+                record_edid_char: edid_char,
+                schema: ctx.schema,
+                form_version: ctx.form_version,
+                is_localized: ctx.is_localized,
+                localization: ctx.localization,
+                curves: ctx.curves,
+                resolve_depth: ctx.resolve_depth,
+                resolver: ctx.resolver,
+                outer_struct: None,
+                scope_min_doc_index: ctx.scope_min_doc_index,
+                scope_max_doc_index: ctx.scope_max_doc_index,
+            };
+            &ctx_with_meta
+        } else {
+            ctx
         };
-        &ctx_with_edid
-    } else {
-        ctx
-    };
 
     let mut out = Map::new();
     let record_def = ctx.schema.record(signature);
@@ -636,7 +644,7 @@ fn decode_member(
                 }),
             );
         }
-        MemberDef::Empty { sig, name } => {
+        MemberDef::Empty { sig, name, .. } => {
             if let Some(sig) = sig {
                 let _ = take_first(by_sig, sig);
                 out.insert(name.clone(), json!(null));
@@ -685,7 +693,12 @@ fn decode_member(
         MemberDef::Vmad { sig, name } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
-                    out.insert(name.clone(), decode_vmad(&sr.data));
+                    let decoded = if ctx.record_signature == Some("QUST") {
+                        decode_vmad_qust(&sr.data)
+                    } else {
+                        decode_vmad(&sr.data)
+                    };
+                    out.insert(name.clone(), decoded);
                 }
             }
         }
@@ -1052,6 +1065,11 @@ fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
             ..
         } => (*from_version, *below_version),
         MemberDef::Unused {
+            from_version,
+            below_version,
+            ..
+        } => (*from_version, *below_version),
+        MemberDef::Empty {
             from_version,
             below_version,
             ..
@@ -1507,6 +1525,192 @@ pub fn decode_vmad(data: &[u8]) -> Value {
     json!({"version": version, "scripts": scripts})
 }
 
+/// Decode a `wbVMADFragmentedQUST` VMAD subrecord.
+///
+/// Extends the flat `decode_vmad` output with the `wbVMADFragmentedQUST`-specific
+/// tail: a **Script Fragments** struct (extra bind data version, fragment count,
+/// script name + optional script data, then N quest-stage fragments) followed by
+/// an **Aliases** array (each alias carries a FormID/alias-ID, format version,
+/// and its own script entries).
+///
+/// On any bounds-check failure the function returns the same `{"_raw": true,
+/// "reason": "VMAD truncated", ...}` sentinel as `decode_vmad`, so callers can
+/// treat both uniformly.
+pub fn decode_vmad_qust(data: &[u8]) -> Value {
+    let mut pos = 0usize;
+
+    macro_rules! need {
+        ($n:expr) => {
+            if pos + $n > data.len() {
+                return json!({
+                    "_raw": true,
+                    "reason": "VMAD truncated",
+                    "hex": hex::encode(&data[pos..])
+                });
+            }
+        };
+    }
+    macro_rules! read_u16 {
+        () => {{
+            need!(2);
+            let v = u16::from_le_bytes([data[pos], data[pos + 1]]);
+            pos += 2;
+            v
+        }};
+    }
+    macro_rules! read_u32 {
+        () => {{
+            need!(4);
+            let v = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+            pos += 4;
+            v
+        }};
+    }
+    macro_rules! read_wstring {
+        () => {{
+            let len = read_u16!() as usize;
+            need!(len);
+            let s = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
+            pos += len;
+            s
+        }};
+    }
+
+    // ── Header + scripts (same layout as the flat decoder) ───────────────────
+    let version = read_u16!();
+    let obj_format = read_u16!();
+    let script_count = read_u16!();
+    let mut scripts = Vec::new();
+    for _ in 0..script_count {
+        let name = read_wstring!();
+        need!(1);
+        let status = data[pos];
+        pos += 1;
+        let prop_count = read_u16!();
+        let mut props = Vec::new();
+        for _ in 0..prop_count {
+            let prop_name = read_wstring!();
+            need!(2);
+            let prop_type = data[pos];
+            pos += 1;
+            let _prop_status = data[pos];
+            pos += 1;
+            let value = decode_vmad_property(data, &mut pos, prop_type, obj_format);
+            props.push(json!({"name": prop_name, "type": prop_type, "value": value}));
+        }
+        scripts.push(json!({"name": name, "status": status, "properties": props}));
+    }
+
+    // ── Script Fragments (wbVMADFragmentedQUST tail) ─────────────────────────
+    need!(1);
+    let extra_bind_data_version = data[pos] as i8;
+    pos += 1;
+    let frag_count = read_u16!() as usize;
+    let script_name = read_wstring!();
+    // Script union: if script_name == "" then wbNull, else Script Data
+    let script_data = if !script_name.is_empty() {
+        need!(3); // flags u8 + prop_count u16
+        let flags = data[pos];
+        pos += 1;
+        let pc = read_u16!() as usize;
+        let mut props = Vec::new();
+        for _ in 0..pc {
+            let pn = read_wstring!();
+            need!(2);
+            let pt = data[pos];
+            pos += 1;
+            let _ps = data[pos];
+            pos += 1;
+            let val = decode_vmad_property(data, &mut pos, pt, obj_format);
+            props.push(json!({"name": pn, "type": pt, "value": val}));
+        }
+        json!({"flags": flags, "properties": props})
+    } else {
+        json!(null)
+    };
+    let mut fragments = Vec::new();
+    for _ in 0..frag_count {
+        let quest_stage = read_u32!();
+        let quest_stage_index = read_u32!();
+        need!(1);
+        pos += 1; // unknown byte
+        let frag_script_name = read_wstring!();
+        let fragment_name = read_wstring!();
+        fragments.push(json!({
+            "quest_stage": quest_stage,
+            "quest_stage_index": quest_stage_index,
+            "script_name": frag_script_name,
+            "fragment_name": fragment_name,
+        }));
+    }
+    let script_fragments = json!({
+        "extra_bind_data_version": extra_bind_data_version,
+        "script_name": script_name,
+        "script_data": script_data,
+        "fragments": fragments,
+    });
+
+    // ── Aliases (wbArrayS, u16-prefixed) ─────────────────────────────────────
+    let alias_count = read_u16!() as usize;
+    let mut aliases = Vec::new();
+    for _ in 0..alias_count {
+        // ScriptPropertyObject: obj_format 2 → u16 alias_id + u16 unused + u32 FormID
+        //                       obj_format 1 → u32 FormID only
+        let (alias_id, form_id) = if obj_format >= 2 {
+            need!(8);
+            let a = u16::from_le_bytes([data[pos], data[pos + 1]]);
+            pos += 2;
+            let _unused = u16::from_le_bytes([data[pos], data[pos + 1]]);
+            pos += 2;
+            let f = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+            pos += 4;
+            (a as u32, f)
+        } else {
+            let f = read_u32!();
+            (0u32, f)
+        };
+        need!(4);
+        let _version = i16::from_le_bytes([data[pos], data[pos + 1]]);
+        pos += 2;
+        let alias_obj_format = u16::from_le_bytes([data[pos], data[pos + 1]]);
+        pos += 2;
+        // Alias Scripts: u16-prefixed array of script entries
+        let alias_script_count = read_u16!() as usize;
+        let mut alias_scripts = Vec::new();
+        for _ in 0..alias_script_count {
+            let name = read_wstring!();
+            need!(1);
+            let status = data[pos];
+            pos += 1;
+            let pc = read_u16!() as usize;
+            let mut props = Vec::new();
+            for _ in 0..pc {
+                let pn = read_wstring!();
+                need!(2);
+                let pt = data[pos];
+                pos += 1;
+                let _ps = data[pos];
+                pos += 1;
+                let val = decode_vmad_property(data, &mut pos, pt, alias_obj_format);
+                props.push(json!({"name": pn, "type": pt, "value": val}));
+            }
+            alias_scripts.push(json!({"name": name, "status": status, "properties": props}));
+        }
+        aliases.push(json!({
+            "alias_id": alias_id,
+            "form_id": format!("{:#010X}", form_id),
+            "alias_scripts": alias_scripts,
+        }));
+    }
+
+    json!({
+        "version": version,
+        "scripts": scripts,
+        "script_fragments": script_fragments,
+        "aliases": aliases,
+    })
+}
+
 fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format: u16) -> Value {
     fn read_vmad_wstring(data: &[u8], pos: &mut usize) -> Option<String> {
         if *pos + 2 > data.len() {
@@ -1727,6 +1931,7 @@ mod tests {
             resolve_depth: crate::ResolveDepth::None,
             resolver: None,
             outer_struct: None,
+            record_signature: None,
             record_edid_char: None,
             scope_min_doc_index: None,
             scope_max_doc_index: None,

@@ -33,18 +33,12 @@
 //! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records.rs`.
 //!
 //! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
-//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT.
+//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT,
+//! LVLI, LVLN, LVPC, LVLP, RESO, GMRW, QUST.
 //!
 //! | Type | raw_fallback | _unmapped | Notes |
 //! |------|-------------|-----------|-------|
-//! | LVLI |           0 |     10150 | Leveled-list LLCT/LLSD variants unmapped |
-//! | NPC_ |           1 |       273 | NPC data has multiple unmapped sigs |
-//! | QUST |           6 |         0 | partial† — fragmented `VMAD` on 6 records only |
-//! | LVLN |           0 |      1060 | partial† — empty `LVLD` drift only |
-//! | LVPC |           0 |        15 | partial† — empty `LVLD` drift only |
-//! | LVLP |           0 |         1 | partial† — empty `LVLD` drift only |
-//! | RESO |           0 |         1 | partial† — `NAM5` drift only |
-//! | GMRW |           0 |         1 | `XALG` drift only (drift-locked test) |
+//! | NPC_ |           1 |         0 | 1 pre-existing raw_fallback (VMAD on one NPC); all AWPB/CTDA now mapped |
 
 mod common;
 
@@ -59,7 +53,7 @@ const CLEAN_TYPES: &[&str] = &[
     "FISH", "FACT", "FLST", "WTHR", "WAVE", "OTFT", "MSWP", "CURV", "DFOB", "CHAL", "CMPO", "CMPT",
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
     "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
-    "NOTE", "RACE", "CONT",
+    "NOTE", "RACE", "CONT", "LVLI", "LVLN", "LVPC", "LVLP", "RESO", "GMRW", "QUST",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`

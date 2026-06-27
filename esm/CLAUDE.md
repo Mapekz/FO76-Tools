@@ -158,15 +158,9 @@ The server exposes five tools: `esm_file_info`, `esm_get_record`, `esm_list_reco
 
 ## Known coverage drift (vs TES5Edit)
 
-These `_unmapped` markers are intentional — the live ESM contains subrecords newer than or version-gated relative to the TES5Edit Pascal reference (`../TES5Edit/Core/wbDefinitionsFO76.pas`). Do not treat them as decode bugs:
+All previously-documented drift entries are now resolved:
 
-| Record | Subrecord | Reason |
-|---|---|---|
-| LVLI | `LVLD` | `wbBelowVersion(174, LVLD …)` — live data is form-version ≥174, so LVLD is correctly out of schema scope. |
-| LVLN | `LVLD` | Same as LVLI — empty `LVLD` on form-version ≥174 records. |
-| LVPC | `LVLD` | Same as LVLI/LVLN. |
-| LVLP | `LVLD` | Same as LVLI/LVLN. |
-| RESO | `NAM5` | Absent from the TES5Edit reference; newer than the reference. |
-| NPC_ | `AWPB`, `CTDA` | Absent from the entire TES5Edit reference; newer than the reference. |
-| GMRW | `XALG` | Absent from the TES5Edit GMRW definition (EDID/FTAGs/ANAM/RWDS/Rewards only); newer than the reference. |
-| QUST | `VMAD` (fragmented) | Six quests use `wbVMADFragmentedQUST` payloads the flat VMAD decoder does not parse yet. |
+- **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`** — mapped in `schema/fo76.overrides.json`.
+- **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode.rs` handles the Script Fragments + Aliases tail; dispatched when `record_signature == "QUST"`.
+
+The only remaining gap is **NPC_ VMAD**: one NPC in the live ESM produces a `raw_fallback` on VMAD (unrelated to `wbVMADFragmentedQUST`; pre-existing). This is not yet diagnosed.

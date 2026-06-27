@@ -1,7 +1,7 @@
 mod common;
 
 use common::{
-    assert_fully_decoded, assert_only_drift_markers, bare_ctx, bare_ctx_fv, sr, subrecords_from,
+    assert_fully_decoded, bare_ctx, bare_ctx_fv, collect_decode_problems, sr, subrecords_from,
 };
 use esm::decode::decode_record;
 use esm::format::Signature;
@@ -43,6 +43,15 @@ fn mgef_data_decodes_correct_structure() {
     assert_eq!(
         result.get("_record_type").and_then(|v| v.as_str()),
         Some("Magic Effect"),
+    );
+    // Synthetic DATA payload should decode cleanly — no raw_fallback, _unknown_record,
+    // or _unmapped markers. (assert_fully_decoded is inappropriate here since the record
+    // is intentionally missing most subrecords; collect_decode_problems is the right tool.)
+    let problems = collect_decode_problems(&result);
+    assert!(
+        problems.is_empty(),
+        "MGEF DATA should decode without problems; found:\n{}",
+        problems.join("\n")
     );
 
     let data = result
@@ -189,15 +198,14 @@ fn omod_legendary_weapon_data_decodes_correctly() {
 
     let result = decode_record(&ctx, "OMOD", &subrecords);
 
-    // Record type resolved, no subrecords left over.
+    // Record type resolved, no subrecords left over, no raw_fallbacks.
     assert_eq!(
         result.get("_record_type").and_then(|v| v.as_str()),
         Some("Object Modification"),
     );
-    assert!(
-        result.get("_unmapped").is_none(),
-        "all subrecords should be consumed by the schema"
-    );
+    // assert_fully_decoded catches _unmapped, _raw+reason, and _unknown_record —
+    // stronger than the previous bare _unmapped.is_none() check.
+    assert_fully_decoded(&result);
 
     // Navigate via &Value so .pointer() is available for nested paths.
     let data = result.get("Data").expect("Data struct must decode");
@@ -911,9 +919,7 @@ fn avif_strength_decodes_correctly() {
 // Fix A / Fix B / Fix D — per-type regression tests added alongside the
 // VMAD/COED/RACE-morph decode fixes (HEAD commit).
 //
-// Five clean-type tests (assert_fully_decoded) lock the no-marker status.
-// Three drift-type tests (assert_only_drift_markers) lock the drift boundary
-// so that future regressions introducing NEW unexpected markers fail.
+// All clean-type tests (assert_fully_decoded) lock the no-marker status.
 // ════════════════════════════════════════════════════════════════════════════
 
 /// ENCH 0x00002B4F — `zzzcrEnchFireflyIchorSplatterFX` — decodes to
@@ -2977,22 +2983,19 @@ fn race_mothman_decodes_correctly() {
     );
 }
 
-// ── Drift-type regression tests ──────────────────────────────────────────────
+// ── Previously-drift records now fully decoded ────────────────────────────────
 //
-// These three types remain intentionally partial: they carry subrecords that
-// are absent from or version-gated out of the TES5Edit Pascal reference.
-// The tests lock the drift boundary: exactly the documented sigs appear as
-// _unmapped, and no NEW unexpected markers (raw_fallback, additional _unmapped)
-// should emerge from future decoder changes.
+// These records carry subrecords that were absent from or version-gated out of
+// the TES5Edit Pascal reference.  Overrides in `fo76.overrides.json` now map
+// them (as reverse-engineered or reference-grounded types), so all tests assert
+// assert_fully_decoded instead of the former assert_only_drift_markers.
 
-/// GMRW 0x008B2016 — `WorldPets_Reward_PetLevelling_Generic_CUR_Goldbullions01`
-/// — XALG is the documented drift subrecord.
+/// GMRW 0x008B2016 — `WorldPets_Reward_PetLevelling_Generic_CUR_Goldbullions01`.
 ///
-/// form_version 209.  XALG is absent from the TES5Edit GMRW definition (which
-/// covers only EDID/FTAGs/ANAM/RWDS/Rewards); it is newer than the reference
-/// and intentionally left _unmapped.
+/// form_version 209.  XALG is absent from the TES5Edit GMRW definition; it is
+/// mapped in `fo76.overrides.json` as a raw `bytes` field (reverse-engineered).
 #[test]
-fn gmrw_xalg_drift_locked() {
+fn gmrw_world_pets_reward_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
 
@@ -3011,19 +3014,16 @@ fn gmrw_xalg_drift_locked() {
 
     let result = decode_record(&ctx, "GMRW", &subs);
 
-    // XALG must be the sole _unmapped sig — no other unexpected markers.
-    assert_only_drift_markers(&result, &["XALG"]);
+    assert_fully_decoded(&result);
 }
 
-/// LVLI 0x0000129C — `LL_Flora_Corn` — LVLD is the documented drift subrecord.
+/// LVLI 0x0000129C — `LL_Flora_Corn`.
 ///
-/// form_version 197 (≥174).  `wbBelowVersion(174, LVLD …)` means LVLD is only
-/// in the schema for form_version < 174; live data is ≥174, so LVLD is
-/// _unmapped.  All other subrecords (OBND, ONAM, LVMV, LVCV, LVLF, LLCT, LVLO,
-/// CTDA, LVOV, LVIV, LVLV, MODL, MODT, ENLT, ENLS, AUUV) are correctly
-/// decoded.
+/// form_version 197 (≥174).  `wbBelowVersion(174, LVLD …)` means the existing
+/// LVLD schema member is inactive at fv≥174; an `empty` member with
+/// `from_version:174` in `fo76.overrides.json` now consumes the empty subrecord.
 #[test]
-fn lvli_lvld_drift_locked() {
+fn lvli_flora_corn_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 197);
 
@@ -3093,8 +3093,7 @@ fn lvli_lvld_drift_locked() {
 
     let result = decode_record(&ctx, "LVLI", &subs);
 
-    // LVLD must be the sole _unmapped sig — no other unexpected markers.
-    assert_only_drift_markers(&result, &["LVLD"]);
+    assert_fully_decoded(&result);
 }
 
 /// NPC_ 0x00425171 — `W05_Settler_Ward` — decodes to Non-Player Character fully.
@@ -3264,16 +3263,12 @@ fn npc_w05_settler_ward_decodes_correctly() {
     );
 }
 
-/// NPC_ 0x0084FB8F — `ATX_CAMPPets_Actor_RadHog_Standard` — AWPB and CTDA are
-/// documented drift subrecords.
+/// NPC_ 0x0084FB8F — `ATX_CAMPPets_Actor_RadHog_Standard`.
 ///
-/// form_version 209.  AWPB is absent from the entire TES5Edit FO76 reference
-/// (newer than the reference); CTDA in NPC_ context is absent from the NPC_
-/// definition (appears only as a sub-condition in NPC_-adjacent records in the
-/// Pascal source).  Both remain _unmapped intentionally.  No VMAD raw_fallback
-/// appears, confirming Fix A applies cleanly to this record too.
+/// form_version 209.  AWPB (reverse-engineered FormID) and CTDA (standard
+/// 32-byte condition) are mapped in `fo76.overrides.json`.
 #[test]
-fn npc_awpb_ctda_drift_locked() {
+fn npc_radhog_camp_pet_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
 
@@ -3343,9 +3338,7 @@ fn npc_awpb_ctda_drift_locked() {
 
     let result = decode_record(&ctx, "NPC_", &subs);
 
-    // AWPB and CTDA are the only _unmapped sigs — no raw_fallback or other
-    // unexpected markers, confirming Fix A cleared VMAD truncation on NPC_ too.
-    assert_only_drift_markers(&result, &["AWPB", "CTDA"]);
+    assert_fully_decoded(&result);
 }
 // Part 2 — basic decode tests for partial-record fix plan.
 
@@ -3728,7 +3721,9 @@ fn cont_drop_crate_govt01_decodes_correctly() {
         "Items[0] FormID"
     );
     assert_eq!(
-        items[0].pointer("/Item/Item/Count").and_then(|v| v.as_u64()),
+        items[0]
+            .pointer("/Item/Item/Count")
+            .and_then(|v| v.as_u64()),
         Some(1),
         "Items[0] Count"
     );
@@ -3769,7 +3764,7 @@ fn lvln_test_essl_char_short_decodes_correctly() {
         result.get("_record_type").and_then(|v| v.as_str()),
         Some("Leveled NPC"),
     );
-    assert_only_drift_markers(&result, &["LVLD"]);
+    assert_fully_decoded(&result);
     assert_eq!(
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("TestESSLCharShort"),
@@ -3881,7 +3876,7 @@ fn lvpc_loadout_commando_selection_list_decodes_correctly() {
         result.get("_record_type").and_then(|v| v.as_str()),
         Some("Leveled Perk Card"),
     );
-    assert_only_drift_markers(&result, &["LVLD"]);
+    assert_fully_decoded(&result);
 }
 
 /// LVLP 0x003A1255 — `<no edid>` — basic decode regression.
@@ -3915,10 +3910,13 @@ fn lvlp_frag_mine_owned_decodes_correctly() {
         result.get("_record_type").and_then(|v| v.as_str()),
         Some("Leveled Pack In"),
     );
-    assert_only_drift_markers(&result, &["LVLD"]);
+    assert_fully_decoded(&result);
 }
 
-/// RESO 0x008B53B3 — `ATX_Resource_TeaWizard_resource` — drift-locked NAM5.
+/// RESO 0x008B53B3 — `ATX_Resource_TeaWizard_resource`.
+///
+/// NAM5 (1 byte) is absent from the TES5Edit RESO definition; mapped in
+/// `fo76.overrides.json` as a u8 integer (reverse-engineered).
 #[test]
 fn reso_tea_wizard_resource_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
@@ -3941,7 +3939,7 @@ fn reso_tea_wizard_resource_decodes_correctly() {
         result.get("_record_type").and_then(|v| v.as_str()),
         Some("Resource"),
     );
-    assert_only_drift_markers(&result, &["NAM5"]);
+    assert_fully_decoded(&result);
     assert_eq!(
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("ATX_Resource_TeaWizard_resource"),
@@ -4029,6 +4027,43 @@ fn qust_gq_workshop_reclaim_decodes_correctly() {
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("GQ_WorkshopReclaim")
     );
+
+    // Verify the fragmented VMAD tail is decoded (not silently dropped).
+    // decode_vmad_qust is dispatched here because record_signature == "QUST".
+    let vmad = result
+        .get("Virtual Machine Adapter")
+        .expect("VMAD must decode");
+    let frags = vmad
+        .get("script_fragments")
+        .expect("script_fragments must be present");
+    assert_eq!(
+        frags
+            .get("extra_bind_data_version")
+            .and_then(|v| v.as_i64()),
+        Some(4),
+    );
+    assert_eq!(
+        frags.get("script_name").and_then(|v| v.as_str()),
+        Some("Fragments:Quests:QF_GQ_WorkshopReclaim_000011F0"),
+    );
+    let fragments = frags
+        .get("fragments")
+        .and_then(|v| v.as_array())
+        .expect("fragments array must be present");
+    assert_eq!(fragments.len(), 4);
+    assert_eq!(
+        fragments[0].get("quest_stage").and_then(|v| v.as_u64()),
+        Some(150),
+    );
+    assert_eq!(
+        fragments[3].get("quest_stage").and_then(|v| v.as_u64()),
+        Some(1000),
+    );
+    let aliases = vmad
+        .get("aliases")
+        .and_then(|v| v.as_array())
+        .expect("aliases array must be present");
+    assert_eq!(aliases.len(), 0);
 }
 
 /// QUST 0x0000123F — `GQ_Horde` — alias fill-type + scoped PresentSignature regression.

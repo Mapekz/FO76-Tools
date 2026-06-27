@@ -141,6 +141,10 @@ pub enum MemberDef {
         #[serde(default)]
         sig: Option<String>,
         name: String,
+        #[serde(default)]
+        from_version: Option<u16>,
+        #[serde(default)]
+        below_version: Option<u16>,
     },
     #[serde(rename = "unused")]
     Unused {
