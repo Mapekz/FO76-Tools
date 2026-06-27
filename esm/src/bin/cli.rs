@@ -3,7 +3,7 @@ use esm::backend::{start_daemon_process, stop_daemon, LocalBackend, QueryBackend
 use esm::ipc::{Op, RecordSel};
 use esm::{
     parse_form_id_input, CoverageReport, Database, DiffResult, Markers, RawRecordView, RecordRow,
-    RefList, ResolveDepth, SearchField,
+    RefList, ResolveDepth, SearchField, SourceKind, SourceList,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -160,6 +160,22 @@ enum Commands {
         #[arg(long, default_value = "en")]
         lang: String,
     },
+    Sources {
+        file: PathBuf,
+        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        #[arg(conflicts_with_all = ["formid", "edid"])]
+        target: Option<String>,
+        #[arg(long, conflicts_with = "edid")]
+        formid: Option<String>,
+        #[arg(long, conflicts_with = "formid")]
+        edid: Option<String>,
+        #[arg(long, default_value_t = esm::sources::DEFAULT_MAX_DEPTH)]
+        max_depth: usize,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -252,6 +268,21 @@ enum ReplCommand {
         #[arg(long)]
         pretty: bool,
     },
+    Sources {
+        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        #[arg(conflicts_with_all = ["formid", "edid"])]
+        target: Option<String>,
+        #[arg(long, conflicts_with = "edid")]
+        formid: Option<String>,
+        #[arg(long, conflicts_with = "formid")]
+        edid: Option<String>,
+        #[arg(long, default_value_t = esm::sources::DEFAULT_MAX_DEPTH)]
+        max_depth: usize,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -337,6 +368,7 @@ fn main() -> anyhow::Result<()> {
             Commands::Coverage { file, .. } => file.clone(),
             Commands::Refs { file, .. } => file.clone(),
             Commands::Search { file, .. } => file.clone(),
+            Commands::Sources { file, .. } => file.clone(),
             Commands::Daemon { .. } => unreachable!(),
         };
         match cmd {
@@ -480,6 +512,24 @@ fn main() -> anyhow::Result<()> {
                 &lang,
                 daemon_mode,
             )?,
+            Commands::Sources {
+                file,
+                target,
+                formid,
+                edid,
+                max_depth,
+                json,
+                pretty,
+            } => cmd_sources(
+                &mut backend,
+                &file,
+                formid,
+                edid,
+                target,
+                max_depth,
+                json,
+                pretty,
+            )?,
             Commands::Daemon { .. } => unreachable!(),
         }
         if !cli.print {
@@ -517,7 +567,7 @@ fn run_repl(esm: &Path, backend: &mut Backend) -> anyhow::Result<()> {
             break;
         }
         if line == "help" {
-            eprintln!("Commands: info, get, list, search, refs, tree, diff, coverage, quit");
+            eprintln!("Commands: info, get, list, search, refs, sources, tree, diff, coverage, quit");
             continue;
         }
         let tokens: Vec<String> = shlex::split(line)
@@ -593,6 +643,16 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             pretty,
         } => cmd_search(
             backend, esm, &pattern, types, search_in, limit, json, pretty, None, None, "en", true,
+        ),
+        ReplCommand::Sources {
+            target,
+            formid,
+            edid,
+            max_depth,
+            json,
+            pretty,
+        } => cmd_sources(
+            backend, esm, formid, edid, target, max_depth, json, pretty,
         ),
     }
 }
@@ -924,6 +984,74 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
             ref_list.rows.len(),
             ref_list.total
         );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_sources(
+    backend: &mut Backend,
+    file: &Path,
+    formid: Option<String>,
+    edid: Option<String>,
+    target: Option<String>,
+    max_depth: usize,
+    json: bool,
+    pretty: bool,
+) -> anyhow::Result<()> {
+    let sel = record_sel(formid, edid, target)?;
+    let v = backend.run(
+        file,
+        Op::Sources {
+            sel,
+            max_depth: Some(max_depth),
+        },
+    )?;
+    let list: SourceList = serde_json::from_value(v)?;
+    print_sources(&list, json, pretty);
+    Ok(())
+}
+
+fn source_kind_label(kind: SourceKind) -> &'static str {
+    match kind {
+        SourceKind::LeveledList => "loot_table",
+        SourceKind::Container => "container",
+        SourceKind::Recipe => "recipe",
+        SourceKind::Quest => "quest",
+        SourceKind::NpcDrop => "npc",
+        SourceKind::Vendor => "vendor",
+        SourceKind::World => "world",
+    }
+}
+
+fn print_sources(list: &SourceList, json: bool, pretty: bool) {
+    if json {
+        print_json(&serde_json::to_value(list).unwrap(), pretty);
+        return;
+    }
+    if list.sources.is_empty() {
+        eprintln!("note: no sources found for {}", list.target);
+        return;
+    }
+    for src in &list.sources {
+        print!(
+            "{}  {}  {}  {}",
+            src.form_id,
+            src.record_type,
+            source_kind_label(src.kind),
+            src.editor_id.as_deref().unwrap_or("<no edid>")
+        );
+        if let Some(ref name) = src.name {
+            print!("  {}", name);
+        }
+        if !src.path.is_empty() {
+            let chain: Vec<_> = src
+                .path
+                .iter()
+                .map(|n| n.form_id.as_str())
+                .collect();
+            print!("  via {}", chain.join(" → "));
+        }
+        println!();
     }
 }
 

@@ -477,6 +477,19 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 "limit": {"type": "integer"}
                             }
                         }
+                    },
+                    {
+                        "name": "esm_sources",
+                        "description": "Walk reverse references through leveled lists to find terminal drop sources",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string", "description": "FormID or EditorID (auto-detected)"},
+                                "formid": {"type": "string"},
+                                "edid": {"type": "string"},
+                                "max_depth": {"type": "integer", "description": "Max leveled-list recursion depth (default 6)"}
+                            }
+                        }
                     }
                 ]
             }),
@@ -593,6 +606,26 @@ fn call_tool_proxy(
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
             let refs = backend.referenced_by(esm_path, sel, limit)?;
             Ok(serde_json::to_string_pretty(&refs)?)
+        }
+        "esm_sources" => {
+            let formid = args.get("formid").and_then(|v| v.as_str());
+            let edid = args.get("edid").and_then(|v| v.as_str());
+            let id = args.get("id").and_then(|v| v.as_str());
+            let sel = if let Some(fid_str) = formid {
+                RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
+            } else if let Some(e) = edid {
+                RecordSel::Edid(e.to_string())
+            } else if let Some(id) = id {
+                RecordSel::from_input(id)?
+            } else {
+                anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
+            };
+            let max_depth = args
+                .get("max_depth")
+                .and_then(|v| v.as_u64())
+                .map(|d| d as usize);
+            let sources = backend.sources(esm_path, sel, max_depth)?;
+            Ok(serde_json::to_string_pretty(&sources)?)
         }
         _ => anyhow::bail!("unknown tool: {}", name),
     }

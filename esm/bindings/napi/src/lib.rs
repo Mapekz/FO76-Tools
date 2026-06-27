@@ -127,6 +127,23 @@ impl EsmDatabase {
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         Ok(serde_json::to_value(&rows).unwrap())
     }
+
+    /// Walk reverse references through leveled lists to terminal drop sources.
+    ///
+    /// `id` is a FormID or EditorID (auto-detected). `max_depth` defaults to 6.
+    #[napi]
+    pub fn sources_of(&self, id: String, max_depth: Option<u32>) -> napi::Result<serde_json::Value> {
+        let sel = RecordSel::from_input(&id)
+            .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+        let mut db = self.inner.lock().unwrap();
+        let fid = resolve_sel(&mut db, sel)?;
+        let opts = esm::SourcesOptions {
+            max_depth: max_depth.map(|d| d as usize).unwrap_or(esm::sources::DEFAULT_MAX_DEPTH),
+        };
+        let list = esm::sources_of(&mut db, fid, &opts)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        Ok(serde_json::to_value(&list).unwrap())
+    }
 }
 
 /// Parse a FormID hex string to its display form.

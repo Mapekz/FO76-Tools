@@ -64,6 +64,16 @@ pub trait QueryBackend {
         Ok(serde_json::from_value(v)?)
     }
 
+    fn sources(
+        &mut self,
+        esm: &Path,
+        sel: ipc::RecordSel,
+        max_depth: Option<usize>,
+    ) -> anyhow::Result<crate::SourceList> {
+        let v = self.run(esm, Op::Sources { sel, max_depth })?;
+        Ok(serde_json::from_value(v)?)
+    }
+
     fn list_by_type(
         &mut self,
         esm: &Path,

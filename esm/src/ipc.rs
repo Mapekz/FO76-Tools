@@ -100,9 +100,11 @@ pub enum Op {
         b: PathBuf,
         record_type: Option<String>,
     },
-    /// Reserved for Phase 2.
+    /// Walk reverse references through leveled lists to terminal drop sources.
     Sources {
         sel: RecordSel,
+        #[serde(default)]
+        max_depth: Option<usize>,
     },
     /// Daemon lifecycle: no ESM path required (ignored).
     Shutdown,
@@ -298,8 +300,13 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
         Op::Diff { .. } => {
             bail!("Diff must be dispatched via registry with two ESM paths");
         }
-        Op::Sources { .. } => {
-            bail!("sources_of is not implemented yet (Phase 2)");
+        Op::Sources { sel, max_depth } => {
+            let target = resolve_sel(db, sel)?;
+            let opts = crate::sources::SourcesOptions {
+                max_depth: max_depth.unwrap_or(crate::sources::DEFAULT_MAX_DEPTH),
+            };
+            let list = crate::sources::sources_of(db, target, &opts)?;
+            Ok(serde_json::to_value(&list)?)
         }
     }
 }
