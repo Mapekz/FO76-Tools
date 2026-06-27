@@ -161,6 +161,6 @@ The server exposes five tools: `esm_file_info`, `esm_get_record`, `esm_list_reco
 All previously-documented drift entries are now resolved:
 
 - **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`** — mapped in `schema/fo76.overrides.json`.
-- **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode.rs` handles the Script Fragments + Aliases tail; dispatched when `record_signature == "QUST"`.
-
-The only remaining gap is **NPC_ VMAD**: one NPC in the live ESM produces a `raw_fallback` on VMAD (unrelated to `wbVMADFragmentedQUST`; pre-existing). This is not yet diagnosed.
+- **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode.rs` handles Script Fragments + Aliases tail.
+- **INFO/PACK/PERK/SCEN `VMAD` (fragmented)** — `decode_vmad_{info,pack,perk,scen}` in `src/decode.rs` handle each record type's Script Fragments tail; dispatched by `ctx.record_signature`.
+- **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is now in `CLEAN_TYPES`.

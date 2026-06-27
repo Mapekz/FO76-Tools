@@ -34,11 +34,7 @@
 //!
 //! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
 //! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT,
-//! LVLI, LVLN, LVPC, LVLP, RESO, GMRW, QUST.
-//!
-//! | Type | raw_fallback | _unmapped | Notes |
-//! |------|-------------|-----------|-------|
-//! | NPC_ |           1 |         0 | 1 pre-existing raw_fallback (VMAD on one NPC); all AWPB/CTDA now mapped |
+//! LVLI, LVLN, LVPC, LVLP, RESO, GMRW, QUST, NPC_.
 
 mod common;
 
@@ -53,7 +49,7 @@ const CLEAN_TYPES: &[&str] = &[
     "FISH", "FACT", "FLST", "WTHR", "WAVE", "OTFT", "MSWP", "CURV", "DFOB", "CHAL", "CMPO", "CMPT",
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
     "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
-    "NOTE", "RACE", "CONT", "LVLI", "LVLN", "LVPC", "LVLP", "RESO", "GMRW", "QUST",
+    "NOTE", "RACE", "CONT", "LVLI", "LVLN", "LVPC", "LVLP", "RESO", "GMRW", "QUST", "NPC_",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`
