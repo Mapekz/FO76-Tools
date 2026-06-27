@@ -3658,6 +3658,94 @@ fn qmdl_object_destruction_decodes_correctly() {
     assert_fully_decoded(&result);
 }
 
+/// CONT 0x0000FFEC — `DropCrate_Govt01` — decodes to Container fully.
+///
+/// 20-subrecord record; form_version 204.  Exercises the Enlighten block
+/// (ENLM/ENLT/ENLS/AUUV), COCT/CNTO items array (2 entries), DATA flags +
+/// weight, and the sound-ref triad (SNAM/QNAM/TNAM).  PHST and PTRN are also
+/// present.  The CMIC subrecord decodes as a raw-hex Unknown field (`_raw: true`
+/// but no `reason`) — this is intentional schema behaviour, not a fallback.
+///
+/// Verbatim subrecords from `esm get SeventySix_20260619.esm
+/// --formid 0x0000FFEC --raw` (form_version 204).
+#[test]
+fn cont_drop_crate_govt01_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 204);
+
+    let subs = subrecords_from(&[
+        ("EDID", "44726f7043726174655f476f7674303100"),
+        ("OBND", "c1ffbcfff9ff330044004c00"),
+        ("PTRN", "c0812300"),
+        ("PHST", "08000000"),
+        ("FULL", "3c49443d30303033463830343e476f7665726e6d656e74204169642044726f7000"),
+        ("MODL", "70726f70735c61697264726f70706564636f6e7461696e65725c61697264726f70706564636f6e7461696e65725f706879736963732e6e696600"),
+        ("MODT", "040000000c000000010000000600000002000000ef4b647d64647300be643c4c8c766b8764647300be643c4c748c06956464730038973cea85c0394b64647300e51f8366e6fd36b164647300e51f8366a9a137a564647300e51f8366b748e24564647300e51f83667da32aa66464730038973ceaf8d3913a6464730038973cea97a958b064647300582c5533a6a09d25646473007801bba00cd0f9ed6464730038973cea290100003a9e57cc6267736d199024220c9806106267736d466cc278"),
+        ("ENLM", "03000000"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("COCT", "02000000"),
+        ("CNTO", "f099110001000000"),
+        ("CNTO", "5de8590001000000"),
+        ("DATA", "0000000000"),
+        ("SNAM", "8b534500"),
+        ("QNAM", "8c534500"),
+        ("TNAM", "5d360200"),
+        ("CMIC", "00000000"),
+    ]);
+
+    let result = decode_record(&ctx, "CONT", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Container"),
+    );
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("DropCrate_Govt01"),
+        "Editor ID"
+    );
+
+    // COCT = 2: Items array must have exactly 2 entries.
+    assert_eq!(
+        result.get("Count").and_then(|v| v.as_u64()),
+        Some(2),
+        "Count"
+    );
+    let items = result
+        .get("Items")
+        .and_then(|v| v.as_array())
+        .expect("Items must be an array");
+    assert_eq!(items.len(), 2, "Items length");
+
+    // First CNTO: Item FormID 0x001199F0, Count 1.
+    assert_eq!(
+        items[0].pointer("/Item/Item/Item").and_then(|v| v.as_str()),
+        Some("0x001199F0"),
+        "Items[0] FormID"
+    );
+    assert_eq!(
+        items[0].pointer("/Item/Item/Count").and_then(|v| v.as_u64()),
+        Some(1),
+        "Items[0] Count"
+    );
+
+    // Sound refs decoded as FormIDs.
+    assert_eq!(
+        result.get("Sound - Open").and_then(|v| v.as_str()),
+        Some("0x0045538B"),
+        "Sound - Open"
+    );
+    assert_eq!(
+        result.get("Sound - Close").and_then(|v| v.as_str()),
+        Some("0x0045538C"),
+        "Sound - Close"
+    );
+}
+
 /// LVLN 0x00004073 — `<no edid>` — basic decode regression.
 #[test]
 fn lvln_test_essl_char_short_decodes_correctly() {
