@@ -23,7 +23,7 @@ jobs:
         working-directory: ${{ matrix.crate }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Reads rust-toolchain.toml from $working-directory automatically.
       # rustflags: "" prevents the action from injecting its own -D warnings
@@ -63,14 +63,14 @@ jobs:
         working-directory: esm/bindings/napi
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ""
           cache-workspaces: esm
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
 
@@ -99,9 +99,9 @@ jobs:
     continue-on-error: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           # Matches the .python-version file (3.14.5).
           python-version: "3.14"
