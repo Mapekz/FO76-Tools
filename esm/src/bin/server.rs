@@ -21,6 +21,7 @@ use esm::Database;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -57,6 +58,13 @@ struct AppState {
     default_esm: Option<PathBuf>,
     compare_esm: Option<PathBuf>,
     shutdown: Arc<tokio::sync::Mutex<bool>>,
+    /// Tracks the last time a real op was processed (daemon mode only).
+    ///
+    /// `None` in legacy UI mode — no idle-TTL in that mode.
+    /// Updated by `op_handler` on every real op (Shutdown excluded).
+    /// `/health` and `/status` do NOT update this, so liveness pings from
+    /// `esm -p` clients don't keep the daemon alive indefinitely.
+    last_activity: Option<Arc<StdMutex<Instant>>>,
 }
 
 // ── Error ────────────────────────────────────────────────────────────────────
@@ -154,6 +162,11 @@ async fn op_handler(
         return Ok(Json(OpResponse::Ok {
             data: serde_json::Value::Null,
         }));
+    }
+
+    // Record activity for idle-TTL watchdog (daemon mode only).
+    if let Some(ref la) = state.last_activity {
+        *la.lock().unwrap() = Instant::now();
     }
 
     let registry = state.registry.clone();
@@ -641,6 +654,7 @@ async fn main() -> anyhow::Result<()> {
         default_esm: Some(esm),
         compare_esm: cli.compare,
         shutdown: Arc::new(tokio::sync::Mutex::new(false)),
+        last_activity: None, // no idle-TTL in legacy UI mode
     };
 
     let app = build_router(state);
@@ -656,9 +670,18 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
+    // ── Idle-TTL configuration ───────────────────────────────────────────────
+    // Read `ESM_DAEMON_IDLE_SECS` from the environment (default 600 = 10 min).
+    // Set to 0 to disable auto-shutdown entirely.
+    let idle_secs: u64 = std::env::var("ESM_DAEMON_IDLE_SECS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(600);
+
     let token = generate_token();
     let registry = shared_registry(warm_xref);
     let shutdown = Arc::new(tokio::sync::Mutex::new(false));
+    let last_activity = Arc::new(StdMutex::new(Instant::now()));
 
     let state = AppState {
         registry: registry.clone(),
@@ -666,6 +689,7 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
         default_esm: None,
         compare_esm: None,
         shutdown: shutdown.clone(),
+        last_activity: Some(last_activity.clone()),
     };
 
     let app = build_router(state);
@@ -684,6 +708,34 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
         "esm-daemon listening on http://127.0.0.1:{} (pid {})",
         port, info.pid
     );
+    if idle_secs > 0 {
+        eprintln!(
+            "esm-daemon: idle-TTL = {}s (ESM_DAEMON_IDLE_SECS=0 to disable)",
+            idle_secs
+        );
+    }
+
+    // ── Idle-TTL watchdog ────────────────────────────────────────────────────
+    if idle_secs > 0 {
+        let la = last_activity.clone();
+        let shutdown_flag = shutdown.clone();
+        let ttl = Duration::from_secs(idle_secs);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            loop {
+                interval.tick().await;
+                let elapsed = la.lock().unwrap().elapsed();
+                if elapsed >= ttl {
+                    eprintln!(
+                        "esm-daemon: idle for {:.0?} (TTL {:.0?}), shutting down.",
+                        elapsed, ttl
+                    );
+                    *shutdown_flag.lock().await = true;
+                    break;
+                }
+            }
+        });
+    }
 
     let shutdown_flag = shutdown.clone();
     let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
@@ -691,7 +743,7 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
             if *shutdown_flag.lock().await {
                 break;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
         registry.clear();
         let _ = remove_daemon_info();

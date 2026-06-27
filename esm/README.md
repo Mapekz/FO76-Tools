@@ -2,7 +2,7 @@
 
 A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 173 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, and schema coverage auditing.
 
-> **Read-only.** This tool never modifies your `.esm` files. The only file it writes is a sidecar `<name>.esm.idx` index cache (next to the ESM) to accelerate subsequent opens. Game data files (`*.esm`, `*.ba2`, `*.esm.idx`) are gitignored and non-redistributable — obtain them from your own game install.
+> **Read-only.** This tool never modifies your `.esm` files. The only files it writes are sidecar index caches next to the ESM: `<name>.esm.idx` (full bincode cache, ~280 MiB) and `<name>.esm.midx` (compact mmap index, ~24 MiB). Game data files (`*.esm`, `*.ba2`, `*.esm.idx`, `*.esm.midx`) are gitignored and non-redistributable — obtain them from your own game install.
 
 ## Workspace layout
 
@@ -153,6 +153,16 @@ esm coverage SeventySix.esm --gate   # exits non-zero on any raw_fallback
 
 Counts `_raw`, `_unmapped`, `_unknown_record`, and `_unresolved` markers across decoded records. Use `--gate` in CI to enforce full decode coverage.
 
+### `daemon` — Manage the background warm daemon
+
+```sh
+esm daemon start    # explicitly pre-warm (optional — -p auto-spawns on demand)
+esm daemon status   # check if running, which ESMs are resident and their record counts
+esm daemon stop     # graceful shutdown
+```
+
+The daemon is normally transparent: the first `esm -p` call auto-spawns it, subsequent calls use it as a fast HTTP backend, and it shuts itself down after 10 minutes of idle. Use these subcommands only when you need explicit control.
+
 ## Server — `esm-server`
 
 Feature-gated HTTP REST + MCP stdio server. Build with `--features server`:
@@ -165,7 +175,7 @@ cargo run --release --features server --bin esm-server -- SeventySix.esm --mcp-s
 
 HTTP routes: `GET /info`, `/records/{formid}`, `/records?edid=|type=&limit=`, `/groups`, `/groups/{sig}/children`, `/stub/{offset}`, `/diff`, `/health`. Serves embedded HTML viewer at `/` and `/compare`.
 
-MCP stdio mode implements JSON-RPC 2.0 with three tools: `esm_file_info`, `esm_get_record`, `esm_list_records`.
+MCP stdio mode implements JSON-RPC 2.0 with five tools: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_search`, `esm_refs`.
 
 ## Library API
 
@@ -431,6 +441,68 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored diff_two
 
 `tests/decode_records.rs` tests use verbatim subrecord bytes from `esm get --raw` and run entirely in CI without game data. See the **Supported record types** table in [Schema](#schema) for per-type coverage status.
 
+## Bulk / sweep workflow (for agents)
+
+AI agents scanning many records must avoid cold per-record process spawns. Each cold `esm get` invocation reads and deserializes the **entire ~280 MiB `.esm.idx`** bincode cache for a single lookup, then exits — 5–10 s per record, heavy swap thrash at scale.
+
+### Warm daemon (fastest, no extra flags)
+
+```sh
+# Build both binaries once (server binary must be adjacent to esm for auto-spawn)
+cargo build --release --features server
+
+# The first -p call auto-spawns and warms the daemon; all subsequent calls are fast
+esm -p get SeventySix.esm 0x463F --pretty
+esm -p get SeventySix.esm AssaultRifle --pretty
+```
+
+The daemon keeps the index in memory, self-shuts-down after 10 min idle, stale-evicts if the ESM changes, and is safe for concurrent agents (advisory spawn-lock prevents double-spawn).
+
+**Prefer bulk ops** over N single `get`s — each round-trip has overhead:
+
+```sh
+esm -p list SeventySix.esm --type WEAP --limit 500 --pretty   # all weapons in one call
+esm -p search SeventySix.esm "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
+esm -p refs SeventySix.esm 0x463F --limit 100 --pretty        # reverse FormID lookup
+```
+
+**Gotcha:** `--strings`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open (the daemon doesn't accept per-call BA2 paths). Place the BA2 files next to the ESM so the daemon auto-loads them, and drop these flags in sweeps.
+
+### Daemonless option: `--mmap-index`
+
+For cold FormID lookups without a background process:
+
+```sh
+esm --local --mmap-index get SeventySix.esm 0x463F --pretty
+# or via env var
+ESM_MMAP_INDEX=1 esm --local get SeventySix.esm 0x463F --pretty
+```
+
+Loads a compact ~24 MiB `.esm.midx` table (binary-sorted, O(log n) lookup) instead of the 280 MiB bincode cache. FormID lookups only — EditorID / list / search / refs / tree require the full index; use the daemon for those.
+
+### MCP opt-in
+
+Wire up `esm-server --mcp-stdio` in your AI client's MCP config. **Do not commit** this file — it hardcodes a non-redistributable, date-stamped ESM path:
+
+```jsonc
+// .mcp.json (gitignored — fill in your actual paths)
+{
+  "mcpServers": {
+    "fo76-esm": {
+      "command": "/path/to/esm-server",
+      "args": ["--mcp-stdio", "/path/to/SeventySix_YYYYMMDD.esm"]
+    }
+  }
+}
+```
+
+Five tools exposed: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_search`, `esm_refs`. MCP-stdio proxies to the same warm daemon, so the warm-index benefit applies automatically.
+
 ## Index cache
 
-On first open, the tool writes a `<name>.esm.idx` file next to the ESM. Subsequent opens skip re-parsing and load the index from this cache (keyed by file path, size, and mtime). The cache regenerates automatically when the ESM changes or `CACHE_VERSION` is bumped. These files are gitignored.
+On first open, the tool writes two sidecar files next to the ESM:
+
+- **`<name>.esm.idx`** (~280 MiB, bincode) — full FormID→offset HashMap, lazy EDID/search/xref indexes, and the GRUP tree. Loaded by `Database::open` on all subsequent opens; keyed by path, size, and mtime, and rebuilt automatically when the ESM changes or `CACHE_VERSION` is bumped.
+- **`<name>.esm.midx`** (~24 MiB, flat binary) — compact, sorted FormID table written alongside `.idx` on every fresh build. Used by `Database::open_lite` (the `--mmap-index` path) for fast, RAM-light cold FormID lookups without deserializing the full bincode cache. Binary-searched in O(log n) with ~20 page accesses per lookup.
+
+Both files are gitignored. Never commit them.

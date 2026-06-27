@@ -4,6 +4,7 @@ use crate::ipc::{self, Op, Request, Response};
 use crate::registry::Registry;
 use crate::SearchField;
 use anyhow::{bail, Context};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -347,7 +348,35 @@ pub fn esm_server_exe() -> anyhow::Result<PathBuf> {
 }
 
 /// Spawn `esm-server --daemon` detached and poll until `/health` succeeds.
+///
+/// An advisory file lock (`esm-daemon.lock`) is held for the duration of the
+/// spawn so that concurrent callers (parallel agents) coalesce: the first one
+/// to acquire the lock performs the spawn; subsequent ones re-check the
+/// discovery file after acquiring the lock and, if a healthy daemon is already
+/// running, return immediately without spawning a second instance.
 pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
+    // Acquire an advisory exclusive lock for the duration of the spawn.
+    // The lock file is created if absent and automatically released when
+    // `lock_file` is dropped (fd close).
+    let lock_path = runtime_dir().join("esm-daemon.lock");
+    let lock_file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("open spawn lock {}", lock_path.display()))?;
+    lock_file
+        .lock_exclusive()
+        .context("acquire daemon spawn lock")?;
+
+    // Re-check: another process may have won the race while we waited for the
+    // lock.
+    if let Ok(info) = read_daemon_info() {
+        if health_check("127.0.0.1", info.port, &info.token).is_ok() {
+            return Ok(());
+        }
+    }
+
     let server = esm_server_exe()?;
     let mut child = Command::new(&server)
         .arg("--daemon")
@@ -357,7 +386,7 @@ pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
         .spawn()
         .context("spawn esm-server --daemon")?;
 
-    // Detach: don't wait on the child
+    // Detach: don't wait on the child.
     let _ = child.id();
 
     let deadline = std::time::Instant::now() + HEALTH_POLL_MAX;

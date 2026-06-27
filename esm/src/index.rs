@@ -70,6 +70,28 @@ impl Index {
         build_fresh(esm)
     }
 
+    /// Create an empty index for use with [`crate::Database::open_lite`].
+    ///
+    /// The index holds no records and must not be persisted to disk — it exists
+    /// only as a structural placeholder when the mmap form index is used for
+    /// lookups.
+    pub fn empty(path: PathBuf) -> Self {
+        let cache_path = {
+            let mut p = path.clone();
+            p.set_extension("esm.idx");
+            p
+        };
+        Self {
+            path,
+            form_index: HashMap::new(),
+            edid_index: None,
+            tree: crate::tree::TreeIndex::default(),
+            cache_path,
+            xref_index: None,
+            search_index: None,
+        }
+    }
+
     pub fn get_by_formid(&self, form_id: FormId) -> Option<&RecordMeta> {
         self.form_index.get(&form_id)
     }
@@ -106,6 +128,11 @@ impl Index {
     }
 
     fn save_cache(&self, esm: &EsmFile) -> anyhow::Result<()> {
+        // Don't persist an empty (lite) index — it would overwrite a valid cache
+        // with an empty one.
+        if self.form_index.is_empty() {
+            return Ok(());
+        }
         let meta = fs::metadata(&esm.path)?;
         let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
         let dur = mtime
@@ -362,6 +389,13 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
         cache_path,
     };
     index.save_cache(esm)?;
+
+    // Opportunistically write the compact mmap index alongside the .idx so
+    // that `Database::open_lite` / `--mmap-index` paths are always ready.
+    if let Err(e) = crate::mindex::build_from_form_index_and_save(&index.form_index, &esm.path) {
+        eprintln!("Warning: failed to write .esm.midx: {e}");
+    }
+
     Ok(index)
 }
 

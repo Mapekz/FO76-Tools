@@ -32,15 +32,17 @@ Clean layering — edit at the right level:
 | `src/strings.rs` | `.strings`/`.dlstrings`/`.ilstrings` parser; `Localization::from_ba2` / `from_loose_files` |
 | `src/curves.rs` | `CurveIndex` (FormID → `Curve`); loads JSON from Startup BA2; `Curve::eval` (linear interp) |
 | `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; `bincode` disk cache (`*.esm.idx`, `CACHE_VERSION = 8`) |
+| `src/mindex.rs` | Zero-copy mmap'd FormID index (`*.esm.midx`); 40-byte header + 24-byte sorted entries; `MmapFormIndex` (binary search, O(log n)); written opportunistically in `build_fresh` |
+| `src/registry.rs` | `Registry`: lazily opens and caches `Database` per canonical path; stale-file eviction via `FileSig` (one `fs::metadata` check per cache hit); `auto_warm` flag for daemon mode |
 | `src/tree.rs` | GRUP tree arena (`TreeIndex`); `GroupNode`, `RecordStub`, `GroupLabel` enum |
 | `src/schema.rs` | Serde model for `schema/fo76.json`; `MemberDef` enum (18 variants, `#[serde(tag="kind")]`); `load_embedded()` |
 | `src/decode.rs` | Schema-driven decoder → `serde_json::Value`; `DecodeContext<'a>`, `FormIdRefResolver` trait; never panics |
 | `src/ctda.rs` | CTDA condition decoder; function-index table (binary search); imports `crate::decode::{hex, resolve_formid}` |
 | `src/diff.rs` | `diff_databases(a,b)` — byte-equality fast-path, sparse `{from,to}` JSON diff |
 | `src/wildcard.rs` | Case-insensitive `*`-wildcard matcher; has rustdoc doctest |
-| `src/lib.rs` | `Database` facade (all public API); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
-| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs`, `tree`, `diff`, `coverage` |
-| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); three MCP tools: `esm_file_info`, `esm_get_record`, `esm_list_records` |
+| `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
+| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs`, `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
+| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); five MCP tools: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_search`, `esm_refs`; `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Mutex<Database>`); `#[napi]` async methods |
 | `app/` | Electron GUI ("FO76 ESM Viewer"); main/preload/renderer; consumes the N-API addon |
 
@@ -56,10 +58,10 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 
 ## Critical Invariants — Do Not Break
 
-- **READ-ONLY: no ESM write path exists.** `compress.rs` only decompresses. The only file written is `*.esm.idx` (index cache, not source ESM). Do not add ESM mutation without an explicit design.
+- **READ-ONLY: no ESM write path exists.** `compress.rs` only decompresses. The only files written are `*.esm.idx` and `*.esm.midx` (index caches, not the source ESM). Do not add ESM mutation without an explicit design.
 - **`compress.rs` = decompress only**: `decompress_lz4`, `decompress_zlib`, `decompress_record_data`. No `compress_*` functions.
 - **GNRL-only in `ba2.rs`**: DX10 texture archives are detected and rejected. Do not add DX10 support without a separate path.
-- **Two `unsafe { Mmap::map }` blocks** (in `reader.rs` and `ba2.rs`). Both have `// SAFETY:` comments — keep them accurate if you touch the surrounding code.
+- **Three `unsafe { Mmap::map }` blocks** (in `reader.rs`, `ba2.rs`, and `mindex.rs`). All three have `// SAFETY:` comments — keep them accurate if you touch the surrounding code.
 - **XXXX oversized-subrecord rule** in `reader.rs` (around line 304): a 6-byte `XXXX` subrecord whose `data_size` field carries the actual size precedes an oversized subrecord with `data_size = 0`. Preserve this when modifying the subrecord scanner.
 - **`index.rs` cache**: keyed by path/size/mtime. **Bump `CACHE_VERSION`** whenever the cached data layout changes — the old cache becomes invalid and will be rebuilt.
 - **FormID layout**: high byte = master-file index, low 24 bits = object ID. All values little-endian.
@@ -79,7 +81,80 @@ The app loads the addon via `app/src/main/addon.ts`. The `app/src/shared/api-typ
 
 ## Game Data
 
-`SeventySix.esm`, `SeventySix - Localization.ba2`, `SeventySix - Startup.ba2`, and `*.esm.idx` are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via CLI args or `Database::open(path)`.
+`SeventySix.esm`, `SeventySix - Localization.ba2`, `SeventySix - Startup.ba2`, `*.esm.idx`, and `*.esm.midx` are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via CLI args or `Database::open(path)`.
+
+## Bulk / sweep workflow (for agents)
+
+AI agents that scan many records must avoid cold per-record process spawns. Each cold `esm get` / `esm -p get` invocation reads and deserializes the **entire ~280 MiB `.esm.idx`** bincode cache into heap HashMaps just to perform one lookup, then exits. 1000 sweeps = 1000× (read 280 MiB + allocate ~280 MiB of HashMaps) — 5–10 s per record, heavy swap thrash.
+
+### Recommended: warm daemon (fastest, no extra flags)
+
+Build `esm-server` once, then use `-p` for every single-record lookup:
+
+```sh
+# Build both binaries (server must be alongside esm for auto-spawn to work)
+cargo build --release --features server
+
+# Every -p call auto-spawns the daemon on first use; subsequent calls are fast HTTP round-trips
+esm -p get SeventySix.esm 0x463F --pretty
+esm -p get SeventySix.esm AssaultRifle --pretty
+```
+
+The daemon warms the index once on first load and serves all subsequent lookups in memory. It self-manages:
+- **Auto-spawns** on the first `-p` call (no manual `daemon start` needed).
+- **Auto-shuts-down** after 10 min idle (`ESM_DAEMON_IDLE_SECS=0` to disable).
+- **Stale-evicts** if the ESM changes on disk — no manual restart needed.
+- **Parallel-agent safe** — advisory spawn-lock (`esm-daemon.lock`) prevents double-spawn; multiple agents share one daemon instance.
+
+Use `esm daemon status` to check, `esm daemon stop` to kill early.
+
+### Prefer bulk ops over N single gets
+
+Every round-trip has overhead. When you need many records of the same type, use bulk ops:
+
+```sh
+esm -p list SeventySix.esm --type WEAP --limit 500 --pretty   # all weapons in one call
+esm -p search SeventySix.esm "*Rifle*" --type WEAP --pretty   # search by name/EditorID
+esm -p refs SeventySix.esm 0x463F --limit 100 --pretty        # reverse FormID lookup
+esm -p coverage SeventySix.esm --type WEAP                    # schema decode audit
+```
+
+### Gotcha: `--strings` / `--startup-ba2` bypass the daemon
+
+Passing `--strings`, `--strings-dir`, or `--startup-ba2` to `get` forces a cold in-process open (the daemon doesn't load BA2 args from per-call flags). For sweeps that need localized strings, place `SeventySix - Localization.ba2` and `SeventySix - Startup.ba2` next to the ESM — the daemon auto-loads them on open, and warm lookups return localized output without per-call BA2 flags.
+
+### Daemonless option: `--mmap-index`
+
+For cold FormID lookups without a background process, use the zero-copy mmap index:
+
+```sh
+# Loads a ~24 MiB .esm.midx table instead of the 280 MiB bincode cache
+esm --local --mmap-index get SeventySix.esm 0x463F --pretty
+# Or set the env var so every --local call uses it
+ESM_MMAP_INDEX=1 esm --local get SeventySix.esm 0x463F --pretty
+```
+
+Limitations: FormID lookups only. EditorID (`--edid`), `list`, `search`, `refs`, and `tree` require the full index — use the daemon for those.
+
+The `.esm.midx` file is written automatically whenever the `.esm.idx` is freshly built, so it's always available alongside the bincode cache.
+
+### MCP opt-in (for AI clients that support it)
+
+`esm-server --mcp-stdio` speaks JSON-RPC 2.0 over stdin/stdout. Wire it up in your AI client's MCP config — **do not commit** the config file (it hardcodes a date-stamped, non-redistributable ESM path):
+
+```jsonc
+// .mcp.json (gitignored — fill in your actual ESM path)
+{
+  "mcpServers": {
+    "fo76-esm": {
+      "command": "/path/to/esm-server",
+      "args": ["--mcp-stdio", "/path/to/SeventySix_YYYYMMDD.esm"]
+    }
+  }
+}
+```
+
+The server exposes five tools: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_search`, `esm_refs`. Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
 
 ## Known coverage drift (vs TES5Edit)
 

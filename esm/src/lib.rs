@@ -9,6 +9,7 @@ pub mod format;
 pub mod formid;
 pub mod index;
 pub mod ipc;
+pub mod mindex;
 pub mod reader;
 pub mod registry;
 pub mod schema;
@@ -59,6 +60,12 @@ pub struct Database {
     /// Optional curve index built from Startup BA2. When present, FormID fields
     /// whose `valid_refs` includes `"CURV"` have their curve data inlined.
     pub curves: Option<crate::curves::CurveIndex>,
+    /// Optional zero-copy mmap'd form index, set only in [`Database::open_lite`].
+    ///
+    /// When present, [`record_by_formid`](Self::record_by_formid) and related
+    /// methods use binary search over this table instead of the HashMap in
+    /// `index.form_index`.  The full index (`index`) is empty in this mode.
+    pub mmap_index: Option<crate::mindex::MmapFormIndex>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,6 +155,37 @@ impl Database {
             is_localized,
             localization,
             curves,
+            mmap_index: None,
+        })
+    }
+
+    /// Open an ESM file in **lite mode**: mmap the ESM and load the compact
+    /// `.esm.midx` binary index (building it from an ESM walk if absent).
+    ///
+    /// Compared to [`Database::open`], this skips the ~280 MiB `.esm.idx`
+    /// bincode load entirely — startup is typically sub-second even cold.
+    /// The trade-off is that only FormID-based lookups (`record_by_formid`,
+    /// `record_raw`, `record_by_formid_resolved`) are supported.  Operations
+    /// that require the full index (EditorID lookup, `list`, `search`, `refs`,
+    /// `tree`) return an error directing the caller to use the warm daemon.
+    ///
+    /// Use `--mmap-index` on the CLI or `ESM_MMAP_INDEX=1` to activate this
+    /// path.
+    pub fn open_lite(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let path = path.as_ref();
+        let esm = EsmFile::open(path)?;
+        let mmap_index = crate::mindex::MmapFormIndex::load_or_build(&esm)
+            .with_context(|| format!("build mmap index for {}", path.display()))?;
+        let schema = Schema::load_embedded().context("load embedded schema")?;
+        let is_localized = esm.file_info().map(|i| i.is_localized).unwrap_or(false);
+        Ok(Database {
+            esm,
+            index: Index::empty(path.to_path_buf()),
+            schema,
+            is_localized,
+            localization: None,
+            curves: None,
+            mmap_index: Some(mmap_index),
         })
     }
 
@@ -172,16 +210,39 @@ impl Database {
         Ok(info)
     }
 
+    /// Resolve a FormID to its [`RecordMeta`], consulting the mmap index in
+    /// lite mode or the full HashMap in normal mode.
+    fn get_formid_meta(&self, form_id: FormId) -> anyhow::Result<RecordMeta> {
+        if let Some(ref midx) = self.mmap_index {
+            midx.get_by_formid(form_id)
+                .with_context(|| format!("FormID {} not found", form_id))
+        } else {
+            self.index
+                .get_by_formid(form_id)
+                .cloned()
+                .with_context(|| format!("FormID {} not found", form_id))
+        }
+    }
+
+    /// Bail with a helpful message when a full-index operation is attempted in
+    /// lite mode (opened via [`Database::open_lite`] / `--mmap-index`).
+    fn check_not_lite(&self, op: &str) -> anyhow::Result<()> {
+        if self.mmap_index.is_some() {
+            bail!(
+                "{op} requires the full index; start the warm daemon \
+                 (`esm daemon start`) or remove --mmap-index"
+            );
+        }
+        Ok(())
+    }
+
     pub fn record_by_formid(&mut self, form_id: FormId) -> anyhow::Result<RecordResult> {
-        let meta = self
-            .index
-            .get_by_formid(form_id)
-            .with_context(|| format!("FormID {} not found", form_id))?
-            .clone();
+        let meta = self.get_formid_meta(form_id)?;
         self.record_at_meta(&meta)
     }
 
     pub fn record_by_edid(&mut self, edid: &str) -> anyhow::Result<RecordResult> {
+        self.check_not_lite("EditorID lookup")?;
         self.index.ensure_edid_index(&self.esm)?;
         let form_id = self
             .index
@@ -191,6 +252,7 @@ impl Database {
     }
 
     pub fn list_by_type(&self, sig: &str, limit: usize) -> anyhow::Result<Vec<ListEntry>> {
+        self.check_not_lite("list_by_type")?;
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
@@ -240,6 +302,7 @@ impl Database {
         field: SearchField,
         limit: usize,
     ) -> anyhow::Result<Vec<RecordRow>> {
+        self.check_not_lite("search")?;
         self.index
             .ensure_search_index(&self.esm, self.is_localized)?;
 
@@ -368,6 +431,7 @@ impl Database {
         offset: usize,
         limit: usize,
     ) -> anyhow::Result<Vec<RecordRow>> {
+        self.check_not_lite("list_type_records")?;
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
@@ -406,6 +470,7 @@ impl Database {
     /// The reverse-reference index is built lazily on the first call and
     /// persisted to the `.esm.idx` cache so subsequent calls are instant.
     pub fn referenced_by(&mut self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
+        self.check_not_lite("referenced_by")?;
         self.index.ensure_xref_index(
             &self.esm,
             &self.schema,
@@ -440,11 +505,7 @@ impl Database {
     }
 
     pub fn record_raw(&self, form_id: FormId) -> anyhow::Result<ParsedRecord> {
-        let meta = self
-            .index
-            .get_by_formid(form_id)
-            .with_context(|| format!("FormID {} not found", form_id))?
-            .clone();
+        let meta = self.get_formid_meta(form_id)?;
         self.esm.parse_record_at(meta.offset)
     }
 
@@ -629,11 +690,7 @@ impl Database {
         form_id: FormId,
         depth: crate::decode::ResolveDepth,
     ) -> anyhow::Result<RecordResult> {
-        let meta = self
-            .index
-            .get_by_formid(form_id)
-            .with_context(|| format!("FormID {} not found", form_id))?
-            .clone();
+        let meta = self.get_formid_meta(form_id)?;
         self.record_at_meta_with_depth(&meta, depth)
     }
 
@@ -643,6 +700,7 @@ impl Database {
         edid: &str,
         depth: crate::decode::ResolveDepth,
     ) -> anyhow::Result<RecordResult> {
+        self.check_not_lite("EditorID lookup")?;
         self.index.ensure_edid_index(&self.esm)?;
         let form_id = self
             .index
@@ -669,7 +727,7 @@ impl<'a> DatabaseResolver<'a> {
 
 impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
     fn stub(&self, id: FormId) -> Option<crate::decode::FormIdStub> {
-        let meta = self.db.index.get_by_formid(id)?.clone();
+        let meta = self.db.get_formid_meta(id).ok()?;
         let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
         let editor_id = crate::reader::edid_from_subrecords(&parsed.subrecords);
         let record_type = parsed.header.signature.clone();
@@ -685,7 +743,7 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             // At depth limit — fall back to stub
             return self.stub(id).and_then(|s| serde_json::to_value(&s).ok());
         }
-        let meta = self.db.index.get_by_formid(id)?.clone();
+        let meta = self.db.get_formid_meta(id).ok()?;
         let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
         let editor_id = crate::reader::edid_from_subrecords(&parsed.subrecords);
         let record_type = parsed.header.signature.clone();

@@ -13,14 +13,26 @@ use std::path::{Path, PathBuf};
 #[derive(Parser)]
 #[command(name = "esm", about = "Read and inspect Fallout 76 ESM files")]
 struct Cli {
+    /// One-shot print mode: run the command and exit (auto-spawns a warm daemon
+    /// if none is running, so repeated `-p` calls avoid cold reloads).
     #[arg(short = 'p', long)]
     print: bool,
+    /// Force in-process (cold) open, bypassing the daemon entirely.
     #[arg(long)]
     local: bool,
     #[arg(long)]
     addr: Option<String>,
     #[arg(long)]
     port: Option<u16>,
+    /// Use the zero-copy mmap form index for FormID lookups (with --local).
+    ///
+    /// Loads a compact ~24 MiB `.esm.midx` instead of the full ~280 MiB
+    /// `.esm.idx` bincode cache, making cold FormID lookups sub-second without
+    /// a background daemon.  EditorID / list / search / refs / tree require the
+    /// full index and will error in this mode — use the daemon for those.
+    /// Env: ESM_MMAP_INDEX=1.
+    #[arg(long, env = "ESM_MMAP_INDEX")]
+    mmap_index: bool,
     esm: Option<PathBuf>,
     #[command(subcommand)]
     command: Option<Commands>,
@@ -301,13 +313,15 @@ fn main() -> anyhow::Result<()> {
         };
     }
 
-    // -p  → one-shot print; use an already-running daemon if available, else cold local load.
+    // -p  → one-shot print; auto-spawns a warm daemon if none is running
+    //        (same as no-p REPL mode, but exits after the single command).
     // no -p → REPL mode; always daemon-backed (spawns one if not running).
+    // --local → bypass daemon entirely for both modes (cold in-process open).
     let mut backend = if cli.print && !cli.local {
-        match RemoteBackend::connect_existing_with_override(cli.addr.as_deref(), cli.port) {
-            Ok(r) => Backend::Remote(r),
-            Err(_) => Backend::Local(LocalBackend::new()),
-        }
+        Backend::Remote(RemoteBackend::connect_with_override(
+            cli.addr.as_deref(),
+            cli.port,
+        )?)
     } else {
         make_backend(cli.local, cli.addr.as_deref(), cli.port)?
     };
@@ -355,6 +369,7 @@ fn main() -> anyhow::Result<()> {
                 startup_ba2,
                 resolve,
                 daemon_mode,
+                cli.mmap_index,
             )?,
             Commands::List {
                 file,
@@ -535,7 +550,8 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             resolve,
         } => cmd_get(
             backend, esm, formid, edid, target, json, pretty, raw, None, None, "en", None, resolve,
-            true,
+            true,  // daemon_mode (REPL is always daemon-backed)
+            false, // mmap_index (not applicable in REPL)
         ),
         ReplCommand::List { r#type, limit } => {
             cmd_list(backend, esm, &r#type, limit, None, None, "en", true)
@@ -681,8 +697,54 @@ fn cmd_get(
     startup_ba2: Option<PathBuf>,
     resolve: String,
     daemon_mode: bool,
+    mmap_index: bool,
 ) -> anyhow::Result<()> {
     let has_overrides = strings.is_some() || strings_dir.is_some() || startup_ba2.is_some();
+
+    // ── mmap-index fast path (--local --mmap-index, FormID only) ─────────────
+    // Loads the compact ~24 MiB .esm.midx instead of the full .esm.idx.
+    // Only active in local mode (--local); ignored when hitting the daemon.
+    if mmap_index && !daemon_mode && !has_overrides {
+        let sel = record_sel(formid.clone(), edid.clone(), target.clone())?;
+        if let RecordSel::Edid(_) = &sel {
+            anyhow::bail!(
+                "--mmap-index only supports FormID lookups; \
+                 for EditorID use the warm daemon (`esm daemon start`) \
+                 or remove --mmap-index"
+            );
+        }
+        let form_id = match sel {
+            RecordSel::FormId(f) => f,
+            RecordSel::Edid(_) => unreachable!(),
+        };
+        let db = Database::open_lite(file)?;
+        let depth = parse_resolve(&resolve);
+        if raw {
+            let rec = db.record_raw(form_id)?;
+            let view = RawRecordView {
+                header: rec.header,
+                subrecords: rec
+                    .subrecords
+                    .iter()
+                    .map(|sr| esm::RawSubrecordView {
+                        signature: sr.signature.to_string(),
+                        size: sr.data.len(),
+                        hex: sr.data.iter().map(|b| format!("{:02x}", b)).collect(),
+                    })
+                    .collect(),
+            };
+            print_json(&serde_json::to_value(&view)?, pretty || !json);
+            return Ok(());
+        }
+        let result = db.record_by_formid_resolved(form_id, depth)?;
+        let out = serde_json::json!({
+            "header": result.header,
+            "editor_id": result.editor_id,
+            "fields": result.fields
+        });
+        print_json(&out, pretty || !json);
+        return Ok(());
+    }
     if has_overrides && daemon_mode {
         anyhow::bail!(
             "--strings/--strings-dir/--startup-ba2 are not supported in daemon mode; \
