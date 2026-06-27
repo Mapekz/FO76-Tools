@@ -18655,6 +18655,32 @@
           "kind": "bytes",
           "name": "Menu Item ID",
           "sig": "MIID"
+        },
+        {
+          "kind": "rstruct",
+          "name": "Keywords",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Keyword Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "KSIZ"
+            },
+            {
+              "kind": "array",
+              "name": "Keywords",
+              "element": {
+                "kind": "formid",
+                "name": "Keyword",
+                "valid_refs": [
+                  "KYWD",
+                  "NULL"
+                ]
+              },
+              "sig": "KWDA"
+            }
+          ]
         }
       ]
     },
@@ -81192,6 +81218,13 @@
           "kind": "float",
           "name": "Sneak Attack Multiplier",
           "sig": "WSAM"
+        },
+        {
+          "kind": "integer",
+          "name": "Enchantment Amount",
+          "width": "u16",
+          "signed": false,
+          "sig": "EAMT"
         }
       ]
     },

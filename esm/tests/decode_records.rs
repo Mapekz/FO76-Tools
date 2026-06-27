@@ -896,6 +896,56 @@ fn ench_firefly_ichor_decodes_correctly() {
     );
 }
 
+/// ENCH 0x00900A5A — `EnchPerkConcentratedFire` — decodes to Enchantment fully,
+/// including the newer-than-reference Keywords block (KSIZ + KWDA).
+///
+/// 12-subrecord record (EDID OBND FULL KSIZ KWDA ENIT EFID EFIT MAGA MAGF CODV
+/// MIID); form_version 209.  KSIZ/KWDA are absent from the Pascal reference but
+/// present in the live ESM — covered via `record_additions` override.  This test
+/// locks that path clean.
+#[test]
+fn ench_perk_concentrated_fire_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x00900A5A --raw` (form_version 209).
+    let subs = subrecords_from(&[
+        ("EDID", "456e63685065726b436f6e63656e7472617465644669726500"),
+        ("OBND", "000000000000000000000000"),
+        ("FULL", "3c49443d33393239443530453e436f6e63656e747261746564204669726500"),
+        ("KSIZ", "01000000"),
+        ("KWDA", "d18b8600"),
+        (
+            "ENIT",
+            "000000000100000000000000000000000000000006000000000000000000000000000000",
+        ),
+        ("EFID", "5c0a9000"),
+        ("EFIT", "01000000000000000000000000000000"),
+        ("MAGA", "590a9000"),
+        ("MAGF", "00000000"),
+        ("CODV", "00000000"),
+        ("MIID", "01000000"),
+    ]);
+
+    let result = decode_record(&ctx, "ENCH", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Enchantment"),
+    );
+    assert_fully_decoded(&result);
+
+    // Keywords[0] = 0x00868BD1 (KWDA value d18b8600 little-endian).
+    assert_eq!(
+        result
+            .pointer("/Keywords/Keywords/0")
+            .and_then(|v| v.as_str()),
+        Some("0x00868BD1"),
+        "first keyword FormID"
+    );
+}
+
 /// BOOK 0x00000871 — `recipe_mod_AssaultRifle_Receiver_FastTrigger-CritDMG` —
 /// decodes to Book fully.
 ///
@@ -982,6 +1032,78 @@ fn weap_gas_trap_dummy_decodes_correctly() {
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("GasTrapDummy"),
         "Editor ID"
+    );
+}
+
+/// WEAP 0x00113083 — `crDLC04AnimatronicAlienBlaster` — decodes to Weapon
+/// fully, including the newer-than-reference EAMT subrecord.
+///
+/// 39-subrecord record; form_version 205.  EAMT (Enchantment Amount, u16) is
+/// absent from the Pascal WEAP definition but present in the live ESM — covered
+/// via `record_additions` override.  This test locks that path clean.
+#[test]
+fn weap_animatronic_alien_blaster_decodes_correctly() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 205);
+
+    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // --formid 0x00113083 --raw` (form_version 205).
+    let subs = subrecords_from(&[
+        ("EDID", "6372444c433034416e696d6174726f6e6963416c69656e426c617374657200"),
+        ("OBND", "fcfffcfff8ff040018000800"),
+        ("PTRN", "dd1d0700"),
+        ("FULL", "3c49443d30303030304634363e416e696d6174726f6e696320416c69656e20426c617374657200"),
+        ("MODL", "444c4330345c576561706f6e735c46616b65416c69656e426c61737465725c46616b65416c69656e426c61737465722e6e696600"),
+        ("MODT", "040000000d000000010000000300000003000000dae093a564647300607b9d87b9dd9c5f64647300607b9d87f6819d4b64647300607b9d87105544aa646473007b49fa3773684b50646473007b49fa37988c963d646473007b49fa373c344a44646473007b49fa371008ee15646473004feae24d7335e1ef646473004feae24d3c69e0fb646473004feae24d2280351b646473004feae24d22dd9fa4646473007b49fa37e86848ab64647300607b9d87c600000036cd804b6267736db95ede76bd56cc1d6267736dae9326475cf1e05c6267736d96cfa1bc"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("EITM", "3a961700"),
+        ("EAMT", "1027"),
+        ("ETYP", "423f0100"),
+        ("BIDS", "ff830100"),
+        ("YNAM", "23490300"),
+        ("ZNAM", "c3f50100"),
+        ("KSIZ", "0c000000"),
+        ("KWDA", "8b96160048f90100ea4a0f0096f90f00ac3f1b00b3ad030085c41000e0881800797b1a006ac41c00453e1100c8a73300"),
+        ("DESC", "00"),
+        ("INRD", "cf772300"),
+        ("APPR", "9d240200992402009f240200c8321e00d7d40500"),
+        ("OBTE", "01000000"),
+        ("OBTS", "000000000000000000000000ffff01000000"),
+        ("STOP", ""),
+        ("MOD4", "444c4330345c576561706f6e735c46616b65416c69656e426c61737465725c46616b65416c69656e426c61737465725f312e6e696600"),
+        ("MO4T", "0400000000000000000000000000000000000000"),
+        ("ENLT", "ffffffff"),
+        ("ENLS", "0000803f"),
+        ("AUUV", "01000000000048420000f04100009c429a99193fcdcccc3d00000000"),
+        ("DNAM", "97180c000000803f0000803f000000000000803f0000803f000080430000804300000000cdcccc3d000000000000003f000000000000000000000000000112002a000100090000c0400000004000000000000001000000000000000000000000000000cdda01000000000000000000ac2615000000000000abaa2a3f00000000a041000000000000000001000000ffff7f7f000000000000000000000000cdcccc3dcdcccc3d00000000"),
+        ("RGW3", "84301100acc527376666663fcdcc4c3fcdcc4c3ea2773740a8aaea3f9a99193e9a99193e0000803e0000803f000000000300000001"),
+        ("CRDT", "000000400000803f00000000"),
+        ("INAM", "56181700"),
+        ("LNAM", "98180c00"),
+        ("WAMD", "e1881800"),
+        ("DAMA", "810a060000000000c9e97600"),
+        ("VCRY", "0f000000"),
+        ("WTDT", "00000000"),
+        ("WSAM", "00000040"),
+    ]);
+
+    let result = decode_record(&ctx, "WEAP", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Weapon"),
+    );
+    assert_fully_decoded(&result);
+
+    // EAMT = 0x2710 = 10000 (little-endian u16).
+    assert_eq!(
+        result
+            .get("Enchantment Amount")
+            .and_then(|v| v.as_u64()),
+        Some(10000),
+        "Enchantment Amount"
     );
 }
 

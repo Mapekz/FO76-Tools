@@ -693,21 +693,6 @@ def _annotate_stop_before_member(member: dict | None, outer_stops: list[str]) ->
             _annotate_stop_before_member(variant, outer_stops)
 
 
-def _rebuild_present_signature(variants: list[dict], extractor: Extractor) -> list[list[str]]:
-    from collections import Counter
-
-    anchors = [extractor._extract_anchor_sigs(v) for v in variants]
-    freq = Counter(sig for a in anchors for sig in a)
-    shared = {sig for sig, n in freq.items() if n > 1}
-    if shared:
-        anchors = [[sig for sig in a if sig not in shared] for a in anchors]
-    for i, a in enumerate(anchors):
-        if not a:
-            first = extractor._extract_first_anchor_sig(variants[i])
-            anchors[i] = [first] if first else []
-    return anchors
-
-
 class Extractor:
     def __init__(self, fo76: str, common: str):
         self.fo76 = fo76

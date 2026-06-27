@@ -1,5 +1,20 @@
 {
   "record_additions": {
+    "ENCH": [
+      {
+        "kind": "rstruct",
+        "name": "Keywords",
+        "members": [
+          { "kind": "integer", "name": "Keyword Count", "width": "u32", "signed": false, "sig": "KSIZ" },
+          { "kind": "array", "name": "Keywords",
+            "element": { "kind": "formid", "name": "Keyword", "valid_refs": ["KYWD", "NULL"] },
+            "sig": "KWDA" }
+        ]
+      }
+    ],
+    "WEAP": [
+      { "kind": "integer", "name": "Enchantment Amount", "width": "u16", "signed": false, "sig": "EAMT" }
+    ],
     "NPC_": [
       {
         "kind": "empty",
