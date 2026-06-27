@@ -191,11 +191,31 @@ async fn record_by_formid(
         Ok(a) => a,
         Err(e) => return e.into_response(),
     };
+    let mut db = db_arc.lock().unwrap();
+
+    // The path segment is auto-detected: a FormID-looking token is resolved as a
+    // FormID, otherwise it falls back to an EditorID lookup.
+    if !esm::looks_like_formid(&formid) {
+        return match db.record_by_edid(&formid) {
+            Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("not found")
+                    || msg.contains("Not found")
+                    || msg.contains("Not Found")
+                {
+                    ApiError::not_found(format!("EditorID {} not found", formid)).into_response()
+                } else {
+                    ApiError::from(e).into_response()
+                }
+            }
+        };
+    }
+
     let fid = match esm::parse_form_id_input(&formid) {
         Ok(f) => f,
         Err(e) => return ApiError::bad_request(e).into_response(),
     };
-    let mut db = db_arc.lock().unwrap();
     match db.record_by_formid(fid) {
         Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
         Err(e) => {
@@ -211,6 +231,7 @@ async fn record_by_formid(
 
 #[derive(serde::Deserialize)]
 struct RecordsQuery {
+    id: Option<String>,
     edid: Option<String>,
     r#type: Option<String>,
     limit: Option<usize>,
@@ -225,6 +246,22 @@ async fn records_query(
         Err(e) => return e.into_response(),
     };
     let mut db = db_arc.lock().unwrap();
+    if let Some(id) = params.id {
+        if esm::looks_like_formid(&id) {
+            let fid = match esm::parse_form_id_input(&id) {
+                Ok(f) => f,
+                Err(e) => return ApiError::bad_request(e).into_response(),
+            };
+            return match db.record_by_formid(fid) {
+                Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
+                Err(e) => ApiError::from(e).into_response(),
+            };
+        }
+        return match db.record_by_edid(&id) {
+            Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
+            Err(e) => ApiError::from(e).into_response(),
+        };
+    }
     if let Some(edid) = params.edid {
         return match db.record_by_edid(&edid) {
             Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
@@ -238,7 +275,7 @@ async fn records_query(
             Err(e) => ApiError::from(e).into_response(),
         };
     }
-    ApiError::bad_request("specify ?edid=, ?type=, or use /records/:formid").into_response()
+    ApiError::bad_request("specify ?id=, ?edid=, ?type=, or use /records/:formid").into_response()
 }
 
 async fn list_groups(State(state): State<AppState>) -> impl IntoResponse {
@@ -384,6 +421,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                         "inputSchema": {
                             "type": "object",
                             "properties": {
+                                "id": {"type": "string", "description": "FormID or EditorID (auto-detected)"},
                                 "formid": {"type": "string"},
                                 "edid": {"type": "string"}
                             }
@@ -420,6 +458,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                         "inputSchema": {
                             "type": "object",
                             "properties": {
+                                "id": {"type": "string", "description": "FormID or EditorID (auto-detected)"},
                                 "formid": {"type": "string"},
                                 "edid": {"type": "string"},
                                 "limit": {"type": "integer"}
@@ -479,12 +518,15 @@ fn call_tool_proxy(
         "esm_get_record" => {
             let formid = args.get("formid").and_then(|v| v.as_str());
             let edid = args.get("edid").and_then(|v| v.as_str());
+            let id = args.get("id").and_then(|v| v.as_str());
             let sel = if let Some(fid_str) = formid {
                 RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
             } else if let Some(e) = edid {
                 RecordSel::Edid(e.to_string())
+            } else if let Some(id) = id {
+                RecordSel::from_input(id)?
             } else {
-                anyhow::bail!("specify 'formid' or 'edid' argument");
+                anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
             };
             let v = backend.run(
                 esm_path,
@@ -525,12 +567,15 @@ fn call_tool_proxy(
         "esm_refs" => {
             let formid = args.get("formid").and_then(|v| v.as_str());
             let edid = args.get("edid").and_then(|v| v.as_str());
+            let id = args.get("id").and_then(|v| v.as_str());
             let sel = if let Some(fid_str) = formid {
                 RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
             } else if let Some(e) = edid {
                 RecordSel::Edid(e.to_string())
+            } else if let Some(id) = id {
+                RecordSel::from_input(id)?
             } else {
-                anyhow::bail!("specify 'formid' or 'edid' argument");
+                anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
             };
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
             let refs = backend.referenced_by(esm_path, sel, limit)?;

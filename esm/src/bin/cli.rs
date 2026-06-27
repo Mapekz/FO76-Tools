@@ -37,6 +37,9 @@ enum Commands {
     },
     Get {
         file: PathBuf,
+        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        #[arg(conflicts_with_all = ["formid", "edid"])]
+        target: Option<String>,
         #[arg(long, conflicts_with = "edid")]
         formid: Option<String>,
         #[arg(long, conflicts_with = "formid")]
@@ -105,6 +108,9 @@ enum Commands {
     },
     Refs {
         file: PathBuf,
+        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        #[arg(conflicts_with_all = ["formid", "edid"])]
+        target: Option<String>,
         #[arg(long, conflicts_with = "edid")]
         formid: Option<String>,
         #[arg(long, conflicts_with = "formid")]
@@ -155,6 +161,9 @@ enum DaemonAction {
 enum ReplCommand {
     Info,
     Get {
+        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        #[arg(conflicts_with_all = ["formid", "edid"])]
+        target: Option<String>,
         #[arg(long, conflicts_with = "edid")]
         formid: Option<String>,
         #[arg(long, conflicts_with = "formid")]
@@ -204,6 +213,9 @@ enum ReplCommand {
         gate: bool,
     },
     Refs {
+        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        #[arg(conflicts_with_all = ["formid", "edid"])]
+        target: Option<String>,
         #[arg(long, conflicts_with = "edid")]
         formid: Option<String>,
         #[arg(long, conflicts_with = "formid")]
@@ -317,6 +329,7 @@ fn main() -> anyhow::Result<()> {
             Commands::Info { file } => cmd_info(&mut backend, &file)?,
             Commands::Get {
                 file,
+                target,
                 formid,
                 edid,
                 json,
@@ -332,6 +345,7 @@ fn main() -> anyhow::Result<()> {
                 &file,
                 formid,
                 edid,
+                target,
                 json,
                 pretty,
                 raw,
@@ -403,6 +417,7 @@ fn main() -> anyhow::Result<()> {
             )?,
             Commands::Refs {
                 file,
+                target,
                 formid,
                 edid,
                 limit,
@@ -416,6 +431,7 @@ fn main() -> anyhow::Result<()> {
                 &file,
                 formid,
                 edid,
+                target,
                 limit,
                 json,
                 pretty,
@@ -510,6 +526,7 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
     match cmd {
         ReplCommand::Info => cmd_info(backend, esm),
         ReplCommand::Get {
+            target,
             formid,
             edid,
             json,
@@ -517,7 +534,8 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             raw,
             resolve,
         } => cmd_get(
-            backend, esm, formid, edid, json, pretty, raw, None, None, "en", None, resolve, true,
+            backend, esm, formid, edid, target, json, pretty, raw, None, None, "en", None, resolve,
+            true,
         ),
         ReplCommand::List { r#type, limit } => {
             cmd_list(backend, esm, &r#type, limit, None, None, "en", true)
@@ -541,13 +559,14 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             gate,
         } => cmd_coverage(backend, esm, record_type.as_deref(), sample, json, gate),
         ReplCommand::Refs {
+            target,
             formid,
             edid,
             limit,
             json,
             pretty,
         } => cmd_refs(
-            backend, esm, formid, edid, limit, json, pretty, None, None, "en", true,
+            backend, esm, formid, edid, target, limit, json, pretty, None, None, "en", true,
         ),
         ReplCommand::Search {
             pattern,
@@ -630,13 +649,19 @@ fn parse_resolve(s: &str) -> ResolveDepth {
     }
 }
 
-fn record_sel(formid: Option<String>, edid: Option<String>) -> anyhow::Result<RecordSel> {
+fn record_sel(
+    formid: Option<String>,
+    edid: Option<String>,
+    target: Option<String>,
+) -> anyhow::Result<RecordSel> {
     if let Some(fid) = formid {
         Ok(RecordSel::FormId(parse_form_id_input(&fid)?))
     } else if let Some(e) = edid {
         Ok(RecordSel::Edid(e))
+    } else if let Some(t) = target {
+        RecordSel::from_input(&t)
     } else {
-        anyhow::bail!("specify --formid or --edid");
+        anyhow::bail!("specify a FormID/EditorID (positional), or --formid/--edid");
     }
 }
 
@@ -646,6 +671,7 @@ fn cmd_get(
     file: &Path,
     formid: Option<String>,
     edid: Option<String>,
+    target: Option<String>,
     json: bool,
     pretty: bool,
     raw: bool,
@@ -669,7 +695,7 @@ fn cmd_get(
         if let Some(ba2_path) = startup_ba2 {
             db.load_curves(&ba2_path)?;
         }
-        let sel = record_sel(formid, edid)?;
+        let sel = record_sel(formid, edid, target)?;
         let depth = parse_resolve(&resolve);
         if raw {
             let form_id = match &sel {
@@ -712,7 +738,7 @@ fn cmd_get(
         return Ok(());
     }
 
-    let sel = record_sel(formid, edid)?;
+    let sel = record_sel(formid, edid, target)?;
     let depth = parse_resolve(&resolve);
     if raw {
         let v = backend.run(file, Op::RecordRaw { sel })?;
@@ -780,6 +806,7 @@ fn cmd_refs(
     file: &Path,
     formid: Option<String>,
     edid: Option<String>,
+    target: Option<String>,
     limit: usize,
     json: bool,
     pretty: bool,
@@ -797,12 +824,12 @@ fn cmd_refs(
         }
         let mut db = Database::open(file)?;
         apply_strings_override(&mut db, file, strings, strings_dir, lang);
-        let target = resolve_form_id_local(&mut db, formid, edid)?;
-        let ref_list = esm::ipc::referenced_by_enriched(&mut db, target, limit)?;
+        let form_id = resolve_form_id_local(&mut db, formid, edid, target)?;
+        let ref_list = esm::ipc::referenced_by_enriched(&mut db, form_id, limit)?;
         print_refs(&ref_list, json, pretty);
         return Ok(());
     }
-    let sel = record_sel(formid, edid)?;
+    let sel = record_sel(formid, edid, target)?;
     let v = backend.run(file, Op::ReferencedBy { sel, limit })?;
     let ref_list: RefList = serde_json::from_value(v)?;
     print_refs(&ref_list, json, pretty);
@@ -916,16 +943,16 @@ fn resolve_form_id_local(
     db: &mut Database,
     formid: Option<String>,
     edid: Option<String>,
+    target: Option<String>,
 ) -> anyhow::Result<esm::FormId> {
-    if let Some(fid) = formid {
-        parse_form_id_input(&fid)
-    } else if let Some(e) = edid {
-        db.index.ensure_edid_index(&db.esm)?;
-        db.index
-            .get_by_edid(&e)
-            .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", e))
-    } else {
-        anyhow::bail!("specify --formid or --edid")
+    match record_sel(formid, edid, target)? {
+        RecordSel::FormId(fid) => Ok(fid),
+        RecordSel::Edid(e) => {
+            db.index.ensure_edid_index(&db.esm)?;
+            db.index
+                .get_by_edid(&e)
+                .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", e))
+        }
     }
 }
 

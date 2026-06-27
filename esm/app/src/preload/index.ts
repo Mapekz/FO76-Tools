@@ -14,7 +14,10 @@ const api: Fo76Api = {
   recordByFormid: (id, formid, resolve) =>
     ipcRenderer.invoke(CH.recordByFormid, id, formid, resolve ?? 'stub'),
   recordByEdid: (id, edid) => ipcRenderer.invoke(CH.recordByEdid, id, edid),
+  recordById: (id, target, resolve) =>
+    ipcRenderer.invoke(CH.recordById, id, target, resolve ?? 'stub'),
   referencedBy: (id, formid) => ipcRenderer.invoke(CH.referencedBy, id, formid),
+  referencedById: (id, target) => ipcRenderer.invoke(CH.referencedById, id, target),
   parseFormId: (s) => ipcRenderer.invoke(CH.parseFormId, s),
 }
 

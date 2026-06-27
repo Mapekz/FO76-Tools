@@ -163,6 +163,41 @@ fn local_backend_parity_with_dispatch() {
     let _ = std::fs::remove_file(&path);
 }
 
+#[test]
+fn looks_like_formid_heuristic() {
+    // FormID-looking tokens.
+    assert!(esm::looks_like_formid("0x463F"));
+    assert!(esm::looks_like_formid("0X463F"));
+    assert!(esm::looks_like_formid("463F"));
+    assert!(esm::looks_like_formid("18000"));
+    assert!(esm::looks_like_formid("cafe")); // short all-hex EditorIDs read as FormIDs
+    assert!(esm::looks_like_formid("DEADBEEF")); // exactly 8 hex digits
+    assert!(esm::looks_like_formid("  463F  ")); // surrounding whitespace trimmed
+
+    // EditorID-looking tokens.
+    assert!(!esm::looks_like_formid("AssaultRifle"));
+    assert!(!esm::looks_like_formid("Enc_Raider"));
+    assert!(!esm::looks_like_formid("DEADBEEF1")); // 9 hex digits — too long for a u32
+    assert!(!esm::looks_like_formid(""));
+    assert!(!esm::looks_like_formid("0x"));
+}
+
+#[test]
+fn record_sel_from_input_auto_detects() {
+    match RecordSel::from_input("0x463F").unwrap() {
+        RecordSel::FormId(f) => assert_eq!(f, esm::FormId(0x463F)),
+        other => panic!("expected FormId, got {other:?}"),
+    }
+    match RecordSel::from_input("18000").unwrap() {
+        RecordSel::FormId(f) => assert_eq!(f, esm::FormId(18000)),
+        other => panic!("expected FormId, got {other:?}"),
+    }
+    match RecordSel::from_input("AssaultRifle").unwrap() {
+        RecordSel::Edid(e) => assert_eq!(e, "AssaultRifle"),
+        other => panic!("expected Edid, got {other:?}"),
+    }
+}
+
 /// Regression: `RecordSel` must survive a JSON round-trip.
 ///
 /// Before the fix, `#[serde(tag = "kind")]` (internally-tagged) on a newtype enum

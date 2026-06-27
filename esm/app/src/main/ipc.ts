@@ -65,10 +65,22 @@ export function registerIpc(): void {
     return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).recordByEdid(edid))
   })
 
+  ipcMain.handle(CH.recordById, (_e, id: string, target: string, resolve = 'stub') => {
+    const entry = registry.get(id)
+    if (!entry) throw new Error(`no database with id ${id}`)
+    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).recordById(target, resolve))
+  })
+
   ipcMain.handle(CH.referencedBy, (_e, id: string, formid: string) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
     return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).referencedBy(formid))
+  })
+
+  ipcMain.handle(CH.referencedById, (_e, id: string, target: string) => {
+    const entry = registry.get(id)
+    if (!entry) throw new Error(`no database with id ${id}`)
+    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).referencedById(target))
   })
 
   ipcMain.handle(CH.parseFormId, (_e, s: string) => {

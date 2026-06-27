@@ -47,14 +47,16 @@ Prints version, record count, next object ID, ESM/Localization flags, author, de
 ### `get` — Fetch a single record
 
 ```sh
-# By EditorID (decoded JSON)
-esm get SeventySix.esm --edid AssaultRifle --pretty
+# Auto-detected positional: FormID (0x-prefixed / hex / decimal) vs EditorID
+esm get SeventySix.esm AssaultRifle --pretty
+esm get SeventySix.esm 0x463F --pretty
 
-# By FormID (hex or decimal)
+# Explicit flags still work and override the positional
+esm get SeventySix.esm --edid AssaultRifle --pretty
 esm get SeventySix.esm --formid 0x463F --pretty
 
 # Raw subrecords (no schema decoding)
-esm get SeventySix.esm --formid 0x463F --raw --pretty
+esm get SeventySix.esm 0x463F --raw --pretty
 
 # With localized strings resolved
 esm get SeventySix.esm --edid AssaultRifle --strings "SeventySix - Localization.ba2"
@@ -67,8 +69,9 @@ esm get SeventySix.esm --edid AssaultRifle --resolve none   # leave FormIDs as h
 
 | Flag | Default | Description |
 |---|---|---|
-| `--formid <ID>` | — | Hex (`0x1234`) or decimal FormID |
-| `--edid <ID>` | — | EditorID string |
+| `<target>` | — | Positional FormID or EditorID, auto-detected (see note) |
+| `--formid <ID>` | — | Hex (`0x1234`) or decimal FormID (overrides positional) |
+| `--edid <ID>` | — | EditorID string (overrides positional) |
 | `--json` | false | Emit JSON (implied by `--pretty`) |
 | `--pretty` | false | Pretty-print JSON |
 | `--raw` | false | Skip schema decode; dump raw subrecords |
@@ -77,6 +80,8 @@ esm get SeventySix.esm --edid AssaultRifle --resolve none   # leave FormIDs as h
 | `--lang <code>` | `en` | Language code for string tables |
 | `--startup-ba2 <BA2>` | — | Startup BA2 for curve table evaluation |
 | `--resolve <depth>` | `none` | FormID cross-reference depth: `none`, `stub`, `full` |
+
+> Auto-detection: a positional `<target>` is treated as a FormID when it is `0x`-prefixed, pure decimal, or a bare run of hex digits up to 8 chars; anything else is an EditorID. Precedence is `--formid` > `--edid` > positional. Short all-hex EditorIDs (e.g. `cafe`) are read as FormIDs — pass `--edid` to disambiguate.
 
 ### `list` — List records of a type
 
@@ -112,6 +117,11 @@ esm search SeventySix.esm "Assault*" --in edid
 ### `refs` — Reverse FormID lookup
 
 ```sh
+# Auto-detected positional (FormID or EditorID), same rules as `get`
+esm refs SeventySix.esm AssaultRifle --limit 50
+esm refs SeventySix.esm 0x463F --json --pretty
+
+# Explicit flags still work and override the positional
 esm refs SeventySix.esm --edid AssaultRifle --limit 50
 esm refs SeventySix.esm --formid 0x463F --json --pretty
 ```

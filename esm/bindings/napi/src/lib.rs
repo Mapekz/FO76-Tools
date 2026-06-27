@@ -1,5 +1,6 @@
 #![deny(clippy::all)]
 
+use esm::ipc::RecordSel;
 use esm::{Database, FormId, ResolveDepth};
 use napi_derive::napi;
 use std::sync::Mutex;
@@ -84,6 +85,23 @@ impl EsmDatabase {
         Ok(serde_json::to_value(&result).unwrap())
     }
 
+    /// Decode a record by FormID or EditorID (auto-detected).
+    ///
+    /// `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
+    #[napi]
+    pub fn record_by_id(&self, id: String, resolve: String) -> napi::Result<serde_json::Value> {
+        let sel = RecordSel::from_input(&id)
+            .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+        let depth = parse_resolve_depth(&resolve)?;
+        let mut db = self.inner.lock().unwrap();
+        let result = match sel {
+            RecordSel::FormId(fid) => db.record_by_formid_resolved(fid, depth),
+            RecordSel::Edid(edid) => db.record_by_edid_resolved(&edid, depth),
+        }
+        .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        Ok(serde_json::to_value(&result).unwrap())
+    }
+
     /// Return all records that reference the given FormID hex string.
     #[napi]
     pub fn referenced_by(&self, formid: String) -> napi::Result<serde_json::Value> {
@@ -91,6 +109,19 @@ impl EsmDatabase {
             .parse()
             .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
         let mut db = self.inner.lock().unwrap();
+        let rows = db
+            .referenced_by(fid)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        Ok(serde_json::to_value(&rows).unwrap())
+    }
+
+    /// Return all records that reference the given FormID or EditorID (auto-detected).
+    #[napi]
+    pub fn referenced_by_id(&self, id: String) -> napi::Result<serde_json::Value> {
+        let sel = RecordSel::from_input(&id)
+            .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+        let mut db = self.inner.lock().unwrap();
+        let fid = resolve_sel(&mut db, sel)?;
         let rows = db
             .referenced_by(fid)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
@@ -115,5 +146,19 @@ fn parse_resolve_depth(s: &str) -> napi::Result<ResolveDepth> {
         other => Err(napi::Error::from_reason(format!(
             "unknown resolve depth '{other}'; expected none|stub|full"
         ))),
+    }
+}
+
+fn resolve_sel(db: &mut Database, sel: RecordSel) -> napi::Result<FormId> {
+    match sel {
+        RecordSel::FormId(fid) => Ok(fid),
+        RecordSel::Edid(edid) => {
+            db.index
+                .ensure_edid_index(&db.esm)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+            db.index
+                .get_by_edid(&edid)
+                .ok_or_else(|| napi::Error::from_reason(format!("EditorID '{}' not found", edid)))
+        }
     }
 }

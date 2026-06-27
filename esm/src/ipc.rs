@@ -48,6 +48,18 @@ pub enum RecordSel {
     Edid(String),
 }
 
+impl RecordSel {
+    /// Build a selector from a single user-supplied token, auto-detecting whether
+    /// it denotes a FormID (numeric/hex) or an EditorID via [`crate::looks_like_formid`].
+    pub fn from_input(s: &str) -> anyhow::Result<RecordSel> {
+        if crate::looks_like_formid(s) {
+            Ok(RecordSel::FormId(crate::parse_form_id_input(s)?))
+        } else {
+            Ok(RecordSel::Edid(s.to_string()))
+        }
+    }
+}
+
 /// All operations routable through `dispatch`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]

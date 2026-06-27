@@ -58,9 +58,9 @@ export function RecordTree() {
     if (!activeDbId) return
     navPush({ dbId: activeDbId, formid: row.form_id })
     try {
-      const rec = await window.api.recordByFormid(activeDbId, row.form_id, 'stub')
+      const rec = await window.api.recordById(activeDbId, row.form_id, 'stub')
       setActiveRecord(rec)
-      const refs = await window.api.referencedBy(activeDbId, row.form_id)
+      const refs = await window.api.referencedById(activeDbId, row.form_id)
       setReferencedBy(refs)
     } catch (e) {
       console.error(e)

@@ -8,7 +8,9 @@ export const CH = {
   listTypeRecords: 'list-type-records',
   recordByFormid: 'record-by-formid',
   recordByEdid: 'record-by-edid',
+  recordById: 'record-by-id',
   referencedBy: 'referenced-by',
+  referencedById: 'referenced-by-id',
   parseFormId: 'parse-form-id',
 } as const
 
@@ -75,6 +77,8 @@ export interface Fo76Api {
   listTypeRecords(id: DbId, sig: string, offset: number, limit: number): Promise<RecordRow[]>
   recordByFormid(id: DbId, formid: string, resolve?: string): Promise<RecordResult>
   recordByEdid(id: DbId, edid: string): Promise<RecordResult>
+  recordById(id: DbId, target: string, resolve?: string): Promise<RecordResult>
   referencedBy(id: DbId, formid: string): Promise<RecordRow[]>
+  referencedById(id: DbId, target: string): Promise<RecordRow[]>
   parseFormId(s: string): Promise<string>
 }

@@ -9,12 +9,12 @@ import { useStore } from './store'
 export function App() {
   const { setActiveRecord, setReferencedBy, navPush } = useStore()
 
-  const navigate = useCallback(async (dbId: string, formid: string) => {
-    navPush({ dbId, formid })
+  const navigate = useCallback(async (dbId: string, target: string) => {
+    navPush({ dbId, formid: target })
     try {
-      const rec = await window.api.recordByFormid(dbId, formid, 'stub')
+      const rec = await window.api.recordById(dbId, target, 'stub')
       setActiveRecord(rec)
-      const refs = await window.api.referencedBy(dbId, formid)
+      const refs = await window.api.referencedById(dbId, target)
       setReferencedBy(refs)
     } catch (e) {
       console.error('navigate error:', e)
