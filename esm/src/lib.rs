@@ -28,17 +28,17 @@ use crate::tree::ChildRef;
 use crate::wildcard::wildcard_match;
 use anyhow::{bail, Context};
 pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
-pub use diff::{DiffResult, RecordDiff, RecordStub};
+pub use diff::{DiffResult, RecordDiff, RecordStub, RefName};
 pub use formid::FormId;
 pub use index::SearchMeta;
 pub use ipc::{
     CoverageReport, Markers, Op, RawRecordView, RawSubrecordView, RefList, RefRow, Request,
     Response,
 };
-pub use sources::{Source, SourceKind, SourceList, SourcePathNode, SourcesOptions, sources_of};
 pub use reader::RecordMeta;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+pub use sources::{sources_of, Source, SourceKind, SourceList, SourcePathNode, SourcesOptions};
 use std::collections::HashSet;
 use std::path::Path;
 

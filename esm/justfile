@@ -33,3 +33,19 @@ audit:
 # Diff two ESM versions (integration test normally skipped by #[ignore]).
 test-esm a b:
     RUST_TEST_ESM_A={{a}} RUST_TEST_ESM_B={{b}} cargo test -- --ignored
+
+# Generate patch notes from two ESM files.
+# Produces patch_notes_<date>.md next to NEW and discord_chunks_<date>/ next to NEW.
+# Assumes loose string files live in strings/ next to the ESMs (or pass STRINGS_DIR=…).
+#
+# Usage:
+#   just patch-notes SeventySix_20260619.esm SeventySix_20260626.esm
+#   STRINGS_DIR=strings just patch-notes old.esm new.esm
+#   HIGHLIGHTS=highlights.md just patch-notes old.esm new.esm
+patch-notes old new:
+    python3 tools/make_patch_notes.py \
+        "{{old}}" "{{new}}" \
+        --strings-dir "${STRINGS_DIR:-strings}" \
+        ${HIGHLIGHTS:+--highlights-file "$HIGHLIGHTS"} \
+        ${LANG:+--lang "$LANG"} \
+        ${OUT_DIR:+--out-dir "$OUT_DIR"}

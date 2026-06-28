@@ -132,13 +132,19 @@ impl EsmDatabase {
     ///
     /// `id` is a FormID or EditorID (auto-detected). `max_depth` defaults to 6.
     #[napi]
-    pub fn sources_of(&self, id: String, max_depth: Option<u32>) -> napi::Result<serde_json::Value> {
+    pub fn sources_of(
+        &self,
+        id: String,
+        max_depth: Option<u32>,
+    ) -> napi::Result<serde_json::Value> {
         let sel = RecordSel::from_input(&id)
             .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
         let mut db = self.inner.lock().unwrap();
         let fid = resolve_sel(&mut db, sel)?;
         let opts = esm::SourcesOptions {
-            max_depth: max_depth.map(|d| d as usize).unwrap_or(esm::sources::DEFAULT_MAX_DEPTH),
+            max_depth: max_depth
+                .map(|d| d as usize)
+                .unwrap_or(esm::sources::DEFAULT_MAX_DEPTH),
         };
         let list = esm::sources_of(&mut db, fid, &opts)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;

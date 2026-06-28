@@ -1,8 +1,6 @@
 mod common;
 
-use common::{
-    assert_fully_decoded, bare_ctx, bare_ctx_fv, sr, subrecords_from,
-};
+use common::{assert_fully_decoded, bare_ctx, bare_ctx_fv, sr, subrecords_from};
 use esm::decode::decode_record;
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
@@ -4626,7 +4624,9 @@ fn spel_ab_nemesis_rank00_decodes_correctly() {
         .expect("Effects must be an array");
     assert_eq!(effects.len(), 1, "Effects count");
     assert_eq!(
-        effects[0].pointer("/Effect/Base Effect").and_then(|v| v.as_str()),
+        effects[0]
+            .pointer("/Effect/Base Effect")
+            .and_then(|v| v.as_str()),
         Some("0x00004382"),
         "Effects[0] Base Effect FormID"
     );

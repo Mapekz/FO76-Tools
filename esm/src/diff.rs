@@ -4,12 +4,14 @@
 //! for unchanged records; only records with different payloads are decoded and
 //! field-diffed via `json_diff`.
 
-use crate::formid::FormId;
-use crate::reader::edid_from_subrecords;
+use crate::formid::{parse_formid, FormId};
+use crate::reader::{edid_from_subrecords, lstring_id_from_subrecords};
+use crate::strings::StringKind;
 use crate::Database;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{BTreeMap, HashSet};
 
 /// Lightweight record identity for added/removed entries.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,6 +20,12 @@ pub struct RecordStub {
     pub editor_id: Option<String>,
     pub record_type: String,
     pub offset: u64,
+    /// Resolved FULL display name (when localization is available).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Resolved DESC description (when localization is available).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// A record present in both ESMs whose decoded fields changed.
@@ -26,6 +34,21 @@ pub struct RecordDiff {
     pub stub: RecordStub,
     /// Sparse JSON object: only changed fields, each `{ "from": .., "to": .. }`.
     pub field_changes: Value,
+    /// EditorID from the A (old) side.  Only present when it differs from
+    /// `stub.editor_id` (the B side), which indicates an EDID rename this
+    /// patch (e.g. a `ZZZ_` deprecation prefix being added).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prev_editor_id: Option<String>,
+}
+
+/// Resolved display information for a FormID that appears in `field_changes`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefName {
+    pub record_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 /// Top-level result of comparing two ESM files.
@@ -37,22 +60,32 @@ pub struct DiffResult {
     pub removed: Vec<RecordStub>,
     /// FormIDs in both files where the decoded fields changed.
     pub changed: Vec<RecordDiff>,
+    /// One-hop resolved names for every FormID hex string that appears in any
+    /// `field_changes` value.  Keyed by the bare hex string (e.g. `"0x00ABCDEF"`).
+    /// Empty when no localization is available or no FormID references exist.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub ref_names: BTreeMap<String, RefName>,
 }
 
 /// Compare two ESM databases and return a structured diff.
 ///
-/// Records are aligned by raw FormID. The decompressed data payload is compared
-/// byte-for-byte to skip unchanged records (fast-path). Only changed records are
-/// decoded and field-diffed.
+/// Records are aligned by raw FormID.  The decompressed data payload is
+/// compared byte-for-byte to skip unchanged records (fast-path).  Only
+/// changed records are decoded and field-diffed.
+///
+/// When either database has a localization table loaded, each `RecordStub`
+/// is enriched with `name` (FULL) and `description` (DESC), and `DiffResult`
+/// gains a `ref_names` sidecar mapping every FormID hex reference found in
+/// `field_changes` to its resolved record type, EditorID, and name.
 pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> {
-    let a_ids: std::collections::HashSet<FormId> = a.index.form_index.keys().copied().collect();
-    let b_ids: std::collections::HashSet<FormId> = b.index.form_index.keys().copied().collect();
+    let a_ids: HashSet<FormId> = a.index.form_index.keys().copied().collect();
+    let b_ids: HashSet<FormId> = b.index.form_index.keys().copied().collect();
 
     // Added: in B but not A
     let mut added = Vec::new();
     for id in b_ids.difference(&a_ids) {
         let meta = b.index.form_index[id].clone();
-        let stub = record_stub_from(&b.esm, &meta, *id)?;
+        let stub = record_stub_from_db(b, &meta, *id)?;
         added.push(stub);
     }
     added.sort_by(|x, y| x.form_id.cmp(&y.form_id));
@@ -61,7 +94,7 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
     let mut removed = Vec::new();
     for id in a_ids.difference(&b_ids) {
         let meta = a.index.form_index[id].clone();
-        let stub = record_stub_from(&a.esm, &meta, *id)?;
+        let stub = record_stub_from_db(a, &meta, *id)?;
         removed.push(stub);
     }
     removed.sort_by(|x, y| x.form_id.cmp(&y.form_id));
@@ -101,42 +134,162 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
             continue; // decoded-equal despite byte differences (volatile header bytes)
         }
 
+        // Resolve name/description from the B-side raw subrecords.
+        let (name, description) = resolve_stub_names(b, &meta_b);
+
         let stub = RecordStub {
             form_id: id.display(),
-            editor_id: rb.editor_id,
+            editor_id: rb.editor_id.clone(),
             record_type: meta_b.signature.clone(),
             offset: meta_b.offset,
+            name,
+            description,
         };
+
+        // Capture A-side EditorID only when it changed — signals an EDID rename
+        // (e.g. a ZZZ_ / CUT_ deprecation prefix being applied this patch).
+        let prev_editor_id = if ra.editor_id != rb.editor_id {
+            ra.editor_id
+        } else {
+            None
+        };
+
         changed.push(RecordDiff {
             stub,
             field_changes,
+            prev_editor_id,
         });
     }
     changed.sort_by(|x, y| x.stub.form_id.cmp(&y.stub.form_id));
+
+    // Build ref_names: one-hop FormID resolution for every hex ref in field_changes.
+    // Only populated when at least one side has localization loaded.
+    let ref_names = if b.localization.is_some() || a.localization.is_some() {
+        let mut refs: HashSet<String> = HashSet::new();
+        for rd in &changed {
+            collect_formid_refs(&rd.field_changes, &mut refs);
+        }
+        refs.into_iter()
+            .filter_map(|fid_str| resolve_ref_name(&fid_str, b, a).map(|rn| (fid_str, rn)))
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
 
     Ok(DiffResult {
         added,
         removed,
         changed,
+        ref_names,
     })
 }
 
-fn record_stub_from(
-    esm: &crate::reader::EsmFile,
+/// Build a `RecordStub` from a database, resolving name/description when
+/// localization is available.
+fn record_stub_from_db(
+    db: &Database,
     meta: &crate::reader::RecordMeta,
     id: FormId,
 ) -> anyhow::Result<RecordStub> {
-    let rec = esm.parse_record_at(meta.offset)?;
+    let rec = db.esm.parse_record_at(meta.offset)?;
     let editor_id = edid_from_subrecords(&rec.subrecords);
+
+    let (name, description) = if let Some(loc) = &db.localization {
+        let n = lstring_id_from_subrecords(&rec.subrecords, "FULL")
+            .and_then(|lid| loc.lookup(StringKind::Strings, lid).map(str::to_owned));
+        let d = lstring_id_from_subrecords(&rec.subrecords, "DESC")
+            .and_then(|lid| loc.lookup(StringKind::DlStrings, lid).map(str::to_owned));
+        (n, d)
+    } else {
+        (None, None)
+    };
+
     Ok(RecordStub {
         form_id: id.display(),
         editor_id,
         record_type: meta.signature.clone(),
         offset: meta.offset,
+        name,
+        description,
     })
 }
 
-/// Recursive JSON diff. Returns a sparse object with only changed fields.
+/// Resolve FULL (name) and DESC (description) from the raw record at `meta.offset`.
+/// Returns `(None, None)` on any parse error or when localization is absent.
+fn resolve_stub_names(
+    db: &Database,
+    meta: &crate::reader::RecordMeta,
+) -> (Option<String>, Option<String>) {
+    let loc = match &db.localization {
+        Some(l) => l,
+        None => return (None, None),
+    };
+    let rec = match db.esm.parse_record_at(meta.offset) {
+        Ok(r) => r,
+        Err(_) => return (None, None),
+    };
+    let name = lstring_id_from_subrecords(&rec.subrecords, "FULL")
+        .and_then(|lid| loc.lookup(StringKind::Strings, lid).map(str::to_owned));
+    let description = lstring_id_from_subrecords(&rec.subrecords, "DESC")
+        .and_then(|lid| loc.lookup(StringKind::DlStrings, lid).map(str::to_owned));
+    (name, description)
+}
+
+/// Return `true` if `s` is a FormID hex string as produced by `FormId::display()`:
+/// exactly `0x` followed by 8 ASCII hex digits (case-insensitive).
+fn is_formid_str(s: &str) -> bool {
+    let b = s.as_bytes();
+    s.len() == 10 && b[0] == b'0' && b[1] == b'x' && b[2..].iter().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Recursively collect all FormID-shaped strings from a JSON value tree.
+fn collect_formid_refs(val: &Value, out: &mut HashSet<String>) {
+    match val {
+        Value::String(s) if is_formid_str(s) => {
+            out.insert(s.clone());
+        }
+        Value::Object(map) => {
+            for v in map.values() {
+                collect_formid_refs(v, out);
+            }
+        }
+        Value::Array(arr) => {
+            for v in arr {
+                collect_formid_refs(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Resolve a FormID hex string to a `RefName` by looking up the record in
+/// `primary` (B / new side) first, then `fallback` (A / old side).
+fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> Option<RefName> {
+    let id = parse_formid(fid_str).ok()?;
+    for db in [primary, fallback] {
+        if let Some(meta) = db.index.form_index.get(&id) {
+            let offset = meta.offset;
+            let sig = meta.signature.clone();
+            let rec = match db.esm.parse_record_at(offset) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let editor_id = edid_from_subrecords(&rec.subrecords);
+            let name = db.localization.as_ref().and_then(|loc| {
+                lstring_id_from_subrecords(&rec.subrecords, "FULL")
+                    .and_then(|lid| loc.lookup(StringKind::Strings, lid).map(str::to_owned))
+            });
+            return Some(RefName {
+                record_type: sig,
+                editor_id,
+                name,
+            });
+        }
+    }
+    None
+}
+
+/// Recursive JSON diff.  Returns a sparse object with only changed fields.
 /// Arrays are treated as opaque: any difference → `{ "from": a, "to": b }`.
 pub fn json_diff(a: &Value, b: &Value) -> Value {
     match (a, b) {

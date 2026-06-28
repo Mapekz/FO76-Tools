@@ -71,8 +71,7 @@ const CLEAN_TYPES: &[&str] = &[
     "NAVI", "NOCM", "OVIS", "PACH", "PACK", "PKIN", "PMFT", "PPAK", "REGN", "RELA", "REVB", "RFCT",
     "RFGP", "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM", "SOUN",
     "SPGD", "STAG", "STHD", "STMP", "STND", "TRNS", "TXST", "UTIL", "VOLI", "VTYP", "WATR", "WSPR",
-    "ZOOM",
-    "MGEF",
+    "ZOOM", "MGEF",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`

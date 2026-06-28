@@ -127,12 +127,8 @@ fn sources_of_finds_container_through_lvli_chain() {
 fn sources_of_respects_depth_bound() {
     let (path, mut db) = open_chain_db();
     // Depth 1 stops at the first LVLI without reaching CONT.
-    let list = sources_of(
-        &mut db,
-        FormId(1),
-        &SourcesOptions { max_depth: 1 },
-    )
-    .expect("sources_of");
+    let list =
+        sources_of(&mut db, FormId(1), &SourcesOptions { max_depth: 1 }).expect("sources_of");
     assert!(list.sources.is_empty());
 
     let _ = std::fs::remove_file(&path);

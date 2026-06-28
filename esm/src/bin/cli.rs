@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use esm::backend::{start_daemon_process, stop_daemon, LocalBackend, QueryBackend, RemoteBackend};
 use esm::ipc::{Op, RecordSel};
@@ -95,6 +96,18 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
+        /// Load localization from an explicit BA2 archive path.
+        /// Mutually exclusive with --strings-dir.
+        #[arg(long, conflicts_with = "strings_dir")]
+        strings: Option<PathBuf>,
+        /// Directory containing loose <stem>_<lang>.{strings,dlstrings,ilstrings} files.
+        /// Defaults to <esm-dir>/strings then <esm-dir> when not given.
+        /// Mutually exclusive with --strings.
+        #[arg(long, conflicts_with = "strings")]
+        strings_dir: Option<PathBuf>,
+        /// Language code for string table lookup.
+        #[arg(long, default_value = "en")]
+        lang: String,
     },
     Tree {
         file: PathBuf,
@@ -426,6 +439,9 @@ fn main() -> anyhow::Result<()> {
                 record_type,
                 json,
                 pretty,
+                strings,
+                strings_dir,
+                lang,
             } => cmd_diff(
                 &mut backend,
                 &file_a,
@@ -433,6 +449,10 @@ fn main() -> anyhow::Result<()> {
                 record_type.as_deref(),
                 json,
                 pretty,
+                strings,
+                strings_dir,
+                &lang,
+                daemon_mode,
             )?,
             Commands::Tree {
                 file,
@@ -567,7 +587,9 @@ fn run_repl(esm: &Path, backend: &mut Backend) -> anyhow::Result<()> {
             break;
         }
         if line == "help" {
-            eprintln!("Commands: info, get, list, search, refs, sources, tree, diff, coverage, quit");
+            eprintln!(
+                "Commands: info, get, list, search, refs, sources, tree, diff, coverage, quit"
+            );
             continue;
         }
         let tokens: Vec<String> = shlex::split(line)
@@ -611,7 +633,18 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             record_type,
             json,
             pretty,
-        } => cmd_diff(backend, esm, &file_b, record_type.as_deref(), json, pretty),
+        } => cmd_diff(
+            backend,
+            esm,
+            &file_b,
+            record_type.as_deref(),
+            json,
+            pretty,
+            None, // strings ba2
+            None, // strings_dir
+            "en",
+            true, // REPL is always daemon-backed
+        ),
         ReplCommand::Tree {
             record_type,
             offset,
@@ -651,9 +684,7 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             max_depth,
             json,
             pretty,
-        } => cmd_sources(
-            backend, esm, formid, edid, target, max_depth, json, pretty,
-        ),
+        } => cmd_sources(backend, esm, formid, edid, target, max_depth, json, pretty),
     }
 }
 
@@ -1044,11 +1075,7 @@ fn print_sources(list: &SourceList, json: bool, pretty: bool) {
             print!("  {}", name);
         }
         if !src.path.is_empty() {
-            let chain: Vec<_> = src
-                .path
-                .iter()
-                .map(|n| n.form_id.as_str())
-                .collect();
+            let chain: Vec<_> = src.path.iter().map(|n| n.form_id.as_str()).collect();
             print!("  via {}", chain.join(" → "));
         }
         println!();
@@ -1146,6 +1173,104 @@ fn resolve_form_id_local(
     }
 }
 
+/// Resolve localization for one ESM side, or bail loudly if no string tables
+/// can be found.  Precedence:
+///   1. Explicit BA2 via `--strings` → `Localization::from_ba2`.
+///   2. Loose files win: search `--strings-dir`, then `<esm-dir>/strings`,
+///      then `<esm-dir>` for `<stem>_<lang>.strings`.
+///   3. Version-matched BA2 fallback: scan `<esm-dir>` for a `.ba2` whose
+///      filename contains both "localization" and the numeric version token
+///      extracted from the ESM stem (e.g. `20260619`).
+///   4. Bail with an actionable error message — output without strings is noise.
+fn resolve_localization_or_bail(
+    esm_path: &Path,
+    strings_ba2: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
+    lang: &str,
+) -> anyhow::Result<esm::strings::Localization> {
+    use esm::strings::Localization;
+
+    let esm_dir = esm_path.parent().unwrap_or(Path::new("."));
+    let stem = esm_string_prefix(esm_path); // e.g. "SeventySix_20260619"
+
+    // 1. Explicit BA2.
+    if let Some(ba2) = strings_ba2 {
+        return Localization::from_ba2(&ba2, lang, "seventysix")
+            .with_context(|| format!("loading localization from {}", ba2.display()));
+    }
+
+    // 2. Loose files — search ordered dirs until we find <stem>_<lang>.strings.
+    let search_dirs: Vec<PathBuf> = if let Some(dir) = strings_dir {
+        vec![dir]
+    } else {
+        vec![esm_dir.join("strings"), esm_dir.to_path_buf()]
+    };
+
+    for dir in &search_dirs {
+        let probe = dir.join(format!("{}_{}.strings", stem, lang));
+        if probe.exists() {
+            return Localization::from_loose_files(dir, lang, &stem).with_context(|| {
+                format!(
+                    "loading loose strings for '{}' from {}",
+                    stem,
+                    dir.display()
+                )
+            });
+        }
+    }
+
+    // 3. Version-matched BA2 fallback.
+    //    Extract the numeric version token from the stem (e.g. "20260619" from
+    //    "SeventySix_20260619") then scan <esm-dir> for a matching Localization BA2.
+    let version_token: Option<&str> = stem
+        .split('_')
+        .find(|s| s.len() >= 6 && s.chars().all(|c| c.is_ascii_digit()));
+    if let Some(token) = version_token {
+        let mut candidates: Vec<PathBuf> = std::fs::read_dir(esm_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                let fname = p
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                fname.ends_with(".ba2") && fname.contains("localization") && fname.contains(token)
+            })
+            .collect();
+        candidates.sort();
+        if let Some(ba2) = candidates.first() {
+            return Localization::from_ba2(ba2, lang, "seventysix").with_context(|| {
+                format!("loading versioned BA2 localization from {}", ba2.display())
+            });
+        }
+    }
+
+    // 4. Nothing found — fail loudly.
+    let dirs_tried: Vec<String> = search_dirs
+        .iter()
+        .map(|d| d.display().to_string())
+        .collect();
+    anyhow::bail!(
+        "No version-matched string tables found for '{stem}' (lang={lang}).\n\
+         Looked for loose files in: {dirs}\n\
+         Also scanned '{esm_dir}' for a versioned Localization BA2 — none found.\n\
+         \n\
+         Refusing to diff without string tables — output would contain unresolved LString IDs (noise).\n\
+         \n\
+         Fix options:\n  \
+           --strings-dir <DIR>  path to a directory with {stem}_{lang}.strings / .dlstrings / .ilstrings\n  \
+           --strings <BA2>      path to a versioned Localization BA2 archive",
+        stem = stem,
+        lang = lang,
+        dirs = dirs_tried.join(", "),
+        esm_dir = esm_dir.display(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn cmd_diff(
     backend: &mut Backend,
     file_a: &Path,
@@ -1153,7 +1278,45 @@ fn cmd_diff(
     record_type: Option<&str>,
     as_json: bool,
     pretty: bool,
+    strings_ba2: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
+    lang: &str,
+    daemon_mode: bool,
 ) -> anyhow::Result<()> {
+    if strings_ba2.is_some() || strings_dir.is_some() {
+        if daemon_mode {
+            anyhow::bail!(
+                "--strings/--strings-dir are not supported in daemon mode for diff; \
+                 use --local to open the ESM files directly"
+            );
+        }
+        // Resolve localization first (fast, fail-loud) before the expensive ESM opens.
+        let loc_a =
+            resolve_localization_or_bail(file_a, strings_ba2.clone(), strings_dir.clone(), lang)?;
+        let loc_b = resolve_localization_or_bail(file_b, strings_ba2, strings_dir, lang)?;
+
+        let mut db_a = Database::open(file_a)?;
+        db_a.set_localization(loc_a);
+
+        let mut db_b = Database::open(file_b)?;
+        db_b.set_localization(loc_b);
+
+        let mut result = esm::diff::diff_databases(&db_a, &db_b)?;
+
+        // Apply optional --type filter (same logic as the IPC dispatcher).
+        if let Some(sig) = record_type {
+            let sig_up = sig.to_uppercase();
+            result.added.retain(|s| s.record_type == sig_up);
+            result.removed.retain(|s| s.record_type == sig_up);
+            result.changed.retain(|d| d.stub.record_type == sig_up);
+            // ref_names is a display sidecar — keep it unrestricted (referenced
+            // records may be of any type).
+        }
+
+        return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
+    }
+
+    // No strings requested — use the backend path (daemon or local).
     let v = backend.run(
         file_a,
         Op::Diff {
@@ -1225,33 +1388,39 @@ fn print_diff(
         println!();
         println!("Added ({}):", result.added.len());
         for s in &result.added {
-            println!(
-                "  [{}] {}",
-                s.form_id,
-                s.editor_id.as_deref().unwrap_or("<no edid>")
-            );
+            let edid = s.editor_id.as_deref().unwrap_or("<no edid>");
+            if let Some(name) = &s.name {
+                println!("  [{}] {} \"{}\"", s.form_id, edid, name);
+            } else {
+                println!("  [{}] {}", s.form_id, edid);
+            }
         }
     }
     if !result.removed.is_empty() {
         println!();
         println!("Removed ({}):", result.removed.len());
         for s in &result.removed {
-            println!(
-                "  [{}] {}",
-                s.form_id,
-                s.editor_id.as_deref().unwrap_or("<no edid>")
-            );
+            let edid = s.editor_id.as_deref().unwrap_or("<no edid>");
+            if let Some(name) = &s.name {
+                println!("  [{}] {} \"{}\"", s.form_id, edid, name);
+            } else {
+                println!("  [{}] {}", s.form_id, edid);
+            }
         }
     }
     if !result.changed.is_empty() {
         println!();
         println!("Changed ({}):", result.changed.len());
         for d in &result.changed {
-            println!(
-                "  [{}] {}",
-                d.stub.form_id,
-                d.stub.editor_id.as_deref().unwrap_or("<no edid>")
-            );
+            let edid = d.stub.editor_id.as_deref().unwrap_or("<no edid>");
+            if let Some(prev) = &d.prev_editor_id {
+                // EDID rename this patch (e.g. deprecation prefix added)
+                println!("  [{}] {} (was: {})", d.stub.form_id, edid, prev);
+            } else if let Some(name) = &d.stub.name {
+                println!("  [{}] {} \"{}\"", d.stub.form_id, edid, name);
+            } else {
+                println!("  [{}] {}", d.stub.form_id, edid);
+            }
             print_field_changes(&d.field_changes, "    ");
         }
     }

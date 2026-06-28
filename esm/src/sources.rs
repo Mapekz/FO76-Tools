@@ -82,9 +82,7 @@ fn classify_terminal(sig: &str) -> Option<SourceKind> {
 }
 
 fn record_type(db: &Database, form_id: FormId) -> Option<String> {
-    db.index
-        .get_by_formid(form_id)
-        .map(|m| m.signature.clone())
+    db.index.get_by_formid(form_id).map(|m| m.signature.clone())
 }
 
 fn path_node(db: &Database, row: &RecordRow) -> SourcePathNode {
@@ -121,13 +119,12 @@ fn row_for(db: &Database, form_id: FormId) -> anyhow::Result<RecordRow> {
         .ok_or_else(|| anyhow::anyhow!("FormID {} not in index", form_id.display()))?;
     let rec = db.esm.parse_record_at(meta.offset)?;
     let editor_id = edid_from_subrecords(&rec.subrecords);
-    let name =
-        crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL").and_then(|id| {
-            db.localization.as_ref().and_then(|l| {
-                l.lookup(crate::strings::StringKind::Strings, id)
-                    .map(|s| s.to_owned())
-            })
-        });
+    let name = crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL").and_then(|id| {
+        db.localization.as_ref().and_then(|l| {
+            l.lookup(crate::strings::StringKind::Strings, id)
+                .map(|s| s.to_owned())
+        })
+    });
     Ok(RecordRow {
         form_id: form_id.display(),
         editor_id,
