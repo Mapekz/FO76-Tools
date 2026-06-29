@@ -178,9 +178,9 @@ The `.esm.midx` file is written automatically whenever the `.esm.idx` is freshly
 
 The server exposes six read-only tools (all proxy to the warm daemon): `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none|stub|full`, default `stub` — references are annotated with EditorID+name inline), `esm_list_groups` (type inventory / table of contents), `esm_list_records`, `esm_refs` (depth-bound BFS reverse-reference walk; default `depth=1` for a single-level lookup, up to `depth=6` to walk the full reference graph — use this for "where does X drop?" questions). Each result includes a hop `depth` and an intermediate-node `path` array. Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
 
-## Known coverage drift (vs TES5Edit)
+## Coverage drift handling (vs TES5Edit)
 
-All previously-documented drift entries are now resolved:
+Drift subrecords newer than the TES5Edit reference are handled as follows:
 
 - **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`** — mapped in `schema/fo76.overrides.json`.
 - **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode.rs` handles Script Fragments + Aliases tail.

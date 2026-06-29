@@ -278,8 +278,6 @@ _ACTOR_PROPERTIES: list[str] = [
 ]
 
 # Vars that use runtime Pascal deciders we cannot model — emit raw fallback.
-# VMAD, conditions, effects, and object templates are REMOVED from this list
-# because they are now modeled via injected helpers or the vmad decoder.
 HARD_RAW_VARS = {
     "wbPerkEffect",
     "wbPERKData",
@@ -304,7 +302,7 @@ class CoverageReport:
     Threaded through the ``Extractor`` instance as ``self.report``.  Non-zero
     ``defaulted_int_tokens`` is the loudest signal: it means an integer type
     token was not found in ``INT_MAP`` and silently defaulted to ``(u32,
-    False)`` — the same class of bug that caused the OBTS +2-byte offset skew.
+    False)`` — a width-skew risk.
     """
 
     def __init__(self, strict: bool = False) -> None:
@@ -603,7 +601,7 @@ def _annotate_stop_before(members: list[dict], outer_stops: list[str]) -> None:
     A "Conditions rarray" is an ``rarray`` whose element's leading sig is
     ``CTDA``.  Without a boundary hint the decoder consumes CTDAs greedily from
     the shared ``by_sig`` map, so per-entry conditions are stolen by the
-    record-level Conditions slot (the LVLI/LVLN bug).
+    record-level Conditions slot.
 
     ``stop_before`` is set to the union of:
       • anchor sigs of all sibling members that follow this rarray, and
@@ -954,8 +952,7 @@ class Extractor:
         self.vars["wbIBSD"] = "wbByteArray(IBSD, 'IBSD', 0)"
         # wbAPPR — wbDefinitionsFO76.pas:7136.
         # Sorted array of KYWD FormIDs (attach-parent slots).  Decoded as a packed
-        # array of 4-byte FormIDs via the record-context Array path (fixed by the
-        # packed-array decode fix in decode.rs).
+        # array of 4-byte FormIDs via the record-context Array path.
         self.vars["wbAPPR"] = "wbArrayS(APPR, 'Attach Parent Slots', wbFormIDCk('Keyword', [KYWD]))"
         self.vars["wbMDOB"] = "wbByteArray(MDOB, 'Menu Display Object', 0)"
         self.vars["wbMIID"] = "wbInteger(MIID, 'Max Item ID', itU32)"
@@ -1176,12 +1173,11 @@ class Extractor:
         )
         self.vars["wbEffectsReq"] = "wbRArray('Effects',wbEffect)"
 
-        # wbOBTSReq and wbObjectTemplate are no longer stubbed here.
-        # _collect_vars picks them up from the Pascal assignments in DefineFO76
-        # (wbDefinitionsFO76.pas:7399-7430).  The real OBTS struct includes
-        # Includes→OMOD references and a Keywords count-prefix array whose
-        # -4 count argument is now handled by _parse_array.  wbObjectModProperties
-        # is also collected from Pascal and provides the Properties array with
+        # wbOBTSReq and wbObjectTemplate are collected from the Pascal assignments
+        # in DefineFO76 (wbDefinitionsFO76.pas:7399-7430).  The real OBTS struct
+        # includes Includes→OMOD references and a Keywords count-prefix array
+        # (the -4 count argument is handled by _parse_array).
+        # wbObjectModProperties provides the Properties array with
         # SetCountPath('Property Count').
 
         # ----------------------------------------------------------------
@@ -2120,7 +2116,7 @@ class Extractor:
         rparen = find_matching_paren(expr, lparen)
         args = split_top_level(expr[lparen + 1 : rparen])
         name = unquote(args[0]) if args[0].strip().startswith("'") else args[0]
-        # FIX: element is always args[1] (name is args[0]).
+        # Element is always args[1] (name is args[0]).
         # args[2:] may be count, priority, or other trailing options.
         elem_expr = args[1] if len(args) > 1 else args[-1]
         elem = self.parse_member(elem_expr)
@@ -2135,11 +2131,11 @@ class Extractor:
         if sig_id(parts[0].strip()):
             sig = parts[0].strip()
             name = unquote(parts[1]) if len(parts) > 1 else ""
-            # FIX: element is at index 2 when leading sig is present.
+            # Element is at index 2 when leading sig is present.
             elem_idx = 2
         else:
             name = unquote(parts[0])
-            # FIX: element is at index 1 when no leading sig.
+            # Element is at index 1 when no leading sig.
             elem_idx = 1
         # Clamp to valid range.
         if elem_idx >= len(parts):
@@ -2271,15 +2267,15 @@ class Extractor:
             itype = parts[idx + 1].strip()
             # Pascal identifiers are case-insensitive, so normalise the
             # it[su]NN form (e.g. 'its32' → 'itS32', 'itu16' → 'itU16').
-            # Without this, a lowercase variant silently defaults to u32 —
-            # the same class of bug as the OBTS itS16{…} offset skew.
+            # Without this, a lowercase variant silently defaults to u32
+            # (a width-skew risk).
             itype = re.sub(
                 r"^it([su])(\d+)$",
                 lambda m: f"it{m.group(1).upper()}{m.group(2)}",
                 itype,
             )
             # Instrument: if itype is still not a known token after normalisation
-            # it will silently default to (u32, False) — OBTS-class width-skew risk.
+            # it will silently default to (u32, False) — a width-skew risk.
             if itype not in INT_MAP:
                 self.report.defaulted_int_tokens[itype] = (
                     self.report.defaulted_int_tokens.get(itype, 0) + 1
@@ -2712,7 +2708,7 @@ class Extractor:
 
         # Annotate Conditions rarrays with stop_before boundaries so the decoder
         # does not greedily consume per-entry CTDAs into the record-level Conditions
-        # slot (the LVLI/LVLN/SPEL/etc. per-entry conditions bug).
+        # slot.
         for rec in records.values():
             _annotate_stop_before(rec.get("members", []), [])
 
@@ -2755,9 +2751,9 @@ class Extractor:
         )
         if self.report.defaulted_int_tokens:
             # Non-empty means an integer type token was not in INT_MAP and
-            # silently defaulted to (u32, False) — OBTS-class width-skew risk.
+            # silently defaulted to (u32, False) — a width-skew risk.
             print(
-                f"defaulted int tokens (OBTS-class width-skew risk!): "
+                f"defaulted int tokens (width-skew risk!): "
                 f"{dict(self.report.defaulted_int_tokens)}",
                 file=sys.stderr,
             )

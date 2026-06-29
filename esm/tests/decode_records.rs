@@ -81,7 +81,7 @@ fn mgef_data_decodes_correct_structure() {
     );
 
     // Actor Value (offset 72) and Explosion (offset 80) must occupy different
-    // byte positions — before the fix both would resolve from offset 72.
+    // byte positions.
     assert_ne!(
         data.get("Actor Value"),
         data.get("Explosion"),
@@ -100,12 +100,9 @@ fn mgef_data_decodes_correct_structure() {
 /// OMOD 0x0085B998 — `HTO_mod_Legendary_Weapon4_Tarnished` — decodes to the
 /// expected structure and values.
 ///
-/// This test pins the full DATA decode path that was broken by the
-/// count-prefix width bug (CountPrefix read 1 byte; the correct width for
-/// xEdit `-1` arrays is 4 bytes).  The OMOD DATA subrecord contains two
-/// 4-byte-prefix inline arrays — `Attach Parent Slots` and `Items` — both
-/// empty here.  Before the fix each was under-read by 3 bytes (6 bytes
-/// total), misaligning `Includes` and `Properties` entirely.
+/// This test pins the full DATA decode path.  xEdit `-1` arrays use a 4-byte
+/// count prefix.  The OMOD DATA subrecord contains two 4-byte-prefix inline
+/// arrays — `Attach Parent Slots` and `Items` — both empty here.
 ///
 /// The binary payload used here is the verbatim hex from `esm get
 /// a reference ESM --formid 0x0085B998 --raw`.  The record uses
@@ -908,8 +905,7 @@ fn avif_strength_decodes_correctly() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Fix A / Fix B / Fix D — per-type regression tests added alongside the
-// VMAD/COED/RACE-morph decode fixes (HEAD commit).
+// Per-type regression tests for the VMAD / COED / RACE-morph decode paths.
 //
 // All clean-type tests (assert_fully_decoded) lock the no-marker status.
 // ════════════════════════════════════════════════════════════════════════════
@@ -919,8 +915,7 @@ fn avif_strength_decodes_correctly() {
 ///
 /// 8-subrecord record (EDID OBND ENIT EFID EFIT MAGF CODV MIID); form_version
 /// 208.  Exercises the ENIT struct and magic-effect entry (EFID/EFIT) without
-/// any raw fallbacks.  Before the COED/VMAD fixes this type was in the dirty
-/// list; this test locks it as clean.
+/// any raw fallbacks.  This test locks the type as clean.
 #[test]
 fn ench_firefly_ichor_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
@@ -1269,8 +1264,8 @@ fn weap_animatronic_alien_blaster_decodes_correctly() {
 ///
 /// 17-subrecord record; form_version 175.  Carries a VMAD header (version 6,
 /// object_format 2, 0 scripts) as well as PRKE/PRKC/CTDA/EPF2/EPF3/PRKF perk
-/// entry blocks.  Before Fix A, records carrying VMAD hit a raw_fallback
-/// "VMAD truncated"; this test locks the clean path.
+/// entry blocks.  VMAD must decode without a "VMAD truncated" raw_fallback;
+/// this test locks the clean path.
 #[test]
 fn perk_test_tame_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
@@ -2975,12 +2970,12 @@ fn race_mothman_decodes_correctly() {
     );
 }
 
-// ── Previously-drift records now fully decoded ────────────────────────────────
+// ── Reverse-engineered / reference-grounded records (fully decoded) ───────────
 //
-// These records carry subrecords that were absent from or version-gated out of
-// the TES5Edit Pascal reference.  Overrides in `fo76.overrides.json` now map
-// them (as reverse-engineered or reference-grounded types), so all tests assert
-// assert_fully_decoded instead of the former assert_only_drift_markers.
+// These records carry subrecords absent from or version-gated out of the
+// TES5Edit Pascal reference.  Overrides in `fo76.overrides.json` map them as
+// reverse-engineered or reference-grounded types; all tests assert
+// assert_fully_decoded.
 
 /// GMRW 0x008B2016 — `WorldPets_Reward_PetLevelling_Generic_CUR_Goldbullions01`.
 ///
@@ -3332,7 +3327,7 @@ fn npc_radhog_camp_pet_decodes_correctly() {
 
     assert_fully_decoded(&result);
 }
-// Part 2 — basic decode tests for partial-record fix plan.
+// Part 2 — basic decode tests for partial records.
 
 /// TERM 0x00001676 — `<no edid>` — basic decode regression.
 #[test]
@@ -4504,9 +4499,8 @@ fn qust_gq_horde_alias_fill_decodes_correctly() {
 }
 
 /// NPC_ 0x0061E065 — `zzzSCORE_S5_COMP_SuperMutant_Maul` — VMAD with type-0 (None) and
-/// type-7 (Struct) script properties.  Both types were previously unhandled: type-0
-/// consumed no bytes but did not return, corrupting the parse; type-7 fell through to the
-/// `_raw` arm.  This test asserts the 1433-byte VMAD decodes fully into 5 scripts.
+/// type-7 (Struct) script properties.  This test asserts the 1433-byte VMAD decodes
+/// fully into 5 scripts.
 #[test]
 fn npc_comp_super_mutant_maul_vmad_decodes_correctly() {
     use esm::decode::decode_vmad;

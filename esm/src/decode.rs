@@ -2494,9 +2494,9 @@ mod tests {
         }
     }
 
-    /// `CountPrefix(4)`: regression test for the OMOD `Attach Parent Slots` /
-    /// `Items` bug.  With a 4-byte prefix the decoder must consume all 4 bytes
-    /// and leave the trailing sentinel value intact.
+    /// `CountPrefix(4)`: pins the 4-byte-prefix `Attach Parent Slots` / `Items`
+    /// decode path.  The decoder must consume all 4 bytes and leave the trailing
+    /// sentinel value intact.
     ///
     /// This is the hermetic, byte-exact mirror of the public-API integration
     /// test `omod_legendary_weapon_data_decodes_correctly` in
@@ -2539,7 +2539,7 @@ mod tests {
         );
     }
 
-    /// `CountPrefix(1)`: lock the OBTS `Keywords` path — was already 1 byte,
+    /// `CountPrefix(1)`: lock the OBTS `Keywords` path to a 1-byte prefix;
     /// must not regress.
     ///
     /// Buffer layout:

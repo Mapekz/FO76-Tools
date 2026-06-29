@@ -60,7 +60,7 @@ class AuditExtractor(Extractor):
     The raw token is the Pascal itXxx literal *before* INT_MAP normalisation,
     so the audit can distinguish:
       - A token in INT_MAP (width/signed known exactly) from
-      - A token NOT in INT_MAP (silently defaulted to u32 — the OBTS class).
+      - A token NOT in INT_MAP (silently defaulted to u32 — a width-skew risk).
     """
 
     def _parse_integer(self, expr: str) -> dict:
@@ -331,8 +331,8 @@ def _compare_integers(
     ) if raw_itype else ""
 
     # Silent-default suspect: normalised token not in INT_MAP AND schema has u32/unsigned.
-    # This is the OBTS class: extract.py called INT_MAP.get(tok, ("u32", False)) and
-    # the fallback default fired, producing a u32 regardless of what Pascal says.
+    # INT_MAP.get(tok, ("u32", False)) fires the fallback default, producing u32
+    # regardless of what Pascal says.
     if norm_itype and norm_itype not in INT_MAP and sw == "u32" and not ss:
         findings.append({
             "record": record,

@@ -198,12 +198,12 @@ fn record_sel_from_input_auto_detects() {
     }
 }
 
-/// Regression: `RecordSel` must survive a JSON round-trip.
+/// `RecordSel` must survive a JSON round-trip.
 ///
-/// Before the fix, `#[serde(tag = "kind")]` (internally-tagged) on a newtype enum
-/// whose payload is a primitive (u32 / String) caused serde_json to error at
-/// runtime with "cannot serialize tagged newtype variant … containing an integer".
-/// The fix switches to adjacently-tagged (`tag = "kind", content = "value"`).
+/// `RecordSel` uses adjacently-tagged serde (`tag = "kind", content = "value"`):
+/// internally-tagged (`tag = "kind"`) on a newtype enum whose payload is a
+/// primitive (u32 / String) fails to serialize — serde_json errors with
+/// "cannot serialize tagged newtype variant … containing an integer".
 #[test]
 fn record_sel_json_round_trip() {
     let formid_sel = RecordSel::FormId(esm::FormId(0x0010_ABCD));
