@@ -958,7 +958,7 @@ class Extractor:
         # packed-array decode fix in decode.rs).
         self.vars["wbAPPR"] = "wbArrayS(APPR, 'Attach Parent Slots', wbFormIDCk('Keyword', [KYWD]))"
         self.vars["wbMDOB"] = "wbByteArray(MDOB, 'Menu Display Object', 0)"
-        self.vars["wbMIID"] = "wbByteArray(MIID, 'Menu Item ID', 0)"
+        self.vars["wbMIID"] = "wbInteger(MIID, 'Max Item ID', itU32)"
         self.vars["wbDEFL"] = "wbFormIDCk(DEFL, 'Default Layer', [LAYR])"
         self.vars["wbOPDSs"] = (
             "wbRArray('Object Placement Defaults', wbStruct(OPDS, 'Object Placement Default', ["

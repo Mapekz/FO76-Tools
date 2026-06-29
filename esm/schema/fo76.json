@@ -4370,8 +4370,10 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "Menu Item ID",
+          "kind": "integer",
+          "name": "Max Item ID",
+          "width": "u32",
+          "signed": false,
           "sig": "MIID"
         }
       ]
@@ -18884,8 +18886,10 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "Menu Item ID",
+          "kind": "integer",
+          "name": "Max Item ID",
+          "width": "u32",
+          "signed": false,
           "sig": "MIID"
         },
         {
@@ -30921,8 +30925,10 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "Menu Item ID",
+          "kind": "integer",
+          "name": "Max Item ID",
+          "width": "u32",
+          "signed": false,
           "sig": "MIID"
         }
       ]
@@ -71900,8 +71906,10 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "Menu Item ID",
+          "kind": "integer",
+          "name": "Max Item ID",
+          "width": "u32",
+          "signed": false,
           "sig": "MIID"
         }
       ]
