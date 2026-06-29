@@ -55,7 +55,7 @@ impl Ba2Archive {
         let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
         if version != 1 {
             // Accept but warn — game may have version 2+ files
-            eprintln!("Warning: unexpected BA2 version {}", version);
+            log::warn!("unexpected BA2 version {}", version);
         }
         if &data[8..12] != b"GNRL" {
             bail!(

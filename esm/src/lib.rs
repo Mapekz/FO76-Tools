@@ -133,7 +133,7 @@ impl Database {
                 match Localization::from_ba2(ba2_path, &resolved.locale) {
                     Ok(loc) => Some(loc),
                     Err(e) => {
-                        eprintln!("Warning: failed to load localization from BA2: {}", e);
+                        log::warn!("failed to load localization from BA2: {}", e);
                         None
                     }
                 }
@@ -143,10 +143,7 @@ impl Database {
                 {
                     Ok(loc) => Some(loc),
                     Err(e) => {
-                        eprintln!(
-                            "Warning: failed to load localization from loose files: {}",
-                            e
-                        );
+                        log::warn!("failed to load localization from loose files: {}", e);
                         None
                     }
                 }
@@ -159,7 +156,7 @@ impl Database {
                 match crate::curves::CurveIndex::build_from_dir(&esm, &index, base) {
                     Ok(ci) => Some(ci),
                     Err(e) => {
-                        eprintln!("Warning: failed to load curves from loose dir: {}", e);
+                        log::warn!("failed to load curves from loose dir: {}", e);
                         None
                     }
                 }
@@ -168,7 +165,7 @@ impl Database {
                 match crate::curves::CurveIndex::build(&esm, &index, ba2_path) {
                     Ok(ci) => Some(ci),
                     Err(e) => {
-                        eprintln!("Warning: failed to load curves from BA2: {}", e);
+                        log::warn!("failed to load curves from BA2: {}", e);
                         None
                     }
                 }
@@ -245,6 +242,21 @@ impl Database {
         let curves = crate::curves::CurveIndex::build_from_dir(&self.esm, &self.index, misc_dir)?;
         self.curves = Some(curves);
         Ok(())
+    }
+
+    /// Parse the record at the given offset in the mmap'd ESM file.
+    pub fn parse_record_at(&self, offset: u64) -> anyhow::Result<crate::reader::ParsedRecord> {
+        self.esm.parse_record_at(offset)
+    }
+
+    /// Returns the localization string tables, if loaded.
+    pub fn localization(&self) -> Option<&Localization> {
+        self.localization.as_ref()
+    }
+
+    /// Returns whether any enrichment (localization or curves) is available.
+    pub fn has_enrichment(&self) -> bool {
+        self.localization.is_some() || self.curves.is_some()
     }
 
     pub fn file_info(&self) -> anyhow::Result<FileInfo> {

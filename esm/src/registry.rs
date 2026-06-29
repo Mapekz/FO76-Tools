@@ -105,7 +105,7 @@ impl Registry {
                 return Ok((canonical, arc));
             }
             // File changed (size or mtime differs): evict and fall through to re-open.
-            eprintln!(
+            log::warn!(
                 "esm-daemon: ESM at {} changed on disk; re-opening.",
                 canonical.display()
             );

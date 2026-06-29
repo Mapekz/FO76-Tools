@@ -186,11 +186,7 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
     // Build ref_names: one-hop FormID resolution for every hex ref in field_changes
     // and added records' decoded fields. Populated when either side has localization
     // loaded, or when curves are loaded (so added-record FormIDs get names too).
-    let ref_names = if b.localization.is_some()
-        || a.localization.is_some()
-        || b.curves.is_some()
-        || a.curves.is_some()
-    {
+    let ref_names = if a.has_enrichment() || b.has_enrichment() {
         let mut refs: HashSet<String> = HashSet::new();
         for rd in &changed {
             collect_formid_refs(&rd.field_changes, &mut refs);
@@ -222,7 +218,7 @@ fn record_stub_from_db(
     meta: &crate::reader::RecordMeta,
     id: FormId,
 ) -> anyhow::Result<RecordStub> {
-    let rec = db.esm.parse_record_at(meta.offset)?;
+    let rec = db.parse_record_at(meta.offset)?;
     let editor_id = edid_from_subrecords(&rec.subrecords);
 
     let (name, description) = if let Some(loc) = &db.localization {
@@ -256,7 +252,7 @@ fn resolve_stub_names(
         Some(l) => l,
         None => return (None, None),
     };
-    let rec = match db.esm.parse_record_at(meta.offset) {
+    let rec = match db.parse_record_at(meta.offset) {
         Ok(r) => r,
         Err(_) => return (None, None),
     };
@@ -302,12 +298,12 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
         if let Some(meta) = db.index.form_index.get(&id) {
             let offset = meta.offset;
             let sig = meta.signature.clone();
-            let rec = match db.esm.parse_record_at(offset) {
+            let rec = match db.parse_record_at(offset) {
                 Ok(r) => r,
                 Err(_) => continue,
             };
             let editor_id = edid_from_subrecords(&rec.subrecords);
-            let name = db.localization.as_ref().and_then(|loc| {
+            let name = db.localization().and_then(|loc| {
                 lstring_id_from_subrecords(&rec.subrecords, "FULL")
                     .and_then(|lid| loc.lookup(StringKind::Strings, lid).map(str::to_owned))
             });

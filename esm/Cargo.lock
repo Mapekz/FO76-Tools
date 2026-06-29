@@ -305,6 +305,7 @@ dependencies = [
  "flate2",
  "fs2",
  "getrandom",
+ "log",
  "lz4_flex",
  "memmap2",
  "serde",

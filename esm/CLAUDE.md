@@ -47,7 +47,7 @@ Clean layering — edit at the right level:
 | `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
 | `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
 | `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 6); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
-| `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Mutex<Database>`); `#[napi]` async methods |
+| `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Arc<Mutex<Database>>`); async: `open_database`, `record_by_edid`, `record_by_id`, `referenced_by`, `referenced_by_id`; sync: `file_info`, `list_groups`, `list_type_records`, `record_by_formid` |
 | `app/` | Electron GUI ("FO76 ESM Viewer"); main/preload/renderer; consumes the N-API addon |
 
 Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`, `RefList`, `RefRow`, `RefPathNode`.

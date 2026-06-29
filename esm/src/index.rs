@@ -442,7 +442,7 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
     // Opportunistically write the compact mmap index alongside the .idx so
     // that `Database::open_lite` / `--mmap-index` paths are always ready.
     if let Err(e) = crate::mindex::build_from_form_index_and_save(&index.form_index, &esm.path) {
-        eprintln!("Warning: failed to write .esm.midx: {e}");
+        log::warn!("failed to write .esm.midx: {e}");
     }
 
     Ok(index)

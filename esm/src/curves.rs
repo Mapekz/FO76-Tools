@@ -94,7 +94,7 @@ impl CurveIndex {
             let parsed = match esm.parse_record_at(meta.offset) {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("Warning: failed to parse CURV {}: {}", form_id.display(), e);
+                    log::warn!("failed to parse CURV {}: {}", form_id.display(), e);
                     continue;
                 }
             };
@@ -155,7 +155,7 @@ impl CurveIndex {
             let parsed = match esm.parse_record_at(meta.offset) {
                 Ok(p) => p,
                 Err(e) => {
-                    eprintln!("Warning: failed to parse CURV {}: {}", form_id.display(), e);
+                    log::warn!("failed to parse CURV {}: {}", form_id.display(), e);
                     continue;
                 }
             };
