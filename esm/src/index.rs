@@ -60,6 +60,7 @@ pub struct Index {
     cache_path: PathBuf,
     xref_index: Option<HashMap<FormId, Vec<FormId>>>,
     search_index: Option<HashMap<FormId, SearchMeta>>,
+    type_index: HashMap<String, Vec<FormId>>,
 }
 
 impl Index {
@@ -89,6 +90,7 @@ impl Index {
             cache_path,
             xref_index: None,
             search_index: None,
+            type_index: HashMap::new(),
         }
     }
 
@@ -101,14 +103,14 @@ impl Index {
     }
 
     pub fn records_by_type(&self, sig: &str) -> Vec<(FormId, &RecordMeta)> {
-        let mut out: Vec<_> = self
-            .form_index
-            .iter()
-            .filter(|(_, m)| m.signature == sig)
-            .map(|(id, m)| (*id, m))
-            .collect();
-        out.sort_by_key(|(id, _)| id.raw());
-        out
+        self.type_index
+            .get(sig)
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| self.form_index.get(id).map(|m| (*id, m)))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn ensure_edid_index(&mut self, esm: &EsmFile) -> anyhow::Result<()> {
@@ -327,6 +329,20 @@ impl Index {
     }
 }
 
+fn build_type_index(form_index: &HashMap<FormId, RecordMeta>) -> HashMap<String, Vec<FormId>> {
+    let mut type_index: HashMap<String, Vec<FormId>> = HashMap::new();
+    for (id, meta) in form_index {
+        type_index
+            .entry(meta.signature.clone())
+            .or_default()
+            .push(*id);
+    }
+    for ids in type_index.values_mut() {
+        ids.sort_by_key(|id| id.raw());
+    }
+    type_index
+}
+
 fn cache_path_for(esm_path: &Path) -> PathBuf {
     let mut p = esm_path.to_path_buf();
     p.set_extension("esm.idx");
@@ -367,7 +383,7 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         return Ok(None);
     }
 
-    let form_index = cache
+    let form_index: HashMap<FormId, RecordMeta> = cache
         .form_index
         .into_iter()
         .map(|(k, v)| (FormId::new(k), v))
@@ -383,6 +399,7 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
     let search_index = cache
         .search_index
         .map(|m| m.into_iter().map(|(k, v)| (FormId::new(k), v)).collect());
+    let type_index = build_type_index(&form_index);
 
     Ok(Some(Index {
         path: esm.path.clone(),
@@ -392,6 +409,7 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         xref_index,
         search_index,
         cache_path,
+        type_index,
     }))
 }
 
@@ -406,6 +424,7 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
     })?;
 
     let tree = TreeIndex::build(esm)?;
+    let type_index = build_type_index(&form_index);
 
     let cache_path = cache_path_for(&esm.path);
     let index = Index {
@@ -416,6 +435,7 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
         xref_index: None,
         search_index: None,
         cache_path,
+        type_index,
     };
     index.save_cache(esm)?;
 
@@ -450,8 +470,10 @@ fn harvest_formids(val: &Value, out: &mut Vec<FormId>) {
             }
         }
         Value::Object(map) => {
-            for v in map.values() {
-                harvest_formids(v, out);
+            for (k, v) in map {
+                if !k.starts_with('_') {
+                    harvest_formids(v, out);
+                }
             }
         }
         _ => {}
@@ -509,5 +531,79 @@ mod tests {
             "unexpected error message: {msg}"
         );
         Ok(())
+    }
+
+    /// Verify that `records_by_type` uses the pre-built type_index and returns
+    /// a deterministic sorted order on repeated calls.
+    #[test]
+    fn records_by_type_sorted_and_stable() {
+        use crate::reader::RecordMeta;
+
+        let weap1 = FormId::new(0x0000_0010);
+        let weap2 = FormId::new(0x0000_0005);
+        let npc_ = FormId::new(0x0000_0020);
+
+        let mut form_index = HashMap::new();
+        form_index.insert(
+            weap1,
+            RecordMeta {
+                offset: 0,
+                signature: "WEAP".into(),
+                flags: 0,
+                form_version: 155,
+            },
+        );
+        form_index.insert(
+            weap2,
+            RecordMeta {
+                offset: 100,
+                signature: "WEAP".into(),
+                flags: 0,
+                form_version: 155,
+            },
+        );
+        form_index.insert(
+            npc_,
+            RecordMeta {
+                offset: 200,
+                signature: "NPC_".into(),
+                flags: 0,
+                form_version: 155,
+            },
+        );
+
+        let type_index = build_type_index(&form_index);
+        let cache_path = std::path::PathBuf::from("/tmp/test.esm.idx");
+        let index = Index {
+            path: std::path::PathBuf::from("/tmp/test.esm"),
+            form_index,
+            edid_index: None,
+            tree: crate::tree::TreeIndex::default(),
+            cache_path,
+            xref_index: None,
+            search_index: None,
+            type_index,
+        };
+
+        // First call
+        let first = index.records_by_type("WEAP");
+        // Second call — must return same order
+        let second = index.records_by_type("WEAP");
+
+        assert_eq!(first.len(), 2);
+        assert_eq!(second.len(), 2);
+        // Pre-sorted by FormId::raw() ascending: weap2 (0x05) < weap1 (0x10)
+        assert_eq!(first[0].0, weap2);
+        assert_eq!(first[1].0, weap1);
+        assert_eq!(first[0].0, second[0].0, "order must be stable across calls");
+        assert_eq!(first[1].0, second[1].0, "order must be stable across calls");
+
+        // NPC_ should return exactly one record
+        let npc_records = index.records_by_type("NPC_");
+        assert_eq!(npc_records.len(), 1);
+        assert_eq!(npc_records[0].0, npc_);
+
+        // Unknown type returns empty
+        assert!(index.records_by_type("XXXX").is_empty());
     }
 }

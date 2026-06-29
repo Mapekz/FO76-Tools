@@ -7,7 +7,7 @@ use crate::schema::{
 use crate::strings::{Localization, StringKind};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 /// Controls how deeply FormID references are followed during decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -197,12 +197,12 @@ pub fn decode_record(
     let mut out = Map::new();
     let record_def = ctx.schema.record(signature);
 
-    let mut by_sig: HashMap<String, Vec<&OwnedSubrecord>> = HashMap::new();
+    let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
     for sr in subrecords {
         by_sig
             .entry(sr.signature.as_str().to_string())
             .or_default()
-            .push(sr);
+            .push_back(sr);
     }
 
     if let Some(def) = record_def {
@@ -243,7 +243,7 @@ fn decode_member(
     ctx: &DecodeContext<'_>,
     member: &MemberDef,
     out: &mut Map<String, Value>,
-    by_sig: &mut HashMap<String, Vec<&OwnedSubrecord>>,
+    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
     payload: Option<&[u8]>,
 ) {
     if !member_version_ok(ctx.form_version, member) {
@@ -1381,16 +1381,10 @@ fn field_value_key(out: &Map<String, Value>, field: &str) -> Option<String> {
 }
 
 fn take_first<'a>(
-    by_sig: &mut HashMap<String, Vec<&'a OwnedSubrecord>>,
+    by_sig: &mut HashMap<String, VecDeque<&'a OwnedSubrecord>>,
     sig: &str,
 ) -> Option<&'a OwnedSubrecord> {
-    by_sig.get_mut(sig).and_then(|v| {
-        if v.is_empty() {
-            None
-        } else {
-            Some(v.remove(0))
-        }
-    })
+    by_sig.get_mut(sig).and_then(|v| v.pop_front())
 }
 
 fn doc_index_in_present_signature_scope(ctx: &DecodeContext<'_>, doc_index: usize) -> bool {
@@ -1408,7 +1402,7 @@ fn doc_index_in_present_signature_scope(ctx: &DecodeContext<'_>, doc_index: usiz
 }
 
 fn first_anchor_doc_index(
-    by_sig: &HashMap<String, Vec<&OwnedSubrecord>>,
+    by_sig: &HashMap<String, VecDeque<&OwnedSubrecord>>,
     member: &MemberDef,
 ) -> Option<usize> {
     match member {
@@ -1427,7 +1421,7 @@ fn first_anchor_doc_index(
         | MemberDef::Vmad { sig: Some(sig), .. }
         | MemberDef::RawFallback { sig: Some(sig), .. } => by_sig
             .get(sig.as_str())
-            .and_then(|v| v.first())
+            .and_then(|v| v.front())
             .map(|sr| sr.doc_index),
         MemberDef::RStruct { members, .. } => members
             .iter()
@@ -1439,7 +1433,7 @@ fn first_anchor_doc_index(
 /// Bounds for `PresentSignature` inside repeated QUST alias bodies: from the
 /// struct's opening anchor subrecord up to (but not including) the next `ALED`.
 fn rstruct_present_signature_scope(
-    by_sig: &HashMap<String, Vec<&OwnedSubrecord>>,
+    by_sig: &HashMap<String, VecDeque<&OwnedSubrecord>>,
     members: &[MemberDef],
 ) -> (Option<usize>, Option<usize>) {
     let scope_min = members
@@ -1503,27 +1497,30 @@ fn rarray_count(
 /// than the next occurrence of `anchor_sig` in `by_sig`. When this is true,
 /// the calling RArray should halt iteration.
 fn stop_before_check(
-    by_sig: &HashMap<String, Vec<&OwnedSubrecord>>,
+    by_sig: &HashMap<String, VecDeque<&OwnedSubrecord>>,
     anchor: &str,
     stop_before: &[String],
 ) -> bool {
-    let anchor_idx = match by_sig.get(anchor).and_then(|v| v.first()) {
+    let anchor_idx = match by_sig.get(anchor).and_then(|v| v.front()) {
         Some(sr) => sr.doc_index,
         None => return true, // nothing left to consume
     };
     stop_before.iter().any(|sig| {
         by_sig
             .get(sig.as_str())
-            .and_then(|v| v.first())
+            .and_then(|v| v.front())
             .is_some_and(|sr| sr.doc_index < anchor_idx)
     })
 }
 
 fn take_all<'a>(
-    by_sig: &mut HashMap<String, Vec<&'a OwnedSubrecord>>,
+    by_sig: &mut HashMap<String, VecDeque<&'a OwnedSubrecord>>,
     sig: &str,
 ) -> Vec<&'a OwnedSubrecord> {
-    by_sig.remove(sig).unwrap_or_default()
+    by_sig
+        .remove(sig)
+        .map(|d| d.into_iter().collect())
+        .unwrap_or_default()
 }
 
 /// Decode a VMAD (Papyrus scripts) subrecord into a structured JSON value.
@@ -2555,12 +2552,12 @@ mod tests {
             subrecord("MPPI", 20u32.to_le_bytes().to_vec(), 4),
             subrecord("MPPK", 200u16.to_le_bytes().to_vec(), 5),
         ];
-        let mut by_sig: HashMap<String, Vec<&OwnedSubrecord>> = HashMap::new();
+        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
         for sr in &subrecords {
             by_sig
                 .entry(sr.signature.as_str().to_string())
                 .or_default()
-                .push(sr);
+                .push_back(sr);
         }
 
         let mut out = Map::new();
