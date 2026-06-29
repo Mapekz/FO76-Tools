@@ -42,14 +42,14 @@ test-esm a b:
 # Use STRINGS_DIR to pass an explicit shared path, or STRINGS_DIR_A/B for per-side.
 #
 # Usage:
-#   just patch-notes /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
-#   STRINGS_DIR=/path/to/strings just patch-notes old.esm new.esm
-#   HIGHLIGHTS=highlights.md just patch-notes old.esm new.esm
+#   just patch-notes /path/to/v1/ /path/to/v2/
+#   STRINGS_DIR=/path/to/strings just patch-notes /path/to/old/ /path/to/new/
+#   HIGHLIGHTS=highlights.md just patch-notes /path/to/old/ /path/to/new/
 #
 # Env vars (all optional):
 #   STRINGS_DIR    Shared strings directory for both ESMs. If omitted, auto-detected
 #                  from <esm_parent>/strings/ (or <esm_parent> itself).
-#   STARTUP_BA2    Path to "SeventySix - Startup.ba2" — enables curve-table detail and
+#   STARTUP_BA2    Path to a Startup BA2 — enables curve-table detail and
 #                  crafting-quantity evaluation. Mutually exclusive with CURVES_DIR.
 #   CURVES_DIR     misc/ directory extracted from Startup BA2 — loose alternative to
 #                  STARTUP_BA2. Auto-detected from <new_esm_parent>/misc/ if omitted.

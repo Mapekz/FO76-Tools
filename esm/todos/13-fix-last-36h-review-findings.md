@@ -126,7 +126,7 @@ Relevant file:
 - `cargo test mindex`
 - `npm run build` in `app/`
 - Manual smoke:
-  - `esm -p get SeventySix.esm 0x463F --pretty`
-  - `esm --local --mmap-index get SeventySix.esm 0x463F --pretty`
-  - start legacy `esm-server SeventySix.esm` and confirm `/op` is blocked or authenticated according to the chosen policy
+  - `esm -p get path/to/data 0x463F --pretty`
+  - `esm --local --mmap-index get path/to/data 0x463F --pretty`
+  - start legacy `esm-server path/to/data` and confirm `/op` is blocked or authenticated according to the chosen policy
   - Electron lookup for an all-hex EditorID and a normal FormID

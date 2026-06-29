@@ -95,7 +95,7 @@ If WASM remains desired, create a separate todo for:
 - The Electron main process does not block on first-time EditorID or xref index
   builds.
 - The smoke test remains portable and runs only when
-  `FO76_ESM=/path/to/SeventySix.esm` is set.
+  `FO76_ESM=/path/to/Game.esm` is set.
 - Supported platforms are explicit and match the Electron packaging targets, or
   packaging is narrowed to the actually supported target.
 - WASM is either split into a new todo or explicitly closed as not planned.
@@ -105,7 +105,7 @@ If WASM remains desired, create a separate todo for:
 - `cargo test`
 - `cargo clippy --all-targets -- -D warnings`
 - `npm run build` in `bindings/napi` or equivalent `napi build --platform --release`
-- `FO76_ESM=/path/to/SeventySix.esm node bindings/napi/smoke.mjs`
+- `FO76_ESM=/path/to/Game.esm node bindings/napi/smoke.mjs`
 - `npm run build` in `app/`
 
 ---

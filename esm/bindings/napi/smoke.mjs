@@ -1,5 +1,5 @@
 // N-API smoke test — mirrors the Rust #[ignore] env-gate convention.
-// Run with:  FO76_ESM=/path/to/SeventySix.esm npm test
+// Run with:  FO76_ESM=/path/to/Game.esm npm test
 // Without FO76_ESM set: prints SKIP and exits 0 (safe for CI and other devs).
 //
 // Uses a dynamic import so the env check fires before the native addon is
@@ -7,7 +7,7 @@
 
 const esmPath = process.env.FO76_ESM;
 if (!esmPath) {
-  console.log('SKIP: set FO76_ESM=/path/to/SeventySix.esm to run the napi smoke test');
+  console.log('SKIP: set FO76_ESM=/path/to/Game.esm to run the napi smoke test');
   process.exit(0);
 }
 

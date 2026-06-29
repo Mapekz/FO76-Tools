@@ -85,7 +85,7 @@ The app loads the addon via `app/src/main/addon.ts`. The `app/src/shared/api-typ
 
 ## Game Data
 
-`SeventySix.esm`, `SeventySix - Localization.ba2`, `SeventySix - Startup.ba2`, `*.esm.idx`, and `*.esm.midx` are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via CLI args or `Database::open(path)`.
+Game data files (`*.esm`, `*.ba2`, `*.esm.idx`, `*.esm.midx`) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via CLI args or `Database::open(path)`.
 
 ## Bulk / sweep workflow (for agents)
 
@@ -100,8 +100,8 @@ Build `esm-server` once, then use `-p` for every single-record lookup:
 cargo build --release --features server
 
 # Every -p call auto-spawns the daemon on first use; subsequent calls are fast HTTP round-trips
-esm -p get SeventySix.esm 0x463F --pretty
-esm -p get SeventySix.esm AssaultRifle --pretty
+esm -p get path/to/data 0x463F --pretty
+esm -p get path/to/data AssaultRifle --pretty
 ```
 
 The daemon warms the index once on first load and serves all subsequent lookups in memory. It self-manages:
@@ -117,15 +117,15 @@ Use `esm daemon status` to check, `esm daemon stop` to kill early.
 Every round-trip has overhead. When you need many records of the same type, use bulk ops:
 
 ```sh
-esm -p list SeventySix.esm --type WEAP --limit 500 --pretty   # all weapons in one call
-esm -p search SeventySix.esm "*Rifle*" --type WEAP --pretty   # search by name/EditorID
-esm -p refs SeventySix.esm 0x463F --limit 100 --pretty        # reverse FormID lookup
-esm -p coverage SeventySix.esm --type WEAP                    # schema decode audit
+esm -p list path/to/data --type WEAP --limit 500 --pretty   # all weapons in one call
+esm -p search path/to/data "*Rifle*" --type WEAP --pretty   # search by name/EditorID
+esm -p refs path/to/data 0x463F --limit 100 --pretty        # reverse FormID lookup
+esm -p coverage path/to/data --type WEAP                    # schema decode audit
 ```
 
-### Gotcha: `--strings` / `--startup-ba2` bypass the daemon
+### Gotcha: `--localization-ba2` / `--startup-ba2` bypass the daemon
 
-Passing `--strings`, `--strings-dir`, or `--startup-ba2` to `get` forces a cold in-process open (the daemon doesn't load BA2 args from per-call flags). For sweeps that need localized strings, place `SeventySix - Localization.ba2` and `SeventySix - Startup.ba2` next to the ESM — the daemon auto-loads them on open, and warm lookups return localized output without per-call BA2 flags.
+Passing `--localization-ba2`, `--strings-dir`, or `--startup-ba2` to `get` forces a cold in-process open (the daemon doesn't load BA2 args from per-call flags). For sweeps that need localized strings, place the Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a `misc/curvetables/` folder) next to the ESM — the daemon auto-loads them on open, and warm lookups return localized output without per-call BA2 flags.
 
 ### Daemonless option: `--mmap-index`
 
@@ -133,9 +133,9 @@ For cold FormID lookups without a background process, use the zero-copy mmap ind
 
 ```sh
 # Loads a ~24 MiB .esm.midx table instead of the 280 MiB bincode cache
-esm --local --mmap-index get SeventySix.esm 0x463F --pretty
+esm --local --mmap-index get path/to/data 0x463F --pretty
 # Or set the env var so every --local call uses it
-ESM_MMAP_INDEX=1 esm --local get SeventySix.esm 0x463F --pretty
+ESM_MMAP_INDEX=1 esm --local get path/to/data 0x463F --pretty
 ```
 
 Limitations: FormID lookups only. EditorID (`--edid`), `list`, `search`, `refs`, and `tree` require the full index — use the daemon for those.
@@ -152,7 +152,7 @@ The `.esm.midx` file is written automatically whenever the `.esm.idx` is freshly
   "mcpServers": {
     "fo76-esm": {
       "command": "/path/to/esm-server",
-      "args": ["--mcp-stdio", "/path/to/SeventySix_YYYYMMDD.esm"]
+      "args": ["--mcp-stdio", "/path/to/data"]
     }
   }
 }

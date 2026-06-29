@@ -108,7 +108,7 @@ fn mgef_data_decodes_correct_structure() {
 /// total), misaligning `Includes` and `Properties` entirely.
 ///
 /// The binary payload used here is the verbatim hex from `esm get
-/// SeventySix_20260619.esm --formid 0x0085B998 --raw`.  The record uses
+/// a reference ESM --formid 0x0085B998 --raw`.  The record uses
 /// form_version 208 and has no compressed subrecords.
 ///
 /// What is asserted (covering every field that the bug corrupted):
@@ -122,7 +122,7 @@ fn omod_legendary_weapon_data_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx(&schema);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x0085B998 --raw` (form_version 208, flags 0x10 = Legendary Mod).
     let subrecords = vec![
         sr(
@@ -315,7 +315,7 @@ fn omod_legendary_weapon_data_decodes_correctly() {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Curated CI decode tests — verbatim subrecord bytes from
-//   esm get SeventySix_20260619.esm --formid <ID> --raw
+//   esm get a reference ESM --formid <ID> --raw
 //
 // Each test:
 //   1. Asserts the correct _record_type name.
@@ -791,7 +791,7 @@ fn armo_bos_recon_chest_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 208);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x005DD339 --raw` (form_version 208).
     let subs = subrecords_from(&[
         ("EDID", "41726d6f725f424f53496e66616e7472795f546f72736f00"),
@@ -926,7 +926,7 @@ fn ench_firefly_ichor_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 208);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x00002B4F --raw` (form_version 208).
     let subs = subrecords_from(&[
         (
@@ -975,7 +975,7 @@ fn ench_perk_concentrated_fire_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x00900A5A --raw` (form_version 209).
     let subs = subrecords_from(&[
         ("EDID", "456e63685065726b436f6e63656e7472617465644669726500"),
@@ -1028,7 +1028,7 @@ fn book_assault_rifle_recipe_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 185);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x00000871 --raw` (form_version 185).
     let subs = subrecords_from(&[
         ("EDID", "7265636970655f6d6f645f41737361756c745269666c655f52656365697665725f46617374547269676765722d43726974444d4700"),
@@ -1077,7 +1077,7 @@ fn weap_gas_trap_dummy_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 176);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x000001F6 --raw` (form_version 176).
     let subs = subrecords_from(&[
         ("EDID", "4761735472617044756d6d7900"),
@@ -1116,7 +1116,7 @@ fn weap_super_sledge_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x000FF964 --raw` (form_version 209).
     let subs = subrecords_from(&[
         ("EDID", "5375706572536c6564676500"),
@@ -1206,7 +1206,7 @@ fn weap_animatronic_alien_blaster_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 205);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x00113083 --raw` (form_version 205).
     let subs = subrecords_from(&[
         ("EDID", "6372444c433034416e696d6174726f6e6963416c69656e426c617374657200"),
@@ -1276,7 +1276,7 @@ fn perk_test_tame_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 175);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x00004168 --raw` (form_version 175).
     let subs = subrecords_from(&[
         ("EDID", "5465737454616d655065726b00"),
@@ -2506,7 +2506,7 @@ fn perk_stat_beneficial_perk_decodes_correctly() {
 fn race_liberator_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
-    // Verbatim subrecords from `esm --local -p get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm --local get <esm>
     // --formid 0x00002ECF --raw --json` (form_version 209).
     let subs = subrecords_from(&[
         ("EDID", "4c6962657261746f725261636500"),
@@ -2740,7 +2740,7 @@ fn race_liberator_decodes_correctly() {
 fn race_mothman_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
-    // Verbatim subrecords from `esm --local -p get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm --local get <esm>
     // --formid 0x0000D233 --raw --json` (form_version 209).
     let subs = subrecords_from(&[
         ("EDID", "4d6f74686d616e5261636500"),
@@ -2991,7 +2991,7 @@ fn gmrw_world_pets_reward_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x008B2016 --raw` (form_version 209).
     let subs = subrecords_from(&[
         ("EDID", "576f726c64506574735f5265776172645f5065744c6576656c6c696e675f47656e657269635f4355525f476f6c6462756c6c696f6e73303100"),
@@ -3019,7 +3019,7 @@ fn lvli_flora_corn_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 197);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x0000129C --raw` (form_version 197).
     let subs = subrecords_from(&[
         ("EDID", "4c4c5f466c6f72615f436f726e00"),
@@ -3098,7 +3098,7 @@ fn npc_w05_settler_ward_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x00425171 --raw` (form_version 209).
     let subs = subrecords_from(&[
         ("EDID", "5730355f536574746c65725f5761726400"),
@@ -3264,7 +3264,7 @@ fn npc_radhog_camp_pet_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
     let ctx = bare_ctx_fv(&schema, 209);
 
-    // Verbatim subrecords from `esm get SeventySix_20260619.esm
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x0084FB8F --raw` (form_version 209).
     let subs = subrecords_from(&[
         ("EDID", "4154585f43414d50506574735f4163746f725f526164486f675f5374616e6461726400"),
@@ -3651,7 +3651,7 @@ fn qmdl_object_destruction_decodes_correctly() {
 /// present.  The CMIC subrecord decodes as a raw-hex Unknown field (`_raw: true`
 /// but no `reason`) — this is intentional schema behaviour, not a fallback.
 ///
-/// Verbatim subrecords from `esm get SeventySix_20260619.esm
+/// Verbatim subrecords from `esm get <esm>
 /// --formid 0x0000FFEC --raw` (form_version 204).
 #[test]
 fn cont_drop_crate_govt01_decodes_correctly() {
@@ -4579,7 +4579,7 @@ fn npc_comp_super_mutant_maul_vmad_decodes_correctly() {
 /// Exercises the SPIT Data struct (Type = Ability) and the Effects array.
 /// form_version 131.
 ///
-/// Verbatim subrecords from `esm get SeventySix_20260619.esm 0x00004381 --raw`.
+/// Verbatim subrecords from `esm get <esm> 0x00004381 --raw`.
 #[test]
 fn spel_ab_nemesis_rank00_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
@@ -4638,7 +4638,7 @@ fn spel_ab_nemesis_rank00_decodes_correctly() {
 /// the DATA struct including the Sound 1 FormID and Sound Level enum.
 /// form_version 202.
 ///
-/// Verbatim subrecords from `esm get SeventySix_20260619.esm 0x000001F5 --raw`.
+/// Verbatim subrecords from `esm get <esm> 0x000001F5 --raw`.
 #[test]
 fn expl_explosion_default_water_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
@@ -4701,7 +4701,7 @@ fn expl_explosion_default_water_decodes_correctly() {
 /// REPM, LRNM, DESC, CNAM, BNAM, GNAM, FNAM, DNAM, CIFK, RECF.  Exercises the
 /// FVPA and REPR struct arrays plus the LRNM learn-method enum.  form_version 195.
 ///
-/// Verbatim subrecords from `esm get SeventySix_20260619.esm 0x00004170 --raw`.
+/// Verbatim subrecords from `esm get <esm> 0x00004170 --raw`.
 #[test]
 fn cobj_weapon_ranged_alien_blaster_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");

@@ -1,14 +1,14 @@
 # FO76 Parser — Out-of-scope / follow-ups
 
 ## Localization
-- [ ] BA2 archive parser to extract SeventySix_En.{STRINGS,DLSTRINGS,ILSTRINGS} (FO76 BA2 + LZ4)
+- [ ] BA2 archive parser to extract localization `.strings`/`.dlstrings`/`.ilstrings` (FO76 BA2 + LZ4)
 - [ ] .STRINGS/.DLSTRINGS/.ILSTRINGS reader; resolve LString u32 ids → text
       (format: count u32, dataSize u32, [id u32, offset u32]*, data block; STRINGS=zstring,
        DL/ILSTRINGS=len-prefixed; per-field table choice; ref Core/wbLocalization.pas)
 - [ ] Support loose Strings/ folder as a runtime option
 
 ## Curve tables
-- [ ] Load curve JSON from `SeventySix - Startup.ba2` and resolve `CURV` FormID references to
+- [ ] Load curve JSON from a Startup BA2 and resolve `CURV` FormID references to
       evaluable `{ "curve": [{ "x", "y" }, …] }` data (FO76 BA2 + LZ4; reuse BA2 parser from Localization work)
 - [ ] Parse `CURV` records: `EDID` + `CRVE` or `JASF` subrecord holds a zstring path such as
       `Weapons\Weap_10mmSMGDMG.json` or `Creatures\Weapon\Damage_Universal_Tier24.json`

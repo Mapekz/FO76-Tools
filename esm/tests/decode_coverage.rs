@@ -5,7 +5,7 @@
 //! # Running this test
 //!
 //! ```sh
-//! RUST_TEST_ESM=/path/to/SeventySix.esm cargo test
+//! RUST_TEST_ESM=/path/to/Game.esm cargo test
 //! ```
 //!
 //! The test skips silently when `RUST_TEST_ESM` is unset, so `cargo test` in
@@ -28,7 +28,7 @@
 //!
 //! The following types are **excluded** from `CLEAN_TYPES` because they still
 //! emit `raw_fallback` or undocumented `_unmapped` markers on at least some
-//! records in the reference ESM (`SeventySix_20260619.esm`, coverage run 2026-06-27).
+//! records in a reference ESM.
 //! Types marked partial† in the README decode only with documented drift
 //! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records.rs`.
 //!
@@ -36,7 +36,7 @@
 //! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT,
 //! LVLI, LVLN, LVPC, LVLP, RESO, GMRW, QUST, NPC_.
 //! Batch-promoted 2026-06-27: 97 additional types confirmed zero-marker on
-//! SeventySix_20260619.esm — AACT, AAMD, ADDN, AECH, ANIO, AORU, ARMA, ARTO,
+//! a reference ESM — AACT, AAMD, ADDN, AECH, ANIO, AORU, ARMA, ARTO,
 //! ASPC, ASTM, ASTP, ATXO, AUVF, AVTR, BNDS, CAMS, CLAS, CLFM, CLMT, CNCY,
 //! CNDF, CPRD, CPTH, CSEN, CSTY, DCGF, DEBR, DIAL, DIST, DOBJ, ECAT, EFSH,
 //! EMOT, EQUP, FSTP, FSTS, GCVR, GRAS, HDPT, IDLE, IDLM, IMAD, IMGS, INGR,
@@ -54,7 +54,7 @@ use common::collect_decode_problems;
 use esm::{Database, FormId};
 
 /// All record types verified (via `esm coverage`) to decode with zero markers
-/// on every record in SeventySix_20260619.esm (coverage runs through 2026-06-27).
+/// on every record in a reference ESM.
 const CLEAN_TYPES: &[&str] = &[
     // Original + incrementally promoted batch
     "ARMO", "SPEL", "GLOB", "KYWD", "OMOD", "AMMO", "PROJ", "EXPL", "ALCH", "COBJ", "ENTM", "DMGT",
@@ -62,7 +62,7 @@ const CLEAN_TYPES: &[&str] = &[
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
     "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
     "NOTE", "RACE", "CONT", "LVLI", "LVLN", "LVPC", "LVLP", "RESO", "GMRW", "QUST", "NPC_",
-    // Batch-promoted 2026-06-27 (97 types confirmed zero-marker on SeventySix_20260619.esm)
+    // Batch-promoted (97 types confirmed zero-marker on a reference ESM)
     "AACT", "AAMD", "ADDN", "AECH", "ANIO", "AORU", "ARMA", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
     "AUVF", "AVTR", "BNDS", "CAMS", "CLAS", "CLFM", "CLMT", "CNCY", "CNDF", "CPRD", "CPTH", "CSEN",
     "CSTY", "DCGF", "DEBR", "DIAL", "DIST", "DOBJ", "ECAT", "EFSH", "EMOT", "EQUP", "FSTP", "FSTS",

@@ -164,11 +164,11 @@ SOURCE_KIND_LABEL = {
 # --------------------------------------------------------------------------
 
 def derive_labels_from_filenames(old_label, new_label):
-    """Derive PATCH_DATE from new_label filename stem (e.g. SeventySix_20260626.esm → 2026-06-26)."""
+    """Derive PATCH_DATE from new_label filename stem (e.g. Game_YYYYMMDD.esm → YYYY-MM-DD)."""
     if not new_label:
         return old_label, new_label, "Unknown Date"
     stem = os.path.splitext(os.path.basename(new_label))[0]
-    # Extract 8-digit date token, e.g. 20260626 → "2026-06-26"
+    # Extract 8-digit date token (YYYYMMDD) and reformat as "YYYY-MM-DD"
     m = re.search(r'(\d{4})(\d{2})(\d{2})', stem)
     if m:
         patch_date = f"{m.group(1)}-{m.group(2)}-{m.group(3)}"

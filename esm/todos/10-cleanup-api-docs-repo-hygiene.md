@@ -52,7 +52,7 @@ library-side warnings now make the project harder to maintain.
 - Generated local build metadata is not tracked.
 - Ignore rules cover generated TypeScript build info and `.esm.midx` sidecars.
 - Smoke scripts work on any machine with
-  `FO76_ESM=/path/to/SeventySix.esm`.
+  `FO76_ESM=/path/to/Game.esm`.
 - Native platform support notes match the actual N-API package targets and
   Electron packaging targets.
 
@@ -61,5 +61,5 @@ library-side warnings now make the project harder to maintain.
 - `cargo test`
 - `cargo clippy --all-targets -- -D warnings`
 - `npm run build` in `app/`
-- `FO76_ESM=/path/to/SeventySix.esm node bindings/napi/smoke.mjs` after
+- `FO76_ESM=/path/to/Game.esm node bindings/napi/smoke.mjs` after
   building the native addon.

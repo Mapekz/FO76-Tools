@@ -16,8 +16,8 @@ COMMON_PAS = TES5 / "Core" / "wbDefinitionsCommon.pas"
 OUT = ROOT / "schema" / "fo76.json"
 OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
-# All 168 record types present in SeventySix.esm (excluding CELL and WRLD).
-# Generated from: fo76 tree SeventySix.esm | jq '[.[].label.sig] | unique | sort | .[]'
+# All 168 record types present in the FO76 ESM (excluding CELL and WRLD).
+# Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
 WHITELIST = [
     "AACT", "AAMD", "AAPD", "ACHR", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
     "ANIO", "AORU", "ARMA", "ARMO", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",

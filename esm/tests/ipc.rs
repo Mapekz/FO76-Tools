@@ -215,7 +215,7 @@ fn record_sel_json_round_trip() {
             depth: ResolveDepth::None,
         };
         let req = Request {
-            esm: PathBuf::from("SeventySix.esm"),
+            esm: PathBuf::from("Game.esm"),
             op,
         };
         let json = serde_json::to_string(&req).expect("serialize");

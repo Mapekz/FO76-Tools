@@ -33,13 +33,15 @@ cargo test                     # run all tests (~100 run; 2 env-gated ignored)
 ## CLI — `esm`
 
 ```sh
-esm <subcommand> [options] <ESM-FILE> [...]
+esm <subcommand> [options] <ESM-or-folder> [...]
 ```
+
+Pass either a `.esm` file or a data folder. When given a folder, the tool auto-discovers the single `.esm` inside it, then looks for localization strings (`strings/<stem>_<locale>.strings` or any `*localization*.ba2`) and curve tables (`misc/curvetables/json/` or any `*startup*.ba2`). Override with `--localization-ba2`/`--strings-dir`/`--startup-ba2`/`--curves-dir` when the auto-detected sources aren't what you want.
 
 ### `info` — TES4 header summary
 
 ```sh
-esm info SeventySix.esm
+esm info path/to/data      # data folder or explicit .esm file
 ```
 
 Prints version, record count, next object ID, ESM/Localization flags, author, description, and master dependencies.
@@ -48,23 +50,23 @@ Prints version, record count, next object ID, ESM/Localization flags, author, de
 
 ```sh
 # Auto-detected positional: FormID (0x-prefixed / hex / decimal) vs EditorID
-esm get SeventySix.esm AssaultRifle --pretty
-esm get SeventySix.esm 0x463F --pretty
+esm get path/to/data AssaultRifle --pretty
+esm get path/to/data 0x463F --pretty
 
 # Explicit flags still work and override the positional
-esm get SeventySix.esm --edid AssaultRifle --pretty
-esm get SeventySix.esm --formid 0x463F --pretty
+esm get path/to/data --edid AssaultRifle --pretty
+esm get path/to/data --formid 0x463F --pretty
 
 # Raw subrecords (no schema decoding)
-esm get SeventySix.esm 0x463F --raw --pretty
+esm get path/to/data 0x463F --raw --pretty
 
-# With localized strings resolved
-esm get SeventySix.esm --edid AssaultRifle --strings "SeventySix - Localization.ba2"
+# With localized strings resolved (override auto-discovery)
+esm get path/to/data --edid AssaultRifle --localization-ba2 path/to/localization.ba2
 
 # Control FormID cross-reference depth
-esm get SeventySix.esm --edid AssaultRifle --resolve full   # inline referenced records
-esm get SeventySix.esm --edid AssaultRifle --resolve stub   # referenced records as stubs
-esm get SeventySix.esm --edid AssaultRifle --resolve none   # leave FormIDs as hex (default)
+esm get path/to/data --edid AssaultRifle --resolve full   # inline referenced records
+esm get path/to/data --edid AssaultRifle --resolve stub   # referenced records as stubs
+esm get path/to/data --edid AssaultRifle --resolve none   # leave FormIDs as hex (default)
 ```
 
 | Flag | Default | Description |
@@ -75,8 +77,8 @@ esm get SeventySix.esm --edid AssaultRifle --resolve none   # leave FormIDs as h
 | `--json` | false | Emit JSON (implied by `--pretty`) |
 | `--pretty` | false | Pretty-print JSON |
 | `--raw` | false | Skip schema decode; dump raw subrecords |
-| `--strings <BA2>` | — | Localization BA2 to resolve LStrings |
-| `--strings-dir <DIR>` | — | Directory of loose `.strings` / `.dlstrings` files |
+| `--localization-ba2 <BA2>` | — | Localization BA2 override (auto-discovered if omitted) |
+| `--strings-dir <DIR>` | — | Loose `.strings` / `.dlstrings` directory override |
 | `--lang <code>` | `en` | Language code for string tables |
 | `--startup-ba2 <BA2>` | — | Startup BA2 for curve table evaluation |
 | `--resolve <depth>` | `none` | FormID cross-reference depth: `none`, `stub`, `full` |
@@ -86,23 +88,23 @@ esm get SeventySix.esm --edid AssaultRifle --resolve none   # leave FormIDs as h
 ### `list` — List records of a type
 
 ```sh
-esm list SeventySix.esm --type WEAP --limit 20
-esm list SeventySix.esm --type GLOB --strings "SeventySix - Localization.ba2" --pretty
+esm list path/to/data --type WEAP --limit 20
+esm list path/to/data --type GLOB --localization-ba2 path/to/localization.ba2 --pretty
 ```
 
 | Flag | Default | Description |
 |---|---|---|
 | `--type <SIG>` | required | 4-char record type signature |
 | `--limit <N>` | 50 | Max records to return |
-| `--strings <BA2>` | — | Resolve LStrings |
-| `--strings-dir <DIR>` | — | Loose string files |
+| `--localization-ba2 <BA2>` | — | Localization BA2 override |
+| `--strings-dir <DIR>` | — | Loose string files override |
 | `--lang <code>` | `en` | Language |
 
 ### `search` — Wildcard search over EditorIDs and names
 
 ```sh
-esm search SeventySix.esm "*Rifle*" --type WEAP --in both --pretty
-esm search SeventySix.esm "Assault*" --in edid
+esm search path/to/data "*Rifle*" --type WEAP --in both --pretty
+esm search path/to/data "Assault*" --in edid
 ```
 
 | Flag | Default | Description |
@@ -112,18 +114,18 @@ esm search SeventySix.esm "Assault*" --in edid
 | `--in <field>` | `both` | `edid`, `name`, or `both` |
 | `--limit <N>` | 100 | Max results |
 | `--json` / `--pretty` | — | Output format |
-| `--strings`, `--strings-dir`, `--lang` | — | String resolution |
+| `--localization-ba2`, `--strings-dir`, `--lang` | — | String resolution |
 
 ### `refs` — Reverse FormID lookup
 
 ```sh
 # Auto-detected positional (FormID or EditorID), same rules as `get`
-esm refs SeventySix.esm AssaultRifle --limit 50
-esm refs SeventySix.esm 0x463F --json --pretty
+esm refs path/to/data AssaultRifle --limit 50
+esm refs path/to/data 0x463F --json --pretty
 
 # Explicit flags still work and override the positional
-esm refs SeventySix.esm --edid AssaultRifle --limit 50
-esm refs SeventySix.esm --formid 0x463F --json --pretty
+esm refs path/to/data --edid AssaultRifle --limit 50
+esm refs path/to/data --formid 0x463F --json --pretty
 ```
 
 Find all records that reference a given FormID. Builds and caches an xref index on first run.
@@ -131,15 +133,15 @@ Find all records that reference a given FormID. Builds and caches an xref index 
 ### `tree` — Browse the GRUP hierarchy
 
 ```sh
-esm tree SeventySix.esm --type WEAP --limit 50 --pretty
-esm tree SeventySix.esm --offset 0 --limit 20
+esm tree path/to/data --type WEAP --limit 50 --pretty
+esm tree path/to/data --offset 0 --limit 20
 ```
 
 ### `diff` — Compare two ESM versions
 
 ```sh
-esm diff old.esm new.esm --type GLOB --json --pretty
-esm diff SeventySix_20260612.esm SeventySix_20260619.esm
+esm diff path/to/old path/to/new --type GLOB --json --pretty
+esm diff path/to/old path/to/new
 ```
 
 Aligns records by FormID, uses byte-equality fast-path, decodes only changed records, and emits a sparse `{from, to}` diff per changed field. Prints a per-type summary and timing to stderr.
@@ -147,8 +149,8 @@ Aligns records by FormID, uses byte-equality fast-path, decodes only changed rec
 ### `coverage` — Schema audit
 
 ```sh
-esm coverage SeventySix.esm --type WEAP
-esm coverage SeventySix.esm --gate   # exits non-zero on any raw_fallback
+esm coverage path/to/data --type WEAP
+esm coverage path/to/data --gate   # exits non-zero on any raw_fallback
 ```
 
 Counts `_raw`, `_unmapped`, `_unknown_record`, and `_unresolved` markers across decoded records. Use `--gate` in CI to enforce full decode coverage.
@@ -168,9 +170,9 @@ The daemon is normally transparent: the first `esm -p` call auto-spawns it, subs
 Feature-gated HTTP REST + MCP stdio server. Build with `--features server`:
 
 ```sh
-cargo run --release --features server --bin esm-server -- SeventySix.esm
-cargo run --release --features server --bin esm-server -- SeventySix.esm --compare SeventySix_prev.esm --port 3000
-cargo run --release --features server --bin esm-server -- SeventySix.esm --mcp-stdio
+cargo run --release --features server --bin esm-server -- path/to/data
+cargo run --release --features server --bin esm-server -- path/to/data --compare path/to/prev --port 3000
+cargo run --release --features server --bin esm-server -- path/to/data --mcp-stdio
 ```
 
 HTTP routes: `GET /info`, `/records/{formid}`, `/records?edid=|type=&limit=`, `/groups`, `/groups/{sig}/children`, `/stub/{offset}`, `/diff`, `/health`. Serves embedded HTML viewer at `/` and `/compare`.
@@ -184,7 +186,7 @@ The `esm` crate exposes a `Database` facade for library consumers:
 ```rust
 use esm::{Database, FormId, ResolveDepth};
 
-let db = Database::open("SeventySix.esm")?;
+let db = Database::open("path/to/data")?;  // data folder or explicit .esm file
 
 // File metadata
 let info = db.file_info();
@@ -227,7 +229,7 @@ python3 tools/extractor/audit.py --gate
 **Decode** — `full`: every subrecord and field consumed with no fallbacks; `partial`: some subrecords or fields hit a raw-bytes fallback or are left unmapped (schema gaps); `partial†`: only documented newer-than-reference drift subrecords remain `_unmapped` (see [Known coverage drift](CLAUDE.md#known-coverage-drift-vs-tes5edit)); `none`: record type has no schema entry — all subrecords are unmapped.  
 **Tests** — `robust`: ≥ 3 handpicked records tested end-to-end; `basic`: 1–2 records or covered by the exhaustive env-gated sweep; `none`: no dedicated test.
 
-Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. Run the exhaustive integration test locally with `RUST_TEST_ESM=<path> cargo test`.
+Decode status is measured against a reference ESM via `esm coverage`. Run the exhaustive integration test locally with `RUST_TEST_ESM=<path> cargo test`.
 
 | Sig | Name | Decode | Tests |
 |-----|------|:------:|:-----:|
@@ -421,7 +423,7 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 cargo test
 
 # Exhaustive decode sweep (needs real ESM — skips silently if unset)
-RUST_TEST_ESM=SeventySix.esm cargo test
+RUST_TEST_ESM=path/to/data cargo test
 
 # Diff integration test (needs two ESM versions — skips silently if unset)
 RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test
@@ -452,8 +454,8 @@ AI agents scanning many records must avoid cold per-record process spawns. Each 
 cargo build --release --features server
 
 # The first -p call auto-spawns and warms the daemon; all subsequent calls are fast
-esm -p get SeventySix.esm 0x463F --pretty
-esm -p get SeventySix.esm AssaultRifle --pretty
+esm -p get path/to/data 0x463F --pretty
+esm -p get path/to/data AssaultRifle --pretty
 ```
 
 The daemon keeps the index in memory, self-shuts-down after 10 min idle, stale-evicts if the ESM changes, and is safe for concurrent agents (advisory spawn-lock prevents double-spawn).
@@ -461,21 +463,21 @@ The daemon keeps the index in memory, self-shuts-down after 10 min idle, stale-e
 **Prefer bulk ops** over N single `get`s — each round-trip has overhead:
 
 ```sh
-esm -p list SeventySix.esm --type WEAP --limit 500 --pretty   # all weapons in one call
-esm -p search SeventySix.esm "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
-esm -p refs SeventySix.esm 0x463F --limit 100 --pretty        # reverse FormID lookup
+esm -p list path/to/data --type WEAP --limit 500 --pretty   # all weapons in one call
+esm -p search path/to/data "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
+esm -p refs path/to/data 0x463F --limit 100 --pretty        # reverse FormID lookup
 ```
 
-**Gotcha:** `--strings`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open (the daemon doesn't accept per-call BA2 paths). Place the BA2 files next to the ESM so the daemon auto-loads them, and drop these flags in sweeps.
+**Gotcha:** `--localization-ba2`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open (the daemon doesn't accept per-call source overrides). Pass a data folder or place the Localization/Startup BA2 files (or `strings/`/`misc/curvetables/` directories) next to the ESM so the daemon auto-loads them on open, and drop per-call flags in sweeps.
 
 ### Daemonless option: `--mmap-index`
 
 For cold FormID lookups without a background process:
 
 ```sh
-esm --local --mmap-index get SeventySix.esm 0x463F --pretty
+esm --local --mmap-index get path/to/data 0x463F --pretty
 # or via env var
-ESM_MMAP_INDEX=1 esm --local get SeventySix.esm 0x463F --pretty
+ESM_MMAP_INDEX=1 esm --local get path/to/data 0x463F --pretty
 ```
 
 Loads a compact ~24 MiB `.esm.midx` table (binary-sorted, O(log n) lookup) instead of the 280 MiB bincode cache. FormID lookups only — EditorID / list / search / refs / tree require the full index; use the daemon for those.
@@ -490,7 +492,7 @@ Wire up `esm-server --mcp-stdio` in your AI client's MCP config. **Do not commit
   "mcpServers": {
     "fo76-esm": {
       "command": "/path/to/esm-server",
-      "args": ["--mcp-stdio", "/path/to/SeventySix_YYYYMMDD.esm"]
+      "args": ["--mcp-stdio", "/path/to/data"]
     }
   }
 }

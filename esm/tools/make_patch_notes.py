@@ -10,7 +10,7 @@ Options:
                           <esm_parent>/strings/ (or <esm_parent> itself) if omitted.
     --strings-dir-a DIR   Strings directory for ESM A only (overrides --strings-dir for A).
     --strings-dir-b DIR   Strings directory for ESM B only (overrides --strings-dir for B).
-    --startup-ba2 PATH    Path to "SeventySix - Startup.ba2" (or env STARTUP_BA2).
+    --startup-ba2 PATH    Path to a Startup BA2 (or env STARTUP_BA2).
                           Enables curve-table inlining and crafting-quantity evaluation.
                           Mutually exclusive with --curves-dir.
     --curves-dir DIR      Path to the misc/ directory extracted from a Startup BA2
@@ -38,20 +38,20 @@ Exit codes:
 Examples:
     # Each ESM in its own directory; strings auto-detected from <dir>/strings/.
     python3 tools/make_patch_notes.py \\
-        /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
+        /path/to/v1/ /path/to/v2/
 
     # Shared strings directory (both ESMs in the same folder, or explicit path).
     python3 tools/make_patch_notes.py \\
-        old/SeventySix.esm new/SeventySix.esm \\
+        /path/to/old/ /path/to/new/ \\
         --strings-dir /path/to/strings
 
     # With Startup BA2 for curve-table detail:
-    STARTUP_BA2="/path/to/SeventySix - Startup.ba2" \\
+    STARTUP_BA2="/path/to/startup.ba2" \\
     python3 tools/make_patch_notes.py \\
-        /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
+        /path/to/v1/ /path/to/v2/
 
     # Via justfile:
-    just patch-notes /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
+    just patch-notes /path/to/v1/ /path/to/v2/
 """
 
 import argparse
@@ -90,7 +90,7 @@ def die(code, msg) -> NoReturn:
 
 
 def version_token(esm_path: Path) -> str:
-    """Extract the 8-digit date token from an ESM stem (e.g. '20260619')."""
+    """Extract the 8-digit date token from an ESM stem, or return the stem itself."""
     stem = esm_path.stem
     m = re.search(r"\d{6,}", stem)
     return m.group(0) if m else stem
@@ -149,7 +149,7 @@ def locate_strings_dirs(
             if list(d.glob(f"*{tok}*_{lang}.{ext}")):
                 return True
             if re.search(r"\d{6,}", tok) is None:
-                # tok has no date digits (e.g. "SeventySix") — also accept plain name
+                # tok has no date digits (e.g. stem without version suffix) — also accept plain name
                 if list(d.glob(f"*_{lang}.{ext}")):
                     return True
         return False
@@ -452,7 +452,7 @@ def main():
     ap.add_argument("--strings-dir-b", default=None, metavar="DIR",
                     help="Strings directory for ESM B only (overrides --strings-dir for B)")
     ap.add_argument("--startup-ba2", default=os.environ.get("STARTUP_BA2"), metavar="PATH",
-                    help='Path to "SeventySix - Startup.ba2" for curve-table inlining '
+                    help='Path to a Startup BA2 for curve-table inlining '
                          '(also $STARTUP_BA2). Mutually exclusive with --curves-dir.')
     ap.add_argument("--curves-dir", default=os.environ.get("CURVES_DIR"), metavar="DIR",
                     help='misc/ directory extracted from Startup BA2 for curve-table inlining '

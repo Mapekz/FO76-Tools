@@ -5,12 +5,9 @@ Produces a ~50-100 line summary suitable for posting in a few Discord messages.
 Usage: python3 tools/gen_discord_summary.py /tmp/fo76_diff.json > discord_summary.md
 """
 
+import argparse
 import json
-import sys
 from collections import defaultdict
-
-OLD_LABEL = "20260612"
-NEW_LABEL = "20260619"
 
 TYPE_DESC = {
     "ALCH": "Ingestibles/Chems", "AMMO": "Ammo", "ARMO": "Armor/Apparel",
@@ -105,8 +102,17 @@ Also: Lone Wanderer perk effects updated
 """
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "/tmp/fo76_diff.json"
-    with open(path) as f:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("diff_json", nargs="?", default="/tmp/fo76_diff.json",
+                        help="Path to diff JSON (default: /tmp/fo76_diff.json)")
+    parser.add_argument("--old-label", default="old", help="Display label for the old ESM")
+    parser.add_argument("--new-label", default="new", help="Display label for the new ESM")
+    args_parsed = parser.parse_args()
+
+    OLD_LABEL = args_parsed.old_label
+    NEW_LABEL = args_parsed.new_label
+
+    with open(args_parsed.diff_json) as f:
         data = json.load(f)
 
     added   = data["added"]
