@@ -84,10 +84,16 @@ export function registerIpc(): void {
     return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).referencedBy(formid))
   })
 
-  ipcMain.handle(CH.referencedById, (_e, id: string, target: string) => {
+  ipcMain.handle(CH.referencedById, (_e, id: string, target: string, depth?: number) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).referencedById(target))
+    const clampedDepth = Math.max(1, Math.min(depth ?? 1, 6))
+    return wrap(() =>
+      (entry.db as Record<string, (...args: unknown[]) => unknown>).referencedById(
+        target,
+        clampedDepth,
+      ),
+    )
   })
 
   ipcMain.handle(CH.parseFormId, (_e, s: string) => {

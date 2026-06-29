@@ -35,7 +35,7 @@ Clean layering — edit at the right level:
 | `src/ba2.rs` | Minimal BTDX/GNRL BA2 reader (memory-mapped); used by strings + curves |
 | `src/strings.rs` | `.strings`/`.dlstrings`/`.ilstrings` parser; `Localization::from_ba2` / `from_loose_files` |
 | `src/curves.rs` | `CurveIndex` (FormID → `Curve`); loads JSON from Startup BA2; `Curve::eval` (linear interp) |
-| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; `bincode` disk cache (`*.esm.idx`, `CACHE_VERSION = 8`) |
+| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; `bincode` disk cache (`*.esm.idx`, `CACHE_VERSION = 9`) |
 | `src/mindex.rs` | Zero-copy mmap'd FormID index (`*.esm.midx`); 40-byte header + 24-byte sorted entries; `MmapFormIndex` (binary search, O(log n)); written opportunistically in `build_fresh` |
 | `src/registry.rs` | `Registry`: lazily opens and caches `Database` per canonical path; stale-file eviction via `FileSig` (one `fs::metadata` check per cache hit); `auto_warm` flag for daemon mode |
 | `src/tree.rs` | GRUP tree arena (`TreeIndex`); `GroupNode`, `RecordStub`, `GroupLabel` enum |
@@ -45,12 +45,12 @@ Clean layering — edit at the right level:
 | `src/diff.rs` | `diff_databases(a,b)` — byte-equality fast-path, sparse `{from,to}` JSON diff |
 | `src/wildcard.rs` | Case-insensitive `*`-wildcard matcher; has rustdoc doctest |
 | `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
-| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs`, `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
-| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); seven read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs`, `esm_sources`; `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
+| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
+| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 6); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Mutex<Database>`); `#[napi]` async methods |
 | `app/` | Electron GUI ("FO76 ESM Viewer"); main/preload/renderer; consumes the N-API addon |
 
-Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`.
+Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`, `RefList`, `RefRow`, `RefPathNode`.
 
 ## Conventions to Follow
 
@@ -117,10 +117,11 @@ Use `esm daemon status` to check, `esm daemon stop` to kill early.
 Every round-trip has overhead. When you need many records of the same type, use bulk ops:
 
 ```sh
-esm -p list path/to/data --type WEAP --limit 500 --pretty   # all weapons in one call
-esm -p search path/to/data "*Rifle*" --type WEAP --pretty   # search by name/EditorID
-esm -p refs path/to/data 0x463F --limit 100 --pretty        # reverse FormID lookup
-esm -p coverage path/to/data --type WEAP                    # schema decode audit
+esm -p list path/to/data --type WEAP --limit 500 --pretty       # all weapons in one call
+esm -p search path/to/data "*Rifle*" --type WEAP --pretty       # search by name/EditorID
+esm -p refs path/to/data 0x463F --limit 100 --pretty            # direct reverse lookup (depth=1)
+esm -p refs path/to/data 0x463F --depth 6 --pretty              # recursive walk to depth 6
+esm -p coverage path/to/data --type WEAP                        # schema decode audit
 ```
 
 ### Gotcha: `--localization-ba2` / `--startup-ba2` bypass the daemon
@@ -158,7 +159,7 @@ The `.esm.midx` file is written automatically whenever the `.esm.idx` is freshly
 }
 ```
 
-The server exposes seven read-only tools (all proxy to the warm daemon): `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none|stub|full`, default `stub` — references are annotated with EditorID+name inline), `esm_list_groups` (type inventory / table of contents), `esm_list_records`, `esm_refs` (single-level reverse lookup), `esm_sources` (full recursive leveled-list walk to terminal drop sources — use this for "where does X drop?" questions, not repeated `esm_refs` calls). Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
+The server exposes six read-only tools (all proxy to the warm daemon): `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none|stub|full`, default `stub` — references are annotated with EditorID+name inline), `esm_list_groups` (type inventory / table of contents), `esm_list_records`, `esm_refs` (depth-bound BFS reverse-reference walk; default `depth=1` for a single-level lookup, up to `depth=6` to walk the full reference graph — use this for "where does X drop?" questions). Each result includes a hop `depth` and an intermediate-node `path` array. Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
 
 ## Known coverage drift (vs TES5Edit)
 

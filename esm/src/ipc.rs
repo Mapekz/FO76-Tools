@@ -6,8 +6,11 @@ use crate::{Database, FormId, ResolveDepth, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::PathBuf;
+
+/// Default maximum recursion depth for the reverse-reference walk.
+pub const DEFAULT_MAX_DEPTH: usize = 6;
 
 // ─── Wire types ─────────────────────────────────────────────────────────────
 
@@ -85,6 +88,9 @@ pub enum Op {
     ReferencedBy {
         sel: RecordSel,
         limit: usize,
+        /// Recursion depth for the reverse-reference walk (default 1, capped at DEFAULT_MAX_DEPTH).
+        #[serde(default)]
+        depth: usize,
     },
     ListGroups,
     ListTypeChildren {
@@ -100,17 +106,19 @@ pub enum Op {
         b: PathBuf,
         record_type: Option<String>,
     },
-    /// Walk reverse references through leveled lists to terminal drop sources.
-    Sources {
-        sel: RecordSel,
-        #[serde(default)]
-        max_depth: Option<usize>,
-    },
     /// Daemon lifecycle: no ESM path required (ignored).
     Shutdown,
 }
 
 // ─── Shared DTOs (lifted from CLI) ──────────────────────────────────────────
+
+/// One node on the hop chain from the lookup target to a result record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefPathNode {
+    pub form_id: String,
+    pub record_type: Option<String>,
+    pub editor_id: Option<String>,
+}
 
 /// One referencer row enriched with record type (refs command output).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +128,12 @@ pub struct RefRow {
     pub editor_id: Option<String>,
     pub name: Option<String>,
     pub offset: u64,
+    /// Hop distance from the lookup target (1 = direct reference).
+    pub depth: usize,
+    /// Intermediate nodes on the path from target to this record.
+    /// Empty when depth = 1 (direct reference).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<RefPathNode>,
 }
 
 /// Referenced-by result with total count and optional cap flag.
@@ -197,7 +211,7 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
                 crate::diff::apply_type_filter(&mut result, record_type);
                 return Ok(serde_json::to_value(&result)?);
             }
-            // Lock in key order (deadlock-safe); hold db_b as mut for sources pass.
+            // Lock in key order (deadlock-safe).
             let mut result = if key_a < key_b {
                 let db_a = arc_a.lock().unwrap();
                 let db_b = arc_b.lock().unwrap();
@@ -208,13 +222,6 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
                 diff_databases(&db_a, &db_b)?
             };
             crate::diff::apply_type_filter(&mut result, record_type);
-            // Now take db_b mutably for the sources enrichment pass.
-            let mut db_b = arc_b.lock().unwrap();
-            crate::diff::enrich_added_sources(
-                &mut db_b,
-                &mut result,
-                &crate::sources::SourcesOptions::default(),
-            )?;
             Ok(serde_json::to_value(&result)?)
         }
         _ => {
@@ -284,9 +291,9 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             let results = db.search(pattern, &types, *field, *limit)?;
             Ok(serde_json::to_value(&results)?)
         }
-        Op::ReferencedBy { sel, limit } => {
+        Op::ReferencedBy { sel, limit, depth } => {
             let target = resolve_sel(db, sel)?;
-            let ref_list = referenced_by_enriched(db, target, *limit)?;
+            let ref_list = referenced_by_enriched(db, target, *depth, *limit)?;
             Ok(serde_json::to_value(&ref_list)?)
         }
         Op::ListGroups => {
@@ -306,14 +313,6 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
         }
         Op::Diff { .. } => {
             bail!("Diff must be dispatched via registry with two ESM paths");
-        }
-        Op::Sources { sel, max_depth } => {
-            let target = resolve_sel(db, sel)?;
-            let opts = crate::sources::SourcesOptions {
-                max_depth: max_depth.unwrap_or(crate::sources::DEFAULT_MAX_DEPTH),
-            };
-            let list = crate::sources::sources_of(db, target, &opts)?;
-            Ok(serde_json::to_value(&list)?)
         }
     }
 }
@@ -353,41 +352,86 @@ fn record_resolved(
     }
 }
 
+/// Walk reverse references from `target` up to `depth` hops using BFS.
+///
+/// A `depth` of 1 (the default) returns the same set as the old single-level
+/// lookup.  Higher values follow the reverse-reference graph breadth-first,
+/// visiting each node at most once (cycle-safe).  `depth` is clamped to
+/// `[1, DEFAULT_MAX_DEPTH]`; passing 0 is treated as 1.
+///
+/// Each `RefRow` carries:
+/// - `depth`: hop distance from `target` (1 = direct referencer).
+/// - `path`: intermediate nodes between `target` and this row; empty for
+///   depth-1 rows (and omitted from serialized JSON when empty).
 pub fn referenced_by_enriched(
     db: &mut Database,
     target: FormId,
+    depth: usize,
     limit: usize,
 ) -> anyhow::Result<RefList> {
-    let mut rows = db.referenced_by(target)?;
+    let max_depth = depth.clamp(1, DEFAULT_MAX_DEPTH);
+
+    // `seen` is both the dedup set for emitted results and the BFS visited set.
+    // Seeding with `target` prevents the target itself from appearing as its
+    // own result and breaks any self-referential cycles.
+    let mut seen: HashSet<FormId> = HashSet::new();
+    seen.insert(target);
+
+    // Queue entries: (node_to_expand, path_of_intermediate_hops_leading_to_it).
+    // The path does NOT include the target or the node itself; it holds the
+    // nodes that were emitted at earlier depths on the way here.
+    let mut queue: VecDeque<(FormId, Vec<RefPathNode>)> = VecDeque::new();
+    queue.push_back((target, Vec::new()));
+
+    let mut rows: Vec<RefRow> = Vec::new();
+
+    while let Some((current, path_here)) = queue.pop_front() {
+        for r in db.referenced_by(current)? {
+            let fid = match crate::parse_form_id_input(&r.form_id) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            if !seen.insert(fid) {
+                continue; // already emitted via a shorter or equal-length path
+            }
+
+            let record_type = db.index.get_by_formid(fid).map(|m| m.signature.clone());
+            let hop_depth = path_here.len() + 1;
+
+            rows.push(RefRow {
+                form_id: r.form_id.clone(),
+                record_type: record_type.clone(),
+                editor_id: r.editor_id.clone(),
+                name: r.name.clone(),
+                offset: r.offset,
+                depth: hop_depth,
+                path: path_here.clone(),
+            });
+
+            if hop_depth < max_depth {
+                let mut new_path = path_here.clone();
+                new_path.push(RefPathNode {
+                    form_id: r.form_id,
+                    record_type,
+                    editor_id: r.editor_id,
+                });
+                queue.push_back((fid, new_path));
+            }
+        }
+    }
+
     rows.sort_by_key(|r| {
         crate::parse_form_id_input(&r.form_id)
             .map(|f| f.0)
             .unwrap_or(u32::MAX)
     });
 
-    let enriched: Vec<RefRow> = rows
-        .into_iter()
-        .map(|r| {
-            let record_type = crate::parse_form_id_input(&r.form_id)
-                .ok()
-                .and_then(|fid| db.index.get_by_formid(fid))
-                .map(|m| m.signature.clone());
-            RefRow {
-                form_id: r.form_id,
-                record_type,
-                editor_id: r.editor_id,
-                name: r.name,
-                offset: r.offset,
-            }
-        })
-        .collect();
-
-    let total = enriched.len();
+    let total = rows.len();
     let capped = limit > 0 && total > limit;
     let limited: Vec<RefRow> = if limit > 0 {
-        enriched.into_iter().take(limit).collect()
+        rows.into_iter().take(limit).collect()
     } else {
-        enriched
+        rows
     };
 
     Ok(RefList {

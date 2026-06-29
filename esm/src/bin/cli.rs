@@ -4,7 +4,7 @@ use esm::backend::{start_daemon_process, stop_daemon, LocalBackend, QueryBackend
 use esm::ipc::{Op, RecordSel};
 use esm::{
     parse_form_id_input, CoverageReport, Database, DiffResult, Markers, RawRecordView, RecordRow,
-    RefList, ResolveDepth, SearchField, SourceKind, SourceList,
+    RefList, ResolveDepth, SearchField,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -173,6 +173,9 @@ enum Commands {
         edid: Option<String>,
         #[arg(long, default_value_t = 100)]
         limit: usize,
+        /// Reverse-reference walk depth (1 = direct refs only, up to 6).
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
         #[arg(long)]
         json: bool,
         #[arg(long)]
@@ -203,22 +206,6 @@ enum Commands {
         strings_dir: Option<PathBuf>,
         #[arg(long, default_value = "en")]
         lang: String,
-    },
-    Sources {
-        file: PathBuf,
-        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
-        #[arg(conflicts_with_all = ["formid", "edid"])]
-        target: Option<String>,
-        #[arg(long, conflicts_with = "edid")]
-        formid: Option<String>,
-        #[arg(long, conflicts_with = "formid")]
-        edid: Option<String>,
-        #[arg(long, default_value_t = esm::sources::DEFAULT_MAX_DEPTH)]
-        max_depth: usize,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
     },
 }
 
@@ -294,6 +281,9 @@ enum ReplCommand {
         edid: Option<String>,
         #[arg(long, default_value_t = 100)]
         limit: usize,
+        /// Reverse-reference walk depth (1 = direct refs only, up to 6).
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
         #[arg(long)]
         json: bool,
         #[arg(long)]
@@ -307,21 +297,6 @@ enum ReplCommand {
         search_in: SearchInArg,
         #[arg(long, default_value_t = 100)]
         limit: usize,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
-    },
-    Sources {
-        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
-        #[arg(conflicts_with_all = ["formid", "edid"])]
-        target: Option<String>,
-        #[arg(long, conflicts_with = "edid")]
-        formid: Option<String>,
-        #[arg(long, conflicts_with = "formid")]
-        edid: Option<String>,
-        #[arg(long, default_value_t = esm::sources::DEFAULT_MAX_DEPTH)]
-        max_depth: usize,
         #[arg(long)]
         json: bool,
         #[arg(long)]
@@ -412,7 +387,6 @@ fn main() -> anyhow::Result<()> {
             Commands::Coverage { file, .. } => file.clone(),
             Commands::Refs { file, .. } => file.clone(),
             Commands::Search { file, .. } => file.clone(),
-            Commands::Sources { file, .. } => file.clone(),
             Commands::Daemon { .. } => unreachable!(),
         };
         match cmd {
@@ -539,6 +513,7 @@ fn main() -> anyhow::Result<()> {
                 formid,
                 edid,
                 limit,
+                depth,
                 json,
                 pretty,
                 localization_ba2,
@@ -551,6 +526,7 @@ fn main() -> anyhow::Result<()> {
                 edid,
                 target,
                 limit,
+                depth,
                 json,
                 pretty,
                 localization_ba2,
@@ -582,24 +558,6 @@ fn main() -> anyhow::Result<()> {
                 strings_dir,
                 &lang,
                 daemon_mode,
-            )?,
-            Commands::Sources {
-                file,
-                target,
-                formid,
-                edid,
-                max_depth,
-                json,
-                pretty,
-            } => cmd_sources(
-                &mut backend,
-                &file,
-                formid,
-                edid,
-                target,
-                max_depth,
-                json,
-                pretty,
             )?,
             Commands::Daemon { .. } => unreachable!(),
         }
@@ -638,9 +596,7 @@ fn run_repl(esm: &Path, backend: &mut Backend) -> anyhow::Result<()> {
             break;
         }
         if line == "help" {
-            eprintln!(
-                "Commands: info, get, list, search, refs, sources, tree, diff, coverage, quit"
-            );
+            eprintln!("Commands: info, get, list, search, refs, tree, diff, coverage, quit");
             continue;
         }
         let tokens: Vec<String> = shlex::split(line)
@@ -723,10 +679,11 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             formid,
             edid,
             limit,
+            depth,
             json,
             pretty,
         } => cmd_refs(
-            backend, esm, formid, edid, target, limit, json, pretty, None, None, "en", true,
+            backend, esm, formid, edid, target, limit, depth, json, pretty, None, None, "en", true,
         ),
         ReplCommand::Search {
             pattern,
@@ -738,14 +695,6 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
         } => cmd_search(
             backend, esm, &pattern, types, search_in, limit, json, pretty, None, None, "en", true,
         ),
-        ReplCommand::Sources {
-            target,
-            formid,
-            edid,
-            max_depth,
-            json,
-            pretty,
-        } => cmd_sources(backend, esm, formid, edid, target, max_depth, json, pretty),
     }
 }
 
@@ -1025,6 +974,7 @@ fn cmd_refs(
     edid: Option<String>,
     target: Option<String>,
     limit: usize,
+    depth: usize,
     json: bool,
     pretty: bool,
     localization_ba2: Option<PathBuf>,
@@ -1043,12 +993,12 @@ fn cmd_refs(
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         let form_id = resolve_form_id_local(&mut db, formid, edid, target)?;
-        let ref_list = esm::ipc::referenced_by_enriched(&mut db, form_id, limit)?;
+        let ref_list = esm::ipc::referenced_by_enriched(&mut db, form_id, depth, limit)?;
         print_refs(&ref_list, json, pretty);
         return Ok(());
     }
     let sel = record_sel(formid, edid, target)?;
-    let v = backend.run(file, Op::ReferencedBy { sel, limit })?;
+    let v = backend.run(file, Op::ReferencedBy { sel, limit, depth })?;
     let ref_list: RefList = serde_json::from_value(v)?;
     print_refs(&ref_list, json, pretty);
     Ok(())
@@ -1068,6 +1018,10 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
             if let Some(ref name) = row.name {
                 print!("  {}", name);
             }
+            if !row.path.is_empty() {
+                let chain: Vec<_> = row.path.iter().map(|n| n.form_id.as_str()).collect();
+                print!("  via {}", chain.join(" → "));
+            }
             println!();
         }
         if ref_list.rows.is_empty() {
@@ -1080,70 +1034,6 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
             ref_list.rows.len(),
             ref_list.total
         );
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn cmd_sources(
-    backend: &mut Backend,
-    file: &Path,
-    formid: Option<String>,
-    edid: Option<String>,
-    target: Option<String>,
-    max_depth: usize,
-    json: bool,
-    pretty: bool,
-) -> anyhow::Result<()> {
-    let sel = record_sel(formid, edid, target)?;
-    let v = backend.run(
-        file,
-        Op::Sources {
-            sel,
-            max_depth: Some(max_depth),
-        },
-    )?;
-    let list: SourceList = serde_json::from_value(v)?;
-    print_sources(&list, json, pretty);
-    Ok(())
-}
-
-fn source_kind_label(kind: SourceKind) -> &'static str {
-    match kind {
-        SourceKind::LeveledList => "loot_table",
-        SourceKind::Container => "container",
-        SourceKind::Recipe => "recipe",
-        SourceKind::Quest => "quest",
-        SourceKind::NpcDrop => "npc",
-        SourceKind::Vendor => "vendor",
-        SourceKind::World => "world",
-    }
-}
-
-fn print_sources(list: &SourceList, json: bool, pretty: bool) {
-    if json {
-        print_json(&serde_json::to_value(list).unwrap(), pretty);
-        return;
-    }
-    if list.sources.is_empty() {
-        eprintln!("note: no sources found for {}", list.target);
-        return;
-    }
-    for src in &list.sources {
-        print!(
-            "{}  {}  {}  {}",
-            src.form_id,
-            src.record_type,
-            source_kind_label(src.kind),
-            src.editor_id.as_deref().unwrap_or("<no edid>")
-        );
-        if let Some(ref name) = src.name {
-            print!("  {}", name);
-        }
-        if !src.path.is_empty() {
-            let chain: Vec<_> = src.path.iter().map(|n| n.form_id.as_str()).collect();
-            print!("  via {}", chain.join(" → "));
-        }
-        println!();
     }
 }
 
@@ -1393,13 +1283,8 @@ fn cmd_diff(
 
         let mut result = esm::diff::diff_databases(&db_a, &db_b)?;
 
-        // Apply optional --type filter and enrich sources.
+        // Apply optional --type filter.
         esm::diff::apply_type_filter(&mut result, &record_type.map(str::to_string));
-        esm::diff::enrich_added_sources(
-            &mut db_b,
-            &mut result,
-            &esm::sources::SourcesOptions::default(),
-        )?;
 
         return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
     }

@@ -78,18 +78,9 @@ pub trait QueryBackend {
         esm: &Path,
         sel: ipc::RecordSel,
         limit: usize,
+        depth: usize,
     ) -> anyhow::Result<ipc::RefList> {
-        let v = self.run(esm, Op::ReferencedBy { sel, limit })?;
-        Ok(serde_json::from_value(v)?)
-    }
-
-    fn sources(
-        &mut self,
-        esm: &Path,
-        sel: ipc::RecordSel,
-        max_depth: Option<usize>,
-    ) -> anyhow::Result<crate::SourceList> {
-        let v = self.run(esm, Op::Sources { sel, max_depth })?;
+        let v = self.run(esm, Op::ReferencedBy { sel, limit, depth })?;
         Ok(serde_json::from_value(v)?)
     }
 

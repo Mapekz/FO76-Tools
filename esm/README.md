@@ -177,7 +177,7 @@ cargo run --release --features server --bin esm-server -- path/to/data --mcp-std
 
 HTTP routes: `GET /info`, `/records/{formid}`, `/records?edid=|type=&limit=`, `/groups`, `/groups/{sig}/children`, `/stub/{offset}`, `/diff`, `/health`. Serves embedded HTML viewer at `/` and `/compare`.
 
-MCP stdio mode implements JSON-RPC 2.0 with five tools: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_search`, `esm_refs`.
+MCP stdio mode implements JSON-RPC 2.0 with six tools: `esm_file_info`, `esm_get_record`, `esm_list_groups`, `esm_list_records`, `esm_search`, `esm_refs` (depth-bound BFS reverse-reference walk; `depth=1` default, up to 6).
 
 ## Library API
 

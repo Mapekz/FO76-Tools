@@ -116,39 +116,26 @@ impl EsmDatabase {
     }
 
     /// Return all records that reference the given FormID or EditorID (auto-detected).
-    #[napi]
-    pub fn referenced_by_id(&self, id: String) -> napi::Result<serde_json::Value> {
-        let sel = RecordSel::from_input(&id)
-            .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-        let mut db = self.inner.lock().unwrap();
-        let fid = resolve_sel(&mut db, sel)?;
-        let rows = db
-            .referenced_by(fid)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        Ok(serde_json::to_value(&rows).unwrap())
-    }
-
-    /// Walk reverse references through leveled lists to terminal drop sources.
     ///
-    /// `id` is a FormID or EditorID (auto-detected). `max_depth` defaults to 6.
+    /// `depth` controls the reverse-reference walk depth (default 1 = direct refs only,
+    /// capped at DEFAULT_MAX_DEPTH = 6). Each returned row includes its hop `depth` and
+    /// an intermediate-node `path` array (empty for depth-1 results).
     #[napi]
-    pub fn sources_of(
+    pub fn referenced_by_id(
         &self,
         id: String,
-        max_depth: Option<u32>,
+        depth: Option<u32>,
     ) -> napi::Result<serde_json::Value> {
         let sel = RecordSel::from_input(&id)
             .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
         let mut db = self.inner.lock().unwrap();
         let fid = resolve_sel(&mut db, sel)?;
-        let opts = esm::SourcesOptions {
-            max_depth: max_depth
-                .map(|d| d as usize)
-                .unwrap_or(esm::sources::DEFAULT_MAX_DEPTH),
-        };
-        let list = esm::sources_of(&mut db, fid, &opts)
+        let walk_depth = depth
+            .map(|d| (d as usize).clamp(1, esm::ipc::DEFAULT_MAX_DEPTH))
+            .unwrap_or(1);
+        let list = esm::ipc::referenced_by_enriched(&mut db, fid, walk_depth, usize::MAX)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        Ok(serde_json::to_value(&list).unwrap())
+        Ok(serde_json::to_value(&list.rows).unwrap())
     }
 }
 

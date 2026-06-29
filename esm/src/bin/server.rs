@@ -356,18 +356,11 @@ async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
     let result = tokio::task::spawn_blocking(move || -> anyhow::Result<esm::diff::DiffResult> {
         let arc_a = registry.get_or_open(&default)?;
         let arc_b = registry.get_or_open(&cmp_path)?;
-        let mut diff = {
+        let diff = {
             let db_a = arc_a.lock().unwrap();
             let db_b = arc_b.lock().unwrap();
             esm::diff::diff_databases(&db_a, &db_b)?
         };
-        // Sources pass requires &mut — take a fresh lock after the immutable borrows end.
-        let mut db_b = arc_b.lock().unwrap();
-        esm::diff::enrich_added_sources(
-            &mut db_b,
-            &mut diff,
-            &esm::sources::SourcesOptions::default(),
-        )?;
         Ok(diff)
     })
     .await;
@@ -518,7 +511,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                     },
                     {
                         "name": "esm_refs",
-                        "description": "List all records that directly reference a given FormID or EditorID (single-level reverse lookup). Useful for finding what uses a specific record — e.g. which leveled lists include a particular item, or which NPCs carry a specific weapon. This is a ONE-LEVEL lookup only. If you want to answer 'where does this item drop / who drops it / how do I obtain it', use esm_sources instead — it walks the full reverse-reference graph through leveled lists automatically.",
+                        "description": "Walk the reverse-reference graph from a FormID or EditorID up to `depth` hops (default 1). depth=1 lists all records that directly reference the target (e.g. which leveled lists include an item, which NPCs carry a weapon). depth=2–6 follows referencers of referencers, useful for questions like 'where does this item ultimately drop?' or 'which quests reference X's leveled list?'. Each result includes its hop distance and the intermediate-node path. Results are deduplicated; each node appears once at its shortest path. The caller decides what counts as a 'terminal source' — filter by record_type to focus on containers, NPCs, quests, etc.",
                         "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
@@ -532,26 +525,10 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 "limit": {
                                     "type": "integer",
                                     "description": "Maximum rows to return (default 100)."
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "name": "esm_sources",
-                        "description": "Find all terminal drop sources for an item by walking the reverse-reference graph recursively through leveled lists (LVLI/LVLN) up to max_depth levels. This is THE tool to answer questions like 'what drops this item?', 'where do I get X?', 'list all sources of Y'. Do NOT hand-roll this with repeated esm_refs calls — esm_sources already does the full recursive walk with deduplication and cycle safety. Each result has a 'kind' field (LeveledList, Container, Recipe, Quest, NpcDrop, Vendor, World) and a 'path' array showing the leveled-list chain that leads to the terminal source.",
-                        "annotations": {"readOnlyHint": true},
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "id": {
-                                    "type": "string",
-                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID of the item to trace — auto-detected by format."
                                 },
-                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
-                                "edid": {"type": "string", "description": "EditorID string (exact match)."},
-                                "max_depth": {
+                                "depth": {
                                     "type": "integer",
-                                    "description": "Maximum leveled-list recursion depth (default 6). Increase only if the graph is known to be unusually deep."
+                                    "description": "Reverse-reference walk depth (default 1, max 6). depth=1 is a single-level lookup. Higher values recurse through the reference graph."
                                 }
                             }
                         }
@@ -671,17 +648,13 @@ fn call_tool_proxy(
         "esm_refs" => {
             let sel = sel_from_args(args)?;
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
-            let refs = backend.referenced_by(esm_path, sel, limit)?;
-            Ok(serde_json::to_string_pretty(&refs)?)
-        }
-        "esm_sources" => {
-            let sel = sel_from_args(args)?;
-            let max_depth = args
-                .get("max_depth")
+            let depth = args
+                .get("depth")
                 .and_then(|v| v.as_u64())
-                .map(|d| d as usize);
-            let sources = backend.sources(esm_path, sel, max_depth)?;
-            Ok(serde_json::to_string_pretty(&sources)?)
+                .map(|d| (d as usize).clamp(1, esm::ipc::DEFAULT_MAX_DEPTH))
+                .unwrap_or(1);
+            let refs = backend.referenced_by(esm_path, sel, limit, depth)?;
+            Ok(serde_json::to_string_pretty(&refs)?)
         }
         _ => anyhow::bail!("unknown tool: {}", name),
     }

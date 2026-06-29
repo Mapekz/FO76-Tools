@@ -49,6 +49,22 @@ export interface RecordRow {
   offset: number
 }
 
+/** One intermediate hop on the path from the lookup target to a result record. */
+export interface RefPathNode {
+  form_id: string
+  record_type?: string
+  editor_id?: string
+}
+
+/** A referencer row returned by a recursive refs walk (referencedById). */
+export interface RefRow extends RecordRow {
+  record_type?: string
+  /** Hop distance from the lookup target (1 = direct reference). */
+  depth?: number
+  /** Intermediate nodes between target and this row; absent/empty for depth-1 results. */
+  path?: RefPathNode[]
+}
+
 export interface FormIdStub {
   formid: string
   editor_id?: string
@@ -81,6 +97,6 @@ export interface Fo76Api {
   recordByEdid(id: DbId, edid: string): Promise<RecordResult>
   recordById(id: DbId, target: string, resolve?: string): Promise<RecordResult>
   referencedBy(id: DbId, formid: string): Promise<RecordRow[]>
-  referencedById(id: DbId, target: string): Promise<RecordRow[]>
+  referencedById(id: DbId, target: string, depth?: number): Promise<RefRow[]>
   parseFormId(s: string): Promise<string>
 }

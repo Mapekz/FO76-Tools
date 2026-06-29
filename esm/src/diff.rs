@@ -6,7 +6,6 @@
 
 use crate::formid::{parse_formid, FormId};
 use crate::reader::{edid_from_subrecords, lstring_id_from_subrecords};
-use crate::sources::{Source, SourcesOptions};
 use crate::strings::StringKind;
 use crate::Database;
 use anyhow::Context;
@@ -41,10 +40,6 @@ pub struct RecordStub {
     /// Absent for removed/changed stubs and non-gameplay added types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fields: Option<Value>,
-    /// Drop/acquisition sources for *added* records (reverse-reference walk).
-    /// Absent when empty.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub sources: Vec<Source>,
 }
 
 /// A record present in both ESMs whose decoded fields changed.
@@ -324,36 +319,6 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
         }
     }
     None
-}
-
-/// Attach drop/acquisition sources to every added record that has at least one
-/// source.
-///
-/// Must be called *after* [`diff_databases`] against the B-side database (added
-/// records live in B).  Requires `&mut Database` for the lazy xref index, which
-/// is built once on the first call to [`sources_of`] and then reused from the
-/// on-disk cache.
-///
-/// Errors on individual records are logged to stderr and do not abort the walk.
-pub fn enrich_added_sources(
-    b: &mut Database,
-    result: &mut DiffResult,
-    opts: &SourcesOptions,
-) -> anyhow::Result<()> {
-    for stub in &mut result.added {
-        let id = match parse_formid(&stub.form_id) {
-            Ok(id) => id,
-            Err(_) => continue,
-        };
-        match crate::sources::sources_of(b, id, opts) {
-            Ok(list) if !list.sources.is_empty() => {
-                stub.sources = list.sources;
-            }
-            Ok(_) => {}
-            Err(e) => eprintln!("Warning: sources_of {} failed: {e:#}", stub.form_id),
-        }
-    }
-    Ok(())
 }
 
 /// Apply optional record-type filter to a diff result in-place.
