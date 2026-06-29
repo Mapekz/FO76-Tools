@@ -148,6 +148,80 @@ pub fn make_minimal_esm() -> Vec<u8> {
     buf
 }
 
+/// Build an ESM byte buffer for testing the xref (reverse-reference) index:
+///
+/// - TES4 header (24 B, `data_size = 0`)
+/// - GRUP of type WEAP containing two records:
+///   - **WEAP `form_id = 1`** — the *target* record; no subrecords.
+///   - **WEAP `form_id = 2`** — the *referencer* record; carries two
+///     FormID-typed subrecords (`YNAM` = Sound–Pickup and `ZNAM` =
+///     Sound–Putdown) both pointing at `form_id = 1`, so `harvest_formids`
+///     sees the same target FormID **twice** in this single record.
+///
+/// Used to verify that `Database::referenced_by` returns the referencer
+/// exactly once despite the duplicate references (the dedup invariant).
+pub fn make_xref_esm() -> Vec<u8> {
+    // Helper: build a 6-byte subrecord header followed by a 4-byte FormID payload.
+    // sig must be exactly 4 ASCII bytes.
+    fn formid_subrecord(sig: &[u8; 4], form_id: u32) -> Vec<u8> {
+        let mut sr = Vec::with_capacity(10);
+        sr.extend_from_slice(sig); // 4-byte signature
+        sr.extend_from_slice(&4u16.to_le_bytes()); // data_size = 4
+        sr.extend_from_slice(&form_id.to_le_bytes()); // FormID payload
+        sr
+    }
+
+    let ynam = formid_subrecord(b"YNAM", 1); // Sound - Pickup → FormId(1)
+    let znam = formid_subrecord(b"ZNAM", 1); // Sound - Putdown → FormId(1)
+    let rec2_data_size: u32 = (ynam.len() + znam.len()) as u32; // = 20
+
+    // Record sizes (each header is 24 B; record 1 has no payload, record 2 has 20 B payload):
+    let rec1_total: u32 = 24;
+    let rec2_total: u32 = 24 + rec2_data_size;
+    let group_size: u32 = 24 + rec1_total + rec2_total; // group header + both records
+
+    let mut buf = Vec::new();
+
+    // TES4 header
+    buf.extend_from_slice(b"TES4");
+    buf.extend_from_slice(&0u32.to_le_bytes()); // data_size = 0
+    buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+    buf.extend_from_slice(&0u32.to_le_bytes()); // form_id
+    buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+    buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
+    buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+
+    // GRUP header
+    buf.extend_from_slice(b"GRUP");
+    buf.extend_from_slice(&group_size.to_le_bytes());
+    buf.extend_from_slice(&u32::from_le_bytes(*b"WEAP").to_le_bytes()); // label
+    buf.extend_from_slice(&0i32.to_le_bytes()); // group_type = 0 (top-level)
+    buf.extend_from_slice(&0u32.to_le_bytes()); // stamp
+    buf.extend_from_slice(&0u32.to_le_bytes()); // unknown
+
+    // WEAP record 1 (target): form_id = 1, no subrecords
+    buf.extend_from_slice(b"WEAP");
+    buf.extend_from_slice(&0u32.to_le_bytes()); // data_size = 0
+    buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+    buf.extend_from_slice(&1u32.to_le_bytes()); // form_id = 1
+    buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+    buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
+    buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+
+    // WEAP record 2 (referencer): form_id = 2, YNAM + ZNAM both pointing at form_id = 1
+    buf.extend_from_slice(b"WEAP");
+    buf.extend_from_slice(&rec2_data_size.to_le_bytes()); // data_size = 20
+    buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+    buf.extend_from_slice(&2u32.to_le_bytes()); // form_id = 2
+    buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+    buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
+    buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+    buf.extend_from_slice(&ynam);
+    buf.extend_from_slice(&znam);
+
+    buf
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Decode-quality assertions
 // ──────────────────────────────────────────────────────────────────────────────

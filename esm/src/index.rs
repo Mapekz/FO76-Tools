@@ -9,13 +9,13 @@ use crate::strings::Localization;
 use crate::tree::TreeIndex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-const CACHE_VERSION: u32 = 8;
+const CACHE_VERSION: u32 = 9;
 
 /// Per-record data stored in the lazy search index.
 ///
@@ -223,8 +223,14 @@ impl Index {
             let fields = decode_record(&ctx, &rec.header.signature, &rec.subrecords);
             let mut refs = Vec::new();
             harvest_formids(&fields, &mut refs);
+            // Dedup within this record: a single record may reference the same
+            // target FormID multiple times (e.g. the same FormID in two
+            // separate subrecords, or repeated array entries).  We want each
+            // referencing record to appear exactly once per target, regardless
+            // of how many times it references it internally.
+            let mut seen = HashSet::new();
             for target in refs {
-                if target != referencer && form_index.contains_key(&target) {
+                if target != referencer && form_index.contains_key(&target) && seen.insert(target) {
                     xref.entry(target).or_default().push(referencer);
                 }
             }
