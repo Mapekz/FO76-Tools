@@ -80,6 +80,10 @@ enum Commands {
         r#type: String,
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
         #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
         localization_ba2: Option<PathBuf>,
         #[arg(long, conflicts_with = "localization_ba2")]
@@ -241,6 +245,10 @@ enum ReplCommand {
         r#type: String,
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
     },
     Diff {
         file_b: PathBuf,
@@ -425,6 +433,8 @@ fn main() -> anyhow::Result<()> {
                 file,
                 r#type,
                 limit,
+                json,
+                pretty,
                 localization_ba2,
                 strings_dir,
                 lang,
@@ -433,6 +443,8 @@ fn main() -> anyhow::Result<()> {
                 &file,
                 &r#type,
                 limit,
+                json,
+                pretty,
                 localization_ba2,
                 strings_dir,
                 &lang,
@@ -632,9 +644,14 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             true,  // daemon_mode (REPL is always daemon-backed)
             false, // mmap_index (not applicable in REPL)
         ),
-        ReplCommand::List { r#type, limit } => {
-            cmd_list(backend, esm, &r#type, limit, None, None, "en", true)
-        }
+        ReplCommand::List {
+            r#type,
+            limit,
+            json,
+            pretty,
+        } => cmd_list(
+            backend, esm, &r#type, limit, json, pretty, None, None, "en", true,
+        ),
         ReplCommand::Diff {
             file_b,
             record_type,
@@ -921,6 +938,8 @@ fn cmd_list(
     file: &Path,
     sig: &str,
     limit: usize,
+    json: bool,
+    pretty: bool,
     localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
@@ -936,34 +955,21 @@ fn cmd_list(
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
-        let entries = db.list_by_type(sig, limit)?;
-        print_list_entries(&entries);
+        let rows = db.list_type_records(sig, 0, limit)?;
+        print_record_rows(&rows, limit, json, pretty);
         return Ok(());
     }
     let v = backend.run(
         file,
-        Op::ListByType {
+        Op::ListTypeRecords {
             sig: sig.to_string(),
+            offset: 0,
             limit,
         },
     )?;
-    let entries: Vec<esm::ListEntry> = serde_json::from_value(v)?;
-    print_list_entries(&entries);
+    let rows: Vec<RecordRow> = serde_json::from_value(v)?;
+    print_record_rows(&rows, limit, json, pretty);
     Ok(())
-}
-
-fn print_list_entries(entries: &[esm::ListEntry]) {
-    for e in entries {
-        print!(
-            "{}  {}",
-            e.form_id,
-            e.editor_id.as_deref().unwrap_or("<no edid>")
-        );
-        if let Some(full) = &e.full_lstring_id {
-            print!("  FULL={}", full);
-        }
-        println!();
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1008,24 +1014,44 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
     if json {
         print_json(&serde_json::to_value(&ref_list.rows).unwrap(), pretty);
     } else {
-        for row in &ref_list.rows {
-            print!(
-                "{}  {}  {}",
-                row.form_id,
-                row.record_type.as_deref().unwrap_or("????"),
-                row.editor_id.as_deref().unwrap_or("<no edid>")
-            );
-            if let Some(ref name) = row.name {
-                print!("  {}", name);
-            }
-            if !row.path.is_empty() {
-                let chain: Vec<_> = row.path.iter().map(|n| n.form_id.as_str()).collect();
-                print!("  via {}", chain.join(" → "));
-            }
-            println!();
-        }
         if ref_list.rows.is_empty() {
             eprintln!("note: no records reference {}", ref_list.target);
+        } else {
+            // Include a VIA column only when at least one row has a multi-hop path.
+            let has_via = ref_list.rows.iter().any(|r| !r.path.is_empty());
+            let table_rows: Vec<Vec<String>> = ref_list
+                .rows
+                .iter()
+                .map(|row| {
+                    let via = if !row.path.is_empty() {
+                        let chain: Vec<_> = row.path.iter().map(|n| n.form_id.as_str()).collect();
+                        chain.join(" → ")
+                    } else {
+                        String::new()
+                    };
+                    if has_via {
+                        vec![
+                            row.form_id.clone(),
+                            row.record_type.as_deref().unwrap_or("").to_string(),
+                            row.editor_id.as_deref().unwrap_or("").to_string(),
+                            row.name.as_deref().unwrap_or("").to_string(),
+                            via,
+                        ]
+                    } else {
+                        vec![
+                            row.form_id.clone(),
+                            row.record_type.as_deref().unwrap_or("").to_string(),
+                            row.editor_id.as_deref().unwrap_or("").to_string(),
+                            row.name.as_deref().unwrap_or("").to_string(),
+                        ]
+                    }
+                })
+                .collect();
+            if has_via {
+                print_record_table(&["FORMID", "TYPE", "EDID", "NAME", "VIA"], &table_rows);
+            } else {
+                print_record_table(&["FORMID", "TYPE", "EDID", "NAME"], &table_rows);
+            }
         }
     }
     if ref_list.capped {
@@ -1087,22 +1113,69 @@ fn cmd_search(
     Ok(())
 }
 
-fn print_search_results(results: &[RecordRow], limit: usize, json: bool, pretty: bool) {
-    let capped = limit > 0 && results.len() == limit;
-    if json {
-        print_json(&serde_json::to_value(results).unwrap(), pretty);
-    } else {
-        for row in results {
-            print!(
-                "{}  {}",
-                row.form_id,
-                row.editor_id.as_deref().unwrap_or("<no edid>")
-            );
-            if let Some(ref name) = row.name {
-                print!("  {}", name);
+fn print_record_table(headers: &[&str], rows: &[Vec<String>]) {
+    if rows.is_empty() {
+        return;
+    }
+    // Compute column widths: max of header char-count and any cell char-count.
+    let ncols = headers.len();
+    let mut widths: Vec<usize> = headers.iter().map(|h| h.chars().count()).collect();
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < ncols {
+                widths[i] = widths[i].max(cell.chars().count());
             }
-            println!();
         }
+    }
+    // Print header.
+    let header_parts: Vec<String> = headers
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            if i + 1 < ncols {
+                format!("{:<width$}", h, width = widths[i])
+            } else {
+                h.to_string()
+            }
+        })
+        .collect();
+    println!("{}", header_parts.join("  "));
+    // Print rows.
+    for row in rows {
+        let parts: Vec<String> = (0..ncols)
+            .map(|i| {
+                let cell = row.get(i).map(|s| s.as_str()).unwrap_or("");
+                if i + 1 < ncols {
+                    format!("{:<width$}", cell, width = widths[i])
+                } else {
+                    cell.to_string()
+                }
+            })
+            .collect();
+        println!("{}", parts.join("  "));
+    }
+}
+
+/// Render a `&[RecordRow]` as an aligned table (FORMID / TYPE / EDID / NAME columns).
+/// When `json` is true, emit the rows as JSON instead. `limit` is used only for
+/// the "capped" stderr note.
+fn print_record_rows(rows: &[RecordRow], limit: usize, json: bool, pretty: bool) {
+    let capped = limit > 0 && rows.len() == limit;
+    if json {
+        print_json(&serde_json::to_value(rows).unwrap(), pretty);
+    } else {
+        let table_rows: Vec<Vec<String>> = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r.form_id.clone(),
+                    r.record_type.as_deref().unwrap_or("").to_string(),
+                    r.editor_id.as_deref().unwrap_or("").to_string(),
+                    r.name.as_deref().unwrap_or("").to_string(),
+                ]
+            })
+            .collect();
+        print_record_table(&["FORMID", "TYPE", "EDID", "NAME"], &table_rows);
     }
     if capped {
         eprintln!(
@@ -1110,6 +1183,10 @@ fn print_search_results(results: &[RecordRow], limit: usize, json: bool, pretty:
             limit
         );
     }
+}
+
+fn print_search_results(results: &[RecordRow], limit: usize, json: bool, pretty: bool) {
+    print_record_rows(results, limit, json, pretty);
 }
 
 fn resolve_form_id_local(
