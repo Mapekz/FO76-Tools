@@ -79,6 +79,11 @@ pub enum Op {
         sig: String,
         limit: usize,
     },
+    ListTypeRecords {
+        sig: String,
+        offset: usize,
+        limit: usize,
+    },
     Search {
         pattern: String,
         types: Vec<String>,
@@ -268,6 +273,10 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
         Op::ListByType { sig, limit } => {
             let entries = db.list_by_type(sig, *limit)?;
             Ok(serde_json::to_value(&entries)?)
+        }
+        Op::ListTypeRecords { sig, offset, limit } => {
+            let rows = db.list_type_records(sig, *offset, *limit)?;
+            Ok(serde_json::to_value(&rows)?)
         }
         Op::Search {
             pattern,

@@ -83,10 +83,11 @@ pub struct ListEntry {
     pub full_lstring_id: Option<String>,
 }
 
-/// A tree row combining FormID, EditorID, and resolved translated name.
+/// A tree row combining FormID, record type, EditorID, and resolved translated name.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordRow {
     pub form_id: String,
+    pub record_type: Option<String>,
     pub editor_id: Option<String>,
     pub name: Option<String>,
     pub offset: u64,
@@ -450,16 +451,15 @@ impl Database {
                 continue;
             }
 
-            let offset = self
-                .index
-                .get_by_formid(*form_id)
-                .map(|m| m.offset)
-                .unwrap_or(0);
+            let meta = self.index.get_by_formid(*form_id);
+            let offset = meta.map(|m| m.offset).unwrap_or(0);
+            let record_type = meta.map(|m| m.signature.clone());
 
             matches.push((
                 form_id.raw(),
                 RecordRow {
                     form_id: form_id.display(),
+                    record_type,
                     editor_id: smeta.editor_id.clone(),
                     name,
                     offset,
@@ -490,16 +490,16 @@ impl Database {
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
-        let records: Vec<(FormId, u64)> = self
+        let records: Vec<(FormId, u64, String)> = self
             .index
             .records_by_type(sig)
             .into_iter()
             .skip(offset)
             .take(limit)
-            .map(|(fid, meta)| (fid, meta.offset))
+            .map(|(fid, meta)| (fid, meta.offset, meta.signature.clone()))
             .collect();
         let mut out = Vec::new();
-        for (form_id, rec_offset) in records {
+        for (form_id, rec_offset, record_type) in records {
             let rec = self.esm.parse_record_at(rec_offset)?;
             let editor_id = edid_from_subrecords(&rec.subrecords);
             let name =
@@ -511,6 +511,7 @@ impl Database {
                 });
             out.push(RecordRow {
                 form_id: form_id.display(),
+                record_type: Some(record_type),
                 editor_id,
                 name,
                 offset: rec_offset,
@@ -551,6 +552,7 @@ impl Database {
                 });
             out.push(RecordRow {
                 form_id: referencer.display(),
+                record_type: Some(meta.signature.clone()),
                 editor_id,
                 name,
                 offset: meta.offset,

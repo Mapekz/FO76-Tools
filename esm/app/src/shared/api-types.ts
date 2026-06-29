@@ -44,6 +44,7 @@ export interface GroupNode {
 
 export interface RecordRow {
   form_id: string
+  record_type?: string
   editor_id?: string
   name?: string
   offset: number
