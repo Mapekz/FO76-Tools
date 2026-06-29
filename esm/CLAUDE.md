@@ -46,7 +46,7 @@ Clean layering — edit at the right level:
 | `src/wildcard.rs` | Case-insensitive `*`-wildcard matcher; has rustdoc doctest |
 | `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
 | `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs`, `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
-| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); five MCP tools: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_search`, `esm_refs`; `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
+| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); seven read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs`, `esm_sources`; `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Mutex<Database>`); `#[napi]` async methods |
 | `app/` | Electron GUI ("FO76 ESM Viewer"); main/preload/renderer; consumes the N-API addon |
 
@@ -158,7 +158,7 @@ The `.esm.midx` file is written automatically whenever the `.esm.idx` is freshly
 }
 ```
 
-The server exposes five tools: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_search`, `esm_refs`. Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
+The server exposes seven read-only tools (all proxy to the warm daemon): `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none|stub|full`, default `stub` — references are annotated with EditorID+name inline), `esm_list_groups` (type inventory / table of contents), `esm_list_records`, `esm_refs` (single-level reverse lookup), `esm_sources` (full recursive leveled-list walk to terminal drop sources — use this for "where does X drop?" questions, not repeated `esm_refs` calls). Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
 
 ## Known coverage drift (vs TES5Edit)
 

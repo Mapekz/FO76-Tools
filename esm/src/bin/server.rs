@@ -435,69 +435,124 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                 "tools": [
                     {
                         "name": "esm_file_info",
-                        "description": "Get ESM file metadata (version, record count, masters)",
+                        "description": "Return header metadata for the current ESM: version, author, description, total record count, and the list of master (.esm) dependencies. Call this first to orient yourself on the file.",
+                        "annotations": {"readOnlyHint": true},
                         "inputSchema": {"type": "object", "properties": {}}
                     },
                     {
-                        "name": "esm_get_record",
-                        "description": "Get a decoded record by FormID or EditorID",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "id": {"type": "string", "description": "FormID or EditorID (auto-detected)"},
-                                "formid": {"type": "string"},
-                                "edid": {"type": "string"}
-                            }
-                        }
-                    },
-                    {
-                        "name": "esm_list_records",
-                        "description": "List records of a given 4-character type signature",
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "type": {"type": "string"},
-                                "limit": {"type": "integer"}
-                            },
-                            "required": ["type"]
-                        }
-                    },
-                    {
                         "name": "esm_search",
-                        "description": "Search records by EditorID and/or display name",
+                        "description": "Search for records by EditorID and/or display name using case-insensitive wildcard patterns (use * for any substring). This is the first step to turn a fuzzy name into concrete FormIDs. Each result includes the record type (e.g. WEAP, MISC, OMOD) so you can disambiguate between similarly-named records — for example, the droppable loose-mod MISC item vs the abstract OMOD object-mod. Narrow the result set with the optional 'types' filter.",
+                        "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "pattern": {"type": "string"},
-                                "types": {"type": "array", "items": {"type": "string"}},
-                                "limit": {"type": "integer"}
+                                "pattern": {
+                                    "type": "string",
+                                    "description": "Wildcard pattern matched against EditorID and display name (e.g. \"Bully*\", \"*Rifle*\"). Use * freely; matching is case-insensitive."
+                                },
+                                "types": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Optional list of 4-character record-type signatures to restrict results (e.g. [\"WEAP\", \"MISC\"]). Omit to search all types. Call esm_list_groups first if you are unsure which signatures exist."
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Maximum results to return (default 100)."
+                                }
                             },
                             "required": ["pattern"]
                         }
                     },
                     {
-                        "name": "esm_refs",
-                        "description": "List records that reference a given FormID or EditorID",
+                        "name": "esm_get_record",
+                        "description": "Fetch and decode a single record by FormID or EditorID. Use this to inspect the full field layout of a record after identifying it with esm_search. The 'resolve' parameter controls how nested FormID references are rendered: 'stub' (default) annotates each reference inline with its EditorID and display name — saving round-trips; 'full' inlines the complete referenced records (richer but larger payloads); 'none' leaves raw hex FormIDs unchanged. Supply exactly one of 'id', 'formid', or 'edid'.",
+                        "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "id": {"type": "string", "description": "FormID or EditorID (auto-detected)"},
-                                "formid": {"type": "string"},
-                                "edid": {"type": "string"},
-                                "limit": {"type": "integer"}
+                                "id": {
+                                    "type": "string",
+                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                },
+                                "formid": {
+                                    "type": "string",
+                                    "description": "FormID as a hex string (e.g. \"0x00463F\") or decimal integer."
+                                },
+                                "edid": {
+                                    "type": "string",
+                                    "description": "EditorID string (exact match)."
+                                },
+                                "resolve": {
+                                    "type": "string",
+                                    "enum": ["none", "stub", "full"],
+                                    "default": "stub",
+                                    "description": "How to render nested FormID references. 'stub' (default): annotate each reference with its EditorID + name — avoids extra round-trips. 'full': inline entire referenced records up to 2 levels. 'none': leave raw hex FormIDs unchanged."
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "esm_list_groups",
+                        "description": "Return the top-level GRUP inventory of the ESM — the full table of contents showing which record-type signatures are present and how many records each contains. Call this before esm_list_records or esm_search when you are unsure which 4-character type signatures exist (e.g. WEAP, MISC, NPC_, LVLI).",
+                        "annotations": {"readOnlyHint": true},
+                        "inputSchema": {"type": "object", "properties": {}}
+                    },
+                    {
+                        "name": "esm_list_records",
+                        "description": "List records of a given 4-character type signature (e.g. WEAP, NPC_, MISC). Returns FormID, EditorID, and display name for each record, up to the limit. Useful for enumerating all records of a type before narrowing with esm_search. Use esm_list_groups first to discover valid type signatures. Capped at 500 rows.",
+                        "annotations": {"readOnlyHint": true},
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "description": "4-character record-type signature (e.g. \"WEAP\", \"MISC\", \"NPC_\"). Call esm_list_groups to discover which signatures are present."
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Maximum rows to return (default 50, max 500)."
+                                }
+                            },
+                            "required": ["type"]
+                        }
+                    },
+                    {
+                        "name": "esm_refs",
+                        "description": "List all records that directly reference a given FormID or EditorID (single-level reverse lookup). Useful for finding what uses a specific record — e.g. which leveled lists include a particular item, or which NPCs carry a specific weapon. This is a ONE-LEVEL lookup only. If you want to answer 'where does this item drop / who drops it / how do I obtain it', use esm_sources instead — it walks the full reverse-reference graph through leveled lists automatically.",
+                        "annotations": {"readOnlyHint": true},
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                },
+                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "limit": {
+                                    "type": "integer",
+                                    "description": "Maximum rows to return (default 100)."
+                                }
                             }
                         }
                     },
                     {
                         "name": "esm_sources",
-                        "description": "Walk reverse references through leveled lists to find terminal drop sources",
+                        "description": "Find all terminal drop sources for an item by walking the reverse-reference graph recursively through leveled lists (LVLI/LVLN) up to max_depth levels. This is THE tool to answer questions like 'what drops this item?', 'where do I get X?', 'list all sources of Y'. Do NOT hand-roll this with repeated esm_refs calls — esm_sources already does the full recursive walk with deduplication and cycle safety. Each result has a 'kind' field (LeveledList, Container, Recipe, Quest, NpcDrop, Vendor, World) and a 'path' array showing the leveled-list chain that leads to the terminal source.",
+                        "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
                             "properties": {
-                                "id": {"type": "string", "description": "FormID or EditorID (auto-detected)"},
-                                "formid": {"type": "string"},
-                                "edid": {"type": "string"},
-                                "max_depth": {"type": "integer", "description": "Max leveled-list recursion depth (default 6)"}
+                                "id": {
+                                    "type": "string",
+                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID of the item to trace — auto-detected by format."
+                                },
+                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "max_depth": {
+                                    "type": "integer",
+                                    "description": "Maximum leveled-list recursion depth (default 6). Increase only if the graph is known to be unusually deep."
+                                }
                             }
                         }
                     }
@@ -537,13 +592,30 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Parse `{"id"|"formid"|"edid": ...}` args into a `RecordSel`.
+fn sel_from_args(args: &serde_json::Value) -> anyhow::Result<esm::ipc::RecordSel> {
+    use esm::ipc::RecordSel;
+    let formid = args.get("formid").and_then(|v| v.as_str());
+    let edid = args.get("edid").and_then(|v| v.as_str());
+    let id = args.get("id").and_then(|v| v.as_str());
+    if let Some(fid_str) = formid {
+        Ok(RecordSel::FormId(esm::parse_form_id_input(fid_str)?))
+    } else if let Some(e) = edid {
+        Ok(RecordSel::Edid(e.to_string()))
+    } else if let Some(id) = id {
+        Ok(RecordSel::from_input(id)?)
+    } else {
+        anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
+    }
+}
+
 fn call_tool_proxy(
     backend: &mut RemoteBackend,
     esm_path: &std::path::Path,
     name: &str,
     args: &serde_json::Value,
 ) -> anyhow::Result<String> {
-    use esm::ipc::{Op, RecordSel};
+    use esm::ipc::Op;
     use esm::SearchField;
 
     match name {
@@ -552,25 +624,21 @@ fn call_tool_proxy(
             Ok(serde_json::to_string_pretty(&info)?)
         }
         "esm_get_record" => {
-            let formid = args.get("formid").and_then(|v| v.as_str());
-            let edid = args.get("edid").and_then(|v| v.as_str());
-            let id = args.get("id").and_then(|v| v.as_str());
-            let sel = if let Some(fid_str) = formid {
-                RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
-            } else if let Some(e) = edid {
-                RecordSel::Edid(e.to_string())
-            } else if let Some(id) = id {
-                RecordSel::from_input(id)?
-            } else {
-                anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
+            let sel = sel_from_args(args)?;
+            let depth = match args
+                .get("resolve")
+                .and_then(|v| v.as_str())
+                .unwrap_or("stub")
+            {
+                "full" => esm::ResolveDepth::Full,
+                "none" => esm::ResolveDepth::None,
+                _ => esm::ResolveDepth::Stub, // "stub" is the default
             };
-            let v = backend.run(
-                esm_path,
-                Op::Record {
-                    sel,
-                    depth: esm::ResolveDepth::None,
-                },
-            )?;
+            let v = backend.run(esm_path, Op::Record { sel, depth })?;
+            Ok(serde_json::to_string_pretty(&v)?)
+        }
+        "esm_list_groups" => {
+            let v = backend.run(esm_path, Op::ListGroups)?;
             Ok(serde_json::to_string_pretty(&v)?)
         }
         "esm_list_records" => {
@@ -601,35 +669,13 @@ fn call_tool_proxy(
             Ok(serde_json::to_string_pretty(&results)?)
         }
         "esm_refs" => {
-            let formid = args.get("formid").and_then(|v| v.as_str());
-            let edid = args.get("edid").and_then(|v| v.as_str());
-            let id = args.get("id").and_then(|v| v.as_str());
-            let sel = if let Some(fid_str) = formid {
-                RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
-            } else if let Some(e) = edid {
-                RecordSel::Edid(e.to_string())
-            } else if let Some(id) = id {
-                RecordSel::from_input(id)?
-            } else {
-                anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
-            };
+            let sel = sel_from_args(args)?;
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
             let refs = backend.referenced_by(esm_path, sel, limit)?;
             Ok(serde_json::to_string_pretty(&refs)?)
         }
         "esm_sources" => {
-            let formid = args.get("formid").and_then(|v| v.as_str());
-            let edid = args.get("edid").and_then(|v| v.as_str());
-            let id = args.get("id").and_then(|v| v.as_str());
-            let sel = if let Some(fid_str) = formid {
-                RecordSel::FormId(esm::parse_form_id_input(fid_str)?)
-            } else if let Some(e) = edid {
-                RecordSel::Edid(e.to_string())
-            } else if let Some(id) = id {
-                RecordSel::from_input(id)?
-            } else {
-                anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
-            };
+            let sel = sel_from_args(args)?;
             let max_depth = args
                 .get("max_depth")
                 .and_then(|v| v.as_u64())
