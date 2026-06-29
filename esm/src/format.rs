@@ -62,6 +62,10 @@ impl RecordHeader {
     }
 
     pub fn total_size(&self) -> u64 {
+        // Both operands are u64: HEADER_SIZE is a u64 constant (24) and
+        // data_size (u32) is widened to u64.  The maximum value is
+        // 24 + u32::MAX ≈ 4 GiB, which is well within u64's range.
+        // No overflow is possible with these input types.
         HEADER_SIZE + self.data_size as u64
     }
 }

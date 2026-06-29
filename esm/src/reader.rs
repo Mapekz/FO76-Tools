@@ -124,8 +124,12 @@ impl EsmFile {
         let data = self.data();
         let header = self.record_header_at(offset)?;
         let hdr = RecordHeader::parse(&data[offset as usize..])?;
-        let data_start = offset as usize + HEADER_SIZE as usize;
-        let data_end = data_start + hdr.data_size as usize;
+        let data_start = (offset as usize)
+            .checked_add(HEADER_SIZE as usize)
+            .ok_or_else(|| anyhow::anyhow!("record offset overflow"))?;
+        let data_end = data_start
+            .checked_add(hdr.data_size as usize)
+            .ok_or_else(|| anyhow::anyhow!("record offset overflow"))?;
         if data_end > data.len() {
             bail!("record data out of range");
         }
@@ -144,8 +148,12 @@ impl EsmFile {
     pub fn record_payload_at(&self, offset: u64) -> anyhow::Result<Vec<u8>> {
         let data = self.data();
         let hdr = RecordHeader::parse(&data[offset as usize..])?;
-        let data_start = offset as usize + HEADER_SIZE as usize;
-        let data_end = data_start + hdr.data_size as usize;
+        let data_start = (offset as usize)
+            .checked_add(HEADER_SIZE as usize)
+            .ok_or_else(|| anyhow::anyhow!("record offset overflow"))?;
+        let data_end = data_start
+            .checked_add(hdr.data_size as usize)
+            .ok_or_else(|| anyhow::anyhow!("record offset overflow"))?;
         if data_end > data.len() {
             anyhow::bail!("record data out of range");
         }

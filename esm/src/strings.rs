@@ -58,10 +58,16 @@ impl StringTable {
         let data_size = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
 
         let index_start = 8usize;
-        let index_size = count as usize * 8; // each entry: id(4) + offset(4)
-        let index_end = index_start + index_size;
+        let index_size = (count as usize)
+            .checked_mul(8) // each entry: id(4) + offset(4)
+            .ok_or_else(|| anyhow::anyhow!("strings index size overflow"))?;
+        let index_end = index_start
+            .checked_add(index_size)
+            .ok_or_else(|| anyhow::anyhow!("strings index_end overflow"))?;
         let data_start = index_end;
-        let data_end = data_start + data_size as usize;
+        let data_end = data_start
+            .checked_add(data_size as usize)
+            .ok_or_else(|| anyhow::anyhow!("strings data_end overflow"))?;
 
         if index_end > bytes.len() {
             bail!(
@@ -237,5 +243,49 @@ impl Localization {
             StringKind::DlStrings => self.dlstrings.get(id),
             StringKind::IlStrings => self.ilstrings.get(id),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A string table buffer with `count = u32::MAX` must be rejected.
+    ///
+    /// On 64-bit targets `checked_mul(8)` does not overflow (u32::MAX * 8 fits
+    /// in u64), but the subsequent `index_end > bytes.len()` bounds check
+    /// catches the out-of-range index.  On 32-bit targets the `checked_mul`
+    /// itself overflows.  Either way `StringTable::parse` must return an error.
+    #[test]
+    fn strings_large_count_rejected() {
+        let count: u32 = u32::MAX;
+        let data_size: u32 = 0;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&count.to_le_bytes());
+        buf.extend_from_slice(&data_size.to_le_bytes());
+        // No index or data follows — the bounds check must fire.
+
+        let result = StringTable::parse(&buf, StringKind::Strings);
+        assert!(
+            result.is_err(),
+            "expected error for overflowing count, got Ok"
+        );
+    }
+
+    /// A string table buffer with `data_size` pointing past the end of the
+    /// buffer must be rejected even when `count = 0`.
+    #[test]
+    fn strings_oversized_data_block_rejected() {
+        let count: u32 = 0;
+        let data_size: u32 = u32::MAX;
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&count.to_le_bytes());
+        buf.extend_from_slice(&data_size.to_le_bytes());
+
+        let result = StringTable::parse(&buf, StringKind::Strings);
+        assert!(
+            result.is_err(),
+            "expected error for oversized data_size, got Ok"
+        );
     }
 }

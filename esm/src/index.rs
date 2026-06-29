@@ -174,9 +174,21 @@ impl Index {
         };
 
         let encoded = bincode::serialize(&cache)?;
-        let mut file = fs::File::create(&self.cache_path)?;
-        file.write_all(&encoded)?;
-        Ok(())
+        // Write to a sidecar temp file first, then rename atomically so a crash
+        // mid-write cannot leave a partial (corrupt) cache at the real path.
+        let tmp_path = self.cache_path.with_extension("tmp");
+        let write_result: anyhow::Result<()> = (|| {
+            let mut file = fs::File::create(&tmp_path)?;
+            file.write_all(&encoded)?;
+            Ok(())
+        })();
+        match write_result {
+            Ok(()) => fs::rename(&tmp_path, &self.cache_path).map_err(Into::into),
+            Err(e) => {
+                let _ = fs::remove_file(&tmp_path); // best-effort cleanup
+                Err(e)
+            }
+        }
     }
 
     /// Build the reverse-reference index on first call, then cache it to disk.
@@ -327,6 +339,16 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         return Ok(None);
     }
     let meta = fs::metadata(&esm.path)?;
+    // Reject obviously oversized cache files before reading them into RAM.
+    // A legitimate .esm.idx is a bincode-serialized HashMap of ~100k records
+    // and typically stays well under 300 MiB; anything above 1 GiB is suspect.
+    let cache_meta = fs::metadata(&cache_path)?;
+    if cache_meta.len() > 1024 * 1024 * 1024 {
+        anyhow::bail!(
+            "cache file suspiciously large ({}B), refusing to load",
+            cache_meta.len()
+        );
+    }
     let bytes = fs::read(&cache_path)?;
     let cache: CacheFile = match bincode::deserialize(&bytes) {
         Ok(c) => c,
@@ -433,5 +455,59 @@ fn harvest_formids(val: &Value, out: &mut Vec<FormId>) {
             }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Verify that `try_load_cache` rejects a cache file whose on-disk size
+    /// exceeds 1 GiB without reading the file into RAM.
+    ///
+    /// The cache file is created as a sparse file (no actual disk allocation for
+    /// the hole), so the test completes quickly on any POSIX filesystem.
+    /// The ESM stub is a 4-byte file — `EsmFile::open` only needs a non-empty
+    /// file it can mmap; the content is irrelevant here.
+    #[test]
+    fn try_load_cache_rejects_oversized_cache_file() -> anyhow::Result<()> {
+        let tmp_dir = std::env::temp_dir();
+        let pid = std::process::id();
+        let esm_path = tmp_dir.join(format!("fo76_idx_size_test_{pid}.esm"));
+        let cache_path = {
+            let mut p = esm_path.clone();
+            p.set_extension("esm.idx");
+            p
+        };
+
+        // Minimal non-empty ESM stub for mmap.
+        {
+            let mut f = fs::File::create(&esm_path)?;
+            f.write_all(b"TEST")?;
+        }
+
+        // Sparse file > 1 GiB — the OS allocates no physical blocks for the hole.
+        {
+            let f = fs::File::create(&cache_path)?;
+            f.set_len(1024 * 1024 * 1024 + 1)?;
+        }
+
+        let esm = crate::reader::EsmFile::open(&esm_path)?;
+        let result = try_load_cache(&esm);
+
+        let _ = fs::remove_file(&esm_path);
+        let _ = fs::remove_file(&cache_path);
+
+        assert!(
+            result.is_err(),
+            "expected error for oversized cache file, got Ok"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("suspiciously large"),
+            "unexpected error message: {msg}"
+        );
+        Ok(())
     }
 }

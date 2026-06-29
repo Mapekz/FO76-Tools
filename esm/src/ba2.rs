@@ -77,7 +77,10 @@ impl Ba2Archive {
         //   [32..36] padding     u32  (0xBAADF00D)
         const RECORD_SIZE: usize = 36;
         let records_start = 24usize;
-        let records_end = records_start + file_count as usize * RECORD_SIZE;
+        let records_end = (file_count as usize)
+            .checked_mul(RECORD_SIZE)
+            .and_then(|n| records_start.checked_add(n))
+            .ok_or_else(|| anyhow::anyhow!("BA2 file_count overflows record table size"))?;
         if records_end > data.len() {
             bail!("BA2 file records extend past end of file");
         }
@@ -167,5 +170,52 @@ impl Ba2Archive {
             crate::compress::decompress_lz4(raw, entry.unpacked_size as usize)
                 .with_context(|| format!("LZ4 decompress failed for {}", entry.name))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    /// Build a minimal 24-byte BTDX/GNRL header with the given `file_count`
+    /// and `name_table_offset`.  No record entries or name table follow, so
+    /// any `file_count > 0` will fail the bounds check.
+    fn make_ba2_header(file_count: u32, name_table_offset: u64) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(24);
+        buf.extend_from_slice(b"BTDX");
+        buf.extend_from_slice(&1u32.to_le_bytes()); // version
+        buf.extend_from_slice(b"GNRL");
+        buf.extend_from_slice(&file_count.to_le_bytes());
+        buf.extend_from_slice(&name_table_offset.to_le_bytes());
+        buf
+    }
+
+    /// A BA2 with `file_count = u32::MAX` must be rejected.
+    ///
+    /// On 64-bit targets `checked_mul` does not overflow (u32::MAX * 36 fits in
+    /// u64), but the subsequent `records_end > data.len()` bounds check catches
+    /// the out-of-range table.  On 32-bit targets the `checked_mul` itself
+    /// overflows and returns the error via `ok_or_else`.  Either way the open
+    /// call must return an error before attempting any large allocation.
+    #[test]
+    fn ba2_large_file_count_rejected() -> anyhow::Result<()> {
+        let buf = make_ba2_header(u32::MAX, 24);
+
+        let tmp_path =
+            std::env::temp_dir().join(format!("fo76_ba2_overflow_test_{}.ba2", std::process::id()));
+        {
+            let mut f = std::fs::File::create(&tmp_path)?;
+            f.write_all(&buf)?;
+        }
+
+        let result = Ba2Archive::open(&tmp_path);
+        let _ = std::fs::remove_file(&tmp_path);
+
+        assert!(
+            result.is_err(),
+            "expected error for overflowing file_count, got Ok"
+        );
+        Ok(())
     }
 }
