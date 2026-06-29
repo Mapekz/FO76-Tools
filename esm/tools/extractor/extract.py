@@ -24,7 +24,7 @@ WHITELIST = [
     "AUVF", "AVIF", "AVTR", "BNDS", "BOOK", "BPTD", "CAMS", "CHAL", "CLAS",
     "CLFM", "CLMT", "CMPO", "CMPT", "CNCY", "CNDF", "COBJ", "COEN", "COLL",
     "CONT", "CPRD", "CPTH", "CSEN", "CSTY", "CURV", "DCGF", "DEBR", "DFOB",
-    "DIAL", "DIST", "DLVW", "DMGT", "DOBJ", "DOOR", "ECAT", "EFSH", "EMOT", "ENCH",
+    "DIAL", "DLBR", "DIST", "DLVW", "DMGT", "DOBJ", "DOOR", "ECAT", "EFSH", "EMOT", "ENCH",
     "ENTM", "EQUP", "EXPL", "FACT", "FISH", "FLOR", "FLST", "FSTP", "FSTS",
     "FURN", "GCVR", "GDRY", "GLOB", "GMRW", "GMST", "GRAS", "HAZD", "HDPT",
     "IDLE", "IDLM", "IMAD", "IMGS", "INFO", "INGR", "INNR", "IPCT", "IPDS", "KEYM",
@@ -32,7 +32,7 @@ WHITELIST = [
     "LOUT", "LSCR", "LTEX", "LVLI", "LVLN", "LVLP", "LVPC", "MATO", "MATT",
     "MDSP", "MESG", "MGEF", "MISC", "MOVT", "MSTT", "MSWP", "MUSC", "MUST",
     "NAVI", "NOCM", "NOTE", "NPC_", "OMOD", "OTFT", "OVIS", "PACH", "PACK",
-    "PCRD", "PEPF", "PERK", "PKIN", "PLYT", "PMFT", "PPAK", "PROJ", "QMDL",
+    "PCRD", "PEPF", "PERK", "PGRE", "PHZD", "PKIN", "PLYR", "PLYT", "PMFT", "PMIS", "PPAK", "PROJ", "QMDL",
     "QUST", "RACE", "REFR", "REGN", "RELA", "RESO", "REVB", "RFCT", "RFGP", "SCCO",
     "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM",
     "SOUN", "SPEL", "SPGD", "STAG", "STAT", "STHD", "STMP", "STND", "TACT",
@@ -1237,11 +1237,22 @@ class Extractor:
         # wbWaterData — water reflection/refraction data, XWAT/XXXX.
         self.vars["wbWaterData"] = "wbByteArray(XWAT,'Water Data',0)"
 
-        # wbAmbientColors — ambient color block (XRLL).
-        self.vars["wbAmbientColors"] = "wbByteArray(XRLL,'Ambient Colors',0)"
+        # wbAmbientColors — ambient lighting colors (no-sig struct form; sig form handled in expand_call).
+        # FO76 branch: Directional (6×4-byte color entries) + wbUnused(4) + wbUnused(4).
+        self.vars["wbAmbientColors"] = (
+            "wbStruct('Directional Ambient Lighting Colors',"
+            "[wbStruct('Directional',"
+            "[wbByteColors('X+'),wbByteColors('X-'),wbByteColors('Y+'),"
+            "wbByteColors('Y-'),wbByteColors('Z+'),wbByteColors('Z-')]),"
+            "wbUnused(4),wbUnused(4)])"
+        )
 
-        # wbByteColors — byte-precision color block (XCLP).
-        self.vars["wbByteColors"] = "wbByteArray(XCLP,'Byte Colors',0)"
+        # wbByteColors — byte-precision color (no-sig struct form; sig form handled in expand_call).
+        # 4 bytes: Red u8, Green u8, Blue u8, Unused u8.
+        self.vars["wbByteColors"] = (
+            "wbStruct('Color',"
+            "[wbInteger('Red',itU8),wbInteger('Green',itU8),wbInteger('Blue',itU8),wbUnused(1)])"
+        )
 
         # wbSizePosRot — bounds size + position/rotation (used in XOCP).
         self.vars["wbSizePosRot"] = "wbByteArray(XOCP,'Size/Pos/Rot',0)"
@@ -1615,6 +1626,59 @@ class Extractor:
                         f"wbFloat('Red'), wbFloat('Green'), wbFloat('Blue'), wbFloat('Alpha')])"
                     )
                 return self.vars.get("wbFloatRGBA", expr)
+            # wbByteColors([SIG,] ['name']) → 4-byte struct (R u8, G u8, B u8, Unused u8).
+            # wbDefinitionsCommon.pas:6291-6305.  The no-arg/bare form falls through to
+            # the self.vars["wbByteColors"] substitution above.
+            if fn == "wbByteColors":
+                bc_parts = split_top_level(args)
+                if bc_parts and sig_id(bc_parts[0].strip()):
+                    sig2 = bc_parts[0].strip()
+                    bc_name = unquote(bc_parts[1]) if len(bc_parts) > 1 else "Color"
+                    return (
+                        f"wbStruct({sig2},'{bc_name}',"
+                        f"[wbInteger('Red',itU8),wbInteger('Green',itU8),"
+                        f"wbInteger('Blue',itU8),wbUnused(1)])"
+                    )
+                else:
+                    bc_name = (
+                        unquote(bc_parts[0])
+                        if bc_parts and bc_parts[0].strip().startswith("'")
+                        else "Color"
+                    )
+                    return (
+                        f"wbStruct('{bc_name}',"
+                        f"[wbInteger('Red',itU8),wbInteger('Green',itU8),"
+                        f"wbInteger('Blue',itU8),wbUnused(1)])"
+                    )
+            # wbAmbientColors([SIG,] ['name']) → 32-byte struct (FO76 branch).
+            # Layout: Directional inner-struct (6×4-byte wbByteColors) + wbUnused(4) + wbUnused(4).
+            # wbDefinitionsCommon.pas:6238-6263 (IsFO76 branch = wbUnused(4) for both SF1 slots).
+            if fn == "wbAmbientColors":
+                ac_parts = split_top_level(args)
+                _directional = (
+                    "wbStruct('Directional',"
+                    "[wbByteColors('X+'),wbByteColors('X-'),wbByteColors('Y+'),"
+                    "wbByteColors('Y-'),wbByteColors('Z+'),wbByteColors('Z-')])"
+                )
+                if ac_parts and sig_id(ac_parts[0].strip()):
+                    sig2 = ac_parts[0].strip()
+                    ac_name = (
+                        unquote(ac_parts[1]) if len(ac_parts) > 1 else "Directional Ambient Lighting Colors"
+                    )
+                    return (
+                        f"wbStruct({sig2},'{ac_name}',"
+                        f"[{_directional},wbUnused(4),wbUnused(4)])"
+                    )
+                else:
+                    ac_name = (
+                        unquote(ac_parts[0])
+                        if ac_parts and ac_parts[0].strip().startswith("'")
+                        else "Directional Ambient Lighting Colors"
+                    )
+                    return (
+                        f"wbStruct('{ac_name}',"
+                        f"[{_directional},wbUnused(4),wbUnused(4)])"
+                    )
             # wbVec3PosRot(SIG) → bytes (24 bytes = pos xyz + rot xyz)
             if fn == "wbVec3PosRot":
                 parts = split_top_level(args)
@@ -1944,6 +2008,10 @@ class Extractor:
         for prefix in ("wbStructExSK", "wbStructSK", "wbStruct"):
             if expr.startswith(prefix + "("):
                 return self._parse_struct(expr)
+        # wbRStructS must be checked before wbRStruct because the latter is a prefix.
+        # wbRStructS('GroupName', 'ElemName', [...]) → rarray of rstruct elements.
+        if expr.startswith("wbRStructS") and not expr.startswith("wbRStructSK"):
+            return self._parse_rstructS(expr)
         if expr.startswith("wbRStruct") or expr.startswith("wbRStructSK"):
             return self._parse_rstruct(expr)
         if expr.startswith("wbRArray") or expr.startswith("wbRArrayS"):
@@ -2110,6 +2178,54 @@ class Extractor:
         fe = find_matching_bracket(members_expr, start)
         members = self._parse_member_list(members_expr[start + 1 : fe])
         return {"kind": "rstruct", "name": name, "members": members}
+
+    def _parse_rstructS(self, expr: str) -> dict:
+        """wbRStructS('GroupName', 'ElemName', [...members...]) → rarray of rstruct.
+
+        Unlike wbRStruct (one-shot), wbRStructS is a *repeating* rstruct — the decoder
+        iterates while the element's anchor sig keeps appearing.  Maps to the rarray
+        schema kind with an rstruct element (same as wbRArrayS of wbRStruct).
+
+        Member name deduplication: if two members share the same name (e.g. both ANAM
+        and BNAM are named 'Part' in AAPD), the second occurrence is renamed to
+        'Name (SIG)' so JSON keys remain distinct.
+        """
+        lparen = expr.index("(")
+        rparen = find_matching_paren(expr, lparen)
+        args = expr[lparen + 1 : rparen]
+        parts = split_top_level(args)
+        group_name = unquote(parts[0]) if parts else ""
+        elem_name = unquote(parts[1]) if len(parts) > 1 else group_name
+        # Members list is the first []-starting part after the two name args.
+        members_expr: str | None = None
+        for p in parts[2:]:
+            ps = p.strip()
+            if ps.startswith("["):
+                members_expr = p
+                break
+        if members_expr is None:
+            return {"kind": "raw_fallback", "name": group_name or "rstructS", "reason": "rstructS variable ref"}
+        start = members_expr.index("[")
+        fe = find_matching_bracket(members_expr, start)
+        raw_members = self._parse_member_list(members_expr[start + 1 : fe])
+        # Deduplicate member names: rename subsequent collisions to 'Name (SIG)'.
+        seen_names: set[str] = set()
+        members: list[dict] = []
+        for mem in raw_members:
+            mem_name = mem.get("name", "")
+            if mem_name and mem_name in seen_names:
+                mem_sig = mem.get("sig", "")
+                if mem_sig:
+                    mem = dict(mem)
+                    mem["name"] = f"{mem_name} ({mem_sig})"
+            if mem_name:
+                seen_names.add(mem_name)
+            members.append(mem)
+        return {
+            "kind": "rarray",
+            "name": group_name,
+            "element": {"kind": "rstruct", "name": elem_name, "members": members},
+        }
 
     def _parse_rarray(self, expr: str) -> dict:
         lparen = expr.index("(")
@@ -2442,13 +2558,19 @@ class Extractor:
         return out
 
     def _parse_unknown(self, expr: str) -> dict:
-        m = re.match(r"wbUnknown\((.*)\)", expr)
+        m = re.match(r"wbUnknown\((.*)\)", expr, re.DOTALL)
         sig = None
         name = "Unknown"
         if m:
-            tok = m.group(1).strip()
-            if sig_id(tok):
-                sig = tok
+            args_str = m.group(1).strip()
+            if args_str:
+                # Use split_top_level to get only the first argument so that
+                # extra args like `wbUnknown(VNAM, cpNormal, True)` don't
+                # prevent sig extraction.
+                parts = split_top_level(args_str)
+                first = parts[0].strip() if parts else ""
+                if sig_id(first):
+                    sig = first
         out: dict = {"kind": "unknown", "name": name}
         if sig:
             out["sig"] = sig
@@ -2669,6 +2791,60 @@ class Extractor:
                 out.append(parsed)
         return out
 
+    def _get_reference_record_members(self) -> list[dict]:
+        """Extract and cache the member list from the ReferenceRecord procedure body.
+
+        ReferenceRecord(SIG, name) is a Pascal procedure (wbDefinitionsFO76.pas:4057)
+        that calls wbRefRecord with a fixed flags block and a shared member list.
+        All PGRE/PHZD/PMIS (and PARW/PBAR/PBEA/PCON/PFLA) share the same members.
+        We parse the procedure body once and cache the result.
+        """
+        if hasattr(self, "_reference_record_members_cache"):
+            return self._reference_record_members_cache
+
+        # Find the procedure declaration
+        proc_m = re.search(r"\bprocedure\s+ReferenceRecord\s*\(", self.fo76)
+        if not proc_m:
+            self._reference_record_members_cache: list[dict] = []
+            return []
+
+        # Locate "begin" after the procedure signature
+        after_sig = self.fo76[proc_m.end():]
+        begin_m = re.search(r"\bbegin\b", after_sig[:2000])
+        if not begin_m:
+            self._reference_record_members_cache = []
+            return []
+
+        body_start = proc_m.end() + begin_m.end()
+
+        # Find the wbRefRecord( call inside the body
+        ref_m = re.search(r"\bwbRefRecord\s*\(", self.fo76[body_start:body_start + 20000])
+        if not ref_m:
+            self._reference_record_members_cache = []
+            return []
+
+        wbref_abs = body_start + ref_m.start()
+        wbref_lparen = self.fo76.index("(", wbref_abs)
+        wbref_rparen = find_matching_paren(self.fo76, wbref_lparen)
+
+        # wbRefRecord args: (aSignature, aName, wbFlags(...), [...members...])
+        inner = self.fo76[wbref_lparen + 1 : wbref_rparen]
+        parts = split_top_level(inner)
+
+        # Find the [...members...] arg (last top-level [...] part)
+        members_expr = next(
+            (p for p in reversed(parts) if p.strip().startswith("[")), None
+        )
+        if members_expr is None:
+            self._reference_record_members_cache = []
+            return []
+
+        mb = members_expr.index("[")
+        me = find_matching_bracket(members_expr, mb)
+        members = self._parse_member_list(members_expr[mb + 1 : me])
+        self._reference_record_members_cache = members
+        return members
+
     def extract_record(self, sig: str) -> dict | None:
         # Track current record for error attribution in the coverage report.
         self._current_record = sig
@@ -2679,7 +2855,18 @@ class Extractor:
         pattern = rf"\bwbRe(?:cord|fRecord)\s*\(\s*{sig}\s*,"
         m = re.search(pattern, self.fo76)
         if not m:
-            return None
+            # Check for records defined via the ReferenceRecord(SIG, name) macro.
+            # These share the member list from the procedure body (wbDefinitionsFO76.pas:4057).
+            ref_pattern = rf"\bReferenceRecord\s*\(\s*{sig}\s*,"
+            ref_m = re.search(ref_pattern, self.fo76)
+            if not ref_m:
+                return None
+            name_m = re.search(
+                rf"\bReferenceRecord\s*\(\s*{sig}\s*,\s*'([^']+)'", self.fo76
+            )
+            name = name_m.group(1) if name_m else sig
+            members = self._get_reference_record_members()
+            return {"name": name, "members": members}
         lparen = self.fo76.index("(", m.start())
         rparen = find_matching_paren(self.fo76, lparen)
         args = self.fo76[lparen + 1 : rparen]

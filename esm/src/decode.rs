@@ -1670,6 +1670,11 @@ pub fn decode_vmad_qust(data: &[u8]) -> Value {
     }
 
     // ── Script Fragments (wbVMADFragmentedQUST tail) ─────────────────────────
+    // Some QUST records carry only the plain VMAD header without a script-fragments tail.
+    // Treat end-of-data here as a successful no-fragments result.
+    if pos >= data.len() {
+        return json!({"version": version, "scripts": scripts});
+    }
     need!(1);
     let extra_bind_data_version = data[pos] as i8;
     pos += 1;
@@ -1941,11 +1946,18 @@ fn vmad_read_flags_fragments(
 /// Decode a fragmented VMAD for INFO records (wbVMADFragmentedINFO).
 /// Script Fragments: extra_bind_data_version(s8) + flags(u8) + script_entry + fragments
 /// Fragment count = popcount(flags & 0x03) — OnBegin (bit 0) and OnEnd (bit 1).
+///
+/// Some INFO records have scripts but no script-fragments tail (they use plain VMAD
+/// layout even though INFO is classified as a fragmented type). When data ends right
+/// after the header, return a successful result with no script_fragments key.
 pub fn decode_vmad_info(data: &[u8]) -> Value {
     let (version, obj_format, scripts, mut pos) = match vmad_parse_header(data) {
         Ok(v) => v,
         Err(e) => return e,
     };
+    if pos >= data.len() {
+        return json!({"version": version, "scripts": scripts});
+    }
     match vmad_read_flags_fragments(data, &mut pos, obj_format, 0x03) {
         Err(e) => e,
         Ok((flags, script_entry, fragments)) => json!({
@@ -1963,11 +1975,17 @@ pub fn decode_vmad_info(data: &[u8]) -> Value {
 /// Decode a fragmented VMAD for PACK records (wbVMADFragmentedPACK).
 /// Script Fragments: extra_bind_data_version(s8) + flags(u8) + script_entry + fragments
 /// Fragment count = popcount(flags & 0x07) — OnBegin, OnEnd, OnChange (bits 0-2).
+///
+/// Like INFO, some PACK records carry only the plain VMAD header without a
+/// script-fragments tail. Return a no-fragments result when data ends after the header.
 pub fn decode_vmad_pack(data: &[u8]) -> Value {
     let (version, obj_format, scripts, mut pos) = match vmad_parse_header(data) {
         Ok(v) => v,
         Err(e) => return e,
     };
+    if pos >= data.len() {
+        return json!({"version": version, "scripts": scripts});
+    }
     match vmad_read_flags_fragments(data, &mut pos, obj_format, 0x07) {
         Err(e) => e,
         Ok((flags, script_entry, fragments)) => json!({
@@ -1986,6 +2004,9 @@ pub fn decode_vmad_pack(data: &[u8]) -> Value {
 /// Script Fragments: extra_bind_data_version(s8) + script_entry + u16-count fragments
 /// Each fragment: fragment_index(u32) + unknown(1) + script_name(wstring) + fragment_name(wstring)
 /// Followed by trailing unknown bytes (wbUnknown — consumed but not decoded).
+///
+/// Some PERK records carry only the plain VMAD header without a script-fragments tail.
+/// Return a no-fragments result when data ends after the header.
 pub fn decode_vmad_perk(data: &[u8]) -> Value {
     let (version, obj_format, scripts, mut pos) = match vmad_parse_header(data) {
         Ok(v) => v,
@@ -2028,7 +2049,7 @@ pub fn decode_vmad_perk(data: &[u8]) -> Value {
         }};
     }
     if pos >= data.len() {
-        trunc!();
+        return json!({"version": version, "scripts": scripts});
     }
     let extra_bind_data_version = data[pos] as i8;
     pos += 1;
@@ -2073,6 +2094,10 @@ pub fn decode_vmad_scen(data: &[u8]) -> Value {
         Ok(v) => v,
         Err(e) => return e,
     };
+    // Some SCEN records carry only the plain VMAD header without a script-fragments tail.
+    if pos >= data.len() {
+        return json!({"version": version, "scripts": scripts});
+    }
     let (flags, script_entry, fragments) =
         match vmad_read_flags_fragments(data, &mut pos, obj_format, 0x03) {
             Ok(v) => v,
@@ -3059,5 +3084,69 @@ mod tests {
             obj.get("Magnitude").is_none(),
             "no decoded fields on fallback"
         );
+    }
+
+    // ── VMAD no-fragments tail tests ─────────────────────────────────────────
+
+    /// Build a minimal VMAD header (version + obj_format + script_count=0).
+    /// This is the payload for records that have VMAD attached-scripts but no
+    /// script-fragments tail (plain VMAD layout in a "fragmented" record type).
+    fn vmad_plain_header() -> Vec<u8> {
+        let mut d = Vec::new();
+        d.extend_from_slice(&5u16.to_le_bytes()); // version
+        d.extend_from_slice(&1u16.to_le_bytes()); // obj_format
+        d.extend_from_slice(&0u16.to_le_bytes()); // script_count = 0
+        d
+    }
+
+    #[test]
+    fn decode_vmad_info_no_fragments_tail_returns_success() {
+        // An INFO VMAD that ends after the scripts header (no fragments tail)
+        // must NOT be treated as truncated — it's a valid plain-VMAD layout.
+        let data = vmad_plain_header();
+        let v = decode_vmad_info(&data);
+        let obj = v.as_object().expect("must return an object");
+        assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
+        assert!(obj.get("version").is_some(), "version must be present");
+        assert!(
+            obj.get("script_fragments").is_none(),
+            "script_fragments must be absent when tail is missing"
+        );
+    }
+
+    #[test]
+    fn decode_vmad_pack_no_fragments_tail_returns_success() {
+        let data = vmad_plain_header();
+        let v = decode_vmad_pack(&data);
+        let obj = v.as_object().expect("must return an object");
+        assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
+        assert!(obj.get("version").is_some(), "version must be present");
+    }
+
+    #[test]
+    fn decode_vmad_perk_no_fragments_tail_returns_success() {
+        let data = vmad_plain_header();
+        let v = decode_vmad_perk(&data);
+        let obj = v.as_object().expect("must return an object");
+        assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
+        assert!(obj.get("version").is_some(), "version must be present");
+    }
+
+    #[test]
+    fn decode_vmad_scen_no_fragments_tail_returns_success() {
+        let data = vmad_plain_header();
+        let v = decode_vmad_scen(&data);
+        let obj = v.as_object().expect("must return an object");
+        assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
+        assert!(obj.get("version").is_some(), "version must be present");
+    }
+
+    #[test]
+    fn decode_vmad_qust_no_fragments_tail_returns_success() {
+        let data = vmad_plain_header();
+        let v = decode_vmad_qust(&data);
+        let obj = v.as_object().expect("must return an object");
+        assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
+        assert!(obj.get("version").is_some(), "version must be present");
     }
 }
