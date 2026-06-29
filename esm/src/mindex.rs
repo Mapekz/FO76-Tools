@@ -44,6 +44,18 @@ const VERSION: u32 = 1;
 const HEADER_SIZE: usize = 40;
 const ENTRY_SIZE: usize = 24;
 
+/// Compute the expected byte length of a `.midx` file holding `count` entries.
+///
+/// Uses checked arithmetic because `count` is read from untrusted on-disk bytes:
+/// a hostile or corrupt header can carry a near-`usize::MAX` count, which would
+/// wrap in release builds under unchecked multiplication.  Returns `None` on
+/// overflow — callers should treat that as a corrupt file and reject it.
+fn expected_midx_len(count: usize) -> Option<usize> {
+    count
+        .checked_mul(ENTRY_SIZE)
+        .and_then(|b| HEADER_SIZE.checked_add(b))
+}
+
 /// Return the `.esm.midx` path for a given ESM path.
 pub fn midx_path_for(esm_path: &Path) -> PathBuf {
     let mut p = esm_path.to_path_buf();
@@ -131,9 +143,20 @@ impl MmapFormIndex {
             return Ok(None);
         }
 
-        // Sanity-check expected file size.
-        let expected = HEADER_SIZE + count * ENTRY_SIZE;
-        if mmap.len() < expected {
+        // Reject corrupt or adversarial files with overflow-safe size arithmetic.
+        //
+        // `count` is attacker-controlled (read from disk), so unchecked multiplication
+        // wraps in release builds when count ≈ usize::MAX, producing a small `expected`
+        // that passes a `<` guard even though the file is far too short.
+        //
+        // The writer always produces exactly HEADER_SIZE + count*ENTRY_SIZE bytes
+        // (see `write_midx_file`), so we require an *exact* match — a file that is
+        // larger OR smaller is corrupt.  This invariant is what makes the unchecked
+        // slice indexing in `get_by_formid` / `read_entry` sound.
+        let Some(expected) = expected_midx_len(count) else {
+            return Ok(None);
+        };
+        if mmap.len() != expected {
             return Ok(None);
         }
 
@@ -380,5 +403,131 @@ mod tests {
         assert_ne!(version, VERSION, "bad version should differ from VERSION");
 
         let _ = fs::remove_file(&path);
+    }
+
+    // ── Helper for the try_load tests ────────────────────────────────────────
+
+    /// Write a dummy ESM file (any content that can be mmap'd) and return its
+    /// metadata fields: `(file_size, mtime_secs, mtime_nanos)`.
+    fn write_dummy_esm(path: &Path) -> (u64, u64, u32) {
+        fs::write(path, b"x").unwrap();
+        let meta = fs::metadata(path).unwrap();
+        let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        let dur = mtime
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
+        (meta.len(), dur.as_secs(), dur.subsec_nanos())
+    }
+
+    /// Build a 40-byte `.midx` header buffer with the given fields.
+    fn make_midx_header(
+        count: u64,
+        src_size: u64,
+        src_mtime_secs: u64,
+        src_mtime_nanos: u32,
+    ) -> Vec<u8> {
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..8].copy_from_slice(MAGIC);
+        buf[8..16].copy_from_slice(&src_size.to_le_bytes());
+        buf[16..24].copy_from_slice(&src_mtime_secs.to_le_bytes());
+        buf[24..32].copy_from_slice(&count.to_le_bytes());
+        buf[32..36].copy_from_slice(&VERSION.to_le_bytes());
+        buf[36..40].copy_from_slice(&src_mtime_nanos.to_le_bytes());
+        buf
+    }
+
+    // ── `expected_midx_len` pure-arithmetic tests ─────────────────────────────
+
+    #[test]
+    fn expected_midx_len_arithmetic() {
+        assert_eq!(expected_midx_len(0), Some(HEADER_SIZE));
+        assert_eq!(expected_midx_len(1), Some(HEADER_SIZE + ENTRY_SIZE));
+        assert_eq!(expected_midx_len(2), Some(HEADER_SIZE + 2 * ENTRY_SIZE));
+        assert_eq!(expected_midx_len(usize::MAX), None);
+    }
+
+    // ── `try_load` adversarial tests ──────────────────────────────────────────
+
+    /// A midx whose header claims count = u64::MAX must be rejected without panic.
+    #[test]
+    fn try_load_rejects_huge_count() {
+        let tmp = std::env::temp_dir();
+        let esm_path = tmp.join("esm_mindex_test_huge_count.esm");
+        let midx_path = midx_path_for(&esm_path);
+        let (src_size, src_secs, src_nanos) = write_dummy_esm(&esm_path);
+
+        // Header-only file (40 bytes), count overflows expected_midx_len.
+        let buf = make_midx_header(u64::MAX, src_size, src_secs, src_nanos);
+        fs::write(&midx_path, &buf).unwrap();
+
+        let esm = EsmFile::open(&esm_path).unwrap();
+        let result = MmapFormIndex::try_load(&esm).unwrap();
+        assert!(result.is_none(), "huge count must be rejected (no panic)");
+
+        let _ = fs::remove_file(&midx_path);
+        let _ = fs::remove_file(&esm_path);
+    }
+
+    /// A midx header claiming more entries than the file contains must be rejected.
+    #[test]
+    fn try_load_rejects_short_file() {
+        let tmp = std::env::temp_dir();
+        let esm_path = tmp.join("esm_mindex_test_short_file.esm");
+        let midx_path = midx_path_for(&esm_path);
+        let (src_size, src_secs, src_nanos) = write_dummy_esm(&esm_path);
+
+        // count=2 implies expected=88 bytes, but only the 40-byte header is present.
+        let buf = make_midx_header(2, src_size, src_secs, src_nanos);
+        fs::write(&midx_path, &buf).unwrap();
+
+        let esm = EsmFile::open(&esm_path).unwrap();
+        let result = MmapFormIndex::try_load(&esm).unwrap();
+        assert!(result.is_none(), "short file must be rejected");
+
+        let _ = fs::remove_file(&midx_path);
+        let _ = fs::remove_file(&esm_path);
+    }
+
+    /// A midx with one extra trailing byte appended must be rejected.
+    #[test]
+    fn try_load_rejects_trailing_garbage() {
+        let tmp = std::env::temp_dir();
+        let esm_path = tmp.join("esm_mindex_test_trailing_garbage.esm");
+        let midx_path = midx_path_for(&esm_path);
+        let (src_size, src_secs, src_nanos) = write_dummy_esm(&esm_path);
+
+        // Write a valid empty midx (40 bytes), then append 1 garbage byte.
+        let entries: Vec<(u32, &RecordMeta)> = Vec::new();
+        write_midx_file(&midx_path, &entries, src_size, src_secs, src_nanos).unwrap();
+        let mut valid = fs::read(&midx_path).unwrap();
+        valid.push(0x00);
+        fs::write(&midx_path, &valid).unwrap();
+
+        let esm = EsmFile::open(&esm_path).unwrap();
+        let result = MmapFormIndex::try_load(&esm).unwrap();
+        assert!(result.is_none(), "trailing garbage must be rejected");
+
+        let _ = fs::remove_file(&midx_path);
+        let _ = fs::remove_file(&esm_path);
+    }
+
+    /// A well-formed midx must load successfully and serve lookups.
+    #[test]
+    fn try_load_accepts_valid() {
+        let tmp = std::env::temp_dir();
+        let esm_path = tmp.join("esm_mindex_test_accepts_valid.esm");
+        let midx_path = midx_path_for(&esm_path);
+        let (src_size, src_secs, src_nanos) = write_dummy_esm(&esm_path);
+
+        let entries: Vec<(u32, &RecordMeta)> = Vec::new();
+        write_midx_file(&midx_path, &entries, src_size, src_secs, src_nanos).unwrap();
+
+        let esm = EsmFile::open(&esm_path).unwrap();
+        let result = MmapFormIndex::try_load(&esm).unwrap();
+        assert!(result.is_some(), "valid midx must load");
+        assert!(result.unwrap().get_by_formid(FormId::new(1)).is_none());
+
+        let _ = fs::remove_file(&midx_path);
+        let _ = fs::remove_file(&esm_path);
     }
 }
