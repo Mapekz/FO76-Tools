@@ -112,6 +112,23 @@ The daemon warms the index once on first load and serves all subsequent lookups 
 
 Use `esm daemon status` to check, `esm daemon stop` to kill early.
 
+### Use `--resolve stub` to avoid follow-up lookups
+
+Any record containing FormID references (COBJ, NPC_, WEAP, …) returns raw hex FormIDs by default. Pass `--resolve stub` to annotate every reference inline with `editor_id` and `record_type` in a single call — no follow-up `get` calls needed:
+
+```sh
+# Without --resolve: components are raw FormIDs → requires N follow-up gets
+esm -p get path/to/data 0x008B33D7 --pretty
+
+# With --resolve stub: all references annotated inline in one call
+esm -p get path/to/data 0x008B33D7 --resolve stub --pretty
+
+# --resolve full recursively expands references to their complete decoded record
+esm -p get path/to/data 0x008B33D7 --resolve full --pretty
+```
+
+Default to `--resolve stub` when the record you're reading is reference-heavy (recipes, NPCs, leveled lists, quests). Use `--resolve full` only when you need the complete sub-record data. Bare `get` is fine only when you specifically want raw FormID values.
+
 ### Prefer bulk ops over N single gets
 
 Every round-trip has overhead. When you need many records of the same type, use bulk ops:
