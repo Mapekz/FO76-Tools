@@ -29,7 +29,7 @@ export function registerIpc(): void {
 
   ipcMain.handle(CH.openDatabase, async (_e, path: string) => {
     const db = await napi.EsmDatabase.openDatabase(path)
-    const info = wrap(() => (db as Record<string, () => unknown>).fileInfo())
+    const info = wrap(() => db.fileInfo())
     const id = registry.add(db, path, info)
     return { id, path, info }
   })
@@ -45,58 +45,53 @@ export function registerIpc(): void {
   ipcMain.handle(CH.fileInfo, (_e, id: string) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, () => unknown>).fileInfo())
+    return wrap(() => entry.db.fileInfo())
   })
 
   ipcMain.handle(CH.listGroups, (_e, id: string) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, () => unknown>).listGroups())
+    return wrap(() => entry.db.listGroups())
   })
 
   ipcMain.handle(CH.listTypeRecords, (_e, id: string, sig: string, offset: number, limit: number) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).listTypeRecords(sig, offset, limit))
+    return wrap(() => entry.db.listTypeRecords(sig, offset, limit))
   })
 
   ipcMain.handle(CH.recordByFormid, (_e, id: string, formid: string, resolve = 'stub') => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).recordByFormid(formid, resolve))
+    return wrap(() => entry.db.recordByFormid(formid, resolve))
   })
 
-  ipcMain.handle(CH.recordByEdid, (_e, id: string, edid: string) => {
+  ipcMain.handle(CH.recordByEdid, async (_e, id: string, edid: string) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).recordByEdid(edid))
+    return await entry.db.recordByEdid(edid)
   })
 
-  ipcMain.handle(CH.recordById, (_e, id: string, target: string, resolve = 'stub') => {
+  ipcMain.handle(CH.recordById, async (_e, id: string, target: string, resolve = 'stub') => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).recordById(target, resolve))
+    return await entry.db.recordById(target, resolve)
   })
 
-  ipcMain.handle(CH.referencedBy, (_e, id: string, formid: string) => {
+  ipcMain.handle(CH.referencedBy, async (_e, id: string, formid: string) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => (entry.db as Record<string, (...args: unknown[]) => unknown>).referencedBy(formid))
+    return await entry.db.referencedBy(formid)
   })
 
-  ipcMain.handle(CH.referencedById, (_e, id: string, target: string, depth?: number) => {
+  ipcMain.handle(CH.referencedById, async (_e, id: string, target: string, depth?: number) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
     const clampedDepth = Math.max(1, Math.min(depth ?? 1, 6))
-    return wrap(() =>
-      (entry.db as Record<string, (...args: unknown[]) => unknown>).referencedById(
-        target,
-        clampedDepth,
-      ),
-    )
+    return await entry.db.referencedById(target, clampedDepth)
   })
 
   ipcMain.handle(CH.parseFormId, (_e, s: string) => {
-    return wrap(() => (napi as Record<string, (...args: unknown[]) => unknown>).parseFormId(s))
+    return wrap(() => napi.parseFormId(s))
   })
 }

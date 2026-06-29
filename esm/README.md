@@ -508,3 +508,28 @@ On first open, the tool writes two sidecar files next to the ESM:
 - **`<name>.esm.midx`** (~24 MiB, flat binary) — compact, sorted FormID table written alongside `.idx` on every fresh build. Used by `Database::open_lite` (the `--mmap-index` path) for fast, RAM-light cold FormID lookups without deserializing the full bincode cache. Binary-searched in O(log n) with ~20 page accesses per lookup.
 
 Both files are gitignored. Never commit them.
+
+## Electron GUI
+
+The `app/` directory contains the FO76 ESM Viewer, an Electron desktop application. It depends on the `bindings/napi/` N-API addon (`@fo76/esm-napi`) which must be compiled from Rust before the app can run.
+
+### Building the native addon
+
+Before running the Electron app for the first time, build the N-API addon:
+
+```sh
+cd bindings/napi
+npm install
+npm run build          # or: npm run build:debug for a debug build
+```
+
+This compiles the Rust library into `bindings/napi/esm-napi.<platform>.node` and is required before `npm install` / `npm run dev` in `app/`.
+
+### Running the app
+
+```sh
+cd app
+npm install
+npm run dev            # start in development mode
+npm run build          # production build
+```

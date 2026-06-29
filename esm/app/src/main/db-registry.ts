@@ -1,7 +1,8 @@
 import type { DbId } from '../shared/api-types'
+import type { EsmDatabase } from './addon'
 
 interface DbEntry {
-  db: unknown  // EsmDatabase napi object
+  db: EsmDatabase
   path: string
   info: unknown
 }
@@ -9,7 +10,7 @@ interface DbEntry {
 const registry = new Map<DbId, DbEntry>()
 let nextId = 1
 
-export function add(db: unknown, path: string, info: unknown): DbId {
+export function add(db: EsmDatabase, path: string, info: unknown): DbId {
   const id = String(nextId++)
   registry.set(id, { db, path, info })
   return id
