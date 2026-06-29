@@ -395,11 +395,15 @@ fn decode_member(
                 );
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
-                    let n = len.unwrap_or(sr.data.len());
-                    out.insert(
-                        name.clone(),
-                        json!({"hex": hex::encode(&sr.data[..sr.data.len().min(n)])}),
-                    );
+                    if sig == "EFIT" {
+                        out.insert(name.clone(), decode_efit(&sr.data, ctx));
+                    } else {
+                        let n = len.unwrap_or(sr.data.len());
+                        out.insert(
+                            name.clone(),
+                            json!({"hex": hex::encode(&sr.data[..sr.data.len().min(n)])}),
+                        );
+                    }
                 }
             }
         }
@@ -2353,6 +2357,61 @@ fn lstring_table_to_kind(table: &LStringTable) -> StringKind {
     }
 }
 
+/// Decode an EFIT (Effect Item) subrecord.
+///
+/// The FO76 EFIT layout is form-version-conditional (TES5Edit wbDefinitionsFO76.pas:6721-6728):
+///
+/// ```text
+/// wbStruct(EFIT, '', [
+///   wbFromVersion(166, wbInteger('Effect ID', itU32)),  // only when form_version >= 166
+///   wbFloat('Magnitude'),
+///   wbInteger('Area', itU32),
+///   wbInteger('Duration', itU32),
+///   wbUnknown { empty if FV>182 or FV<154; 12 bytes for FV 154-165; 8 bytes for FV 166-182 }
+/// ]);
+/// ```
+///
+/// Because the layout depends on the record's own form version (not a separate decider
+/// subrecord), this cannot be expressed in the static schema model.  The extractor therefore
+/// intentionally stubs EFIT as a byte array, and this function is the version-aware decoder
+/// dispatched from the `MemberDef::Bytes` arm when `sig == "EFIT"`.
+///
+/// Falls back to `{"hex": ..., "_raw": true}` on unexpected data length rather than
+/// panicking — consistent with the decoder-must-never-panic invariant.
+pub(crate) fn decode_efit(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
+    let has_effect_id = ctx.form_version >= 166;
+    // Minimum expected size: 4 (Effect ID, if present) + 4 (Magnitude) + 4 (Area) + 4 (Duration)
+    let base = if has_effect_id { 16 } else { 12 };
+    if data.len() < base {
+        return json!({ "hex": hex::encode(data), "_raw": true });
+    }
+    let mut out = Map::new();
+    let mut off = 0usize;
+    if has_effect_id {
+        let id = u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+        out.insert("Effect ID".into(), json!(id));
+        off += 4;
+    }
+    let magnitude = f32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+    out.insert("Magnitude".into(), json!(magnitude));
+    off += 4;
+    let area = u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+    out.insert("Area".into(), json!(area));
+    off += 4;
+    let duration = u32::from_le_bytes(data[off..off + 4].try_into().unwrap());
+    out.insert("Duration".into(), json!(duration));
+    off += 4;
+    // Version-dependent trailing wbUnknown:
+    //   FV 166-182: 8 bytes   FV 154-165: 12 bytes   FV < 154 or > 182: empty
+    if off < data.len() {
+        out.insert(
+            "_unknown".into(),
+            json!({ "hex": hex::encode(&data[off..]) }),
+        );
+    }
+    Value::Object(out)
+}
+
 // Minimal hex encoding without extra dependency
 pub(crate) mod hex {
     pub fn encode(data: &[u8]) -> String {
@@ -2866,5 +2925,139 @@ mod tests {
             .and_then(|v| v.as_object())
             .expect("struct");
         assert!(inner2.get("Global Variable").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // decode_efit — version-aware EFIT (Effect Item) decoder
+    // -----------------------------------------------------------------------
+
+    /// FV 197 (> 182): real Endangerol bytes.
+    /// Layout: Effect ID (4) + Magnitude (4) + Area (4) + Duration (4) = 16 bytes, no unknown.
+    #[test]
+    fn decode_efit_fv197_endangerol_bytes() {
+        let data: [u8; 16] = [
+            0x00, 0x00, 0x00, 0x00, // Effect ID = 0
+            0x00, 0x00, 0x80, 0x3e, // Magnitude = 0.25 (IEEE-754 LE)
+            0x00, 0x00, 0x00, 0x00, // Area = 0
+            0x78, 0x00, 0x00, 0x00, // Duration = 120
+        ];
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.form_version = 197;
+        let v = decode_efit(&data, &ctx);
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.get("Effect ID").and_then(|v| v.as_u64()), Some(0));
+        let mag = obj.get("Magnitude").and_then(|v| v.as_f64()).unwrap();
+        assert!(
+            (mag - 0.25).abs() < 1e-6,
+            "magnitude should be 0.25, got {mag}"
+        );
+        assert_eq!(obj.get("Area").and_then(|v| v.as_u64()), Some(0));
+        assert_eq!(obj.get("Duration").and_then(|v| v.as_u64()), Some(120));
+        assert!(
+            obj.get("_unknown").is_none(),
+            "no trailing unknown for FV > 182"
+        );
+        assert!(obj.get("hex").is_none(), "should not be a raw hex blob");
+    }
+
+    /// FV 170 (166-182): Effect ID present, 8-byte trailing unknown.
+    #[test]
+    fn decode_efit_fv170_effect_id_and_trailing_unknown() {
+        let mut data = [0u8; 24];
+        data[0..4].copy_from_slice(&1u32.to_le_bytes()); // Effect ID = 1
+        data[4..8].copy_from_slice(&2.5f32.to_le_bytes()); // Magnitude = 2.5
+        data[8..12].copy_from_slice(&3u32.to_le_bytes()); // Area = 3
+        data[12..16].copy_from_slice(&4u32.to_le_bytes()); // Duration = 4
+        data[16..24].fill(0xAB); // 8-byte unknown
+
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.form_version = 170;
+        let v = decode_efit(&data, &ctx);
+        let obj = v.as_object().unwrap();
+        assert_eq!(obj.get("Effect ID").and_then(|v| v.as_u64()), Some(1));
+        let mag = obj.get("Magnitude").and_then(|v| v.as_f64()).unwrap();
+        assert!((mag - 2.5).abs() < 1e-6);
+        assert_eq!(obj.get("Area").and_then(|v| v.as_u64()), Some(3));
+        assert_eq!(obj.get("Duration").and_then(|v| v.as_u64()), Some(4));
+        let unk = obj.get("_unknown").and_then(|v| v.as_object()).unwrap();
+        assert_eq!(
+            unk.get("hex").and_then(|v| v.as_str()),
+            Some("abababababababab"),
+            "8-byte unknown"
+        );
+    }
+
+    /// FV 160 (154-165): no Effect ID, 12-byte trailing unknown.
+    #[test]
+    fn decode_efit_fv160_no_effect_id_trailing_unknown() {
+        let mut data = [0u8; 24];
+        data[0..4].copy_from_slice(&1.5f32.to_le_bytes()); // Magnitude = 1.5
+        data[4..8].copy_from_slice(&5u32.to_le_bytes()); // Area = 5
+        data[8..12].copy_from_slice(&10u32.to_le_bytes()); // Duration = 10
+        data[12..24].fill(0xCC); // 12-byte unknown
+
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.form_version = 160;
+        let v = decode_efit(&data, &ctx);
+        let obj = v.as_object().unwrap();
+        assert!(obj.get("Effect ID").is_none(), "no Effect ID before FV 166");
+        let mag = obj.get("Magnitude").and_then(|v| v.as_f64()).unwrap();
+        assert!((mag - 1.5).abs() < 1e-6);
+        assert_eq!(obj.get("Area").and_then(|v| v.as_u64()), Some(5));
+        assert_eq!(obj.get("Duration").and_then(|v| v.as_u64()), Some(10));
+        let unk = obj.get("_unknown").and_then(|v| v.as_object()).unwrap();
+        assert_eq!(
+            unk.get("hex").and_then(|v| v.as_str()),
+            Some("cccccccccccccccccccccccc"),
+            "12-byte unknown"
+        );
+    }
+
+    /// FV 150 (< 154): classic 12-byte layout — no Effect ID, no trailing unknown.
+    #[test]
+    fn decode_efit_fv150_classic_layout() {
+        let mut data = [0u8; 12];
+        data[0..4].copy_from_slice(&3.0f32.to_le_bytes()); // Magnitude = 3.0
+        data[4..8].copy_from_slice(&0u32.to_le_bytes()); // Area = 0
+        data[8..12].copy_from_slice(&30u32.to_le_bytes()); // Duration = 30
+
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.form_version = 150;
+        let v = decode_efit(&data, &ctx);
+        let obj = v.as_object().unwrap();
+        assert!(obj.get("Effect ID").is_none());
+        let mag = obj.get("Magnitude").and_then(|v| v.as_f64()).unwrap();
+        assert!((mag - 3.0).abs() < 1e-6);
+        assert_eq!(obj.get("Area").and_then(|v| v.as_u64()), Some(0));
+        assert_eq!(obj.get("Duration").and_then(|v| v.as_u64()), Some(30));
+        assert!(obj.get("_unknown").is_none());
+    }
+
+    /// Truncated data for FV 197 (expects 16 bytes, given 10) must fall back to raw hex.
+    #[test]
+    fn decode_efit_truncated_falls_back_to_raw_hex() {
+        let data = [0xABu8; 10];
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.form_version = 197;
+        let v = decode_efit(&data, &ctx);
+        let obj = v.as_object().unwrap();
+        assert!(
+            obj.get("hex").is_some(),
+            "truncated data must produce a raw hex fallback"
+        );
+        assert_eq!(
+            obj.get("_raw").and_then(|v| v.as_bool()),
+            Some(true),
+            "_raw must be set on truncated input"
+        );
+        assert!(
+            obj.get("Magnitude").is_none(),
+            "no decoded fields on fallback"
+        );
     }
 }
