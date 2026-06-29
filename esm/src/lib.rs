@@ -28,7 +28,9 @@ use crate::tree::ChildRef;
 use crate::wildcard::wildcard_match;
 use anyhow::{bail, Context};
 pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
-pub use diff::{DiffResult, RecordDiff, RecordStub, RefName};
+pub use diff::{
+    apply_type_filter, enrich_added_sources, DiffResult, RecordDiff, RecordStub, RefName,
+};
 pub use formid::FormId;
 pub use index::SearchMeta;
 pub use ipc::{

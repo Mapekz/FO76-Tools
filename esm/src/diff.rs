@@ -6,6 +6,7 @@
 
 use crate::formid::{parse_formid, FormId};
 use crate::reader::{edid_from_subrecords, lstring_id_from_subrecords};
+use crate::sources::{Source, SourcesOptions};
 use crate::strings::StringKind;
 use crate::Database;
 use anyhow::Context;
@@ -13,8 +14,18 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
+/// Record types for which added records get fully-decoded spec sheets.
+const ADDED_DETAIL_TYPES: &[&str] = &[
+    "WEAP", "ARMO", "AMMO", "PROJ", "EXPL", "COBJ", "OMOD", "AVIF", "NPC_", "LVLI", "MGEF", "ENCH",
+];
+
+#[inline]
+fn wants_detail(sig: &str) -> bool {
+    ADDED_DETAIL_TYPES.contains(&sig)
+}
+
 /// Lightweight record identity for added/removed entries.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RecordStub {
     pub form_id: String,
     pub editor_id: Option<String>,
@@ -26,6 +37,14 @@ pub struct RecordStub {
     /// Resolved DESC description (when localization is available).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Fully-decoded fields (ResolveDepth::Full) for *added* gameplay records.
+    /// Absent for removed/changed stubs and non-gameplay added types.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fields: Option<Value>,
+    /// Drop/acquisition sources for *added* records (reverse-reference walk).
+    /// Absent when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sources: Vec<Source>,
 }
 
 /// A record present in both ESMs whose decoded fields changed.
@@ -85,7 +104,13 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
     let mut added = Vec::new();
     for id in b_ids.difference(&a_ids) {
         let meta = b.index.form_index[id].clone();
-        let stub = record_stub_from_db(b, &meta, *id)?;
+        let mut stub = record_stub_from_db(b, &meta, *id)?;
+        // Decode full fields for gameplay types (best-effort; never aborts the diff).
+        if wants_detail(&stub.record_type) {
+            if let Ok(r) = b.record_by_formid_resolved(*id, crate::decode::ResolveDepth::Full) {
+                stub.fields = Some(r.fields);
+            }
+        }
         added.push(stub);
     }
     added.sort_by(|x, y| x.form_id.cmp(&y.form_id));
@@ -144,6 +169,7 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
             offset: meta_b.offset,
             name,
             description,
+            ..Default::default()
         };
 
         // Capture A-side EditorID only when it changed — signals an EDID rename
@@ -162,12 +188,22 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
     }
     changed.sort_by(|x, y| x.stub.form_id.cmp(&y.stub.form_id));
 
-    // Build ref_names: one-hop FormID resolution for every hex ref in field_changes.
-    // Only populated when at least one side has localization loaded.
-    let ref_names = if b.localization.is_some() || a.localization.is_some() {
+    // Build ref_names: one-hop FormID resolution for every hex ref in field_changes
+    // and added records' decoded fields. Populated when either side has localization
+    // loaded, or when curves are loaded (so added-record FormIDs get names too).
+    let ref_names = if b.localization.is_some()
+        || a.localization.is_some()
+        || b.curves.is_some()
+        || a.curves.is_some()
+    {
         let mut refs: HashSet<String> = HashSet::new();
         for rd in &changed {
             collect_formid_refs(&rd.field_changes, &mut refs);
+        }
+        for stub in &added {
+            if let Some(f) = &stub.fields {
+                collect_formid_refs(f, &mut refs);
+            }
         }
         refs.into_iter()
             .filter_map(|fid_str| resolve_ref_name(&fid_str, b, a).map(|rn| (fid_str, rn)))
@@ -211,6 +247,7 @@ fn record_stub_from_db(
         offset: meta.offset,
         name,
         description,
+        ..Default::default()
     })
 }
 
@@ -287,6 +324,47 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
         }
     }
     None
+}
+
+/// Attach drop/acquisition sources to every added record that has at least one
+/// source.
+///
+/// Must be called *after* [`diff_databases`] against the B-side database (added
+/// records live in B).  Requires `&mut Database` for the lazy xref index, which
+/// is built once on the first call to [`sources_of`] and then reused from the
+/// on-disk cache.
+///
+/// Errors on individual records are logged to stderr and do not abort the walk.
+pub fn enrich_added_sources(
+    b: &mut Database,
+    result: &mut DiffResult,
+    opts: &SourcesOptions,
+) -> anyhow::Result<()> {
+    for stub in &mut result.added {
+        let id = match parse_formid(&stub.form_id) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
+        match crate::sources::sources_of(b, id, opts) {
+            Ok(list) if !list.sources.is_empty() => {
+                stub.sources = list.sources;
+            }
+            Ok(_) => {}
+            Err(e) => eprintln!("Warning: sources_of {} failed: {e:#}", stub.form_id),
+        }
+    }
+    Ok(())
+}
+
+/// Apply optional record-type filter to a diff result in-place.
+pub fn apply_type_filter(result: &mut DiffResult, record_type: &Option<String>) {
+    if let Some(sig) = record_type {
+        let sig = sig.to_uppercase();
+        result.added.retain(|s| s.record_type == sig);
+        result.removed.retain(|s| s.record_type == sig);
+        result.changed.retain(|d| d.stub.record_type == sig);
+        // ref_names is a display sidecar — keep unrestricted.
+    }
 }
 
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.

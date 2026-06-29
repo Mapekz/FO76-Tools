@@ -353,12 +353,22 @@ async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
         None => return ApiError::bad_request("no default ESM loaded").into_response(),
     };
     let registry = state.registry.clone();
-    let result = tokio::task::spawn_blocking(move || {
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<esm::diff::DiffResult> {
         let arc_a = registry.get_or_open(&default)?;
         let arc_b = registry.get_or_open(&cmp_path)?;
-        let db_a = arc_a.lock().unwrap();
-        let db_b = arc_b.lock().unwrap();
-        esm::diff::diff_databases(&db_a, &db_b)
+        let mut diff = {
+            let db_a = arc_a.lock().unwrap();
+            let db_b = arc_b.lock().unwrap();
+            esm::diff::diff_databases(&db_a, &db_b)?
+        };
+        // Sources pass requires &mut — take a fresh lock after the immutable borrows end.
+        let mut db_b = arc_b.lock().unwrap();
+        esm::diff::enrich_added_sources(
+            &mut db_b,
+            &mut diff,
+            &esm::sources::SourcesOptions::default(),
+        )?;
+        Ok(diff)
     })
     .await;
 

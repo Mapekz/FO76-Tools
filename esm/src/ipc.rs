@@ -190,10 +190,15 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
             let (key_a, arc_a) = reg.get_or_open_with_key(&req.esm)?;
             let (key_b, arc_b) = reg.get_or_open_with_key(b)?;
             let same_db = key_a == key_b || std::sync::Arc::ptr_eq(&arc_a, &arc_b);
-            let mut result = if same_db {
+            if same_db {
                 let db = arc_a.lock().unwrap();
-                diff_databases(&db, &db)?
-            } else if key_a < key_b {
+                let mut result = diff_databases(&db, &db)?;
+                // same_db means no added records — enrich_added_sources is a no-op.
+                crate::diff::apply_type_filter(&mut result, record_type);
+                return Ok(serde_json::to_value(&result)?);
+            }
+            // Lock in key order (deadlock-safe); hold db_b as mut for sources pass.
+            let mut result = if key_a < key_b {
                 let db_a = arc_a.lock().unwrap();
                 let db_b = arc_b.lock().unwrap();
                 diff_databases(&db_a, &db_b)?
@@ -202,12 +207,14 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
                 let db_a = arc_a.lock().unwrap();
                 diff_databases(&db_a, &db_b)?
             };
-            if let Some(sig) = record_type {
-                let sig = sig.to_uppercase();
-                result.added.retain(|s| s.record_type == sig);
-                result.removed.retain(|s| s.record_type == sig);
-                result.changed.retain(|d| d.stub.record_type == sig);
-            }
+            crate::diff::apply_type_filter(&mut result, record_type);
+            // Now take db_b mutably for the sources enrichment pass.
+            let mut db_b = arc_b.lock().unwrap();
+            crate::diff::enrich_added_sources(
+                &mut db_b,
+                &mut result,
+                &crate::sources::SourcesOptions::default(),
+            )?;
             Ok(serde_json::to_value(&result)?)
         }
         _ => {
