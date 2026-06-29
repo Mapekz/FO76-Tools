@@ -6,13 +6,18 @@ Usage:
     python3 tools/make_patch_notes.py OLD.esm NEW.esm [options]
 
 Options:
-    --strings-dir DIR     Directory containing loose .strings/.dlstrings/.ilstrings files.
-                          Tried in this order:
-                          1. --strings-dir (if given)
-                          2. <esm_dir>/strings
-                          3. <esm_dir>
-                          The resolved directory must contain version-matched files
-                          for BOTH ESMs (sevenysix_<date>_en.*). Fails loudly if absent.
+    --strings-dir DIR     Shared strings directory for both ESMs. Auto-detected from
+                          <esm_parent>/strings/ (or <esm_parent> itself) if omitted.
+    --strings-dir-a DIR   Strings directory for ESM A only (overrides --strings-dir for A).
+    --strings-dir-b DIR   Strings directory for ESM B only (overrides --strings-dir for B).
+    --startup-ba2 PATH    Path to "SeventySix - Startup.ba2" (or env STARTUP_BA2).
+                          Enables curve-table inlining and crafting-quantity evaluation.
+                          Mutually exclusive with --curves-dir.
+    --curves-dir DIR      Path to the misc/ directory extracted from a Startup BA2
+                          (or env CURVES_DIR). Loose alternative to --startup-ba2;
+                          curve JSON is read from <dir>/curvetables/json/.
+                          Auto-detected from <new_esm_parent>/misc/ if omitted.
+                          Mutually exclusive with --startup-ba2.
     --lang LANG           Localization language code (default: en)
     --out-dir DIR         Output directory. Default: discord_chunks_<date> next to NEW.esm.
     --highlights-file F   Inject this markdown file verbatim as the Highlights section
@@ -31,18 +36,22 @@ Exit codes:
     4  Discord chunking failed
 
 Examples:
+    # Each ESM in its own directory; strings auto-detected from <dir>/strings/.
     python3 tools/make_patch_notes.py \\
-        SeventySix_20260619.esm SeventySix_20260626.esm \\
-        --strings-dir strings
+        /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
 
-    # With hand-authored highlights:
+    # Shared strings directory (both ESMs in the same folder, or explicit path).
     python3 tools/make_patch_notes.py \\
-        SeventySix_20260619.esm SeventySix_20260626.esm \\
-        --strings-dir strings \\
-        --highlights-file /tmp/highlights_20260626.md
+        old/SeventySix.esm new/SeventySix.esm \\
+        --strings-dir /path/to/strings
+
+    # With Startup BA2 for curve-table detail:
+    STARTUP_BA2="/path/to/SeventySix - Startup.ba2" \\
+    python3 tools/make_patch_notes.py \\
+        /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
 
     # Via justfile:
-    just patch-notes SeventySix_20260619.esm SeventySix_20260626.esm
+    just patch-notes /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
 """
 
 import argparse
@@ -111,49 +120,103 @@ def find_esm_binary(explicit) -> Path:
         "Or pass --esm-bin /path/to/esm")
 
 
-def locate_strings_dir(esm_a: Path, esm_b: Path, explicit, lang: str) -> Path:
+def locate_strings_dirs(
+    esm_a: Path,
+    esm_b: Path,
+    explicit: str | None,
+    explicit_a: str | None,
+    explicit_b: str | None,
+    lang: str,
+) -> tuple[Path, Path]:
     """
-    Return the directory that contains version-matched loose string files for
-    BOTH esm_a and esm_b, or die loudly.
+    Return (strings_dir_a, strings_dir_b) — may be the same path for both sides.
+
+    Strategy:
+    - Explicit per-side flags (--strings-dir-a/b) take precedence.
+    - --strings-dir applies to both sides as a shared dir.
+    - Auto-detect: if both ESMs share a parent, look for a shared strings/ dir there.
+      Otherwise, detect per-side from each ESM's own parent directory.
     """
     tok_a = version_token(esm_a)
     tok_b = version_token(esm_b)
 
-    def has_strings(d: Path, tok: str) -> bool:
-        """True if d has at least one of *.strings, *.dlstrings, *.ilstrings for tok."""
+    def has_any_strings(d: Path, tok: str) -> bool:
+        """True if d contains at least one *_{lang}.{strings,dlstrings,ilstrings} for tok."""
         if not d.is_dir():
             return False
         for ext in ("strings", "dlstrings", "ilstrings"):
-            candidates = list(d.glob(f"*{tok}*_{lang}.{ext}"))
-            if candidates:
+            # Match date-stamped names (*{tok}*_en.*) or plain names (*_en.*).
+            if list(d.glob(f"*{tok}*_{lang}.{ext}")):
                 return True
+            if re.search(r"\d{6,}", tok) is None:
+                # tok has no date digits (e.g. "SeventySix") — also accept plain name
+                if list(d.glob(f"*_{lang}.{ext}")):
+                    return True
         return False
 
-    # Candidate directories in priority order
-    candidates = []
+    # --- Explicit per-side overrides ---
+    if explicit_a and explicit_b:
+        da = Path(explicit_a).resolve()
+        db = Path(explicit_b).resolve()
+        if not da.is_dir():
+            die(1, f"--strings-dir-a not a directory: {da}")
+        if not db.is_dir():
+            die(1, f"--strings-dir-b not a directory: {db}")
+        return da, db
+
+    # --- Shared explicit dir ---
     if explicit:
-        candidates.append(Path(explicit))
-    for esm in (esm_a, esm_b):
-        esm_dir = esm.resolve().parent
-        candidates.append(esm_dir / "strings")
-        candidates.append(esm_dir)
+        d = Path(explicit).resolve()
+        if not d.is_dir():
+            die(1, f"--strings-dir not a directory: {d}")
+        if has_any_strings(d, tok_a) and has_any_strings(d, tok_b):
+            return d, d
+        missing = []
+        if not has_any_strings(d, tok_a):
+            missing.append(f"ESM A ({esm_a.name})")
+        if not has_any_strings(d, tok_b):
+            missing.append(f"ESM B ({esm_b.name})")
+        die(1, f"--strings-dir {d} missing string files for: {', '.join(missing)}")
 
-    seen = set()
-    for d in candidates:
-        if d in seen:
-            continue
-        seen.add(d)
-        if has_strings(d, tok_a) and has_strings(d, tok_b):
-            return d.resolve()
+    # --- Auto-detect: shared dir first (works when both ESMs are in the same parent) ---
+    if explicit_a is None and explicit_b is None:
+        shared_candidates: list[Path] = []
+        seen: set[Path] = set()
+        for esm in (esm_a, esm_b):
+            for cand in [esm.parent / "strings", esm.parent]:
+                r = cand.resolve()
+                if r not in seen:
+                    seen.add(r)
+                    shared_candidates.append(r)
+        for d in shared_candidates:
+            if has_any_strings(d, tok_a) and has_any_strings(d, tok_b):
+                return d, d
 
-    # Build a helpful error
-    tried = "\n  ".join(str(d) for d in list(seen)[:6])
+    # --- Auto-detect: per-side (each ESM in its own directory with a sibling strings/) ---
+    def find_for_esm(esm: Path, tok: str) -> Path | None:
+        for d in [esm.parent / "strings", esm.parent]:
+            if has_any_strings(d.resolve(), tok):
+                return d.resolve()
+        return None
+
+    eff_a = Path(explicit_a).resolve() if explicit_a else find_for_esm(esm_a, tok_a)
+    eff_b = Path(explicit_b).resolve() if explicit_b else find_for_esm(esm_b, tok_b)
+
+    if eff_a and eff_b:
+        return eff_a, eff_b
+
+    # --- Fail loudly ---
+    missing_sides = []
+    if not eff_a:
+        missing_sides.append(f"ESM A ({esm_a.name})")
+    if not eff_b:
+        missing_sides.append(f"ESM B ({esm_b.name})")
+    searched = [esm_a.parent / "strings", esm_a.parent, esm_b.parent / "strings", esm_b.parent]
+    tried_str = "\n  ".join(str(d) for d in searched)
     die(1,
-        f"No version-matched string files found for both ESMs.\n"
-        f"Expected files matching *{tok_a}*_{lang}.{{strings,dlstrings,ilstrings}}\n"
-        f"and *{tok_b}*_{lang}.{{strings,dlstrings,ilstrings}}\n"
-        f"Searched:\n  {tried}\n\n"
-        f"Supply --strings-dir pointing to the directory with both sets of loose files.\n"
+        f"Cannot find string files for: {', '.join(missing_sides)}\n"
+        f"Searched (auto-detect):\n  {tried_str}\n\n"
+        f"Supply --strings-dir (shared) or --strings-dir-a/--strings-dir-b (per side).\n"
         f"Refusing to diff without strings — output would be noise.")
 
 
@@ -187,11 +250,14 @@ def run_esm_diff(
     esm_bin: Path,
     esm_a: Path,
     esm_b: Path,
-    strings_dir: Path,
+    strings_dir_a: Path | None,
+    strings_dir_b: Path | None,
     lang: str,
     json_out: Path,
     record_type: str | None,
     verbose: bool,
+    startup_ba2: Path | None = None,
+    curves_dir: Path | None = None,
 ) -> dict:
     cmd = [
         str(esm_bin),
@@ -199,23 +265,41 @@ def run_esm_diff(
         "diff",
         str(esm_a),
         str(esm_b),
-        "--strings-dir", str(strings_dir),
         "--lang", lang,
         "--json",
         "--pretty",
     ]
+    # Pass string dirs: shared if identical, per-side if different.
+    if strings_dir_a and strings_dir_b:
+        if strings_dir_a == strings_dir_b:
+            cmd += ["--strings-dir", str(strings_dir_a)]
+        else:
+            cmd += ["--strings-dir-a", str(strings_dir_a),
+                    "--strings-dir-b", str(strings_dir_b)]
+    elif strings_dir_a:
+        cmd += ["--strings-dir-a", str(strings_dir_a)]
+    elif strings_dir_b:
+        cmd += ["--strings-dir-b", str(strings_dir_b)]
     if record_type:
         cmd += ["--type", record_type]
+    if startup_ba2:
+        cmd += ["--startup-ba2", str(startup_ba2)]
+    elif curves_dir:
+        cmd += ["--curves-dir", str(curves_dir)]
 
     banner("Step 1: Running esm diff")
     eprint(f"  A:           {esm_a}")
     eprint(f"  B:           {esm_b}")
-    eprint(f"  strings-dir: {strings_dir}")
+    if strings_dir_a == strings_dir_b:
+        eprint(f"  strings-dir: {strings_dir_a}")
+    else:
+        eprint(f"  strings-dir-a: {strings_dir_a}")
+        eprint(f"  strings-dir-b: {strings_dir_b}")
     eprint(f"  json output: {json_out}")
     if record_type:
         eprint(f"  --type filter: {record_type}")
     if verbose:
-        eprint(f"\n  Command: {' '.join(cmd)}")
+        eprint(f"\n  Command: {' '.join(str(c) for c in cmd)}")
 
     t_start = time.time()
     # Always capture stdout (JSON output); in verbose mode also echo stderr live.
@@ -362,7 +446,18 @@ def main():
     ap.add_argument("old_esm", type=Path, help="Path to the old ESM file")
     ap.add_argument("new_esm", type=Path, help="Path to the new ESM file")
     ap.add_argument("--strings-dir", default=None, metavar="DIR",
-                    help="Directory with loose .strings/.dlstrings/.ilstrings for both ESMs")
+                    help="Shared strings directory for both ESMs (auto-detected if omitted)")
+    ap.add_argument("--strings-dir-a", default=None, metavar="DIR",
+                    help="Strings directory for ESM A only (overrides --strings-dir for A)")
+    ap.add_argument("--strings-dir-b", default=None, metavar="DIR",
+                    help="Strings directory for ESM B only (overrides --strings-dir for B)")
+    ap.add_argument("--startup-ba2", default=os.environ.get("STARTUP_BA2"), metavar="PATH",
+                    help='Path to "SeventySix - Startup.ba2" for curve-table inlining '
+                         '(also $STARTUP_BA2). Mutually exclusive with --curves-dir.')
+    ap.add_argument("--curves-dir", default=os.environ.get("CURVES_DIR"), metavar="DIR",
+                    help='misc/ directory extracted from Startup BA2 for curve-table inlining '
+                         '(also $CURVES_DIR). Auto-detected from <new_esm>/misc/ if omitted. '
+                         'Mutually exclusive with --startup-ba2.')
     ap.add_argument("--lang", default="en", metavar="LANG",
                     help="Localization language code (default: en)")
     ap.add_argument("--out-dir", default=None, metavar="DIR",
@@ -402,8 +497,18 @@ def main():
     esm_bin = find_esm_binary(args.esm_bin)
     eprint(f"  esm binary: {esm_bin}")
 
-    strings_dir = locate_strings_dir(esm_a, esm_b, args.strings_dir, args.lang)
-    eprint(f"  strings-dir: {strings_dir}  ✓ (both versions found)")
+    strings_dir_a, strings_dir_b = locate_strings_dirs(
+        esm_a, esm_b,
+        explicit=args.strings_dir,
+        explicit_a=args.strings_dir_a,
+        explicit_b=args.strings_dir_b,
+        lang=args.lang,
+    )
+    if strings_dir_a == strings_dir_b:
+        eprint(f"  strings-dir:   {strings_dir_a}  ✓")
+    else:
+        eprint(f"  strings-dir-a: {strings_dir_a}  ✓")
+        eprint(f"  strings-dir-b: {strings_dir_b}  ✓")
 
     json_path = Path(args.keep_json) if args.keep_json else Path("/tmp/fo76_diff.json")
 
@@ -417,13 +522,43 @@ def main():
 
     # ---- Step 1: esm diff -------------------------------------------------
     t_diff_start = time.time()
+
+    if args.startup_ba2 and args.curves_dir:
+        die(1, "--startup-ba2 and --curves-dir are mutually exclusive")
+
+    startup_ba2 = Path(args.startup_ba2).resolve() if args.startup_ba2 else None
+    if startup_ba2:
+        if not startup_ba2.is_file():
+            die(1, f"--startup-ba2 not found: {startup_ba2}")
+        eprint(f"  startup-ba2: {startup_ba2}  ✓")
+
+    # Resolve curves_dir: explicit flag/env > auto-detect from <new_esm>/misc/.
+    curves_dir: Path | None = None
+    if not startup_ba2:
+        if args.curves_dir:
+            curves_dir = Path(args.curves_dir).resolve()
+            if not curves_dir.is_dir():
+                die(1, f"--curves-dir not found: {curves_dir}")
+            if not (curves_dir / "curvetables" / "json").is_dir():
+                die(1, f"--curves-dir missing curvetables/json/: {curves_dir}")
+            eprint(f"  curves-dir: {curves_dir}  ✓")
+        else:
+            for candidate in [esm_b.parent / "misc", esm_a.parent / "misc"]:
+                if (candidate / "curvetables" / "json").is_dir():
+                    curves_dir = candidate.resolve()
+                    eprint(f"  curves-dir: {curves_dir}  (auto-detected) ✓")
+                    break
+
     diff_data = run_esm_diff(
         esm_bin, esm_a, esm_b,
-        strings_dir=strings_dir,
+        strings_dir_a=strings_dir_a,
+        strings_dir_b=strings_dir_b,
         lang=args.lang,
         json_out=json_path,
         record_type=args.record_type,
         verbose=args.verbose,
+        startup_ba2=startup_ba2,
+        curves_dir=curves_dir,
     )
     t_diff = time.time() - t_diff_start
 
@@ -461,8 +596,12 @@ def main():
     eprint(f"  ✓ Discord chunks: {chunks_dir}/ ({n_chunks} files)")
     eprint(f"\n  Total time: {t_total:.1f}s")
     eprint(f"\nTo reproduce:")
-    eprint(f"  python3 tools/make_patch_notes.py {esm_a.name} {esm_b.name} \\")
-    eprint(f"    --strings-dir {strings_dir}")
+    eprint(f"  python3 tools/make_patch_notes.py {esm_a} {esm_b} \\")
+    if strings_dir_a == strings_dir_b:
+        eprint(f"    --strings-dir {strings_dir_a}")
+    else:
+        eprint(f"    --strings-dir-a {strings_dir_a} \\")
+        eprint(f"    --strings-dir-b {strings_dir_b}")
     eprint()
 
 
