@@ -68972,8 +68972,9 @@
         },
         {
           "kind": "bytes",
-          "name": "Size/Pos/Rot",
-          "sig": "XOCP"
+          "name": "Room Portal",
+          "sig": "XPTL",
+          "len": 36
         },
         {
           "kind": "array",
@@ -68990,8 +68991,9 @@
         },
         {
           "kind": "bytes",
-          "name": "Size/Pos/Rot",
-          "sig": "XOCP"
+          "name": "Occlusion Plane Data",
+          "sig": "XOCP",
+          "len": 36
         },
         {
           "kind": "rstruct",
@@ -69246,9 +69248,36 @@
           "sig": "XMBR"
         },
         {
-          "kind": "bytes",
-          "name": "Water Data",
-          "sig": "XWAT"
+          "kind": "rstruct",
+          "name": "Water Current Velocities",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Velocity Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "XWCN"
+            },
+            {
+              "kind": "array",
+              "name": "Velocities",
+              "element": {
+                "kind": "struct",
+                "name": "Current",
+                "fields": [
+                  {
+                    "kind": "vec3",
+                    "name": "Velocity"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Unknown"
+                  }
+                ]
+              },
+              "sig": "XWCU"
+            }
+          ]
         },
         {
           "kind": "formid",

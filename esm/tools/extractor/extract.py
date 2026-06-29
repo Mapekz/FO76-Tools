@@ -1234,8 +1234,14 @@ class Extractor:
         # wbActionFlag — wbDefinitionsCommon.pas (single flag byte, XACT).
         self.vars["wbActionFlag"] = "wbInteger(XACT,'Action Flag',itU32)"
 
-        # wbWaterData — water reflection/refraction data, XWAT/XXXX.
-        self.vars["wbWaterData"] = "wbByteArray(XWAT,'Water Data',0)"
+        # wbWaterData — wbDefinitionsFO76.pas:4973-4985. FO76 uses XWCN (count u32) + XWCU (velocity array).
+        # Not XWAT (old FO4 sig that no longer appears in FO76).
+        self.vars["wbWaterData"] = (
+            "wbRStruct('Water Current Velocities',"
+            "[wbInteger(XWCN,'Velocity Count',itU32),"
+            "wbArray(XWCU,'Velocities',"
+            "wbStruct('Current',[wbVec3('Velocity'),wbFloat('Unknown')]))])"
+        )
 
         # wbAmbientColors — ambient lighting colors (no-sig struct form; sig form handled in expand_call).
         # FO76 branch: Directional (6×4-byte color entries) + wbUnused(4) + wbUnused(4).
@@ -1254,8 +1260,7 @@ class Extractor:
             "[wbInteger('Red',itU8),wbInteger('Green',itU8),wbInteger('Blue',itU8),wbUnused(1)])"
         )
 
-        # wbSizePosRot — bounds size + position/rotation (used in XOCP).
-        self.vars["wbSizePosRot"] = "wbByteArray(XOCP,'Size/Pos/Rot',0)"
+        # wbSizePosRot — bounds size + position/rotation; handled in expand_call with the sig arg.
 
         # ----------------------------------------------------------------
         # WTHR (Weather) helper functions from wbDefinitionsCommon.pas.
@@ -1684,6 +1689,14 @@ class Extractor:
                 parts = split_top_level(args)
                 sig2 = parts[0].strip() if parts else "DATA"
                 return f"wbByteArray({sig2}, 'Position/Rotation', 24)"
+            # wbSizePosRot(SIG, name) → bytes (36 bytes: Size 2f + Pos 3f + Quat 4f).
+            # wbDefinitionsCommon.pas:6205-6234.
+            if fn == "wbSizePosRot":
+                parts = split_top_level(args)
+                sig2 = parts[0].strip() if parts else ""
+                spr_name = unquote(parts[1]) if len(parts) > 1 else "Size/Pos/Rot"
+                if sig_id(sig2):
+                    return f"wbByteArray({sig2}, '{spr_name}', 36)"
             # wbDebrisModel(textureHashes) → rstruct with DATA struct + hashes
             if fn == "wbDebrisModel":
                 return (
