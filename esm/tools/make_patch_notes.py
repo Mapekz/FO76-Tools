@@ -120,6 +120,28 @@ def find_esm_binary(explicit) -> Path:
         "Or pass --esm-bin /path/to/esm")
 
 
+def resolve_esm(path: Path, label: str) -> Path:
+    """Resolve *path* to a concrete `.esm` file, mirroring the Rust CLI behaviour.
+
+    * **File input** — used directly after verifying it exists.
+    * **Directory input** — scanned (non-recursively) for exactly one `*.esm`
+      file (case-insensitive).  Zero or multiple `.esm` files are an error.
+    """
+    p = path.resolve()
+    if p.is_dir():
+        esms = sorted(c for c in p.iterdir()
+                      if c.is_file() and c.suffix.lower() == ".esm")
+        if len(esms) == 1:
+            return esms[0]
+        if not esms:
+            die(1, f"no .esm file found in {p}")
+        names = "\n  ".join(e.name for e in esms)
+        die(1, f"multiple .esm files in {p}; pass the file path directly:\n  {names}")
+    if not p.is_file():
+        die(1, f"{label} ESM not found: {p}")
+    return p
+
+
 def locate_strings_dirs(
     esm_a: Path,
     esm_b: Path,
@@ -443,8 +465,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    ap.add_argument("old_esm", type=Path, help="Path to the old ESM file")
-    ap.add_argument("new_esm", type=Path, help="Path to the new ESM file")
+    ap.add_argument("old_esm", type=Path,
+                    help="Old ESM file, or directory containing exactly one .esm")
+    ap.add_argument("new_esm", type=Path,
+                    help="New ESM file, or directory containing exactly one .esm")
     ap.add_argument("--strings-dir", default=None, metavar="DIR",
                     help="Shared strings directory for both ESMs (auto-detected if omitted)")
     ap.add_argument("--strings-dir-a", default=None, metavar="DIR",
@@ -480,13 +504,8 @@ def main():
     # ---- Validate inputs --------------------------------------------------
     banner("Validating inputs")
 
-    esm_a = args.old_esm.resolve()
-    esm_b = args.new_esm.resolve()
-
-    if not esm_a.is_file():
-        die(1, f"Old ESM not found: {esm_a}")
-    if not esm_b.is_file():
-        die(1, f"New ESM not found: {esm_b}")
+    esm_a = resolve_esm(args.old_esm, "Old")
+    esm_b = resolve_esm(args.new_esm, "New")
 
     eprint(f"  OLD: {esm_a}  ({esm_a.stat().st_size:,} bytes)")
     eprint(f"  NEW: {esm_b}  ({esm_b.stat().st_size:,} bytes)")
