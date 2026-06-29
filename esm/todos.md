@@ -1,45 +1,26 @@
 # FO76 Parser — Out-of-scope / follow-ups
 
-## Localization
-- [ ] BA2 archive parser to extract localization `.strings`/`.dlstrings`/`.ilstrings` (FO76 BA2 + LZ4)
-- [ ] .STRINGS/.DLSTRINGS/.ILSTRINGS reader; resolve LString u32 ids → text
-      (format: count u32, dataSize u32, [id u32, offset u32]*, data block; STRINGS=zstring,
-       DL/ILSTRINGS=len-prefixed; per-field table choice; ref Core/wbLocalization.pas)
-- [ ] Support loose Strings/ folder as a runtime option
-
 ## Curve tables
-- [ ] Load curve JSON from a Startup BA2 and resolve `CURV` FormID references to
-      evaluable `{ "curve": [{ "x", "y" }, …] }` data (FO76 BA2 + LZ4; reuse BA2 parser from Localization work)
-- [ ] Parse `CURV` records: `EDID` + `CRVE` or `JASF` subrecord holds a zstring path such as
-      `Weapons\Weap_10mmSMGDMG.json` or `Creatures\Weapon\Damage_Universal_Tier24.json`
-      (`wbDefinitionsFO76.pas` ~16405)
-- [ ] Map CURV path → BA2 internal path: prefix `misc/curvetables/json/`, backslash → slash, lowercase
-      (e.g. `Weapons\Weap_10mmSMGDMG.json` → `misc/curvetables/json/weapons/weap_10mmsmgdmg.json`)
-- [ ] Index CURV FormID → parsed curve; optional on-disk cache keyed by Startup.ba2 mtime/size
-- [ ] When decoding `formid` fields with `valid_refs: ["CURV"]`, inline resolved curve path + points
-      (or lazy lookup handle) instead of bare `0xXXXXXXXX`
-- [ ] Cover common referrers: WEAP `CVT0`–`CVT5` (damage/durability curves), `DAMA` array
-      (`Type` + `Amount` + `Curve Table`), ARMO `CVT0`–`CVT3` + `DAMA` resistances, EXPL
-      `Damage Curve Table` (`wbFromVersion` 150), and other `wbDamageTypeArray` / `wbFormIDCk(…, [CURV])` sites
-- [ ] Expose curve evaluation helper: linear interpolate `y` at level `x`, clamp to curve range
-      (same semantics as `dps-76/src/lib/curve-tables.ts`)
+- [ ] Optional on-disk cache for the FormID→curve index, keyed by Startup.ba2
+      mtime/size (mirror the `*.esm.idx` cache in `src/index.rs`). The in-memory
+      index is built and used on every open today; this only avoids the cold-open
+      rebuild — the warm daemon already keeps it resident. `CurveIndex`
+      (`src/curves.rs`) already derives Serialize/Deserialize but nothing
+      persists/reloads it.
 
 ## Schema coverage
-- [ ] Hand-model hard union deciders: wbConditions (CTDA), wbMGEFAssocItemDecider,
-      wbPerkEffectDataDecider + EPF* (so SPEL/MGEF/PERK fully decode, not raw fallback)
-- [ ] Expand record whitelist beyond the initial 8 (re-run extractor)
-- [ ] RArray/RStruct grouping fidelity (vs flat per-subrecord presentation)
-- [ ] VMAD (script) decoding
 - [ ] Consider compile-and-introspect extraction via Free Pascal for full fidelity
-      (build a small program that runs DefineFO76 and serializes the def tree) — higher
-      fidelity than source-parsing, but Windows-API portability risk
+      (a small program that runs DefineFO76 and serializes the def tree) — higher
+      fidelity than the current source-parsing extractor
+      (`tools/extractor/extract.py`), but Windows-API portability risk. The
+      source-parser already covers 168 record types with raw_fallback=0, so this is
+      a fidelity hedge, not a known gap.
 
 ## FormID / load order
-- [ ] Cross-file FormID resolution & load-order fixup across masters (multi-plugin)
-- [ ] Follow references (resolve FormID fields to their target record)
+- [ ] Cross-file FormID resolution & load-order fixup across masters (multi-plugin).
+      `Database` currently wraps a single `EsmFile`; the TES4 masters list is exposed
+      via `file_info()`, but there is no multi-plugin load or cross-file FormID fixup.
 
 ## Productization (post-POC)
-- [ ] napi-rs / WASM binding for Electron/TS frontend
-- [ ] axum HTTP + MCP server; chatbot front page
-- [ ] Tree-navigation API (browse groups → records → fields)
-- [ ] Write support (POC is read-only)
+- [ ] Chatbot front page over the HTTP/MCP server. The static UI is a record browser;
+      the MCP server already exposes the six read-only tools a chatbot would call.
