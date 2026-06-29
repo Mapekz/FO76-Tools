@@ -70,6 +70,76 @@ impl CurveIndex {
         self.by_formid.get(&id.raw())
     }
 
+    /// Build the curve index from a live ESM + loose curve JSON files.
+    ///
+    /// `misc_dir` is the `misc/` directory extracted from a Startup BA2
+    /// (curve files live at `<misc_dir>/curvetables/json/<path>`).
+    pub fn build_from_dir(
+        esm: &EsmFile,
+        index: &crate::index::Index,
+        misc_dir: &Path,
+    ) -> Result<CurveIndex> {
+        let json_root = misc_dir.join("curvetables/json");
+        if !json_root.is_dir() {
+            anyhow::bail!(
+                "curves directory missing curvetables/json/: {}",
+                json_root.display()
+            );
+        }
+
+        let curv_records = index.records_by_type("CURV");
+        let mut by_formid = HashMap::new();
+
+        for (form_id, meta) in curv_records {
+            let parsed = match esm.parse_record_at(meta.offset) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Warning: failed to parse CURV {}: {}", form_id.display(), e);
+                    continue;
+                }
+            };
+
+            let edid =
+                crate::reader::edid_from_subrecords(&parsed.subrecords).unwrap_or_default();
+
+            let path_sub = parsed
+                .subrecords
+                .iter()
+                .find(|s| s.signature.as_str() == "CRVE" || s.signature.as_str() == "JASF");
+            let Some(path_sub) = path_sub else {
+                continue;
+            };
+
+            let raw = &path_sub.data;
+            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+            let curv_path = match std::str::from_utf8(&raw[..end]) {
+                Ok(s) => s.to_owned(),
+                Err(_) => continue,
+            };
+
+            let normalized = curv_path.replace('\\', "/").to_lowercase();
+            let file_path = json_root.join(&normalized);
+
+            let bytes = match std::fs::read(&file_path) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+
+            let points = parse_curve_json(&bytes).unwrap_or_default();
+
+            by_formid.insert(
+                form_id.raw(),
+                Curve {
+                    edid,
+                    path: curv_path,
+                    points,
+                },
+            );
+        }
+
+        Ok(CurveIndex { by_formid })
+    }
+
     /// Build the curve index from a live ESM + Startup BA2.
     pub fn build(
         esm: &EsmFile,

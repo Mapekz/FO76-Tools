@@ -136,9 +136,19 @@ impl Database {
             None
         };
 
-        // Auto-detect sibling startup BA2 for the curve index.
+        // Auto-detect curves: prefer a sibling misc/ directory (loose extraction),
+        // fall back to a sibling Startup BA2.
+        let sibling_misc = path.with_file_name("misc");
         let sibling_startup = path.with_file_name("SeventySix - Startup.ba2");
-        let curves = if sibling_startup.exists() {
+        let curves = if sibling_misc.join("curvetables/json").is_dir() {
+            match crate::curves::CurveIndex::build_from_dir(&esm, &index, &sibling_misc) {
+                Ok(ci) => Some(ci),
+                Err(e) => {
+                    eprintln!("Warning: failed to load curves from misc/: {}", e);
+                    None
+                }
+            }
+        } else if sibling_startup.exists() {
             match crate::curves::CurveIndex::build(&esm, &index, &sibling_startup) {
                 Ok(ci) => Some(ci),
                 Err(e) => {
@@ -204,6 +214,17 @@ impl Database {
     /// have the curve's path and point data inlined in the decoded output.
     pub fn load_curves(&mut self, ba2_path: &Path) -> anyhow::Result<()> {
         let curves = crate::curves::CurveIndex::build(&self.esm, &self.index, ba2_path)?;
+        self.curves = Some(curves);
+        Ok(())
+    }
+
+    /// Load and build the curve index from a loose `misc/` directory.
+    ///
+    /// `misc_dir` is the extracted `misc/` folder from a Startup BA2
+    /// (`misc_dir/curvetables/json/` must contain the JSON files).
+    pub fn load_curves_from_dir(&mut self, misc_dir: &Path) -> anyhow::Result<()> {
+        let curves =
+            crate::curves::CurveIndex::build_from_dir(&self.esm, &self.index, misc_dir)?;
         self.curves = Some(curves);
         Ok(())
     }

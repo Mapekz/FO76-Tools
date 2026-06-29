@@ -101,8 +101,7 @@ enum Commands {
         #[arg(long, conflicts_with_all = ["strings_dir", "strings_dir_a", "strings_dir_b"])]
         strings: Option<PathBuf>,
         /// Directory with loose string files for BOTH ESMs.
-        /// Use --strings-dir-a/--strings-dir-b when each ESM lives in its own
-        /// date-versioned folder (e.g. Data/20260619/ vs Data/20260626/).
+        /// Use --strings-dir-a/--strings-dir-b when each ESM has its own strings folder.
         /// Mutually exclusive with --strings / --strings-dir-a / --strings-dir-b.
         #[arg(long, conflicts_with_all = ["strings", "strings_dir_a", "strings_dir_b"])]
         strings_dir: Option<PathBuf>,
@@ -118,10 +117,14 @@ enum Commands {
         #[arg(long, default_value = "en")]
         lang: String,
         /// Load curve tables from an explicit Startup BA2 path.
-        /// Needed for dated ESMs without a sibling "SeventySix - Startup.ba2".
-        /// Enables crafting-quantity evaluation and curve-point inlining in the diff.
-        #[arg(long)]
+        /// Mutually exclusive with --curves-dir.
+        #[arg(long, conflicts_with = "curves_dir")]
         startup_ba2: Option<PathBuf>,
+        /// Load curve tables from a loose misc/ directory (extracted Startup BA2).
+        /// Pass the misc/ directory; curve JSON is read from misc/curvetables/json/.
+        /// Mutually exclusive with --startup-ba2.
+        #[arg(long, conflicts_with = "startup_ba2")]
+        curves_dir: Option<PathBuf>,
     },
     Tree {
         file: PathBuf,
@@ -459,6 +462,7 @@ fn main() -> anyhow::Result<()> {
                 strings_dir_b,
                 lang,
                 startup_ba2,
+                curves_dir,
             } => cmd_diff(
                 &mut backend,
                 &file_a,
@@ -472,6 +476,7 @@ fn main() -> anyhow::Result<()> {
                 strings_dir_b,
                 &lang,
                 startup_ba2,
+                curves_dir,
                 daemon_mode,
             )?,
             Commands::Tree {
@@ -666,6 +671,7 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             None, // strings_dir_b
             "en",
             None, // startup_ba2 — REPL is daemon-backed, no per-call BA2
+            None, // curves_dir — REPL is daemon-backed, no per-call misc dir
             true, // daemon_mode
         ),
         ReplCommand::Tree {
@@ -1307,19 +1313,23 @@ fn cmd_diff(
     strings_dir_b: Option<PathBuf>,
     lang: &str,
     startup_ba2: Option<PathBuf>,
+    curves_dir: Option<PathBuf>,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
     // --strings-dir-a/b are per-side aliases; --strings-dir applies to both sides.
     let sd_a = strings_dir_a.or_else(|| strings_dir.clone());
     let sd_b = strings_dir_b.or(strings_dir);
 
-    let force_local =
-        strings_ba2.is_some() || sd_a.is_some() || sd_b.is_some() || startup_ba2.is_some();
+    let force_local = strings_ba2.is_some()
+        || sd_a.is_some()
+        || sd_b.is_some()
+        || startup_ba2.is_some()
+        || curves_dir.is_some();
     if force_local {
         if daemon_mode {
             anyhow::bail!(
-                "--strings/--strings-dir*/--startup-ba2 are not supported in daemon mode \
-                 for diff; use --local to open the ESM files directly"
+                "--strings/--strings-dir*/--startup-ba2/--curves-dir are not supported \
+                 in daemon mode for diff; use --local to open the ESM files directly"
             );
         }
 
@@ -1338,10 +1348,13 @@ fn cmd_diff(
             db_b.set_localization(loc_b);
         }
 
-        // Load curves when an explicit Startup BA2 is supplied.
+        // Load curves from Startup BA2 or loose misc/ directory.
         if let Some(ref ba2) = startup_ba2 {
             db_a.load_curves(ba2)?;
             db_b.load_curves(ba2)?;
+        } else if let Some(ref misc) = curves_dir {
+            db_a.load_curves_from_dir(misc)?;
+            db_b.load_curves_from_dir(misc)?;
         }
 
         let mut result = esm::diff::diff_databases(&db_a, &db_b)?;
