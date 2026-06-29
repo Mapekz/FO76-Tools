@@ -63,9 +63,9 @@ enum Commands {
         pretty: bool,
         #[arg(long)]
         raw: bool,
-        #[arg(long, conflicts_with = "strings_dir")]
-        strings: Option<PathBuf>,
-        #[arg(long, conflicts_with = "strings")]
+        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
+        localization_ba2: Option<PathBuf>,
+        #[arg(long, conflicts_with = "localization_ba2")]
         strings_dir: Option<PathBuf>,
         #[arg(long, default_value = "en")]
         lang: String,
@@ -80,9 +80,9 @@ enum Commands {
         r#type: String,
         #[arg(long, default_value_t = 50)]
         limit: usize,
-        #[arg(long, conflicts_with = "strings_dir")]
-        strings: Option<PathBuf>,
-        #[arg(long, conflicts_with = "strings")]
+        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
+        localization_ba2: Option<PathBuf>,
+        #[arg(long, conflicts_with = "localization_ba2")]
         strings_dir: Option<PathBuf>,
         #[arg(long, default_value = "en")]
         lang: String,
@@ -96,35 +96,49 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
-        /// Load localization from an explicit BA2 archive path (both ESMs).
-        /// Mutually exclusive with --strings-dir / --strings-dir-a / --strings-dir-b.
-        #[arg(long, conflicts_with_all = ["strings_dir", "strings_dir_a", "strings_dir_b"])]
-        strings: Option<PathBuf>,
+        /// Localization BA2 for both ESMs.
+        /// Mutually exclusive with --strings-dir / --strings-dir-a/b / --localization-ba2-a/b.
+        #[arg(long = "localization-ba2", conflicts_with_all = ["strings_dir", "strings_dir_a", "strings_dir_b", "localization_ba2_a", "localization_ba2_b"])]
+        localization_ba2: Option<PathBuf>,
+        /// Localization BA2 for ESM A only (old side).
+        #[arg(long = "localization-ba2-a", conflicts_with_all = ["localization_ba2", "strings_dir", "strings_dir_a"])]
+        localization_ba2_a: Option<PathBuf>,
+        /// Localization BA2 for ESM B only (new side).
+        #[arg(long = "localization-ba2-b", conflicts_with_all = ["localization_ba2", "strings_dir", "strings_dir_b"])]
+        localization_ba2_b: Option<PathBuf>,
         /// Directory with loose string files for BOTH ESMs.
-        /// Use --strings-dir-a/--strings-dir-b when each ESM has its own strings folder.
-        /// Mutually exclusive with --strings / --strings-dir-a / --strings-dir-b.
-        #[arg(long, conflicts_with_all = ["strings", "strings_dir_a", "strings_dir_b"])]
+        /// Mutually exclusive with --localization-ba2 / --strings-dir-a/b / --localization-ba2-a/b.
+        #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir_a", "strings_dir_b", "localization_ba2_a", "localization_ba2_b"])]
         strings_dir: Option<PathBuf>,
         /// Strings directory for ESM A only (old side).
-        /// Use with --strings-dir-b when each version has its own strings folder.
-        #[arg(long, conflicts_with_all = ["strings", "strings_dir"])]
+        #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir", "localization_ba2_a"])]
         strings_dir_a: Option<PathBuf>,
         /// Strings directory for ESM B only (new side).
-        /// Use with --strings-dir-a when each version has its own strings folder.
-        #[arg(long, conflicts_with_all = ["strings", "strings_dir"])]
+        #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir", "localization_ba2_b"])]
         strings_dir_b: Option<PathBuf>,
         /// Language code for string table lookup.
         #[arg(long, default_value = "en")]
         lang: String,
-        /// Load curve tables from an explicit Startup BA2 path.
-        /// Mutually exclusive with --curves-dir.
-        #[arg(long, conflicts_with = "curves_dir")]
+        /// Startup BA2 for curve tables (both ESMs).
+        /// Mutually exclusive with --curves-dir / --startup-ba2-a/b / --curves-dir-a/b.
+        #[arg(long, conflicts_with_all = ["curves_dir", "startup_ba2_a", "startup_ba2_b", "curves_dir_a", "curves_dir_b"])]
         startup_ba2: Option<PathBuf>,
-        /// Load curve tables from a loose misc/ directory (extracted Startup BA2).
-        /// Pass the misc/ directory; curve JSON is read from misc/curvetables/json/.
-        /// Mutually exclusive with --startup-ba2.
-        #[arg(long, conflicts_with = "startup_ba2")]
+        /// Startup BA2 for ESM A only (old side).
+        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "curves_dir_a"])]
+        startup_ba2_a: Option<PathBuf>,
+        /// Startup BA2 for ESM B only (new side).
+        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "curves_dir_b"])]
+        startup_ba2_b: Option<PathBuf>,
+        /// Loose misc/ directory for curve tables (both ESMs).
+        /// Mutually exclusive with --startup-ba2 / --startup-ba2-a/b / --curves-dir-a/b.
+        #[arg(long, conflicts_with_all = ["startup_ba2", "startup_ba2_a", "startup_ba2_b", "curves_dir_a", "curves_dir_b"])]
         curves_dir: Option<PathBuf>,
+        /// Loose misc/ directory for ESM A only (old side).
+        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "startup_ba2_a"])]
+        curves_dir_a: Option<PathBuf>,
+        /// Loose misc/ directory for ESM B only (new side).
+        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "startup_ba2_b"])]
+        curves_dir_b: Option<PathBuf>,
     },
     Tree {
         file: PathBuf,
@@ -163,9 +177,9 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
-        #[arg(long, conflicts_with = "strings_dir")]
-        strings: Option<PathBuf>,
-        #[arg(long, conflicts_with = "strings")]
+        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
+        localization_ba2: Option<PathBuf>,
+        #[arg(long, conflicts_with = "localization_ba2")]
         strings_dir: Option<PathBuf>,
         #[arg(long, default_value = "en")]
         lang: String,
@@ -183,9 +197,9 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
-        #[arg(long, conflicts_with = "strings_dir")]
-        strings: Option<PathBuf>,
-        #[arg(long, conflicts_with = "strings")]
+        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
+        localization_ba2: Option<PathBuf>,
+        #[arg(long, conflicts_with = "localization_ba2")]
         strings_dir: Option<PathBuf>,
         #[arg(long, default_value = "en")]
         lang: String,
@@ -411,7 +425,7 @@ fn main() -> anyhow::Result<()> {
                 json,
                 pretty,
                 raw,
-                strings,
+                localization_ba2,
                 strings_dir,
                 lang,
                 startup_ba2,
@@ -425,7 +439,7 @@ fn main() -> anyhow::Result<()> {
                 json,
                 pretty,
                 raw,
-                strings,
+                localization_ba2,
                 strings_dir,
                 &lang,
                 startup_ba2,
@@ -437,7 +451,7 @@ fn main() -> anyhow::Result<()> {
                 file,
                 r#type,
                 limit,
-                strings,
+                localization_ba2,
                 strings_dir,
                 lang,
             } => cmd_list(
@@ -445,7 +459,7 @@ fn main() -> anyhow::Result<()> {
                 &file,
                 &r#type,
                 limit,
-                strings,
+                localization_ba2,
                 strings_dir,
                 &lang,
                 daemon_mode,
@@ -456,13 +470,19 @@ fn main() -> anyhow::Result<()> {
                 record_type,
                 json,
                 pretty,
-                strings,
+                localization_ba2,
+                localization_ba2_a,
+                localization_ba2_b,
                 strings_dir,
                 strings_dir_a,
                 strings_dir_b,
                 lang,
                 startup_ba2,
+                startup_ba2_a,
+                startup_ba2_b,
                 curves_dir,
+                curves_dir_a,
+                curves_dir_b,
             } => cmd_diff(
                 &mut backend,
                 &file_a,
@@ -470,13 +490,19 @@ fn main() -> anyhow::Result<()> {
                 record_type.as_deref(),
                 json,
                 pretty,
-                strings,
+                localization_ba2,
+                localization_ba2_a,
+                localization_ba2_b,
                 strings_dir,
                 strings_dir_a,
                 strings_dir_b,
                 &lang,
                 startup_ba2,
+                startup_ba2_a,
+                startup_ba2_b,
                 curves_dir,
+                curves_dir_a,
+                curves_dir_b,
                 daemon_mode,
             )?,
             Commands::Tree {
@@ -515,7 +541,7 @@ fn main() -> anyhow::Result<()> {
                 limit,
                 json,
                 pretty,
-                strings,
+                localization_ba2,
                 strings_dir,
                 lang,
             } => cmd_refs(
@@ -527,7 +553,7 @@ fn main() -> anyhow::Result<()> {
                 limit,
                 json,
                 pretty,
-                strings,
+                localization_ba2,
                 strings_dir,
                 &lang,
                 daemon_mode,
@@ -540,7 +566,7 @@ fn main() -> anyhow::Result<()> {
                 limit,
                 json,
                 pretty,
-                strings,
+                localization_ba2,
                 strings_dir,
                 lang,
             } => cmd_search(
@@ -552,7 +578,7 @@ fn main() -> anyhow::Result<()> {
                 limit,
                 json,
                 pretty,
-                strings,
+                localization_ba2,
                 strings_dir,
                 &lang,
                 daemon_mode,
@@ -665,13 +691,19 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             record_type.as_deref(),
             json,
             pretty,
-            None, // strings ba2
+            None, // localization_ba2
+            None, // localization_ba2_a
+            None, // localization_ba2_b
             None, // strings_dir
             None, // strings_dir_a
             None, // strings_dir_b
             "en",
-            None, // startup_ba2 — REPL is daemon-backed, no per-call BA2
-            None, // curves_dir — REPL is daemon-backed, no per-call misc dir
+            None, // startup_ba2
+            None, // startup_ba2_a
+            None, // startup_ba2_b
+            None, // curves_dir
+            None, // curves_dir_a
+            None, // curves_dir_b
             true, // daemon_mode
         ),
         ReplCommand::Tree {
@@ -745,18 +777,18 @@ fn esm_string_prefix(esm_path: &Path) -> String {
     esm_path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "SeventySix".to_string())
+        .unwrap_or_else(|| "game".to_string())
 }
 
 fn apply_strings_override(
     db: &mut Database,
     esm_path: &Path,
-    strings: Option<PathBuf>,
+    localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
 ) {
-    if let Some(ba2_path) = strings {
-        match esm::strings::Localization::from_ba2(&ba2_path, lang, "seventysix") {
+    if let Some(ba2_path) = localization_ba2 {
+        match esm::strings::Localization::from_ba2(&ba2_path, lang) {
             Ok(loc) => db.set_localization(loc),
             Err(e) => eprintln!(
                 "Warning: failed to load localization from {}: {}",
@@ -811,7 +843,7 @@ fn cmd_get(
     json: bool,
     pretty: bool,
     raw: bool,
-    strings: Option<PathBuf>,
+    localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
     startup_ba2: Option<PathBuf>,
@@ -819,7 +851,8 @@ fn cmd_get(
     daemon_mode: bool,
     mmap_index: bool,
 ) -> anyhow::Result<()> {
-    let has_overrides = strings.is_some() || strings_dir.is_some() || startup_ba2.is_some();
+    let has_overrides =
+        localization_ba2.is_some() || strings_dir.is_some() || startup_ba2.is_some();
 
     // ── mmap-index fast path (--local --mmap-index, FormID only) ─────────────
     // Loads the compact ~24 MiB .esm.midx instead of the full .esm.idx.
@@ -867,13 +900,14 @@ fn cmd_get(
     }
     if has_overrides && daemon_mode {
         anyhow::bail!(
-            "--strings/--strings-dir/--startup-ba2 are not supported in daemon mode; \
+            "--localization-ba2/--strings-dir/--startup-ba2 are not supported in daemon mode; \
              use --local to open the ESM directly"
         );
     }
     if has_overrides {
-        let mut db = Database::open(file)?;
-        apply_strings_override(&mut db, file, strings, strings_dir, lang);
+        let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
+        let mut db = Database::open(&esm_path)?;
+        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         if let Some(ba2_path) = startup_ba2 {
             db.load_curves(&ba2_path)?;
         }
@@ -938,20 +972,21 @@ fn cmd_list(
     file: &Path,
     sig: &str,
     limit: usize,
-    strings: Option<PathBuf>,
+    localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
-    if strings.is_some() || strings_dir.is_some() {
+    if localization_ba2.is_some() || strings_dir.is_some() {
         if daemon_mode {
             anyhow::bail!(
-                "--strings/--strings-dir are not supported in daemon mode; \
+                "--localization-ba2/--strings-dir are not supported in daemon mode; \
                  use --local to open the ESM directly"
             );
         }
-        let mut db = Database::open(file)?;
-        apply_strings_override(&mut db, file, strings, strings_dir, lang);
+        let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
+        let mut db = Database::open(&esm_path)?;
+        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         let entries = db.list_by_type(sig, limit)?;
         print_list_entries(&entries);
         return Ok(());
@@ -992,20 +1027,21 @@ fn cmd_refs(
     limit: usize,
     json: bool,
     pretty: bool,
-    strings: Option<PathBuf>,
+    localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
-    if strings.is_some() || strings_dir.is_some() {
+    if localization_ba2.is_some() || strings_dir.is_some() {
         if daemon_mode {
             anyhow::bail!(
-                "--strings/--strings-dir are not supported in daemon mode; \
+                "--localization-ba2/--strings-dir are not supported in daemon mode; \
                  use --local to open the ESM directly"
             );
         }
-        let mut db = Database::open(file)?;
-        apply_strings_override(&mut db, file, strings, strings_dir, lang);
+        let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
+        let mut db = Database::open(&esm_path)?;
+        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         let form_id = resolve_form_id_local(&mut db, formid, edid, target)?;
         let ref_list = esm::ipc::referenced_by_enriched(&mut db, form_id, limit)?;
         print_refs(&ref_list, json, pretty);
@@ -1121,7 +1157,7 @@ fn cmd_search(
     limit: usize,
     json: bool,
     pretty: bool,
-    strings: Option<PathBuf>,
+    localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
     daemon_mode: bool,
@@ -1132,15 +1168,16 @@ fn cmd_search(
         SearchInArg::Both => SearchField::Both,
     };
 
-    if strings.is_some() || strings_dir.is_some() {
+    if localization_ba2.is_some() || strings_dir.is_some() {
         if daemon_mode {
             anyhow::bail!(
-                "--strings/--strings-dir are not supported in daemon mode; \
+                "--localization-ba2/--strings-dir are not supported in daemon mode; \
                  use --local to open the ESM directly"
             );
         }
-        let mut db = Database::open(file)?;
-        apply_strings_override(&mut db, file, strings, strings_dir, lang);
+        let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
+        let mut db = Database::open(&esm_path)?;
+        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         let results = db.search(pattern, &types, field, limit)?;
         print_search_results(&results, limit, json, pretty);
         return Ok(());
@@ -1204,12 +1241,10 @@ fn resolve_form_id_local(
 
 /// Resolve localization for one ESM side, or bail loudly if no string tables
 /// can be found.  Precedence:
-///   1. Explicit BA2 via `--strings` → `Localization::from_ba2`.
-///   2. Loose files win: search `--strings-dir`, then `<esm-dir>/strings`,
+///   1. Explicit BA2 via `--localization-ba2` → `Localization::from_ba2`.
+///   2. Loose files: search `--strings-dir`, then `<esm-dir>/strings`,
 ///      then `<esm-dir>` for `<stem>_<lang>.strings`.
-///   3. Version-matched BA2 fallback: scan `<esm-dir>` for a `.ba2` whose
-///      filename contains both "localization" and the numeric version token
-///      extracted from the ESM stem (e.g. `20260619`).
+///   3. Any `*localization*.ba2` in `<esm-dir>`.
 ///   4. Bail with an actionable error message — output without strings is noise.
 fn resolve_localization_or_bail(
     esm_path: &Path,
@@ -1220,11 +1255,11 @@ fn resolve_localization_or_bail(
     use esm::strings::Localization;
 
     let esm_dir = esm_path.parent().unwrap_or(Path::new("."));
-    let stem = esm_string_prefix(esm_path); // e.g. "SeventySix_20260619"
+    let stem = esm_string_prefix(esm_path);
 
     // 1. Explicit BA2.
     if let Some(ba2) = strings_ba2 {
-        return Localization::from_ba2(&ba2, lang, "seventysix")
+        return Localization::from_ba2(&ba2, lang)
             .with_context(|| format!("loading localization from {}", ba2.display()));
     }
 
@@ -1248,33 +1283,10 @@ fn resolve_localization_or_bail(
         }
     }
 
-    // 3. Version-matched BA2 fallback.
-    //    Extract the numeric version token from the stem (e.g. "20260619" from
-    //    "SeventySix_20260619") then scan <esm-dir> for a matching Localization BA2.
-    let version_token: Option<&str> = stem
-        .split('_')
-        .find(|s| s.len() >= 6 && s.chars().all(|c| c.is_ascii_digit()));
-    if let Some(token) = version_token {
-        let mut candidates: Vec<PathBuf> = std::fs::read_dir(esm_dir)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| {
-                let fname = p
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("")
-                    .to_lowercase();
-                fname.ends_with(".ba2") && fname.contains("localization") && fname.contains(token)
-            })
-            .collect();
-        candidates.sort();
-        if let Some(ba2) = candidates.first() {
-            return Localization::from_ba2(ba2, lang, "seventysix").with_context(|| {
-                format!("loading versioned BA2 localization from {}", ba2.display())
-            });
-        }
+    // 3. Any *localization*.ba2 in the esm directory.
+    if let Some(ba2) = esm::discover::find_ba2_containing(esm_dir, "localization") {
+        return Localization::from_ba2(&ba2, lang)
+            .with_context(|| format!("loading localization BA2 from {}", ba2.display()));
     }
 
     // 4. Nothing found — fail loudly.
@@ -1283,15 +1295,15 @@ fn resolve_localization_or_bail(
         .map(|d| d.display().to_string())
         .collect();
     anyhow::bail!(
-        "No version-matched string tables found for '{stem}' (lang={lang}).\n\
+        "No string tables found for '{stem}' (lang={lang}).\n\
          Looked for loose files in: {dirs}\n\
-         Also scanned '{esm_dir}' for a versioned Localization BA2 — none found.\n\
+         Also scanned '{esm_dir}' for a Localization BA2 — none found.\n\
          \n\
-         Refusing to diff without string tables — output would contain unresolved LString IDs (noise).\n\
+         Refusing to diff without string tables — output would contain unresolved LString IDs.\n\
          \n\
          Fix options:\n  \
-           --strings-dir <DIR>  path to a directory with {stem}_{lang}.strings / .dlstrings / .ilstrings\n  \
-           --strings <BA2>      path to a versioned Localization BA2 archive",
+           --strings-dir <DIR>        path to a directory with {stem}_{lang}.strings/.dlstrings/.ilstrings\n  \
+           --localization-ba2 <BA2>   path to a Localization BA2 archive",
         stem = stem,
         lang = lang,
         dirs = dirs_tried.join(", "),
@@ -1307,53 +1319,76 @@ fn cmd_diff(
     record_type: Option<&str>,
     as_json: bool,
     pretty: bool,
-    strings_ba2: Option<PathBuf>,
+    localization_ba2: Option<PathBuf>,
+    localization_ba2_a: Option<PathBuf>,
+    localization_ba2_b: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     strings_dir_a: Option<PathBuf>,
     strings_dir_b: Option<PathBuf>,
     lang: &str,
     startup_ba2: Option<PathBuf>,
+    startup_ba2_a: Option<PathBuf>,
+    startup_ba2_b: Option<PathBuf>,
     curves_dir: Option<PathBuf>,
+    curves_dir_a: Option<PathBuf>,
+    curves_dir_b: Option<PathBuf>,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
-    // --strings-dir-a/b are per-side aliases; --strings-dir applies to both sides.
+    // Coalesce per-side over shared for each source kind.
+    let lba2_a = localization_ba2_a.or_else(|| localization_ba2.clone());
+    let lba2_b = localization_ba2_b.or_else(|| localization_ba2.clone());
     let sd_a = strings_dir_a.or_else(|| strings_dir.clone());
-    let sd_b = strings_dir_b.or(strings_dir);
+    let sd_b = strings_dir_b.or_else(|| strings_dir.clone());
+    let sb_a = startup_ba2_a.or_else(|| startup_ba2.clone());
+    let sb_b = startup_ba2_b.or_else(|| startup_ba2.clone());
+    let cd_a = curves_dir_a.or_else(|| curves_dir.clone());
+    let cd_b = curves_dir_b.or_else(|| curves_dir.clone());
 
-    let force_local = strings_ba2.is_some()
+    let force_local = lba2_a.is_some()
+        || lba2_b.is_some()
         || sd_a.is_some()
         || sd_b.is_some()
-        || startup_ba2.is_some()
-        || curves_dir.is_some();
+        || sb_a.is_some()
+        || sb_b.is_some()
+        || cd_a.is_some()
+        || cd_b.is_some();
+
     if force_local {
         if daemon_mode {
             anyhow::bail!(
-                "--strings/--strings-dir*/--startup-ba2/--curves-dir are not supported \
-                 in daemon mode for diff; use --local to open the ESM files directly"
+                "--localization-ba2*/--strings-dir*/--startup-ba2*/--curves-dir* are not \
+                 supported in daemon mode for diff; use --local to open the ESM files directly"
             );
         }
 
-        let mut db_a = Database::open(file_a)?;
-        let mut db_b = Database::open(file_b)?;
+        // Resolve folder → ESM so that esm_string_prefix/resolve_localization_or_bail
+        // receive the actual .esm path (not a folder).
+        let esm_a = esm::discover::resolve_sources(file_a, "en")?.esm;
+        let esm_b = esm::discover::resolve_sources(file_b, "en")?.esm;
 
-        // Load localization per side (--strings-dir-a/b override; --strings-dir applies to both;
-        // --strings BA2 applies to both). Each side is independently optional.
-        if strings_ba2.is_some() || sd_a.is_some() {
-            let loc_a = resolve_localization_or_bail(file_a, strings_ba2.clone(), sd_a, lang)?;
+        let mut db_a = Database::open(&esm_a)?;
+        let mut db_b = Database::open(&esm_b)?;
+
+        // Load localization per side — each side is independently optional.
+        if lba2_a.is_some() || sd_a.is_some() {
+            let loc_a = resolve_localization_or_bail(&esm_a, lba2_a, sd_a, lang)?;
             db_a.set_localization(loc_a);
         }
-        if strings_ba2.is_some() || sd_b.is_some() {
-            let loc_b = resolve_localization_or_bail(file_b, strings_ba2, sd_b, lang)?;
+        if lba2_b.is_some() || sd_b.is_some() {
+            let loc_b = resolve_localization_or_bail(&esm_b, lba2_b, sd_b, lang)?;
             db_b.set_localization(loc_b);
         }
 
-        // Load curves from Startup BA2 or loose misc/ directory.
-        if let Some(ref ba2) = startup_ba2 {
-            db_a.load_curves(ba2)?;
-            db_b.load_curves(ba2)?;
-        } else if let Some(ref misc) = curves_dir {
-            db_a.load_curves_from_dir(misc)?;
-            db_b.load_curves_from_dir(misc)?;
+        // Load curves per side.
+        if let Some(ba2) = sb_a {
+            db_a.load_curves(&ba2)?;
+        } else if let Some(dir) = cd_a {
+            db_a.load_curves_from_dir(&dir)?;
+        }
+        if let Some(ba2) = sb_b {
+            db_b.load_curves(&ba2)?;
+        } else if let Some(dir) = cd_b {
+            db_b.load_curves_from_dir(&dir)?;
         }
 
         let mut result = esm::diff::diff_databases(&db_a, &db_b)?;
