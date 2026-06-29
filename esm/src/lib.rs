@@ -5,6 +5,7 @@ pub mod ctda;
 pub mod curves;
 pub mod decode;
 pub mod diff;
+pub mod discover;
 pub mod format;
 pub mod formid;
 pub mod index;
@@ -108,56 +109,75 @@ pub enum SearchField {
 }
 
 impl Database {
-    /// Open an ESM file.
+    /// Open an ESM file or data folder.
     ///
-    /// Sibling BA2 files are loaded automatically if present next to the ESM:
-    /// - `SeventySix - Localization.ba2` → string tables (English)
-    /// - `SeventySix - Startup.ba2` → curve index
+    /// When `path` is a **directory**, it is scanned for exactly one `.esm`
+    /// file; zero or multiple ESMs produce a clear error.  When `path` is a
+    /// **file**, it is used directly.
     ///
-    /// Missing files are silently skipped; load failures print a warning to
-    /// stderr but do not abort.
+    /// After locating the ESM, sibling sources are loaded automatically when
+    /// present (missing sources are silently skipped; load failures print a
+    /// warning to stderr but do not abort):
+    ///
+    /// - **Strings**: loose `strings/<stem>_<locale>.{strings,…}` or
+    ///   `<stem>_<locale>.strings` in the folder, else any
+    ///   `*localization*.ba2` in the folder.
+    /// - **Curves**: `misc/curvetables/json/` or `curvetables/json/` in the
+    ///   folder, else any `*startup*.ba2` in the folder.
     pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
-        let esm = EsmFile::open(path)?;
+        let resolved = crate::discover::resolve_sources(path, "en")?;
+
+        let esm = EsmFile::open(&resolved.esm)?;
         let index = Index::build(&esm)?;
         let schema = Schema::load_embedded().context("load embedded schema")?;
 
-        // Auto-detect sibling localization BA2.
-        let sibling_loc = path.with_file_name("SeventySix - Localization.ba2");
-        let localization = if sibling_loc.exists() {
-            match Localization::from_ba2(&sibling_loc, "en", "seventysix") {
-                Ok(loc) => Some(loc),
-                Err(e) => {
-                    eprintln!("Warning: failed to load localization: {}", e);
-                    None
+        let localization = match resolved.strings {
+            Some(crate::discover::StringsSrc::Ba2(ref ba2_path)) => {
+                match Localization::from_ba2(ba2_path, &resolved.locale) {
+                    Ok(loc) => Some(loc),
+                    Err(e) => {
+                        eprintln!("Warning: failed to load localization from BA2: {}", e);
+                        None
+                    }
                 }
             }
-        } else {
-            None
+            Some(crate::discover::StringsSrc::Loose(ref dir)) => {
+                match Localization::from_loose_files(dir, &resolved.locale, &resolved.loose_prefix)
+                {
+                    Ok(loc) => Some(loc),
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: failed to load localization from loose files: {}",
+                            e
+                        );
+                        None
+                    }
+                }
+            }
+            None => None,
         };
 
-        // Auto-detect curves: prefer a sibling misc/ directory (loose extraction),
-        // fall back to a sibling Startup BA2.
-        let sibling_misc = path.with_file_name("misc");
-        let sibling_startup = path.with_file_name("SeventySix - Startup.ba2");
-        let curves = if sibling_misc.join("curvetables/json").is_dir() {
-            match crate::curves::CurveIndex::build_from_dir(&esm, &index, &sibling_misc) {
-                Ok(ci) => Some(ci),
-                Err(e) => {
-                    eprintln!("Warning: failed to load curves from misc/: {}", e);
-                    None
+        let curves = match resolved.curves {
+            Some(crate::discover::CurvesSrc::LooseBase(ref base)) => {
+                match crate::curves::CurveIndex::build_from_dir(&esm, &index, base) {
+                    Ok(ci) => Some(ci),
+                    Err(e) => {
+                        eprintln!("Warning: failed to load curves from loose dir: {}", e);
+                        None
+                    }
                 }
             }
-        } else if sibling_startup.exists() {
-            match crate::curves::CurveIndex::build(&esm, &index, &sibling_startup) {
-                Ok(ci) => Some(ci),
-                Err(e) => {
-                    eprintln!("Warning: failed to load curves: {}", e);
-                    None
+            Some(crate::discover::CurvesSrc::Ba2(ref ba2_path)) => {
+                match crate::curves::CurveIndex::build(&esm, &index, ba2_path) {
+                    Ok(ci) => Some(ci),
+                    Err(e) => {
+                        eprintln!("Warning: failed to load curves from BA2: {}", e);
+                        None
+                    }
                 }
             }
-        } else {
-            None
+            None => None,
         };
 
         let is_localized = esm.file_info().map(|i| i.is_localized).unwrap_or(false);
@@ -173,8 +193,10 @@ impl Database {
         })
     }
 
-    /// Open an ESM file in **lite mode**: mmap the ESM and load the compact
-    /// `.esm.midx` binary index (building it from an ESM walk if absent).
+    /// Open an ESM file or folder in **lite mode**: mmap the ESM and load the
+    /// compact `.esm.midx` binary index (building it from an ESM walk if absent).
+    ///
+    /// When `path` is a directory, it is scanned for exactly one `.esm` file.
     ///
     /// Compared to [`Database::open`], this skips the ~280 MiB `.esm.idx`
     /// bincode load entirely — startup is typically sub-second even cold.
@@ -187,14 +209,15 @@ impl Database {
     /// path.
     pub fn open_lite(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref();
-        let esm = EsmFile::open(path)?;
+        let esm_path = crate::discover::resolve_sources(path, "en")?.esm;
+        let esm = EsmFile::open(&esm_path)?;
         let mmap_index = crate::mindex::MmapFormIndex::load_or_build(&esm)
-            .with_context(|| format!("build mmap index for {}", path.display()))?;
+            .with_context(|| format!("build mmap index for {}", esm_path.display()))?;
         let schema = Schema::load_embedded().context("load embedded schema")?;
         let is_localized = esm.file_info().map(|i| i.is_localized).unwrap_or(false);
         Ok(Database {
             esm,
-            index: Index::empty(path.to_path_buf()),
+            index: Index::empty(esm_path),
             schema,
             is_localized,
             localization: None,

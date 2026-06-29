@@ -83,9 +83,13 @@ impl Registry {
         &self,
         path: &Path,
     ) -> anyhow::Result<(PathBuf, Arc<Mutex<Database>>)> {
-        let canonical = path
+        // Resolve folder → ESM before canonicalizing so the cache key and the
+        // FileSig track the ESM file, not a directory.  Resolving a file input
+        // is idempotent and costs one `is_dir` stat.
+        let esm_path = crate::discover::resolve_sources(path, "en")?.esm;
+        let canonical = esm_path
             .canonicalize()
-            .with_context(|| format!("canonicalize {}", path.display()))?;
+            .with_context(|| format!("canonicalize {}", esm_path.display()))?;
 
         // Check for a live, non-stale entry.
         if let Some(resident) = {
