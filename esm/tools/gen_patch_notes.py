@@ -123,6 +123,42 @@ SKIP_DETAIL_TYPES = {"CELL", "WRLD"}
 # Cut/deprecation EDID marker prefixes (all-caps or all-lowercase, typically _-delimited).
 CUT_MARKERS = ["ZZZ", "CUT", "POST", "DEPRECATED", "DELETE"]
 
+# Gameplay types that get fully-decoded spec sheets in the Detailed section.
+# Cosmetic/world types keep the identity-only render_added_table.
+SPEC_SHEET_TYPES = {
+    "WEAP", "ARMO", "AMMO", "PROJ", "EXPL", "COBJ",
+    "OMOD", "AVIF", "NPC_", "LVLI", "MGEF", "ENCH",
+}
+
+# NPC / character curve sampling window (HP, resist, damage scaling by level).
+# Adjust these when the level cap rises — e.g. set MAX to 500.
+NPC_CURVE_LEVEL_MIN  = 100
+NPC_CURVE_LEVEL_MAX  = 200
+NPC_CURVE_LEVEL_STEP = 25
+
+# Player-gear level-band fallback when Object Template carries no Level Min/Max.
+PLAYER_LEVEL_FALLBACK_MIN = 1
+PLAYER_LEVEL_FALLBACK_MAX = 50
+
+# Per-block display caps (keep spec sheets scannable and Discord-chunk-safe).
+MAX_CURVE_ROWS        = 8
+MAX_DMG_TYPES         = 8
+MAX_MODS_PER_SLOT     = 6
+MAX_LVLI_ROWS         = 12
+MAX_PERKS             = 12
+MAX_INVENTORY         = 12
+MAX_SOURCES_PER_KIND  = 6
+
+SOURCE_KIND_LABEL = {
+    "leveled_list": "Leveled List",
+    "container":    "Container",
+    "recipe":       "Recipe",
+    "quest":        "Quest",
+    "npc_drop":     "NPC Drop",
+    "vendor":       "Vendor",
+    "world":        "World",
+}
+
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
@@ -202,6 +238,177 @@ def format_scalar(v, ref_names=None):
             return f"`{name}`"
         return f"`{str(v)[:60]}…`"
     return f"`{repr(v)[:60]}`"
+
+
+# --------------------------------------------------------------------------
+# Curve helpers
+# --------------------------------------------------------------------------
+
+def curve_eval(points, x):
+    """Linear interpolate y at x over [{'x': f, 'y': f}, ...].
+    Mirrors Rust curves::eval: clamp to first.y below first.x,
+    last.y above last.x, lerp between. Returns None for an empty curve."""
+    if not points:
+        return None
+    pts = sorted(points, key=lambda p: p["x"])  # defensive sort
+    if x <= pts[0]["x"]:
+        return pts[0]["y"]
+    if x >= pts[-1]["x"]:
+        return pts[-1]["y"]
+    for i in range(len(pts) - 1):
+        x0, y0 = pts[i]["x"], pts[i]["y"]
+        x1, y1 = pts[i + 1]["x"], pts[i + 1]["y"]
+        if x0 <= x <= x1:
+            if x1 == x0:
+                return y0
+            t = (x - x0) / (x1 - x0)
+            return y0 + t * (y1 - y0)
+    return pts[-1]["y"]
+
+
+def fmt_num(v):
+    """Compact number: drop trailing '.0', round floats to 2 dp."""
+    if v is None:
+        return "?"
+    if isinstance(v, float):
+        r = round(v, 2)
+        return str(int(r)) if r == int(r) else str(r)
+    return str(v)
+
+
+def curve_table_for_levels(points, levels):
+    """Evaluate curve at each level; collapse runs of equal rounded values.
+    Returns [(label_str, value_str), ...] capped at MAX_CURVE_ROWS."""
+    if not points or not levels:
+        return []
+    rows = []
+    for lv in sorted(set(int(round(lv)) for lv in levels)):
+        y = curve_eval(points, lv)
+        rows.append((lv, fmt_num(y)))
+    # Collapse consecutive identical values → "a–b: val"
+    collapsed = []
+    i = 0
+    while i < len(rows):
+        lv, val = rows[i]
+        j = i + 1
+        while j < len(rows) and rows[j][1] == val:
+            j += 1
+        if j - i == 1:
+            collapsed.append((str(lv), val))
+        else:
+            collapsed.append((f"{lv}–{rows[j - 1][0]}", val))
+        i = j
+    if len(collapsed) > MAX_CURVE_ROWS:
+        dropped = len(collapsed) - MAX_CURVE_ROWS + 1
+        collapsed = collapsed[:MAX_CURVE_ROWS - 1] + [(f"…+{dropped} more", "")]
+    return collapsed
+
+
+def fmt_curve_inline(rows):
+    """Join [(label, value), ...] as 'label: val · label: val · …'."""
+    return " · ".join(f"{lb}: {vl}" for lb, vl in rows if vl)
+
+
+def is_curve(val):
+    """True if val is a decoded FormID reference with inlined curve points."""
+    return isinstance(val, dict) and "curve" in val and isinstance(val.get("curve"), list)
+
+
+def iter_curves(node, path=""):
+    """Recursively yield (dotted_label, points_list) for every inlined curve."""
+    if is_curve(node):
+        yield path, node["curve"]
+    elif isinstance(node, dict):
+        for k, v in node.items():
+            sub = f"{path}.{k}" if path else k
+            yield from iter_curves(v, sub)
+    elif isinstance(node, list):
+        for i, item in enumerate(node):
+            yield from iter_curves(item, f"{path}[{i}]")
+
+
+def derive_eligible_levels(fields):
+    """Return (min_level, max_level) from Object Template Level Min/Max.
+    Falls back to PLAYER_LEVEL_FALLBACK_MIN/MAX if absent."""
+    lo, hi = None, None
+    tmpl = fields.get("Object Template")
+    if isinstance(tmpl, list):
+        for combo in tmpl:
+            items = combo.get("Object Mod Template Item") or []
+            if isinstance(items, dict):
+                items = [items]
+            for item in (items if isinstance(items, list) else []):
+                lmin = item.get("Level Min")
+                lmax = item.get("Level Max")
+                if isinstance(lmin, (int, float)):
+                    lo = lmin if lo is None else min(lo, lmin)
+                if isinstance(lmax, (int, float)):
+                    hi = lmax if hi is None else max(hi, lmax)
+    lo = lo if lo is not None else PLAYER_LEVEL_FALLBACK_MIN
+    hi = hi if hi is not None else PLAYER_LEVEL_FALLBACK_MAX
+    return int(lo), int(hi)
+
+
+def _player_curve_rows(points, fields):
+    """Evaluate curve at player-eligible levels: band endpoints + in-band breakpoints."""
+    lmin, lmax = derive_eligible_levels(fields)
+    in_band = {int(round(p["x"])) for p in points if lmin <= p["x"] <= lmax}
+    levels = sorted({lmin, lmax} | in_band)
+    return curve_table_for_levels(points, levels)
+
+
+def _npc_curve_levels():
+    return list(range(NPC_CURVE_LEVEL_MIN, NPC_CURVE_LEVEL_MAX + 1, NPC_CURVE_LEVEL_STEP))
+
+
+def _npc_curve_cells(points):
+    """Evaluate curve at NPC stat window levels. Returns list of value strings."""
+    return [fmt_num(curve_eval(points, lv)) for lv in _npc_curve_levels()]
+
+
+def _ref(v, ref_names):
+    """Format a FormID value (possibly a curve object) as a readable reference."""
+    if is_curve(v):
+        fid = v.get("formid", "?")
+        return format_scalar(fid, ref_names)
+    return format_scalar(v, ref_names)
+
+
+# --------------------------------------------------------------------------
+# Sources block renderer
+# --------------------------------------------------------------------------
+
+def render_sources_block(sources, ref_names=None, label="Sources"):
+    """Group a sources list by kind and return markdown bullet lines."""
+    if not sources:
+        return []
+    by_kind = defaultdict(list)
+    for s in sources:
+        by_kind[s.get("kind", "world")].append(s)
+    lines = [f"*{label}:*"]
+    order = ["leveled_list", "container", "recipe", "quest", "npc_drop", "vendor", "world"]
+    for kind in order:
+        group = by_kind.get(kind)
+        if not group:
+            continue
+        lbl = SOURCE_KIND_LABEL.get(kind, kind)
+        entries = group[:MAX_SOURCES_PER_KIND]
+        extra = len(group) - len(entries)
+        parts = []
+        for s in entries:
+            fid = s.get("form_id", "?")
+            rt = s.get("record_type", "?")
+            edid = s.get("editor_id") or ""
+            sname = s.get("name") or ""
+            if sname and edid:
+                parts.append(f"`{fid}` ({rt}: `{edid}` *\"{sname}\"*)")
+            elif edid:
+                parts.append(f"`{fid}` ({rt}: `{edid}`)")
+            else:
+                parts.append(f"`{fid}` ({rt})")
+        suffix = f" *+{extra} more*" if extra else ""
+        lines.append(f"- **{lbl}** ({len(group)}): {', '.join(parts)}{suffix}")
+    return lines
 
 
 def is_vmad_hex_change(path, fv, tv):
@@ -515,7 +722,42 @@ def diff_stages(from_list, to_list):
     return lines
 
 
-def smart_array_diff(from_list, to_list):
+def diff_components(from_list, to_list, ref_names=None):
+    """Render per-component crafting-cost quantity diffs."""
+    def comp_key(entry):
+        c = entry.get("Component")
+        if isinstance(c, str):
+            return c
+        if isinstance(c, dict):
+            return c.get("formid", str(c))
+        return str(c)
+
+    def qty(entry):
+        q = entry.get("Quantity")
+        if q is None:
+            q = entry.get("Count")
+        return q
+
+    from_map = {comp_key(e): e for e in from_list if isinstance(e, dict)}
+    to_map   = {comp_key(e): e for e in to_list   if isinstance(e, dict)}
+    all_keys = list(from_map) + [k for k in to_map if k not in from_map]
+    lines = []
+    for key in all_keys:
+        old_e = from_map.get(key)
+        new_e = to_map.get(key)
+        comp_ref = _ref(new_e.get("Component") if new_e else (old_e.get("Component") if old_e else key), ref_names)
+        if old_e is None:
+            lines.append(f"  - **+** {comp_ref}: ×{fmt_num(qty(new_e))}")
+        elif new_e is None:
+            lines.append(f"  - **−** {comp_ref}: was ×{fmt_num(qty(old_e))}")
+        else:
+            oq, nq = qty(old_e), qty(new_e)
+            if oq != nq:
+                lines.append(f"  - {comp_ref}: ×{fmt_num(oq)} → ×{fmt_num(nq)}")
+    return lines or None
+
+
+def smart_array_diff(from_list, to_list, ref_names=None):
     if not isinstance(from_list, list) or not isinstance(to_list, list):
         return None
 
@@ -529,6 +771,11 @@ def smart_array_diff(from_list, to_list):
 
     if "Stage" in sample:
         return diff_stages(from_list, to_list) or None
+
+    # Component structs (COBJ Components / Repair / Scrap Recieved).
+    # Must come before the "Combination"/"mod" branch to avoid mis-matching.
+    if "Component" in sample or "Quantity" in sample:
+        return diff_components(from_list, to_list, ref_names) or None
 
     if "Leveled List Entry" in sample:
         delta = len(to_list) - len(from_list)
@@ -641,6 +888,7 @@ def _walk_fc(fc, path, scalar_rows, array_sections, vmad_sections, raw_fields, r
                 diff = smart_array_diff(
                     fv if isinstance(fv, list) else [],
                     tv if isinstance(tv, list) else [],
+                    ref_names,
                 )
                 if diff:
                     array_sections.append((key, diff))
@@ -786,6 +1034,624 @@ def render_added_table(records):
             edid = r.get("editor_id") or "*(no edid)*"
             out.append(f"| `{r['form_id']}` | `{edid}` |")
     return out
+
+
+# --------------------------------------------------------------------------
+# Spec-sheet renderers for added gameplay records
+# --------------------------------------------------------------------------
+
+def _spec_header(record):
+    """Shared one-line header for every spec sheet."""
+    edid    = record.get("editor_id") or "*(no edid)*"
+    form_id = record.get("form_id", "?")
+    name    = record.get("name")
+    if name:
+        return f"**`{edid}`** `{form_id}` — *{name}*"
+    return f"**`{edid}`** `{form_id}`"
+
+
+def render_weap_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    data = fields.get("Data") or fields.get("DNAM") or {}
+    stats = []
+    for key in ("Value", "Weight", "Weapon Type"):
+        v = data.get(key)
+        if v is not None:
+            stats.append(f"{key} {format_scalar(v, ref_names)}")
+    if stats:
+        out.append("- **Stats:** " + " · ".join(stats))
+
+    dmg_parts = []
+    for key in ("Base Damage",):
+        v = data.get(key)
+        if v is not None:
+            dmg_parts.append(f"Base Dmg {format_scalar(v, ref_names)}")
+    for key in ("Action Point Cost", "Speed", "Attack Delay Seconds"):
+        v = data.get(key)
+        if v is not None:
+            dmg_parts.append(f"{key} {format_scalar(v, ref_names)}")
+    ammo = data.get("Ammo")
+    if ammo:
+        dmg_parts.append(f"Ammo {_ref(ammo, ref_names)}")
+    cap = data.get("Capacity")
+    if cap is not None:
+        dmg_parts.append(f"Capacity {format_scalar(cap, ref_names)}")
+    shots = data.get("Ammo used per shot")
+    if shots is not None:
+        dmg_parts.append(f"{shots}/shot")
+    if dmg_parts:
+        out.append("- **Weapon:** " + " · ".join(str(x) for x in dmg_parts))
+
+    # Projectile override
+    for struct_key in ("FNAM", "RGW2", "RGW3"):
+        proj_struct = fields.get(struct_key) or {}
+        if proj_struct:
+            proj = proj_struct.get("Override Projectile")
+            nproj = proj_struct.get("# Projectiles")
+            fire  = proj_struct.get("Animation Fire Seconds")
+            pparts = []
+            if proj:
+                pparts.append(f"Proj {_ref(proj, ref_names)}")
+            if nproj:
+                pparts.append(f"×{nproj}")
+            if fire:
+                pparts.append(f"fire {format_scalar(fire, ref_names)}s")
+            if pparts:
+                out.append("- **Projectile:** " + " · ".join(pparts))
+            break
+
+    # Crit
+    crit = fields.get("Critical Data") or {}
+    if crit:
+        cparts = []
+        cm = crit.get("Crit Damage Mult")
+        ce = crit.get("Crit Effect")
+        if cm is not None:
+            cparts.append(f"×{fmt_num(cm)} dmg")
+        if ce:
+            cparts.append(f"effect {_ref(ce, ref_names)}")
+        if cparts:
+            out.append("- **Crit:** " + " · ".join(cparts))
+
+    # Damage types (with curve eval)
+    dmg_types = fields.get("Damage Types") or []
+    if isinstance(dmg_types, list) and dmg_types:
+        lmin, lmax = derive_eligible_levels(fields)
+        out.append("")
+        out.append("*Damage Types:*")
+        out.append("| Type | Amount | Scaling (player lvl→amt) |")
+        out.append("|------|--------|--------------------------|")
+        for entry in dmg_types[:MAX_DMG_TYPES]:
+            if not isinstance(entry, dict):
+                continue
+            dtype = _ref(entry.get("Type"), ref_names)
+            amount = fmt_num(entry.get("Amount"))
+            curv = entry.get("Curve Table")
+            if is_curve(curv):
+                rows = _player_curve_rows((curv or {}).get("curve") or [], fields)
+                scaling = fmt_curve_inline(rows) or "flat"
+            else:
+                scaling = "flat"
+            out.append(f"| {dtype} | {amount} | {scaling} |")
+
+    # Mod slots from Object Template
+    tmpl = fields.get("Object Template")
+    if isinstance(tmpl, list) and tmpl:
+        lmin, lmax = derive_eligible_levels(fields)
+        # Count distinct attach-point indices and collect mods
+        slots = defaultdict(list)
+        for combo in tmpl:
+            items = combo.get("Object Mod Template Item") or []
+            if isinstance(items, dict):
+                items = [items]
+            for item in (items if isinstance(items, list) else []):
+                includes = item.get("Includes") or []
+                if isinstance(includes, dict):
+                    includes = [includes]
+                for inc in (includes if isinstance(includes, list) else []):
+                    mod = inc.get("Mod")
+                    idx = inc.get("Attach Point Index", "?")
+                    if mod and _ref(mod, ref_names) not in [_ref(m, ref_names) for m in slots[idx]]:
+                        slots[idx].append(mod)
+        if slots:
+            out.append("")
+            out.append(f"*Mod slots:* {len(slots)} (eligible levels {lmin}–{lmax})")
+            for idx, mods in sorted(slots.items(), key=lambda x: str(x[0])):
+                shown = mods[:MAX_MODS_PER_SLOT]
+                extra = len(mods) - len(shown)
+                mod_strs = [_ref(m, ref_names) for m in shown]
+                suffix = f" *+{extra} more*" if extra else ""
+                out.append(f"- Slot [{idx}]: {', '.join(mod_strs)}{suffix}")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_armo_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    armor_data = fields.get("Armor Data") or fields.get("DATA") or {}
+    stats = []
+    for key in ("Value", "Weight", "Health"):
+        v = armor_data.get(key)
+        if v is not None:
+            stats.append(f"{key} {format_scalar(v, ref_names)}")
+    if stats:
+        out.append("- **Stats:** " + " · ".join(stats))
+
+    rating = fields.get("Rating Addon Data") or {}
+    rparts = []
+    for key in ("Armor Rating", "Stagger Rating"):
+        v = rating.get(key)
+        if v is not None:
+            rparts.append(f"{key} {format_scalar(v, ref_names)}")
+    if rparts:
+        out.append("- **Ratings:** " + " · ".join(rparts))
+
+    resists = fields.get("Resistances") or []
+    if isinstance(resists, list) and resists:
+        out.append("")
+        out.append("*Resistances:*")
+        out.append("| Type | Amount | Scaling (player lvl→amt) |")
+        out.append("|------|--------|--------------------------|")
+        for entry in resists[:MAX_DMG_TYPES]:
+            if not isinstance(entry, dict):
+                continue
+            rtype = _ref(entry.get("Type"), ref_names)
+            amount = fmt_num(entry.get("Amount"))
+            curv = entry.get("Curve Table")
+            if is_curve(curv):
+                rows = _player_curve_rows((curv or {}).get("curve") or [], fields)
+                scaling = fmt_curve_inline(rows) or "flat"
+            else:
+                scaling = "flat"
+            out.append(f"| {rtype} | {amount} | {scaling} |")
+
+    # Mod slots
+    tmpl = fields.get("Object Template")
+    if isinstance(tmpl, list) and tmpl:
+        lmin, lmax = derive_eligible_levels(fields)
+        slots = defaultdict(list)
+        for combo in tmpl:
+            items = combo.get("Object Mod Template Item") or []
+            if isinstance(items, dict):
+                items = [items]
+            for item in (items if isinstance(items, list) else []):
+                includes = item.get("Includes") or []
+                if isinstance(includes, dict):
+                    includes = [includes]
+                for inc in (includes if isinstance(includes, list) else []):
+                    mod = inc.get("Mod")
+                    idx = inc.get("Attach Point Index", "?")
+                    if mod:
+                        slots[idx].append(mod)
+        if slots:
+            out.append("")
+            out.append(f"*Mod slots:* {len(slots)} (eligible levels {lmin}–{lmax})")
+            for idx, mods in sorted(slots.items(), key=lambda x: str(x[0])):
+                shown = mods[:MAX_MODS_PER_SLOT]
+                extra = len(mods) - len(shown)
+                mod_strs = [_ref(m, ref_names) for m in shown]
+                suffix = f" *+{extra} more*" if extra else ""
+                out.append(f"- Slot [{idx}]: {', '.join(mod_strs)}{suffix}")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_ammo_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    dnam = fields.get("DNAM") or fields.get("Data") or {}
+    parts = []
+    for key in ("Damage", "Health"):
+        v = dnam.get(key)
+        if v is not None:
+            parts.append(f"{key} {format_scalar(v, ref_names)}")
+    proj = dnam.get("Projectile")
+    if proj:
+        parts.append(f"Proj {_ref(proj, ref_names)}")
+    flags = dnam.get("Flags")
+    if flags:
+        parts.append(f"Flags {format_scalar(flags, ref_names)}")
+    data = fields.get("Data") or {}
+    for key in ("Value", "Weight"):
+        v = data.get(key) if key not in dnam else None
+        if v is not None:
+            parts.append(f"{key} {format_scalar(v, ref_names)}")
+    if parts:
+        out.append("- " + " · ".join(parts))
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_proj_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    data = fields.get("Data") or fields.get("DNAM") or {}
+    parts = []
+    for key in ("Type", "Speed", "Gravity", "Range"):
+        v = data.get(key)
+        if v is not None:
+            parts.append(f"{key} {format_scalar(v, ref_names)}")
+    expl = data.get("Explosion")
+    if expl:
+        parts.append(f"Explosion {_ref(expl, ref_names)}")
+    if parts:
+        out.append("- " + " · ".join(parts))
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_expl_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    data = fields.get("Data") or fields.get("ENIT") or {}
+    parts = []
+    for key in ("Damage", "Force"):
+        v = data.get(key)
+        if v is not None:
+            parts.append(f"{key} {format_scalar(v, ref_names)}")
+    for key in ("Inner Radius", "Outer Radius"):
+        v = data.get(key)
+        if v is not None:
+            parts.append(f"{key} {format_scalar(v, ref_names)}")
+    sp = data.get("Spawn Projectile")
+    if sp:
+        parts.append(f"Spawn Proj {_ref(sp, ref_names)}")
+    if parts:
+        out.append("- " + " · ".join(parts))
+
+    # Damage curve (breakpoints only — no parent Object Template for level band)
+    dcurv = data.get("Damage Curve Table")
+    if is_curve(dcurv):
+        pts = (dcurv or {}).get("curve") or []
+        breakpoints = sorted({int(round(p["x"])) for p in pts})
+        rows = curve_table_for_levels(pts, breakpoints)
+        if rows:
+            out.append(f"- **Damage scaling:** {fmt_curve_inline(rows)}")
+
+    dmg_types = fields.get("Damage Types") or []
+    if isinstance(dmg_types, list) and dmg_types:
+        out.append("")
+        out.append("*Damage Types:*")
+        out.append("| Type | Amount |")
+        out.append("|------|--------|")
+        for entry in dmg_types[:MAX_DMG_TYPES]:
+            if not isinstance(entry, dict):
+                continue
+            out.append(f"| {_ref(entry.get('Type'), ref_names)} | {fmt_num(entry.get('Amount'))} |")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_cobj_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    created = fields.get("Created Object") or fields.get("CNAM")
+    if created:
+        out.append(f"- **Creates:** {_ref(created, ref_names)}")
+
+    bench = fields.get("Workbench Keyword") or fields.get("BNAM")
+    if bench:
+        out.append(f"- **Workbench:** {_ref(bench, ref_names)}")
+
+    learn_method = fields.get("Learn Method")
+    if learn_method:
+        lm_str = learn_method.get("name") if isinstance(learn_method, dict) else str(learn_method)
+        out.append(f"- **Learn method:** {lm_str}")
+
+    recipe_from = fields.get("Learn Recipe From") or fields.get("GNAM")
+    if recipe_from:
+        out.append(f"- **Learn recipe from:** {_ref(recipe_from, ref_names)}")
+
+    build_group = fields.get("Build Group Name") or fields.get("NAM1")
+    if build_group:
+        out.append(f"- **Build group:** {format_scalar(build_group, ref_names)}")
+
+    # Crafting cost
+    components = fields.get("Components") or fields.get("FVPA") or []
+    if isinstance(components, list) and components:
+        out.append("")
+        out.append("*Crafting cost:*")
+        for entry in components:
+            if not isinstance(entry, dict):
+                continue
+            comp = entry.get("Component")
+            qty  = entry.get("Quantity")
+            qs   = entry.get("Quantity Source", "count")
+            if qty is None:
+                qty = entry.get("Count")
+            comp_ref = _ref(comp, ref_names)
+            suspect = "" if qs == "curve" else " ⚠ *(no curve table — qty = raw Count, may be inaccurate)*"
+            out.append(f"- {fmt_num(qty)} × {comp_ref}{suspect}")
+
+    # Also show Repair and Scrap Recieved if present
+    for arr_key in ("Repair", "Scrap Recieved"):
+        arr = fields.get(arr_key) or []
+        if isinstance(arr, list) and arr:
+            out.append("")
+            out.append(f"*{arr_key}:*")
+            for entry in arr:
+                if not isinstance(entry, dict):
+                    continue
+                comp = entry.get("Component")
+                qty  = entry.get("Quantity") or entry.get("Count")
+                out.append(f"- {fmt_num(qty)} × {_ref(comp, ref_names)}")
+
+    # Recipe source: from sources that look like plans/notes
+    recipe_sources = [s for s in sources if s.get("kind") in ("recipe", "vendor", "quest", "container")]
+    other_sources  = [s for s in sources if s not in recipe_sources]
+    if recipe_sources:
+        out.append("")
+        out.extend(render_sources_block(recipe_sources, ref_names, label="Recipe source"))
+    if other_sources:
+        out.extend(render_sources_block(other_sources, ref_names))
+    elif not recipe_sources:
+        out.extend(render_sources_block(sources, ref_names))
+
+    return out
+
+
+def render_omod_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    attach = fields.get("Attach Point") or fields.get("ANAM")
+    if attach:
+        out.append(f"- **Attach point:** {format_scalar(attach, ref_names)}")
+
+    kws = fields.get("Target OMOD Keywords") or fields.get("MNAM") or []
+    if kws:
+        kw_strs = [format_scalar(k, ref_names) for k in (kws if isinstance(kws, list) else [kws])]
+        out.append(f"- **Targets:** {', '.join(kw_strs[:6])}")
+
+    data = fields.get("Data") or {}
+    props = data.get("Properties") if isinstance(data, dict) else None
+    if not props:
+        props = fields.get("Properties") or fields.get("DATA") or []
+    if isinstance(props, list) and props:
+        out.append("")
+        out.append("*Properties (effects):*")
+        out.append("| Stat | Function | Value |")
+        out.append("|------|----------|-------|")
+        for p in props:
+            if not isinstance(p, dict):
+                continue
+            stat = format_scalar(p.get("Property") or p.get("Actor Value"), ref_names)
+            func = format_scalar(p.get("Function Type") or p.get("Type"), ref_names)
+            v1   = p.get("Value 1") or p.get("Value")
+            v2   = p.get("Value 2")
+            val  = fmt_num(v1) if v2 is None else f"{fmt_num(v1)}, {fmt_num(v2)}"
+            out.append(f"| {stat} | {func} | {val} |")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_avif_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    parts = []
+    for key in ("Default Value", "Minimum Value", "Maximum Value"):
+        v = fields.get(key)
+        if v is not None:
+            parts.append(f"{key.replace(' Value', '')} {format_scalar(v, ref_names)}")
+    if parts:
+        out.append("- **Values:** " + " · ".join(parts))
+
+    desc = fields.get("Description") or fields.get("DESC")
+    if desc:
+        d = format_scalar(desc, ref_names)
+        out.append(f"- *Description:* {d}")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_npc_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    # Level band
+    acbs = fields.get("ACBS") or {}
+    lv_parts = []
+    lvl  = acbs.get("Level") or acbs.get("Level Mult")
+    cmin = acbs.get("Calc min level")
+    cmax = acbs.get("Calc max level")
+    if cmin is not None and cmax is not None:
+        lv_parts.append(f"Level {format_scalar(cmin, ref_names)}–{format_scalar(cmax, ref_names)}")
+    elif lvl is not None:
+        lv_parts.append(f"Level {format_scalar(lvl, ref_names)}")
+
+    dnam = fields.get("DNAM") or {}
+    hp = dnam.get("Calculated Health")
+    ap = dnam.get("Calculated Action Points")
+    if hp is not None:
+        lv_parts.append(f"Health {format_scalar(hp, ref_names)}")
+    if ap is not None:
+        lv_parts.append(f"AP {format_scalar(ap, ref_names)}")
+    if lv_parts:
+        out.append("- **Stats:** " + " · ".join(lv_parts))
+
+    znam = fields.get("Combat Style") or fields.get("ZNAM")
+    if znam:
+        out.append(f"- **Combat style:** {_ref(znam, ref_names)}")
+
+    tplt = fields.get("Default Template") or fields.get("TPLT")
+    if tplt:
+        out.append(f"- **Default template:** {_ref(tplt, ref_names)}")
+
+    # NPC scaling curves: collect all inlined curves and render the NPC window
+    curve_found = {}
+    for label, pts in iter_curves(fields):
+        short = label.split(".")[-1].replace("[", "").replace("]", "")
+        if short not in curve_found:
+            curve_found[short] = pts
+    if curve_found:
+        levels = _npc_curve_levels()
+        header_lvls = " | ".join(str(lv) for lv in levels)
+        sep_lvls    = " | ".join("---" for _ in levels)
+        out.append("")
+        out.append(f"*Scaling (NPC level):*")
+        out.append(f"| Stat | {header_lvls} |")
+        out.append(f"|------|{sep_lvls}|")
+        for stat, pts in list(curve_found.items())[:8]:
+            cells = " | ".join(_npc_curve_cells(pts))
+            out.append(f"| {stat} | {cells} |")
+
+    perks = fields.get("Perks") or []
+    if isinstance(perks, list) and perks:
+        perk_strs = []
+        for p in perks[:MAX_PERKS]:
+            if not isinstance(p, dict):
+                continue
+            pf = p.get("Perk")
+            rk = p.get("Rank")
+            s = _ref(pf, ref_names)
+            if rk is not None:
+                s += f" r{rk}"
+            perk_strs.append(s)
+        extra = len(perks) - len(perk_strs)
+        suffix = f" *+{extra} more*" if extra else ""
+        out.append(f"*Perks ({len(perks)}):* {', '.join(perk_strs)}{suffix}")
+
+    inv = fields.get("Items") or fields.get("CNTO") or []
+    if isinstance(inv, list) and inv:
+        shown = inv[:MAX_INVENTORY]
+        extra = len(inv) - len(shown)
+        inv_strs = []
+        for item in shown:
+            if not isinstance(item, dict):
+                continue
+            it = item.get("Item")
+            cnt = item.get("Count", 1)
+            inv_strs.append(f"{cnt}× {_ref(it, ref_names)}")
+        suffix = f" *+{extra} more*" if extra else ""
+        out.append(f"*Inventory ({len(inv)}):* {', '.join(inv_strs)}{suffix}")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_lvli_spec(record, ref_names=None):
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    entries = fields.get("Leveled List Entries") or fields.get("LLCT") or []
+    chance_none = fields.get("Chance None") or fields.get("LVLD")
+
+    header_parts = [f"Entries: {len(entries)}"]
+    if chance_none is not None and chance_none != 0:
+        header_parts.append(f"Chance none: {fmt_num(chance_none)}%")
+    out.append("- " + " · ".join(header_parts))
+
+    if isinstance(entries, list) and entries:
+        out.append("")
+        out.append("| Lvl | Item | Count |")
+        out.append("|-----|------|-------|")
+        shown = entries[:MAX_LVLI_ROWS]
+        extra = len(entries) - len(shown)
+        for e in shown:
+            if not isinstance(e, dict):
+                continue
+            bd = e.get("Base Data") or e
+            lv  = bd.get("Level", "?")
+            it  = bd.get("Item") or bd.get("Reference")
+            cnt = bd.get("Count", 1)
+            out.append(f"| {lv} | {_ref(it, ref_names)} | {cnt} |")
+        if extra:
+            out.append(f"| … | *{extra} more entries* | |")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+def render_generic_spec(record, ref_names=None):
+    """Fallback: key→value table for MGEF, ENCH, and any unrecognised gameplay type."""
+    fields  = record.get("fields") or {}
+    sources = record.get("sources") or []
+    out     = [_spec_header(record), ""]
+
+    if fields:
+        out.append("| Field | Value |")
+        out.append("|-------|-------|")
+        for k, v in list(fields.items())[:20]:
+            if k.startswith("_"):
+                continue
+            out.append(f"| {k} | {format_scalar(v, ref_names)} |")
+
+    # Any curves found anywhere
+    for label, pts in list(iter_curves(fields))[:3]:
+        breakpoints = sorted({int(round(p["x"])) for p in pts})
+        rows = curve_table_for_levels(pts, breakpoints)
+        if rows:
+            out.append(f"- **{label} (curve breakpoints):** {fmt_curve_inline(rows)}")
+
+    out.append("")
+    out.extend(render_sources_block(sources, ref_names))
+    return out
+
+
+SPEC_RENDERERS = {
+    "WEAP": render_weap_spec,
+    "ARMO": render_armo_spec,
+    "AMMO": render_ammo_spec,
+    "PROJ": render_proj_spec,
+    "EXPL": render_expl_spec,
+    "COBJ": render_cobj_spec,
+    "OMOD": render_omod_spec,
+    "AVIF": render_avif_spec,
+    "NPC_": render_npc_spec,
+    "LVLI": render_lvli_spec,
+    "LVLN": render_lvli_spec,
+    "LVLP": render_lvli_spec,
+}
+
+
+def render_added_detail(record, ref_names=None):
+    """Render a single added gameplay record as a spec sheet."""
+    rtype = record.get("record_type", "")
+    renderer = SPEC_RENDERERS.get(rtype, render_generic_spec)
+    # If no decoded fields were attached (e.g. decode failed), fall back to identity.
+    if not record.get("fields"):
+        edid    = record.get("editor_id") or "*(no edid)*"
+        form_id = record.get("form_id", "?")
+        name    = record.get("name")
+        if name:
+            return [f"**`{edid}`** `{form_id}` — *{name}*", ""]
+        return [f"**`{edid}`** `{form_id}`", ""]
+    return renderer(record, ref_names)
 
 
 # --------------------------------------------------------------------------
@@ -1106,8 +1972,13 @@ def generate_markdown(diff_data, old_label, new_label, patch_date,
         if a_list:
             out.append(f"#### Added ({len(a_list)})")
             out.append("")
-            out.extend(render_added_table(a_list))
-            out.append("")
+            if rtype in SPEC_SHEET_TYPES:
+                for rec in a_list:
+                    out.extend(render_added_detail(rec, ref_names))
+                    out.append("")   # blank separator = chunker split point
+            else:
+                out.extend(render_added_table(a_list))
+                out.append("")
 
         if r_list:
             out.append(f"#### Removed ({len(r_list)})")
