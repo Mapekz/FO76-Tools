@@ -5,11 +5,11 @@
 //! # Running this test
 //!
 //! ```sh
-//! RUST_TEST_ESM=/path/to/SeventySix.esm cargo test -- --ignored decode_all_clean_types_fully
+//! RUST_TEST_ESM=/path/to/SeventySix.esm cargo test
 //! ```
 //!
-//! The test is `#[ignore]`d by default so that `cargo test` in CI (where the
-//! game ESM is unavailable) skips it without failing.
+//! The test skips silently when `RUST_TEST_ESM` is unset, so `cargo test` in
+//! CI (where the game ESM is unavailable) passes without extra flags.
 //!
 //! # What is checked
 //!
@@ -85,10 +85,11 @@ fn count_problems(v: &serde_json::Value) -> (usize, Vec<String>) {
 }
 
 #[test]
-#[ignore = "requires RUST_TEST_ESM env var pointing at a SeventySix*.esm file"]
 fn decode_all_clean_types_fully() {
-    let esm_path = std::env::var("RUST_TEST_ESM")
-        .expect("set RUST_TEST_ESM to the path of a SeventySix*.esm file");
+    let Ok(esm_path) = std::env::var("RUST_TEST_ESM") else {
+        eprintln!("RUST_TEST_ESM not set — skipping");
+        return;
+    };
 
     let mut db = Database::open(&esm_path)
         .unwrap_or_else(|e| panic!("failed to open ESM at {esm_path:?}: {e}"));

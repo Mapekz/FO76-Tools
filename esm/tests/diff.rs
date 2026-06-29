@@ -71,10 +71,15 @@ fn json_diff_unequal_primitives() {
 }
 
 #[test]
-#[ignore = "requires RUST_TEST_ESM_A and RUST_TEST_ESM_B env vars"]
 fn diff_two_esm_versions_glob() {
-    let esm_a = std::env::var("RUST_TEST_ESM_A").expect("set RUST_TEST_ESM_A to path of older ESM");
-    let esm_b = std::env::var("RUST_TEST_ESM_B").expect("set RUST_TEST_ESM_B to path of newer ESM");
+    let Ok(esm_a) = std::env::var("RUST_TEST_ESM_A") else {
+        eprintln!("RUST_TEST_ESM_A / RUST_TEST_ESM_B not set — skipping");
+        return;
+    };
+    let Ok(esm_b) = std::env::var("RUST_TEST_ESM_B") else {
+        eprintln!("RUST_TEST_ESM_B not set — skipping");
+        return;
+    };
     let db_a = esm::Database::open(&esm_a).unwrap();
     let db_b = esm::Database::open(&esm_b).unwrap();
     let result = esm::diff::diff_databases(&db_a, &db_b).unwrap();

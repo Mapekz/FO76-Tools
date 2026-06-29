@@ -9,7 +9,7 @@ cargo build [--release]                             # esm CLI (target/release/es
 cargo build [--release] --features server           # also builds esm-server
 cargo run --bin esm -- <args>                       # run CLI
 cargo run --features server --bin esm-server -- <ESM> [--mcp-stdio]
-cargo test                                          # ~100 tests (2 ignored integration tests)
+cargo test                                          # ~100 tests; env-gated integration tests skip silently if unset
 cargo clippy --all-targets -- -D warnings
 cargo fmt [--check]
 
@@ -54,7 +54,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 - **Serialization**: manual little-endian byte reads (`u*::from_le_bytes`, `byteorder::ReadBytesExt`) for fixed headers; `serde`/`serde_json` for output; `bincode` for the index cache. No `binrw`/`nom`.
 - **Schema editing**: `schema/fo76.json` is embedded at compile time (`include_str!`). Change the extractor (`tools/extractor/extract.py`) or add overrides to `fo76.overrides.json` — don't hand-edit `fo76.json` directly unless fixing something the extractor can't express.
 - **Decoder must never panic**: unknown/malformed bytes → raw hex fallback (`_raw`, `_unknown_record`, `_unmapped`). Do not add unwraps on untrusted input.
-- **Tests**: most tests live in `tests/` (one file per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_records.rs`, `decode_coverage.rs`). Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode.rs`). All tests use synthetic in-memory byte buffers — no real ESM required. Integration tests that need game data go under `#[ignore]` with an env-var gate (see `tests/diff.rs`, `tests/decode_coverage.rs`).
+- **Tests**: most tests live in `tests/` (one file per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_records.rs`, `decode_coverage.rs`). Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode.rs`). All tests use synthetic in-memory byte buffers — no real ESM required. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
 
 ## Critical Invariants — Do Not Break
 

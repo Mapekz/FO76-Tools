@@ -48,7 +48,7 @@ and decode/index behavior should remain deterministic.
 ## Acceptance Criteria
 
 - Fresh checkout tests pass without game data.
-- Real ESM/BA2 tests are `#[ignore]` and opt in via documented env vars.
+- Real ESM/BA2 tests skip silently when env vars are unset and opt in via documented env vars.
 - Tests cover truncated headers, malformed subrecords, oversized declarations,
   BA2/string-table bounds, cache corruption, cache atomicity, decode union
   selection, nested structs, xref extraction, xref duplicate handling, and
@@ -59,6 +59,6 @@ and decode/index behavior should remain deterministic.
 ## Verification
 
 - `cargo test`
-- `cargo test -- --ignored` with documented local env vars set.
+- `RUST_TEST_ESM=<path> cargo test` with documented local env vars set.
 - `cargo clippy --all-targets -- -D warnings`
 - Optional frontend/static test command if a JS test harness is introduced.

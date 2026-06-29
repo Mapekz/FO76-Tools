@@ -227,7 +227,7 @@ python3 tools/extractor/audit.py --gate
 **Decode** — `full`: every subrecord and field consumed with no fallbacks; `partial`: some subrecords or fields hit a raw-bytes fallback or are left unmapped (schema gaps); `partial†`: only documented newer-than-reference drift subrecords remain `_unmapped` (see [Known coverage drift](CLAUDE.md#known-coverage-drift-vs-tes5edit)); `none`: record type has no schema entry — all subrecords are unmapped.  
 **Tests** — `robust`: ≥ 3 handpicked records tested end-to-end; `basic`: 1–2 records or covered by the exhaustive env-gated sweep; `none`: no dedicated test.
 
-Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. Run the exhaustive integration test locally with `RUST_TEST_ESM=<path> cargo test -- --ignored`.
+Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. Run the exhaustive integration test locally with `RUST_TEST_ESM=<path> cargo test`.
 
 | Sig | Name | Decode | Tests |
 |-----|------|:------:|:-----:|
@@ -420,11 +420,11 @@ Decode status is measured against `SeventySix_20260619.esm` via `esm coverage`. 
 ```sh
 cargo test
 
-# Exhaustive decode sweep (needs real ESM — 51 clean types, ~181k records)
-RUST_TEST_ESM=SeventySix.esm cargo test -- --ignored decode_all_clean_types_fully
+# Exhaustive decode sweep (needs real ESM — skips silently if unset)
+RUST_TEST_ESM=SeventySix.esm cargo test
 
-# Diff integration test (needs two ESM versions)
-RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test -- --ignored diff_two_esm_versions_glob
+# Diff integration test (needs two ESM versions — skips silently if unset)
+RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test
 ```
 
 | File | What it covers |
