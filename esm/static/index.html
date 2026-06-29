@@ -64,11 +64,11 @@ async function loadGroups() {
       const sig = g.label && g.label.kind === 'record_type' && g.label.sig ? g.label.sig : JSON.stringify(g.label);
       const div = document.createElement('div');
       div.className = 'group';
-      div.innerHTML = '<div class="group-label"><span class="group-sig">' + sig + '</span><span class="group-count">' + g.child_count + '</span></div>';
+      div.innerHTML = '<div class="group-label"><span class="group-sig">' + escHtml(sig) + '</span><span class="group-count">' + g.child_count + '</span></div>';
       div.onclick = () => loadGroupChildren(sig, g);
       el.appendChild(div);
     });
-  } catch(e) { el.innerHTML = '<div class="error">Failed to load groups: ' + e.message + '</div>'; }
+  } catch(e) { el.innerHTML = '<div class="error">Failed to load groups: ' + escHtml(e.message) + '</div>'; }
 }
 
 function showGroups() {
@@ -83,7 +83,7 @@ async function loadGroupChildren(sig, group) {
   const rl = document.getElementById('record-list');
   rl.style.display = '';
   const items = document.getElementById('record-items');
-  items.innerHTML = '<div style="padding:4px 12px;font-size:11px;color:#858585">' + sig + ' (' + group.child_count + ')</div>';
+  items.innerHTML = '<div style="padding:4px 12px;font-size:11px;color:#858585">' + escHtml(sig) + ' (' + group.child_count + ')</div>';
   await appendRecords(items, sig);
 }
 
@@ -113,7 +113,7 @@ async function appendRecords(container, sig) {
       container.appendChild(more);
     }
   } catch(e) {
-    container.insertAdjacentHTML('beforeend', '<div class="error" style="padding:4px 12px">' + e.message + '</div>');
+    container.insertAdjacentHTML('beforeend', '<div class="error" style="padding:4px 12px">' + escHtml(e.message) + '</div>');
   }
 }
 
@@ -122,15 +122,15 @@ async function loadRecord(formId, el) {
   if (el) el.classList.add('active');
   const info = document.getElementById('record-info');
   const view = document.getElementById('fields-view');
-  info.innerHTML = '<span class="spinner">⟳</span> Loading ' + formId + '…';
+  info.innerHTML = '<span class="spinner">⟳</span> Loading ' + escHtml(formId) + '…';
   view.innerHTML = '';
   try {
     const rec = await api('/records/' + formId);
-    info.innerHTML = '<span>' + (rec.editor_id || formId) + '</span> &nbsp; FormID: <span>' + formId + '</span> &nbsp; Type: <span>' + (rec.header && rec.header.signature) + '</span>';
+    info.innerHTML = '<span>' + escHtml(rec.editor_id || formId) + '</span> &nbsp; FormID: <span>' + escHtml(formId) + '</span> &nbsp; Type: <span>' + escHtml((rec.header && rec.header.signature) || '') + '</span>';
     view.innerHTML = '<pre>' + renderJson(rec.fields, 0) + '</pre>';
   } catch(e) {
-    info.innerHTML = '<span class="error">' + formId + '</span>';
-    view.innerHTML = '<div class="error">' + e.message + '</div>';
+    info.innerHTML = '<span class="error">' + escHtml(formId) + '</span>';
+    view.innerHTML = '<div class="error">' + escHtml(e.message) + '</div>';
   }
 }
 
@@ -153,7 +153,7 @@ function renderJson(val, depth) {
   return String(val);
 }
 
-function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 // Resizable pane
 const handle = document.getElementById('resize-handle');

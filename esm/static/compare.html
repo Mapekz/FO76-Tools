@@ -33,6 +33,8 @@
 <h1>FO76 ESM Diff</h1>
 <div id="content">Loading diff&#8230;</div>
 <script>
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
 async function load() {
   const el = document.getElementById('content');
   try {
@@ -40,7 +42,7 @@ async function load() {
     if (resp.status === 404) { el.innerHTML = '<div class="error">No compare file loaded. Start server with --compare &lt;file.esm&gt;</div>'; return; }
     const diff = await resp.json();
     render(diff, el);
-  } catch(e) { el.innerHTML = '<div class="error">' + e.message + '</div>'; }
+  } catch(e) { el.innerHTML = '<div class="error">' + escHtml(e.message) + '</div>'; }
 }
 
 function render(diff, el) {
@@ -57,7 +59,7 @@ function render(diff, el) {
   if (total_a > 0) {
     html += '<div class="section"><h2>Added (' + total_a + ')</h2>';
     diff.added.forEach(s => {
-      html += '<div class="record-row added">[' + s.form_id + '] ' + (s.editor_id || '') + ' <span style="color:#858585">' + s.record_type + '</span></div>';
+      html += '<div class="record-row added">[' + escHtml(s.form_id) + '] ' + escHtml(s.editor_id || '') + ' <span style="color:#858585">' + escHtml(s.record_type) + '</span></div>';
     });
     html += '</div>';
   }
@@ -65,18 +67,19 @@ function render(diff, el) {
   if (total_r > 0) {
     html += '<div class="section"><h2>Removed (' + total_r + ')</h2>';
     diff.removed.forEach(s => {
-      html += '<div class="record-row removed">[' + s.form_id + '] ' + (s.editor_id || '') + ' <span style="color:#858585">' + s.record_type + '</span></div>';
+      html += '<div class="record-row removed">[' + escHtml(s.form_id) + '] ' + escHtml(s.editor_id || '') + ' <span style="color:#858585">' + escHtml(s.record_type) + '</span></div>';
     });
     html += '</div>';
   }
 
   if (total_c > 0) {
     html += '<div class="section"><h2>Changed (' + total_c + ')</h2>';
+    let changeIdx = 0;
     Object.entries(byType).sort().forEach(([type, records]) => {
-      html += '<div class="type-group"><div class="type-header" onclick="toggleType(this)">' + type + ' (' + records.length + ')</div><div class="type-records">';
-      records.forEach((d, i) => {
-        const id = 'changed-' + type + '-' + i;
-        html += '<div class="record-row changed" onclick="toggleFields(\'' + id + '\')">[' + d.stub.form_id + '] ' + (d.stub.editor_id || '') + '</div>';
+      html += '<div class="type-group"><div class="type-header" onclick="toggleType(this)">' + escHtml(type) + ' (' + records.length + ')</div><div class="type-records">';
+      records.forEach((d) => {
+        const id = 'fd-' + (changeIdx++);
+        html += '<div class="record-row changed" onclick="toggleFields(\'' + id + '\')">[' + escHtml(d.stub.form_id) + '] ' + escHtml(d.stub.editor_id || '') + '</div>';
         html += '<div class="field-diff" id="' + id + '">' + renderFieldChanges(d.field_changes) + '</div>';
       });
       html += '</div></div>';
@@ -92,9 +95,9 @@ function renderFieldChanges(changes) {
   let html = '';
   Object.entries(changes).forEach(([k, v]) => {
     if (v && typeof v === 'object' && 'from' in v && 'to' in v) {
-      html += '<div><b>' + k + '</b>: <span class="from">' + JSON.stringify(v.from) + '</span><span class="arrow">&#8594;</span><span class="to">' + JSON.stringify(v.to) + '</span></div>';
+      html += '<div><b>' + escHtml(k) + '</b>: <span class="from">' + escHtml(JSON.stringify(v.from)) + '</span><span class="arrow">&#8594;</span><span class="to">' + escHtml(JSON.stringify(v.to)) + '</span></div>';
     } else {
-      html += '<div><b>' + k + ':</b> ' + renderFieldChanges(v) + '</div>';
+      html += '<div><b>' + escHtml(k) + ':</b> ' + renderFieldChanges(v) + '</div>';
     }
   });
   return html;
