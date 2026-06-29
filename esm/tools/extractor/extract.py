@@ -635,6 +635,13 @@ def _annotate_stop_before(members: list[dict], outer_stops: list[str]) -> None:
                         stops.append(s)
                 if stops:
                     member["stop_before"] = stops
+                    # Also annotate the immediately-preceding CITC count integer
+                    # with the same boundary list so it defers when the conditions
+                    # appear out-of-position (e.g. FO76 NPC_ camp-pet tail CITC).
+                    for prev in reversed(members[:i]):
+                        if prev.get("kind") == "integer" and prev.get("sig") == "CITC":
+                            prev["stop_before"] = stops
+                            break
 
             # Recurse into the element.  From inside the element the enclosing
             # rarray's element anchor is itself a repeat boundary (e.g. LVLO

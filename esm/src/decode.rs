@@ -272,6 +272,7 @@ fn decode_member(
             width,
             signed,
             format,
+            stop_before,
             ..
         } => {
             if let Some(data) = payload {
@@ -279,7 +280,12 @@ fn decode_member(
                     out.insert(name.clone(), format_int(v, format.as_ref()));
                 }
             } else if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                // If stop_before is set and a boundary sig precedes this
+                // integer in document order, defer — leave the subrecord in
+                // the pool for the correctly-positioned schema member.
+                if !stop_before.is_empty() && stop_before_check(by_sig, sig, stop_before) {
+                    // deferred
+                } else if let Some(sr) = take_first(by_sig, sig) {
                     if let Some(v) = read_int(&sr.data, *width, *signed) {
                         out.insert(name.clone(), format_int(v, format.as_ref()));
                     }
@@ -646,8 +652,10 @@ fn decode_member(
         }
         MemberDef::Empty { sig, name, .. } => {
             if let Some(sig) = sig {
-                let _ = take_first(by_sig, sig);
-                out.insert(name.clone(), json!(null));
+                // Only emit the marker when the empty subrecord is actually present.
+                if take_first(by_sig, sig).is_some() {
+                    out.insert(name.clone(), json!(null));
+                }
             }
         }
         MemberDef::Unused { bytes, .. } => {
@@ -2396,6 +2404,7 @@ mod tests {
             format: None,
             from_version: None,
             below_version: None,
+            stop_before: vec![],
         }
     }
 
@@ -2417,6 +2426,7 @@ mod tests {
             format: None,
             from_version: None,
             below_version: None,
+            stop_before: vec![],
         }
     }
 
@@ -2824,6 +2834,7 @@ mod tests {
                         format: None,
                         from_version: None,
                         below_version: None,
+                        stop_before: vec![],
                     },
                 ],
             },

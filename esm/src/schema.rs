@@ -77,6 +77,12 @@ pub enum MemberDef {
         from_version: Option<u16>,
         #[serde(default)]
         below_version: Option<u16>,
+        /// Halt consumption when any listed sig has a lower `doc_index` than
+        /// this integer's `sig` in the subrecord stream.  Mirrors the same
+        /// field on `RArray` — used for condition-count integers (CITC) that
+        /// must defer to a later, correctly-positioned schema member.
+        #[serde(default)]
+        stop_before: Vec<String>,
     },
     #[serde(rename = "float")]
     Float {

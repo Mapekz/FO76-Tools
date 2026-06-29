@@ -1514,7 +1514,39 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DOFA",
+                    "KSIZ",
+                    "PRPS",
+                    "NTRM",
+                    "FTYP",
+                    "MNAM",
+                    "NAM1",
+                    "DESC",
+                    "PNAM",
+                    "SNAM",
+                    "VNAM",
+                    "WNAM",
+                    "QSTI",
+                    "AIID",
+                    "ATTX",
+                    "FNAM",
+                    "LAVT",
+                    "LAMN",
+                    "LAMX",
+                    "KNAM",
+                    "RADR",
+                    "GCDA",
+                    "VEND",
+                    "PAHD",
+                    "CTRN",
+                    "NVNM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -2298,7 +2330,16 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "GCDA",
+                          "VEND",
+                          "PAHD",
+                          "CTRN",
+                          "NVNM",
+                          "MNAM",
+                          "NAM1"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -2434,7 +2475,16 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "GCDA",
+                          "VEND",
+                          "PAHD",
+                          "CTRN",
+                          "NVNM",
+                          "MNAM",
+                          "NAM1"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -3531,7 +3581,19 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DESC",
+                    "DATA",
+                    "ENIT",
+                    "DNAM",
+                    "EFID",
+                    "MIID"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -4138,7 +4200,16 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "DURG",
+                      "MAGG",
+                      "EIES",
+                      "CODG",
+                      "CODV",
+                      "EFID",
+                      "MIID"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -4777,7 +4848,23 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "YNAM",
+                    "ZNAM",
+                    "DESC",
+                    "KSIZ",
+                    "VCRY",
+                    "DATA",
+                    "DNAM",
+                    "ONAM",
+                    "NAM1",
+                    "NAM2"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -6797,7 +6884,38 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "YNAM",
+                    "ZNAM",
+                    "ETYP",
+                    "BIDS",
+                    "BAMT",
+                    "RNAM",
+                    "KSIZ",
+                    "DESC",
+                    "INRD",
+                    "EILV",
+                    "IBSD",
+                    "INDX",
+                    "DATA",
+                    "FNAM",
+                    "DAMA",
+                    "TNAM",
+                    "APPR",
+                    "OBTE",
+                    "CVT0",
+                    "CVT1",
+                    "CVT2",
+                    "CVT3",
+                    "ABPO",
+                    "DIQO",
+                    "VCRY"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -9507,7 +9625,25 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "YNAM",
+                    "ZNAM",
+                    "KSIZ",
+                    "FIMD",
+                    "VCRY",
+                    "DATA",
+                    "DNAM",
+                    "CNAM",
+                    "INAM",
+                    "DIQO",
+                    "BTOF",
+                    "BVGO"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -10929,7 +11065,11 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "DATA",
+                "MNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -11382,7 +11522,15 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "NEXT",
+                "CTRG",
+                "JASF",
+                "SCFL",
+                "MNAM",
+                "RNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -11513,7 +11661,14 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "CTRG",
+                    "JASF",
+                    "SCFL",
+                    "MNAM",
+                    "RNAM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -11754,7 +11909,16 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "DNAM",
+                      "ITME",
+                      "CTRG",
+                      "JASF",
+                      "SCFL",
+                      "MNAM",
+                      "RNAM"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -13541,7 +13705,27 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "CNAM",
+                "BNAM",
+                "NAM1",
+                "NAM2",
+                "NAM3",
+                "ANAM",
+                "GNAM",
+                "INAM",
+                "JNAM",
+                "CVT0",
+                "LRNC",
+                "RCND",
+                "FNAM",
+                "HNAM",
+                "DNAM",
+                "CIFK",
+                "RECF",
+                "INTV"
+              ]
             },
             {
               "kind": "rarray",
@@ -14621,7 +14805,24 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DOFA",
+                    "DATA",
+                    "KSIZ",
+                    "FTYP",
+                    "NTRM",
+                    "PRPS",
+                    "SNAM",
+                    "QNAM",
+                    "TNAM",
+                    "ONAM",
+                    "CMIC"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -15294,7 +15495,12 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "ANAM",
+                "DATA",
+                "SNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -16944,7 +17150,24 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "KSIZ",
+                    "NTRM",
+                    "APPR",
+                    "SNAM",
+                    "ANAM",
+                    "BNAM",
+                    "FNAM",
+                    "ONAM",
+                    "CNAM",
+                    "PAHD",
+                    "TNAM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -18491,7 +18714,16 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "DURG",
+                      "MAGG",
+                      "EIES",
+                      "CODG",
+                      "CODV",
+                      "EFID",
+                      "MIID"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -19959,7 +20191,12 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "FCAF",
+                      "FCNR",
+                      "CITC"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -20772,7 +21009,34 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "KSIZ",
+                    "PRPS",
+                    "NAM1",
+                    "DESC",
+                    "PNAM",
+                    "QSTI",
+                    "AIID",
+                    "ATTX",
+                    "RNAM",
+                    "FNAM",
+                    "PAHD",
+                    "CTRN",
+                    "PFIG",
+                    "SNAM",
+                    "PFPC",
+                    "CITC",
+                    "FLFG",
+                    "FMAH",
+                    "FMIH",
+                    "FMAG",
+                    "FMIG"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -22107,7 +22371,47 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DOFA",
+                    "KSIZ",
+                    "PRPS",
+                    "NTRM",
+                    "FTYP",
+                    "NAM1",
+                    "DESC",
+                    "PNAM",
+                    "WNAM",
+                    "QSTI",
+                    "AIID",
+                    "ATTX",
+                    "FNAM",
+                    "RADR",
+                    "PAHD",
+                    "CTRN",
+                    "COCT",
+                    "CNTO",
+                    "LAVT",
+                    "LAMN",
+                    "LAMX",
+                    "MNAM",
+                    "WBDT",
+                    "ENAM",
+                    "FNPR",
+                    "FNMU",
+                    "XMRK",
+                    "SNAM",
+                    "ZNAM",
+                    "CNAM",
+                    "APPR",
+                    "OBTE",
+                    "FFEF",
+                    "NVNM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -22792,7 +23096,31 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "RADR",
+                          "PAHD",
+                          "CTRN",
+                          "COCT",
+                          "CNTO",
+                          "LAVT",
+                          "LAMN",
+                          "LAMX",
+                          "MNAM",
+                          "WBDT",
+                          "NAM1",
+                          "ENAM",
+                          "FNPR",
+                          "FNMU",
+                          "XMRK",
+                          "SNAM",
+                          "ZNAM",
+                          "CNAM",
+                          "APPR",
+                          "OBTE",
+                          "FFEF",
+                          "NVNM"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -22943,7 +23271,31 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "RADR",
+                          "PAHD",
+                          "CTRN",
+                          "COCT",
+                          "CNTO",
+                          "LAVT",
+                          "LAMN",
+                          "LAMX",
+                          "MNAM",
+                          "WBDT",
+                          "NAM1",
+                          "ENAM",
+                          "FNPR",
+                          "FNMU",
+                          "XMRK",
+                          "SNAM",
+                          "ZNAM",
+                          "CNAM",
+                          "APPR",
+                          "OBTE",
+                          "FFEF",
+                          "NVNM"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -24615,7 +24967,12 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "DNAM",
+                      "ITME",
+                      "CTRG"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -26018,7 +26375,16 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "DNAM",
+                "ENAM",
+                "ANAM",
+                "DATA",
+                "GNAM",
+                "PNAM",
+                "FULL"
+              ]
             },
             {
               "kind": "rarray",
@@ -29130,7 +29496,23 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "RNAM",
+                "ANAM",
+                "TSCE",
+                "ALFT",
+                "INTV",
+                "ALFA",
+                "ONAM",
+                "GREE",
+                "TIQS",
+                "NAM0",
+                "INCC",
+                "MODQ",
+                "INAM",
+                "NAM8"
+              ]
             },
             {
               "kind": "rarray",
@@ -29779,7 +30161,21 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "ETYP",
+                    "YNAM",
+                    "ZNAM",
+                    "VCRY",
+                    "DATA",
+                    "ENIT",
+                    "EFID",
+                    "MIID"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -30355,7 +30751,16 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "DURG",
+                      "MAGG",
+                      "EIES",
+                      "CODG",
+                      "CODV",
+                      "EFID",
+                      "MIID"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -31580,7 +31985,21 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "YNAM",
+                    "ZNAM",
+                    "KSIZ",
+                    "VCRY",
+                    "DESC",
+                    "DATA",
+                    "AQIC",
+                    "DIQO"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -34454,7 +34873,24 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "PRPS",
+                    "FULL",
+                    "ICON",
+                    "MICO",
+                    "VCRY",
+                    "DATA",
+                    "LILS",
+                    "NAM0",
+                    "LNAM",
+                    "WGDR",
+                    "SNAM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -35243,7 +35679,17 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "BNAM",
+                "NNAM",
+                "TNAM",
+                "ONAM",
+                "ZNAM",
+                "MOD2",
+                "PNAM",
+                "LSST"
+              ]
             },
             {
               "kind": "rarray",
@@ -35782,7 +36228,16 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "LLCT",
+                "LVLO",
+                "LLKC",
+                "LVSG",
+                "DIQO",
+                "LIMC",
+                "MODL"
+              ]
             },
             {
               "kind": "rarray",
@@ -36266,7 +36721,25 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "LVUD",
+                      "LVOV",
+                      "LVOC",
+                      "LVOT",
+                      "LVIV",
+                      "LVIG",
+                      "LVIT",
+                      "LVLV",
+                      "LVOG",
+                      "LVLT",
+                      "LVLO",
+                      "LLKC",
+                      "LVSG",
+                      "DIQO",
+                      "LIMC",
+                      "MODL"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -36914,7 +37387,13 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "LLCT",
+                "LVLO",
+                "LLKC",
+                "MODL"
+              ]
             },
             {
               "kind": "rarray",
@@ -37183,7 +37662,17 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "LVOV",
+                      "LVIV",
+                      "LVLV",
+                      "LVOG",
+                      "LVLT",
+                      "LVLO",
+                      "LLKC",
+                      "MODL"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -38186,7 +38675,18 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "LVUD",
+                      "LVOV",
+                      "LVIV",
+                      "LVLV",
+                      "LVOG",
+                      "LVLT",
+                      "LVLO",
+                      "LVCL",
+                      "LVUO"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -38878,7 +39378,11 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "MBNR",
+                      "ITXT"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -40373,7 +40877,25 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "YNAM",
+                    "ZNAM",
+                    "KSIZ",
+                    "FIMD",
+                    "VCRY",
+                    "DESC",
+                    "DATA",
+                    "MCQP",
+                    "AQIC",
+                    "DIQO",
+                    "CVPA",
+                    "CDIX"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -42269,7 +42791,20 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DOFA",
+                    "KSIZ",
+                    "PRPS",
+                    "APPR",
+                    "DATA",
+                    "SNAM",
+                    "ANLD"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -43043,7 +43578,10 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "SNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -44504,7 +45042,71 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "WNAM",
+                    "ANAM",
+                    "ATKR",
+                    "ATKD",
+                    "SPOR",
+                    "OCOR",
+                    "GWOR",
+                    "ECOR",
+                    "FCPL",
+                    "RCLR",
+                    "PRKZ",
+                    "PRKR",
+                    "PRPS",
+                    "FTYP",
+                    "NTRM",
+                    "INRD",
+                    "COCT",
+                    "AIDT",
+                    "PKID",
+                    "KSIZ",
+                    "APPR",
+                    "OBTE",
+                    "CNAM",
+                    "FULL",
+                    "SHRT",
+                    "DATA",
+                    "DNAM",
+                    "ZNAM",
+                    "GNAM",
+                    "HCLF",
+                    "NAM5",
+                    "NAM6",
+                    "NAM4",
+                    "MWGT",
+                    "NAM8",
+                    "CS2H",
+                    "CSCR",
+                    "PFRN",
+                    "DOFT",
+                    "SOFT",
+                    "DPLT",
+                    "CRIF",
+                    "PNAM",
+                    "BCLF",
+                    "FTST",
+                    "QNAM",
+                    "MSDK",
+                    "MSDV",
+                    "TETI",
+                    "MRSV",
+                    "FMRI",
+                    "FMIN",
+                    "ATTX",
+                    "CVT0",
+                    "CVT1",
+                    "CVT2",
+                    "CVT3",
+                    "UNWP"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -45127,7 +45729,64 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "ATKD",
+                      "SPOR",
+                      "OCOR",
+                      "GWOR",
+                      "ECOR",
+                      "FCPL",
+                      "RCLR",
+                      "PRKZ",
+                      "PRKR",
+                      "PRPS",
+                      "FTYP",
+                      "NTRM",
+                      "INRD",
+                      "COCT",
+                      "AIDT",
+                      "PKID",
+                      "KSIZ",
+                      "APPR",
+                      "OBTE",
+                      "CNAM",
+                      "FULL",
+                      "SHRT",
+                      "DATA",
+                      "DNAM",
+                      "ZNAM",
+                      "GNAM",
+                      "HCLF",
+                      "NAM5",
+                      "NAM6",
+                      "NAM4",
+                      "MWGT",
+                      "NAM8",
+                      "CS2H",
+                      "CSCR",
+                      "PFRN",
+                      "DOFT",
+                      "SOFT",
+                      "DPLT",
+                      "CRIF",
+                      "PNAM",
+                      "BCLF",
+                      "FTST",
+                      "QNAM",
+                      "MSDK",
+                      "MSDV",
+                      "TETI",
+                      "MRSV",
+                      "FMRI",
+                      "FMIN",
+                      "ATTX",
+                      "CVT0",
+                      "CVT1",
+                      "CVT2",
+                      "CVT3",
+                      "UNWP"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -48339,7 +48998,19 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "IDLF",
+                "CNAM",
+                "QNAM",
+                "PKCU",
+                "ANAM",
+                "XNAM",
+                "UNAM",
+                "POBA",
+                "POEA",
+                "POCA"
+              ]
             },
             {
               "kind": "rarray",
@@ -48826,7 +49497,20 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "PRCB",
+                          "PNAM",
+                          "FNAM",
+                          "PKC2",
+                          "PFO2",
+                          "PFOR",
+                          "ANAM",
+                          "UNAM",
+                          "POBA",
+                          "POEA",
+                          "POCA"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -50991,7 +51675,12 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "FNAM",
+                "INAM",
+                "KNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -51882,7 +52571,21 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DATA",
+                    "DNAM",
+                    "NAM1",
+                    "VNAM",
+                    "PSCT",
+                    "PSSC",
+                    "PFDX",
+                    "PFDZ"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -53177,7 +53880,25 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "NEXT",
+                    "INDX",
+                    "QOBJ",
+                    "ANAM",
+                    "NNAM",
+                    "GNAM",
+                    "SNAM",
+                    "SCCM",
+                    "QRWT",
+                    "QARV",
+                    "QARF",
+                    "PEDF",
+                    "QQSD",
+                    "QQSK",
+                    "QTFS",
+                    "QMDE"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -53320,7 +54041,25 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "NEXT",
+                    "INDX",
+                    "QOBJ",
+                    "ANAM",
+                    "NNAM",
+                    "GNAM",
+                    "SNAM",
+                    "SCCM",
+                    "QRWT",
+                    "QARV",
+                    "QARF",
+                    "PEDF",
+                    "QQSD",
+                    "QQSK",
+                    "QTFS",
+                    "QMDE"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -53461,7 +54200,25 @@
                       "name": "Condition Count",
                       "width": "u32",
                       "signed": false,
-                      "sig": "CITC"
+                      "sig": "CITC",
+                      "stop_before": [
+                        "NEXT",
+                        "INDX",
+                        "QOBJ",
+                        "ANAM",
+                        "NNAM",
+                        "GNAM",
+                        "SNAM",
+                        "SCCM",
+                        "QRWT",
+                        "QARV",
+                        "QARF",
+                        "PEDF",
+                        "QQSD",
+                        "QQSK",
+                        "QTFS",
+                        "QMDE"
+                      ]
                     },
                     {
                       "kind": "rarray",
@@ -53602,7 +54359,24 @@
                           "name": "Condition Count",
                           "width": "u32",
                           "signed": false,
-                          "sig": "CITC"
+                          "sig": "CITC",
+                          "stop_before": [
+                            "INDX",
+                            "QOBJ",
+                            "ANAM",
+                            "NNAM",
+                            "GNAM",
+                            "SNAM",
+                            "SCCM",
+                            "QRWT",
+                            "QARV",
+                            "QARF",
+                            "PEDF",
+                            "QQSD",
+                            "QQSK",
+                            "QTFS",
+                            "QMDE"
+                          ]
                         },
                         {
                           "kind": "rarray",
@@ -53800,7 +54574,32 @@
                           "name": "Condition Count",
                           "width": "u32",
                           "signed": false,
-                          "sig": "CITC"
+                          "sig": "CITC",
+                          "stop_before": [
+                            "NAM2",
+                            "SCFC",
+                            "CNAM",
+                            "NAM0",
+                            "CTRG",
+                            "QRWD",
+                            "QUIM",
+                            "QSDT",
+                            "INDX",
+                            "QOBJ",
+                            "ANAM",
+                            "NNAM",
+                            "GNAM",
+                            "SNAM",
+                            "SCCM",
+                            "QRWT",
+                            "QARV",
+                            "QARF",
+                            "PEDF",
+                            "QQSD",
+                            "QQSK",
+                            "QTFS",
+                            "QMDE"
+                          ]
                         },
                         {
                           "kind": "rarray",
@@ -54082,7 +54881,30 @@
                                 "name": "Condition Count",
                                 "width": "u32",
                                 "signed": false,
-                                "sig": "CITC"
+                                "sig": "CITC",
+                                "stop_before": [
+                                  "DNAM",
+                                  "ITME",
+                                  "CTRG",
+                                  "QRWD",
+                                  "QUIM",
+                                  "QSDT",
+                                  "INDX",
+                                  "QOBJ",
+                                  "ANAM",
+                                  "NNAM",
+                                  "GNAM",
+                                  "SNAM",
+                                  "SCCM",
+                                  "QRWT",
+                                  "QARV",
+                                  "QARF",
+                                  "PEDF",
+                                  "QQSD",
+                                  "QQSK",
+                                  "QTFS",
+                                  "QMDE"
+                                ]
                               },
                               {
                                 "kind": "rarray",
@@ -54378,7 +55200,24 @@
                           "name": "Condition Count",
                           "width": "u32",
                           "signed": false,
-                          "sig": "CITC"
+                          "sig": "CITC",
+                          "stop_before": [
+                            "QSTA",
+                            "QOBJ",
+                            "ANAM",
+                            "NNAM",
+                            "GNAM",
+                            "SNAM",
+                            "SCCM",
+                            "QRWT",
+                            "QARV",
+                            "QARF",
+                            "PEDF",
+                            "QQSD",
+                            "QQSK",
+                            "QTFS",
+                            "QMDE"
+                          ]
                         },
                         {
                           "kind": "rarray",
@@ -54937,7 +55776,39 @@
                             "name": "Condition Count",
                             "width": "u32",
                             "signed": false,
-                            "sig": "CITC"
+                            "sig": "CITC",
+                            "stop_before": [
+                              "KSIZ",
+                              "COCT",
+                              "CNTO",
+                              "SPOR",
+                              "OCOR",
+                              "GWOR",
+                              "ECOR",
+                              "ALLA",
+                              "ALDN",
+                              "ALFV",
+                              "ALDI",
+                              "ALSP",
+                              "ALFC",
+                              "ALFF",
+                              "ALPC",
+                              "NAM7",
+                              "SCCM",
+                              "VTCK",
+                              "ALED",
+                              "NNAM",
+                              "GNAM",
+                              "SNAM",
+                              "QRWT",
+                              "QARV",
+                              "QARF",
+                              "PEDF",
+                              "QQSD",
+                              "QQSK",
+                              "QTFS",
+                              "QMDE"
+                            ]
                           },
                           {
                             "kind": "rarray",
@@ -55647,7 +56518,23 @@
                             "name": "Condition Count",
                             "width": "u32",
                             "signed": false,
-                            "sig": "CITC"
+                            "sig": "CITC",
+                            "stop_before": [
+                              "ALCC",
+                              "ALED",
+                              "NNAM",
+                              "GNAM",
+                              "SNAM",
+                              "SCCM",
+                              "QRWT",
+                              "QARV",
+                              "QARF",
+                              "PEDF",
+                              "QQSD",
+                              "QQSK",
+                              "QTFS",
+                              "QMDE"
+                            ]
                           },
                           {
                             "kind": "rarray",
@@ -56911,7 +57798,51 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "ATKD",
+                      "NAM1",
+                      "GNAM",
+                      "DNAM",
+                      "NAM3",
+                      "NAM4",
+                      "NAM5",
+                      "NAM7",
+                      "CNAM",
+                      "NAM2",
+                      "ONAM",
+                      "LNAM",
+                      "NAME",
+                      "RBPC",
+                      "MTYP",
+                      "VNAM",
+                      "QNAM",
+                      "UNWP",
+                      "RLBC",
+                      "PHTN",
+                      "PHWT",
+                      "WKMV",
+                      "SWMV",
+                      "FLMV",
+                      "SNMV",
+                      "NAM0",
+                      "NAM8",
+                      "RNAM",
+                      "CVT1",
+                      "SRAC",
+                      "SADD",
+                      "SAKD",
+                      "PTOP",
+                      "NTOP",
+                      "MSID",
+                      "MLSI",
+                      "HNAM",
+                      "HLTX",
+                      "QSTI",
+                      "BSMP",
+                      "SNAM",
+                      "TSLT"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -62487,7 +63418,37 @@
                                   "name": "Condition Count",
                                   "width": "u32",
                                   "signed": false,
-                                  "sig": "CITC"
+                                  "sig": "CITC",
+                                  "stop_before": [
+                                    "TTET",
+                                    "TTEB",
+                                    "TTEC",
+                                    "TTED",
+                                    "TETI",
+                                    "TTGE",
+                                    "TTGP",
+                                    "MPGN",
+                                    "FMRI",
+                                    "WMAP",
+                                    "NAM0",
+                                    "FNAM",
+                                    "NAM8",
+                                    "RNAM",
+                                    "CVT1",
+                                    "SRAC",
+                                    "SADD",
+                                    "SAKD",
+                                    "PTOP",
+                                    "NTOP",
+                                    "MSID",
+                                    "MLSI",
+                                    "HNAM",
+                                    "HLTX",
+                                    "QSTI",
+                                    "BSMP",
+                                    "SNAM",
+                                    "TSLT"
+                                  ]
                                 },
                                 {
                                   "kind": "rarray",
@@ -63036,7 +63997,35 @@
                                   "name": "Condition Count",
                                   "width": "u32",
                                   "signed": false,
-                                  "sig": "CITC"
+                                  "sig": "CITC",
+                                  "stop_before": [
+                                    "TTET",
+                                    "TTEB",
+                                    "TTEC",
+                                    "TTED",
+                                    "TETI",
+                                    "TTGE",
+                                    "TTGP",
+                                    "MPGN",
+                                    "FMRI",
+                                    "WMAP",
+                                    "NAM8",
+                                    "RNAM",
+                                    "CVT1",
+                                    "SRAC",
+                                    "SADD",
+                                    "SAKD",
+                                    "PTOP",
+                                    "NTOP",
+                                    "MSID",
+                                    "MLSI",
+                                    "HNAM",
+                                    "HLTX",
+                                    "QSTI",
+                                    "BSMP",
+                                    "SNAM",
+                                    "TSLT"
+                                  ]
                                 },
                                 {
                                   "kind": "rarray",
@@ -66732,7 +67721,32 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "NEXT",
+                          "CITC",
+                          "WNAM",
+                          "SPPI",
+                          "SPPT",
+                          "SPCT",
+                          "SDCT",
+                          "FNAM",
+                          "SCQS",
+                          "HNAM",
+                          "ALID",
+                          "ANAM",
+                          "PNAM",
+                          "INAM",
+                          "VNAM",
+                          "CNAM",
+                          "ACTV",
+                          "CRIS",
+                          "KSIZ",
+                          "NNAM",
+                          "TNAM",
+                          "XNAM",
+                          "ONAM"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -66882,7 +67896,32 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "NEXT",
+                          "WNAM",
+                          "SPPI",
+                          "SPPT",
+                          "SPCT",
+                          "SDCT",
+                          "FNAM",
+                          "SCQS",
+                          "HNAM",
+                          "ALID",
+                          "ANAM",
+                          "PNAM",
+                          "INAM",
+                          "VNAM",
+                          "CNAM",
+                          "ACTV",
+                          "CRIS",
+                          "KSIZ",
+                          "CITC",
+                          "NNAM",
+                          "TNAM",
+                          "XNAM",
+                          "ONAM"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -67489,7 +68528,25 @@
                                   "name": "Condition Count",
                                   "width": "u32",
                                   "signed": false,
-                                  "sig": "CITC"
+                                  "sig": "CITC",
+                                  "stop_before": [
+                                    "LCEP",
+                                    "HTID",
+                                    "ANAM",
+                                    "PNAM",
+                                    "INAM",
+                                    "VNAM",
+                                    "CNAM",
+                                    "ACTV",
+                                    "CRIS",
+                                    "KSIZ",
+                                    "CITC",
+                                    "SCQS",
+                                    "NNAM",
+                                    "TNAM",
+                                    "XNAM",
+                                    "ONAM"
+                                  ]
                                 },
                                 {
                                   "kind": "rarray",
@@ -67930,7 +68987,14 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "SCQS",
+                "NNAM",
+                "TNAM",
+                "XNAM",
+                "ONAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -68847,7 +69911,11 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "DNAM",
+                "XNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -69026,7 +70094,12 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "DNAM",
+                "XNAM",
+                "ENAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -69213,7 +70286,15 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "DNAM",
+                "XNAM",
+                "MNAM",
+                "HNAM",
+                "QNAM",
+                "NNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -69551,7 +70632,18 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "LNAM",
+                "BNAM",
+                "HNAM",
+                "INAM",
+                "DNAM",
+                "ITMC",
+                "ITMS",
+                "PNAM",
+                "QNAM"
+              ]
             },
             {
               "kind": "rarray",
@@ -70638,7 +71730,16 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "DURG",
+                      "MAGG",
+                      "EIES",
+                      "CODG",
+                      "CODV",
+                      "EFID",
+                      "MIID"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -71455,7 +72556,19 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DOFA",
+                    "NAM1",
+                    "DNAM",
+                    "STXF",
+                    "NVNM",
+                    "MNAM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -72904,7 +74017,25 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "KSIZ",
+                    "NAM1",
+                    "DESC",
+                    "PNAM",
+                    "SNAM",
+                    "QSTI",
+                    "AIID",
+                    "FNAM",
+                    "PAHD",
+                    "CTRN",
+                    "GCDA",
+                    "VNAM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -73452,7 +74583,14 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "PAHD",
+                          "CTRN",
+                          "GCDA",
+                          "VNAM",
+                          "FNAM"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -73586,7 +74724,14 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "PAHD",
+                          "CTRN",
+                          "GCDA",
+                          "VNAM",
+                          "FNAM"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -74237,7 +75382,37 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "KSIZ",
+                    "NAM1",
+                    "PRPS",
+                    "DESC",
+                    "PNAM",
+                    "AIID",
+                    "SNAM",
+                    "FNAM",
+                    "PAHD",
+                    "CTRN",
+                    "COCT",
+                    "CNTO",
+                    "MNAM",
+                    "WBDT",
+                    "XMRK",
+                    "ZNAM",
+                    "FFEF",
+                    "BSIZ",
+                    "BTXT",
+                    "QNAM",
+                    "TDAT",
+                    "ISIZ",
+                    "ITXT",
+                    "SCFC"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -75059,7 +76234,15 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "BTXT",
+                      "QNAM",
+                      "TDAT",
+                      "ISIZ",
+                      "ITXT",
+                      "SCFC"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -75265,7 +76448,11 @@
                     "name": "Condition Count",
                     "width": "u32",
                     "signed": false,
-                    "sig": "CITC"
+                    "sig": "CITC",
+                    "stop_before": [
+                      "ITXT",
+                      "SCFC"
+                    ]
                   },
                   {
                     "kind": "rarray",
@@ -75905,7 +77092,44 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "DOFA",
+                    "KSIZ",
+                    "PRPS",
+                    "NTRM",
+                    "FTYP",
+                    "MNAM",
+                    "NAM1",
+                    "DESC",
+                    "PNAM",
+                    "SNAM",
+                    "VNAM",
+                    "WNAM",
+                    "QSTI",
+                    "AIID",
+                    "ATTX",
+                    "FNAM",
+                    "LAVT",
+                    "LAMN",
+                    "LAMX",
+                    "KNAM",
+                    "RADR",
+                    "GCDA",
+                    "VEND",
+                    "PAHD",
+                    "CTRN",
+                    "TRCD",
+                    "TRRE",
+                    "TRST",
+                    "TRTY",
+                    "TREF",
+                    "NVNM"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -76694,7 +77918,21 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "GCDA",
+                          "VEND",
+                          "PAHD",
+                          "CTRN",
+                          "TRCD",
+                          "TRRE",
+                          "TRST",
+                          "TRTY",
+                          "TREF",
+                          "NVNM",
+                          "MNAM",
+                          "NAM1"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -76835,7 +78073,21 @@
                         "name": "Condition Count",
                         "width": "u32",
                         "signed": false,
-                        "sig": "CITC"
+                        "sig": "CITC",
+                        "stop_before": [
+                          "GCDA",
+                          "VEND",
+                          "PAHD",
+                          "CTRN",
+                          "TRCD",
+                          "TRRE",
+                          "TRST",
+                          "TRTY",
+                          "TREF",
+                          "NVNM",
+                          "MNAM",
+                          "NAM1"
+                        ]
                       },
                       {
                         "kind": "rarray",
@@ -79320,7 +80572,52 @@
                   "name": "Condition Count",
                   "width": "u32",
                   "signed": false,
-                  "sig": "CITC"
+                  "sig": "CITC",
+                  "stop_before": [
+                    "DSCF",
+                    "HGLB",
+                    "DAMC",
+                    "DSTD",
+                    "ETYP",
+                    "BIDS",
+                    "BAMT",
+                    "YNAM",
+                    "ZNAM",
+                    "KSIZ",
+                    "DESC",
+                    "INRD",
+                    "EILV",
+                    "IBSD",
+                    "APPR",
+                    "OBTE",
+                    "NNAM",
+                    "MOD4",
+                    "DNAM",
+                    "FNAM",
+                    "RGW2",
+                    "RGW3",
+                    "CRDT",
+                    "INAM",
+                    "LNAM",
+                    "WAMD",
+                    "WAAM",
+                    "WZMD",
+                    "CNAM",
+                    "DAMA",
+                    "FLTR",
+                    "VCRY",
+                    "WMCT",
+                    "CVT0",
+                    "CVT1",
+                    "CVT2",
+                    "CVT3",
+                    "CVT4",
+                    "CVT5",
+                    "MASE",
+                    "DAMS",
+                    "WTDT",
+                    "WSAM"
+                  ]
                 },
                 {
                   "kind": "rarray",
