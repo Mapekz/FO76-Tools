@@ -1339,8 +1339,7 @@ fn cmd_diff(
         // Load localization per side (--strings-dir-a/b override; --strings-dir applies to both;
         // --strings BA2 applies to both). Each side is independently optional.
         if strings_ba2.is_some() || sd_a.is_some() {
-            let loc_a =
-                resolve_localization_or_bail(file_a, strings_ba2.clone(), sd_a, lang)?;
+            let loc_a = resolve_localization_or_bail(file_a, strings_ba2.clone(), sd_a, lang)?;
             db_a.set_localization(loc_a);
         }
         if strings_ba2.is_some() || sd_b.is_some() {

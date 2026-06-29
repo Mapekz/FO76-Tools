@@ -99,8 +99,7 @@ impl CurveIndex {
                 }
             };
 
-            let edid =
-                crate::reader::edid_from_subrecords(&parsed.subrecords).unwrap_or_default();
+            let edid = crate::reader::edid_from_subrecords(&parsed.subrecords).unwrap_or_default();
 
             let path_sub = parsed
                 .subrecords

@@ -223,8 +223,7 @@ impl Database {
     /// `misc_dir` is the extracted `misc/` folder from a Startup BA2
     /// (`misc_dir/curvetables/json/` must contain the JSON files).
     pub fn load_curves_from_dir(&mut self, misc_dir: &Path) -> anyhow::Result<()> {
-        let curves =
-            crate::curves::CurveIndex::build_from_dir(&self.esm, &self.index, misc_dir)?;
+        let curves = crate::curves::CurveIndex::build_from_dir(&self.esm, &self.index, misc_dir)?;
         self.curves = Some(curves);
         Ok(())
     }
