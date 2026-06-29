@@ -17,6 +17,15 @@ This repository contains two **independent** Fallout 76 tools. They share no cod
 - `esm/` uses `cargo` (Rust workspace) + `npm` (Electron app in `app/`). See [`esm/CLAUDE.md`](esm/CLAUDE.md).
 - `dps-76/` uses `pnpm`. See [`dps-76/CLAUDE.md`](dps-76/CLAUDE.md).
 
+## Before committing
+
+Before committing in any subproject, run that subproject's full check suite and only commit when everything passes — formatting, lint with `-D warnings`, and tests:
+
+- **`esm/` and `ba2/`**: `just` (fmt + clippy + test). For `esm/`, also run `just audit` when you change the schema, the extractor, or anything affecting decode coverage.
+- **`dps-76/`**: run its own checks in that repo (separate remote).
+
+Fix formatting and clippy warnings rather than committing around them. Never commit with failing or skipped checks.
+
 ## Git boundary
 
 `dps-76/` is a **nested git repository** with its own remote (`github.com/Mapekz/dps-76`). Files inside `dps-76/` are tracked by that repo, not by the root `FO76-Tools` repo. Do not stage or commit `dps-76/` files from the root repo.

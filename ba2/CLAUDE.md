@@ -5,15 +5,20 @@ Guidance for Claude Code when working in this Rust crate.
 ## Commands
 
 ```sh
-cargo build                    # debug build
-cargo build --release          # release build (binary: target/release/ba2)
-cargo run --bin ba2 -- <args>  # run CLI (e.g. -- info archive.ba2)
-cargo test                     # run all tests (~71 across tests/ and inline modules)
-cargo clippy                   # lint
-cargo fmt                      # format
+just                                                # fmt + clippy + test (full local CI pass)
+cargo build                                         # debug build
+cargo build --release                               # release build (binary: target/release/ba2)
+cargo run --bin ba2 -- <args>                       # run CLI (e.g. -- info archive.ba2)
+cargo test                                          # run all tests (~71 across tests/ and inline modules)
+cargo clippy --all-targets -- -D warnings           # lint (deny warnings; matches CI)
+cargo fmt --check                                   # verify formatting (matches CI)
 ```
 
 No test framework beyond `cargo test` is used.
+
+## Before committing
+
+Run `just` (fmt + clippy + test) and make sure it passes before every commit. Clippy runs with `-D warnings` — fix warnings rather than silencing them with `#[allow]` without cause. Never commit with failing or skipped checks.
 
 ## Architecture
 

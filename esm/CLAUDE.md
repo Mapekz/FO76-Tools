@@ -18,6 +18,10 @@ python3 tools/extractor/extract.py                  # regenerate schema/fo76.jso
 python3 tools/extractor/audit.py --gate             # parity audit (exits non-zero on HIGH drops)
 ```
 
+## Before committing
+
+Run `just` (= `just check` = `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings` for both default and `--features server` + `cargo test`) and ensure it passes before every commit. Run `just audit` as well whenever you change the schema, the extractor, or anything affecting decode coverage. Never commit with failing or skipped checks.
+
 ## Architecture
 
 Clean layering — edit at the right level:

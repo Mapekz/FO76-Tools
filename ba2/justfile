@@ -1,0 +1,22 @@
+# Run from ba2/.  Mirrors the CI checks exactly.
+# Install `just` once: cargo install just
+#
+# Usage:
+#   just          -> fmt + clippy + test  (the full local CI pass)
+
+default: check
+
+# Run the full check suite (same as CI rust matrix).
+check: fmt clippy test
+
+# Verify formatting.
+fmt:
+    cargo fmt --check
+
+# Lint (deny warnings).
+clippy:
+    cargo clippy --all-targets -- -D warnings
+
+# Run all tests.
+test:
+    cargo test
