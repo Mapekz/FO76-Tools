@@ -20,9 +20,10 @@ clippy:
     cargo clippy --all-targets -- -D warnings
     cargo clippy --all-targets --features server -- -D warnings
 
-# Run all tests (game-data tests are #[ignore]-gated).
+# Run all tests (game-data integration tests are env-gated and skip silently when unset).
 test:
     cargo test
+    cargo test --features server
 
 # Schema parity audit against the Pascal source in ../TES5Edit.
 # Expects ../TES5Edit = Eckserah/TES5Edit @ 80a2c3c6 (branch dev-4.1.6).
@@ -30,9 +31,10 @@ test:
 audit:
     python3 tools/extractor/audit.py --gate
 
-# Diff two ESM versions (integration test normally skipped by #[ignore]).
+# Diff two ESM versions with real game data (requires two ESM paths).
+# The test is env-gated and skips silently when RUST_TEST_ESM_A/B are unset.
 test-esm a b:
-    RUST_TEST_ESM_A={{a}} RUST_TEST_ESM_B={{b}} cargo test -- --ignored
+    RUST_TEST_ESM_A={{a}} RUST_TEST_ESM_B={{b}} cargo test diff_two_esm_versions_glob -- --nocapture
 
 # Generate patch notes from two ESM files.
 # Produces patch_notes_<date>.md next to NEW and discord_chunks_<date>/ next to NEW.
