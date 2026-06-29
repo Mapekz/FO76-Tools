@@ -36,16 +36,33 @@ test-esm a b:
 
 # Generate patch notes from two ESM files.
 # Produces patch_notes_<date>.md next to NEW and discord_chunks_<date>/ next to NEW.
-# Assumes loose string files live in strings/ next to the ESMs (or pass STRINGS_DIR=…).
+#
+# Strings are auto-detected from <esm_parent>/strings/ for each ESM.
+# If both ESMs share a parent directory, the shared strings/ there is tried first.
+# Use STRINGS_DIR to pass an explicit shared path, or STRINGS_DIR_A/B for per-side.
 #
 # Usage:
-#   just patch-notes SeventySix_20260619.esm SeventySix_20260626.esm
-#   STRINGS_DIR=strings just patch-notes old.esm new.esm
+#   just patch-notes /path/to/v1/SeventySix.esm /path/to/v2/SeventySix.esm
+#   STRINGS_DIR=/path/to/strings just patch-notes old.esm new.esm
 #   HIGHLIGHTS=highlights.md just patch-notes old.esm new.esm
+#
+# Env vars (all optional):
+#   STRINGS_DIR    Shared strings directory for both ESMs. If omitted, auto-detected
+#                  from <esm_parent>/strings/ (or <esm_parent> itself).
+#   STARTUP_BA2    Path to "SeventySix - Startup.ba2" — enables curve-table detail and
+#                  crafting-quantity evaluation. Mutually exclusive with CURVES_DIR.
+#   CURVES_DIR     misc/ directory extracted from Startup BA2 — loose alternative to
+#                  STARTUP_BA2. Auto-detected from <new_esm_parent>/misc/ if omitted.
+#   HIGHLIGHTS     Path to a hand-authored highlights markdown file.
+#   ESM_LANG       Localization language code (default: en). Named ESM_LANG to
+#                  avoid collision with the system $LANG locale variable.
+#   OUT_DIR        Output directory for Discord chunks.
 patch-notes old new:
     python3 tools/make_patch_notes.py \
         "{{old}}" "{{new}}" \
-        --strings-dir "${STRINGS_DIR:-strings}" \
+        ${STRINGS_DIR:+--strings-dir "$STRINGS_DIR"} \
+        ${STARTUP_BA2:+--startup-ba2 "$STARTUP_BA2"} \
+        ${CURVES_DIR:+--curves-dir "$CURVES_DIR"} \
         ${HIGHLIGHTS:+--highlights-file "$HIGHLIGHTS"} \
-        ${LANG:+--lang "$LANG"} \
+        ${ESM_LANG:+--lang "$ESM_LANG"} \
         ${OUT_DIR:+--out-dir "$OUT_DIR"}
