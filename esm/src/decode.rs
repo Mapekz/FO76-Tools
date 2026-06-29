@@ -978,10 +978,66 @@ fn decode_struct_fields(
             _ => {}
         }
     }
+    apply_crafting_quantity(&mut struct_out);
     if !struct_out.is_empty() {
         out.insert(struct_name.to_string(), Value::Object(struct_out));
     }
     pos
+}
+
+/// Post-decode pass for component/scrap-quantity structs.
+///
+/// Runs after a struct's fields have been decoded into `struct_out`. When the
+/// map contains both a recognised count key *and* a `"Curve Table"` value, this
+/// function inserts:
+///
+/// * `"Quantity"` — the effective quantity: `curve.eval(count)` when an inlined
+///   curve is available, or the raw count otherwise.
+/// * `"Quantity Source"` — one of `"curve"`, `"count"`, or
+///   `"count_unresolved_curve"`.
+///
+/// This covers the three component-array structs used in FO76:
+/// * COBJ `Components` / `Repair` / `Scrap Recieved`: `"Count"` + `"Curve Table"`
+/// * CMPO `Junk Scrap Quantities`: `"Scrap Component Count"` + `"Curve Table"`
+///
+/// Shape-gated: no-op when either key is absent (prevents touching unrelated
+/// structs that coincidentally share field names). Never panics.
+fn apply_crafting_quantity(struct_out: &mut Map<String, Value>) {
+    if !struct_out.contains_key("Curve Table") {
+        return;
+    }
+    // Recognise both count-key spellings; stop if neither is present.
+    let count = field_int_value(struct_out, "Count")
+        .or_else(|| field_int_value(struct_out, "Scrap Component Count"));
+    let Some(count) = count else { return };
+
+    let (quantity, source): (Value, &str) = match struct_out.get("Curve Table") {
+        // Curve inlined by `resolve_formid`: {"formid", "curve_path", "curve":[{x,y}…]}.
+        Some(Value::Object(o)) => match o.get("curve").and_then(|c| c.as_array()) {
+            Some(pts) if !pts.is_empty() => {
+                let points: Vec<crate::curves::CurvePoint> = pts
+                    .iter()
+                    .filter_map(|p| {
+                        Some(crate::curves::CurvePoint {
+                            x: p.get("x").and_then(Value::as_f64)? as f32,
+                            y: p.get("y").and_then(Value::as_f64)? as f32,
+                        })
+                    })
+                    .collect();
+                match crate::curves::eval(&points, count as f32) {
+                    Some(y) => (serde_json::json!(y), "curve"),
+                    None => (serde_json::json!(count), "count"),
+                }
+            }
+            _ => (serde_json::json!(count), "count"),
+        },
+        // Bare hex string: curve referenced but curves not loaded (no Startup BA2).
+        Some(Value::String(_)) => (serde_json::json!(count), "count_unresolved_curve"),
+        // null slot or any other shape → literal count is the effective quantity.
+        _ => (serde_json::json!(count), "count"),
+    };
+    struct_out.insert("Quantity".to_string(), quantity);
+    struct_out.insert("Quantity Source".to_string(), serde_json::json!(source));
 }
 
 /// Returns the fixed byte size of a field when it can be determined statically.
