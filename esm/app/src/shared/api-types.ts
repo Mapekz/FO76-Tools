@@ -93,9 +93,9 @@ export interface Fo76Api {
   fileInfo(id: DbId): Promise<FileInfo>
   listGroups(id: DbId): Promise<GroupNode[]>
   listTypeRecords(id: DbId, sig: string, offset: number, limit: number): Promise<RecordRow[]>
-  recordByFormid(id: DbId, formid: string, resolve?: string): Promise<RecordResult>
+  recordByFormid(id: DbId, formid: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
   recordByEdid(id: DbId, edid: string): Promise<RecordResult>
-  recordById(id: DbId, target: string, resolve?: string): Promise<RecordResult>
+  recordById(id: DbId, target: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
   referencedBy(id: DbId, formid: string): Promise<RecordRow[]>
   referencedById(id: DbId, target: string, depth?: number): Promise<RefRow[]>
   parseFormId(s: string): Promise<string>

@@ -3,6 +3,26 @@ import { napi } from './addon'
 import * as registry from './db-registry'
 import { CH } from '../shared/api-types'
 
+function validateResolve(v: unknown): 'none' | 'stub' | 'full' {
+  if (v === 'none' || v === 'stub' || v === 'full') return v
+  throw new Error(`invalid resolve value: expected none|stub|full, got ${String(v)}`)
+}
+
+function validateSig(v: unknown): string {
+  if (typeof v === 'string' && /^[A-Z_0-9]{1,4}$/.test(v)) return v
+  throw new Error(`invalid record signature: ${String(v)}`)
+}
+
+function validateUint(name: string, v: unknown, max = 100_000): number {
+  if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max) return v
+  throw new Error(`invalid ${name}: expected integer 0–${max}, got ${String(v)}`)
+}
+
+function validateTarget(v: unknown): string {
+  if (typeof v === 'string' && v.length > 0 && v.length <= 512) return v
+  throw new Error(`invalid target: must be a non-empty string`)
+}
+
 function wrap(fn: () => unknown) {
   try {
     return fn()
@@ -54,41 +74,51 @@ export function registerIpc(): void {
     return wrap(() => entry.db.listGroups())
   })
 
-  ipcMain.handle(CH.listTypeRecords, (_e, id: string, sig: string, offset: number, limit: number) => {
+  ipcMain.handle(CH.listTypeRecords, (_e, id: string, sig: unknown, offset: unknown, limit: unknown) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => entry.db.listTypeRecords(sig, offset, limit))
+    const validSig = validateSig(sig)
+    const validOffset = validateUint('offset', offset)
+    const validLimit = validateUint('limit', limit)
+    return wrap(() => entry.db.listTypeRecords(validSig, validOffset, validLimit))
   })
 
-  ipcMain.handle(CH.recordByFormid, (_e, id: string, formid: string, resolve = 'stub') => {
+  ipcMain.handle(CH.recordByFormid, (_e, id: string, formid: unknown, resolve: unknown = 'stub') => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => entry.db.recordByFormid(formid, resolve))
+    const validFormid = validateTarget(formid)
+    const validResolve = validateResolve(resolve)
+    return wrap(() => entry.db.recordByFormid(validFormid, validResolve))
   })
 
-  ipcMain.handle(CH.recordByEdid, async (_e, id: string, edid: string) => {
+  ipcMain.handle(CH.recordByEdid, async (_e, id: string, edid: unknown) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return await entry.db.recordByEdid(edid)
+    const validEdid = validateTarget(edid)
+    return await entry.db.recordByEdid(validEdid)
   })
 
-  ipcMain.handle(CH.recordById, async (_e, id: string, target: string, resolve = 'stub') => {
+  ipcMain.handle(CH.recordById, async (_e, id: string, target: unknown, resolve: unknown = 'stub') => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return await entry.db.recordById(target, resolve)
+    const validTarget = validateTarget(target)
+    const validResolve = validateResolve(resolve)
+    return await entry.db.recordById(validTarget, validResolve)
   })
 
-  ipcMain.handle(CH.referencedBy, async (_e, id: string, formid: string) => {
+  ipcMain.handle(CH.referencedBy, async (_e, id: string, formid: unknown) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
-    return await entry.db.referencedBy(formid)
+    const validFormid = validateTarget(formid)
+    return await entry.db.referencedBy(validFormid)
   })
 
-  ipcMain.handle(CH.referencedById, async (_e, id: string, target: string, depth?: number) => {
+  ipcMain.handle(CH.referencedById, async (_e, id: string, target: unknown, depth?: number) => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
+    const validTarget = validateTarget(target)
     const clampedDepth = Math.max(1, Math.min(depth ?? 1, 6))
-    return await entry.db.referencedById(target, clampedDepth)
+    return await entry.db.referencedById(validTarget, clampedDepth)
   })
 
   ipcMain.handle(CH.parseFormId, (_e, s: string) => {
