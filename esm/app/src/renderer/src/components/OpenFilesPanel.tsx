@@ -4,8 +4,7 @@ import { useStore } from '../store'
 export function OpenFilesPanel() {
   const { openDbs, activeDbId, setOpenDbs, setActiveDb, setActiveRecord, setReferencedBy } = useStore()
 
-  async function handleOpen() {
-    const path = await window.api.openFileDialog()
+  async function handleOpenPath(path: string | null) {
     if (!path) return
     try {
       const handle = await window.api.openDatabase(path)
@@ -15,6 +14,14 @@ export function OpenFilesPanel() {
     } catch (e) {
       alert(String(e))
     }
+  }
+
+  async function handleOpen() {
+    handleOpenPath(await window.api.openFileDialog())
+  }
+
+  async function handleOpenFolder() {
+    handleOpenPath(await window.api.openFolderDialog())
   }
 
   async function handleClose(id: string) {
@@ -31,6 +38,7 @@ export function OpenFilesPanel() {
   return (
     <div style={{ padding: 8, borderBottom: '1px solid #444' }}>
       <button onClick={handleOpen}>Open ESM…</button>
+      <button onClick={handleOpenFolder} style={{ marginLeft: 4 }}>Open Folder…</button>
       <ul style={{ listStyle: 'none', margin: '8px 0 0', padding: 0 }}>
         {openDbs.map((db) => (
           <li

@@ -4,6 +4,7 @@ import type { Fo76Api } from '../shared/api-types'
 
 const api: Fo76Api = {
   openFileDialog: () => ipcRenderer.invoke(CH.openFileDialog),
+  openFolderDialog: () => ipcRenderer.invoke(CH.openFolderDialog),
   openDatabase: (path) => ipcRenderer.invoke(CH.openDatabase, path),
   closeDatabase: (id) => ipcRenderer.invoke(CH.closeDatabase, id),
   listOpen: () => ipcRenderer.invoke(CH.listOpen),

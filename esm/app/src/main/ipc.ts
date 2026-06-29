@@ -20,6 +20,13 @@ export function registerIpc(): void {
     return canceled ? null : filePaths[0]
   })
 
+  ipcMain.handle(CH.openFolderDialog, async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openDirectory']
+    })
+    return canceled ? null : filePaths[0]
+  })
+
   ipcMain.handle(CH.openDatabase, async (_e, path: string) => {
     const db = await napi.EsmDatabase.openDatabase(path)
     const info = wrap(() => (db as Record<string, () => unknown>).fileInfo())

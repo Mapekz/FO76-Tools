@@ -1,5 +1,6 @@
 export const CH = {
   openFileDialog: 'open-file-dialog',
+  openFolderDialog: 'open-folder-dialog',
   openDatabase: 'open-database',
   closeDatabase: 'close-database',
   listOpen: 'list-open',
@@ -69,6 +70,7 @@ export interface RecordResult {
 
 export interface Fo76Api {
   openFileDialog(): Promise<string | null>
+  openFolderDialog(): Promise<string | null>
   openDatabase(path: string): Promise<DbHandle>
   closeDatabase(id: DbId): Promise<void>
   listOpen(): Promise<DbHandle[]>
