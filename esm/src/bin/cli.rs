@@ -96,18 +96,32 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
-        /// Load localization from an explicit BA2 archive path.
-        /// Mutually exclusive with --strings-dir.
-        #[arg(long, conflicts_with = "strings_dir")]
+        /// Load localization from an explicit BA2 archive path (both ESMs).
+        /// Mutually exclusive with --strings-dir / --strings-dir-a / --strings-dir-b.
+        #[arg(long, conflicts_with_all = ["strings_dir", "strings_dir_a", "strings_dir_b"])]
         strings: Option<PathBuf>,
-        /// Directory containing loose <stem>_<lang>.{strings,dlstrings,ilstrings} files.
-        /// Defaults to <esm-dir>/strings then <esm-dir> when not given.
-        /// Mutually exclusive with --strings.
-        #[arg(long, conflicts_with = "strings")]
+        /// Directory with loose string files for BOTH ESMs.
+        /// Use --strings-dir-a/--strings-dir-b when each ESM lives in its own
+        /// date-versioned folder (e.g. Data/20260619/ vs Data/20260626/).
+        /// Mutually exclusive with --strings / --strings-dir-a / --strings-dir-b.
+        #[arg(long, conflicts_with_all = ["strings", "strings_dir_a", "strings_dir_b"])]
         strings_dir: Option<PathBuf>,
+        /// Strings directory for ESM A only (old side).
+        /// Use with --strings-dir-b when each version has its own strings folder.
+        #[arg(long, conflicts_with_all = ["strings", "strings_dir"])]
+        strings_dir_a: Option<PathBuf>,
+        /// Strings directory for ESM B only (new side).
+        /// Use with --strings-dir-a when each version has its own strings folder.
+        #[arg(long, conflicts_with_all = ["strings", "strings_dir"])]
+        strings_dir_b: Option<PathBuf>,
         /// Language code for string table lookup.
         #[arg(long, default_value = "en")]
         lang: String,
+        /// Load curve tables from an explicit Startup BA2 path.
+        /// Needed for dated ESMs without a sibling "SeventySix - Startup.ba2".
+        /// Enables crafting-quantity evaluation and curve-point inlining in the diff.
+        #[arg(long)]
+        startup_ba2: Option<PathBuf>,
     },
     Tree {
         file: PathBuf,
@@ -441,7 +455,10 @@ fn main() -> anyhow::Result<()> {
                 pretty,
                 strings,
                 strings_dir,
+                strings_dir_a,
+                strings_dir_b,
                 lang,
+                startup_ba2,
             } => cmd_diff(
                 &mut backend,
                 &file_a,
@@ -451,7 +468,10 @@ fn main() -> anyhow::Result<()> {
                 pretty,
                 strings,
                 strings_dir,
+                strings_dir_a,
+                strings_dir_b,
                 &lang,
+                startup_ba2,
                 daemon_mode,
             )?,
             Commands::Tree {
@@ -642,8 +662,11 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             pretty,
             None, // strings ba2
             None, // strings_dir
+            None, // strings_dir_a
+            None, // strings_dir_b
             "en",
-            true, // REPL is always daemon-backed
+            None, // startup_ba2 — REPL is daemon-backed, no per-call BA2
+            true, // daemon_mode
         ),
         ReplCommand::Tree {
             record_type,
@@ -1280,43 +1303,61 @@ fn cmd_diff(
     pretty: bool,
     strings_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
+    strings_dir_a: Option<PathBuf>,
+    strings_dir_b: Option<PathBuf>,
     lang: &str,
+    startup_ba2: Option<PathBuf>,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
-    if strings_ba2.is_some() || strings_dir.is_some() {
+    // --strings-dir-a/b are per-side aliases; --strings-dir applies to both sides.
+    let sd_a = strings_dir_a.or_else(|| strings_dir.clone());
+    let sd_b = strings_dir_b.or(strings_dir);
+
+    let force_local =
+        strings_ba2.is_some() || sd_a.is_some() || sd_b.is_some() || startup_ba2.is_some();
+    if force_local {
         if daemon_mode {
             anyhow::bail!(
-                "--strings/--strings-dir are not supported in daemon mode for diff; \
-                 use --local to open the ESM files directly"
+                "--strings/--strings-dir*/--startup-ba2 are not supported in daemon mode \
+                 for diff; use --local to open the ESM files directly"
             );
         }
-        // Resolve localization first (fast, fail-loud) before the expensive ESM opens.
-        let loc_a =
-            resolve_localization_or_bail(file_a, strings_ba2.clone(), strings_dir.clone(), lang)?;
-        let loc_b = resolve_localization_or_bail(file_b, strings_ba2, strings_dir, lang)?;
 
         let mut db_a = Database::open(file_a)?;
-        db_a.set_localization(loc_a);
-
         let mut db_b = Database::open(file_b)?;
-        db_b.set_localization(loc_b);
+
+        // Load localization per side (--strings-dir-a/b override; --strings-dir applies to both;
+        // --strings BA2 applies to both). Each side is independently optional.
+        if strings_ba2.is_some() || sd_a.is_some() {
+            let loc_a =
+                resolve_localization_or_bail(file_a, strings_ba2.clone(), sd_a, lang)?;
+            db_a.set_localization(loc_a);
+        }
+        if strings_ba2.is_some() || sd_b.is_some() {
+            let loc_b = resolve_localization_or_bail(file_b, strings_ba2, sd_b, lang)?;
+            db_b.set_localization(loc_b);
+        }
+
+        // Load curves when an explicit Startup BA2 is supplied.
+        if let Some(ref ba2) = startup_ba2 {
+            db_a.load_curves(ba2)?;
+            db_b.load_curves(ba2)?;
+        }
 
         let mut result = esm::diff::diff_databases(&db_a, &db_b)?;
 
-        // Apply optional --type filter (same logic as the IPC dispatcher).
-        if let Some(sig) = record_type {
-            let sig_up = sig.to_uppercase();
-            result.added.retain(|s| s.record_type == sig_up);
-            result.removed.retain(|s| s.record_type == sig_up);
-            result.changed.retain(|d| d.stub.record_type == sig_up);
-            // ref_names is a display sidecar — keep it unrestricted (referenced
-            // records may be of any type).
-        }
+        // Apply optional --type filter and enrich sources.
+        esm::diff::apply_type_filter(&mut result, &record_type.map(str::to_string));
+        esm::diff::enrich_added_sources(
+            &mut db_b,
+            &mut result,
+            &esm::sources::SourcesOptions::default(),
+        )?;
 
         return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
     }
 
-    // No strings requested — use the backend path (daemon or local).
+    // No local flags — use the backend path (daemon or local).
     let v = backend.run(
         file_a,
         Op::Diff {
