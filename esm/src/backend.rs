@@ -13,9 +13,28 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const DAEMON_FILENAME: &str = "esm-daemon.json";
+/// Fast 2 s deadline for `/health` and `/status` probes — a live daemon responds instantly.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const HEALTH_POLL_MAX: Duration = Duration::from_secs(30);
+
+/// Deadline for a full `/op` round-trip.
+///
+/// Generous because the *first* `refs`/`list`/`search` against a cold daemon triggers a
+/// one-time whole-ESM index build (xref, edid, search) followed by a full re-serialisation
+/// of the ~280 MiB `.esm.idx` cache — easily tens of seconds on a full FO76 ESM.
+///
+/// Override with `ESM_OP_TIMEOUT_SECS` (set to `0` for no deadline).
+fn op_timeout() -> Option<Duration> {
+    match std::env::var("ESM_OP_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        Some(0) => None,
+        Some(n) => Some(Duration::from_secs(n)),
+        None => Some(Duration::from_secs(300)),
+    }
+}
 
 /// Discovery file written by the daemon on start.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -241,12 +260,13 @@ impl RemoteBackend {
 
     fn post_op(&self, req: &Request) -> anyhow::Result<Response> {
         let url = format!("{}/op", self.base_url);
-        let resp = ureq::post(&url)
+        let mut request = ureq::post(&url)
             .set("Authorization", &format!("Bearer {}", self.token))
-            .set("Content-Type", "application/json")
-            .timeout(CONNECT_TIMEOUT)
-            .send_json(req)
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .set("Content-Type", "application/json");
+        if let Some(t) = op_timeout() {
+            request = request.timeout(t);
+        }
+        let resp = request.send_json(req).map_err(|e| anyhow::anyhow!("{e}"))?;
         let response: Response = resp.into_json()?;
         Ok(response)
     }
