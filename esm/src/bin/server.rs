@@ -22,7 +22,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tower_http::trace::TraceLayer;
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -102,12 +102,17 @@ impl IntoResponse for ApiError {
 }
 
 fn check_auth(headers: &HeaderMap, token: &str) -> Result<(), ApiError> {
+    // Reject immediately if no token was configured — defence-in-depth guard;
+    // the daemon always generates a 256-bit token and legacy mode has no auth routes.
+    if token.is_empty() {
+        return Err(ApiError::unauthorized("invalid or missing bearer token"));
+    }
     let auth = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let expected = format!("Bearer {}", token);
-    if auth == expected || token.is_empty() {
+    if auth == expected {
         Ok(())
     } else {
         Err(ApiError::unauthorized("invalid or missing bearer token"))
@@ -662,13 +667,17 @@ fn call_tool_proxy(
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 
-fn build_router(state: AppState) -> Router {
+/// Router for legacy embedded-UI mode.
+///
+/// Serves the static HTML pages and read-only GET data routes.  `/op`, `/health`,
+/// and `/status` are intentionally absent — the embedded UI never calls `/op`,
+/// and there is no token to authenticate against in legacy mode.  No CORS header
+/// is added; the browser's same-origin policy is the only client, so cross-origin
+/// access is unnecessary.
+fn build_legacy_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/compare", get(compare_page))
-        .route("/health", get(health))
-        .route("/status", get(status))
-        .route("/op", post(op_handler))
         .route("/info", get(info))
         .route("/records/{formid}", get(record_by_formid))
         .route("/records", get(records_query))
@@ -676,7 +685,19 @@ fn build_router(state: AppState) -> Router {
         .route("/groups/{sig}/children", get(group_children))
         .route("/stub/{offset}", get(record_stub_at_offset))
         .route("/diff", get(diff_route))
-        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
+/// Router for daemon mode.
+///
+/// Exposes only the three token-gated endpoints that the CLI / Electron / MCP
+/// clients use.  All handlers call `check_auth` before doing any work.
+fn build_daemon_router(state: AppState) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/status", get(status))
+        .route("/op", post(op_handler))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -719,7 +740,7 @@ async fn main() -> anyhow::Result<()> {
         last_activity: None, // no idle-TTL in legacy UI mode
     };
 
-    let app = build_router(state);
+    let app = build_legacy_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], cli.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     eprintln!("esm-server listening on http://127.0.0.1:{}", cli.port);
@@ -754,7 +775,7 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
         last_activity: Some(last_activity.clone()),
     };
 
-    let app = build_router(state);
+    let app = build_daemon_router(state);
     let addr = SocketAddr::from(([127, 0, 0, 1], 0));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let port = listener.local_addr()?.port();
@@ -813,4 +834,115 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
 
     serve.await?;
     Ok(())
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt; // for .oneshot()
+
+    fn test_state(token: &str) -> AppState {
+        AppState {
+            registry: shared_registry(false),
+            token: token.to_string(),
+            default_esm: None,
+            compare_esm: None,
+            shutdown: Arc::new(tokio::sync::Mutex::new(false)),
+            last_activity: None,
+        }
+    }
+
+    /// Valid JSON body for all `/op` auth tests — FileInfo on a nonexistent path.
+    /// Auth is checked inside the handler, after the Json extractor succeeds, so
+    /// we always need a parseable body to reach the auth check.
+    ///
+    /// The `Op` enum uses `#[serde(tag = "op")]` (internally tagged), so
+    /// `Op::FileInfo` serialises as `{"op":"file_info"}` — a nested object inside
+    /// the `Request.op` field, not a bare string.
+    const OP_BODY: &str = r#"{"esm":"/nonexistent.esm","op":{"op":"file_info"}}"#;
+
+    /// Daemon router: `/op` requires a valid bearer token.
+    #[tokio::test]
+    async fn daemon_op_requires_token() {
+        // No auth header → 401.
+        let resp = build_daemon_router(test_state("secret"))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/op")
+                    .header("content-type", "application/json")
+                    .body(Body::from(OP_BODY))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Wrong bearer → 401.
+        let resp = build_daemon_router(test_state("secret"))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/op")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer wrongtoken")
+                    .body(Body::from(OP_BODY))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Correct bearer → authenticated; dispatch returns an error payload but HTTP 200.
+        let resp = build_daemon_router(test_state("secret"))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/op")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer secret")
+                    .body(Body::from(OP_BODY))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Legacy router has no `/op` route — POST returns 404.
+    #[tokio::test]
+    async fn legacy_router_has_no_op() {
+        let resp = build_legacy_router(test_state(""))
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/op")
+                    .header("content-type", "application/json")
+                    .body(Body::from(OP_BODY))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Legacy router GET data routes exist and are reachable without auth.
+    /// With no default ESM loaded, `/info` returns 400, not 404.
+    #[tokio::test]
+    async fn legacy_router_get_routes_accessible() {
+        let resp = build_legacy_router(test_state(""))
+            .oneshot(
+                Request::builder()
+                    .uri("/info")
+                    .body(Body::from(""))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), StatusCode::NOT_FOUND);
+    }
 }

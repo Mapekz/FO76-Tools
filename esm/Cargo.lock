@@ -312,6 +312,7 @@ dependencies = [
  "shlex",
  "thiserror",
  "tokio",
+ "tower",
  "tower-http",
  "ureq",
 ]
