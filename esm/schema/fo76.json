@@ -52189,19 +52189,86 @@
                 ]
               },
               {
-                "kind": "bytes",
-                "sig": "EPF2",
-                "name": "Function Parameter 2"
+                "kind": "union",
+                "name": "Function Parameter 2",
+                "decider": {
+                  "field": "Function Type",
+                  "default_variant": 0,
+                  "map": {
+                    "1": 1,
+                    "4": 2,
+                    "5": 3
+                  }
+                },
+                "variants": [
+                  {
+                    "kind": "bytes",
+                    "sig": "EPF2",
+                    "name": "Function Parameter 2"
+                  },
+                  {
+                    "kind": "formid",
+                    "sig": "EPF2",
+                    "name": "Curve Table",
+                    "valid_refs": [
+                      "CURV"
+                    ]
+                  },
+                  {
+                    "kind": "lstring",
+                    "sig": "EPF2",
+                    "name": "Button Label"
+                  },
+                  {
+                    "kind": "integer",
+                    "sig": "EPF2",
+                    "name": "Unknown Spell Value",
+                    "width": "u32",
+                    "signed": false
+                  }
+                ]
               },
               {
-                "kind": "formid",
-                "sig": "EPF3",
-                "name": "Function Parameter 3 (Actor Value)"
+                "kind": "union",
+                "name": "Function Parameter 3",
+                "decider": {
+                  "field": "Function Type",
+                  "default_variant": 0,
+                  "map": {
+                    "8": 1
+                  }
+                },
+                "variants": [
+                  {
+                    "kind": "integer",
+                    "sig": "EPF3",
+                    "name": "Script Flags",
+                    "width": "u16",
+                    "signed": false,
+                    "format": {
+                      "flags": [
+                        "Run Immediately",
+                        "Replace Default"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "formid",
+                    "sig": "EPF3",
+                    "name": "Function Parameter 3 (Actor Value)",
+                    "valid_refs": [
+                      "AVIF"
+                    ]
+                  }
+                ]
               },
               {
                 "kind": "formid",
                 "sig": "EPF4",
-                "name": "Function Parameter 4"
+                "name": "Function Parameter 4 (Actor Value)",
+                "valid_refs": [
+                  "AVIF"
+                ]
               },
               {
                 "kind": "empty",

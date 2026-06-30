@@ -1266,6 +1266,11 @@ fn weap_animatronic_alien_blaster_decodes_correctly() {
 /// object_format 2, 0 scripts) as well as PRKE/PRKC/CTDA/EPF2/EPF3/PRKF perk
 /// entry blocks.  VMAD must decode without a "VMAD truncated" raw_fallback;
 /// this test locks the clean path.
+///
+/// Also locks the `EPF2`/`EPF3` union-by-`Function Type` decode: this effect
+/// has `Function Type` = 4 ("Activate Choice"), so `EPF2` must decode as the
+/// inline `<ID=...>`-prefixed lstring "Button Label" (not raw hex), and `EPF3`
+/// as the u16 "Script Flags" flags field (not a dropped/short FormID).
 #[test]
 fn perk_test_tame_decodes_correctly() {
     let schema = Schema::load_embedded().expect("embedded schema must load");
@@ -1305,6 +1310,82 @@ fn perk_test_tame_decodes_correctly() {
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("TestTamePerk"),
         "Editor ID"
+    );
+
+    let effect = &result["Effects"][0]["Effect"];
+    assert_eq!(
+        effect.get("Button Label").and_then(|v| v.as_str()),
+        Some("TAME"),
+        "EPF2 should decode as Button Label lstring when Function Type=4"
+    );
+    assert_eq!(
+        effect["Script Flags"].get("value").and_then(|v| v.as_str()),
+        Some("0x2"),
+        "EPF3 should decode as Script Flags when Function Type=4"
+    );
+    let set_flags: Vec<&str> = effect["Script Flags"]["flags"]
+        .as_array()
+        .expect("Script Flags.flags must be an array")
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    assert_eq!(
+        set_flags,
+        vec!["Replace Default"],
+        "EPF3 Script Flags bit 1 set"
+    );
+}
+
+/// PERK 0x0085B9A0 — `HTO_Legendary_Armor_RagingPerk` — decodes `EPF2` to an
+/// integer instead of raw hex.
+///
+/// Regression test for the originally reported bug: this effect has
+/// `Function Type` = 5 ("Spell Item"), so `EPF2` must decode as the u32
+/// "Unknown Spell Value" field rather than `{"hex": "03000000"}`.
+#[test]
+fn perk_raging_armor_epf2_decodes_to_int() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 208);
+
+    // Verbatim subrecords from `esm get <esm> HTO_Legendary_Armor_RagingPerk --raw`.
+    let subs = subrecords_from(&[
+        (
+            "EDID",
+            "48544f5f4c6567656e646172795f41726d6f725f526167696e675065726b00",
+        ),
+        (
+            "FULL",
+            "3c49443d37313031343730423e526167696e672041726d6f72205065726b00",
+        ),
+        ("DESC", "00"),
+        ("DATA", "010001"),
+        ("PRKE", "0201"),
+        ("DATA", "c10a0400"),
+        ("EPFT", "05"),
+        ("EPFB", "0000"),
+        ("EPFD", "a3b98500"),
+        ("EPF2", "03000000"),
+        ("PRKF", ""),
+    ]);
+
+    let result = decode_record(&ctx, "PERK", &subs);
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("HTO_Legendary_Armor_RagingPerk"),
+        "Editor ID"
+    );
+
+    let effect = &result["Effects"][0]["Effect"];
+    assert_eq!(
+        effect.get("Unknown Spell Value").and_then(|v| v.as_u64()),
+        Some(3),
+        "EPF2 should decode as Unknown Spell Value (u32) when Function Type=5, not raw hex"
+    );
+    assert!(
+        effect.get("Function Parameter 2").is_none(),
+        "EPF2 must not fall back to the raw bytes variant"
     );
 }
 
