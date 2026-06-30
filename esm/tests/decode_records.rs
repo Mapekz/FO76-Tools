@@ -5,6 +5,7 @@ use esm::decode::decode_record;
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
 use esm::schema::Schema;
+use serde_json::json;
 
 /// MGEF DATA decodes to the expected structure with all fields correctly aligned.
 ///
@@ -774,6 +775,11 @@ fn armo_skin_naked_decodes_correctly() {
         Some("0x00000D6C"),
         "Models[0].Armor Addon"
     );
+    assert_eq!(
+        result.get("Value Currency").and_then(|v| v.as_str()),
+        Some("0x0000000F"),
+        "VCRY decodes as a Value Currency FormID, not raw bytes"
+    );
 }
 
 /// ARMO 0x005DD339 — `Armor_BOSInfantry_Torso` — Brotherhood Recon Chest Piece
@@ -1060,6 +1066,27 @@ fn book_assault_rifle_recipe_decodes_correctly() {
         Some("recipe_mod_AssaultRifle_Receiver_FastTrigger-CritDMG"),
         "Editor ID"
     );
+
+    // MODT decodes as a structured wbModelInfo blob (4 textures, 0 addon nodes, 1
+    // material), not raw hex.
+    let model_info = result
+        .pointer("/Model/Model Information")
+        .expect("Model Information");
+    assert_eq!(model_info.pointer("/Counters/Textures"), Some(&json!(4)));
+    assert_eq!(model_info.pointer("/Counters/Addon Nodes"), Some(&json!(0)));
+    assert_eq!(model_info.pointer("/Counters/Materials"), Some(&json!(1)));
+    assert_eq!(
+        model_info
+            .pointer("/Textures/0/Extension")
+            .and_then(|v| v.as_str()),
+        Some("dds"),
+    );
+    assert_eq!(
+        model_info
+            .pointer("/Materials/0/Extension")
+            .and_then(|v| v.as_str()),
+        Some("bgsm"),
+    );
 }
 
 /// WEAP 0x000001F6 — `GasTrapDummy` — decodes to Weapon fully.
@@ -1187,6 +1214,38 @@ fn weap_super_sledge_decodes_correctly() {
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("SuperSledge"),
         "Editor ID"
+    );
+
+    // MODT decodes as a structured wbModelInfo blob (12 textures, 0 addon nodes, 2
+    // materials), not raw hex.
+    let model_info = result
+        .pointer("/Model/Model Information")
+        .expect("Model Information");
+    assert_eq!(model_info.pointer("/Counters/Textures"), Some(&json!(12)));
+    assert_eq!(model_info.pointer("/Counters/Addon Nodes"), Some(&json!(0)));
+    assert_eq!(model_info.pointer("/Counters/Materials"), Some(&json!(2)));
+    assert_eq!(
+        model_info
+            .pointer("/Textures/0/Extension")
+            .and_then(|v| v.as_str()),
+        Some("dds"),
+    );
+    assert_eq!(
+        model_info
+            .pointer("/Materials/0/Extension")
+            .and_then(|v| v.as_str()),
+        Some("bgsm"),
+    );
+
+    // MO4T (1st Person Model) is an empty wbModelInfo blob — 0 textures, 0 addon nodes,
+    // 0 materials — decodes structurally rather than as raw hex too.
+    let mo4t = result
+        .pointer("/1st Person Model/Model Information")
+        .expect("1st Person Model Information");
+    assert_eq!(mo4t.pointer("/Counters/Textures"), Some(&json!(0)));
+    assert_eq!(
+        mo4t.pointer("/Textures").and_then(|v| v.as_array()),
+        Some(&Vec::new())
     );
 }
 

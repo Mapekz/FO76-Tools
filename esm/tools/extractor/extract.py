@@ -976,7 +976,7 @@ class Extractor:
         self.vars["wbETYP"] = "wbFormIDCk(ETYP, 'Equipment Type', [EQUP,NULL])"
         self.vars["wbYNAM"] = "wbFormIDCk(YNAM, 'Sound - Pickup', [SNDR,NULL])"
         self.vars["wbZNAM"] = "wbFormIDCk(ZNAM, 'Sound - Putdown', [SNDR,NULL])"
-        self.vars["wbVCRY"] = "wbByteArray(VCRY, 'Voice Category', 0)"
+        self.vars["wbVCRY"] = "wbFormIDCk(VCRY, 'Value Currency', [NULL,CNCY])"
         self.vars["wbICON"] = "wbString(ICON, 'Icon Image')"
         self.vars["wbMICO"] = "wbString(MICO, 'Message Icon')"
         self.vars["wbINRD"] = "wbFormIDCk(INRD, 'Instance Naming', [INNR])"

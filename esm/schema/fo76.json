@@ -5647,8 +5647,12 @@
           ]
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -8554,8 +8558,12 @@
           "sig": "DIQO"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         }
       ]
@@ -10431,8 +10439,12 @@
           "sig": "FIMD"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -13014,8 +13026,12 @@
           "sig": "CUSD"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -13566,8 +13582,12 @@
           ]
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -31120,8 +31140,12 @@
           "sig": "ZNAM"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -32986,8 +33010,12 @@
           ]
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -34719,8 +34747,12 @@
           "name": "Name"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -36413,8 +36445,12 @@
           "sig": "MICO"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -42422,8 +42458,12 @@
           "sig": "FIMD"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -45368,8 +45408,12 @@
           ]
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -49907,8 +49951,12 @@
           "name": "Name"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -56279,8 +56327,12 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -84031,8 +84083,12 @@
           ]
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
@@ -87226,8 +87282,12 @@
           "sig": "FLTR"
         },
         {
-          "kind": "bytes",
-          "name": "Voice Category",
+          "kind": "formid",
+          "name": "Value Currency",
+          "valid_refs": [
+            "NULL",
+            "CNCY"
+          ],
           "sig": "VCRY"
         },
         {
