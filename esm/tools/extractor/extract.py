@@ -596,12 +596,22 @@ def _anchor_sig(member: dict | None) -> str | None:
 
 
 def _annotate_stop_before(members: list[dict], outer_stops: list[str]) -> None:
-    """Walk a member list and set `stop_before` on every Conditions rarray.
+    """Walk a member list and set ``stop_before`` on rarrays that need boundaries.
 
-    A "Conditions rarray" is an ``rarray`` whose element's leading sig is
-    ``CTDA``.  Without a boundary hint the decoder consumes CTDAs greedily from
-    the shared ``by_sig`` map, so per-entry conditions are stolen by the
-    record-level Conditions slot.
+    Two cases receive a boundary:
+
+    1. **Conditions rarrays** (element anchor ``CTDA``) — the original case.
+       Without a boundary hint the decoder consumes CTDAs greedily from the
+       shared ``by_sig`` map, so per-entry conditions are stolen by the
+       record-level Conditions slot.
+
+    2. **Any rarray nested inside a repeating record group** (``outer_stops``
+       non-empty).  When an rarray sits inside an rstruct element of an outer
+       rarray, ``outer_stops`` carries the element anchor of that outer rarray
+       (and its siblings), making it non-empty.  Without a boundary the nested
+       array over-consumes across entry boundaries — e.g. all ``QSRD``
+       "Rewarded Items" in a GMRW record are pulled into the first reward entry
+       rather than being split per-reward by the ``ITME`` end-marker.
 
     ``stop_before`` is set to the union of:
       • anchor sigs of all sibling members that follow this rarray, and
@@ -626,20 +636,42 @@ def _annotate_stop_before(members: list[dict], outer_stops: list[str]) -> None:
 
             if elem_anchor == "CTDA":
                 # Conditions rarray: add stop_before so consumption halts at
-                # the next structural boundary.
+                # the next structural boundary.  Use sibling_stops + outer_stops
+                # so the boundary propagates from enclosing levels.
                 stops: list[str] = sibling_stops[:]
                 for s in outer_stops:
                     if s not in stops:
                         stops.append(s)
                 if stops:
                     member["stop_before"] = stops
-                    # Also annotate the immediately-preceding CITC count integer
-                    # with the same boundary list so it defers when the conditions
-                    # appear out-of-position (e.g. FO76 NPC_ camp-pet tail CITC).
+                    # Also annotate the immediately-preceding CITC count
+                    # integer with the same boundary list so it defers when
+                    # the conditions appear out-of-position (e.g. FO76
+                    # NPC_ camp-pet tail CITC).
                     for prev in reversed(members[:i]):
                         if prev.get("kind") == "integer" and prev.get("sig") == "CITC":
                             prev["stop_before"] = stops
                             break
+            elif outer_stops and sibling_stops and elem and elem.get("kind") == "struct":
+                # Non-CTDA rarray nested inside a repeating record group, where
+                # the element is an atomic single-subrecord struct (kind="struct").
+                #
+                # For struct elements the anchor sig IS the element itself: if the
+                # anchor is absent there is genuinely nothing to consume, so
+                # stop_before_check's "anchor absent → halt" is correct.
+                #
+                # For rstruct elements the anchor is only the FIRST member — the
+                # anchor can be absent while later members (e.g. CS2D without CS2K
+                # in NPC_ Actor Sounds, or OBTS without OBTF in Object Templates)
+                # are still present.  Adding stop_before there causes an immediate
+                # false halt and orphans those subrecords.  So rstruct-element
+                # rarrays are excluded from this branch.
+                #
+                # Use ONLY sibling_stops (not outer_stops) as the boundary: outer_stops
+                # propagates record-level sigs (e.g. CNAM, FULL) that appear before
+                # the array elements in document order and would cause false halts.
+                stops = sibling_stops[:]
+                member["stop_before"] = stops
 
             # Recurse into the element.  From inside the element the enclosing
             # rarray's element anchor is itself a repeat boundary (e.g. LVLO
