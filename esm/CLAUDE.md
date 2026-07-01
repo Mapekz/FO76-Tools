@@ -186,3 +186,27 @@ Drift subrecords newer than the TES5Edit reference are handled as follows:
 - **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode.rs` handles Script Fragments + Aliases tail.
 - **INFO/PACK/PERK/SCEN `VMAD` (fragmented)** — `decode_vmad_{info,pack,perk,scen}` in `src/decode.rs` handle each record type's Script Fragments tail; dispatched by `ctx.record_signature`.
 - **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is now in `CLEAN_TYPES`.
+
+## Interpreting game data: live vs. cut/deferred content (for agents doing lookups)
+
+This is guidance about the *game data itself*, not the codebase — it matters whenever an agent uses `esm` to answer "what does X do in the current game."
+
+FO76's EditorIDs use informal prefixes to mark content that isn't part of the live game:
+
+- **`zzz_`** — deprioritized/superseded. Usually an older implementation of a perk/effect that has been reworked; the unprefixed sibling (if any) is the live one.
+- **`CUT_`**, **`DEL_`**, **`deprecated_`** (or similar) — cut content, never shipped or removed.
+- **`POST_`** — deferred/not-yet-released content (future update material sitting in the current ESM).
+- **`zzz_Babylon_*`** — an internal test-branch duplicate, not the live record.
+
+**Do not treat these as ground truth for "what does the game currently do."** Only use them when the task is explicitly historical/comparative: diffing snapshots, tracing how a mechanic evolved, or investigating cut content on request.
+
+**The prefix is a heuristic, not proof — the naming convention is inconsistent.** Several currently-dead PERK ranks have *no* prefix at all (e.g. `BearArms02`/`BearArms03`, `TankKiller03` — plain names, but orphaned). Conversely, some unprefixed records are simply broken/vestigial (e.g. `BearArms01` has a description string copy-pasted from an unrelated perk and carries no `Conditions`/`Effects` at all). Naming alone is not sufficient to confirm a record is live.
+
+**Authoritative check for perks specifically: does a `PCRD` (Perk Card) record reference it?** A `PERK` rank is only actually reachable by a player if some `PCRD`'s `Perks` array lists it. Verify with:
+
+```sh
+esm -p refs <perk-formid> --limit 20   # look for a PCRD in the results
+esm -p get <pcrd-formid> --resolve stub --pretty   # inspect its Perks[].Perk["Male Perk"] list — only these ranks are live
+```
+
+A `PERK` record with no referencing `PCRD` (e.g. `Deadeye01/02`, `Bandito01`) is orphaned — the record decodes fine and may even have `Playable: true`, but nothing in the game ever grants it to a player. A `PCRD` whose `Perks` array stops at rank N means ranks N+1 onward (even if unprefixed, even if not `CUT_`) are dead. Other record types don't have as clean an authoritative signal as `PCRD` — for those, the prefix heuristic above is what's available; flag uncertainty rather than asserting liveness.
