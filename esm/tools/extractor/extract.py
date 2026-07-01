@@ -3047,6 +3047,45 @@ def _patch_property_union(node: dict, dv: int) -> None:
         _patch_property_union(elem, dv)
 
 
+def _descend(node: dict, step: str) -> dict:
+    """Descend one step of a record_patches path: a member's sig/name, or the
+    literal 'element' to enter an array/rarray's element node."""
+    if step == "element":
+        if "element" not in node:
+            raise ValueError(f"patch step 'element': node has no element: {node.get('name')}")
+        return node["element"]
+    for child in node.get("members", node.get("fields", [])):
+        if child.get("sig") == step or child.get("name") == step:
+            return child
+    raise ValueError(f"patch step {step!r} not found under {node.get('name')}")
+
+
+def _apply_patch(record: dict, path: list[str], new_node: dict) -> None:
+    """Splice new_node into record at path (record_patches merge mode).
+
+    Each path step names a child by sig/name, or is the literal 'element' to
+    enter an array/rarray's element. The last step is replaced in place;
+    everything else in the record is left untouched.
+    """
+    cur = record
+    for step in path[:-1]:
+        cur = _descend(cur, step)
+    last = path[-1]
+    if last == "element":
+        if "element" not in cur:
+            raise ValueError("patch target 'element' on non-array node")
+        cur["element"] = new_node
+        return
+    lst = cur.get("members") or cur.get("fields")
+    if lst is None:
+        raise ValueError(f"patch target {last!r}: parent has no members/fields")
+    for i, child in enumerate(lst):
+        if child.get("sig") == last or child.get("name") == last:
+            lst[i] = new_node
+            return
+    raise ValueError(f"patch target {last!r} not found")
+
+
 def main() -> None:
     import argparse as _argparse
     import os as _os
@@ -3071,8 +3110,13 @@ def main() -> None:
     schema = ex.run()
 
     # Merge overrides — hand-authored fixes that survive regeneration.
-    # Two mechanisms:
+    # Three mechanisms:
     #   "records"          — whole-record replacement (wins over extractor output).
+    #   "record_patches"   — path-addressed splice: replaces one nested node inside
+    #                        the extractor-generated record (e.g. an array's element)
+    #                        without touching the rest of the record. Use when the
+    #                        extractor gets most of a record right but one nested
+    #                        node resists static extraction (a HARD_RAW_VAR).
     #   "record_additions" — member-append: members are appended to the extractor-
     #                        generated record's members list without replacing it.
     #                        Use for genuine xEdit gaps (subrecords absent from Pascal).
@@ -3083,6 +3127,13 @@ def main() -> None:
             for sig, rec in overrides.get("records", {}).items():
                 schema["records"][sig] = rec
                 merged += 1
+            patches = 0
+            for sig, patch_list in overrides.get("record_patches", {}).items():
+                if sig not in schema["records"]:
+                    raise ValueError(f"record_patches: no extractor record for {sig} to patch")
+                for patch in patch_list:
+                    _apply_patch(schema["records"][sig], patch["path"], patch["node"])
+                    patches += 1
             additions = 0
             for sig, extra_members in overrides.get("record_additions", {}).items():
                 if sig in schema["records"]:
@@ -3093,11 +3144,12 @@ def main() -> None:
                     schema["records"][sig] = {"name": sig, "members": extra_members}
                     merged += 1
             print(
-                f"merged {merged} override(s), {additions} member addition(s) from {OVERRIDES.name}",
+                f"merged {merged} override(s), {patches} patch(es), "
+                f"{additions} member addition(s) from {OVERRIDES.name}",
                 file=sys.stderr,
             )
         except Exception as e:
-            # Overrides are load-bearing (e.g. the hand-authored PERK record).
+            # Overrides are load-bearing (e.g. the hand-authored PERK Effect patch).
             # A failure here means the shipped schema is missing critical members.
             print(f"ERROR: failed to load overrides: {e}", file=sys.stderr)
             sys.exit(1)

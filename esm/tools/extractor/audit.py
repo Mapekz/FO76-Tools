@@ -468,7 +468,12 @@ def run_audit(
         if p_rec is None and s_rec is None:
             continue
         if p_rec is None:
-            # Override-only record (e.g. PERK replaced wholesale) — informational only.
+            # Record the extractor could not build from Pascal at all (e.g. no
+            # matching wbRecord(...) call found) — nothing to compare against;
+            # informational only. Records with a hand-authored record_patches
+            # entry still extract natively and fall through to the per-member
+            # comparison below (see parity-exceptions.json for their allowlisted
+            # divergences).
             continue
         if s_rec is None:
             # Pascal has a record but schema has nothing.

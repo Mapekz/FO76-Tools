@@ -51454,7 +51454,16 @@
               "name": "Condition Count",
               "width": "u32",
               "signed": false,
-              "sig": "CITC"
+              "sig": "CITC",
+              "stop_before": [
+                "DATA",
+                "SNAM",
+                "PRFS",
+                "NNAM",
+                "FNAM",
+                "PRFI",
+                "PFAC"
+              ]
             },
             {
               "kind": "rarray",
@@ -51466,7 +51475,6 @@
                   {
                     "kind": "struct",
                     "name": "Condition Data",
-                    "sig": "CTDA",
                     "fields": [
                       {
                         "kind": "integer",
@@ -51540,7 +51548,8 @@
                         "name": "Parameter #3",
                         "len": 4
                       }
-                    ]
+                    ],
+                    "sig": "CTDA"
                   },
                   {
                     "kind": "string",
@@ -51555,7 +51564,16 @@
                     "sig": "CIS2"
                   }
                 ]
-              }
+              },
+              "stop_before": [
+                "DATA",
+                "SNAM",
+                "PRFS",
+                "NNAM",
+                "FNAM",
+                "PRFI",
+                "PFAC"
+              ]
             }
           ]
         },
