@@ -5,7 +5,9 @@
 //! field-diffed via `json_diff`.
 
 use crate::formid::{parse_formid, FormId};
-use crate::reader::{edid_from_subrecords, lstring_id_from_subrecords};
+use crate::reader::{
+    edid_from_subrecords, inline_string_from_subrecords, lstring_id_from_subrecords, OwnedSubrecord,
+};
 use crate::strings::StringKind;
 use crate::Database;
 use anyhow::Context;
@@ -185,23 +187,25 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 
     // Build ref_names: one-hop FormID resolution for every hex ref in field_changes
     // and added records' decoded fields. Populated when either side has localization
-    // loaded, or when curves are loaded (so added-record FormIDs get names too).
-    let ref_names = if a.has_enrichment() || b.has_enrichment() {
-        let mut refs: HashSet<String> = HashSet::new();
-        for rd in &changed {
-            collect_formid_refs(&rd.field_changes, &mut refs);
-        }
-        for stub in &added {
-            if let Some(f) = &stub.fields {
-                collect_formid_refs(f, &mut refs);
+    // or curves loaded, or is non-localized (FULL/DESC are inline text there, so
+    // names resolve without any string table).
+    let ref_names =
+        if a.has_enrichment() || b.has_enrichment() || !a.is_localized || !b.is_localized {
+            let mut refs: HashSet<String> = HashSet::new();
+            for rd in &changed {
+                collect_formid_refs(&rd.field_changes, &mut refs);
             }
-        }
-        refs.into_iter()
-            .filter_map(|fid_str| resolve_ref_name(&fid_str, b, a).map(|rn| (fid_str, rn)))
-            .collect()
-    } else {
-        BTreeMap::new()
-    };
+            for stub in &added {
+                if let Some(f) = &stub.fields {
+                    collect_formid_refs(f, &mut refs);
+                }
+            }
+            refs.into_iter()
+                .filter_map(|fid_str| resolve_ref_name(&fid_str, b, a).map(|rn| (fid_str, rn)))
+                .collect()
+        } else {
+            BTreeMap::new()
+        };
 
     Ok(DiffResult {
         added,
@@ -209,6 +213,28 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
         changed,
         ref_names,
     })
+}
+
+/// Resolve a display-name field (`FULL`/`DESC`) from raw subrecords, honoring
+/// the ESM's localization mode. Localized files store a 4-byte LString ID
+/// that must be looked up in the loaded `Localization` tables; non-localized
+/// files (e.g. FO76's `SeventySix.esm`) store the text inline — no string
+/// tables required.
+fn resolve_name_field(
+    db: &Database,
+    subs: &[OwnedSubrecord],
+    sig: &str,
+    kind: StringKind,
+) -> Option<String> {
+    if db.is_localized {
+        let lid = lstring_id_from_subrecords(subs, sig)?;
+        db.localization
+            .as_ref()?
+            .lookup(kind, lid)
+            .map(str::to_owned)
+    } else {
+        inline_string_from_subrecords(subs, sig)
+    }
 }
 
 /// Build a `RecordStub` from a database, resolving name/description when
@@ -220,16 +246,8 @@ fn record_stub_from_db(
 ) -> anyhow::Result<RecordStub> {
     let rec = db.parse_record_at(meta.offset)?;
     let editor_id = edid_from_subrecords(&rec.subrecords);
-
-    let (name, description) = if let Some(loc) = &db.localization {
-        let n = lstring_id_from_subrecords(&rec.subrecords, "FULL")
-            .and_then(|lid| loc.lookup(StringKind::Strings, lid).map(str::to_owned));
-        let d = lstring_id_from_subrecords(&rec.subrecords, "DESC")
-            .and_then(|lid| loc.lookup(StringKind::DlStrings, lid).map(str::to_owned));
-        (n, d)
-    } else {
-        (None, None)
-    };
+    let name = resolve_name_field(db, &rec.subrecords, "FULL", StringKind::Strings);
+    let description = resolve_name_field(db, &rec.subrecords, "DESC", StringKind::DlStrings);
 
     Ok(RecordStub {
         form_id: id.display(),
@@ -243,24 +261,19 @@ fn record_stub_from_db(
 }
 
 /// Resolve FULL (name) and DESC (description) from the raw record at `meta.offset`.
-/// Returns `(None, None)` on any parse error or when localization is absent.
+/// Returns `(None, None)` on any parse error.
 fn resolve_stub_names(
     db: &Database,
     meta: &crate::reader::RecordMeta,
 ) -> (Option<String>, Option<String>) {
-    let loc = match &db.localization {
-        Some(l) => l,
-        None => return (None, None),
-    };
     let rec = match db.parse_record_at(meta.offset) {
         Ok(r) => r,
         Err(_) => return (None, None),
     };
-    let name = lstring_id_from_subrecords(&rec.subrecords, "FULL")
-        .and_then(|lid| loc.lookup(StringKind::Strings, lid).map(str::to_owned));
-    let description = lstring_id_from_subrecords(&rec.subrecords, "DESC")
-        .and_then(|lid| loc.lookup(StringKind::DlStrings, lid).map(str::to_owned));
-    (name, description)
+    (
+        resolve_name_field(db, &rec.subrecords, "FULL", StringKind::Strings),
+        resolve_name_field(db, &rec.subrecords, "DESC", StringKind::DlStrings),
+    )
 }
 
 /// Return `true` if `s` is a FormID hex string as produced by `FormId::display()`:
@@ -303,10 +316,7 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
                 Err(_) => continue,
             };
             let editor_id = edid_from_subrecords(&rec.subrecords);
-            let name = db.localization().and_then(|loc| {
-                lstring_id_from_subrecords(&rec.subrecords, "FULL")
-                    .and_then(|lid| loc.lookup(StringKind::Strings, lid).map(str::to_owned))
-            });
+            let name = resolve_name_field(db, &rec.subrecords, "FULL", StringKind::Strings);
             return Some(RefName {
                 record_type: sig,
                 editor_id,
