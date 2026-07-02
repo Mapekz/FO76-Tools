@@ -121,6 +121,10 @@ pub enum MemberDef {
         name: String,
         #[serde(default)]
         valid_refs: Vec<String>,
+        #[serde(default)]
+        from_version: Option<u16>,
+        #[serde(default)]
+        below_version: Option<u16>,
     },
     #[serde(rename = "bytes")]
     Bytes {
@@ -129,6 +133,10 @@ pub enum MemberDef {
         name: String,
         #[serde(default)]
         len: Option<usize>,
+        #[serde(default)]
+        from_version: Option<u16>,
+        #[serde(default)]
+        below_version: Option<u16>,
     },
     #[serde(rename = "byte_rgba")]
     ByteRgba {
@@ -175,6 +183,18 @@ pub enum MemberDef {
     },
     #[serde(rename = "vmad")]
     Vmad {
+        #[serde(default)]
+        sig: Option<String>,
+        name: String,
+    },
+    #[serde(rename = "ctda")]
+    Ctda {
+        #[serde(default)]
+        sig: Option<String>,
+        name: String,
+    },
+    #[serde(rename = "model_info")]
+    ModelInfo {
         #[serde(default)]
         sig: Option<String>,
         name: String,

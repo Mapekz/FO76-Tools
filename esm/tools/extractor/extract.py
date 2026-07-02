@@ -1200,12 +1200,30 @@ class Extractor:
         # wbConditions is already modeled above.
         # ----------------------------------------------------------------
         self.vars.setdefault("wbEFID", "wbFormIDCk(EFID,'Base Effect',[MGEF])")
-        # EFIT layout is version-conditional; use bytes for structural fidelity.
-        self.vars.setdefault("wbEFIT", "wbByteArray(EFIT,'Effect Item Data',0)")
+        # EFIT layout is form-version-conditional. The bands come from the comment at
+        # wbDefinitionsFO76.pas:6727 (the Pascal itself uses a bare wbUnknown): Effect ID
+        # only at fv>=166; trailing unknown 12 bytes for fv 154-165, 8 bytes for 166-182.
+        self.vars["wbEFIT"] = (
+            "wbStruct(EFIT,'Effect Item Data',["
+            "wbFromVersion(166, wbInteger('Effect ID',itU32)),"
+            "wbFloat('Magnitude'),"
+            "wbInteger('Area',itU32),"
+            "wbInteger('Duration',itU32),"
+            "wbFromVersion(154, wbBelowVersion(166, wbByteArray('_unknown',12))),"
+            "wbFromVersion(166, wbBelowVersion(183, wbByteArray('_unknown',8)))"
+            "])"
+        )
         self.vars["wbEffect"] = (
             "wbRStruct('Effect',["
             "wbFormIDCk(EFID,'Base Effect',[MGEF]),"
-            "wbByteArray(EFIT,'Effect Item Data',0),"
+            "wbStruct(EFIT,'Effect Item Data',["
+            "wbFromVersion(166, wbInteger('Effect ID',itU32)),"
+            "wbFloat('Magnitude'),"
+            "wbInteger('Area',itU32),"
+            "wbInteger('Duration',itU32),"
+            "wbFromVersion(154, wbBelowVersion(166, wbByteArray('_unknown',12))),"
+            "wbFromVersion(166, wbBelowVersion(183, wbByteArray('_unknown',8)))"
+            "]),"
             "wbFormIDCk(CVT0,'Curve Table',[CURV,NULL]),"
             "wbFormIDCk(MAGA,'Actor Value',[AVIF,NULL]),"
             "wbInteger(MAGF,'Effect Flags',itU32,wbFlags(["
@@ -2995,6 +3013,10 @@ class Extractor:
         if "QUST" in records:
             _patch_qust_location_fill_type(records["QUST"], self)
 
+        for rec in records.values():
+            _apply_schema_kinds(rec.get("members", []))
+            _dedup_field_names(rec.get("members", []))
+
         # ── Extraction coverage summary ──────────────────────────────────────
         # Count total raw_fallback members across all extracted records.
         def _count_rf(mlist: list) -> int:
@@ -3045,6 +3067,58 @@ class Extractor:
                 )
 
         return {"records": records}
+
+
+def _apply_schema_kinds(members: list) -> None:
+    """Replace magic-string dispatch targets with explicit schema kinds.
+
+    CTDA appears in the extractor output (and in overrides) as a *struct*
+    with reference fields; the runtime decoder is `src/ctda.rs`, so the
+    field list is dropped along with the kind swap. Also runs over the
+    merged overrides in main() — override-sourced CTDA structs (NPC_
+    Conditions, PERK Effect patch) must convert too.
+    """
+    for m in members:
+        if not isinstance(m, dict):
+            continue
+        if m.get("sig") == "CTDA" and m.get("kind") in ("bytes", "struct"):
+            m["kind"] = "ctda"
+            m.pop("fields", None)
+        elif m.get("kind") == "bytes" and m.get("name") == "Model Information":
+            m["kind"] = "model_info"
+        for key in ("members", "fields", "variants"):
+            _apply_schema_kinds(m.get(key, []))
+        elem = m.get("element")
+        if isinstance(elem, dict):
+            _apply_schema_kinds([elem])
+
+
+def _dedup_field_names(members: list) -> None:
+    """Rename duplicate sibling field names to '<name> 2', '<name> 3', …
+
+    Bakes `insert_unique`'s runtime disambiguation (e.g. MGEF's twin
+    wbActorValue slots → "Actor Value 2") into the schema so output keys
+    are declared rather than patched at decode time. Union `variants` are
+    deliberately NOT deduped — only one variant decodes per record, so
+    same-named variants never collide.
+    """
+    if not members:
+        return
+    seen: dict[str, int] = {}
+    for m in members:
+        if not isinstance(m, dict):
+            continue
+        name = m.get("name")
+        if isinstance(name, str) and name:
+            count = seen.get(name, 0) + 1
+            seen[name] = count
+            if count > 1:
+                m["name"] = f"{name} {count}"
+        for key in ("members", "fields"):
+            _dedup_field_names(m.get(key, []))
+        elem = m.get("element")
+        if isinstance(elem, dict):
+            _dedup_field_names([elem])
 
 
 def _fixup_obts_property_default(members: list, default_variant: int) -> None:
@@ -3189,6 +3263,12 @@ def main() -> None:
             # A failure here means the shipped schema is missing critical members.
             print(f"ERROR: failed to load overrides: {e}", file=sys.stderr)
             sys.exit(1)
+
+    # Re-apply schema-kind conversion over the merged tree: override-sourced
+    # members (record replacements, patches, additions) bypass the pass that
+    # ran inside Extractor.run(), and CTDA structs must not reach the decoder.
+    for rec in schema["records"].values():
+        _apply_schema_kinds(rec.get("members", []))
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(schema, indent=2), encoding="utf-8")

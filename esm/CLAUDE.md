@@ -183,6 +183,7 @@ The server exposes six read-only tools (all proxy to the warm daemon): `esm_file
 Drift subrecords newer than the TES5Edit reference are handled as follows:
 
 - **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`** — mapped in `schema/fo76.overrides.json`.
+- **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `decode.rs`.
 - **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode.rs` handles Script Fragments + Aliases tail.
 - **INFO/PACK/PERK/SCEN `VMAD` (fragmented)** — `decode_vmad_{info,pack,perk,scen}` in `src/decode.rs` handle each record type's Script Fragments tail; dispatched by `ctx.record_signature`.
 - **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is now in `CLEAN_TYPES`.
