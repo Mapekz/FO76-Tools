@@ -197,10 +197,8 @@
     ],
     "GMRW": [
       {
-        "_comment": "XALG \u2014 reverse-engineered: 8 bytes in test record WorldPets_Reward_PetLevelling_Generic_CURGoldbullions01. Absent from TES5Edit GMRW definition.",
-        "kind": "bytes",
-        "sig": "XALG",
-        "name": "XALG"
+        "_comment": "XALG — live-game drift subrecord absent from TES5Edit GMRW definition; expanded from wbXALG (u64 legendary flags).",
+        "$pascal_var": "wbXALG"
       }
     ],
     "LVLI": [

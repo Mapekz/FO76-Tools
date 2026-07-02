@@ -17,7 +17,7 @@ OUT = ROOT / "schema" / "fo76.json"
 CTDA_OUT = ROOT / "schema" / "fo76.ctda.json"
 OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
-# All 168 record types present in the FO76 ESM (excluding CELL and WRLD).
+# Record types present in the FO76 ESM (excluding CELL and WRLD until Part C).
 # Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
 WHITELIST = [
     "AACT", "AAMD", "AAPD", "ACHR", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
@@ -975,7 +975,21 @@ class Extractor:
         self.vars["wbPTRN"] = "wbFormIDCk(PTRN, 'Preview Transform', [TRNS,NULL])"
         self.vars["wbPHST"] = "wbByteArray(PHST, 'Photo Studio', 0)"
         self.vars["wbSNTP"] = "wbFormIDCk(SNTP, 'Snap Template', [STMP])"
-        self.vars["wbXALG"] = "wbInteger(XALG, 'Flags', itU32)"
+        # wbXALGFlags / wbXALG — wbDefinitionsFO76.pas:4815-4848 / :4931.
+        self.vars["wbXALGFlags"] = (
+            "wbFlags(["
+            "'Skip HAVOK on Load','Server Authoritative','Disable Permanent Decals',"
+            "'Never Visible Distant','Item Dispenser','Item Dispenser Pickedup',"
+            "'Fast travel restricted','Block Item Dispenser','Premium','Visible Distant',"
+            "'Camera Weapon Detectable','Fallout 1st','Bullion Reward Object',"
+            "'REFR invalidates previs','Deleted REFR invalidates previs',"
+            "'Container weight calculation queued','UNUSED 17',"
+            "'No refresh body 3D on load','Unknown 19','Unknown 20','Unknown 21',"
+            "'Unknown 22','Unknown 23','Unknown 24','Unknown 25','Unknown 26',"
+            "'Unknown 27','Unknown 28','Unknown 29','Unknown 30','Unknown 31','Unknown 32'"
+            "])"
+        )
+        self.vars["wbXALG"] = "wbInteger(XALG, 'Flags', itU64, wbXALGFlags)"
         self.vars["wbFTAGs"] = "wbRArray('Form Tags', wbString(FTAG, 'Form Tag'))"
         # wbBipedObjectFlags — wbDefinitionsFO76.pas:4312-4345.
         # FO76's BOD2 is a single u32 of biped-object flags (no Armor Type byte).
@@ -3187,6 +3201,25 @@ def emit_ctda_table(pas_text: str) -> dict:
     return {"functions": functions}
 
 
+def _expand_pascal_var(node: dict, ex: "Extractor") -> dict:
+    """Expand ``{"$pascal_var": "wbXALG"}`` override nodes via the extractor.
+
+    Lets an override addition reference a Pascal helper var by name so the
+    member definition (names, widths, flag lists) stays in sync with the
+    Pascal instead of being duplicated into the overrides JSON.
+    """
+    var = node.get("$pascal_var")
+    if not var:
+        return node
+    expr = ex.vars.get(var)
+    if not expr:
+        raise ValueError(f"unknown Pascal var {var!r} for $pascal_var expansion")
+    expanded = ex.parse_member(expr)
+    if not isinstance(expanded, dict):
+        raise ValueError(f"$pascal_var {var!r} did not expand to a member dict")
+    return expanded
+
+
 def _fixup_obts_property_default(members: list, default_variant: int) -> None:
     """Walk schema members and set the OBTS 'Property' union default_variant.
 
@@ -3312,12 +3345,16 @@ def main() -> None:
                     patches += 1
             additions = 0
             for sig, extra_members in overrides.get("record_additions", {}).items():
+                expanded = [
+                    _expand_pascal_var(m, ex) if isinstance(m, dict) else m
+                    for m in extra_members
+                ]
                 if sig in schema["records"]:
-                    schema["records"][sig]["members"].extend(extra_members)
-                    additions += len(extra_members)
+                    schema["records"][sig]["members"].extend(expanded)
+                    additions += len(expanded)
                 else:
                     # No generated record to append to — treat as a full record.
-                    schema["records"][sig] = {"name": sig, "members": extra_members}
+                    schema["records"][sig] = {"name": sig, "members": expanded}
                     merged += 1
             print(
                 f"merged {merged} override(s), {patches} patch(es), "
