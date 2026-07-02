@@ -554,6 +554,33 @@ fn decode_member(
                 if !items.is_empty() {
                     out.insert(name.clone(), Value::Array(items));
                 }
+            } else if let (Some(data), Some(ArrayCount::Fixed(n))) = (payload, count) {
+                // No sig: a nested array element (e.g. the inner dimension of an
+                // array-of-arrays, such as CELL's 32x32 Max Height Data grid)
+                // reached via decode_field_value with its own byte slice as
+                // `payload`. Only the Fixed-count shape is handled here (the only
+                // one that currently occurs in this position) — mirrors
+                // decode_struct_fields's packed Array arm but starting at position
+                // 0 of the given slice, since decode_field_value already hands us
+                // exactly this one array instance's bytes.
+                if let Some(elem_size) = field_byte_size(ctx, element) {
+                    let mut items = Vec::with_capacity((*n).min(4096));
+                    let mut pos = 0;
+                    for _ in 0..*n {
+                        if pos + elem_size > data.len() {
+                            break;
+                        }
+                        items.push(decode_field_value(
+                            ctx,
+                            element,
+                            &data[pos..pos + elem_size],
+                        ));
+                        pos += elem_size;
+                    }
+                    if !items.is_empty() {
+                        out.insert(name.clone(), Value::Array(items));
+                    }
+                }
             }
         }
         MemberDef::Union {
@@ -1192,6 +1219,13 @@ fn field_byte_size(ctx: &DecodeContext<'_>, field: &FieldDef) -> Option<usize> {
                 total = total.checked_add(field_byte_size(ctx, f)?)?;
             }
             Some(total)
+        }
+        MemberDef::Array { element, count, .. } => {
+            if let Some(ArrayCount::Fixed(n)) = count {
+                field_byte_size(ctx, element)?.checked_mul(*n)
+            } else {
+                None
+            }
         }
         MemberDef::Union {
             decider, variants, ..
