@@ -32,7 +32,7 @@ WHITELIST = [
     "KSSM", "KYWD", "LAYR", "LCRT", "LCTN", "LENS", "LGDI", "LGTM", "LIGH",
     "LOUT", "LSCR", "LTEX", "LVLI", "LVLN", "LVLP", "LVPC", "MATO", "MATT",
     "MDSP", "MESG", "MGEF", "MISC", "MOVT", "MSTT", "MSWP", "MUSC", "MUST",
-    "NAVI", "NOCM", "NOTE", "NPC_", "OMOD", "OTFT", "OVIS", "PACH", "PACK",
+    "NAVI", "NAVM", "NOCM", "NOTE", "NPC_", "OMOD", "OTFT", "OVIS", "PACH", "PACK",
     "PCRD", "PEPF", "PERK", "PGRE", "PHZD", "PKIN", "PLYR", "PLYT", "PMFT", "PMIS", "PPAK", "PROJ", "QMDL",
     "QUST", "RACE", "REFR", "REGN", "RELA", "RESO", "REVB", "RFCT", "RFGP", "SCCO",
     "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM",
@@ -1644,6 +1644,15 @@ class Extractor:
         expr = expr.strip().rstrip(";")
         if not expr:
             return expr
+        # IfThen(wbSimpleRecords, thenExpr, elseExpr) — wbSimpleRecords is a global
+        # xEdit UI toggle (not a per-game constant); this project always prefers the
+        # richer structured branch, so resolve to elseExpr unconditionally.
+        if expr.startswith("IfThen(wbSimpleRecords,"):
+            lparen = expr.index("(")
+            rparen = find_matching_paren(expr, lparen)
+            args = split_top_level(expr[lparen + 1 : rparen])
+            if len(args) >= 3:
+                return self.expand_call(args[2].strip())
         # identifier reference
         if re.fullmatch(r"wb[A-Za-z0-9_]+", expr):
             if expr in HARD_RAW_VARS:

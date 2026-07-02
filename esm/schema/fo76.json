@@ -43338,6 +43338,85 @@
         }
       ]
     },
+    "NAVM": {
+      "name": "Navmesh",
+      "members": [
+        {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
+        },
+        {
+          "kind": "bytes",
+          "name": "NVNM",
+          "len": null,
+          "sig": "NVNM"
+        },
+        {
+          "kind": "array",
+          "name": "Base Objects",
+          "element": {
+            "kind": "formid",
+            "name": "Base Object",
+            "valid_refs": []
+          },
+          "sig": "ONAM"
+        },
+        {
+          "kind": "array",
+          "name": "Preferred Connectors",
+          "element": {
+            "kind": "integer",
+            "name": "Vertex",
+            "width": "u16",
+            "signed": false
+          },
+          "sig": "PNAM"
+        },
+        {
+          "kind": "array",
+          "name": "Non Connectors",
+          "element": {
+            "kind": "integer",
+            "name": "Vertex",
+            "width": "u16",
+            "signed": false
+          },
+          "sig": "NNAM"
+        },
+        {
+          "kind": "array",
+          "name": "PreCut Map Entries",
+          "element": {
+            "kind": "struct",
+            "name": "PreCut Map Entry",
+            "fields": [
+              {
+                "kind": "formid",
+                "name": "Reference",
+                "valid_refs": []
+              },
+              {
+                "kind": "array",
+                "name": "Triangles",
+                "element": {
+                  "kind": "integer",
+                  "name": "Triangle",
+                  "width": "u16",
+                  "signed": false
+                },
+                "count": {
+                  "count_prefix": 2
+                }
+              }
+            ]
+          },
+          "sig": "MNAM"
+        }
+      ]
+    },
     "NOCM": {
       "name": "Navmesh Obstacle Manager",
       "members": [
