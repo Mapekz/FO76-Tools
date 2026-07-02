@@ -261,7 +261,16 @@ fn decode_member(
                     if sig == "CTDA" {
                         out.insert(name.clone(), crate::ctda::decode_ctda(&sr.data, ctx));
                     } else {
-                        decode_struct_fields(ctx, name, fields, &sr.data, out);
+                        // Chain the already-decoded siblings as the outer struct so
+                        // FieldValue union deciders inside this struct can see them
+                        // (e.g. AECH DNAM's Value union reads the rstruct's KNAM Type).
+                        let child_ctx = if fields.iter().any(contains_field_value_union) {
+                            Some(ctx.with_outer_struct(out.clone()))
+                        } else {
+                            None
+                        };
+                        let decode_ctx = child_ctx.as_ref().unwrap_or(ctx);
+                        decode_struct_fields(decode_ctx, name, fields, &sr.data, out);
                     }
                 }
             }
@@ -743,6 +752,20 @@ fn insert_unique(map: &mut Map<String, Value>, key: String, value: Value) {
     }
 }
 
+/// Returns true when `member` or any nested field uses a `FieldValue` union decider.
+fn contains_field_value_union(member: &MemberDef) -> bool {
+    match member {
+        MemberDef::Union {
+            decider: UnionDecider::FieldValue { .. },
+            ..
+        } => true,
+        MemberDef::Struct { fields, .. } => fields.iter().any(contains_field_value_union),
+        MemberDef::Union { variants, .. } => variants.iter().any(contains_field_value_union),
+        MemberDef::Array { element, .. } => contains_field_value_union(element),
+        _ => false,
+    }
+}
+
 /// Decode the fields of a struct payload into `out` under the key `struct_name`.
 /// Returns the number of bytes consumed from `data`.
 fn decode_struct_fields(
@@ -822,6 +845,44 @@ fn decode_struct_fields(
                 let end = (pos + n).min(data.len());
                 struct_out.insert(name.clone(), json!({"hex": hex::encode(&data[pos..end])}));
                 pos = end;
+            }
+            MemberDef::ByteRgba { name, .. } => {
+                if pos + 4 <= data.len() {
+                    struct_out.insert(
+                        name.clone(),
+                        json!({
+                            "r": data[pos], "g": data[pos + 1], "b": data[pos + 2], "a": data[pos + 3]
+                        }),
+                    );
+                    pos += 4;
+                }
+            }
+            MemberDef::Vec3 { name, .. } => {
+                if pos + 12 <= data.len() {
+                    struct_out.insert(
+                        name.clone(),
+                        json!({
+                            "x": f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()),
+                            "y": f32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap()),
+                            "z": f32::from_le_bytes(data[pos + 8..pos + 12].try_into().unwrap()),
+                        }),
+                    );
+                    pos += 12;
+                }
+            }
+            MemberDef::RawFallback { name, reason, .. } => {
+                if pos < data.len() {
+                    struct_out.insert(
+                        name.clone(),
+                        json!({
+                            "hex": hex::encode(&data[pos..]),
+                            "_raw": true,
+                            "reason": reason
+                        }),
+                    );
+                }
+                pos = data.len();
+                break;
             }
             MemberDef::Struct { name, fields, .. } => {
                 let sub_data = data.get(pos..).unwrap_or(&[]);
@@ -1105,8 +1166,17 @@ fn field_byte_size(ctx: &DecodeContext<'_>, field: &FieldDef) -> Option<usize> {
 }
 
 fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos: usize) -> usize {
-    let p = field_byte_size(ctx, variant).unwrap_or(0);
-    pos + p.min(data.len())
+    match variant {
+        MemberDef::Struct { name, fields, .. } => {
+            let mut tmp = Map::new();
+            let consumed = decode_struct_fields(ctx, name, fields, data, &mut tmp);
+            pos + consumed
+        }
+        _ => {
+            let p = field_byte_size(ctx, variant).unwrap_or(0);
+            pos + p.min(data.len())
+        }
+    }
 }
 
 fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) -> Value {
@@ -1351,7 +1421,7 @@ fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
                     set.push(name.clone());
                 }
             }
-            json!({"value": format!("0x{:X}", v as u32), "flags": set})
+            json!({"value": format!("0x{:X}", v as u64), "flags": set})
         }
         _ => json!(v),
     }
@@ -1366,7 +1436,8 @@ fn read_zstring(data: &[u8]) -> String {
 ///
 /// Supports dot-separated paths (e.g. `"Effect Header.Effect Type"`) to reach
 /// into nested objects. For enum-formatted integers, the object has a `"value"`
-/// key whose integer is used as the map key.
+/// key whose integer is used as the map key. JSON `null` maps to the key `"null"`
+/// (used by union deciders such as `wbNAVIParentDecider`).
 fn field_value_key(out: &Map<String, Value>, field: &str) -> Option<String> {
     let val = if let Some((parent, child)) = field.split_once('.') {
         out.get(parent)?.get(child)?
@@ -1374,6 +1445,7 @@ fn field_value_key(out: &Map<String, Value>, field: &str) -> Option<String> {
         out.get(field)?
     };
     let key = match val {
+        Value::Null => "null".to_string(),
         Value::Number(n) => n.to_string(),
         Value::String(s) => s.clone(),
         Value::Object(o) => o
@@ -1383,6 +1455,9 @@ fn field_value_key(out: &Map<String, Value>, field: &str) -> Option<String> {
             .unwrap_or_default(),
         _ => val.to_string(),
     };
+    if key.is_empty() {
+        return None;
+    }
     Some(key)
 }
 

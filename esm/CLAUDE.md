@@ -70,7 +70,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 - **`index.rs` cache**: keyed by path/size/mtime. **Bump `CACHE_VERSION`** whenever the cached data layout changes — the old cache becomes invalid and will be rebuilt.
 - **FormID layout**: high byte = master-file index, low 24 bits = object ID. All values little-endian.
 - **Decode output key conventions** (must stay consistent): `_record_type`, `_unknown_record`, `_unmapped`, `_raw`, `_unresolved`. These are the flags the `coverage` subcommand and MCP server rely on.
-- **`advance_union` / `RArray` paths in `decode.rs`** are heuristics (byte-count estimates). Change with extra care and verify against real ESM output.
+- **`advance_union` / `RArray` paths in `decode.rs`**: struct union variants advance by real decoded byte counts; fixed scalars still use `field_byte_size`. Change with extra care and verify against real ESM output.
 - **Schema `fo76.json` is generated** — treat it as a build artifact. Fix decode coverage by updating the extractor or `fo76.overrides.json`, not by hand-editing the 2.3 MB JSON.
 
 ## N-API Binding and Electron App
