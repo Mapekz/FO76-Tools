@@ -1,0 +1,4477 @@
+{
+  "functions": [
+    {
+      "index": 0,
+      "name": "GetWantBlocking",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 1,
+      "name": "GetDistance",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 2,
+      "name": "AddItem",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 3,
+      "name": "SetEssential",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5,
+      "name": "GetLocked",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 6,
+      "name": "GetPos",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8,
+      "name": "GetAngle",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10,
+      "name": "GetStartingPos",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 11,
+      "name": "GetStartingAngle",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 12,
+      "name": "GetSecondsPassed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 14,
+      "name": "GetValue",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 18,
+      "name": "GetCurrentTime",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 24,
+      "name": "GetScale",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 25,
+      "name": "IsMoving",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 26,
+      "name": "IsTurning",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 27,
+      "name": "GetLineOfSight",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 32,
+      "name": "GetInSameCell",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 35,
+      "name": "GetDisabled",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 36,
+      "name": "MenuPaused",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 39,
+      "name": "GetDisease",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 41,
+      "name": "GetClothingValue",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 42,
+      "name": "SameFaction",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 43,
+      "name": "SameRace",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 44,
+      "name": "SameSex",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 45,
+      "name": "GetDetected",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 46,
+      "name": "GetDead",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 47,
+      "name": "GetItemCount",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 48,
+      "name": "GetGold",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 49,
+      "name": "GetSleeping",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 50,
+      "name": "GetTalkedToPC",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 56,
+      "name": "GetQuestRunning",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 58,
+      "name": "GetStageCurrentInstance",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 59,
+      "name": "GetStageDoneCurrentInstance",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 60,
+      "name": "GetFactionRankDifference",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 61,
+      "name": "GetAlarmed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 62,
+      "name": "IsRaining",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 63,
+      "name": "GetAttacked",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 64,
+      "name": "GetIsCreature",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 65,
+      "name": "GetLockLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 66,
+      "name": "GetShouldAttack",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 67,
+      "name": "GetInCell",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 68,
+      "name": "GetIsClass",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 69,
+      "name": "GetIsRace",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 70,
+      "name": "GetIsSex",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 71,
+      "name": "GetInFaction",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 72,
+      "name": "GetIsID",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 73,
+      "name": "GetFactionRank",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 74,
+      "name": "GetGlobalValue",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 75,
+      "name": "IsSnowing",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 77,
+      "name": "GetRandomPercent",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 79,
+      "name": "WouldBeStealing",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 80,
+      "name": "GetLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 81,
+      "name": "IsRotating",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 84,
+      "name": "GetDeadCount",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 91,
+      "name": "GetIsAlerted",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 98,
+      "name": "GetPlayerControlsDisabled",
+      "p1": "I",
+      "p2": "I",
+      "p3": "I"
+    },
+    {
+      "index": 99,
+      "name": "GetHeadingAngle",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 101,
+      "name": "IsWeaponMagicOut",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 102,
+      "name": "IsTorchOut",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 103,
+      "name": "IsShieldOut",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 105,
+      "name": "IsActionRef",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 106,
+      "name": "IsFacingUp",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 107,
+      "name": "GetKnockedState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 108,
+      "name": "GetWeaponAnimType",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 109,
+      "name": "IsWeaponSkillType",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 110,
+      "name": "GetCurrentAIPackage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 111,
+      "name": "IsWaiting",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 112,
+      "name": "IsIdlePlaying",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 116,
+      "name": "IsIntimidatedbyPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 117,
+      "name": "IsPlayerInRegion",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 118,
+      "name": "GetActorAggroRadiusViolated",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 122,
+      "name": "GetCrime",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 123,
+      "name": "IsGreetingPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 125,
+      "name": "IsGuard",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 127,
+      "name": "HasBeenEaten",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 128,
+      "name": "GetStaminaPercentage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 129,
+      "name": "HasBeenRead",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 130,
+      "name": "GetDying",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 131,
+      "name": "GetSceneActionPercent",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 132,
+      "name": "WouldRefuseCommand",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 133,
+      "name": "SameFactionAsPC",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 134,
+      "name": "SameRaceAsPC",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 135,
+      "name": "SameSexAsPC",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 136,
+      "name": "GetIsReference",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 141,
+      "name": "IsTalking",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 142,
+      "name": "GetComponentCount",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 143,
+      "name": "GetCurrentAIProcedure",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 144,
+      "name": "GetTrespassWarningLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 145,
+      "name": "IsTrespassing",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 146,
+      "name": "IsInMyOwnedCell",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 147,
+      "name": "GetWindSpeed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 148,
+      "name": "GetCurrentWeatherPercent",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 149,
+      "name": "GetIsCurrentWeather",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 150,
+      "name": "IsContinuingPackagePCNear",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 152,
+      "name": "GetIsCrimeFaction",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 153,
+      "name": "CanHaveFlames",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 154,
+      "name": "HasFlames",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 157,
+      "name": "GetOpenState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 159,
+      "name": "GetSitting",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 161,
+      "name": "GetIsCurrentPackage",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 162,
+      "name": "IsCurrentFurnitureRef",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 163,
+      "name": "IsCurrentFurnitureObj",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 170,
+      "name": "GetDayOfWeek",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 172,
+      "name": "GetTalkedToPCParam",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 175,
+      "name": "IsPCSleeping",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 176,
+      "name": "IsPCAMurderer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 180,
+      "name": "HasSameEditorLocationAsRef",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 181,
+      "name": "HasSameEditorLocationAsRefAlias",
+      "p1": "I",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 182,
+      "name": "GetEquipped",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 185,
+      "name": "IsSwimming",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 190,
+      "name": "GetAmountSoldStolen",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 192,
+      "name": "GetIgnoreCrime",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 193,
+      "name": "GetPCExpelled",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 195,
+      "name": "GetPCFactionMurder",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 197,
+      "name": "GetPCEnemyofFaction",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 199,
+      "name": "GetPCFactionAttack",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 203,
+      "name": "GetDestroyed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 214,
+      "name": "HasMagicEffect",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 215,
+      "name": "GetDefaultOpen",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 223,
+      "name": "IsSpellTarget",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 224,
+      "name": "GetVATSMode",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 225,
+      "name": "GetPersuasionNumber",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 226,
+      "name": "GetVampireFeed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 227,
+      "name": "GetCannibal",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 228,
+      "name": "GetIsClassDefault",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 229,
+      "name": "GetClassDefaultMatch",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 230,
+      "name": "GetInCellParam",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 231,
+      "name": "GetPlayerDialogueInput",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 235,
+      "name": "GetVatsTargetHeight",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 237,
+      "name": "GetIsGhost",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 242,
+      "name": "GetUnconscious",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 244,
+      "name": "GetRestrained",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 246,
+      "name": "GetIsUsedItem",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 247,
+      "name": "GetIsUsedItemType",
+      "p1": "T",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 248,
+      "name": "IsScenePlaying",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 249,
+      "name": "IsInDialogueWithPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 250,
+      "name": "GetLocationCleared",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 254,
+      "name": "GetIsPlayableRace",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 255,
+      "name": "GetOffersServicesNow",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 258,
+      "name": "HasAssociationType",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 259,
+      "name": "HasFamilyRelationship",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 261,
+      "name": "HasParentRelationship",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 262,
+      "name": "IsWarningAbout",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 263,
+      "name": "IsWeaponOut",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 264,
+      "name": "HasSpell",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 265,
+      "name": "IsTimePassing",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 266,
+      "name": "IsPleasant",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 267,
+      "name": "IsCloudy",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 274,
+      "name": "IsSmallBump",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 276,
+      "name": "IsInInteriorAcousticSpace",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 277,
+      "name": "GetBaseValue",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 278,
+      "name": "IsOwner",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 280,
+      "name": "IsCellOwner",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 282,
+      "name": "IsHorseStolen",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 285,
+      "name": "IsLeftUp",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 286,
+      "name": "IsSneaking",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 287,
+      "name": "IsRunning",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 288,
+      "name": "GetFriendHit",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 289,
+      "name": "IsInCombat",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 300,
+      "name": "IsInInterior",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 304,
+      "name": "IsWaterObject",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 305,
+      "name": "GetPlayerAction",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 306,
+      "name": "IsActorUsingATorch",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 309,
+      "name": "IsXBox",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 310,
+      "name": "GetInWorldspace",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 312,
+      "name": "GetPCMiscStat",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 313,
+      "name": "GetPairedAnimation",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 314,
+      "name": "IsActorAVictim",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 315,
+      "name": "GetTotalPersuasionNumber",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 318,
+      "name": "GetIdleDoneOnce",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 320,
+      "name": "GetNoRumors",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 323,
+      "name": "GetCombatState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 325,
+      "name": "GetWithinPackageLocation",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 327,
+      "name": "IsRidingMount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 329,
+      "name": "IsFleeing",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 332,
+      "name": "IsInDangerousWater",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 338,
+      "name": "GetIgnoreFriendlyHits",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 339,
+      "name": "IsPlayersLastRiddenMount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 353,
+      "name": "IsActor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 354,
+      "name": "IsEssential",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 358,
+      "name": "IsPlayerMovingIntoNewSpace",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 359,
+      "name": "GetInCurrentLocation",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 360,
+      "name": "GetInCurrentLocationAlias",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 361,
+      "name": "GetTimeDead",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 362,
+      "name": "HasLinkedRef",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 365,
+      "name": "IsChild",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 366,
+      "name": "GetStolenItemValueNoCrime",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 367,
+      "name": "GetLastPlayerAction",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 368,
+      "name": "IsPlayerActionActive",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 370,
+      "name": "IsTalkingActivatorActor",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 371,
+      "name": "IsOnChems",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 372,
+      "name": "IsInList",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 373,
+      "name": "GetStolenItemValue",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 375,
+      "name": "GetCrimeGoldViolent",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 376,
+      "name": "GetCrimeGoldNonviolent",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 378,
+      "name": "IsOwnedBy",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 380,
+      "name": "GetCommandDistance",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 381,
+      "name": "GetCommandLocationDistance",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 390,
+      "name": "GetHitLocation",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 391,
+      "name": "IsPC1stPerson",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 396,
+      "name": "GetCauseofDeath",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 397,
+      "name": "IsLimbGone",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 398,
+      "name": "IsWeaponInList",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 402,
+      "name": "IsBribedbyPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 403,
+      "name": "GetRelationshipRank",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 407,
+      "name": "GetVATSValue",
+      "p1": "I",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 408,
+      "name": "IsKiller",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 409,
+      "name": "IsKillerObject",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 410,
+      "name": "GetFactionCombatReaction",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 414,
+      "name": "Exists",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 415,
+      "name": "GetGroupMemberCount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 416,
+      "name": "GetGroupTargetCount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 426,
+      "name": "GetIsVoiceType",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 427,
+      "name": "GetPlantedExplosive",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 429,
+      "name": "IsScenePackageRunning",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 430,
+      "name": "GetHealthPercentage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 432,
+      "name": "GetIsObjectType",
+      "p1": "T",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 434,
+      "name": "PlayerVisualDetection",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 435,
+      "name": "PlayerAudioDetection",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 437,
+      "name": "GetIsCreatureType",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 438,
+      "name": "HasKey",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 439,
+      "name": "IsFurnitureEntryType",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 444,
+      "name": "GetInCurrentLocationFormList",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 445,
+      "name": "GetInZone",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 446,
+      "name": "GetVelocity",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 447,
+      "name": "GetGraphVariableFloat",
+      "p1": "S",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 448,
+      "name": "HasPerk",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 449,
+      "name": "GetFactionRelation",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 450,
+      "name": "IsLastIdlePlayed",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 453,
+      "name": "GetPlayerTeammate",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 454,
+      "name": "GetPlayerTeammateCount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 458,
+      "name": "GetActorCrimePlayerEnemy",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 459,
+      "name": "GetCrimeGold",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 463,
+      "name": "IsPlayerGrabbedRef",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 465,
+      "name": "GetKeywordItemCount",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 470,
+      "name": "GetDestructionStage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 473,
+      "name": "GetIsAlignment",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 476,
+      "name": "IsProtected",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 477,
+      "name": "GetThreatRatio",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 479,
+      "name": "GetIsUsedItemEquipType",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 483,
+      "name": "GetPlayerActivated",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 485,
+      "name": "GetFullyEnabledActorsInHigh",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 487,
+      "name": "IsCarryable",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 488,
+      "name": "GetConcussed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 491,
+      "name": "GetMapMarkerVisible",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 493,
+      "name": "PlayerKnows",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 494,
+      "name": "GetPermanentValue",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 495,
+      "name": "GetKillingBlowLimb",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 497,
+      "name": "CanPayCrimeGold",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 499,
+      "name": "GetDaysInJail",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 500,
+      "name": "EPAlchemyGetMakingPoison",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 501,
+      "name": "EPAlchemyEffectHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 503,
+      "name": "GetAllowWorldInteractions",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 506,
+      "name": "DialogueGetAv",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 507,
+      "name": "DialogueHasPerk",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 508,
+      "name": "GetLastHitCritical",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 510,
+      "name": "DialogueGetItemCount",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 511,
+      "name": "LastCrippledCondition",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 512,
+      "name": "HasSharedPowerGrid",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 513,
+      "name": "IsCombatTarget",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 515,
+      "name": "GetVATSRightAreaFree",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 516,
+      "name": "GetVATSLeftAreaFree",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 517,
+      "name": "GetVATSBackAreaFree",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 518,
+      "name": "GetVATSFrontAreaFree",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 519,
+      "name": "GetIsLockBroken",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 520,
+      "name": "IsPS3",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 521,
+      "name": "IsWindowsPC",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 522,
+      "name": "GetVATSRightTargetVisible",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 523,
+      "name": "GetVATSLeftTargetVisible",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 524,
+      "name": "GetVATSBackTargetVisible",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 525,
+      "name": "GetVATSFrontTargetVisible",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 528,
+      "name": "IsInCriticalStage",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 530,
+      "name": "GetXPForNextLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 533,
+      "name": "GetInfamy",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 534,
+      "name": "GetInfamyViolent",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 535,
+      "name": "GetInfamyNonViolent",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 536,
+      "name": "GetTypeCommandPerforming",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 543,
+      "name": "GetQuestCompleted",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 544,
+      "name": "GetSpeechChallengeSuccessLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 547,
+      "name": "IsGoreDisabled",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 550,
+      "name": "IsSceneActionComplete",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 552,
+      "name": "GetSpellUsageNum",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 554,
+      "name": "GetActorsInHigh",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 555,
+      "name": "HasLoaded3D",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 560,
+      "name": "HasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 561,
+      "name": "HasRefType",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 562,
+      "name": "LocationHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 563,
+      "name": "LocationHasRefType",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 565,
+      "name": "GetIsEditorLocation",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 566,
+      "name": "GetIsAliasRef",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 567,
+      "name": "GetIsEditorLocationAlias",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 568,
+      "name": "IsSprinting",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 569,
+      "name": "IsBlocking",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 570,
+      "name": "HasEquippedSpell",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 571,
+      "name": "GetCurrentCastingType",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 572,
+      "name": "GetCurrentDeliveryType",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 574,
+      "name": "GetAttackState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 576,
+      "name": "GetEventData",
+      "p1": "I",
+      "p2": "R",
+      "p3": "S"
+    },
+    {
+      "index": 577,
+      "name": "IsCloserToAThanB",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 578,
+      "name": "LevelMinusPCLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 579,
+      "name": "EditorLocationHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 580,
+      "name": "IsBleedingOut",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 584,
+      "name": "GetRelativeAngle",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 589,
+      "name": "GetMovementDirection",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 590,
+      "name": "IsInScene",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 591,
+      "name": "GetRefTypeDeadCount",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 592,
+      "name": "GetRefTypeAliveCount",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 594,
+      "name": "GetIsFlying",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 595,
+      "name": "IsCurrentSpell",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 596,
+      "name": "SpellHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 597,
+      "name": "GetEquippedItemType",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 598,
+      "name": "GetLocationAliasCleared",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 600,
+      "name": "GetLocationAliasRefTypeDeadCount",
+      "p1": "I",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 601,
+      "name": "GetLocationAliasRefTypeAliveCount",
+      "p1": "I",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 602,
+      "name": "IsWardState",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 603,
+      "name": "IsInSameCurrentLocationAsRef",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 604,
+      "name": "IsInSameCurrentLocationAsRefAlias",
+      "p1": "I",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 605,
+      "name": "LocationAliasIsLocation",
+      "p1": "I",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 606,
+      "name": "GetKeywordDataForLocation",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 608,
+      "name": "GetKeywordDataForAlias",
+      "p1": "I",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 610,
+      "name": "LocationAliasHasKeyword",
+      "p1": "I",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 611,
+      "name": "IsNullPackageData",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 612,
+      "name": "GetNumericPackageData",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 613,
+      "name": "IsPlayerRadioOn",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 614,
+      "name": "GetPlayerRadioFrequency",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 615,
+      "name": "GetHighestRelationshipRank",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 616,
+      "name": "GetLowestRelationshipRank",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 617,
+      "name": "HasAssociationTypeAny",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 618,
+      "name": "HasFamilyRelationshipAny",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 619,
+      "name": "GetPathingTargetOffset",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 620,
+      "name": "GetPathingTargetAngleOffset",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 621,
+      "name": "GetPathingTargetSpeed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 622,
+      "name": "GetPathingTargetSpeedAngle",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 623,
+      "name": "GetMovementSpeed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 624,
+      "name": "GetInContainer",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 625,
+      "name": "IsLocationLoaded",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 626,
+      "name": "IsLocationAliasLoaded",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 627,
+      "name": "IsDualCasting",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 629,
+      "name": "GetVMQuestVariable",
+      "p1": "R",
+      "p2": "S",
+      "p3": "N"
+    },
+    {
+      "index": 630,
+      "name": "GetCombatAudioDetection",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 631,
+      "name": "GetCombatVisualDetection",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 632,
+      "name": "IsCasting",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 633,
+      "name": "GetFlyingState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 635,
+      "name": "IsInFavorState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 636,
+      "name": "HasTwoHandedWeaponEquipped",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 637,
+      "name": "IsFurnitureExitType",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 638,
+      "name": "IsInFriendStatewithPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 639,
+      "name": "GetWithinDistance",
+      "p1": "R",
+      "p2": "F",
+      "p3": "N"
+    },
+    {
+      "index": 640,
+      "name": "GetValuePercent",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 641,
+      "name": "IsUnique",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 642,
+      "name": "GetLastBumpDirection",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 644,
+      "name": "GetInfoChallangeSuccess",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 645,
+      "name": "GetIsInjured",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 646,
+      "name": "GetIsCrashLandRequest",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 647,
+      "name": "GetIsHastyLandRequest",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 650,
+      "name": "IsLinkedTo",
+      "p1": "R",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 651,
+      "name": "GetKeywordDataForCurrentLocation",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 652,
+      "name": "GetInSharedCrimeFaction",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 654,
+      "name": "GetBribeSuccess",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 655,
+      "name": "GetIntimidateSuccess",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 656,
+      "name": "GetArrestedState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 657,
+      "name": "GetArrestingActor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 659,
+      "name": "HasVMScript",
+      "p1": "S",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 660,
+      "name": "GetVMScriptVariable",
+      "p1": "S",
+      "p2": "S",
+      "p3": "N"
+    },
+    {
+      "index": 661,
+      "name": "GetWorkshopResourceDamage",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 664,
+      "name": "HasValidRumorTopic",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 672,
+      "name": "IsAttacking",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 673,
+      "name": "IsPowerAttacking",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 674,
+      "name": "IsLastHostileActor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 675,
+      "name": "GetGraphVariableInt",
+      "p1": "S",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 678,
+      "name": "ShouldAttackKill",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 680,
+      "name": "GetActivationHeight",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 682,
+      "name": "WornHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 683,
+      "name": "GetPathingCurrentSpeed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 684,
+      "name": "GetPathingCurrentSpeedAngle",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 691,
+      "name": "GetWorkshopObjectCount",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 692,
+      "name": "GetStrongestEnemyHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 693,
+      "name": "EPMagic_SpellHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 694,
+      "name": "GetNoBleedoutRecovery",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 696,
+      "name": "EPMagic_SpellHasSkill",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 697,
+      "name": "IsAttackType",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 698,
+      "name": "IsAllowedToFly",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 699,
+      "name": "HasMagicEffectKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 700,
+      "name": "IsCommandedActor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 701,
+      "name": "IsStaggered",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 702,
+      "name": "IsRecoiling",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 703,
+      "name": "HasScopeWeaponEquipped",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 704,
+      "name": "IsPathing",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 705,
+      "name": "GetShouldHelp",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 706,
+      "name": "HasBoundWeaponEquipped",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 707,
+      "name": "GetCombatTargetHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 709,
+      "name": "GetCombatGroupMemberCount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 710,
+      "name": "IsIgnoringCombat",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 711,
+      "name": "GetLightLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 713,
+      "name": "SpellHasCastingPerk",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 714,
+      "name": "IsBeingRidden",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 715,
+      "name": "IsUndead",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 716,
+      "name": "GetRealHoursPassed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 718,
+      "name": "IsUnlockedDoor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 719,
+      "name": "IsHostileToActor",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 720,
+      "name": "GetTargetHeight",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 721,
+      "name": "IsPoison",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 722,
+      "name": "WornApparelHasKeywordCount",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 723,
+      "name": "GetItemHealthPercent",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 724,
+      "name": "EffectWasDualCast",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 725,
+      "name": "GetKnockStateEnum",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 726,
+      "name": "DoesNotExist",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 728,
+      "name": "GetPlayerWalkAwayFromDialogueScene",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 729,
+      "name": "GetActorStance",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 730,
+      "name": "HasAnyMutatedTeammates",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 734,
+      "name": "CanProduceForWorkshop",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 735,
+      "name": "CanFlyHere",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 736,
+      "name": "EPIsDamageType",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 737,
+      "name": "GetCurrentWeatherHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 738,
+      "name": "GetActorGunState",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 739,
+      "name": "GetVoiceLineLength",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 741,
+      "name": "ObjectTemplateItem_HasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 742,
+      "name": "ObjectTemplateItem_HasUniqueKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 743,
+      "name": "ObjectTemplateItem_GetLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 744,
+      "name": "MovementIdleMatches",
+      "p1": "I",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 745,
+      "name": "GetActionData",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 746,
+      "name": "GetActionDataShort",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 747,
+      "name": "GetActionDataByte",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 748,
+      "name": "GetActionDataFlag",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 749,
+      "name": "ModdedItemHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 750,
+      "name": "GetAngryWithPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 751,
+      "name": "IsCameraUnderWater",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 753,
+      "name": "IsActorRefOwner",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 754,
+      "name": "HasActorRefOwner",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 756,
+      "name": "GetLoadedAmmoCount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 757,
+      "name": "IsTimeSpanSunrise",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 758,
+      "name": "IsTimeSpanMorning",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 759,
+      "name": "IsTimeSpanAfternoon",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 760,
+      "name": "IsTimeSpanEvening",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 761,
+      "name": "IsTimeSpanSunset",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 762,
+      "name": "IsTimeSpanNight",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 763,
+      "name": "IsTimeSpanMidnight",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 764,
+      "name": "IsTimeSpanAnyDay",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 765,
+      "name": "IsTimeSpanAnyNight",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 766,
+      "name": "CurrentFurnitureHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 767,
+      "name": "GetWeaponEquipIndex",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 769,
+      "name": "IsOverEncumbered",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 770,
+      "name": "IsPackageRequestingBlockedIdles",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 771,
+      "name": "GetActionDataInt",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 772,
+      "name": "GetVATSRightMinusLeftAreaFree",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 773,
+      "name": "GetInIronSights",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 774,
+      "name": "GetActorStaggerDirection",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 775,
+      "name": "GetActorStaggerMagnitude",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 776,
+      "name": "WornCoversBipedSlot",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 777,
+      "name": "GetInventoryValue",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 778,
+      "name": "IsPlayerInConversation",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 779,
+      "name": "IsInDialogueCamera",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 780,
+      "name": "IsMyDialogueTargetPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 781,
+      "name": "IsMyDialogueTargetActor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 782,
+      "name": "GetMyDialogueTargetDistance",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 783,
+      "name": "IsSeatOccupied",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 784,
+      "name": "IsPlayerRiding",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 785,
+      "name": "IsTryingEventCamera",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 786,
+      "name": "UseLeftSideCamera",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 787,
+      "name": "GetNoteType",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 788,
+      "name": "LocationHasPlayerOwnedWorkshop",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 789,
+      "name": "IsStartingAction",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 790,
+      "name": "IsMidAction",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 791,
+      "name": "IsWeaponChargeAttack",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 792,
+      "name": "IsInWorkshopMode",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 793,
+      "name": "IsWeaponChargingHoldAttack",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 794,
+      "name": "IsEncounterAbovePlayerLevel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 795,
+      "name": "IsMeleeAttacking",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 796,
+      "name": "GetVATSQueuedTargetsUnique",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 797,
+      "name": "GetCurrentLocationCleared",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 798,
+      "name": "IsPowered",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 799,
+      "name": "GetTransmitterDistance",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 800,
+      "name": "GetCameraPlaybackTime",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 801,
+      "name": "IsInWater",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 802,
+      "name": "GetWithinActivateDistance",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 803,
+      "name": "IsUnderWater",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 804,
+      "name": "IsInSameSpace",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 805,
+      "name": "LocationAllowsReset",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 806,
+      "name": "GetVATSBackRightAreaFree",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 807,
+      "name": "GetVATSBackLeftAreaFree",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 808,
+      "name": "GetVATSBackRightTargetVisible",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 809,
+      "name": "GetVATSBackLeftTargetVisible",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 810,
+      "name": "GetVATSTargetLimbVisible",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 811,
+      "name": "IsPlayerListening",
+      "p1": "F",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 812,
+      "name": "GetPathingRequestedQuickTurn",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 813,
+      "name": "EPIsCalculatingBaseDamage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 814,
+      "name": "GetReanimating",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 817,
+      "name": "IsInRobotWorkbench",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 818,
+      "name": "IsActorsTurfActive",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 828,
+      "name": "GetIsPlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 832,
+      "name": "GetStageUniqueQuest",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 833,
+      "name": "GetStageDoneUniqueQuest",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 834,
+      "name": "GetVMQuestVariableUnique",
+      "p1": "R",
+      "p2": "S",
+      "p3": "N"
+    },
+    {
+      "index": 835,
+      "name": "IsWorkshopOwner",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 836,
+      "name": "IsWorkshopClaimant",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 837,
+      "name": "IsActivePlayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 839,
+      "name": "IsMemberOfAPlayerTeam",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 840,
+      "name": "IsWaterConsumeSpell",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 841,
+      "name": "IsWaterContactSpell",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 842,
+      "name": "IsPlayerInFriendlyWorkshop",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 843,
+      "name": "GetJunkItemCount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 844,
+      "name": "GetIsCurrentLocationExact",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 845,
+      "name": "GetIsEditorLocationExact",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 846,
+      "name": "GetActorValueForCurrentLocation",
+      "p1": "A",
+      "p2": "R",
+      "p3": "N"
+    },
+    {
+      "index": 849,
+      "name": "GetIsInRegion",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 850,
+      "name": "GetInAcousticSpace",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 851,
+      "name": "IsPowerArmorOwner",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 852,
+      "name": "GetCurrency",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 853,
+      "name": "HasLearnedRecipe",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 854,
+      "name": "HasActiveMagicEffect",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 855,
+      "name": "HasBeenSearched",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 856,
+      "name": "GetQuestRunningUnique",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 857,
+      "name": "GetNumTimesCompletedQuest",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 858,
+      "name": "WorkshopOwnerHasPerk",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 859,
+      "name": "HasEntitlement",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 860,
+      "name": "IsQuickplayer",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 861,
+      "name": "IsVisitor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 862,
+      "name": "IsInWorkshop",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 863,
+      "name": "IsInWorkshopOwned",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 864,
+      "name": "IsJunkItem",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 865,
+      "name": "IsInWeather",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 867,
+      "name": "GetQuickplayModeLoadingInto",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 868,
+      "name": "IsInitiatingFastTravel",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 869,
+      "name": "GetQuickplayKeywordLoadingInto",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 870,
+      "name": "GetNumActiveEffectsWithKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 871,
+      "name": "GetNumActiveSpellsWithKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 872,
+      "name": "GatLastHitHealthDamageAmount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 873,
+      "name": "GatLastHitTotalDamageAmount",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 874,
+      "name": "GatLastHitDamageSourceType",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 875,
+      "name": "IsTrueForConditionForm",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 876,
+      "name": "IsActiveQuest",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 877,
+      "name": "IsFullHealth",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 878,
+      "name": "CHAL_IsTargetWeaponMelee",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 879,
+      "name": "CHAL_IsTargetWeaponRanged",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 880,
+      "name": "CHAL_IsTargetWeaponThrown",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 881,
+      "name": "CHAL_GetTargetWeaponDamageType",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 882,
+      "name": "CHAL_DoesTargetWeaponHaveKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 884,
+      "name": "CHAL_IsTargetWorkshopRecipeInCategory",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 885,
+      "name": "GetLastFallDamage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 886,
+      "name": "IsPlayerInCamp",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 887,
+      "name": "GetLastHitLethal",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 888,
+      "name": "IsPlayerTeammate",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 889,
+      "name": "IsPlayerCombatOpponent",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 890,
+      "name": "HasPerkCardEquipped",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 891,
+      "name": "HasPerkCardFromListEquipped",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 892,
+      "name": "GetLastCompletedCheckpointStage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 893,
+      "name": "IsPreviousMeleeAttackEvent",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 894,
+      "name": "HasCompletedCheckpointStage",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 895,
+      "name": "DoesRecipeContainObject",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 896,
+      "name": "IsDailyCooldownExpired",
+      "p1": "A",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 897,
+      "name": "GetRandomUInt",
+      "p1": "I",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 898,
+      "name": "GetWorldType",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 899,
+      "name": "IsEngagedInPvP",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 900,
+      "name": "IsAggresive",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 901,
+      "name": "IsInWorkshopPublic",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 902,
+      "name": "IsPlayerInCampOwned",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 903,
+      "name": "IsPlayerInCampTeam",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 904,
+      "name": "CHAL_IsTargetWorkshopRecipe",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 905,
+      "name": "DoesModApplyKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 906,
+      "name": "HasCompletedChallenge",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 907,
+      "name": "GetNumElementsInRefCollection",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 908,
+      "name": "IsTeamLeader",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 909,
+      "name": "ActorPackageHasRandomConversationsFlagOn",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 910,
+      "name": "IsInInstancedLocation",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 911,
+      "name": "IsInstanceOwner",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 914,
+      "name": "IsQuestTracked",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 915,
+      "name": "IsPlayerFO1Member",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 916,
+      "name": "IsServerOverEWSActorBudget",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 917,
+      "name": "GetStageDonePlayerInstance",
+      "p1": "R",
+      "p2": "I",
+      "p3": "N"
+    },
+    {
+      "index": 918,
+      "name": "IsAuthoritativeOverMovement",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 919,
+      "name": "IsWeaponMinChargeTimeElapsed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 920,
+      "name": "IsOccupiedFurnitureRef",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 921,
+      "name": "IsOccupiedFurnitureObj",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 922,
+      "name": "GetTeammateBondScore",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 923,
+      "name": "GetTeamType",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 924,
+      "name": "GetNumPlayersInSameInterior",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 925,
+      "name": "GetQuestFormType",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 926,
+      "name": "GetPlayerSeasonRank",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 927,
+      "name": "IsInWorkshopFreeCameraMode",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 928,
+      "name": "IsVendor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 929,
+      "name": "GetLanguage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 930,
+      "name": "IsNextClipLastShot",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 931,
+      "name": "WornInOrOutOfPowerArmorHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 932,
+      "name": "IsPlayerInBestBuildCamp",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 933,
+      "name": "GetLastHitLimbDamageMultiplier",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 934,
+      "name": "IsLastDamageFromVATS",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 935,
+      "name": "IsLastDamageCripplingLimb",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 936,
+      "name": "GetCurrentCAMPWeatherHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 937,
+      "name": "GetCurrentWeatherOverrideHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 938,
+      "name": "HasActiveChallenge",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5000,
+      "name": "IsInAirOrFloating",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5001,
+      "name": "GetIsForm",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5002,
+      "name": "GetIsInDailyOps",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5003,
+      "name": "GetRadsHealthPercentage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5004,
+      "name": "PlayerHasQuest",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5005,
+      "name": "IsBackpackVisible",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5006,
+      "name": "GetIsInExpedition",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 5007,
+      "name": "HasCAMPWeatherActive",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 6000,
+      "name": "GetSecondsSinceLastAttack",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8000,
+      "name": "IsDailyContentAvailable",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8001,
+      "name": "StartDailyContent",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8002,
+      "name": "GetRemainingQuestTimeSeconds",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8003,
+      "name": "IsCaravanAvailable",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8004,
+      "name": "CanFishHere",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8005,
+      "name": "IsFishingBaitSelected",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8006,
+      "name": "GetDepthInwater",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 8007,
+      "name": "LocationHierarchyHasKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 9000,
+      "name": "RemoveAchievement",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 9001,
+      "name": "IsPlayerInShelterOwned",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 9002,
+      "name": "IsPlayerInShelter",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 9003,
+      "name": "IsInShelterLocation",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 9004,
+      "name": "StopAllPublicEvents",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 9005,
+      "name": "IsFalloutWorlds",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10000,
+      "name": "IsChallengeTypeDaily",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10001,
+      "name": "IsChallengeTypeWeekly",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10002,
+      "name": "IsChallengeTypeLifetime",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10003,
+      "name": "IsStealthed",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10004,
+      "name": "HasExpeditionInProgress",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10005,
+      "name": "IsExpeditionInProgress",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10006,
+      "name": "AbandonExpedition",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10007,
+      "name": "StartExpedition",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10008,
+      "name": "GetExpeditionsInstanceNumOptbjectivesCompleted",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10009,
+      "name": "ResetExpedition",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10010,
+      "name": "StartNewExpedition",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10011,
+      "name": "ResumeExpedition",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10012,
+      "name": "JoinExpedition",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10013,
+      "name": "GetPublicEventHasMutation",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10014,
+      "name": "IsUsingAltCurveTable",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10015,
+      "name": "GetIsInVATS",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10016,
+      "name": "GetIsDisguisedWithKeyword",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10017,
+      "name": "GetIsPlayerGhoul",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10018,
+      "name": "GetDistanceToClosestHostileActor",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10019,
+      "name": "GetRadshieldPercentage",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 10020,
+      "name": "IsChallengeTypeMonthly",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 12000,
+      "name": "IsFOWPersonalEWSEnabled",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 12001,
+      "name": "GetWeakPointDamageMultiplier",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 12002,
+      "name": "GetEquippedItemHealthPercent",
+      "p1": "R",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 12003,
+      "name": "GetEquippedArmorHealthPercent",
+      "p1": "I",
+      "p2": "N",
+      "p3": "N"
+    },
+    {
+      "index": 12004,
+      "name": "GetEquippedWeaponHealthPercent",
+      "p1": "N",
+      "p2": "N",
+      "p3": "N"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ TES5 = ROOT.parent / "TES5Edit"
 FO76_PAS = TES5 / "Core" / "wbDefinitionsFO76.pas"
 COMMON_PAS = TES5 / "Core" / "wbDefinitionsCommon.pas"
 OUT = ROOT / "schema" / "fo76.json"
+CTDA_OUT = ROOT / "schema" / "fo76.ctda.json"
 OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
 # All 168 record types present in the FO76 ESM (excluding CELL and WRLD).
@@ -3121,6 +3122,71 @@ def _dedup_field_names(members: list) -> None:
             _dedup_field_names([elem])
 
 
+# pt* → CTDA param class (must match ctda.rs decode_param).
+# Compared lowercased: the Pascal is case-inconsistent (ptWorldspace vs ptWorldSpace).
+_PT_FORM = {
+    "ptacousticspace", "ptactor", "ptactorbase", "ptassociationtype", "ptbaseobject",
+    "ptcell", "ptchallenge", "ptclass", "ptconditionform", "ptconstructibleobject",
+    "ptcurrency", "ptdailycontentgroup", "ptdamagetype", "pteffectitem", "ptencounterzone",
+    "ptentitlement", "ptequiptype", "pteventdata", "ptfaction", "ptfactionnull",
+    "ptformlist", "ptfurniture", "ptglobal", "ptidleform", "ptinventoryobject",
+    "ptkeyword", "ptlocation", "ptlocationreftype", "ptmagiceffect", "ptowner",
+    "ptpackage", "ptperk", "ptperkcard", "ptquest", "ptrace", "ptreference",
+    "ptregion", "ptscene", "ptspell", "ptvoicetype", "ptweather", "ptworldspace",
+}
+_PT_INT = {
+    "ptinteger", "ptalias", "ptattackdata", "ptevent", "ptpackdata",
+    "ptqueststage1", "ptqueststage2",
+    "ptalignment", "ptaxis", "ptcastingsource", "ptcrimetype", "ptcriticalstage",
+    "ptfurnitureanim", "ptmiscstat", "ptsex", "ptwardstate", "ptfurnitureentry",
+}
+
+
+def _pt_to_class(pt: str) -> str:
+    pt = (pt or "").lower()
+    if not pt or pt == "ptnone":
+        return "N"
+    if pt == "ptfloat":
+        return "F"
+    if pt == "ptstring":
+        return "S"
+    if pt == "ptactorvalue":
+        return "A"
+    if pt == "ptformtype":
+        return "T"
+    if pt in _PT_FORM:
+        return "R"
+    if pt not in _PT_INT:
+        print(f"warning: unknown ParamType {pt!r} classed as 'I'", file=sys.stderr)
+    return "I"
+
+
+def emit_ctda_table(pas_text: str) -> dict:
+    """Parse wbConditionFunctions from FO76.pas → fo76.ctda.json payload."""
+    start = pas_text.index("wbConditionFunctions")
+    block = pas_text[start : start + 400_000]
+    end = block.index(");")
+    block = block[block.index("(") + 1 : end]
+    entry_re = re.compile(
+        r"\(\s*Index\s*:\s*(\d+)\s*;\s*Name\s*:\s*'((?:[^']|'')*)'"
+        r"(?:[^;]*;\s*Desc\s*:\s*'(?:[^']|'')*')?"
+        r"(?:[^)]*Param[Tt]ype1\s*:\s*(pt\w+))?"
+        r"(?:[^)]*Param[Tt]ype2\s*:\s*(pt\w+))?"
+        r"(?:[^)]*Param[Tt]ype3\s*:\s*(pt\w+))?",
+        re.DOTALL,
+    )
+    functions = []
+    for m in entry_re.finditer(block):
+        idx = int(m.group(1))
+        name = m.group(2).replace("''", "'")
+        p1 = _pt_to_class(m.group(3) or "ptNone")
+        p2 = _pt_to_class(m.group(4) or "ptNone")
+        p3 = _pt_to_class(m.group(5) or "ptNone")
+        functions.append({"index": idx, "name": name, "p1": p1, "p2": p2, "p3": p3})
+    functions.sort(key=lambda e: e["index"])
+    return {"functions": functions}
+
+
 def _fixup_obts_property_default(members: list, default_variant: int) -> None:
     """Walk schema members and set the OBTS 'Property' union default_variant.
 
@@ -3273,6 +3339,10 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(schema, indent=2), encoding="utf-8")
     print(f"wrote {OUT}", file=sys.stderr)
+
+    ctda = emit_ctda_table(read_text(FO76_PAS))
+    CTDA_OUT.write_text(json.dumps(ctda, indent=2), encoding="utf-8")
+    print(f"wrote {CTDA_OUT} ({len(ctda['functions'])} functions)", file=sys.stderr)
 
 
 if __name__ == "__main__":
