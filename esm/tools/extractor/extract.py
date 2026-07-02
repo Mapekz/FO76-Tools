@@ -228,6 +228,29 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
         "default_variant": 0,
         "map": {"NPC_": 1, "FACT": 2},
     },
+    # wbTypeDecider: reads sibling field named "Type" as variant index (FO76.pas:3123).
+    # Identity map is materialized per-site in _parse_union once the variant count is known.
+    "wbTypeDecider": {"field": "Type", "__identity_map__": True},
+    # wbAECHDataDecider (FO76.pas:2301): reads the outer Effect rstruct's KNAM "Type"
+    # sparse enum. Keys are the decimal Sig2Int values of BSOverdrive (0x864804BE),
+    # BSStateVariableFilter (0xEF575F7F), BSDelayEffect (0x18837B4F).
+    "wbAECHDataDecider": {
+        "field": "Type",
+        "map": {"2252866750": 0, "4015480703": 1, "411269967": 2},
+    },
+    # wbNAVIIslandDataDecider (Common.pas:5329): sibling "Has Island Data" u8 bool.
+    "wbNAVIIslandDataDecider": {
+        "field": "Has Island Data",
+        "default_variant": 0,
+        "map": {"0": 0, "1": 1},
+    },
+    # wbNAVIParentDecider (Common.pas:5350): null Parent World FormID → variant 1
+    # (Parent Cell); any non-null worldspace → variant 0 (Grid coords).
+    "wbNAVIParentDecider": {
+        "field": "Parent World",
+        "default_variant": 0,
+        "map": {"null": 1},
+    },
 }
 
 # Property index → name enums for wbObjectModPropertyToStr.
@@ -2348,6 +2371,7 @@ class Extractor:
             idx = 1
         name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[idx].strip()
         decider_expr = parts[idx + 1]
+        identity_map_field: str | None = None
         decider: dict
         if "wbFormVersionDecider" in decider_expr:
             # wbFormVersionDecider([N, M, ...]) — multi-threshold array form (check first).
@@ -2383,6 +2407,11 @@ class Extractor:
                         if sig and "sig" not in out:
                             out["sig"] = sig
                         return out
+                    elif subst.get("__identity_map__"):
+                        # Identity map: variant index == the field's value; the
+                        # map is materialized below once the variant count is known.
+                        identity_map_field = subst["field"]
+                        decider = {}
                     else:
                         # Decider-only: use the subst dict AS the decider,
                         # and fall through to parse variants from Pascal.
@@ -2409,6 +2438,13 @@ class Extractor:
         vb = variants_expr.index("[")
         ve = find_matching_bracket(variants_expr, vb)
         variants = self._parse_member_list(variants_expr[vb + 1 : ve])
+        if identity_map_field is not None:
+            # No default_variant: out-of-range values fall to the safe
+            # "union decider unresolved" raw path, mirroring xEdit.
+            decider = {
+                "field": identity_map_field,
+                "map": {str(i): i for i in range(len(variants))},
+            }
         out: dict = {"kind": "union", "name": name or sig or "union", "decider": decider, "variants": variants}
         if sig:
             out["sig"] = sig

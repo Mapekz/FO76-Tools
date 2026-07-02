@@ -436,9 +436,31 @@
                     }
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "Data",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "field": "Type",
+                      "map": {
+                        "0": 0,
+                        "1": 1
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "formid",
+                        "name": "Topic",
+                        "valid_refs": [
+                          "DIAL",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "string",
+                        "name": "Subtype",
+                        "keep_case": false,
+                        "sized": 4
+                      }
+                    ]
                   }
                 ],
                 "sig": "PDTO"
@@ -3442,9 +3464,88 @@
                     }
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "Value",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "field": "Type",
+                      "map": {
+                        "2252866750": 0,
+                        "4015480703": 1,
+                        "411269967": 2
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "struct",
+                        "name": "Overdrive",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Input Gain"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Output Gain"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Upper Threshold"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Lower Threshold"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "State Variable Filter",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Center Freq"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Q Value"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Filter Mode",
+                            "width": "u32",
+                            "signed": false,
+                            "format": {
+                              "enum": [
+                                "High Pass",
+                                "Low Pass",
+                                "Band Pass",
+                                "Notch"
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Delay Effect",
+                        "fields": [
+                          {
+                            "kind": "float",
+                            "name": "Feedback %"
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Wet Mix %"
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Delay MS",
+                            "width": "u32",
+                            "signed": false
+                          }
+                        ]
+                      }
+                    ]
                   }
                 ],
                 "sig": "DNAM"
@@ -20648,9 +20749,190 @@
               }
             },
             {
-              "kind": "raw_fallback",
+              "kind": "union",
               "name": "Location Value",
-              "reason": "closure union decider"
+              "decider": {
+                "field": "Type",
+                "map": {
+                  "0": 0,
+                  "1": 1,
+                  "2": 2,
+                  "3": 3,
+                  "4": 4,
+                  "5": 5,
+                  "6": 6,
+                  "7": 7,
+                  "8": 8,
+                  "9": 9,
+                  "10": 10,
+                  "11": 11,
+                  "12": 12,
+                  "13": 13,
+                  "14": 14
+                }
+              },
+              "variants": [
+                {
+                  "kind": "formid",
+                  "name": "Reference",
+                  "valid_refs": [
+                    "NULL",
+                    "PLYR",
+                    "ACHR",
+                    "REFR",
+                    "PGRE",
+                    "PHZD",
+                    "PMIS",
+                    "PARW",
+                    "PBAR",
+                    "PBEA",
+                    "PCON",
+                    "PFLA"
+                  ]
+                },
+                {
+                  "kind": "formid",
+                  "name": "Cell",
+                  "valid_refs": [
+                    "NULL",
+                    "CELL"
+                  ]
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Near Package Start Location",
+                  "len": 4
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Near Editor Location",
+                  "len": 4
+                },
+                {
+                  "kind": "formid",
+                  "name": "Object ID",
+                  "valid_refs": [
+                    "NULL",
+                    "ACTI",
+                    "DOOR",
+                    "STAT",
+                    "MSTT",
+                    "FURN",
+                    "SPEL",
+                    "NPC_",
+                    "CONT",
+                    "ARMO",
+                    "AMMO",
+                    "MISC",
+                    "WEAP",
+                    "OMOD",
+                    "BOOK",
+                    "NOTE",
+                    "KEYM",
+                    "ALCH",
+                    "INGR",
+                    "LIGH",
+                    "FACT",
+                    "FLST",
+                    "IDLM",
+                    "TXST",
+                    "PROJ"
+                  ]
+                },
+                {
+                  "kind": "integer",
+                  "name": "Object Type",
+                  "width": "u32",
+                  "signed": false,
+                  "format": {
+                    "enum": [
+                      "NONE",
+                      "Activators",
+                      "Armor",
+                      "Books",
+                      "Containers",
+                      "Doors",
+                      "Ingredients",
+                      "Lights",
+                      "Miscellaneous",
+                      "Flora",
+                      "Furniture",
+                      "Weapons: Any",
+                      "Ammo",
+                      "Keys",
+                      "Alchemy",
+                      "Food",
+                      "Clothing",
+                      "All: Wearable",
+                      "Weapons: NONE",
+                      "Weapons: Melee",
+                      "Weapons: Ranged",
+                      "Spells: Any",
+                      "Spells: Range Target",
+                      "Spells: Range Touch",
+                      "Spells: Range Self",
+                      "Actors: Any",
+                      "Furniture: Beds",
+                      "Furniture: Chairs",
+                      "Shouts",
+                      "Headtrack Markers",
+                      "Players: Any"
+                    ]
+                  }
+                },
+                {
+                  "kind": "formid",
+                  "name": "Keyword",
+                  "valid_refs": [
+                    "NULL",
+                    "KYWD"
+                  ]
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 4
+                },
+                {
+                  "kind": "integer",
+                  "name": "Ref Alias",
+                  "width": "s32",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "Loc Alias",
+                  "width": "s32",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "Interrupt Data",
+                  "width": "u32",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Packdata Target",
+                  "width": "u32",
+                  "signed": false
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Unknown",
+                  "len": 4
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Unknown",
+                  "len": 4
+                },
+                {
+                  "kind": "integer",
+                  "name": "Ref Collection Alias",
+                  "width": "s32",
+                  "signed": true
+                }
+              ]
             },
             {
               "kind": "integer",
@@ -44935,9 +45217,90 @@
                     }
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "Island Data",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "field": "Has Island Data",
+                      "default_variant": 0,
+                      "map": {
+                        "0": 0,
+                        "1": 1
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "struct",
+                        "name": "Unused",
+                        "fields": [
+                          {
+                            "kind": "empty",
+                            "name": "Unused"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "struct",
+                        "name": "Island Data",
+                        "fields": [
+                          {
+                            "kind": "struct",
+                            "name": "Navmesh Bounds",
+                            "fields": [
+                              {
+                                "kind": "vec3",
+                                "name": "Min"
+                              },
+                              {
+                                "kind": "vec3",
+                                "name": "Max"
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "array",
+                            "name": "Triangles",
+                            "element": {
+                              "kind": "struct",
+                              "name": "Triangle",
+                              "fields": [
+                                {
+                                  "kind": "integer",
+                                  "name": "Vertex 0",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Vertex 1",
+                                  "width": "u16",
+                                  "signed": false
+                                },
+                                {
+                                  "kind": "integer",
+                                  "name": "Vertex 2",
+                                  "width": "u16",
+                                  "signed": false
+                                }
+                              ]
+                            },
+                            "count": {
+                              "count_prefix": 4
+                            }
+                          },
+                          {
+                            "kind": "array",
+                            "name": "Vertices",
+                            "element": {
+                              "kind": "vec3",
+                              "name": "Vertex"
+                            },
+                            "count": {
+                              "count_prefix": 4
+                            }
+                          }
+                        ]
+                      }
+                    ]
                   }
                 ]
               },
@@ -44960,9 +45323,42 @@
                     ]
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "union",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "field": "Parent World",
+                      "default_variant": 0,
+                      "map": {
+                        "null": 1
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "struct",
+                        "name": "Coordinates",
+                        "fields": [
+                          {
+                            "kind": "integer",
+                            "name": "Grid Y",
+                            "width": "s16",
+                            "signed": true
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Grid X",
+                            "width": "s16",
+                            "signed": true
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Parent Cell",
+                        "valid_refs": [
+                          "CELL"
+                        ]
+                      }
+                    ]
                   }
                 ]
               }
@@ -50451,9 +50847,31 @@
                           }
                         },
                         {
-                          "kind": "raw_fallback",
+                          "kind": "union",
                           "name": "Data",
-                          "reason": "closure union decider"
+                          "decider": {
+                            "field": "Type",
+                            "map": {
+                              "0": 0,
+                              "1": 1
+                            }
+                          },
+                          "variants": [
+                            {
+                              "kind": "formid",
+                              "name": "Topic",
+                              "valid_refs": [
+                                "DIAL",
+                                "NULL"
+                              ]
+                            },
+                            {
+                              "kind": "string",
+                              "name": "Subtype",
+                              "keep_case": false,
+                              "sized": 4
+                            }
+                          ]
                         }
                       ],
                       "sig": "PDTO"
@@ -50497,9 +50915,191 @@
                         }
                       },
                       {
-                        "kind": "raw_fallback",
+                        "kind": "union",
                         "name": "Location Value",
-                        "reason": "closure union decider"
+                        "decider": {
+                          "field": "Type",
+                          "map": {
+                            "0": 0,
+                            "1": 1,
+                            "2": 2,
+                            "3": 3,
+                            "4": 4,
+                            "5": 5,
+                            "6": 6,
+                            "7": 7,
+                            "8": 8,
+                            "9": 9,
+                            "10": 10,
+                            "11": 11,
+                            "12": 12,
+                            "13": 13,
+                            "14": 14
+                          }
+                        },
+                        "variants": [
+                          {
+                            "kind": "formid",
+                            "name": "Reference",
+                            "valid_refs": [
+                              "NULL",
+                              "PLYR",
+                              "ACHR",
+                              "REFR",
+                              "PGRE",
+                              "PHZD",
+                              "PMIS",
+                              "PARW",
+                              "PBAR",
+                              "PBEA",
+                              "PCON",
+                              "PFLA"
+                            ]
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Cell",
+                            "valid_refs": [
+                              "NULL",
+                              "CELL"
+                            ]
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Near Package Start Location",
+                            "len": 4
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Near Editor Location",
+                            "len": 4
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Object ID",
+                            "valid_refs": [
+                              "ACTI",
+                              "ALCH",
+                              "AMMO",
+                              "ARMO",
+                              "BOOK",
+                              "CONT",
+                              "DOOR",
+                              "FACT",
+                              "FLST",
+                              "FURN",
+                              "IDLM",
+                              "INGR",
+                              "KEYM",
+                              "LIGH",
+                              "LVLI",
+                              "MISC",
+                              "MSTT",
+                              "NOTE",
+                              "NPC_",
+                              "OMOD",
+                              "PROJ",
+                              "SPEL",
+                              "STAT",
+                              "TXST",
+                              "WEAP",
+                              "NULL"
+                            ]
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Object Type",
+                            "width": "u32",
+                            "signed": false,
+                            "format": {
+                              "enum": [
+                                "NONE",
+                                "Activators",
+                                "Armor",
+                                "Books",
+                                "Containers",
+                                "Doors",
+                                "Ingredients",
+                                "Lights",
+                                "Miscellaneous",
+                                "Flora",
+                                "Furniture",
+                                "Weapons: Any",
+                                "Ammo",
+                                "Keys",
+                                "Alchemy",
+                                "Food",
+                                "Clothing",
+                                "All: Wearable",
+                                "Weapons: NONE",
+                                "Weapons: Melee",
+                                "Weapons: Ranged",
+                                "Spells: Any",
+                                "Spells: Range Target",
+                                "Spells: Range Touch",
+                                "Spells: Range Self",
+                                "Actors: Any",
+                                "Furniture: Beds",
+                                "Furniture: Chairs",
+                                "Shouts",
+                                "Headtrack Markers",
+                                "Players: Any"
+                              ]
+                            }
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Keyword",
+                            "valid_refs": [
+                              "NULL",
+                              "KYWD"
+                            ]
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 4
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Ref Alias",
+                            "width": "s32",
+                            "signed": true
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Loc Alias",
+                            "width": "s32",
+                            "signed": true
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Interrupt Data",
+                            "width": "u32",
+                            "signed": false
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Packdata Target",
+                            "width": "u32",
+                            "signed": false
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Unknown",
+                            "len": 4
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Unknown",
+                            "len": 4
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Ref Collection Alias",
+                            "width": "s32",
+                            "signed": true
+                          }
+                        ]
                       },
                       {
                         "kind": "integer",
@@ -50544,9 +51144,152 @@
                             }
                           },
                           {
-                            "kind": "raw_fallback",
+                            "kind": "union",
                             "name": "Target",
-                            "reason": "closure union decider"
+                            "decider": {
+                              "field": "Type",
+                              "map": {
+                                "0": 0,
+                                "1": 1,
+                                "2": 2,
+                                "3": 3,
+                                "4": 4,
+                                "5": 5,
+                                "6": 6,
+                                "7": 7,
+                                "8": 8
+                              }
+                            },
+                            "variants": [
+                              {
+                                "kind": "formid",
+                                "name": "Reference",
+                                "valid_refs": [
+                                  "NULL",
+                                  "PLYR",
+                                  "ACHR",
+                                  "REFR",
+                                  "PGRE",
+                                  "PHZD",
+                                  "PMIS",
+                                  "PARW",
+                                  "PBAR",
+                                  "PBEA",
+                                  "PCON",
+                                  "PFLA"
+                                ]
+                              },
+                              {
+                                "kind": "formid",
+                                "name": "Object ID",
+                                "valid_refs": [
+                                  "NULL",
+                                  "ACTI",
+                                  "DOOR",
+                                  "STAT",
+                                  "MSTT",
+                                  "FURN",
+                                  "SPEL",
+                                  "NPC_",
+                                  "CONT",
+                                  "ARMO",
+                                  "AMMO",
+                                  "MISC",
+                                  "WEAP",
+                                  "OMOD",
+                                  "BOOK",
+                                  "NOTE",
+                                  "KEYM",
+                                  "ALCH",
+                                  "INGR",
+                                  "LIGH",
+                                  "FACT",
+                                  "FLST",
+                                  "IDLM",
+                                  "TXST",
+                                  "PROJ"
+                                ]
+                              },
+                              {
+                                "kind": "integer",
+                                "name": "Object Type",
+                                "width": "u32",
+                                "signed": false,
+                                "format": {
+                                  "enum": [
+                                    "NONE",
+                                    "Activators",
+                                    "Armor",
+                                    "Books",
+                                    "Containers",
+                                    "Doors",
+                                    "Ingredients",
+                                    "Lights",
+                                    "Miscellaneous",
+                                    "Flora",
+                                    "Furniture",
+                                    "Weapons: Any",
+                                    "Ammo",
+                                    "Keys",
+                                    "Alchemy",
+                                    "Food",
+                                    "Clothing",
+                                    "All: Wearable",
+                                    "Weapons: NONE",
+                                    "Weapons: Melee",
+                                    "Weapons: Ranged",
+                                    "Spells: Any",
+                                    "Spells: Range Target",
+                                    "Spells: Range Touch",
+                                    "Spells: Range Self",
+                                    "Actors: Any",
+                                    "Furniture: Beds",
+                                    "Furniture: Chairs",
+                                    "Shouts",
+                                    "Headtrack Markers",
+                                    "Players: Any"
+                                  ]
+                                }
+                              },
+                              {
+                                "kind": "formid",
+                                "name": "Keyword",
+                                "valid_refs": [
+                                  "KYWD",
+                                  "NULL"
+                                ]
+                              },
+                              {
+                                "kind": "integer",
+                                "name": "Alias",
+                                "width": "s32",
+                                "signed": true
+                              },
+                              {
+                                "kind": "integer",
+                                "name": "Interrupt Data",
+                                "width": "u32",
+                                "signed": false
+                              },
+                              {
+                                "kind": "bytes",
+                                "name": "Unknown",
+                                "len": 4
+                              },
+                              {
+                                "kind": "formid",
+                                "name": "Keyword",
+                                "valid_refs": [
+                                  "KYWD",
+                                  "NULL"
+                                ]
+                              },
+                              {
+                                "kind": "bytes",
+                                "name": "Unknown",
+                                "len": 4
+                              }
+                            ]
                           },
                           {
                             "kind": "integer",
@@ -51077,9 +51820,31 @@
                     }
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "Data",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "field": "Type",
+                      "map": {
+                        "0": 0,
+                        "1": 1
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "formid",
+                        "name": "Topic",
+                        "valid_refs": [
+                          "DIAL",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "string",
+                        "name": "Subtype",
+                        "keep_case": false,
+                        "sized": 4
+                      }
+                    ]
                   }
                 ],
                 "sig": "PDTO"
@@ -51125,9 +51890,31 @@
                     }
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "Data",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "field": "Type",
+                      "map": {
+                        "0": 0,
+                        "1": 1
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "formid",
+                        "name": "Topic",
+                        "valid_refs": [
+                          "DIAL",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "string",
+                        "name": "Subtype",
+                        "keep_case": false,
+                        "sized": 4
+                      }
+                    ]
                   }
                 ],
                 "sig": "PDTO"
@@ -51173,9 +51960,31 @@
                     }
                   },
                   {
-                    "kind": "raw_fallback",
+                    "kind": "union",
                     "name": "Data",
-                    "reason": "closure union decider"
+                    "decider": {
+                      "field": "Type",
+                      "map": {
+                        "0": 0,
+                        "1": 1
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "formid",
+                        "name": "Topic",
+                        "valid_refs": [
+                          "DIAL",
+                          "NULL"
+                        ]
+                      },
+                      {
+                        "kind": "string",
+                        "name": "Subtype",
+                        "keep_case": false,
+                        "sized": 4
+                      }
+                    ]
                   }
                 ],
                 "sig": "PDTO"
@@ -70581,9 +71390,31 @@
                       }
                     },
                     {
-                      "kind": "raw_fallback",
+                      "kind": "union",
                       "name": "Data",
-                      "reason": "closure union decider"
+                      "decider": {
+                        "field": "Type",
+                        "map": {
+                          "0": 0,
+                          "1": 1
+                        }
+                      },
+                      "variants": [
+                        {
+                          "kind": "formid",
+                          "name": "Topic",
+                          "valid_refs": [
+                            "DIAL",
+                            "NULL"
+                          ]
+                        },
+                        {
+                          "kind": "string",
+                          "name": "Subtype",
+                          "keep_case": false,
+                          "sized": 4
+                        }
+                      ]
                     }
                   ],
                   "sig": "PDTO"
