@@ -46,6 +46,9 @@
 //! SNCT, SNDR, SOPM, SOUN, SPGD, STAG, STHD, STMP, STND, TRNS, TXST, UTIL,
 //! VOLI, VTYP, WATR, WSPR, ZOOM.
 //! Also promoted: MGEF (3109 records, zero markers — prior exclusion was stale).
+//! Batch-promoted 2026-07-02 (schema parity A+B): AAPD, ACHR, ACTI, COLL,
+//! DLBR, DOOR, KEYM, LGTM, LIGH, MSTT, PGRE, PHZD, PLYR, PMIS, REFR, SCCO,
+//! STAT, TACT.
 //! DLVW, GDRY, TREE absent from this ESM version (no records); deferred.
 
 mod common;
@@ -72,6 +75,9 @@ const CLEAN_TYPES: &[&str] = &[
     "RFGP", "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM", "SOUN",
     "SPGD", "STAG", "STHD", "STMP", "STND", "TRNS", "TXST", "UTIL", "VOLI", "VTYP", "WATR", "WSPR",
     "ZOOM", "MGEF",
+    // Batch-promoted 2026-07-02 (schema parity A+B — zero markers on reference ESM)
+    "AAPD", "ACHR", "ACTI", "COLL", "DLBR", "DOOR", "KEYM", "LGTM", "LIGH", "MSTT", "PGRE", "PHZD",
+    "PLYR", "PMIS", "REFR", "SCCO", "STAT", "TACT",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`
