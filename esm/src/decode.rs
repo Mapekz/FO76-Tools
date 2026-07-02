@@ -511,6 +511,40 @@ fn decode_member(
                                 pos += sz;
                             }
                         }
+                        None if matches!(element.as_ref(), MemberDef::Struct { .. }) => {
+                            // Variable-size struct element (e.g. contains a nested
+                            // count-prefixed array): the subrecord may pack one or
+                            // more instances back-to-back with no static per-element
+                            // size. Loop using the real consumed-byte count per
+                            // instance (mirrors advance_union) until the subrecord's
+                            // data is exhausted, instead of decoding only the first
+                            // instance and silently dropping the rest.
+                            if let MemberDef::Struct {
+                                name: elem_name,
+                                fields,
+                                ..
+                            } = element.as_ref()
+                            {
+                                let mut pos = 0;
+                                while pos < sr.data.len() {
+                                    let mut elem_out = Map::new();
+                                    let consumed = decode_struct_fields(
+                                        ctx,
+                                        elem_name,
+                                        fields,
+                                        &sr.data[pos..],
+                                        &mut elem_out,
+                                    );
+                                    if consumed == 0 {
+                                        break;
+                                    }
+                                    if let Some(v) = elem_out.remove(elem_name) {
+                                        items.push(v);
+                                    }
+                                    pos += consumed;
+                                }
+                            }
+                        }
                         _ => items.push(decode_field_value(ctx, element, &sr.data)),
                     }
                 }

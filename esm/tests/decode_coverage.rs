@@ -78,6 +78,8 @@ const CLEAN_TYPES: &[&str] = &[
     // Batch-promoted 2026-07-02 (schema parity A+B — zero markers on reference ESM)
     "AAPD", "ACHR", "ACTI", "COLL", "DLBR", "DOOR", "KEYM", "LGTM", "LIGH", "MSTT", "PGRE", "PHZD",
     "PLYR", "PMIS", "REFR", "SCCO", "STAT", "TACT",
+    // Part C — coverage expansion (2026-07-02)
+    "NAVM",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`
