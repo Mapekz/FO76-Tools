@@ -75813,6 +75813,21 @@
             }
           ],
           "sig": "MNAM"
+        },
+        {
+          "_comment": "SNAM \u2014 live-game drift (20260702 snapshot, ATX_/SCORE_S26_ statics); absent from TES5Edit STAT. Verified FormID \u2192 SNDR on 0x008D2753; matches MSTT/ASPC/SCOL 'Looping Sound' wbFormIDCk(SNAM,[SNDR]) precedent (wbDefinitionsFO76.pas:9223).",
+          "kind": "formid",
+          "sig": "SNAM",
+          "name": "Looping Sound",
+          "valid_refs": [
+            "SNDR"
+          ]
+        },
+        {
+          "_comment": "ANLD \u2014 live-game drift; sig is '{ New To Fallout 76 }' in xEdit and only defined as wbUnknown(ANLD) on MSTT (wbDefinitionsFO76.pas:9224). 8 zero bytes in all observed records; kept as unknown/hex like MSTT's.",
+          "kind": "unknown",
+          "sig": "ANLD",
+          "name": "Unknown"
         }
       ]
     },
