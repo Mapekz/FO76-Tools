@@ -11441,6 +11441,1109 @@
         }
       ]
     },
+    "CELL": {
+      "name": "Cell",
+      "members": [
+        {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
+        },
+        {
+          "kind": "string",
+          "name": "DURL",
+          "keep_case": false,
+          "sig": "DURL"
+        },
+        {
+          "kind": "integer",
+          "name": "Flags",
+          "width": "u64",
+          "signed": false,
+          "sig": "XALG",
+          "format": {
+            "flags": [
+              "Skip HAVOK on Load",
+              "Server Authoritative",
+              "Disable Permanent Decals",
+              "Never Visible Distant",
+              "Item Dispenser",
+              "Item Dispenser Pickedup",
+              "Fast travel restricted",
+              "Block Item Dispenser",
+              "Premium",
+              "Visible Distant",
+              "Camera Weapon Detectable",
+              "Fallout 1st",
+              "Bullion Reward Object",
+              "REFR invalidates previs",
+              "Deleted REFR invalidates previs",
+              "Container weight calculation queued",
+              "UNUSED 17",
+              "No refresh body 3D on load",
+              "Unknown 19",
+              "Unknown 20",
+              "Unknown 21",
+              "Unknown 22",
+              "Unknown 23",
+              "Unknown 24",
+              "Unknown 25",
+              "Unknown 26",
+              "Unknown 27",
+              "Unknown 28",
+              "Unknown 29",
+              "Unknown 30",
+              "Unknown 31",
+              "Unknown 32"
+            ]
+          }
+        },
+        {
+          "kind": "lstring",
+          "sig": "FULL",
+          "name": "Name"
+        },
+        {
+          "kind": "union",
+          "name": "Flags 2",
+          "decider": {
+            "payload_size": {
+              "2": 0
+            },
+            "default_variant": 1
+          },
+          "variants": [
+            {
+              "kind": "integer",
+              "name": "",
+              "width": "u16",
+              "signed": false,
+              "format": {
+                "flags": [
+                  "Is Interior Cell",
+                  "Has Water",
+                  "Can't Travel From Here",
+                  "No LOD Water",
+                  "Has Temp Data",
+                  "Public Area",
+                  "Hand Changed",
+                  "Show Sky",
+                  "Use Sky Lighting",
+                  "Warn On Leave",
+                  "Hidden from Interior Cell List",
+                  "Has Sky Shadows",
+                  "Skylighting Is Distant Only",
+                  "Player Followers No Warp",
+                  "Terrain Altered",
+                  "No Fast Travel Too",
+                  "Illegal To Enter",
+                  "Illegal To Enter (Adventure Only)",
+                  "Illegal To Enter (Survival Only)",
+                  "Illegal To Enter (Nuclear Winter Only)",
+                  "Show Instanced Enter Options",
+                  "Is Prime Instance"
+                ]
+              }
+            },
+            {
+              "kind": "integer",
+              "name": "",
+              "width": "u32",
+              "signed": false,
+              "format": {
+                "flags": [
+                  "Is Interior Cell",
+                  "Has Water",
+                  "Can't Travel From Here",
+                  "No LOD Water",
+                  "Has Temp Data",
+                  "Public Area",
+                  "Hand Changed",
+                  "Show Sky",
+                  "Use Sky Lighting",
+                  "Warn On Leave",
+                  "Hidden from Interior Cell List",
+                  "Has Sky Shadows",
+                  "Skylighting Is Distant Only",
+                  "Player Followers No Warp",
+                  "Terrain Altered",
+                  "No Fast Travel Too",
+                  "Illegal To Enter",
+                  "Illegal To Enter (Adventure Only)",
+                  "Illegal To Enter (Survival Only)",
+                  "Illegal To Enter (Nuclear Winter Only)",
+                  "Show Instanced Enter Options",
+                  "Is Prime Instance"
+                ]
+              }
+            }
+          ],
+          "sig": "DATA"
+        },
+        {
+          "kind": "bytes",
+          "name": "PreVis File Hash",
+          "len": null,
+          "sig": "VISI"
+        },
+        {
+          "kind": "formid",
+          "name": "In PreVis File Of",
+          "valid_refs": [
+            "CELL"
+          ],
+          "sig": "RVIS"
+        },
+        {
+          "kind": "bytes",
+          "name": "PreCombined Files Timestamp",
+          "sig": "PCMB",
+          "len": 2
+        },
+        {
+          "kind": "struct",
+          "name": "Grid",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "X",
+              "width": "s32",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Y",
+              "width": "s32",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Land Flags",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "unused",
+              "bytes": 3
+            }
+          ],
+          "sig": "XCLC"
+        },
+        {
+          "kind": "struct",
+          "name": "Lighting",
+          "fields": [
+            {
+              "kind": "struct",
+              "name": "Ambient Color",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Red",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Green",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Blue",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 1
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Directional Color",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Red",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Green",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Blue",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 1
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Fog Color Near",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Red",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Green",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Blue",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 1
+                }
+              ]
+            },
+            {
+              "kind": "float",
+              "name": "Fog Near"
+            },
+            {
+              "kind": "float",
+              "name": "Fog Far"
+            },
+            {
+              "kind": "integer",
+              "name": "Directional Rotation XY",
+              "width": "s32",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Directional Rotation Z",
+              "width": "s32",
+              "signed": true
+            },
+            {
+              "kind": "float",
+              "name": "Directional Fade"
+            },
+            {
+              "kind": "float",
+              "name": "Fog Clip Distance"
+            },
+            {
+              "kind": "float",
+              "name": "Fog Power"
+            },
+            {
+              "kind": "struct",
+              "name": "Ambient Colors",
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Directional",
+                  "fields": [
+                    {
+                      "kind": "struct",
+                      "name": "X+",
+                      "fields": [
+                        {
+                          "kind": "integer",
+                          "name": "Red",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Green",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Blue",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "unused",
+                          "bytes": 1
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "X-",
+                      "fields": [
+                        {
+                          "kind": "integer",
+                          "name": "Red",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Green",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Blue",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "unused",
+                          "bytes": 1
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Y+",
+                      "fields": [
+                        {
+                          "kind": "integer",
+                          "name": "Red",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Green",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Blue",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "unused",
+                          "bytes": 1
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Y-",
+                      "fields": [
+                        {
+                          "kind": "integer",
+                          "name": "Red",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Green",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Blue",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "unused",
+                          "bytes": 1
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Z+",
+                      "fields": [
+                        {
+                          "kind": "integer",
+                          "name": "Red",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Green",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Blue",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "unused",
+                          "bytes": 1
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Z-",
+                      "fields": [
+                        {
+                          "kind": "integer",
+                          "name": "Red",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Green",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "integer",
+                          "name": "Blue",
+                          "width": "u8",
+                          "signed": false
+                        },
+                        {
+                          "kind": "unused",
+                          "bytes": 1
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 4
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 4
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Fog Color Far",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Red",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Green",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Blue",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 1
+                }
+              ]
+            },
+            {
+              "kind": "float",
+              "name": "Fog Max"
+            },
+            {
+              "kind": "float",
+              "name": "Light Fade Begin"
+            },
+            {
+              "kind": "float",
+              "name": "Light Fade End"
+            },
+            {
+              "kind": "integer",
+              "name": "Inherits",
+              "width": "u32",
+              "signed": false,
+              "format": {
+                "flags": [
+                  "Ambient Color",
+                  "Directional Color",
+                  "Fog Color",
+                  "Fog Near",
+                  "Fog Far",
+                  "Directional Rotation",
+                  "Directional Fade",
+                  "Clip Distance",
+                  "Fog Power",
+                  "Fog Max",
+                  "Light Fade Distances",
+                  "Unknown 11",
+                  "Unknown 12",
+                  "Unknown 13",
+                  "Unknown 14",
+                  "Unknown 15",
+                  "Unknown 16",
+                  "Unknown 17",
+                  "Unknown 18",
+                  "Unknown 19",
+                  "Unknown 20",
+                  "Unknown 21",
+                  "Unknown 22",
+                  "Unknown 23",
+                  "Unknown 24",
+                  "Unknown 25",
+                  "Unknown 26",
+                  "Unknown 27",
+                  "Unknown 28",
+                  "Unknown 29",
+                  "Unknown 30"
+                ]
+              }
+            },
+            {
+              "kind": "float",
+              "name": "Near Height Mid"
+            },
+            {
+              "kind": "float",
+              "name": "Near Height Range"
+            },
+            {
+              "kind": "struct",
+              "name": "Fog Color High Near",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Red",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Green",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Blue",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 1
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Fog Color High Far",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Red",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Green",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "integer",
+                  "name": "Blue",
+                  "width": "u8",
+                  "signed": false
+                },
+                {
+                  "kind": "unused",
+                  "bytes": 1
+                }
+              ]
+            },
+            {
+              "kind": "float",
+              "name": "High Density Scale"
+            },
+            {
+              "kind": "float",
+              "name": "Fog Near Scale"
+            },
+            {
+              "kind": "float",
+              "name": "Fog Far Scale"
+            },
+            {
+              "kind": "float",
+              "name": "Fog High Near Scale"
+            },
+            {
+              "kind": "float",
+              "name": "Fog High Far Scale"
+            },
+            {
+              "kind": "float",
+              "name": "Far Height Mid"
+            },
+            {
+              "kind": "float",
+              "name": "Far Height Range"
+            },
+            {
+              "kind": "struct",
+              "name": "Skybox Bounds",
+              "fields": [
+                {
+                  "kind": "vec3",
+                  "name": "Center"
+                },
+                {
+                  "kind": "vec3",
+                  "name": "Radius"
+                }
+              ]
+            }
+          ],
+          "sig": "XCLL"
+        },
+        {
+          "kind": "integer",
+          "name": "Precombined Object Level XY",
+          "width": "u8",
+          "signed": false,
+          "sig": "CNAM"
+        },
+        {
+          "kind": "integer",
+          "name": "Precombined Object Level Z",
+          "width": "u8",
+          "signed": false,
+          "sig": "ZNAM"
+        },
+        {
+          "kind": "bytes",
+          "name": "Unknown",
+          "sig": "TVDT"
+        },
+        {
+          "kind": "struct",
+          "name": "Max Height Data",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Offset"
+            },
+            {
+              "kind": "array",
+              "name": "Max Heights",
+              "element": {
+                "kind": "array",
+                "name": "Row",
+                "element": {
+                  "kind": "integer",
+                  "name": "Column",
+                  "width": "u8",
+                  "signed": false
+                },
+                "count": {
+                  "fixed": 32
+                }
+              },
+              "count": {
+                "fixed": 32
+              }
+            }
+          ],
+          "sig": "MHDT"
+        },
+        {
+          "kind": "formid",
+          "name": "Lighting Template",
+          "valid_refs": [
+            "LGTM",
+            "NULL"
+          ],
+          "sig": "LTMP"
+        },
+        {
+          "kind": "float",
+          "name": "Water Height",
+          "sig": "XCLW"
+        },
+        {
+          "kind": "float",
+          "name": "XILS",
+          "sig": "XILS"
+        },
+        {
+          "kind": "formid",
+          "name": "Unknown Reference",
+          "valid_refs": [
+            "REFR",
+            "NULL"
+          ],
+          "sig": "RDES"
+        },
+        {
+          "kind": "unknown",
+          "name": "Unknown 2",
+          "sig": "NAVH"
+        },
+        {
+          "kind": "formid",
+          "name": "Water Type",
+          "valid_refs": [
+            "WATR"
+          ],
+          "sig": "XCWT"
+        },
+        {
+          "kind": "array",
+          "name": "Regions",
+          "element": {
+            "kind": "formid",
+            "name": "Region",
+            "valid_refs": [
+              "REGN"
+            ]
+          },
+          "sig": "XCLR"
+        },
+        {
+          "kind": "formid",
+          "name": "Location",
+          "valid_refs": [
+            "LCTN"
+          ],
+          "sig": "XLCN"
+        },
+        {
+          "kind": "rstruct",
+          "name": "Water Current Velocities",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Velocity Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "XWCN"
+            },
+            {
+              "kind": "array",
+              "name": "Velocities",
+              "element": {
+                "kind": "struct",
+                "name": "Current",
+                "fields": [
+                  {
+                    "kind": "vec3",
+                    "name": "Velocity"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Unknown"
+                  }
+                ]
+              },
+              "sig": "XWCU"
+            }
+          ]
+        },
+        {
+          "kind": "rstruct",
+          "name": "Ownership",
+          "members": [
+            {
+              "kind": "formid",
+              "name": "Owner",
+              "valid_refs": [
+                "FACT",
+                "NPC_",
+                "NULL"
+              ],
+              "sig": "XOWN"
+            },
+            {
+              "kind": "integer",
+              "name": "Faction Rank",
+              "width": "s32",
+              "signed": true,
+              "sig": "XRNK"
+            }
+          ]
+        },
+        {
+          "kind": "formid",
+          "name": "Lock List",
+          "valid_refs": [
+            "FLST",
+            "NPC_"
+          ],
+          "sig": "XILL"
+        },
+        {
+          "kind": "struct",
+          "name": "Interior LOD",
+          "fields": [
+            {
+              "kind": "formid",
+              "name": "Worldspace",
+              "valid_refs": [
+                "WRLD"
+              ]
+            },
+            {
+              "kind": "float",
+              "name": "Offset X"
+            },
+            {
+              "kind": "float",
+              "name": "Offset Y"
+            },
+            {
+              "kind": "float",
+              "name": "Offset Z"
+            }
+          ],
+          "sig": "XILW"
+        },
+        {
+          "kind": "string",
+          "name": "Water Environment Map",
+          "keep_case": false,
+          "sig": "XWEM"
+        },
+        {
+          "kind": "formid",
+          "name": "Sky/Weather from Region",
+          "valid_refs": [
+            "REGN"
+          ],
+          "sig": "XCCM"
+        },
+        {
+          "kind": "formid",
+          "name": "Acoustic Space",
+          "valid_refs": [
+            "ASPC"
+          ],
+          "sig": "XCAS"
+        },
+        {
+          "kind": "formid",
+          "name": "Encounter Zone",
+          "valid_refs": [
+            "LCTN"
+          ],
+          "sig": "XEZN"
+        },
+        {
+          "kind": "formid",
+          "name": "Music Type",
+          "valid_refs": [
+            "MUSC"
+          ],
+          "sig": "XCMO"
+        },
+        {
+          "kind": "formid",
+          "name": "Image Space",
+          "valid_refs": [
+            "IMGS"
+          ],
+          "sig": "XCIM"
+        },
+        {
+          "kind": "formid",
+          "name": "God Rays",
+          "valid_refs": [
+            "GDRY"
+          ],
+          "sig": "XGDR"
+        },
+        {
+          "kind": "array",
+          "name": "Physics References",
+          "element": {
+            "kind": "formid",
+            "name": "Reference",
+            "valid_refs": [
+              "REFR",
+              "PGRE",
+              "PHZD",
+              "PMIS",
+              "PARW",
+              "PBAR",
+              "PBEA",
+              "PCON",
+              "PFLA"
+            ]
+          },
+          "sig": "XPRI"
+        },
+        {
+          "kind": "struct",
+          "name": "Combined References",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "Meshes Count",
+              "width": "u64",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "References Count",
+              "width": "u64",
+              "signed": false
+            },
+            {
+              "kind": "array",
+              "name": "Meshes",
+              "element": {
+                "kind": "struct",
+                "name": "Mesh",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Combined Mesh",
+                    "width": "u32",
+                    "signed": false
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Unknown",
+                    "len": 4
+                  }
+                ]
+              },
+              "count": {
+                "count_path": "Meshes Count"
+              }
+            },
+            {
+              "kind": "array",
+              "name": "References",
+              "element": {
+                "kind": "struct",
+                "name": "Reference",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Reference",
+                    "valid_refs": [
+                      "REFR",
+                      "PGRE",
+                      "PHZD",
+                      "PMIS",
+                      "PARW",
+                      "PBAR",
+                      "PBEA",
+                      "PCON",
+                      "PFLA"
+                    ]
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Unknown",
+                    "len": 4
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Combined Mesh",
+                    "width": "u32",
+                    "signed": false
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Unknown 2",
+                    "len": 4
+                  }
+                ]
+              }
+            }
+          ],
+          "sig": "XCRI"
+        },
+        {
+          "kind": "struct",
+          "name": "Enable State Parents",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "Unknown Int",
+              "width": "u32",
+              "signed": false
+            },
+            {
+              "kind": "array",
+              "name": "References",
+              "element": {
+                "kind": "formid",
+                "name": "Reference",
+                "valid_refs": []
+              }
+            }
+          ],
+          "sig": "XCRP"
+        },
+        {
+          "kind": "bytes",
+          "name": "Combined Physics",
+          "sig": "XCPF",
+          "len": 4
+        },
+        {
+          "kind": "struct",
+          "name": "Interior Sky Override",
+          "fields": [
+            {
+              "kind": "formid",
+              "name": "Weather",
+              "valid_refs": []
+            },
+            {
+              "kind": "float",
+              "name": "Unknown float"
+            }
+          ],
+          "sig": "XISR"
+        },
+        {
+          "kind": "float",
+          "name": "CII0",
+          "sig": "CII0"
+        },
+        {
+          "kind": "float",
+          "name": "CIDH",
+          "sig": "CIDH"
+        }
+      ]
+    },
     "CHAL": {
       "name": "Challenge",
       "members": [
@@ -51711,7 +52814,10 @@
             "kind": "float",
             "name": "Unknown"
           },
-          "sig": "XLOD"
+          "sig": "XLOD",
+          "count": {
+            "fixed": 3
+          }
         },
         {
           "kind": "bytes",
@@ -52710,7 +53816,10 @@
             "kind": "float",
             "name": "Unknown"
           },
-          "sig": "XLOD"
+          "sig": "XLOD",
+          "count": {
+            "fixed": 3
+          }
         },
         {
           "kind": "bytes",
@@ -54456,7 +55565,10 @@
             "kind": "float",
             "name": "Unknown"
           },
-          "sig": "XLOD"
+          "sig": "XLOD",
+          "count": {
+            "fixed": 3
+          }
         },
         {
           "kind": "bytes",
@@ -68549,7 +69661,10 @@
             "kind": "float",
             "name": "Unknown"
           },
-          "sig": "XLOD"
+          "sig": "XLOD",
+          "count": {
+            "fixed": 3
+          }
         },
         {
           "kind": "struct",
@@ -74853,6 +75968,9 @@
                 "element": {
                   "kind": "float",
                   "name": "Unknown"
+                },
+                "count": {
+                  "fixed": 4
                 }
               },
               {
@@ -74900,6 +76018,9 @@
                     "element": {
                       "kind": "float",
                       "name": "Unknown"
+                    },
+                    "count": {
+                      "fixed": 4
                     }
                   },
                   {
@@ -74925,7 +76046,10 @@
             "kind": "float",
             "name": "Unknown"
           },
-          "sig": "BNAM"
+          "sig": "BNAM",
+          "count": {
+            "fixed": 6
+          }
         },
         {
           "kind": "array",
@@ -74934,7 +76058,10 @@
             "kind": "float",
             "name": "Unknown"
           },
-          "sig": "GNAM"
+          "sig": "GNAM",
+          "count": {
+            "fixed": 3
+          }
         },
         {
           "kind": "bytes",
@@ -84972,7 +86099,10 @@
                 "width": "u8",
                 "signed": false
               },
-              "sig": "RNAM"
+              "sig": "RNAM",
+              "count": {
+                "fixed": 32
+              }
             },
             {
               "kind": "array",
@@ -84983,7 +86113,10 @@
                 "width": "u8",
                 "signed": false
               },
-              "sig": "QNAM"
+              "sig": "QNAM",
+              "count": {
+                "fixed": 32
+              }
             }
           ]
         },
@@ -85033,7 +86166,10 @@
               }
             ]
           },
-          "sig": "JNAM"
+          "sig": "JNAM",
+          "count": {
+            "fixed": 32
+          }
         },
         {
           "kind": "bytes",
@@ -85047,7 +86183,10 @@
             "kind": "float",
             "name": "Unknown"
           },
-          "sig": "NAM4"
+          "sig": "NAM4",
+          "count": {
+            "fixed": 32
+          }
         },
         {
           "kind": "bytes",

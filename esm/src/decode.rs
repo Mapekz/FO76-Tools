@@ -614,6 +614,12 @@ fn decode_member(
                     .and_then(|p| read_le_uint(p, *byte_offset, *width_bytes))
                     .and_then(|b| map.get(&b.to_string()).copied())
                     .or(*default_variant),
+                UnionDecider::PayloadSize {
+                    payload_size,
+                    default_variant,
+                } => effective_payload
+                    .and_then(|p| payload_size.get(&p.len().to_string()).copied())
+                    .or(*default_variant),
                 UnionDecider::PresentSignature { present_signature } => {
                     // wbRUnion: select the variant whose anchor subrecord appears
                     // earliest in the document (lowest doc_index).  Each variant
@@ -664,7 +670,17 @@ fn decode_member(
             };
             if let Some(idx) = chosen {
                 if let Some(variant) = variants.get(idx) {
-                    decode_member(ctx, variant, out, by_sig, effective_payload);
+                    // Decode into a temporary map first: some variants are
+                    // anonymous (Pascal `wbInteger('', ...)` reusing the
+                    // union's own name conceptually), so their decoded value
+                    // would otherwise land under the empty-string key instead
+                    // of the union's own (correctly-deduped) name.
+                    let mut tmp = Map::new();
+                    decode_member(ctx, variant, &mut tmp, by_sig, effective_payload);
+                    for (k, v) in tmp {
+                        let key = if k.is_empty() { name.clone() } else { k };
+                        insert_unique(out, key, v);
+                    }
                     return;
                 }
             }
@@ -1336,12 +1352,13 @@ fn choose_union_variant(
                 None
             }
         }
-        // ByteAtOffset, FieldValue, PresentSignature, and FormIdTargetType are
-        // handled by the callers
+        // ByteAtOffset, FieldValue, PresentSignature, FormIdTargetType, and
+        // PayloadSize are handled by the callers
         UnionDecider::ByteAtOffset { .. }
         | UnionDecider::FieldValue { .. }
         | UnionDecider::PresentSignature { .. }
-        | UnionDecider::FormIdTargetType { .. } => None,
+        | UnionDecider::FormIdTargetType { .. }
+        | UnionDecider::PayloadSize { .. } => None,
         UnionDecider::Raw => None,
     }
 }

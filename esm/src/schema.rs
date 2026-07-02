@@ -280,6 +280,17 @@ pub enum UnionDecider {
         #[serde(default = "default_width_bytes")]
         width_bytes: usize,
     },
+    /// Select a variant by the union's total available payload byte length.
+    /// Matches Pascal deciders that dispatch purely on how many bytes are
+    /// actually present (e.g. `wbDeciderCELLFlags`: 2 bytes → u16 flags,
+    /// otherwise → u32 flags). `payload_size` keys are the decimal string of
+    /// the exact byte length; `default_variant` is used when the length
+    /// doesn't match any key.
+    PayloadSize {
+        payload_size: HashMap<String, usize>,
+        #[serde(default)]
+        default_variant: Option<usize>,
+    },
     /// Select a variant by looking up an already-decoded sibling field's value.
     /// `field` supports dot-separated paths (e.g. `"Struct.Field"`).
     /// `bits` is checked first: ordered `[mask, variant_index]` pairs; first match wins.

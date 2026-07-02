@@ -17,12 +17,12 @@ OUT = ROOT / "schema" / "fo76.json"
 CTDA_OUT = ROOT / "schema" / "fo76.ctda.json"
 OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
-# Record types present in the FO76 ESM (excluding CELL until Part C).
+# Record types present in the FO76 ESM.
 # Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
 WHITELIST = [
     "AACT", "AAMD", "AAPD", "ACHR", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
     "ANIO", "AORU", "ARMA", "ARMO", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
-    "AUVF", "AVIF", "AVTR", "BNDS", "BOOK", "BPTD", "CAMS", "CHAL", "CLAS",
+    "AUVF", "AVIF", "AVTR", "BNDS", "BOOK", "BPTD", "CAMS", "CELL", "CHAL", "CLAS",
     "CLFM", "CLMT", "CMPO", "CMPT", "CNCY", "CNDF", "COBJ", "COEN", "COLL",
     "CONT", "CPRD", "CPTH", "CSEN", "CSTY", "CURV", "DCGF", "DEBR", "DFOB",
     "DIAL", "DLBR", "DIST", "DLVW", "DMGT", "DOBJ", "DOOR", "ECAT", "EFSH", "EMOT", "ENCH",
@@ -252,6 +252,12 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
         "default_variant": 0,
         "map": {"null": 1},
     },
+    # wbDeciderCELLFlags (FO76.pas:2293): CELL DATA "Flags" union — payload is
+    # exactly 2 bytes → variant 0 (u16 flags); any other length → variant 1
+    # (u32 flags). The Pascal has a FormVersionDecider(187) fallback branch for
+    # non-2-byte payloads, but since real serialized data is always either
+    # exactly 2 or exactly 4 bytes, payload length alone fully disambiguates.
+    "wbDeciderCELLFlags": {"payload_size": {"2": 0}, "default_variant": 1},
 }
 
 # Property index → name enums for wbObjectModPropertyToStr.
@@ -1464,6 +1470,27 @@ class Extractor:
             "wbByteArray('Cell Heights',0)])"
         )
 
+        # wbCellGrid — wbDefinitionsCommon.pas:7976 (XCLC struct: X/Y s32 + Land Flags
+        # u8 + 3 bytes padding). The trailing Land Flags/padding is Pascal's optional
+        # "required count 2" pattern (only X/Y are mandatory) — this extractor doesn't
+        # need to model that separately: decode_struct_fields already reads struct
+        # fields sequentially and stops naturally when the subrecord's bytes run out,
+        # so a shorter (X/Y-only) DATA payload decodes correctly without special-casing.
+        self.vars["wbCellGrid"] = (
+            "wbStruct(XCLC,'Grid',"
+            "[wbInteger('X',itS32),wbInteger('Y',itS32),"
+            "wbInteger('Land Flags',itU8),wbUnused(3)])"
+        )
+
+        # wbMHDTCELL — wbDefinitionsCommon.pas:8442. IfThen(wbSimpleRecords, ...) always
+        # resolves to the structured (non-simple) branch per this project's convention.
+        # The grid is IsSF1(50, 32) rows/cols — 32 for FO76 (not Starfield).
+        self.vars["wbMHDTCELL"] = (
+            "wbStruct(MHDT,'Max Height Data',"
+            "[wbFloat('Offset'),"
+            "wbArray('Max Heights',wbArray('Row',wbInteger('Column',itU8),32),32)])"
+        )
+
         # wbSizePosRot — bounds size + position/rotation; handled in expand_call with the sig arg.
 
         # ----------------------------------------------------------------
@@ -2513,6 +2540,8 @@ class Extractor:
                     )
                     width = 4
                 out["count"] = {"count_prefix": width}
+            elif cval is not None and cval > 0:
+                out["count"] = {"fixed": cval}
         return out
 
     def _parse_union(self, expr: str) -> dict:
@@ -2651,8 +2680,17 @@ class Extractor:
             fmt_arg = parts[idx + 2].strip()
             # Resolve a bare wb* variable reference (e.g. wbLVLFFlags → wbFlags([...]))
             # before dispatching to parse_format_arg, which only handles literals.
-            if re.fullmatch(r"wb[A-Za-z0-9_]+", fmt_arg) and fmt_arg in self.vars:
-                fmt_arg = self.vars[fmt_arg]
+            # Falls back to a case-insensitive lookup because Pascal identifiers are
+            # case-insensitive but the real Pascal source is not always consistent
+            # about casing at every call site (e.g. wbCellFlags defined vs. wbCELLFlags
+            # referenced in CELL's DATA union) — self.vars keys are exact-case.
+            if re.fullmatch(r"wb[A-Za-z0-9_]+", fmt_arg):
+                if fmt_arg in self.vars:
+                    fmt_arg = self.vars[fmt_arg]
+                else:
+                    canonical = self._vars_lower_map.get(fmt_arg.lower())
+                    if canonical:
+                        fmt_arg = self.vars[canonical]
             if "wbObjectModPropertyToStr" in fmt_arg:
                 # Property index whose enum depends on the parent Data struct's Form Type.
                 # Emit a FieldValue union; the decoder resolves Form Type from outer context.
