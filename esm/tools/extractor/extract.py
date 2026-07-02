@@ -17,7 +17,7 @@ OUT = ROOT / "schema" / "fo76.json"
 CTDA_OUT = ROOT / "schema" / "fo76.ctda.json"
 OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
-# Record types present in the FO76 ESM (excluding CELL and WRLD until Part C).
+# Record types present in the FO76 ESM (excluding CELL until Part C).
 # Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
 WHITELIST = [
     "AACT", "AAMD", "AAPD", "ACHR", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
@@ -38,7 +38,7 @@ WHITELIST = [
     "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM",
     "SOUN", "SPEL", "SPGD", "STAG", "STAT", "STHD", "STMP", "STND", "TACT",
     "TEPF", "TERM", "TRAP", "TREE", "TRNS", "TXST", "UTIL", "VOLI", "VTYP",
-    "WATR", "WAVE", "WEAP", "WSPR", "WTHR", "ZOOM",
+    "WATR", "WAVE", "WEAP", "WRLD", "WSPR", "WTHR", "ZOOM",
 ]
 
 # xEdit encodes the inline count-prefix byte width in the negative wbArray count
@@ -1346,6 +1346,122 @@ class Extractor:
         self.vars["wbByteColors"] = (
             "wbStruct('Color',"
             "[wbInteger('Red',itU8),wbInteger('Green',itU8),wbInteger('Blue',itU8),wbUnused(1)])"
+        )
+
+        # wbWorldFixedCenter — wbDefinitionsCommon.pas:9262 (WCTR struct, 4 bytes).
+        self.vars["wbWorldFixedCenter"] = (
+            "wbStruct(WCTR,'Fixed Dimensions Center Cell',"
+            "[wbInteger('X',itS16),wbInteger('Y',itS16)])"
+        )
+
+        # wbWorldLODData — wbDefinitionsCommon.pas:9274 (rstruct, NAM3 formid + NAM4 float).
+        self.vars["wbWorldLODData"] = (
+            "wbRStruct('LOD Data',"
+            "[wbFormIDCk(NAM3,'LOD Water',[WATR]),wbFloat(NAM4,'LOD Water Height')])"
+        )
+
+        # wbWorldLandData — wbDefinitionsCommon.pas:9283 (DNAM struct, 2 floats).
+        self.vars["wbWorldLandData"] = (
+            "wbStruct(DNAM,'Land Data',"
+            "[wbFloat('Default Land Height'),wbFloat('Default Water Height')])"
+        )
+
+        # wbWorldLargeRefs — wbDefinitionsCommon.pas:9297 (RNAM cell grid of placed refs).
+        self.vars["wbWorldLargeRefs"] = (
+            "wbRArray('Large References',"
+            "wbStruct(RNAM,'Cell',"
+            "[wbInteger('Y',itS16),wbInteger('X',itS16),"
+            "wbArray('References',"
+            "wbStruct('Reference',"
+            "[wbFormIDCk('Ref',[REFR]),wbInteger('Y',itS16),wbInteger('X',itS16)]),"
+            "-1)]))"
+        )
+
+        # wbWorldMapData — wbDefinitionsCommon.pas:9349 (MNAM struct). The IsTES5(...)
+        # Camera Data branch is omitted: FO76 is not TES5, so it always resolves to nil.
+        self.vars["wbWorldMapData"] = (
+            "wbStruct(MNAM,'World Map Data',"
+            "[wbStruct('Usable Dimensions',[wbInteger('X',itS32),wbInteger('Y',itS32)]),"
+            "wbStruct('Cell Coordinates',"
+            "[wbStruct('NW Cell',[wbInteger('X',itS16),wbInteger('Y',itS16)]),"
+            "wbStruct('SE Cell',[wbInteger('X',itS16),wbInteger('Y',itS16)])])])"
+        )
+
+        # wbWorldMapOffset — wbDefinitionsCommon.pas:9393 (ONAM struct, 4 floats).
+        # IsSF1/IsFO3 branches all resolve to the plain (non-Starfield, non-FO3) form
+        # for FO76; the "scale factor" args elsewhere are cosmetic edit-UI-only and
+        # don't change the on-disk byte format, so they are omitted.
+        self.vars["wbWorldMapOffset"] = (
+            "wbStruct(ONAM,'World Map Offset Data',"
+            "[wbFloat('World Map Scale'),wbFloat('Cell X Offset'),"
+            "wbFloat('Cell Y Offset'),wbFloat('Cell Z Offset')])"
+        )
+
+        # wbWorldObjectBounds — wbDefinitionsCommon.pas:9466 (NAM0/NAM9 min/max structs).
+        self.vars["wbWorldObjectBounds"] = (
+            "wbRStruct('Worldspace Bounds',"
+            "[wbStruct(NAM0,'Min',[wbFloat('X'),wbFloat('Y')]),"
+            "wbStruct(NAM9,'Max',[wbFloat('X'),wbFloat('Y')])])"
+        )
+
+        # wbWorldRegionEditorMap — wbDefinitionsCommon.pas:9528 (NAM5 string + NAM6 bounds).
+        self.vars["wbWorldRegionEditorMap"] = (
+            "wbRStruct('Region Editor Map',"
+            "[wbString(NAM5,'Texture'),"
+            "wbStruct(NAM6,'Bounds',"
+            "[wbInteger('NW Cell X',itS16),wbInteger('SE Cell Y',itS16),"
+            "wbInteger('SE Cell X',itS16),wbInteger('NW Cell Y',itS16)])])"
+        )
+
+        # wbWorldWaterHeightData — wbDefinitionsCommon.pas:9601 (XCLW/WHGT arrays).
+        self.vars["wbWorldWaterHeightData"] = (
+            "wbRStruct('Water Height Data',"
+            "[wbArray(XCLW,'Cell Water Height Locations',"
+            "wbStruct('Cell Water Height Location',"
+            "[wbInteger('Cell Y',itS16),wbInteger('Cell X',itS16)])),"
+            "wbArray(WHGT,'Water Heights',wbFloat('Water Height'))])"
+        )
+
+        # wbWorldSwapsImpactData — wbDefinitionsCommon.pas:9547 (IMPS array + IMPF struct).
+        self.vars["wbWorldSwapsImpactData"] = (
+            "wbRStruct('Swaps Impact Data',"
+            "[wbRArrayS('Impact Data',"
+            "wbStructExSK(IMPS,[0,1],[2],'Impact Swap Data',"
+            "[wbInteger('Material Type',itU32),"
+            "wbFormIDCk('Original Data',[IPCT]),"
+            "wbFormIDCk('New Data',[IPCT,NULL])])),"
+            "wbStruct(IMPF,'Footstep Materials',"
+            "[wbString('ConcSolid',30),wbString('ConcBroken',30),wbString('MetalSolid',30),"
+            "wbString('MetalHollow',30),wbString('MetalSheet',30),wbString('Wood',30),"
+            "wbString('Sand',30),wbString('Dirt',30),wbString('Grass',30),wbString('Water',30)])])"
+        )
+
+        # wbWorldLevelData — wbDefinitionsCommon.pas:9325 ("World Default Level Data").
+        # The Pascal has two sibling members both anchored on sig WLEV (a struct, then
+        # a trailing byte array) inside one rstruct, which is an unusual/ambiguous
+        # double-sig pattern this extractor doesn't have a clean way to express safely.
+        # Represent the whole thing as one opaque byte blob instead of guessing at the
+        # split — this is a rare, niche field (worldspace default level-of-detail data)
+        # and opaque-bytes-when-uncertain is an established, safe pattern in this schema.
+        self.vars["wbWorldLevelData"] = "wbByteArray(WLEV,'World Default Level Data',0)"
+
+        # wbWorldCellSizeData / wbWorldOffsetData / wbWorldVisibleCellsData /
+        # wbWorldMaxHeight's "Cell Heights" — these are dynamically-sized 2D grids whose
+        # row/column counts come from runtime Pascal callback functions
+        # (wbWorldColumnsCounter/wbWorldRowsCounter/wbMHDTColumnsCounter) that compute
+        # extents from the Worldspace Bounds min/max — not modelled by this extractor.
+        # Represent as opaque byte blobs (same pattern already used for the NVNM navmesh
+        # geometry union across ACTI/FURN/STAT/TRAP, which is proven safe and does not
+        # count as an "unmapped"/"raw_fallback" marker).
+        self.vars["wbWorldCellSizeData"] = "wbByteArray(CLSZ,'Cell Sizes',0)"
+        self.vars["wbWorldOffsetData"] = "wbByteArray(OFST,'Offsets',0)"
+        self.vars["wbWorldVisibleCellsData"] = "wbByteArray(VISI,'Visible Cells',0)"
+        self.vars["wbWorldMaxHeight"] = (
+            "wbStruct(MHDT,'Max Height Data',"
+            "[wbStruct('Dimensions',"
+            "[wbStruct('Min',[wbInteger('X',itS16),wbInteger('Y',itS16)]),"
+            "wbStruct('Max',[wbInteger('X',itS16),wbInteger('Y',itS16)])]),"
+            "wbByteArray('Cell Heights',0)])"
         )
 
         # wbSizePosRot — bounds size + position/rotation; handled in expand_call with the sig arg.

@@ -83948,6 +83948,735 @@
         }
       ]
     },
+    "WRLD": {
+      "name": "Worldspace",
+      "members": [
+        {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
+        },
+        {
+          "kind": "rarray",
+          "name": "Large References",
+          "element": {
+            "kind": "struct",
+            "name": "Cell",
+            "fields": [
+              {
+                "kind": "integer",
+                "name": "Y",
+                "width": "s16",
+                "signed": true
+              },
+              {
+                "kind": "integer",
+                "name": "X",
+                "width": "s16",
+                "signed": true
+              },
+              {
+                "kind": "array",
+                "name": "References",
+                "element": {
+                  "kind": "struct",
+                  "name": "Reference",
+                  "fields": [
+                    {
+                      "kind": "formid",
+                      "name": "Ref",
+                      "valid_refs": [
+                        "REFR"
+                      ]
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Y",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "X",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                },
+                "count": {
+                  "count_prefix": 4
+                }
+              }
+            ],
+            "sig": "RNAM"
+          }
+        },
+        {
+          "kind": "struct",
+          "name": "Max Height Data",
+          "fields": [
+            {
+              "kind": "struct",
+              "name": "Dimensions",
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "Min",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "X",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Y",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "Max",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "X",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Y",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "bytes",
+              "name": "Cell Heights"
+            }
+          ],
+          "sig": "MHDT"
+        },
+        {
+          "kind": "lstring",
+          "sig": "FULL",
+          "name": "Name"
+        },
+        {
+          "kind": "struct",
+          "name": "Fixed Dimensions Center Cell",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "X",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Y",
+              "width": "s16",
+              "signed": true
+            }
+          ],
+          "sig": "WCTR"
+        },
+        {
+          "kind": "formid",
+          "name": "Interior Lighting",
+          "valid_refs": [
+            "LGTM"
+          ],
+          "sig": "LTMP"
+        },
+        {
+          "kind": "formid",
+          "name": "Encounter Zone",
+          "valid_refs": [
+            "LCTN"
+          ],
+          "sig": "XEZN"
+        },
+        {
+          "kind": "formid",
+          "name": "Location",
+          "valid_refs": [
+            "LCTN"
+          ],
+          "sig": "XLCN"
+        },
+        {
+          "kind": "rstruct",
+          "name": "Parent Worldspace",
+          "members": [
+            {
+              "kind": "formid",
+              "name": "World",
+              "valid_refs": [
+                "WRLD"
+              ],
+              "sig": "WNAM"
+            },
+            {
+              "kind": "integer",
+              "name": "Flags",
+              "width": "u16",
+              "signed": false,
+              "sig": "PNAM",
+              "format": {
+                "flags": [
+                  "Use Land Data",
+                  "Use LOD Data",
+                  "Use Map Data",
+                  "Use Water Data",
+                  "Use Climate Data",
+                  "Use Sky Cell"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "kind": "formid",
+          "name": "Climate",
+          "valid_refs": [
+            "CLMT"
+          ],
+          "sig": "CNAM"
+        },
+        {
+          "kind": "formid",
+          "name": "Water",
+          "valid_refs": [
+            "WATR"
+          ],
+          "sig": "NAM2"
+        },
+        {
+          "kind": "rstruct",
+          "name": "LOD Data",
+          "members": [
+            {
+              "kind": "formid",
+              "name": "LOD Water",
+              "valid_refs": [
+                "WATR"
+              ],
+              "sig": "NAM3"
+            },
+            {
+              "kind": "float",
+              "name": "LOD Water Height",
+              "sig": "NAM4"
+            }
+          ]
+        },
+        {
+          "kind": "struct",
+          "name": "Land Data",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Default Land Height"
+            },
+            {
+              "kind": "float",
+              "name": "Default Water Height"
+            }
+          ],
+          "sig": "DNAM"
+        },
+        {
+          "kind": "string",
+          "name": "Map Image",
+          "keep_case": false,
+          "sig": "ICON"
+        },
+        {
+          "kind": "rstruct",
+          "name": "Cloud Model",
+          "members": [
+            {
+              "kind": "rstruct",
+              "name": "Model",
+              "members": [
+                {
+                  "kind": "string",
+                  "name": "Model FileName",
+                  "keep_case": false,
+                  "sig": "MODL"
+                },
+                {
+                  "kind": "model_info",
+                  "name": "Model Information",
+                  "sig": "MODT"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Color",
+                  "sig": "MODC"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Data",
+                  "sig": "MODS"
+                },
+                {
+                  "kind": "bytes",
+                  "name": "Model Flags",
+                  "sig": "MODF"
+                },
+                {
+                  "kind": "union",
+                  "name": "Enlighten Mode",
+                  "decider": {
+                    "form_version": {
+                      "min": 156,
+                      "max": null
+                    }
+                  },
+                  "variants": [
+                    {
+                      "kind": "integer",
+                      "name": "Mode",
+                      "width": "u8",
+                      "signed": false,
+                      "format": {
+                        "enum": [
+                          "Default",
+                          "Light Map",
+                          "Light Map UV",
+                          "Albedo",
+                          "Indirect Specular (Cubemaps)",
+                          "Unknown 5",
+                          "Unknown 6"
+                        ]
+                      }
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Mode",
+                      "width": "u32",
+                      "signed": false,
+                      "format": {
+                        "enum": {
+                          "2147483649": "Light Map?",
+                          "2147483651": "Albedo?",
+                          "2147483653": "Unknown 5?",
+                          "2147483654": "Unknown 6?"
+                        }
+                      }
+                    }
+                  ],
+                  "sig": "ENLM"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags",
+                  "width": "u8",
+                  "signed": false,
+                  "sig": "XFLG",
+                  "format": {
+                    "flags": [
+                      "Has Facebones Data",
+                      "Has Upper Body Skin",
+                      "Has Right Hand Skin",
+                      "Has Left Hand Skin",
+                      "Has Hand Tagged Enlighten Mode",
+                      "Has Enlighten Transparency",
+                      "Has Enlighten Simplified Geom",
+                      "Has Enlighten Unique Geom"
+                    ]
+                  }
+                },
+                {
+                  "kind": "byte_rgba",
+                  "sig": "ENLT",
+                  "name": "Enlighten Transparency Color"
+                },
+                {
+                  "kind": "float",
+                  "name": "Enlighten Simplified Shape Scale",
+                  "sig": "ENLS"
+                },
+                {
+                  "kind": "struct",
+                  "name": "Enlighten Auto UV",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding?",
+                      "len": 3
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max DIstance"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max Initial Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Max General Normal Deviation"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Expansion Factor"
+                    },
+                    {
+                      "kind": "float",
+                      "name": "Significant Area Ratio"
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Unknown 2",
+                      "width": "u8",
+                      "signed": false
+                    },
+                    {
+                      "kind": "bytes",
+                      "name": "Padding? 2",
+                      "len": 3
+                    }
+                  ],
+                  "sig": "AUUV"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Flags 2",
+                  "width": "u8",
+                  "signed": false,
+                  "sig": "MODD",
+                  "format": {
+                    "flags": [
+                      "Has Facebones Data",
+                      "Has Upper Body Skin",
+                      "Has Right Hand Skin",
+                      "Has Left Hand Skin",
+                      "Has Hand Tagged Enlighten Mode",
+                      "Has Enlighten Transparency",
+                      "Has Enlighten Simplified Geom",
+                      "Has Enlighten Unique Geom"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "kind": "struct",
+          "name": "World Map Data",
+          "fields": [
+            {
+              "kind": "struct",
+              "name": "Usable Dimensions",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "X",
+                  "width": "s32",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "Y",
+                  "width": "s32",
+                  "signed": true
+                }
+              ]
+            },
+            {
+              "kind": "struct",
+              "name": "Cell Coordinates",
+              "fields": [
+                {
+                  "kind": "struct",
+                  "name": "NW Cell",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "X",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Y",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                },
+                {
+                  "kind": "struct",
+                  "name": "SE Cell",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "X",
+                      "width": "s16",
+                      "signed": true
+                    },
+                    {
+                      "kind": "integer",
+                      "name": "Y",
+                      "width": "s16",
+                      "signed": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "sig": "MNAM"
+        },
+        {
+          "kind": "struct",
+          "name": "World Map Offset Data",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "World Map Scale"
+            },
+            {
+              "kind": "float",
+              "name": "Cell X Offset"
+            },
+            {
+              "kind": "float",
+              "name": "Cell Y Offset"
+            },
+            {
+              "kind": "float",
+              "name": "Cell Z Offset"
+            }
+          ],
+          "sig": "ONAM"
+        },
+        {
+          "kind": "float",
+          "name": "Distant LOD Multiplier",
+          "sig": "NAMA"
+        },
+        {
+          "kind": "integer",
+          "name": "Flags",
+          "width": "u8",
+          "signed": false,
+          "sig": "DATA",
+          "format": {
+            "flags": [
+              "Small World",
+              "Can't Fast Travel",
+              "No LOD Water",
+              "No Landscape",
+              "No Sky",
+              "Fixed Dimensions",
+              "No Grass"
+            ]
+          }
+        },
+        {
+          "kind": "rstruct",
+          "name": "Worldspace Bounds",
+          "members": [
+            {
+              "kind": "struct",
+              "name": "Min",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "X"
+                },
+                {
+                  "kind": "float",
+                  "name": "Y"
+                }
+              ],
+              "sig": "NAM0"
+            },
+            {
+              "kind": "struct",
+              "name": "Max",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "X"
+                },
+                {
+                  "kind": "float",
+                  "name": "Y"
+                }
+              ],
+              "sig": "NAM9"
+            }
+          ]
+        },
+        {
+          "kind": "rarray",
+          "name": "Ordered Lands Textures",
+          "element": {
+            "kind": "formid",
+            "name": "Land Texture",
+            "valid_refs": [
+              "LTEX"
+            ],
+            "sig": "LNAM"
+          }
+        },
+        {
+          "kind": "rstruct",
+          "name": "Region Editor Map",
+          "members": [
+            {
+              "kind": "string",
+              "name": "Texture",
+              "keep_case": false,
+              "sig": "NAM5"
+            },
+            {
+              "kind": "struct",
+              "name": "Bounds",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "NW Cell X",
+                  "width": "s16",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "SE Cell Y",
+                  "width": "s16",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "SE Cell X",
+                  "width": "s16",
+                  "signed": true
+                },
+                {
+                  "kind": "integer",
+                  "name": "NW Cell Y",
+                  "width": "s16",
+                  "signed": true
+                }
+              ],
+              "sig": "NAM6"
+            }
+          ]
+        },
+        {
+          "kind": "formid",
+          "name": "Music",
+          "valid_refs": [
+            "MUSC"
+          ],
+          "sig": "ZNAM"
+        },
+        {
+          "kind": "string",
+          "name": "Canopy Shadow (unused)",
+          "keep_case": false,
+          "sig": "NNAM",
+          "sized": 0
+        },
+        {
+          "kind": "string",
+          "name": "Water Environment Map",
+          "keep_case": false,
+          "sig": "XWEM"
+        },
+        {
+          "kind": "string",
+          "name": "HD LOD Diffuse Texture",
+          "keep_case": false,
+          "sig": "TNAM"
+        },
+        {
+          "kind": "string",
+          "name": "HD LOD Normal Texture",
+          "keep_case": false,
+          "sig": "UNAM"
+        },
+        {
+          "kind": "rstruct",
+          "name": "Water Height Data",
+          "members": [
+            {
+              "kind": "array",
+              "name": "Cell Water Height Locations",
+              "element": {
+                "kind": "struct",
+                "name": "Cell Water Height Location",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Cell Y",
+                    "width": "s16",
+                    "signed": true
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Cell X",
+                    "width": "s16",
+                    "signed": true
+                  }
+                ]
+              },
+              "sig": "XCLW"
+            },
+            {
+              "kind": "array",
+              "name": "Water Heights",
+              "element": {
+                "kind": "float",
+                "name": "Water Height"
+              },
+              "sig": "WHGT"
+            }
+          ]
+        },
+        {
+          "kind": "bytes",
+          "name": "World Default Level Data",
+          "sig": "WLEV"
+        },
+        {
+          "kind": "bytes",
+          "name": "Offsets",
+          "sig": "OFST"
+        },
+        {
+          "kind": "bytes",
+          "name": "Cell Sizes",
+          "sig": "CLSZ"
+        },
+        {
+          "kind": "bytes",
+          "name": "Visible Cells",
+          "sig": "VISI"
+        }
+      ]
+    },
     "WSPR": {
       "name": "Workshop Permissions",
       "members": [
