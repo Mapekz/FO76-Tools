@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 const DAEMON_FILENAME: &str = "esm-daemon.json";
 /// Fast 2 s deadline for `/health` and `/status` probes — a live daemon responds instantly.
@@ -37,11 +37,92 @@ fn op_timeout() -> Option<Duration> {
 }
 
 /// Discovery file written by the daemon on start.
+///
+/// `exe_*` fields fingerprint the daemon binary (size + mtime of the running
+/// `esm-server` executable) so clients can detect a rebuild and respawn a stale
+/// daemon instead of silently querying it with an outdated schema/decoder.
+/// `#[serde(default)]` lets a discovery file written by a pre-fingerprint daemon
+/// still deserialize; it is then treated as not-fresh, forcing one clean respawn.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DaemonInfo {
     pub port: u16,
     pub token: String,
     pub pid: u32,
+    #[serde(default)]
+    pub exe_path: String,
+    #[serde(default)]
+    pub exe_size: u64,
+    #[serde(default)]
+    pub exe_mtime_secs: u64,
+    #[serde(default)]
+    pub exe_mtime_nanos: u32,
+}
+
+impl DaemonInfo {
+    /// Build a fresh `DaemonInfo` for the currently-running process, stamping the
+    /// daemon binary's own file signature (best-effort: an unreadable exe path
+    /// yields an empty signature, which `daemon_fresh` always treats as stale).
+    pub fn current(port: u16, token: String) -> Self {
+        let (exe_path, exe_size, exe_mtime_secs, exe_mtime_nanos) = exe_sig();
+        Self {
+            port,
+            token,
+            pid: std::process::id(),
+            exe_path,
+            exe_size,
+            exe_mtime_secs,
+            exe_mtime_nanos,
+        }
+    }
+}
+
+/// Signature `(path, size, mtime_secs, mtime_nanos)` of the currently-running
+/// executable, mirroring the mtime convention used for the `.esm.idx` cache
+/// (see `index.rs`). Returns an empty/zeroed tuple on any error so callers can
+/// still start (or compare against) a daemon even when the exe can't be stat'd.
+///
+/// `pub` (not `pub(crate)`): the daemon binary (`src/bin/server.rs`) is a
+/// separate crate that links against this library, and its idle-TTL watchdog
+/// calls this directly to detect its own binary changing on disk (self-eviction).
+pub fn exe_sig() -> (String, u64, u64, u32) {
+    let path = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return (String::new(), 0, 0, 0),
+    };
+    let meta = match std::fs::metadata(&path) {
+        Ok(m) => m,
+        Err(_) => return (String::new(), 0, 0, 0),
+    };
+    let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    let dur = mtime
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    (
+        path.to_string_lossy().into_owned(),
+        meta.len(),
+        dur.as_secs(),
+        dur.subsec_nanos(),
+    )
+}
+
+/// Whether the daemon described by `info` is still running the exact binary it
+/// was started with. `false` for any pre-fingerprint discovery file (empty
+/// `exe_path`) or if the binary can no longer be stat'd at that path.
+pub fn daemon_fresh(info: &DaemonInfo) -> bool {
+    if info.exe_path.is_empty() {
+        return false;
+    }
+    let meta = match std::fs::metadata(&info.exe_path) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+    let dur = mtime
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    meta.len() == info.exe_size
+        && dur.as_secs() == info.exe_mtime_secs
+        && dur.subsec_nanos() == info.exe_mtime_nanos
 }
 
 /// Trait implemented by local and remote query backends.
@@ -167,10 +248,13 @@ impl RemoteBackend {
         Self::new("127.0.0.1", info.port, info.token.clone())
     }
 
-    /// Connect to a running daemon, auto-spawning one if absent.
+    /// Connect to a running daemon, auto-spawning one if absent. If a resident
+    /// daemon is alive but stale (its binary was rebuilt since it started),
+    /// `spawn_daemon_and_wait` stops it and spawns a fresh one instead of
+    /// silently querying it with an outdated schema/decoder.
     pub fn connect_or_spawn() -> anyhow::Result<Self> {
         if let Ok(info) = read_daemon_info() {
-            if daemon_alive(&info) {
+            if daemon_alive(&info) && daemon_fresh(&info) {
                 return Ok(Self::from_daemon_info(&info));
             }
         }
@@ -373,8 +457,11 @@ pub fn esm_server_exe() -> anyhow::Result<PathBuf> {
 /// An advisory file lock (`esm-daemon.lock`) is held for the duration of the
 /// spawn so that concurrent callers (parallel agents) coalesce: the first one
 /// to acquire the lock performs the spawn; subsequent ones re-check the
-/// discovery file after acquiring the lock and, if a healthy daemon is already
-/// running, return immediately without spawning a second instance.
+/// discovery file after acquiring the lock and, if a healthy *and fresh*
+/// daemon is already running, return immediately without spawning a second
+/// instance. A daemon that's alive but stale (binary rebuilt since it
+/// started) is stopped here, under the lock, before the respawn below —
+/// this is what lets a resident daemon self-heal after `cargo build`.
 pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
     // Acquire an advisory exclusive lock for the duration of the spawn.
     // The lock file is created if absent and automatically released when
@@ -394,7 +481,13 @@ pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
     // lock.
     if let Ok(info) = read_daemon_info() {
         if health_check("127.0.0.1", info.port, &info.token).is_ok() {
-            return Ok(());
+            if daemon_fresh(&info) {
+                return Ok(());
+            }
+            // Alive but stale: stop it before spawning a replacement so the
+            // fresh daemon isn't blocked from binding/registering.
+            stop_running_daemon(&info);
+            let _ = remove_daemon_info();
         }
     }
 
@@ -423,10 +516,12 @@ pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
     bail!("daemon did not become ready within {:?}", HEALTH_POLL_MAX);
 }
 
-/// Start the daemon process (for `esm daemon start`).
+/// Start the daemon process (for `esm daemon start`). Respawns if the
+/// resident daemon is alive but stale (binary rebuilt since it started),
+/// same freshness gate as `connect_or_spawn`.
 pub fn start_daemon_process() -> anyhow::Result<DaemonInfo> {
     if let Ok(info) = read_daemon_info() {
-        if daemon_alive(&info) {
+        if daemon_alive(&info) && daemon_fresh(&info) {
             return Ok(info);
         }
     }
@@ -434,26 +529,34 @@ pub fn start_daemon_process() -> anyhow::Result<DaemonInfo> {
     read_daemon_info()
 }
 
+/// Gracefully shut down a running daemon: request `/op shutdown`, wait
+/// briefly, then force-kill by PID if it's still alive. Does not touch the
+/// discovery file — callers remove it themselves once they're done reading
+/// `info` (e.g. `info.pid`).
+fn stop_running_daemon(info: &DaemonInfo) {
+    let backend = RemoteBackend::from_daemon_info(info);
+    let _ = backend.shutdown();
+    // Give it a moment, then signal if still alive
+    std::thread::sleep(Duration::from_millis(200));
+    if is_pid_alive(info.pid) {
+        #[cfg(unix)]
+        {
+            let _ = Command::new("kill").arg(info.pid.to_string()).status();
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = Command::new("taskkill")
+                .args(["/PID", &info.pid.to_string(), "/F"])
+                .status();
+        }
+    }
+}
+
 /// Stop a running daemon.
 pub fn stop_daemon() -> anyhow::Result<()> {
     if let Ok(info) = read_daemon_info() {
         if daemon_alive(&info) {
-            let backend = RemoteBackend::from_daemon_info(&info);
-            let _ = backend.shutdown();
-            // Give it a moment, then signal if still alive
-            std::thread::sleep(Duration::from_millis(200));
-            if is_pid_alive(info.pid) {
-                #[cfg(unix)]
-                {
-                    let _ = Command::new("kill").arg(info.pid.to_string()).status();
-                }
-                #[cfg(not(unix))]
-                {
-                    let _ = Command::new("taskkill")
-                        .args(["/PID", &info.pid.to_string(), "/F"])
-                        .status();
-                }
-            }
+            stop_running_daemon(&info);
         }
         let _ = remove_daemon_info();
     }
@@ -484,4 +587,132 @@ pub type SharedRegistry = Arc<Registry>;
 
 pub fn shared_registry(warm_xref: bool) -> SharedRegistry {
     Arc::new(Registry::with_warm_xref(warm_xref))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Unique path in the OS temp dir for a test fixture file, disambiguated
+    /// by pid + name so parallel test runs don't collide.
+    fn fixture_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("esm_backend_test_{}_{}", std::process::id(), name))
+    }
+
+    /// Build a `DaemonInfo` whose `exe_*` fields match `path`'s current
+    /// on-disk signature, as `DaemonInfo::current` would if `path` were the
+    /// running executable.
+    fn info_for(path: &Path) -> DaemonInfo {
+        let meta = std::fs::metadata(path).unwrap();
+        let dur = meta
+            .modified()
+            .unwrap()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default();
+        DaemonInfo {
+            port: 0,
+            token: "t".to_string(),
+            pid: 0,
+            exe_path: path.to_string_lossy().into_owned(),
+            exe_size: meta.len(),
+            exe_mtime_secs: dur.as_secs(),
+            exe_mtime_nanos: dur.subsec_nanos(),
+        }
+    }
+
+    #[test]
+    fn daemon_fresh_true_when_sig_matches() {
+        let path = fixture_path("fresh_match.bin");
+        std::fs::write(&path, b"hello").unwrap();
+        let info = info_for(&path);
+        assert!(daemon_fresh(&info));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn daemon_fresh_false_after_file_changes() {
+        let path = fixture_path("fresh_change.bin");
+        std::fs::write(&path, b"hello").unwrap();
+        let mut info = info_for(&path);
+
+        // Simulate a rebuild: different size and a bumped mtime.
+        std::fs::write(&path, b" world, this is longer now").unwrap();
+        let future = SystemTime::now() + Duration::from_secs(120);
+        let file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_modified(future)
+            .expect("set_modified should be supported on this platform");
+
+        // The stale `info` (captured before the rewrite) must no longer match.
+        assert!(!daemon_fresh(&info));
+
+        // A freshly-captured signature must match again.
+        info = info_for(&path);
+        assert!(daemon_fresh(&info));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn daemon_fresh_false_for_empty_exe_path() {
+        let info = DaemonInfo {
+            port: 0,
+            token: "t".to_string(),
+            pid: 0,
+            exe_path: String::new(),
+            exe_size: 0,
+            exe_mtime_secs: 0,
+            exe_mtime_nanos: 0,
+        };
+        assert!(!daemon_fresh(&info));
+    }
+
+    #[test]
+    fn daemon_fresh_false_for_missing_exe() {
+        let info = DaemonInfo {
+            port: 0,
+            token: "t".to_string(),
+            pid: 0,
+            exe_path: "/nonexistent/path/esm-server-does-not-exist".to_string(),
+            exe_size: 0,
+            exe_mtime_secs: 0,
+            exe_mtime_nanos: 0,
+        };
+        assert!(!daemon_fresh(&info));
+    }
+
+    #[test]
+    fn daemon_info_serde_round_trip_with_exe_fields() {
+        let info = DaemonInfo {
+            port: 4321,
+            token: "abc123".to_string(),
+            pid: 999,
+            exe_path: "/usr/local/bin/esm-server".to_string(),
+            exe_size: 42,
+            exe_mtime_secs: 100,
+            exe_mtime_nanos: 200,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let back: DaemonInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.port, info.port);
+        assert_eq!(back.token, info.token);
+        assert_eq!(back.pid, info.pid);
+        assert_eq!(back.exe_path, info.exe_path);
+        assert_eq!(back.exe_size, info.exe_size);
+        assert_eq!(back.exe_mtime_secs, info.exe_mtime_secs);
+        assert_eq!(back.exe_mtime_nanos, info.exe_mtime_nanos);
+    }
+
+    #[test]
+    fn daemon_info_legacy_json_deserializes_and_is_treated_as_stale() {
+        // A discovery file written by a pre-fingerprint daemon has no `exe_*`
+        // fields at all; `#[serde(default)]` must still let it parse, and the
+        // resulting empty `exe_path` must make `daemon_fresh` reject it so a
+        // legacy daemon gets one clean respawn instead of a deserialize error.
+        let legacy = r#"{"port":1,"token":"x","pid":2}"#;
+        let info: DaemonInfo = serde_json::from_str(legacy).unwrap();
+        assert_eq!(info.port, 1);
+        assert_eq!(info.token, "x");
+        assert_eq!(info.pid, 2);
+        assert_eq!(info.exe_path, "");
+        assert!(!daemon_fresh(&info));
+    }
 }

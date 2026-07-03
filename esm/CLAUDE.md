@@ -108,9 +108,10 @@ The daemon warms the index once on first load and serves all subsequent lookups 
 - **Auto-spawns** on the first `-p` call (no manual `daemon start` needed).
 - **Auto-shuts-down** after 10 min idle (`ESM_DAEMON_IDLE_SECS=0` to disable).
 - **Stale-evicts** if the ESM changes on disk — no manual restart needed.
+- **Rebuild-evicts** if the `esm-server` binary itself changes on disk (new schema, new decode logic, any `cargo build`) — a `-p` call against a stale-but-alive daemon stops it and respawns a fresh one before serving the request, and the daemon's own watchdog self-evicts within ~30s even with no client polling it. No manual `daemon stop` needed after a rebuild.
 - **Parallel-agent safe** — advisory spawn-lock (`esm-daemon.lock`) prevents double-spawn; multiple agents share one daemon instance.
 
-Use `esm daemon status` to check, `esm daemon stop` to kill early.
+Use `esm daemon status` to check (includes a `binary_current` flag — `false` means a rebuild happened and the daemon is about to self-evict/respawn), `esm daemon stop` to kill early.
 
 ### Use `--resolve stub` to avoid follow-up lookups
 

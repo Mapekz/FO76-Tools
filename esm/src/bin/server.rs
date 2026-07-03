@@ -13,7 +13,7 @@ use axum::{
 };
 use clap::Parser;
 use esm::backend::{
-    generate_token, remove_daemon_info, shared_registry, write_daemon_info, DaemonInfo,
+    exe_sig, generate_token, remove_daemon_info, shared_registry, write_daemon_info, DaemonInfo,
     QueryBackend, RemoteBackend, SharedRegistry,
 };
 use esm::ipc::{dispatch, Request, Response as OpResponse};
@@ -780,11 +780,7 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let port = listener.local_addr()?.port();
 
-    let info = DaemonInfo {
-        port,
-        token: token.clone(),
-        pid: std::process::id(),
-    };
+    let info = DaemonInfo::current(port, token.clone());
     write_daemon_info(&info)?;
 
     eprintln!(
@@ -798,23 +794,41 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
         );
     }
 
-    // ── Idle-TTL watchdog ────────────────────────────────────────────────────
-    if idle_secs > 0 {
+    // ── Idle-TTL + binary-change watchdog ───────────────────────────────────
+    // Always runs, independent of ESM_DAEMON_IDLE_SECS: every 30s it re-stats
+    // its own executable and self-evicts if the binary on disk no longer
+    // matches the one it started with (i.e. a rebuild happened underneath it).
+    // Clients already detect this via `daemon_fresh` in `backend.rs` and
+    // respawn on their next `-p` call, but this watchdog closes the gap for
+    // any daemon left resident with no client polling it (e.g. started via
+    // `esm daemon start` and never queried again) — it self-heals without
+    // waiting for a client to notice. Idle-shutdown stays gated on `idle_secs`.
+    {
         let la = last_activity.clone();
         let shutdown_flag = shutdown.clone();
         let ttl = Duration::from_secs(idle_secs);
+        let self_sig = exe_sig();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(30));
             loop {
                 interval.tick().await;
-                let elapsed = la.lock().unwrap().elapsed();
-                if elapsed >= ttl {
-                    eprintln!(
-                        "esm-daemon: idle for {:.0?} (TTL {:.0?}), shutting down.",
-                        elapsed, ttl
-                    );
+
+                if exe_sig() != self_sig {
+                    eprintln!("esm-daemon: binary changed on disk; self-evicting.");
                     *shutdown_flag.lock().await = true;
                     break;
+                }
+
+                if idle_secs > 0 {
+                    let elapsed = la.lock().unwrap().elapsed();
+                    if elapsed >= ttl {
+                        eprintln!(
+                            "esm-daemon: idle for {:.0?} (TTL {:.0?}), shutting down.",
+                            elapsed, ttl
+                        );
+                        *shutdown_flag.lock().await = true;
+                        break;
+                    }
                 }
             }
         });

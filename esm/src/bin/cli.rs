@@ -1,6 +1,9 @@
 use anyhow::Context as _;
 use clap::{Parser, Subcommand, ValueEnum};
-use esm::backend::{start_daemon_process, stop_daemon, LocalBackend, QueryBackend, RemoteBackend};
+use esm::backend::{
+    daemon_fresh, read_daemon_info, start_daemon_process, stop_daemon, LocalBackend, QueryBackend,
+    RemoteBackend,
+};
 use esm::ipc::{Op, RecordSel};
 use esm::{
     parse_form_id_input, CoverageReport, Database, DiffResult, Markers, RawRecordView, RecordRow,
@@ -364,7 +367,16 @@ fn main() -> anyhow::Result<()> {
             DaemonAction::Status => {
                 let remote =
                     RemoteBackend::connect_existing_with_override(cli.addr.as_deref(), cli.port)?;
-                let status = remote.status()?;
+                let mut status = remote.status()?;
+                // Best-effort: annotate whether the resident daemon is still
+                // running the binary it started with (see `daemon_fresh` in
+                // `backend.rs`). A `false` here means a rebuild happened since
+                // it started and the next `-p`/REPL call will respawn it.
+                if let Ok(info) = read_daemon_info() {
+                    if let Some(obj) = status.as_object_mut() {
+                        obj.insert("binary_current".to_string(), daemon_fresh(&info).into());
+                    }
+                }
                 println!("{}", serde_json::to_string_pretty(&status)?);
                 Ok(())
             }
