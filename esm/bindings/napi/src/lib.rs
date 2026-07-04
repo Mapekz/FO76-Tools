@@ -1,7 +1,7 @@
 #![deny(clippy::all)]
 
 use esm::ipc::RecordSel;
-use esm::{Database, FormId, ResolveDepth};
+use esm::{Database, FilterOp, FormId, ResolveDepth, SearchField};
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
@@ -62,6 +62,69 @@ impl EsmDatabase {
             .list_type_records(&sig, offset as usize, limit as usize)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         serde_json::to_value(&rows).map_err(|e| napi::Error::from_reason(format!("{e}")))
+    }
+
+    /// Search records by EditorID and/or display name using a `*`-wildcard pattern.
+    ///
+    /// `types` restricts the search to the given 4-character record-type
+    /// signatures (empty = all types). `field` is one of `"edid"` | `"name"` |
+    /// `"both"`. `limit` caps the number of results (`0` = no limit).
+    #[napi]
+    pub fn search(
+        &self,
+        pattern: String,
+        types: Vec<String>,
+        field: String,
+        limit: u32,
+    ) -> napi::Result<serde_json::Value> {
+        let field = parse_search_field(&field)?;
+        let mut db = self
+            .inner
+            .lock()
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let rows = db
+            .search(&pattern, &types, field, limit as usize)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        serde_json::to_value(&rows).map_err(|e| napi::Error::from_reason(format!("{e}")))
+    }
+
+    /// Filter records of type `sig` by a predicate against their decoded
+    /// field body. `path` is a dot-separated path (`"[]"` segments fan out
+    /// over arrays); `None`/empty deep-scans every field. `op` is one of
+    /// `"exists"` | `"eq"` | `"contains"` | `"gt"` | `"lt"` | `"gte"` | `"lte"`.
+    /// `limit` caps the number of returned rows (`0` = no limit).
+    #[napi]
+    pub fn filter_type_records(
+        &self,
+        sig: String,
+        path: Option<String>,
+        op: String,
+        value: Option<String>,
+        limit: u32,
+    ) -> napi::Result<serde_json::Value> {
+        let op = parse_filter_op(&op)?;
+        let mut db = self
+            .inner
+            .lock()
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let result = db
+            .filter_type_records(&sig, path.as_deref(), op, value.as_deref(), limit as usize)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
+    }
+
+    /// List every dot-notation field path observed across a (possibly capped)
+    /// decoded sample of a type's records — for filter-panel autocomplete.
+    #[napi]
+    pub fn list_type_field_paths(&self, sig: String) -> napi::Result<serde_json::Value> {
+        let mut db = self
+            .inner
+            .lock()
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let paths = db
+            .list_type_field_paths(&sig)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        serde_json::to_value(&paths).map_err(|e| napi::Error::from_reason(format!("{e}")))
     }
 
     /// List direct children of the top-level GRUP with the given record type signature.
@@ -128,15 +191,22 @@ impl EsmDatabase {
     }
 
     /// Decode a record by EditorID string.
+    ///
+    /// `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
     #[napi]
-    pub async fn record_by_edid(&self, edid: String) -> napi::Result<serde_json::Value> {
+    pub async fn record_by_edid(
+        &self,
+        edid: String,
+        resolve: String,
+    ) -> napi::Result<serde_json::Value> {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || {
+            let depth = parse_resolve_depth(&resolve)?;
             let mut db = inner
                 .lock()
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
             let result = db
-                .record_by_edid_resolved(&edid, ResolveDepth::Stub)
+                .record_by_edid_resolved(&edid, depth)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
             serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
         })
@@ -239,6 +309,32 @@ fn parse_resolve_depth(s: &str) -> napi::Result<ResolveDepth> {
         "full" => Ok(ResolveDepth::Full),
         other => Err(napi::Error::from_reason(format!(
             "unknown resolve depth '{other}'; expected none|stub|full"
+        ))),
+    }
+}
+
+fn parse_search_field(s: &str) -> napi::Result<SearchField> {
+    match s {
+        "edid" => Ok(SearchField::Edid),
+        "name" => Ok(SearchField::Name),
+        "both" => Ok(SearchField::Both),
+        other => Err(napi::Error::from_reason(format!(
+            "unknown search field '{other}'; expected edid|name|both"
+        ))),
+    }
+}
+
+fn parse_filter_op(s: &str) -> napi::Result<FilterOp> {
+    match s {
+        "exists" => Ok(FilterOp::Exists),
+        "eq" => Ok(FilterOp::Eq),
+        "contains" => Ok(FilterOp::Contains),
+        "gt" => Ok(FilterOp::Gt),
+        "lt" => Ok(FilterOp::Lt),
+        "gte" => Ok(FilterOp::Gte),
+        "lte" => Ok(FilterOp::Lte),
+        other => Err(napi::Error::from_reason(format!(
+            "unknown filter op '{other}'; expected exists|eq|contains|gt|lt|gte|lte"
         ))),
     }
 }

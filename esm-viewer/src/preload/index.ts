@@ -14,7 +14,8 @@ const api: Fo76Api = {
     ipcRenderer.invoke(CH.listTypeRecords, id, sig, offset, limit),
   recordByFormid: (id, formid, resolve) =>
     ipcRenderer.invoke(CH.recordByFormid, id, formid, resolve ?? 'stub'),
-  recordByEdid: (id, edid) => ipcRenderer.invoke(CH.recordByEdid, id, edid),
+  recordByEdid: (id, edid, resolve) =>
+    ipcRenderer.invoke(CH.recordByEdid, id, edid, resolve ?? 'stub'),
   recordById: (id, target, resolve) =>
     ipcRenderer.invoke(CH.recordById, id, target, resolve ?? 'stub'),
   referencedBy: (id, formid) => ipcRenderer.invoke(CH.referencedBy, id, formid),
@@ -25,6 +26,11 @@ const api: Fo76Api = {
     ipcRenderer.invoke(CH.listTypeChildren, id, sig, offset, limit),
   listGroupChildren: (id, groupOffset, offset, limit) =>
     ipcRenderer.invoke(CH.listGroupChildren, id, groupOffset, offset, limit),
+  search: (id, pattern, types, field, limit) =>
+    ipcRenderer.invoke(CH.search, id, pattern, types, field, limit),
+  filterTypeRecords: (id, sig, path, op, value, limit) =>
+    ipcRenderer.invoke(CH.filterTypeRecords, id, sig, path, op, value, limit),
+  listTypeFieldPaths: (id, sig) => ipcRenderer.invoke(CH.listTypeFieldPaths, id, sig),
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -12,6 +12,27 @@ export declare class EsmDatabase {
   listGroups(): any
   /** Paginated record rows for the given 4-character record type signature. */
   listTypeRecords(sig: string, offset: number, limit: number): any
+  /**
+   * Search records by EditorID and/or display name using a `*`-wildcard pattern.
+   *
+   * `types` restricts the search to the given 4-character record-type
+   * signatures (empty = all types). `field` is one of `"edid"` | `"name"` |
+   * `"both"`. `limit` caps the number of results (`0` = no limit).
+   */
+  search(pattern: string, types: Array<string>, field: string, limit: number): any
+  /**
+   * Filter records of type `sig` by a predicate against their decoded
+   * field body. `path` is a dot-separated path (`"[]"` segments fan out
+   * over arrays); `None`/empty deep-scans every field. `op` is one of
+   * `"exists"` | `"eq"` | `"contains"` | `"gt"` | `"lt"` | `"gte"` | `"lte"`.
+   * `limit` caps the number of returned rows (`0` = no limit).
+   */
+  filterTypeRecords(sig: string, path: string | undefined | null, op: string, value: string | undefined | null, limit: number): any
+  /**
+   * List every dot-notation field path observed across a (possibly capped)
+   * decoded sample of a type's records — for filter-panel autocomplete.
+   */
+  listTypeFieldPaths(sig: string): any
   /** List direct children of the top-level GRUP with the given record type signature. */
   listTypeChildren(sig: string, offset: number, limit: number): any
   /**
@@ -28,8 +49,12 @@ export declare class EsmDatabase {
    * `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
    */
   recordByFormid(formid: string, resolve: string): any
-  /** Decode a record by EditorID string. */
-  recordByEdid(edid: string): Promise<any>
+  /**
+   * Decode a record by EditorID string.
+   *
+   * `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
+   */
+  recordByEdid(edid: string, resolve: string): Promise<any>
   /**
    * Decode a record by FormID or EditorID (auto-detected).
    *

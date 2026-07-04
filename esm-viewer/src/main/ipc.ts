@@ -13,6 +13,29 @@ function validateSig(v: unknown): string {
   throw new Error(`invalid record signature: ${String(v)}`)
 }
 
+function validateSigArray(v: unknown): string[] {
+  if (!Array.isArray(v)) throw new Error(`invalid record signature list: ${String(v)}`)
+  return v.map((sig) => validateSig(sig))
+}
+
+function validateSearchField(v: unknown): 'edid' | 'name' | 'both' {
+  if (v === 'edid' || v === 'name' || v === 'both') return v
+  throw new Error(`invalid search field: expected edid|name|both, got ${String(v)}`)
+}
+
+function validateFilterOp(v: unknown): 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' {
+  if (v === 'exists' || v === 'eq' || v === 'contains' || v === 'gt' || v === 'lt' || v === 'gte' || v === 'lte') {
+    return v
+  }
+  throw new Error(`invalid filter op: expected exists|eq|contains|gt|lt|gte|lte, got ${String(v)}`)
+}
+
+function validateOptionalText(name: string, v: unknown, max = 512): string | undefined {
+  if (v === undefined || v === null) return undefined
+  if (typeof v === 'string' && v.length <= max) return v
+  throw new Error(`invalid ${name}: must be a string of length <= ${max}`)
+}
+
 function validateUint(name: string, v: unknown, max = 100_000): number {
   if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max) return v
   throw new Error(`invalid ${name}: expected integer 0–${max}, got ${String(v)}`)
@@ -91,11 +114,12 @@ export function registerIpc(): void {
     return wrap(() => entry.db.recordByFormid(validFormid, validResolve))
   })
 
-  ipcMain.handle(CH.recordByEdid, async (_e, id: string, edid: unknown) => {
+  ipcMain.handle(CH.recordByEdid, async (_e, id: string, edid: unknown, resolve: unknown = 'stub') => {
     const entry = registry.get(id)
     if (!entry) throw new Error(`no database with id ${id}`)
     const validEdid = validateTarget(edid)
-    return await entry.db.recordByEdid(validEdid)
+    const validResolve = validateResolve(resolve)
+    return await entry.db.recordByEdid(validEdid, validResolve)
   })
 
   ipcMain.handle(CH.recordById, async (_e, id: string, target: unknown, resolve: unknown = 'stub') => {
@@ -136,5 +160,49 @@ export function registerIpc(): void {
     if (!entry) throw new Error(`no database with id ${id}`)
     const validOffset = validateUint('groupOffset', groupOffset, Number.MAX_SAFE_INTEGER)
     return wrap(() => entry.db.listGroupChildren(validOffset, validateUint('offset', offset), validateUint('limit', limit)))
+  })
+
+  ipcMain.handle(
+    CH.search,
+    (_e, id: string, pattern: unknown, types: unknown, field: unknown, limit: unknown) => {
+      const entry = registry.get(id)
+      if (!entry) throw new Error(`no database with id ${id}`)
+      const validPattern = validateOptionalText('pattern', pattern, 512) ?? ''
+      const validTypes = validateSigArray(types)
+      const validField = validateSearchField(field)
+      const validLimit = validateUint('limit', limit)
+      return wrap(() => entry.db.search(validPattern, validTypes, validField, validLimit))
+    }
+  )
+
+  ipcMain.handle(
+    CH.filterTypeRecords,
+    (
+      _e,
+      id: string,
+      sig: unknown,
+      path: unknown,
+      op: unknown,
+      value: unknown,
+      limit: unknown
+    ) => {
+      const entry = registry.get(id)
+      if (!entry) throw new Error(`no database with id ${id}`)
+      const validSig = validateSig(sig)
+      const validPath = validateOptionalText('path', path, 1024)
+      const validOp = validateFilterOp(op)
+      const validValue = validateOptionalText('value', value, 1024)
+      const validLimit = validateUint('limit', limit)
+      return wrap(() =>
+        entry.db.filterTypeRecords(validSig, validPath, validOp, validValue, validLimit)
+      )
+    }
+  )
+
+  ipcMain.handle(CH.listTypeFieldPaths, (_e, id: string, sig: unknown) => {
+    const entry = registry.get(id)
+    if (!entry) throw new Error(`no database with id ${id}`)
+    const validSig = validateSig(sig)
+    return wrap(() => entry.db.listTypeFieldPaths(validSig))
   })
 }

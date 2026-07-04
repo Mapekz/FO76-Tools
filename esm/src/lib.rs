@@ -69,6 +69,22 @@ pub struct Database {
     /// methods use binary search over this table instead of the HashMap in
     /// `index.form_index`.  The full index (`index`) is empty in this mode.
     pub mmap_index: Option<crate::mindex::MmapFormIndex>,
+    /// Per-record-type memoized decode, populated lazily by `filter_type_records`
+    /// and `list_type_field_paths`. In-memory only — never persisted, no
+    /// CACHE_VERSION bump (these are ephemeral, rebuilt each time the Database
+    /// is opened; `tree`/`GroupLabel`/`RecordStub` in `tree.rs` are the only
+    /// precedent for presentation-layer types, and this is analogous — it's not
+    /// part of the bincode-cached Index at all).
+    filter_cache: std::collections::HashMap<String, (usize, Vec<FilterCacheEntry>)>,
+}
+
+/// One memoized, fully-decoded record used by [`Database::filter_type_records`]
+/// and [`Database::list_type_field_paths`].
+struct FilterCacheEntry {
+    form_id: FormId,
+    editor_id: Option<String>,
+    offset: u64,
+    fields: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +121,243 @@ pub enum SearchField {
     Name,
     /// Match EditorID **or** display name / description (default).
     Both,
+}
+
+/// Comparison operator for [`Database::filter_type_records`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterOp {
+    /// True iff the path resolves to a present value (even `null`). No `value` used.
+    Exists,
+    /// Numeric equality if both sides parse as numbers; otherwise a
+    /// case-insensitive exact string match.
+    Eq,
+    /// Case-insensitive substring match; deep-scans if the resolved value is
+    /// itself an object or array.
+    Contains,
+    /// Numeric greater-than.
+    Gt,
+    /// Numeric less-than.
+    Lt,
+    /// Numeric greater-than-or-equal.
+    Gte,
+    /// Numeric less-than-or-equal.
+    Lte,
+}
+
+/// Maximum number of records of a single type decoded and cached by
+/// [`Database::ensure_filter_cache`]. Types like REFR/NAVM/LAND can have tens
+/// or hundreds of thousands of records; a full schema-driven decode of all of
+/// them is meaningfully more expensive than the cheap header/EDID scans
+/// `ensure_xref_index`/`ensure_search_index` already do at full-file scale.
+/// `records_by_type` is FormID-sorted, so this is a stable, deterministic
+/// subset rather than an arbitrary truncation.
+const FILTER_SCAN_CAP: usize = 20_000;
+
+/// Evaluate a filter predicate against a decoded record's `fields` JSON body.
+///
+/// `path` is a dot-separated sequence of segments navigating into `fields`
+/// (schema-driven key names, e.g. `"Data.Damage"`). A segment of `"[]"` means
+/// "the current value must be a JSON array; recurse into every element for
+/// the remaining path, matching if ANY element satisfies it". An empty/`None`
+/// path means "deep-scan every value anywhere in the record, matching if ANY
+/// value anywhere satisfies the operator".
+fn predicate_matches(
+    fields: &Value,
+    path: Option<&str>,
+    op: FilterOp,
+    value: Option<&str>,
+) -> bool {
+    let path = path.map(str::trim).filter(|p| !p.is_empty());
+    match path {
+        None => deep_scan_matches(fields, op, value),
+        Some(p) => {
+            let segments: Vec<&str> = p.split('.').collect();
+            navigate_matches(fields, &segments, op, value)
+        }
+    }
+}
+
+/// Walk `segments` into `current`, applying `[]` array-wildcard fan-out, and
+/// test the operator once the path is exhausted. Returns `false` if the path
+/// doesn't exist in the JSON (e.g. an object without the requested key).
+fn navigate_matches(current: &Value, segments: &[&str], op: FilterOp, value: Option<&str>) -> bool {
+    match segments.split_first() {
+        None => op_matches(current, op, value),
+        Some((&"[]", rest)) => match current {
+            Value::Array(items) => items
+                .iter()
+                .any(|item| navigate_matches(item, rest, op, value)),
+            _ => false,
+        },
+        Some((seg, rest)) => match current {
+            Value::Object(map) => match map.get(*seg) {
+                Some(next) => navigate_matches(next, rest, op, value),
+                None => false,
+            },
+            _ => false,
+        },
+    }
+}
+
+/// Test the operator against a value reached via explicit path navigation.
+/// `Contains` deep-scans when the terminal value is itself a container.
+fn op_matches(current: &Value, op: FilterOp, value: Option<&str>) -> bool {
+    match op {
+        FilterOp::Exists => true,
+        FilterOp::Contains => match current {
+            Value::Object(_) | Value::Array(_) => deep_scan_matches(current, op, value),
+            _ => value_matches(current, op, value),
+        },
+        _ => value_matches(current, op, value),
+    }
+}
+
+/// Recurse through every value anywhere in `v` (objects' values, array
+/// elements, and scalars), matching if ANY value satisfies the operator.
+fn deep_scan_matches(v: &Value, op: FilterOp, value: Option<&str>) -> bool {
+    if value_matches(v, op, value) {
+        return true;
+    }
+    match v {
+        Value::Object(map) => map.values().any(|vv| deep_scan_matches(vv, op, value)),
+        Value::Array(items) => items.iter().any(|vv| deep_scan_matches(vv, op, value)),
+        _ => false,
+    }
+}
+
+/// Scalar-only operator test: containers never match directly here — the
+/// caller's recursion (`deep_scan_matches`/`op_matches`) is responsible for
+/// visiting a container's children.
+fn value_matches(current: &Value, op: FilterOp, value: Option<&str>) -> bool {
+    if matches!(current, Value::Object(_) | Value::Array(_)) {
+        return false;
+    }
+    match op {
+        FilterOp::Exists => true,
+        FilterOp::Eq => eq_matches(current, value),
+        FilterOp::Contains => match value {
+            Some(needle) => stringify_scalar(current)
+                .map(|s| s.to_lowercase().contains(&needle.to_lowercase()))
+                .unwrap_or(false),
+            None => false,
+        },
+        FilterOp::Gt | FilterOp::Lt | FilterOp::Gte | FilterOp::Lte => {
+            numeric_matches(current, op, value)
+        }
+    }
+}
+
+/// Render a scalar JSON value as its natural display text (strings as raw
+/// content, not JSON-quoted). Returns `None` for objects/arrays.
+fn stringify_scalar(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        Value::Null => Some("null".to_string()),
+        Value::Object(_) | Value::Array(_) => None,
+    }
+}
+
+fn eq_matches(current: &Value, value: Option<&str>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    if let Value::Number(n) = current {
+        if let (Some(cur_f), Ok(val_f)) = (n.as_f64(), value.parse::<f64>()) {
+            return cur_f == val_f;
+        }
+    }
+    match stringify_scalar(current) {
+        Some(s) => s.eq_ignore_ascii_case(value),
+        None => false,
+    }
+}
+
+fn numeric_matches(current: &Value, op: FilterOp, value: Option<&str>) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+    let Ok(val_f) = value.parse::<f64>() else {
+        return false;
+    };
+    let cur_f = match current {
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.parse::<f64>().ok(),
+        _ => None,
+    };
+    let Some(cur_f) = cur_f else {
+        return false;
+    };
+    match op {
+        FilterOp::Gt => cur_f > val_f,
+        FilterOp::Lt => cur_f < val_f,
+        FilterOp::Gte => cur_f >= val_f,
+        FilterOp::Lte => cur_f <= val_f,
+        _ => false,
+    }
+}
+
+/// Collect every dot-notation field path present in `v` into `out`, capping
+/// defensively once `out` reaches `cap` entries. Array levels collapse to a
+/// literal `"[]"` segment regardless of index.
+fn collect_field_paths(v: &Value, prefix: &str, out: &mut HashSet<String>, cap: usize) {
+    if out.len() >= cap {
+        return;
+    }
+    match v {
+        Value::Object(map) => {
+            for (k, vv) in map {
+                let next = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                out.insert(next.clone());
+                collect_field_paths(vv, &next, out, cap);
+                if out.len() >= cap {
+                    return;
+                }
+            }
+        }
+        Value::Array(items) => {
+            let next = if prefix.is_empty() {
+                "[]".to_string()
+            } else {
+                format!("{prefix}.[]")
+            };
+            out.insert(next.clone());
+            for item in items {
+                collect_field_paths(item, &next, out, cap);
+                if out.len() >= cap {
+                    return;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Result envelope for [`Database::filter_type_records`] — reports both
+/// whether the requested `limit` truncated the match list, and whether the
+/// underlying decode itself was capped (see [`FILTER_SCAN_CAP`]) for a huge
+/// type, so callers can honestly report "N of M possible matches, based on
+/// the first K of L total records of this type" rather than silently
+/// under-covering.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilterResult {
+    pub rows: Vec<RecordRow>,
+    /// Total matches found within the scanned set (may exceed rows.len() if `limit` truncated).
+    pub matched: usize,
+    /// How many records of this type were actually decoded and tested.
+    pub scanned: usize,
+    /// Total records of this type that exist in the file.
+    pub total: usize,
+    /// True if rows.len() < matched (the match list itself was truncated by `limit`).
+    pub capped: bool,
+    /// True if scanned < total (the decode pass itself stopped at FILTER_SCAN_CAP).
+    pub scan_capped: bool,
 }
 
 impl Database {
@@ -186,6 +439,7 @@ impl Database {
             localization,
             curves,
             mmap_index: None,
+            filter_cache: std::collections::HashMap::new(),
         })
     }
 
@@ -219,6 +473,7 @@ impl Database {
             localization: None,
             curves: None,
             mmap_index: Some(mmap_index),
+            filter_cache: std::collections::HashMap::new(),
         })
     }
 
@@ -792,6 +1047,140 @@ impl Database {
             .with_context(|| format!("EditorID '{}' not found", edid))?;
         self.record_by_formid_resolved(form_id, depth)
     }
+
+    /// Populate `self.filter_cache` for `sig` (already uppercased) on first
+    /// access, decoding at most [`FILTER_SCAN_CAP`] records. No-op if already
+    /// cached. Used by [`Database::filter_type_records`] and
+    /// [`Database::list_type_field_paths`].
+    fn ensure_filter_cache(&mut self, sig: &str) -> anyhow::Result<()> {
+        self.check_not_lite("filter_type_records")?;
+        if self.filter_cache.contains_key(sig) {
+            return Ok(());
+        }
+
+        let all_records = self.index.records_by_type(sig);
+        let total = all_records.len();
+        let records: Vec<(FormId, u64)> = all_records
+            .into_iter()
+            .take(FILTER_SCAN_CAP)
+            .map(|(fid, meta)| (fid, meta.offset))
+            .collect();
+
+        let mut entries = Vec::with_capacity(records.len());
+        for (form_id, offset) in records {
+            let parsed = self.esm.parse_record_at(offset)?;
+            let editor_id = edid_from_subrecords(&parsed.subrecords);
+            let ctx = DecodeContext {
+                schema: &self.schema,
+                form_version: parsed.header.form_version,
+                is_localized: self.is_localized,
+                localization: self.localization.as_ref(),
+                curves: self.curves.as_ref(),
+                resolve_depth: crate::decode::ResolveDepth::None,
+                resolver: None,
+                outer_struct: None,
+                record_signature: None,
+                record_edid_char: None,
+                scope_min_doc_index: None,
+                scope_max_doc_index: None,
+            };
+            let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
+            entries.push(FilterCacheEntry {
+                form_id,
+                editor_id,
+                offset,
+                fields,
+            });
+        }
+
+        self.filter_cache.insert(sig.to_string(), (total, entries));
+        Ok(())
+    }
+
+    /// Filter records of type `sig` by a predicate against their decoded
+    /// `fields` JSON body. See [`FilterOp`] and [`predicate_matches`] for the
+    /// path syntax and operator semantics.
+    ///
+    /// `path` of `None`/empty deep-scans every value in the record. `limit`
+    /// of `0` means no limit. Decoding itself is capped at [`FILTER_SCAN_CAP`]
+    /// records per type — see [`FilterResult::scan_capped`].
+    pub fn filter_type_records(
+        &mut self,
+        sig: &str,
+        path: Option<&str>,
+        op: FilterOp,
+        value: Option<&str>,
+        limit: usize,
+    ) -> anyhow::Result<FilterResult> {
+        self.check_not_lite("filter_type_records")?;
+        let sig = sig.to_uppercase();
+        self.ensure_filter_cache(&sig)?;
+
+        let (total, entries) = self
+            .filter_cache
+            .get(&sig)
+            .expect("populated by ensure_filter_cache");
+        let total = *total;
+        let scanned = entries.len();
+
+        let mut matches: Vec<&FilterCacheEntry> = entries
+            .iter()
+            .filter(|e| predicate_matches(&e.fields, path, op, value))
+            .collect();
+        matches.sort_by_key(|e| e.form_id.raw());
+
+        let matched = matches.len();
+        let capped = limit > 0 && matched > limit;
+        let take_n = if limit == 0 { matched } else { limit };
+        let rows: Vec<RecordRow> = matches
+            .into_iter()
+            .take(take_n)
+            .map(|e| RecordRow {
+                form_id: e.form_id.display(),
+                record_type: Some(sig.clone()),
+                editor_id: e.editor_id.clone(),
+                name: None,
+                offset: e.offset,
+            })
+            .collect();
+
+        Ok(FilterResult {
+            rows,
+            matched,
+            scanned,
+            total,
+            capped,
+            scan_capped: scanned < total,
+        })
+    }
+
+    /// Union of all dot-notation field paths observed across the (possibly
+    /// capped) decoded sample of a type's records — for filter-panel
+    /// autocomplete. Array levels collapse to a literal `"[]"` segment
+    /// regardless of index (all elements of an array share the same
+    /// predicate-path shape). Sorted, deduped, capped defensively at a few
+    /// thousand entries against pathological records.
+    pub fn list_type_field_paths(&mut self, sig: &str) -> anyhow::Result<Vec<String>> {
+        const MAX_PATHS: usize = 5000;
+        let sig = sig.to_uppercase();
+        self.ensure_filter_cache(&sig)?;
+        let (_, entries) = self
+            .filter_cache
+            .get(&sig)
+            .expect("populated by ensure_filter_cache");
+
+        let mut paths: HashSet<String> = HashSet::new();
+        for entry in entries {
+            if paths.len() >= MAX_PATHS {
+                break;
+            }
+            collect_field_paths(&entry.fields, "", &mut paths, MAX_PATHS);
+        }
+        let mut out: Vec<String> = paths.into_iter().collect();
+        out.sort();
+        out.truncate(MAX_PATHS);
+        Ok(out)
+    }
 }
 
 /// Adapter that wraps a [`Database`] and implements [`FormIdRefResolver`].
@@ -879,4 +1268,213 @@ pub fn looks_like_formid(s: &str) -> bool {
         .or_else(|| s.strip_prefix("0X"))
         .unwrap_or(s);
     !body.is_empty() && body.len() <= 8 && body.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod filter_predicate_tests {
+    use super::{predicate_matches, FilterOp};
+    use serde_json::json;
+
+    #[test]
+    fn simple_top_level_eq() {
+        let fields = json!({ "EditorID": "TestWeapon" });
+        assert!(predicate_matches(
+            &fields,
+            Some("EditorID"),
+            FilterOp::Eq,
+            Some("testweapon")
+        ));
+        assert!(!predicate_matches(
+            &fields,
+            Some("EditorID"),
+            FilterOp::Eq,
+            Some("other")
+        ));
+    }
+
+    #[test]
+    fn simple_top_level_contains() {
+        let fields = json!({ "Name": "Combat Rifle" });
+        assert!(predicate_matches(
+            &fields,
+            Some("Name"),
+            FilterOp::Contains,
+            Some("rifle")
+        ));
+        assert!(!predicate_matches(
+            &fields,
+            Some("Name"),
+            FilterOp::Contains,
+            Some("shotgun")
+        ));
+    }
+
+    #[test]
+    fn simple_top_level_gt() {
+        let fields = json!({ "Value": 50 });
+        assert!(predicate_matches(
+            &fields,
+            Some("Value"),
+            FilterOp::Gt,
+            Some("10")
+        ));
+        assert!(!predicate_matches(
+            &fields,
+            Some("Value"),
+            FilterOp::Gt,
+            Some("100")
+        ));
+    }
+
+    #[test]
+    fn nested_dot_path_navigation() {
+        let fields = json!({ "Data": { "Damage": 25, "Weight": 5.5 } });
+        assert!(predicate_matches(
+            &fields,
+            Some("Data.Damage"),
+            FilterOp::Eq,
+            Some("25")
+        ));
+        assert!(predicate_matches(
+            &fields,
+            Some("Data.Weight"),
+            FilterOp::Lt,
+            Some("10")
+        ));
+        assert!(!predicate_matches(
+            &fields,
+            Some("Data.Missing"),
+            FilterOp::Exists,
+            None
+        ));
+    }
+
+    #[test]
+    fn array_wildcard_matches_any_element() {
+        let fields = json!({
+            "Components": [
+                { "Component": "Steel", "Count": 2 },
+                { "Component": "Wood", "Count": 1 },
+            ]
+        });
+        assert!(predicate_matches(
+            &fields,
+            Some("Components.[].Component"),
+            FilterOp::Eq,
+            Some("Wood")
+        ));
+        assert!(!predicate_matches(
+            &fields,
+            Some("Components.[].Component"),
+            FilterOp::Eq,
+            Some("Aluminum")
+        ));
+    }
+
+    #[test]
+    fn empty_path_deep_scan() {
+        let fields = json!({
+            "Data": { "Damage": 25 },
+            "Keywords": ["WeapTypeRifle", "Craftable"],
+        });
+        // Deep-scan finds a nested value anywhere in the tree.
+        assert!(predicate_matches(&fields, None, FilterOp::Eq, Some("25")));
+        assert!(predicate_matches(
+            &fields,
+            Some(""),
+            FilterOp::Contains,
+            Some("rifle")
+        ));
+        assert!(!predicate_matches(
+            &fields,
+            None,
+            FilterOp::Eq,
+            Some("nope")
+        ));
+    }
+
+    #[test]
+    fn exists_on_present_but_null_field() {
+        let fields = json!({ "Optional": null });
+        assert!(predicate_matches(
+            &fields,
+            Some("Optional"),
+            FilterOp::Exists,
+            None
+        ));
+    }
+
+    #[test]
+    fn exists_on_genuinely_missing_field() {
+        let fields = json!({ "Other": 1 });
+        assert!(!predicate_matches(
+            &fields,
+            Some("Missing"),
+            FilterOp::Exists,
+            None
+        ));
+    }
+
+    #[test]
+    fn numeric_eq_matches_string_value_against_json_number() {
+        let fields = json!({ "Value": 50.0 });
+        assert!(predicate_matches(
+            &fields,
+            Some("Value"),
+            FilterOp::Eq,
+            Some("50")
+        ));
+    }
+
+    #[test]
+    fn contains_matches_substring_of_stringified_number() {
+        let fields = json!({ "Code": 1234 });
+        assert!(predicate_matches(
+            &fields,
+            Some("Code"),
+            FilterOp::Contains,
+            Some("23")
+        ));
+    }
+
+    #[test]
+    fn gt_wrong_type_does_not_match() {
+        let fields = json!({ "Name": "not a number" });
+        assert!(!predicate_matches(
+            &fields,
+            Some("Name"),
+            FilterOp::Gt,
+            Some("10")
+        ));
+    }
+
+    #[test]
+    fn gt_unparseable_value_does_not_match() {
+        let fields = json!({ "Value": 50 });
+        assert!(!predicate_matches(
+            &fields,
+            Some("Value"),
+            FilterOp::Gt,
+            Some("not-a-number")
+        ));
+    }
+
+    #[test]
+    fn contains_on_object_deep_scans_nested_values() {
+        let fields = json!({
+            "Data": { "Nested": { "Label": "SpecialSteel" } }
+        });
+        assert!(predicate_matches(
+            &fields,
+            Some("Data"),
+            FilterOp::Contains,
+            Some("steel")
+        ));
+        assert!(!predicate_matches(
+            &fields,
+            Some("Data"),
+            FilterOp::Contains,
+            Some("wood")
+        ));
+    }
 }

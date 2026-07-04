@@ -1,14 +1,19 @@
-import React, { useCallback, useEffect } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { OpenFilesPanel } from './components/OpenFilesPanel'
 import { RecordTree } from './components/RecordTree'
 import { RecordDetail } from './components/RecordDetail'
 import { ReferencedByPanel } from './components/ReferencedByPanel'
 import { NavHistory } from './components/NavHistory'
+import { SearchPanel } from './components/SearchPanel'
+import { FilterPanel } from './components/FilterPanel'
 import { useStore } from './store'
+
+type LeftView = 'tree' | 'search' | 'filter'
 
 export function App() {
   const { setActiveRecord, setReferencedBy, navPush, navBack, navForward, referencedByDepth } =
     useStore()
+  const [leftView, setLeftView] = useState<LeftView>('tree')
 
   // Fetch + display a record without touching nav history. Used for Back/Forward
   // (which already moved the history index themselves) and as the shared core
@@ -73,7 +78,28 @@ export function App() {
       {/* Left panel */}
       <div style={{ width: 320, borderRight: '1px solid #444', display: 'flex', flexDirection: 'column' }}>
         <OpenFilesPanel />
-        <RecordTree onNavigate={navigate} />
+        <div style={{ display: 'flex', gap: 4, padding: '4px 8px', borderBottom: '1px solid #444' }}>
+          {(['tree', 'search', 'filter'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setLeftView(v)}
+              style={{
+                fontSize: 11,
+                padding: '3px 8px',
+                background: leftView === v ? '#33395a' : '#16213e',
+                color: '#e0e0e0',
+                border: '1px solid #444',
+                borderRadius: 3,
+                cursor: 'pointer'
+              }}
+            >
+              {v === 'tree' ? 'Tree' : v === 'search' ? 'Search' : 'Filter'}
+            </button>
+          ))}
+        </div>
+        {leftView === 'tree' && <RecordTree onNavigate={navigate} />}
+        {leftView === 'search' && <SearchPanel onNavigate={navigate} />}
+        {leftView === 'filter' && <FilterPanel onNavigate={navigate} />}
       </div>
       {/* Right panel */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>

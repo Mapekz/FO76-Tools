@@ -15,6 +15,9 @@ export const CH = {
   parseFormId: 'parse-form-id',
   listTypeChildren: 'list-type-children',
   listGroupChildren: 'list-group-children',
+  search: 'search',
+  filterTypeRecords: 'filter-type-records',
+  listTypeFieldPaths: 'list-type-field-paths',
 } as const
 
 export type DbId = string
@@ -111,6 +114,23 @@ export interface RecordResult {
   fields: Record<string, unknown>
 }
 
+/** Result envelope for `filterTypeRecords` — mirrors Rust `FilterResult`. */
+export interface FilterResult {
+  rows: RecordRow[]
+  /** Total matches found within the scanned set (may exceed rows.length if `limit` truncated). */
+  matched: number
+  /** How many records of this type were actually decoded and tested. */
+  scanned: number
+  /** Total records of this type that exist in the file. */
+  total: number
+  /** True if rows.length < matched (the match list itself was truncated by `limit`). */
+  capped: boolean
+  /** True if scanned < total (the decode pass itself stopped at the internal scan cap). */
+  scan_capped: boolean
+}
+
+export type FilterOp = 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte'
+
 export interface Fo76Api {
   openFileDialog(): Promise<string | null>
   openFolderDialog(): Promise<string | null>
@@ -121,7 +141,7 @@ export interface Fo76Api {
   listGroups(id: DbId): Promise<GroupNode[]>
   listTypeRecords(id: DbId, sig: string, offset: number, limit: number): Promise<RecordRow[]>
   recordByFormid(id: DbId, formid: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
-  recordByEdid(id: DbId, edid: string): Promise<RecordResult>
+  recordByEdid(id: DbId, edid: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
   recordById(id: DbId, target: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
   referencedBy(id: DbId, formid: string): Promise<RecordRow[]>
   referencedById(id: DbId, target: string, depth?: number): Promise<RefListResult>
@@ -133,4 +153,20 @@ export interface Fo76Api {
     offset: number,
     limit: number
   ): Promise<GroupChild[]>
+  search(
+    id: DbId,
+    pattern: string,
+    types: string[],
+    field: 'edid' | 'name' | 'both',
+    limit: number
+  ): Promise<RecordRow[]>
+  filterTypeRecords(
+    id: DbId,
+    sig: string,
+    path: string | undefined,
+    op: FilterOp,
+    value: string | undefined,
+    limit: number
+  ): Promise<FilterResult>
+  listTypeFieldPaths(id: DbId, sig: string): Promise<string[]>
 }
