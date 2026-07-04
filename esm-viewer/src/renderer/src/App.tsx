@@ -7,9 +7,10 @@ import { NavHistory } from './components/NavHistory'
 import { SearchPanel } from './components/SearchPanel'
 import { FilterPanel } from './components/FilterPanel'
 import { CoveragePanel } from './components/CoveragePanel'
+import { DiffPanel } from './components/DiffPanel'
 import { useStore } from './store'
 
-type LeftView = 'tree' | 'search' | 'filter' | 'coverage'
+type LeftView = 'tree' | 'search' | 'filter' | 'coverage' | 'diff'
 
 export function App() {
   const { setActiveRecord, setReferencedBy, navPush, navBack, navForward, referencedByDepth } =
@@ -80,7 +81,7 @@ export function App() {
       <div style={{ width: 320, borderRight: '1px solid #444', display: 'flex', flexDirection: 'column' }}>
         <OpenFilesPanel />
         <div style={{ display: 'flex', gap: 4, padding: '4px 8px', borderBottom: '1px solid #444' }}>
-          {(['tree', 'search', 'filter', 'coverage'] as const).map((v) => (
+          {(['tree', 'search', 'filter', 'coverage', 'diff'] as const).map((v) => (
             <button
               key={v}
               onClick={() => setLeftView(v)}
@@ -94,7 +95,15 @@ export function App() {
                 cursor: 'pointer'
               }}
             >
-              {v === 'tree' ? 'Tree' : v === 'search' ? 'Search' : v === 'filter' ? 'Filter' : 'Coverage'}
+              {v === 'tree'
+                ? 'Tree'
+                : v === 'search'
+                  ? 'Search'
+                  : v === 'filter'
+                    ? 'Filter'
+                    : v === 'coverage'
+                      ? 'Coverage'
+                      : 'Diff'}
             </button>
           ))}
         </div>
@@ -102,6 +111,7 @@ export function App() {
         {leftView === 'search' && <SearchPanel onNavigate={navigate} />}
         {leftView === 'filter' && <FilterPanel onNavigate={navigate} />}
         {leftView === 'coverage' && <CoveragePanel />}
+        {leftView === 'diff' && <DiffPanel onNavigate={navigate} />}
       </div>
       {/* Right panel */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>

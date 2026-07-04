@@ -79,4 +79,14 @@ export declare class EsmDatabase {
    * type; `sample` caps records decoded per type (0 = unlimited).
    */
   coverageReport(recordType: string | undefined | null, sample: number): Promise<any>
+  /**
+   * Compare this database (treated as the "old"/base snapshot) against
+   * `other` (the "new" snapshot). `record_type` (optional 4-char sig)
+   * restricts the diff to one type; `bodies` is "none"|"stub"|"full"
+   * (detail level for added/removed record bodies); `suppress_noise` strips
+   * known-noisy fields (placement/CELL-precombine) from `changed` records;
+   * `exclude_types` omits matching signatures from added/removed/changed
+   * entirely.
+   */
+  diff(other: EsmDatabase, recordType: string | undefined | null, bodies: string, suppressNoise: boolean, excludeTypes: Array<string>): Promise<any>
 }

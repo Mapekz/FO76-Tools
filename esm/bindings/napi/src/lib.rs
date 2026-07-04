@@ -334,6 +334,62 @@ impl EsmDatabase {
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
     }
+
+    /// Compare this database (treated as the "old"/base snapshot) against
+    /// `other` (the "new" snapshot). `record_type` (optional 4-char sig)
+    /// restricts the diff to one type; `bodies` is "none"|"stub"|"full"
+    /// (detail level for added/removed record bodies); `suppress_noise` strips
+    /// known-noisy fields (placement/CELL-precombine) from `changed` records;
+    /// `exclude_types` omits matching signatures from added/removed/changed
+    /// entirely.
+    #[napi]
+    pub async fn diff(
+        &self,
+        other: &EsmDatabase,
+        record_type: Option<String>,
+        bodies: String,
+        suppress_noise: bool,
+        exclude_types: Vec<String>,
+    ) -> napi::Result<serde_json::Value> {
+        let bodies = parse_body_detail(&bodies)?;
+        let arc_a = self.inner.clone();
+        let arc_b = other.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            let options = esm::diff::DiffOptions {
+                bodies,
+                suppress_noise,
+                exclude_types,
+            };
+            let same_db = Arc::ptr_eq(&arc_a, &arc_b);
+            let mut result = if same_db {
+                let db = arc_a
+                    .lock()
+                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+                esm::diff::diff_databases_with(&db, &db, &options)
+            } else if (Arc::as_ptr(&arc_a) as usize) < (Arc::as_ptr(&arc_b) as usize) {
+                let db_a = arc_a
+                    .lock()
+                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+                let db_b = arc_b
+                    .lock()
+                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+                esm::diff::diff_databases_with(&db_a, &db_b, &options)
+            } else {
+                let db_b = arc_b
+                    .lock()
+                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+                let db_a = arc_a
+                    .lock()
+                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+                esm::diff::diff_databases_with(&db_a, &db_b, &options)
+            }
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+            esm::diff::apply_type_filter(&mut result, &record_type);
+            serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+    }
 }
 
 /// Parse a FormID hex string to its display form.
@@ -363,6 +419,17 @@ fn parse_search_field(s: &str) -> napi::Result<SearchField> {
         "both" => Ok(SearchField::Both),
         other => Err(napi::Error::from_reason(format!(
             "unknown search field '{other}'; expected edid|name|both"
+        ))),
+    }
+}
+
+fn parse_body_detail(s: &str) -> napi::Result<esm::diff::BodyDetail> {
+    match s {
+        "none" => Ok(esm::diff::BodyDetail::None),
+        "stub" => Ok(esm::diff::BodyDetail::Stub),
+        "full" => Ok(esm::diff::BodyDetail::Full),
+        other => Err(napi::Error::from_reason(format!(
+            "unknown body detail '{other}'; expected none|stub|full"
         ))),
     }
 }

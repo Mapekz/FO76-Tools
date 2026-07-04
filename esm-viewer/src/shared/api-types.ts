@@ -20,6 +20,7 @@ export const CH = {
   listTypeFieldPaths: 'list-type-field-paths',
   recordRaw: 'record-raw',
   coverageReport: 'coverage-report',
+  diff: 'diff',
 } as const
 
 export type DbId = string
@@ -157,6 +158,44 @@ export interface CoverageReport {
   totals: Markers
 }
 
+/** Lightweight record identity for added/removed entries (diff output). */
+export interface RecordStubDiff {
+  form_id: string
+  editor_id?: string
+  record_type: string
+  offset: number
+  name?: string
+  description?: string
+  /** Decoded fields, present only when `bodies` was `'stub'` or `'full'`. */
+  fields?: unknown
+}
+
+/** One record present in both snapshots whose decoded fields differ. */
+export interface RecordChangeDiff {
+  stub: RecordStubDiff
+  /** Sparse tree: only changed paths, each leaf `{ from, to }`. */
+  field_changes: unknown
+  /** Set only when the EditorID was renamed (this is the "old" snapshot's EDID). */
+  prev_editor_id?: string
+}
+
+/** Resolved display info for a FormID referenced in a diff (added/removed bodies or field_changes). */
+export interface RefNameEntry {
+  record_type: string
+  editor_id?: string
+  name?: string
+  description?: string
+}
+
+/** Full envelope returned by `diff` — mirrors Rust `DiffResult`. */
+export interface DiffResult {
+  added: RecordStubDiff[]
+  removed: RecordStubDiff[]
+  changed: RecordChangeDiff[]
+  ref_names: Record<string, RefNameEntry>
+  suppressed_counts: Record<string, number>
+}
+
 export interface Fo76Api {
   openFileDialog(): Promise<string | null>
   openFolderDialog(): Promise<string | null>
@@ -197,4 +236,12 @@ export interface Fo76Api {
   listTypeFieldPaths(id: DbId, sig: string): Promise<string[]>
   recordRaw(id: DbId, target: string): Promise<RawRecordView>
   coverageReport(id: DbId, recordType: string | undefined, sample: number): Promise<CoverageReport>
+  diff(
+    oldId: DbId,
+    newId: DbId,
+    recordType: string | undefined,
+    bodies: 'none' | 'stub' | 'full',
+    suppressNoise: boolean,
+    excludeTypes: string[]
+  ): Promise<DiffResult>
 }

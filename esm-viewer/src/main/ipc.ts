@@ -23,6 +23,11 @@ function validateSearchField(v: unknown): 'edid' | 'name' | 'both' {
   throw new Error(`invalid search field: expected edid|name|both, got ${String(v)}`)
 }
 
+function validateBodies(v: unknown): 'none' | 'stub' | 'full' {
+  if (v === 'none' || v === 'stub' || v === 'full') return v
+  throw new Error(`invalid bodies value: expected none|stub|full, got ${String(v)}`)
+}
+
 function validateFilterOp(v: unknown): 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' {
   if (v === 'exists' || v === 'eq' || v === 'contains' || v === 'gt' || v === 'lt' || v === 'gte' || v === 'lte') {
     return v
@@ -220,4 +225,35 @@ export function registerIpc(): void {
     const validSample = validateUint('sample', sample)
     return await entry.db.coverageReport(validRecordType, validSample)
   })
+
+  ipcMain.handle(
+    CH.diff,
+    async (
+      _e,
+      oldId: string,
+      newId: string,
+      recordType: unknown,
+      bodies: unknown,
+      suppressNoise: unknown,
+      excludeTypes: unknown
+    ) => {
+      const entryOld = registry.get(oldId)
+      const entryNew = registry.get(newId)
+      if (!entryOld) throw new Error(`no database with id ${oldId}`)
+      if (!entryNew) throw new Error(`no database with id ${newId}`)
+      const validRecordType = validateOptionalText('recordType', recordType, 4)
+      const validBodies = validateBodies(bodies)
+      if (typeof suppressNoise !== 'boolean') {
+        throw new Error(`invalid suppressNoise: expected boolean, got ${String(suppressNoise)}`)
+      }
+      const validExcludeTypes = validateSigArray(excludeTypes ?? [])
+      return await entryOld.db.diff(
+        entryNew.db,
+        validRecordType,
+        validBodies,
+        suppressNoise,
+        validExcludeTypes
+      )
+    }
+  )
 }

@@ -34,6 +34,8 @@ const api: Fo76Api = {
   recordRaw: (id, target) => ipcRenderer.invoke(CH.recordRaw, id, target),
   coverageReport: (id, recordType, sample) =>
     ipcRenderer.invoke(CH.coverageReport, id, recordType, sample),
+  diff: (oldId, newId, recordType, bodies, suppressNoise, excludeTypes) =>
+    ipcRenderer.invoke(CH.diff, oldId, newId, recordType, bodies, suppressNoise, excludeTypes),
 }
 
 contextBridge.exposeInMainWorld('api', api)
