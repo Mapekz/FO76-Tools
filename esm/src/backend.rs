@@ -192,6 +192,7 @@ pub trait QueryBackend {
             Op::Diff {
                 b: esm_b.to_path_buf(),
                 record_type,
+                options: crate::diff::DiffOptions::default(),
             },
         )?;
         Ok(serde_json::from_value(v)?)

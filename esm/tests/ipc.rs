@@ -1,9 +1,9 @@
 mod common;
 
-use common::{make_minimal_esm, unique_temp_path};
+use common::{append_record, make_minimal_esm, tes4_header, unique_temp_path, wrap_grup};
 use esm::ipc::{dispatch, Op, RecordSel, Request, Response};
 use esm::registry::Registry;
-use esm::{Database, ResolveDepth, SearchField};
+use esm::{BodyDetail, Database, DiffOptions, DiffResult, ResolveDepth, SearchField};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -129,6 +129,7 @@ fn dispatch_diff_same_path_does_not_deadlock() {
         op: Op::Diff {
             b: path.clone(),
             record_type: None,
+            options: DiffOptions::default(),
         },
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
@@ -224,4 +225,141 @@ fn record_sel_json_round_trip() {
         let json2 = serde_json::to_string(&back).expect("re-serialize");
         assert_eq!(json, json2, "round-trip mismatch for {:?}", sel);
     }
+}
+
+/// A pre-`options` wire client (e.g. an older N-API build) sends `Op::Diff`
+/// JSON with no `options` field at all. `#[serde(default)]` on that field
+/// must fill in `DiffOptions::default()` rather than failing to deserialize.
+#[test]
+fn op_diff_without_options_field_deserializes() {
+    let json = r#"{
+        "esm": "Game.esm",
+        "op": {
+            "op": "diff",
+            "b": "Other.esm",
+            "record_type": null
+        }
+    }"#;
+    let req: Request = serde_json::from_str(json).expect("deserialize");
+    match req.op {
+        Op::Diff {
+            b,
+            record_type,
+            options,
+        } => {
+            assert_eq!(b, PathBuf::from("Other.esm"));
+            assert_eq!(record_type, None);
+            assert_eq!(options.bodies, BodyDetail::Full);
+            assert!(options.suppress_noise);
+            assert!(options.exclude_types.is_empty());
+        }
+        other => panic!("expected Op::Diff, got {other:?}"),
+    }
+}
+
+/// Non-default `DiffOptions` (stub bodies, noise kept, explicit type
+/// exclusions) must survive a full JSON round-trip on `Op::Diff` — both the
+/// re-serialized wire form and each individual field.
+#[test]
+fn op_diff_with_options_roundtrip() {
+    let op = Op::Diff {
+        b: PathBuf::from("Other.esm"),
+        record_type: Some("WEAP".to_string()),
+        options: DiffOptions {
+            bodies: BodyDetail::Stub,
+            suppress_noise: false,
+            exclude_types: vec!["LAND".to_string(), "NAVM".to_string()],
+        },
+    };
+    let req = Request {
+        esm: PathBuf::from("Game.esm"),
+        op,
+    };
+
+    let json = serde_json::to_string(&req).expect("serialize");
+    let back: Request = serde_json::from_str(&json).expect("deserialize");
+    let json2 = serde_json::to_string(&back).expect("re-serialize");
+    assert_eq!(json, json2, "round-trip mismatch");
+
+    match back.op {
+        Op::Diff {
+            b,
+            record_type,
+            options,
+        } => {
+            assert_eq!(b, PathBuf::from("Other.esm"));
+            assert_eq!(record_type, Some("WEAP".to_string()));
+            assert_eq!(options.bodies, BodyDetail::Stub);
+            assert!(!options.suppress_noise);
+            assert_eq!(
+                options.exclude_types,
+                vec!["LAND".to_string(), "NAVM".to_string()]
+            );
+        }
+        other => panic!("expected Op::Diff, got {other:?}"),
+    }
+}
+
+/// End-to-end: dispatch `Op::Diff` with non-default options (`bodies: None`,
+/// an explicit `exclude_types` filter) across two distinct synthetic ESMs and
+/// confirm both the added/removed bookkeeping and the options themselves took
+/// effect through the full `Registry` → `dispatch` path (not just
+/// `diff_databases_with` called directly, which `tests/diff.rs` already
+/// covers).
+#[test]
+fn dispatch_diff_two_esms_with_options() {
+    // A: one WEAP(1) record. B: that WEAP is gone, and a new MISC(2) record
+    // exists instead — so WEAP(1) is "removed" and MISC(2) is "added".
+    let mut weap_recs = Vec::new();
+    append_record(&mut weap_recs, b"WEAP", 1, &[]);
+    let mut buf_a = tes4_header();
+    buf_a.extend(wrap_grup(b"WEAP", &weap_recs));
+
+    let mut misc_recs = Vec::new();
+    append_record(&mut misc_recs, b"MISC", 2, &[]);
+    let mut buf_b = tes4_header();
+    buf_b.extend(wrap_grup(b"MISC", &misc_recs));
+
+    let path_a = unique_temp_path("ipc_diff_opts_a");
+    let path_b = unique_temp_path("ipc_diff_opts_b");
+    std::fs::File::create(&path_a)
+        .expect("create a")
+        .write_all(&buf_a)
+        .expect("write a");
+    std::fs::File::create(&path_b)
+        .expect("create b")
+        .write_all(&buf_b)
+        .expect("write b");
+
+    let reg = Registry::new();
+    let req = Request {
+        esm: path_a.clone(),
+        op: Op::Diff {
+            b: path_b.clone(),
+            record_type: None,
+            options: DiffOptions {
+                bodies: BodyDetail::None,
+                suppress_noise: true,
+                exclude_types: vec!["MISC".to_string()],
+            },
+        },
+    };
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok");
+    };
+    let diff: DiffResult = serde_json::from_value(data).expect("DiffResult");
+
+    // MISC is excluded outright, so only the WEAP removal survives.
+    assert_eq!(diff.removed.len(), 1);
+    assert_eq!(diff.removed[0].record_type, "WEAP");
+    assert!(diff.added.is_empty(), "MISC(2) must be excluded by options");
+
+    // bodies: None must skip the decoded body on the surviving stub.
+    assert!(
+        diff.removed[0].fields.is_none(),
+        "BodyDetail::None must skip fields"
+    );
+
+    let _ = std::fs::remove_file(&path_a);
+    let _ = std::fs::remove_file(&path_b);
 }

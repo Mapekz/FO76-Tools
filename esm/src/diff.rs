@@ -4,6 +4,7 @@
 //! for unchanged records; only records with different payloads are decoded and
 //! field-diffed via `json_diff`.
 
+use crate::decode::ResolveDepth;
 use crate::formid::{parse_formid, FormId};
 use crate::reader::{
     edid_from_subrecords, inline_string_from_subrecords, lstring_id_from_subrecords, OwnedSubrecord,
@@ -13,16 +14,55 @@ use crate::Database;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-/// Record types for which added records get fully-decoded spec sheets.
-const ADDED_DETAIL_TYPES: &[&str] = &[
-    "WEAP", "ARMO", "AMMO", "PROJ", "EXPL", "COBJ", "OMOD", "AVIF", "NPC_", "LVLI", "MGEF", "ENCH",
-];
+/// How much of an added/removed record's decoded body to attach to its stub.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyDetail {
+    /// Don't attach decoded fields at all — stub identity only.
+    None,
+    /// Attach fields with FormID references resolved to stubs (`ResolveDepth::Stub`).
+    Stub,
+    /// Attach fields with FormID references recursively expanded (`ResolveDepth::Full`).
+    Full,
+}
 
-#[inline]
-fn wants_detail(sig: &str) -> bool {
-    ADDED_DETAIL_TYPES.contains(&sig)
+impl BodyDetail {
+    /// Map to the `ResolveDepth` used to decode the body, or `None` when no
+    /// body should be decoded at all (`BodyDetail::None`).
+    fn resolve_depth(self) -> Option<ResolveDepth> {
+        match self {
+            BodyDetail::None => None,
+            BodyDetail::Stub => Some(ResolveDepth::Stub),
+            BodyDetail::Full => Some(ResolveDepth::Full),
+        }
+    }
+}
+
+/// Options controlling [`diff_databases_with`]'s behavior.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DiffOptions {
+    /// Detail level for decoded fields attached to added/removed record stubs.
+    pub bodies: BodyDetail,
+    /// Strip known-noisy fields (placement transforms, CELL precombine data,
+    /// …) from `changed` records, dropping the record entirely when nothing
+    /// else changed. See [`strip_noise_fields`].
+    pub suppress_noise: bool,
+    /// 4-character record-type signatures (e.g. `["LAND", "NAVM"]`) to omit
+    /// entirely from `added`, `removed`, and `changed`.
+    pub exclude_types: Vec<String>,
+}
+
+impl Default for DiffOptions {
+    fn default() -> Self {
+        Self {
+            bodies: BodyDetail::Full,
+            suppress_noise: true,
+            exclude_types: Vec::new(),
+        }
+    }
 }
 
 /// Lightweight record identity for added/removed entries.
@@ -38,8 +78,11 @@ pub struct RecordStub {
     /// Resolved DESC description (when localization is available).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Fully-decoded fields (ResolveDepth::Full) for *added* gameplay records.
-    /// Absent for removed/changed stubs and non-gameplay added types.
+    /// Decoded fields for *added*/*removed* records, at the depth requested
+    /// by `DiffOptions::bodies` (see [`BodyDetail`]). `None` when
+    /// `BodyDetail::None` was requested, or when the record failed to
+    /// decode. Always absent on `changed` stubs (see `RecordDiff::field_changes`
+    /// instead).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fields: Option<Value>,
 }
@@ -65,6 +108,8 @@ pub struct RefName {
     pub editor_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// Top-level result of comparing two ESM files.
@@ -81,6 +126,21 @@ pub struct DiffResult {
     /// Empty when no localization is available or no FormID references exist.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ref_names: BTreeMap<String, RefName>,
+    /// Count of `changed` records dropped entirely by noise suppression
+    /// (`DiffOptions::suppress_noise`), keyed by record-type signature.
+    /// Telemetry for renderers, e.g. "312 placement moves omitted".
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub suppressed_counts: BTreeMap<String, usize>,
+}
+
+/// Compare two ESM databases and return a structured diff, using default
+/// [`DiffOptions`] (full bodies on added/removed records, noise suppression
+/// on, no type exclusions).
+///
+/// This is a thin wrapper around [`diff_databases_with`]; see that function
+/// for the full behavior.
+pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> {
+    diff_databases_with(a, b, &DiffOptions::default())
 }
 
 /// Compare two ESM databases and return a structured diff.
@@ -89,11 +149,38 @@ pub struct DiffResult {
 /// compared byte-for-byte to skip unchanged records (fast-path).  Only
 /// changed records are decoded and field-diffed.
 ///
+/// `opts.bodies` controls whether — and how deeply — added/removed record
+/// stubs get a decoded `fields` payload (see [`BodyDetail`]).  Decode
+/// failures are swallowed (`fields` stays `None`); a single bad record never
+/// aborts the whole diff.
+///
+/// `opts.suppress_noise` strips known-noisy top-level fields (placement
+/// transforms, CELL precombine bookkeeping, …) from each `changed` record's
+/// `field_changes`, dropping the record entirely when nothing else changed
+/// — see [`strip_noise_fields`]. Dropped counts are recorded in
+/// `DiffResult::suppressed_counts`.
+///
+/// `opts.exclude_types` omits matching 4-character signatures from `added`,
+/// `removed`, and `changed` outright — checked before any payload
+/// decompression or decode for that record.
+///
 /// When either database has a localization table loaded, each `RecordStub`
 /// is enriched with `name` (FULL) and `description` (DESC), and `DiffResult`
 /// gains a `ref_names` sidecar mapping every FormID hex reference found in
-/// `field_changes` to its resolved record type, EditorID, and name.
-pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> {
+/// `field_changes` (and in added/removed decoded bodies) to its resolved
+/// record type, EditorID, name, and description.
+pub fn diff_databases_with(
+    a: &Database,
+    b: &Database,
+    opts: &DiffOptions,
+) -> anyhow::Result<DiffResult> {
+    let exclude_types: HashSet<String> = opts
+        .exclude_types
+        .iter()
+        .map(|s| s.to_uppercase())
+        .collect();
+    let depth = opts.bodies.resolve_depth();
+
     let a_ids: HashSet<FormId> = a.index.form_index.keys().copied().collect();
     let b_ids: HashSet<FormId> = b.index.form_index.keys().copied().collect();
 
@@ -101,10 +188,13 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
     let mut added = Vec::new();
     for id in b_ids.difference(&a_ids) {
         let meta = b.index.form_index[id].clone();
+        if exclude_types.contains(meta.signature.as_str()) {
+            continue;
+        }
         let mut stub = record_stub_from_db(b, &meta, *id)?;
-        // Decode full fields for gameplay types (best-effort; never aborts the diff).
-        if wants_detail(&stub.record_type) {
-            if let Ok(r) = b.record_by_formid_resolved(*id, crate::decode::ResolveDepth::Full) {
+        // Decode fields best-effort (never aborts the diff on failure).
+        if let Some(depth) = depth {
+            if let Ok(r) = b.record_by_formid_resolved(*id, depth) {
                 stub.fields = Some(r.fields);
             }
         }
@@ -116,19 +206,34 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
     let mut removed = Vec::new();
     for id in a_ids.difference(&b_ids) {
         let meta = a.index.form_index[id].clone();
-        let stub = record_stub_from_db(a, &meta, *id)?;
+        if exclude_types.contains(meta.signature.as_str()) {
+            continue;
+        }
+        let mut stub = record_stub_from_db(a, &meta, *id)?;
+        // Old-side decode: any FormID refs resolve against A, which is
+        // correct since the referenced records may no longer exist in B.
+        if let Some(depth) = depth {
+            if let Ok(r) = a.record_by_formid_resolved(*id, depth) {
+                stub.fields = Some(r.fields);
+            }
+        }
         removed.push(stub);
     }
     removed.sort_by(|x, y| x.form_id.cmp(&y.form_id));
 
     // Common: compare payloads, decode only on mismatch
     let mut changed = Vec::new();
+    let mut suppressed_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut common_ids: Vec<FormId> = a_ids.intersection(&b_ids).copied().collect();
     common_ids.sort_by_key(|id| id.raw());
 
     for id in common_ids {
         let meta_a = a.index.form_index[&id].clone();
         let meta_b = b.index.form_index[&id].clone();
+
+        if exclude_types.contains(meta_a.signature.as_str()) {
+            continue;
+        }
 
         let payload_a = a
             .esm
@@ -151,9 +256,19 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
             .record_at_meta(&meta_b)
             .with_context(|| format!("decode B for {}", id))?;
 
-        let field_changes = json_diff(&ra.fields, &rb.fields);
+        let mut field_changes = json_diff(&ra.fields, &rb.fields);
         if field_changes == Value::Object(serde_json::Map::new()) {
             continue; // decoded-equal despite byte differences (volatile header bytes)
+        }
+
+        if opts.suppress_noise {
+            strip_noise_fields(&mut field_changes, &meta_b.signature);
+            if is_empty_diff(&field_changes) {
+                *suppressed_counts
+                    .entry(meta_b.signature.clone())
+                    .or_insert(0) += 1;
+                continue;
+            }
         }
 
         // Resolve name/description from the B-side raw subrecords.
@@ -186,9 +301,9 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
     changed.sort_by(|x, y| x.stub.form_id.cmp(&y.stub.form_id));
 
     // Build ref_names: one-hop FormID resolution for every hex ref in field_changes
-    // and added records' decoded fields. Populated when either side has localization
-    // or curves loaded, or is non-localized (FULL/DESC are inline text there, so
-    // names resolve without any string table).
+    // and added/removed records' decoded fields. Populated when either side has
+    // localization or curves loaded, or is non-localized (FULL/DESC are inline
+    // text there, so names resolve without any string table).
     let ref_names =
         if a.has_enrichment() || b.has_enrichment() || !a.is_localized || !b.is_localized {
             let mut refs: HashSet<String> = HashSet::new();
@@ -196,6 +311,11 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
                 collect_formid_refs(&rd.field_changes, &mut refs);
             }
             for stub in &added {
+                if let Some(f) = &stub.fields {
+                    collect_formid_refs(f, &mut refs);
+                }
+            }
+            for stub in &removed {
                 if let Some(f) = &stub.fields {
                     collect_formid_refs(f, &mut refs);
                 }
@@ -212,6 +332,7 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
         removed,
         changed,
         ref_names,
+        suppressed_counts,
     })
 }
 
@@ -317,10 +438,13 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
             };
             let editor_id = edid_from_subrecords(&rec.subrecords);
             let name = resolve_name_field(db, &rec.subrecords, "FULL", StringKind::Strings);
+            let description =
+                resolve_name_field(db, &rec.subrecords, "DESC", StringKind::DlStrings);
             return Some(RefName {
                 record_type: sig,
                 editor_id,
                 name,
+                description,
             });
         }
     }
@@ -338,8 +462,77 @@ pub fn apply_type_filter(result: &mut DiffResult, record_type: &Option<String>) 
     }
 }
 
+// ---------------------------------------------------------------------------
+// Noise suppression
+// ---------------------------------------------------------------------------
+//
+// Full-world ESM diffs (e.g. between two weekly snapshots) are dominated by
+// mechanically-regenerated bookkeeping: precombined-mesh bookkeeping on CELL
+// records, and position/scale churn on placement records that the game's
+// tooling re-serializes on every save even when nothing gameplay-relevant
+// moved. `strip_noise_fields` removes these known-noisy top-level keys from
+// a record's `field_changes` so `diff_databases_with` can drop the record
+// entirely when nothing else changed — see `DiffOptions::suppress_noise`.
+
+/// Record types whose placement-transform fields are considered noise.
+const PLACEMENT_TYPES: &[&str] = &["REFR", "ACHR", "PGRE", "PHZD"];
+
+/// Top-level fields stripped for every record type.
+const GLOBAL_NOISE_FIELDS: &[&str] = &["Object Bounds"];
+
+/// Top-level fields stripped additionally for [`PLACEMENT_TYPES`].
+const PLACEMENT_NOISE_FIELDS: &[&str] = &[
+    "Position/Rotation",
+    "Bound Half Extents",
+    "Scale",
+    "Radius",
+    "Distant LOD Data",
+];
+
+/// Top-level fields stripped additionally for `CELL`.
+const CELL_NOISE_FIELDS: &[&str] = &[
+    "PreVis File Hash",
+    "In PreVis File Of",
+    "PreCombined Files Timestamp",
+    "Combined References",
+    "Physics References",
+    "Combined Physics",
+    "Precombined Object Level XY",
+    "Precombined Object Level Z",
+    "Max Height Data",
+];
+
+/// Strip known-noisy top-level keys from a decoded `field_changes` object, in
+/// place. `GLOBAL_NOISE_FIELDS` are removed unconditionally; additionally
+/// `PLACEMENT_NOISE_FIELDS` when `sig` is one of `PLACEMENT_TYPES`, and
+/// `CELL_NOISE_FIELDS` when `sig == "CELL"`. Matching is an exact top-level
+/// key match only — a same-named nested field (inside an array element or
+/// substruct) is left untouched. A no-op when `field_changes` isn't a JSON
+/// object (defensive; `json_diff` on two records always produces one).
+pub fn strip_noise_fields(field_changes: &mut Value, sig: &str) {
+    let Some(map) = field_changes.as_object_mut() else {
+        return;
+    };
+    for key in GLOBAL_NOISE_FIELDS {
+        map.remove(*key);
+    }
+    if PLACEMENT_TYPES.contains(&sig) {
+        for key in PLACEMENT_NOISE_FIELDS {
+            map.remove(*key);
+        }
+    }
+    if sig == "CELL" {
+        for key in CELL_NOISE_FIELDS {
+            map.remove(*key);
+        }
+    }
+}
+
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.
-/// Arrays are treated as opaque: any difference → `{ "from": a, "to": b }`.
+/// Arrays get per-element treatment via [`array_diff`]: a `keyed` diff when
+/// elements have a recognizable identity field, `positional` when lengths
+/// match but no key is available, `set` for arrays of primitives, and the
+/// legacy opaque `{ "from": a, "to": b }` only as a last resort.
 pub fn json_diff(a: &Value, b: &Value) -> Value {
     match (a, b) {
         (Value::Object(ao), Value::Object(bo)) => {
@@ -373,7 +566,412 @@ pub fn json_diff(a: &Value, b: &Value) -> Value {
             }
             Value::Object(out)
         }
+        (Value::Array(aa), Value::Array(ba)) => array_diff(aa, ba),
         (av, bv) if av == bv => Value::Object(serde_json::Map::new()),
         (av, bv) => serde_json::json!({"from": av, "to": bv}),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Keyed per-element array diffing
+// ---------------------------------------------------------------------------
+//
+// Decoded rarray elements are almost always either uniform primitives (a
+// FormID list) or single-member "rstruct" wrappers (`{"Leveled List Entry":
+// {..}}`). Diffing them wholesale (the old opaque behavior) hides which
+// entries actually changed inside a 50-element leveled list. The strategy
+// below tries, in order: a schema-aware key (`element_key_spec`), positional
+// pairing (equal length, no key), or a primitive multiset diff — falling
+// back to the legacy opaque leaf only when none of those apply.
+
+/// A resolved per-element keying strategy for [`array_diff`]: each inner
+/// list gives the alternative field-name paths (dot-separated for one level
+/// of nesting, e.g. `"INDX.Stage Index"`) for one key *component* — the
+/// first alternative present on a given element wins for that component.
+type KeySpec = Vec<Vec<String>>;
+
+/// True for JSON scalars (string/number/bool/null) — anything that isn't an
+/// object or array. Used to detect "arrays of primitives" for `set` diffing.
+fn is_primitive_value(v: &Value) -> bool {
+    !v.is_object() && !v.is_array()
+}
+
+/// `json_diff`'s canonical "no differences" sentinel: an empty JSON object.
+fn is_empty_diff(v: &Value) -> bool {
+    matches!(v, Value::Object(m) if m.is_empty())
+}
+
+/// The legacy opaque array diff — whole old/new arrays under `from`/`to`.
+/// Used when array elements can't be paired meaningfully: heterogeneous
+/// element shapes, or an unkeyable object shape with mismatched lengths.
+fn opaque_array_diff(a: &[Value], b: &[Value]) -> Value {
+    serde_json::json!({"from": Value::Array(a.to_vec()), "to": Value::Array(b.to_vec())})
+}
+
+/// Wrap a populated array-diff body in the `{"_array_diff": {...}}` envelope.
+fn wrap_array_diff(inner: serde_json::Map<String, Value>) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert("_array_diff".to_string(), Value::Object(inner));
+    Value::Object(out)
+}
+
+/// Unwrap the single-member "rstruct" wrapper rarray elements are commonly
+/// decoded into (e.g. `{"Leveled List Entry": {...}}`, `{"Effect": {...}}`).
+/// Returns the wrapper's key name and the inner object to key on. Elements
+/// that don't match the wrapper shape (not a single object-valued key) are
+/// returned as-is with no wrapper name — key lookups against them then miss
+/// every expected member, so they naturally end up with an all-null key.
+fn unwrap_wrapper(
+    m: &serde_json::Map<String, Value>,
+) -> (Option<&str>, &serde_json::Map<String, Value>) {
+    if m.len() == 1 {
+        if let Some((k, Value::Object(inner))) = m.iter().next() {
+            return (Some(k.as_str()), inner);
+        }
+    }
+    (None, m)
+}
+
+/// True when `v` is a FormID reference as produced by the schema decoder:
+/// either a bare hex string (see `is_formid_str`) or a resolved stub object
+/// carrying a `"formid"` key.
+fn is_formid_shaped(v: &Value) -> bool {
+    match v {
+        Value::String(s) => is_formid_str(s),
+        Value::Object(m) => m.contains_key("formid"),
+        _ => false,
+    }
+}
+
+/// Resolve an array's per-element keying strategy from a sample element (the
+/// first object found on either side), per a hardcoded table of known
+/// rarray element shapes, falling back to generic heuristics. Returns `None`
+/// when nothing applies — the caller then falls back to positional pairing
+/// (equal lengths) or an opaque diff.
+fn element_key_spec(sample: &serde_json::Map<String, Value>) -> Option<KeySpec> {
+    let (wrapper, body) = unwrap_wrapper(sample);
+
+    // 1. OMOD properties: composite (Function Type, Property) key.
+    if body.contains_key("Function Type") && body.contains_key("Property") {
+        return Some(vec![
+            vec!["Function Type".to_string()],
+            vec!["Property".to_string()],
+        ]);
+    }
+    // 2. Leveled list entries: Reference/Item + Minimum Level/Level.
+    if wrapper == Some("Leveled List Entry") {
+        return Some(vec![
+            vec!["Reference".to_string(), "Item".to_string()],
+            vec!["Minimum Level".to_string(), "Level".to_string()],
+        ]);
+    }
+    // 3. Magic effects, keyed by their base effect.
+    if wrapper == Some("Effect") {
+        return Some(vec![vec!["Base Effect".to_string()]]);
+    }
+    // 4. Recipe components / item-type entries.
+    if body.contains_key("Component") {
+        return Some(vec![vec!["Component".to_string()]]);
+    }
+    if body.contains_key("Item Type") {
+        return Some(vec![vec!["Item Type".to_string()]]);
+    }
+    // 5. Quest objectives.
+    if wrapper == Some("Objective") {
+        return Some(vec![vec!["Objective Index".to_string()]]);
+    }
+    // 6. Quest stages — the index lives inside the nested INDX struct.
+    if wrapper == Some("Stage") {
+        return Some(vec![vec!["INDX.Stage Index".to_string()]]);
+    }
+    // 7. Single-reference entries.
+    if body.contains_key("Faction") {
+        return Some(vec![vec!["Faction".to_string()]]);
+    }
+    if body.contains_key("Perk") {
+        return Some(vec![vec!["Perk".to_string()]]);
+    }
+    if body.contains_key("Mod") {
+        return Some(vec![vec!["Mod".to_string()]]);
+    }
+    if body.contains_key("Keyword") && body.contains_key("Sound") {
+        return Some(vec![vec!["Keyword".to_string()]]);
+    }
+    // 8. Generic "Index" / "* Index" member.
+    let mut index_members: Vec<&String> = body
+        .keys()
+        .filter(|k| k.as_str() == "Index" || k.ends_with(" Index"))
+        .collect();
+    index_members.sort();
+    if let Some(name) = index_members.into_iter().next() {
+        return Some(vec![vec![name.clone()]]);
+    }
+    // 9. Exactly one FormID-shaped member.
+    let formid_members: Vec<&String> = body
+        .iter()
+        .filter(|(_, v)| is_formid_shaped(v))
+        .map(|(k, _)| k)
+        .collect();
+    if formid_members.len() == 1 {
+        return Some(vec![vec![formid_members[0].clone()]]);
+    }
+    None
+}
+
+/// Look up a field path inside an element body — dot-separated paths reach
+/// one level into a nested object member (e.g. `"INDX.Stage Index"`).
+fn get_path<'a>(body: &'a serde_json::Map<String, Value>, path: &str) -> Option<&'a Value> {
+    let mut parts = path.split('.');
+    let mut cur = body.get(parts.next()?)?;
+    for part in parts {
+        cur = cur.as_object()?.get(part)?;
+    }
+    Some(cur)
+}
+
+/// Resolve one key component (a list of alternative field paths — the first
+/// alternative present in `body` wins). Returns the alternative name that
+/// was actually used (or the first alternative, if none matched) alongside
+/// the raw value found (`None` when absent on this element).
+fn resolve_key_component<'a>(
+    alts: &'a [String],
+    body: &'a serde_json::Map<String, Value>,
+) -> (&'a str, Option<&'a Value>) {
+    for alt in alts {
+        if let Some(v) = get_path(body, alt) {
+            return (alt.as_str(), Some(v));
+        }
+    }
+    (alts[0].as_str(), None)
+}
+
+/// Canonicalize a key field's raw decoded value so schema drift between
+/// snapshots — e.g. a bare int on one side vs an enum object
+/// `{"value": int, "name": ..}` on the other, or a resolved-stub object vs a
+/// bare FormID hex string — doesn't break key matching across sides.
+fn canonical_key_value(raw: Option<&Value>) -> Value {
+    match raw {
+        None | Some(Value::Null) => Value::Null,
+        Some(Value::Object(m)) => m
+            .get("value")
+            .or_else(|| m.get("formid"))
+            .cloned()
+            .unwrap_or_else(|| Value::Object(m.clone())),
+        Some(other) => other.clone(),
+    }
+}
+
+/// A single element's resolved key: `group` is a serialized canonical-value
+/// tuple used to pair elements across sides; `fields` is the display-ready
+/// `{field_name: canonical_value}` map emitted as `"key"`.
+struct KeyInfo {
+    group: String,
+    fields: serde_json::Map<String, Value>,
+}
+
+/// Compute an element's `KeyInfo` for `spec`. Elements that don't match the
+/// wrapper shape `element_key_spec` was derived from simply fail every field
+/// lookup, yielding an all-null key that (almost certainly) pairs with
+/// nothing — they fall out as added/removed rather than panicking or being
+/// silently dropped.
+fn compute_key_info(elem: &Value, spec: &KeySpec) -> KeyInfo {
+    // Callers only reach here after confirming every element is an object.
+    let empty = serde_json::Map::new();
+    let map = elem.as_object().unwrap_or(&empty);
+    let (_, body) = unwrap_wrapper(map);
+
+    let mut values = Vec::with_capacity(spec.len());
+    let mut fields = serde_json::Map::new();
+    for alts in spec {
+        let (name, raw) = resolve_key_component(alts, body);
+        let canon = canonical_key_value(raw);
+        values.push(canon.clone());
+        fields.insert(name.to_string(), canon);
+    }
+    let group = serde_json::to_string(&values).unwrap_or_default();
+    KeyInfo { group, fields }
+}
+
+/// Multiset ("set") diff for arrays of JSON primitives (numbers, strings,
+/// bools, null) — e.g. a Keywords FormID list. Order doesn't matter, only
+/// the multiset of values does: a value appearing twice on one side and
+/// once on the other contributes a single `added`/`removed` entry (the
+/// count delta), not two.
+fn set_diff(a: &[Value], b: &[Value]) -> Value {
+    let mut counts: BTreeMap<String, (Value, i64)> = BTreeMap::new();
+    for v in a {
+        let key = serde_json::to_string(v).unwrap_or_default();
+        counts.entry(key).or_insert_with(|| (v.clone(), 0)).1 -= 1;
+    }
+    for v in b {
+        let key = serde_json::to_string(v).unwrap_or_default();
+        counts.entry(key).or_insert_with(|| (v.clone(), 0)).1 += 1;
+    }
+
+    let mut added = Vec::new();
+    let mut removed = Vec::new();
+    for (value, diff) in counts.into_values() {
+        if diff > 0 {
+            added.extend(std::iter::repeat_n(value, diff as usize));
+        } else if diff < 0 {
+            removed.extend(std::iter::repeat_n(value, (-diff) as usize));
+        }
+    }
+
+    if added.is_empty() && removed.is_empty() {
+        return Value::Object(serde_json::Map::new());
+    }
+
+    let mut out = serde_json::Map::new();
+    out.insert("strategy".to_string(), Value::String("set".to_string()));
+    out.insert("count_from".to_string(), serde_json::json!(a.len()));
+    out.insert("count_to".to_string(), serde_json::json!(b.len()));
+    if !added.is_empty() {
+        out.insert("added".to_string(), Value::Array(added));
+    }
+    if !removed.is_empty() {
+        out.insert("removed".to_string(), Value::Array(removed));
+    }
+    wrap_array_diff(out)
+}
+
+/// Index-aligned diff for two same-length arrays without a usable key.
+fn positional_diff(a: &[Value], b: &[Value]) -> Value {
+    let mut changed = Vec::new();
+    for (i, (av, bv)) in a.iter().zip(b.iter()).enumerate() {
+        let d = json_diff(av, bv);
+        if !is_empty_diff(&d) {
+            changed.push(serde_json::json!({
+                "key": {"index": i},
+                "index_from": i,
+                "index_to": i,
+                "changes": d,
+            }));
+        }
+    }
+
+    if changed.is_empty() {
+        return Value::Object(serde_json::Map::new());
+    }
+
+    let mut out = serde_json::Map::new();
+    out.insert(
+        "strategy".to_string(),
+        Value::String("positional".to_string()),
+    );
+    out.insert("count_from".to_string(), serde_json::json!(a.len()));
+    out.insert("count_to".to_string(), serde_json::json!(b.len()));
+    out.insert("changed".to_string(), Value::Array(changed));
+    wrap_array_diff(out)
+}
+
+/// Keyed per-element diff. Elements are grouped by their canonical key
+/// (`element_key_spec` + `compute_key_info`) and paired 1:1 within same-key
+/// groups, in original array order — duplicate keys pair positionally
+/// within their group. Leftover unpaired elements become `added`/`removed`.
+fn keyed_diff(a: &[Value], b: &[Value], spec: &KeySpec) -> Value {
+    let a_keys: Vec<KeyInfo> = a.iter().map(|v| compute_key_info(v, spec)).collect();
+    let b_keys: Vec<KeyInfo> = b.iter().map(|v| compute_key_info(v, spec)).collect();
+
+    let mut b_groups: HashMap<String, VecDeque<usize>> = HashMap::new();
+    for (j, info) in b_keys.iter().enumerate() {
+        b_groups.entry(info.group.clone()).or_default().push_back(j);
+    }
+
+    let mut matched_b: HashSet<usize> = HashSet::new();
+    let mut removed = Vec::new();
+    let mut changed = Vec::new();
+
+    for (i, a_info) in a_keys.iter().enumerate() {
+        let paired = b_groups
+            .get_mut(&a_info.group)
+            .and_then(VecDeque::pop_front);
+        match paired {
+            Some(j) => {
+                matched_b.insert(j);
+                let d = json_diff(&a[i], &b[j]);
+                if !is_empty_diff(&d) {
+                    changed.push(serde_json::json!({
+                        "key": Value::Object(b_keys[j].fields.clone()),
+                        "index_from": i,
+                        "index_to": j,
+                        "changes": d,
+                    }));
+                }
+            }
+            None => removed.push(a[i].clone()),
+        }
+    }
+
+    let mut added = Vec::new();
+    for (j, elem) in b.iter().enumerate() {
+        if !matched_b.contains(&j) {
+            added.push(elem.clone());
+        }
+    }
+
+    if added.is_empty() && removed.is_empty() && changed.is_empty() {
+        return Value::Object(serde_json::Map::new());
+    }
+
+    let key_fields: Vec<String> = spec.iter().map(|alts| alts[0].clone()).collect();
+
+    let mut out = serde_json::Map::new();
+    out.insert("strategy".to_string(), Value::String("keyed".to_string()));
+    out.insert("key_fields".to_string(), serde_json::json!(key_fields));
+    out.insert("count_from".to_string(), serde_json::json!(a.len()));
+    out.insert("count_to".to_string(), serde_json::json!(b.len()));
+    if !added.is_empty() {
+        out.insert("added".to_string(), Value::Array(added));
+    }
+    if !removed.is_empty() {
+        out.insert("removed".to_string(), Value::Array(removed));
+    }
+    if !changed.is_empty() {
+        out.insert("changed".to_string(), Value::Array(changed));
+    }
+    wrap_array_diff(out)
+}
+
+/// Per-element array diff, used by `json_diff`'s array arm. Classifies the
+/// element shape into one of three pairing strategies:
+///
+/// - **keyed** — elements are rstructs with a recognizable identity field
+///   ([`element_key_spec`]); paired by canonical key value regardless of
+///   order or position.
+/// - **positional** — same length, no usable key; paired index-for-index.
+/// - **set** — uniform JSON primitives (e.g. a FormID keyword list); paired
+///   as a multiset (order-insensitive, duplicate-aware).
+///
+/// Falls back to the legacy opaque `{"from": a, "to": b}` leaf when nothing
+/// applies (heterogeneous shapes, or an unkeyable object shape with
+/// mismatched lengths). Returns an empty object when the chosen strategy
+/// finds no differences — e.g. a reorder-only keyed array — matching
+/// `json_diff`'s convention of omitting unchanged fields entirely.
+fn array_diff(a: &[Value], b: &[Value]) -> Value {
+    if a == b {
+        return Value::Object(serde_json::Map::new());
+    }
+
+    if a.iter().chain(b.iter()).all(is_primitive_value) {
+        return set_diff(a, b);
+    }
+
+    if !a.iter().chain(b.iter()).all(Value::is_object) {
+        // Heterogeneous element shapes (mixed primitive/object, nested
+        // arrays, …) aren't classifiable — keep the legacy opaque form.
+        return opaque_array_diff(a, b);
+    }
+
+    let Some(sample) = a.iter().chain(b.iter()).find_map(Value::as_object) else {
+        // Unreachable in practice (all-object + not `a == b` implies at
+        // least one element exists), kept as a defensive fallback.
+        return opaque_array_diff(a, b);
+    };
+
+    match element_key_spec(sample) {
+        Some(spec) => keyed_diff(a, b, &spec),
+        None if a.len() == b.len() => positional_diff(a, b),
+        None => opaque_array_diff(a, b),
     }
 }

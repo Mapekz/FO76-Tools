@@ -42,7 +42,7 @@ Clean layering — edit at the right level:
 | `src/schema.rs` | Serde model for `schema/fo76.json`; `MemberDef` enum (18 variants, `#[serde(tag="kind")]`); `load_embedded()` |
 | `src/decode.rs` | Schema-driven decoder → `serde_json::Value`; `DecodeContext<'a>`, `FormIdRefResolver` trait; never panics |
 | `src/ctda.rs` | CTDA condition decoder; function-index table (binary search); imports `crate::decode::{hex, resolve_formid}` |
-| `src/diff.rs` | `diff_databases(a,b)` — byte-equality fast-path, sparse `{from,to}` JSON diff |
+| `src/diff.rs` | `diff_databases_with(a,b,opts)` — byte-equality fast-path, sparse `{from,to}` JSON diff; keyed per-element array diffs (`_array_diff`); `DiffOptions` (bodies for all added/removed records, placement/CELL noise suppression, type exclusion); `ref_names` sidecar |
 | `src/wildcard.rs` | Case-insensitive `*`-wildcard matcher; has rustdoc doctest |
 | `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
 | `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
@@ -69,7 +69,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 - **XXXX oversized-subrecord rule** in `reader.rs` (around line 304): a 6-byte `XXXX` subrecord whose `data_size` field carries the actual size precedes an oversized subrecord with `data_size = 0`. Preserve this when modifying the subrecord scanner.
 - **`index.rs` cache**: keyed by path/size/mtime. **Bump `CACHE_VERSION`** whenever the cached data layout changes — the old cache becomes invalid and will be rebuilt.
 - **FormID layout**: high byte = master-file index, low 24 bits = object ID. All values little-endian.
-- **Decode output key conventions** (must stay consistent): `_record_type`, `_unknown_record`, `_unmapped`, `_raw`, `_unresolved`. These are the flags the `coverage` subcommand and MCP server rely on.
+- **Decode output key conventions** (must stay consistent): `_record_type`, `_unknown_record`, `_unmapped`, `_raw`, `_unresolved`, and (diff output only) `_array_diff`. These are the flags the `coverage` subcommand, MCP server, and patch-notes tooling rely on.
 - **`advance_union` / `RArray` paths in `decode.rs`**: struct union variants advance by real decoded byte counts; fixed scalars still use `field_byte_size`. Change with extra care and verify against real ESM output.
 - **Schema `fo76.json` is generated** — treat it as a build artifact. Fix decode coverage by updating the extractor or `fo76.overrides.json`, not by hand-editing the 2.3 MB JSON.
 

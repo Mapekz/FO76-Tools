@@ -18,7 +18,9 @@ use esm::decode::{DecodeContext, ResolveDepth};
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
 use esm::schema::Schema;
+use esm::Database;
 use serde_json::Value;
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -359,4 +361,86 @@ pub fn unique_temp_path(stem: &str) -> PathBuf {
         "fo76_esm_test_{stem}_{}_{n}.esm",
         std::process::id()
     ))
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Generic synthetic-ESM builder (records + GRUPs + TES4 header)
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// `make_minimal_esm`/`make_xref_esm` above hand-roll one fixed layout each.
+// The diff-engine tests need many small, differently-shaped ESM pairs (added/
+// removed/changed records across several types), so these helpers factor out
+// the byte-level conventions (mirroring `tests/refs.rs`'s local helpers of the
+// same names) into reusable building blocks.
+
+/// The form_version stamped on every record built by [`append_record`].
+pub const TEST_FORM_VERSION: u16 = 208;
+
+/// Append a subrecord (4-byte signature + `u16` LE size + data) to `out`.
+pub fn append_subrecord(out: &mut Vec<u8>, sig: &[u8; 4], data: &[u8]) {
+    out.extend_from_slice(sig);
+    out.extend_from_slice(&(data.len() as u16).to_le_bytes());
+    out.extend_from_slice(data);
+}
+
+/// NUL-terminated ASCII bytes for an inline EDID/FULL/DESC-style string field
+/// (the non-localized encoding — see `inline_string_from_subrecords`).
+pub fn cstr(s: &str) -> Vec<u8> {
+    let mut v = s.as_bytes().to_vec();
+    v.push(0);
+    v
+}
+
+/// Append one full record (24-byte header + already-serialized `subrecords`)
+/// to `out`, stamped with [`TEST_FORM_VERSION`].
+pub fn append_record(out: &mut Vec<u8>, sig: &[u8; 4], form_id: u32, subrecords: &[u8]) {
+    out.extend_from_slice(sig);
+    out.extend_from_slice(&(subrecords.len() as u32).to_le_bytes()); // data_size
+    out.extend_from_slice(&0u32.to_le_bytes()); // flags
+    out.extend_from_slice(&form_id.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+    out.extend_from_slice(&TEST_FORM_VERSION.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+    out.extend_from_slice(subrecords);
+}
+
+/// Wrap already-serialized records under a single top-level GRUP of `label`.
+pub fn wrap_grup(label: &[u8; 4], records: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let group_size = (24 + records.len()) as u32;
+    buf.extend_from_slice(b"GRUP");
+    buf.extend_from_slice(&group_size.to_le_bytes());
+    buf.extend_from_slice(label);
+    buf.extend_from_slice(&0i32.to_le_bytes()); // group_type = 0 (top-level)
+    buf.extend_from_slice(&0u32.to_le_bytes()); // stamp
+    buf.extend_from_slice(&0u32.to_le_bytes()); // unknown
+    buf.extend_from_slice(records);
+    buf
+}
+
+/// A bare, non-localized TES4 header (24 bytes, `data_size = 0`) — the start
+/// of every synthetic ESM buffer built with these helpers.
+pub fn tes4_header() -> Vec<u8> {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(b"TES4");
+    buf.extend_from_slice(&0u32.to_le_bytes()); // data_size
+    buf.extend_from_slice(&0u32.to_le_bytes()); // flags (unset Localized bit)
+    buf.extend_from_slice(&0u32.to_le_bytes()); // form_id
+    buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
+    buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
+    buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
+    buf
+}
+
+/// Write `buf` to a unique temp `.esm` path (named from `stem`) and open a
+/// [`Database`] on it. Returns the path — the caller is responsible for
+/// `std::fs::remove_file`-ing it once done — alongside the opened `Database`.
+pub fn write_and_open(buf: &[u8], stem: &str) -> (PathBuf, Database) {
+    let tmp = unique_temp_path(stem);
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(buf).expect("write temp esm");
+    }
+    let db = Database::open(&tmp).expect("open db");
+    (tmp, db)
 }

@@ -6,8 +6,8 @@ use esm::backend::{
 };
 use esm::ipc::{Op, RecordSel};
 use esm::{
-    parse_form_id_input, CoverageReport, Database, DiffResult, Markers, RawRecordView, RecordRow,
-    RefList, ResolveDepth, SearchField,
+    parse_form_id_input, BodyDetail, CoverageReport, Database, DiffOptions, DiffResult, Markers,
+    RawRecordView, RecordRow, RefList, ResolveDepth, SearchField,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -103,6 +103,17 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
+        /// Detail level for decoded fields attached to added/removed record stubs.
+        #[arg(long, value_enum, default_value = "full")]
+        bodies: BodiesArg,
+        /// Keep noisy fields (placement transforms, CELL precombine bookkeeping,
+        /// Object Bounds) instead of suppressing them from `changed` records.
+        #[arg(long)]
+        keep_noise: bool,
+        /// Record-type signature(s) to omit entirely from added/removed/changed
+        /// (repeatable and/or comma-delimited, e.g. `--exclude-type LAND,NAVM`).
+        #[arg(long = "exclude-type", value_delimiter = ',')]
+        exclude_type: Vec<String>,
         /// Localization BA2 for both ESMs.
         /// Mutually exclusive with --strings-dir / --strings-dir-a/b / --localization-ba2-a/b.
         #[arg(long = "localization-ba2", conflicts_with_all = ["strings_dir", "strings_dir_a", "strings_dir_b", "localization_ba2_a", "localization_ba2_b"])]
@@ -261,6 +272,17 @@ enum ReplCommand {
         json: bool,
         #[arg(long)]
         pretty: bool,
+        /// Detail level for decoded fields attached to added/removed record stubs.
+        #[arg(long, value_enum, default_value = "full")]
+        bodies: BodiesArg,
+        /// Keep noisy fields (placement transforms, CELL precombine bookkeeping,
+        /// Object Bounds) instead of suppressing them from `changed` records.
+        #[arg(long)]
+        keep_noise: bool,
+        /// Record-type signature(s) to omit entirely from added/removed/changed
+        /// (repeatable and/or comma-delimited, e.g. `--exclude-type LAND,NAVM`).
+        #[arg(long = "exclude-type", value_delimiter = ',')]
+        exclude_type: Vec<String>,
     },
     Tree {
         #[arg(long = "type")]
@@ -320,6 +342,28 @@ enum SearchInArg {
     Edid,
     Name,
     Both,
+}
+
+/// CLI-facing mirror of `esm::BodyDetail` for `--bodies <none|stub|full>`.
+///
+/// A separate type (rather than implementing `ValueEnum` on `BodyDetail`
+/// itself) because `BodyDetail` lives in `diff.rs`, which this crate doesn't
+/// own — clap's derive can't be added there without touching that file.
+#[derive(Clone, Copy, ValueEnum)]
+enum BodiesArg {
+    None,
+    Stub,
+    Full,
+}
+
+impl From<BodiesArg> for BodyDetail {
+    fn from(b: BodiesArg) -> Self {
+        match b {
+            BodiesArg::None => BodyDetail::None,
+            BodiesArg::Stub => BodyDetail::Stub,
+            BodiesArg::Full => BodyDetail::Full,
+        }
+    }
 }
 
 enum Backend {
@@ -468,6 +512,9 @@ fn main() -> anyhow::Result<()> {
                 record_type,
                 json,
                 pretty,
+                bodies,
+                keep_noise,
+                exclude_type,
                 localization_ba2,
                 localization_ba2_a,
                 localization_ba2_b,
@@ -501,6 +548,9 @@ fn main() -> anyhow::Result<()> {
                 curves_dir,
                 curves_dir_a,
                 curves_dir_b,
+                bodies.into(),
+                keep_noise,
+                exclude_type,
                 daemon_mode,
             )?,
             Commands::Tree {
@@ -669,6 +719,9 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             record_type,
             json,
             pretty,
+            bodies,
+            keep_noise,
+            exclude_type,
         } => cmd_diff(
             backend,
             esm,
@@ -689,6 +742,9 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             None, // curves_dir
             None, // curves_dir_a
             None, // curves_dir_b
+            bodies.into(),
+            keep_noise,
+            exclude_type,
             true, // daemon_mode
         ),
         ReplCommand::Tree {
@@ -1311,8 +1367,17 @@ fn cmd_diff(
     curves_dir: Option<PathBuf>,
     curves_dir_a: Option<PathBuf>,
     curves_dir_b: Option<PathBuf>,
+    bodies: BodyDetail,
+    keep_noise: bool,
+    exclude_type: Vec<String>,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
+    let options = DiffOptions {
+        bodies,
+        suppress_noise: !keep_noise,
+        exclude_types: exclude_type.iter().map(|s| s.to_uppercase()).collect(),
+    };
+
     // Coalesce per-side over shared for each source kind.
     let lba2_a = localization_ba2_a.or_else(|| localization_ba2.clone());
     let lba2_b = localization_ba2_b.or_else(|| localization_ba2.clone());
@@ -1370,7 +1435,7 @@ fn cmd_diff(
             db_b.load_curves_from_dir(&dir)?;
         }
 
-        let mut result = esm::diff::diff_databases(&db_a, &db_b)?;
+        let mut result = esm::diff::diff_databases_with(&db_a, &db_b, &options)?;
 
         // Apply optional --type filter.
         esm::diff::apply_type_filter(&mut result, &record_type.map(str::to_string));
@@ -1384,6 +1449,7 @@ fn cmd_diff(
         Op::Diff {
             b: file_b.to_path_buf(),
             record_type: record_type.map(|s| s.to_string()),
+            options,
         },
     )?;
     let mut result: DiffResult = serde_json::from_value(v)?;
@@ -1493,7 +1559,9 @@ fn print_field_changes(changes: &Value, indent: &str) {
     if let Some(obj) = changes.as_object() {
         for (key, val) in obj {
             if let Some(inner) = val.as_object() {
-                if inner.contains_key("from") && inner.contains_key("to") {
+                if let Some(array_diff) = inner.get("_array_diff").and_then(Value::as_object) {
+                    print_array_diff(key, array_diff, indent);
+                } else if inner.contains_key("from") && inner.contains_key("to") {
                     println!(
                         "{}  {}: {} \u{2192} {}",
                         indent,
@@ -1507,6 +1575,129 @@ fn print_field_changes(changes: &Value, indent: &str) {
                 }
             }
         }
+    }
+}
+
+/// Render one `{"_array_diff": {...}}` envelope (see `json_diff`/`array_diff`
+/// in `diff.rs`) as a one-line summary plus compact per-element detail lines,
+/// e.g.:
+///
+/// ```text
+///     Entries: +3 −1 ~2 entries (12 → 13, keyed by Reference, Minimum Level)
+///       + {"Leveled List Entry":{"Reference":"0x0001A2B3", ...}}
+///       - {"Leveled List Entry":{"Reference":"0x0001A2B4", ...}}
+///       ~ Reference=0x0001A2B5, Minimum Level=10
+///         Count: 1 → 2
+/// ```
+fn print_array_diff(field: &str, array_diff: &serde_json::Map<String, Value>, indent: &str) {
+    let strategy = array_diff
+        .get("strategy")
+        .and_then(Value::as_str)
+        .unwrap_or("?");
+    let count_from = array_diff.get("count_from").and_then(Value::as_u64);
+    let count_to = array_diff.get("count_to").and_then(Value::as_u64);
+    let added = array_diff.get("added").and_then(Value::as_array);
+    let removed = array_diff.get("removed").and_then(Value::as_array);
+    let changed = array_diff.get("changed").and_then(Value::as_array);
+
+    let added_count = added.map(Vec::len).unwrap_or(0);
+    let removed_count = removed.map(Vec::len).unwrap_or(0);
+    let changed_count = changed.map(Vec::len).unwrap_or(0);
+
+    let mut buckets = Vec::new();
+    if added_count > 0 {
+        buckets.push(format!("+{added_count}"));
+    }
+    if removed_count > 0 {
+        buckets.push(format!("\u{2212}{removed_count}"));
+    }
+    if changed_count > 0 {
+        buckets.push(format!("~{changed_count}"));
+    }
+    let summary = if buckets.is_empty() {
+        "no changes".to_string()
+    } else {
+        buckets.join(" ")
+    };
+
+    let strategy_desc = match strategy {
+        "keyed" => {
+            let key_fields: Vec<String> = array_diff
+                .get("key_fields")
+                .and_then(Value::as_array)
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if key_fields.is_empty() {
+                "keyed".to_string()
+            } else {
+                format!("keyed by {}", key_fields.join(", "))
+            }
+        }
+        "positional" => "positional".to_string(),
+        "set" => "set".to_string(),
+        other => other.to_string(),
+    };
+
+    match (count_from, count_to) {
+        (Some(from), Some(to)) => {
+            println!("{indent}  {field}: {summary} entries ({from} \u{2192} {to}, {strategy_desc})")
+        }
+        _ => println!("{indent}  {field}: {summary} entries ({strategy_desc})"),
+    }
+
+    let elem_indent = format!("{indent}    ");
+    if let Some(added) = added {
+        for elem in added {
+            println!("{elem_indent}+ {}", compact_value(elem));
+        }
+    }
+    if let Some(removed) = removed {
+        for elem in removed {
+            println!("{elem_indent}- {}", compact_value(elem));
+        }
+    }
+    if let Some(changed) = changed {
+        for entry in changed {
+            let key = entry.get("key").cloned().unwrap_or(Value::Null);
+            println!("{elem_indent}~ {}", format_key(&key));
+            if let Some(changes) = entry.get("changes") {
+                print_field_changes(changes, &format!("{elem_indent}  "));
+            }
+        }
+    }
+}
+
+/// Render a keyed/positional array-diff entry's `"key"` object as compact
+/// `field=value, field=value` text (e.g. `Reference=0x0001A2B3, Minimum
+/// Level=10`, or `index=3` for a positional pairing).
+fn format_key(key: &Value) -> String {
+    match key.as_object() {
+        Some(map) if !map.is_empty() => map
+            .iter()
+            .map(|(k, v)| format!("{}={}", k, compact_value(v)))
+            .collect::<Vec<_>>()
+            .join(", "),
+        _ => compact_value(key),
+    }
+}
+
+/// Compact single-line rendering of a JSON value for the `_array_diff`
+/// added/removed detail lines, truncated to ~100 characters so one oversized
+/// element (e.g. a fully-decoded leveled-list entry) doesn't spill the
+/// terminal. Reuses [`format_val`] for scalars; falls back to compact JSON
+/// (not pretty-printed) for objects/arrays.
+fn compact_value(v: &Value) -> String {
+    let s = format_val(v);
+    const MAX_CHARS: usize = 100;
+    if s.chars().count() > MAX_CHARS {
+        let truncated: String = s.chars().take(MAX_CHARS).collect();
+        format!("{truncated}\u{2026}")
+    } else {
+        s
     }
 }
 

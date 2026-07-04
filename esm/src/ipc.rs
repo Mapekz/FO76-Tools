@@ -1,6 +1,6 @@
 //! Wire types and the canonical `dispatch` function shared by CLI, daemon, and N-API.
 
-use crate::diff::diff_databases;
+use crate::diff::{diff_databases_with, DiffOptions};
 use crate::registry::Registry;
 use crate::{Database, FormId, ResolveDepth, SearchField};
 use anyhow::bail;
@@ -110,6 +110,11 @@ pub enum Op {
     Diff {
         b: PathBuf,
         record_type: Option<String>,
+        /// Body-detail / noise-suppression / type-exclusion controls (see
+        /// [`DiffOptions`]). `#[serde(default)]` keeps older wire clients that
+        /// never send this field compatible — they get `DiffOptions::default()`.
+        #[serde(default)]
+        options: DiffOptions,
     },
     /// Daemon lifecycle: no ESM path required (ignored).
     Shutdown,
@@ -205,13 +210,17 @@ pub fn dispatch(reg: &Registry, req: &Request) -> Response {
 fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
     match &req.op {
         Op::Shutdown => Ok(Value::Null),
-        Op::Diff { b, record_type } => {
+        Op::Diff {
+            b,
+            record_type,
+            options,
+        } => {
             let (key_a, arc_a) = reg.get_or_open_with_key(&req.esm)?;
             let (key_b, arc_b) = reg.get_or_open_with_key(b)?;
             let same_db = key_a == key_b || std::sync::Arc::ptr_eq(&arc_a, &arc_b);
             if same_db {
                 let db = arc_a.lock().unwrap();
-                let mut result = diff_databases(&db, &db)?;
+                let mut result = diff_databases_with(&db, &db, options)?;
                 // same_db means no added records — enrich_added_sources is a no-op.
                 crate::diff::apply_type_filter(&mut result, record_type);
                 return Ok(serde_json::to_value(&result)?);
@@ -220,11 +229,11 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
             let mut result = if key_a < key_b {
                 let db_a = arc_a.lock().unwrap();
                 let db_b = arc_b.lock().unwrap();
-                diff_databases(&db_a, &db_b)?
+                diff_databases_with(&db_a, &db_b, options)?
             } else {
                 let db_b = arc_b.lock().unwrap();
                 let db_a = arc_a.lock().unwrap();
-                diff_databases(&db_a, &db_b)?
+                diff_databases_with(&db_a, &db_b, options)?
             };
             crate::diff::apply_type_filter(&mut result, record_type);
             Ok(serde_json::to_value(&result)?)
