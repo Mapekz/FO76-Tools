@@ -1,0 +1,460 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "old_esm": "",
+    "new_esm": "",
+    "old_label": "old",
+    "new_label": "new",
+    "patch_date": "2026-07-04",
+    "generated_at": "2026-07-04T00:00:00Z",
+    "excluded_types": [
+      "CELL",
+      "WRLD"
+    ],
+    "counts_excluded": {},
+    "suppressed_counts": {},
+    "counts": {
+      "added": 2,
+      "removed": 1,
+      "changed": 20
+    }
+  },
+  "records": {
+    "0x00100001": {
+      "form_id": "0x00100001",
+      "record_type": "WEAP",
+      "editor_id": "WEAP_TestRifle",
+      "name": "Test Rifle",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100050",
+          "path": "Keywords"
+        }
+      ],
+      "changes": [
+        {
+          "path": "Data / Damage",
+          "kind": "scalar",
+          "from": 10,
+          "to": 14,
+          "from_display": "`10`",
+          "to_display": "`14`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x00100010": {
+      "form_id": "0x00100010",
+      "record_type": "OMOD",
+      "editor_id": "OMOD_TestMod1",
+      "name": null,
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Data / Value 1",
+          "kind": "scalar",
+          "from": 1.0,
+          "to": 1.25,
+          "from_display": "`1.0`",
+          "to_display": "`1.25`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x00100011": {
+      "form_id": "0x00100011",
+      "record_type": "OMOD",
+      "editor_id": "OMOD_TestMod2",
+      "name": null,
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Data / Value 1",
+          "kind": "scalar",
+          "from": 0.9,
+          "to": 1.1,
+          "from_display": "`0.9`",
+          "to_display": "`1.1`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x00100020": {
+      "form_id": "0x00100020",
+      "record_type": "LVLI",
+      "editor_id": "LVLI_TestList",
+      "name": null,
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Leveled List Entry Count",
+          "kind": "scalar",
+          "from": 3,
+          "to": 4,
+          "from_display": "`3`",
+          "to_display": "`4`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x00100040": {
+      "form_id": "0x00100040",
+      "record_type": "COBJ",
+      "editor_id": "COBJ_TestRecipe",
+      "name": "Test Recipe",
+      "status": "added",
+      "cut": null,
+      "fields": {
+        "Data": {
+          "Created Object": "0x00100001"
+        },
+        "Components": [
+          {
+            "Component": "0x00200001",
+            "Quantity": 3
+          }
+        ],
+        "Workbench Keyword": "0x00200002"
+      },
+      "refs_out": [
+        {
+          "formid": "0x00100001",
+          "path": "Data / Created Object"
+        },
+        {
+          "formid": "0x00200001",
+          "path": "Components / Component"
+        },
+        {
+          "formid": "0x00200002",
+          "path": "Workbench Keyword"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100050": {
+      "form_id": "0x00100050",
+      "record_type": "KYWD",
+      "editor_id": "if_tmp_WeaponMod",
+      "name": null,
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": []
+    },
+    "0x00100070": {
+      "form_id": "0x00100070",
+      "record_type": "PERK",
+      "editor_id": "TestPerk01",
+      "name": "Test Perk",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Data / Playable",
+          "kind": "scalar",
+          "from": true,
+          "to": true,
+          "from_display": "`true`",
+          "to_display": "`true`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x00100072": {
+      "form_id": "0x00100072",
+      "record_type": "PERK",
+      "editor_id": "TestPerk02_orphan",
+      "name": "Test Perk Rank 2",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Data / Rank",
+          "kind": "scalar",
+          "from": 2,
+          "to": 2,
+          "from_display": "`2`",
+          "to_display": "`2`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x00100080": {
+      "form_id": "0x00100080",
+      "record_type": "KYWD",
+      "editor_id": "OrphanKeyword",
+      "name": null,
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": []
+    },
+    "0x00100091": {
+      "form_id": "0x00100091",
+      "record_type": "WEAP",
+      "editor_id": "WEAP_HubRef01",
+      "name": "Hub Weap 1",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100092": {
+      "form_id": "0x00100092",
+      "record_type": "WEAP",
+      "editor_id": "WEAP_HubRef02",
+      "name": "Hub Weap 2",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100093": {
+      "form_id": "0x00100093",
+      "record_type": "WEAP",
+      "editor_id": "WEAP_HubRef03",
+      "name": "Hub Weap 3",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100094": {
+      "form_id": "0x00100094",
+      "record_type": "WEAP",
+      "editor_id": "WEAP_HubRef04",
+      "name": "Hub Weap 4",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100095": {
+      "form_id": "0x00100095",
+      "record_type": "ARMO",
+      "editor_id": "ARMO_HubRef05",
+      "name": "Hub Armo 5",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100096": {
+      "form_id": "0x00100096",
+      "record_type": "ARMO",
+      "editor_id": "ARMO_HubRef06",
+      "name": "Hub Armo 6",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100097": {
+      "form_id": "0x00100097",
+      "record_type": "ARMO",
+      "editor_id": "ARMO_HubRef07",
+      "name": "Hub Armo 7",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100098": {
+      "form_id": "0x00100098",
+      "record_type": "ARMO",
+      "editor_id": "ARMO_HubRef08",
+      "name": "Hub Armo 8",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00100099": {
+      "form_id": "0x00100099",
+      "record_type": "MISC",
+      "editor_id": "MISC_HubRef09",
+      "name": "Hub Misc 9",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x0010009A": {
+      "form_id": "0x0010009A",
+      "record_type": "MISC",
+      "editor_id": "MISC_HubRef10",
+      "name": "Hub Misc 10",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x0010009B": {
+      "form_id": "0x0010009B",
+      "record_type": "MISC",
+      "editor_id": "MISC_HubRef11",
+      "name": "Hub Misc 11",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x0010009C": {
+      "form_id": "0x0010009C",
+      "record_type": "MISC",
+      "editor_id": "MISC_HubRef12",
+      "name": "Hub Misc 12",
+      "status": "changed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00100090",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x00300001": {
+      "form_id": "0x00300001",
+      "record_type": "ALCH",
+      "editor_id": "ALCH_TestChem",
+      "name": "Test Chem",
+      "status": "removed",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": []
+    },
+    "0x00300002": {
+      "form_id": "0x00300002",
+      "record_type": "CONT",
+      "editor_id": "CONT_UncategorizedTest",
+      "name": "Uncategorized Container",
+      "status": "added",
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": []
+    }
+  },
+  "common_changes": [],
+  "ref_names": {
+    "0x00100090": {
+      "record_type": "KYWD",
+      "editor_id": "HubKeyword"
+    },
+    "0x00200001": {
+      "record_type": "MISC",
+      "editor_id": "MISC_ScrapComponent",
+      "name": "Scrap Component"
+    },
+    "0x00200002": {
+      "record_type": "KYWD",
+      "editor_id": "wb_WeaponsWorkbench"
+    }
+  }
+}

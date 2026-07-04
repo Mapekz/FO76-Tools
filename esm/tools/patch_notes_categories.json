@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "settings": {
+    "unique_keyword_patterns": ["if_tmp_*"],
+    "hub_degree": 8,
+    "max_members": 40,
+    "refs_depth": 2,
+    "context_cap": 12
+  },
+  "categories": [
+    {
+      "id": "unique_weapons_gear",
+      "label": "Unique Weapons & Gear",
+      "rules": [
+        {"scope": "any", "record_type": ["KYWD"], "edid": ["if_tmp_*"]},
+        {"scope": "anchor", "record_type": ["WEAP", "ARMO"], "keyword": ["if_tmp_*"]}
+      ]
+    },
+    {
+      "id": "perks",
+      "label": "Perks & Legendary Perks",
+      "rules": [
+        {"scope": "anchor", "record_type": ["PERK", "PCRD"]},
+        {"scope": "any", "edid": ["LegendaryPerk*", "LP_*"]}
+      ]
+    },
+    {
+      "id": "weapons_combat",
+      "label": "Weapons & Combat Balance",
+      "rules": [
+        {"scope": "anchor", "record_type": ["WEAP", "AMMO", "PROJ", "EXPL", "OMOD", "ENCH"]}
+      ]
+    },
+    {
+      "id": "armor",
+      "label": "Armor",
+      "rules": [
+        {"scope": "anchor", "record_type": ["ARMO", "ARMA", "INNR"]}
+      ]
+    },
+    {
+      "id": "consumables",
+      "label": "Consumables & Chems",
+      "rules": [
+        {"scope": "anchor", "record_type": ["ALCH"]}
+      ]
+    },
+    {
+      "id": "events_quests",
+      "label": "Events & Quests",
+      "rules": [
+        {"scope": "anchor", "record_type": ["QUST", "SCEN", "DIAL", "INFO"]}
+      ]
+    },
+    {
+      "id": "npcs_creatures",
+      "label": "NPCs & Creatures",
+      "rules": [
+        {"scope": "anchor", "record_type": ["NPC_", "RACE", "LVLN"]}
+      ]
+    },
+    {
+      "id": "camp_workshop",
+      "label": "C.A.M.P. / Workshop",
+      "rules": [
+        {"scope": "anchor", "record_type": ["COBJ"], "keyword": ["Workshop*"]},
+        {"scope": "any", "edid": ["workshop_*", "*CAMP*"]}
+      ]
+    },
+    {
+      "id": "seasonal_score",
+      "label": "Seasonal / Score",
+      "rules": [
+        {"scope": "anchor", "record_type": ["AVTR", "CHAL", "ENTM"]},
+        {"scope": "any", "edid": ["*Season*", "*Score*"]}
+      ]
+    },
+    {
+      "id": "ui_misc",
+      "label": "UI & Misc",
+      "rules": [
+        {"scope": "anchor", "record_type": ["MESG", "GLOB", "FLST", "KYWD", "MISC", "TRNS", "SNDR"]}
+      ]
+    },
+    {
+      "id": "uncategorized",
+      "label": "Uncategorized",
+      "rules": []
+    }
+  ]
+}

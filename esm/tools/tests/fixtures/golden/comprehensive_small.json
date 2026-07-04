@@ -1,0 +1,888 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "old_esm": "",
+    "new_esm": "",
+    "old_label": "20260626",
+    "new_label": "20260703",
+    "patch_date": "2026-07-03",
+    "generated_at": "2026-07-03T00:00:00Z",
+    "excluded_types": [
+      "CELL",
+      "WRLD"
+    ],
+    "counts_excluded": {},
+    "suppressed_counts": {},
+    "counts": {
+      "added": 2,
+      "removed": 1,
+      "changed": 11
+    }
+  },
+  "records": {
+    "0x0100A001": {
+      "form_id": "0x0100A001",
+      "record_type": "WEAP",
+      "editor_id": "TestNewRifle",
+      "name": "New Test Rifle",
+      "description": null,
+      "status": "added",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": {
+        "Data": {
+          "Damage": 25,
+          "Value": 150,
+          "Weight": 6.5
+        },
+        "Keywords": [
+          "0x00050001",
+          "0x00050002",
+          "0x00050099"
+        ],
+        "Model": {
+          "Model Path": "meshes/weapons/newrifle.nif"
+        }
+      },
+      "refs_out": [
+        {
+          "formid": "0x00050001",
+          "path": "Keywords"
+        },
+        {
+          "formid": "0x00050002",
+          "path": "Keywords"
+        },
+        {
+          "formid": "0x00050099",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x0100C001": {
+      "form_id": "0x0100C001",
+      "record_type": "LVLI",
+      "editor_id": "TestNewLVLI01",
+      "name": null,
+      "description": null,
+      "status": "added",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": {
+        "Entries": [
+          {
+            "Leveled List Entry": {
+              "Reference": "0x00AA0005",
+              "Minimum Level": 1,
+              "Quantity": 0
+            }
+          },
+          {
+            "Leveled List Entry": {
+              "Reference": "0x00AA0006",
+              "Minimum Level": 1,
+              "Quantity": 1,
+              "ChanceNone": {
+                "value": 100,
+                "name": "Always"
+              }
+            }
+          }
+        ]
+      },
+      "refs_out": [
+        {
+          "formid": "0x00AA0005",
+          "path": "Entries / Leveled List Entry / Reference"
+        },
+        {
+          "formid": "0x00AA0006",
+          "path": "Entries / Leveled List Entry / Reference"
+        }
+      ],
+      "changes": []
+    },
+    "0x0100B001": {
+      "form_id": "0x0100B001",
+      "record_type": "ARMO",
+      "editor_id": "TestOldChestpiece",
+      "name": "Old Test Chestpiece",
+      "description": null,
+      "status": "removed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": {
+        "Data": {
+          "Value": 50,
+          "Armor Rating": 12
+        },
+        "Keywords": [
+          "0x00050003"
+        ]
+      },
+      "refs_out": [
+        {
+          "formid": "0x00050003",
+          "path": "Keywords"
+        }
+      ],
+      "changes": []
+    },
+    "0x01001001": {
+      "form_id": "0x01001001",
+      "record_type": "WEAP",
+      "editor_id": "TestRifle01",
+      "name": "Test Rifle",
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00654321",
+          "path": "Data / Ammo"
+        },
+        {
+          "formid": "0x00099999",
+          "path": "Data / Scope Attachment"
+        }
+      ],
+      "changes": [
+        {
+          "path": "Data / Damage",
+          "kind": "scalar",
+          "from": 10,
+          "to": 14,
+          "from_display": "`10`",
+          "to_display": "`14`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Data / Firing Type",
+          "kind": "enum",
+          "from": {
+            "value": 0,
+            "name": "Auto"
+          },
+          "to": {
+            "value": 1,
+            "name": "Burst"
+          },
+          "from_display": "`Auto`",
+          "to_display": "`Burst`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Data / Weapon Flags",
+          "kind": "flags",
+          "from": {
+            "value": "0x00000001",
+            "flags": [
+              "Automatic"
+            ]
+          },
+          "to": {
+            "value": "0x00000005",
+            "flags": [
+              "Automatic",
+              "Non-Playable"
+            ]
+          },
+          "from_display": "`Automatic`",
+          "to_display": "`Automatic, Non-Playable` *(+Non-Playable)*",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Data / Ammo",
+          "kind": "formid",
+          "from": "0x00123456",
+          "to": "0x00654321",
+          "from_display": "`0x00123456` (AMMO: `Ammo556Old` *\".556 Round (Old)\"*)",
+          "to_display": "`0x00654321` (AMMO: `Ammo762New` *\"7.62 Round\"*)",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Data / Scope Attachment",
+          "kind": "formid",
+          "from": null,
+          "to": "0x00099999",
+          "from_display": "*(null)*",
+          "to_display": "`0x00099999`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Model / Model Path",
+          "kind": "string",
+          "from": "meshes/weapons/rifle_old.nif",
+          "to": "meshes/weapons/rifle_new.nif",
+          "from_display": "`meshes/weapons/rifle_old.nif`",
+          "to_display": "`meshes/weapons/rifle_new.nif`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Object Bounds / X1",
+          "kind": "scalar",
+          "from": -10,
+          "to": -12,
+          "from_display": "`-10`",
+          "to_display": "`-12`",
+          "suppressed": "noise",
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Object Bounds / Y1",
+          "kind": "scalar",
+          "from": -10,
+          "to": -12,
+          "from_display": "`-10`",
+          "to_display": "`-12`",
+          "suppressed": "noise",
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01002001": {
+      "form_id": "0x01002001",
+      "record_type": "OMOD",
+      "editor_id": "TestMod01",
+      "name": "Test Barrel Mod",
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Data / Properties",
+          "kind": "array",
+          "from": null,
+          "to": {
+            "strategy": "keyed",
+            "key_fields": [
+              "Function Type",
+              "Property"
+            ],
+            "count_from": 2,
+            "count_to": 2,
+            "added": [
+              {
+                "Function Type": "ADD",
+                "Property": "NumProjectiles",
+                "Value 1": 2
+              }
+            ],
+            "removed": [
+              {
+                "Function Type": "MUL",
+                "Property": "Speed",
+                "Value 1": 0.9
+              }
+            ],
+            "changed": [
+              {
+                "key": {
+                  "Function Type": "MUL",
+                  "Property": "Damage"
+                },
+                "index_from": 0,
+                "index_to": 0,
+                "changes": {
+                  "Value 1": {
+                    "from": 1.1,
+                    "to": 1.25
+                  }
+                }
+              }
+            ]
+          },
+          "from_display": null,
+          "to_display": null,
+          "suppressed": null,
+          "common_group": null,
+          "array": {
+            "strategy": "keyed",
+            "key_fields": [
+              "Function Type",
+              "Property"
+            ],
+            "count_from": 2,
+            "count_to": 2,
+            "added": [
+              {
+                "key_display": "Function Type=`ADD`, Property=`NumProjectiles`",
+                "display": "Function Type=`ADD`, Property=`NumProjectiles`, Value 1=`2`",
+                "raw": {
+                  "Function Type": "ADD",
+                  "Property": "NumProjectiles",
+                  "Value 1": 2
+                }
+              }
+            ],
+            "removed": [
+              {
+                "key_display": "Function Type=`MUL`, Property=`Speed`",
+                "display": "Function Type=`MUL`, Property=`Speed`, Value 1=`0.9`",
+                "raw": {
+                  "Function Type": "MUL",
+                  "Property": "Speed",
+                  "Value 1": 0.9
+                }
+              }
+            ],
+            "changed": [
+              {
+                "key_display": "Function Type=`MUL`, Property=`Damage`",
+                "changes": [
+                  {
+                    "path": "Value 1",
+                    "kind": "scalar",
+                    "from": 1.1,
+                    "to": 1.25,
+                    "from_display": "`1.1`",
+                    "to_display": "`1.25`",
+                    "suppressed": null,
+                    "common_group": null,
+                    "array": null,
+                    "vmad": null
+                  }
+                ]
+              }
+            ]
+          },
+          "vmad": null
+        }
+      ]
+    },
+    "0x01003001": {
+      "form_id": "0x01003001",
+      "record_type": "LVLI",
+      "editor_id": "TestLVLI01",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [
+        {
+          "formid": "0x00AA0004",
+          "path": "Entries / Leveled List Entry / Reference"
+        }
+      ],
+      "changes": [
+        {
+          "path": "Entries",
+          "kind": "array",
+          "from": [
+            {
+              "Leveled List Entry": {
+                "Reference": "0x00AA0001",
+                "Minimum Level": 1,
+                "Quantity": 1
+              }
+            },
+            {
+              "Leveled List Entry": {
+                "Reference": "0x00AA0002",
+                "Minimum Level": 5,
+                "Quantity": 1
+              }
+            },
+            {
+              "Leveled List Entry": {
+                "Reference": "0x00AA0003",
+                "Minimum Level": 10,
+                "Quantity": 2
+              }
+            }
+          ],
+          "to": [
+            {
+              "Leveled List Entry": {
+                "Reference": "0x00AA0001",
+                "Minimum Level": 1,
+                "Quantity": 3
+              }
+            },
+            {
+              "Leveled List Entry": {
+                "Reference": "0x00AA0002",
+                "Minimum Level": 5,
+                "Quantity": 1
+              }
+            },
+            {
+              "Leveled List Entry": {
+                "Reference": "0x00AA0003",
+                "Minimum Level": 10,
+                "Quantity": 2
+              }
+            },
+            {
+              "Leveled List Entry": {
+                "Reference": "0x00AA0004",
+                "Minimum Level": 15,
+                "Quantity": 1
+              }
+            }
+          ],
+          "from_display": "`3 items`",
+          "to_display": "`4 items`",
+          "suppressed": null,
+          "common_group": null,
+          "array": {
+            "strategy": "keyed",
+            "key_fields": [
+              "Reference",
+              "Minimum Level"
+            ],
+            "count_from": 3,
+            "count_to": 4,
+            "added": [
+              {
+                "key_display": "Reference=`0x00AA0004` (MISC: *\"A rare crafting component.\"*), Minimum Level=`15`",
+                "display": "`0x00AA0004` (MISC: *\"A rare crafting component.\"*) (min lvl 15, ×1)",
+                "raw": {
+                  "Leveled List Entry": {
+                    "Reference": "0x00AA0004",
+                    "Minimum Level": 15,
+                    "Quantity": 1
+                  }
+                }
+              }
+            ],
+            "removed": [],
+            "changed": [
+              {
+                "key_display": "Reference=`0x00AA0001` (MISC: `JunkItem01` *\"Scrap Metal\"*), Minimum Level=`1`",
+                "changes": [
+                  {
+                    "path": "Quantity",
+                    "kind": "scalar",
+                    "from": 1,
+                    "to": 3,
+                    "from_display": "`1`",
+                    "to_display": "`3`",
+                    "suppressed": null,
+                    "common_group": null,
+                    "array": null,
+                    "vmad": null
+                  }
+                ]
+              }
+            ]
+          },
+          "vmad": null
+        },
+        {
+          "path": "Leveled List Entry Count",
+          "kind": "scalar",
+          "from": 3,
+          "to": 4,
+          "from_display": "`3`",
+          "to_display": "`4`",
+          "suppressed": "redundant_count",
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01004001": {
+      "form_id": "0x01004001",
+      "record_type": "NPC_",
+      "editor_id": "TestVMADNPC01",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Virtual Machine Adapter / hex",
+          "kind": "vmad",
+          "from": "0500436f756e740301030000000400466c6167050100",
+          "to": "0500436f756e740301050000000400466c6167050101",
+          "from_display": "`[VMAD hex, 44 chars]`",
+          "to_display": "`[VMAD hex, 44 chars]`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": {
+            "added": {},
+            "removed": {},
+            "changed": {
+              "Flag": {
+                "from": false,
+                "to": true
+              },
+              "Count": {
+                "from": 3,
+                "to": 5
+              }
+            }
+          }
+        }
+      ]
+    },
+    "0x01005001": {
+      "form_id": "0x01005001",
+      "record_type": "PERK",
+      "editor_id": "zzz_TestPerkRank03",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": "TestPerkRank03",
+      "cut": {
+        "marker": "ZZZ",
+        "confidence": "high",
+        "kind": "newly_deprecated"
+      },
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Data / Playable",
+          "kind": "scalar",
+          "from": true,
+          "to": false,
+          "from_display": "`true`",
+          "to_display": "`false`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01006001": {
+      "form_id": "0x01006001",
+      "record_type": "NPC_",
+      "editor_id": "TestNPC01",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Stats / Confidence",
+          "kind": "scalar",
+          "from": 2,
+          "to": 3,
+          "from_display": "`2`",
+          "to_display": "`3`",
+          "suppressed": null,
+          "common_group": "CC001",
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Stats / Aggression",
+          "kind": "scalar",
+          "from": 1,
+          "to": 2,
+          "from_display": "`1`",
+          "to_display": "`2`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01006002": {
+      "form_id": "0x01006002",
+      "record_type": "NPC_",
+      "editor_id": "TestNPC02",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Stats / Confidence",
+          "kind": "scalar",
+          "from": 2,
+          "to": 3,
+          "from_display": "`2`",
+          "to_display": "`3`",
+          "suppressed": null,
+          "common_group": "CC001",
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Stats / Aggression",
+          "kind": "scalar",
+          "from": 2,
+          "to": 3,
+          "from_display": "`2`",
+          "to_display": "`3`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01006003": {
+      "form_id": "0x01006003",
+      "record_type": "NPC_",
+      "editor_id": "TestNPC03",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Stats / Confidence",
+          "kind": "scalar",
+          "from": 2,
+          "to": 3,
+          "from_display": "`2`",
+          "to_display": "`3`",
+          "suppressed": null,
+          "common_group": "CC001",
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Stats / Aggression",
+          "kind": "scalar",
+          "from": 3,
+          "to": 4,
+          "from_display": "`3`",
+          "to_display": "`4`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01006004": {
+      "form_id": "0x01006004",
+      "record_type": "NPC_",
+      "editor_id": "TestNPC04",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Stats / Confidence",
+          "kind": "scalar",
+          "from": 2,
+          "to": 3,
+          "from_display": "`2`",
+          "to_display": "`3`",
+          "suppressed": null,
+          "common_group": "CC001",
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Stats / Aggression",
+          "kind": "scalar",
+          "from": 4,
+          "to": 5,
+          "from_display": "`4`",
+          "to_display": "`5`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01006005": {
+      "form_id": "0x01006005",
+      "record_type": "NPC_",
+      "editor_id": "TestNPC05",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Stats / Confidence",
+          "kind": "scalar",
+          "from": 2,
+          "to": 3,
+          "from_display": "`2`",
+          "to_display": "`3`",
+          "suppressed": null,
+          "common_group": "CC001",
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Stats / Aggression",
+          "kind": "scalar",
+          "from": 5,
+          "to": 6,
+          "from_display": "`5`",
+          "to_display": "`6`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    },
+    "0x01006006": {
+      "form_id": "0x01006006",
+      "record_type": "NPC_",
+      "editor_id": "TestNPC06",
+      "name": null,
+      "description": null,
+      "status": "changed",
+      "prev_editor_id": null,
+      "cut": null,
+      "fields": null,
+      "refs_out": [],
+      "changes": [
+        {
+          "path": "Stats / Confidence",
+          "kind": "scalar",
+          "from": 2,
+          "to": 3,
+          "from_display": "`2`",
+          "to_display": "`3`",
+          "suppressed": null,
+          "common_group": "CC001",
+          "array": null,
+          "vmad": null
+        },
+        {
+          "path": "Stats / Aggression",
+          "kind": "scalar",
+          "from": 6,
+          "to": 7,
+          "from_display": "`6`",
+          "to_display": "`7`",
+          "suppressed": null,
+          "common_group": null,
+          "array": null,
+          "vmad": null
+        }
+      ]
+    }
+  },
+  "common_changes": [
+    {
+      "id": "CC001",
+      "record_type": "NPC_",
+      "path": "Stats / Confidence",
+      "from": 2,
+      "to": 3,
+      "from_display": "`2`",
+      "to_display": "`3`",
+      "member_form_ids": [
+        "0x01006001",
+        "0x01006002",
+        "0x01006003",
+        "0x01006004",
+        "0x01006005",
+        "0x01006006"
+      ]
+    }
+  ],
+  "ref_names": {
+    "0x00123456": {
+      "record_type": "AMMO",
+      "editor_id": "Ammo556Old",
+      "name": ".556 Round (Old)"
+    },
+    "0x00654321": {
+      "record_type": "AMMO",
+      "editor_id": "Ammo762New",
+      "name": "7.62 Round"
+    },
+    "0x00050001": {
+      "record_type": "KYWD",
+      "editor_id": "WeapTypeRifle"
+    },
+    "0x00050002": {
+      "record_type": "KYWD",
+      "editor_id": "WeapMaterialMetal",
+      "name": "Metal Weapon"
+    },
+    "0x00050003": {
+      "record_type": "KYWD",
+      "editor_id": "ArmorMaterialLeather",
+      "name": "Leather Armor"
+    },
+    "0x00AA0001": {
+      "record_type": "MISC",
+      "editor_id": "JunkItem01",
+      "name": "Scrap Metal"
+    },
+    "0x00AA0002": {
+      "record_type": "MISC",
+      "editor_id": "JunkItem02",
+      "name": "Scrap Wood"
+    },
+    "0x00AA0003": {
+      "record_type": "MISC",
+      "editor_id": "JunkItem03",
+      "name": "Scrap Plastic"
+    },
+    "0x00AA0004": {
+      "record_type": "MISC",
+      "description": "A rare crafting component."
+    },
+    "0x00AA0005": {
+      "record_type": "MISC",
+      "editor_id": "JunkItem05",
+      "name": "Scrap Rubber"
+    },
+    "0x00AA0006": {
+      "record_type": "MISC",
+      "editor_id": "JunkItem06",
+      "name": "Scrap Glass"
+    }
+  }
+}

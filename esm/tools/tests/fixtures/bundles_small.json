@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "meta": {"generated": "2026-07-04", "source": "SeventySix.esm"},
+  "bundles": [
+    {
+      "id": "B0001",
+      "category": "unique_weapons_gear",
+      "category_label": "Unique Weapons & Gear",
+      "title": "Enclave Plasma Gun",
+      "anchor": {"form_id": "0x00123456", "record_type": "WEAP"},
+      "members": [
+        {
+          "form_id": "0x00123456",
+          "record_type": "WEAP",
+          "editor_id": "EnclavePlasmaGun",
+          "name": "Enclave Plasma Gun",
+          "status": "changed",
+          "role": "primary"
+        }
+      ],
+      "edges": [],
+      "bug_watch": true,
+      "lint_ids": ["L0001"]
+    },
+    {
+      "id": "B0002",
+      "category": "unique_weapons_gear",
+      "category_label": "Unique Weapons & Gear",
+      "title": "Tesla Rifle Prototype",
+      "anchor": {"form_id": "0x00654321", "record_type": "WEAP"},
+      "members": [
+        {
+          "form_id": "0x00654321",
+          "record_type": "WEAP",
+          "editor_id": "TeslaRiflePrototype",
+          "name": "Tesla Rifle Prototype",
+          "status": "added",
+          "role": "primary"
+        }
+      ],
+      "edges": [],
+      "bug_watch": false,
+      "lint_ids": []
+    },
+    {
+      "id": "B0003",
+      "category": "perks",
+      "category_label": "Perks",
+      "title": "Bear Arms Rework",
+      "anchor": {"form_id": "0x00ABCDEF", "record_type": "PERK"},
+      "members": [
+        {
+          "form_id": "0x00ABCDEF",
+          "record_type": "PERK",
+          "editor_id": "BearArms01",
+          "name": "Bear Arms",
+          "status": "changed",
+          "role": "primary"
+        }
+      ],
+      "edges": [],
+      "bug_watch": false,
+      "lint_ids": ["L0002"]
+    }
+  ],
+  "lints": [
+    {
+      "id": "L0001",
+      "rule": "missing_description",
+      "severity": "warning",
+      "form_id": "0x00123456",
+      "bundle_id": "B0001",
+      "message": "Missing description text.",
+      "data": {}
+    },
+    {
+      "id": "L0002",
+      "rule": "orphaned_perk_rank",
+      "severity": "info",
+      "form_id": "0x00ABCDEF",
+      "bundle_id": "B0003",
+      "message": "No PCRD references this rank.",
+      "data": {}
+    }
+  ]
+}

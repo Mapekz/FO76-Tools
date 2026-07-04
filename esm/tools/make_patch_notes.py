@@ -1,6 +1,21 @@
 #!/usr/bin/env python3
 """
-Orchestrator: ESM diff → patch notes → Discord chunks.
+make_patch_notes.py — mechanical-stage orchestrator for the FO76 patch-notes
+pipeline.
+
+Wires together, in-process, the four deterministic pipeline tools that turn a
+raw `esm diff --json` into a reviewable, bundled, linted output directory:
+
+    1. `esm --local diff` (subprocess)      -> diff.json
+    2. render_comprehensive.py (library)    -> comprehensive.json + .md
+    3. build_bundles.py (library)           -> bundles.json
+    4. run_lints.py (library)               -> lints.json + updated bundles.json
+    5. patchnotes_lib.py (manifest helpers) -> manifest.json
+
+This is the **mechanical** stage only — deterministic, no LLM involved. The
+narrative stage (slicing, per-category writer subagents, Discord chunking,
+`update_manifest.py`) is the `/patch-notes` Claude skill; see
+`.claude/skills/patch-notes/SKILL.md`.
 
 Usage:
     python3 tools/make_patch_notes.py OLD.esm NEW.esm [options]
@@ -19,40 +34,51 @@ Options:
                           Auto-detected from <new_esm_parent>/misc/ if omitted.
                           Mutually exclusive with --startup-ba2.
     --lang LANG           Localization language code (default: en)
-    --out-dir DIR         Output directory. Default: discord_chunks_<date> next to NEW.esm.
-    --highlights-file F   Inject this markdown file verbatim as the Highlights section
-                          (skip auto-highlights). Useful for hand-authored / LLM analysis.
+    --out-dir DIR         Output directory. Default: patch_<OLDTOK>_to_<NEWTOK>/
+                          next to NEW.esm.
     --esm-bin PATH        Path to the esm binary (default: target/release/esm relative to
                           the esm/ workspace root, or whatever is on $PATH as 'esm').
-    --keep-json PATH      Write the raw diff JSON to this path (default: /tmp/fo76_diff.json).
-    --type TYPE           Only include records of this type in the report (passed to esm diff).
+    --type SIG            Only include records of this type (passed to esm diff).
+    --bodies LEVEL        Detail level for decoded fields on added/removed record
+                          stubs: none|stub|full (default: full).
+    --keep-noise          Keep noisy fields (placement transforms, CELL precombine
+                          bookkeeping, Object Bounds) instead of suppressing them.
+    --exclude-type LIST   Comma-delimited record-type signatures to omit entirely
+                          (default: LAND,NAVM). Pass --exclude-type '' to disable.
+    --categories FILE     Path to patch_notes_categories.json (default: the copy
+                          next to this script).
+    --refs-depth N        Override the categorization config's base reverse-ref
+                          BFS depth.
+    --skip-bundles        Skip bundles.json (and, necessarily, lints.json).
+    --skip-lints          Skip lints.json (bundles.json is still built).
+    --offline             Use esm_daemon.FakeClient instead of a live warm daemon
+                          for the bundles/lints stages (requires --refs-fixture).
+    --refs-fixture F      FakeClient fixture JSON (required with --offline).
     -v, --verbose         Show full diff command + esm output.
 
 Exit codes:
     0  Success
     1  Input validation error (missing files, missing strings, etc.)
-    2  esm diff failed (non-zero exit)
-    3  Markdown generation failed
-    4  Discord chunking failed
+    2  esm diff failed (non-zero exit, or produced unparsable JSON)
+    3  A downstream tooling stage failed (comprehensive/bundles/lints)
 
 Examples:
     # Each ESM in its own directory; strings auto-detected from <dir>/strings/.
-    python3 tools/make_patch_notes.py \\
-        /path/to/v1/ /path/to/v2/
+    python3 tools/make_patch_notes.py /path/to/v1/ /path/to/v2/
 
     # Shared strings directory (both ESMs in the same folder, or explicit path).
-    python3 tools/make_patch_notes.py \\
-        /path/to/old/ /path/to/new/ \\
+    python3 tools/make_patch_notes.py /path/to/old/ /path/to/new/ \\
         --strings-dir /path/to/strings
 
     # With Startup BA2 for curve-table detail:
     STARTUP_BA2="/path/to/startup.ba2" \\
-    python3 tools/make_patch_notes.py \\
-        /path/to/v1/ /path/to/v2/
+    python3 tools/make_patch_notes.py /path/to/v1/ /path/to/v2/
 
     # Via justfile:
     just patch-notes /path/to/v1/ /path/to/v2/
 """
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -62,16 +88,34 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import NoReturn
 
 # Locate the esm/ workspace root (directory containing this script's parent).
 SCRIPT_DIR = Path(__file__).resolve().parent
 WORKSPACE_ROOT = SCRIPT_DIR.parent  # esm/
+DEFAULT_CATEGORIES_PATH = SCRIPT_DIR / "patch_notes_categories.json"
+
+# Sibling pipeline-tool modules live next to this script.
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import build_bundles as bb  # noqa: E402
+import esm_daemon as ed  # noqa: E402
+import patchnotes_lib as pl  # noqa: E402
+import render_comprehensive as rc  # noqa: E402
+import run_lints as rl  # noqa: E402
+
+# Orchestrator default for --exclude-type: world-placement/positional records
+# that are noisy and not meaningfully decoded (mirrors patchnotes_lib.EXCLUDED_TYPES'
+# WRLD/CELL exclusion, but applied at the Rust diff level to shrink diff.json
+# itself rather than filtering after the fact).
+DEFAULT_EXCLUDE_TYPE = "LAND,NAVM"
 
 # --------------------------------------------------------------------------
-# Helpers
+# Small helpers
 # --------------------------------------------------------------------------
+
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
@@ -89,11 +133,41 @@ def die(code, msg) -> NoReturn:
     sys.exit(code)
 
 
+def _now_iso():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def version_token(esm_path: Path) -> str:
     """Extract the 8-digit date token from an ESM stem, or return the stem itself."""
     stem = esm_path.stem
     m = re.search(r"\d{6,}", stem)
     return m.group(0) if m else stem
+
+
+def esm_token(esm_path: Path) -> str:
+    """Version token used for the default out-dir name and manifest
+    `inputs.{old,new}_token` — `version_token()` of the ESM's own stem,
+    unless the stem carries no run of >=4 digits, in which case fall back to
+    the parent directory's name (this pipeline's snapshot layout dates the
+    *parent directory*, not the file itself, e.g.
+    `$FO76_DATA_DIR/20260703/SeventySix.esm` — mirrors
+    render_comprehensive.py's `_label_for_esm`, which makes the same choice
+    for display labels)."""
+    stem = esm_path.stem
+    if not re.search(r"\d{4,}", stem) and esm_path.parent.name:
+        return version_token(esm_path.parent)
+    return version_token(esm_path)
+
+
+def derive_patch_date(esm_path: Path) -> str:
+    tok = version_token(esm_path)
+    if len(tok) == 8 and tok.isdigit():
+        return f"{tok[:4]}-{tok[4:6]}-{tok[6:]}"
+    return tok
+
+
+def default_out_dir(esm_a: Path, esm_b: Path) -> Path:
+    return esm_b.parent / f"patch_{esm_token(esm_a)}_to_{esm_token(esm_b)}"
 
 
 def find_esm_binary(explicit) -> Path:
@@ -116,7 +190,7 @@ def find_esm_binary(explicit) -> Path:
 
     die(1,
         "Cannot find esm binary. Build it first:\n"
-        "  cargo build --release\n"
+        "  cargo build --release --features server\n"
         "Or pass --esm-bin /path/to/esm")
 
 
@@ -242,55 +316,36 @@ def locate_strings_dirs(
         f"Refusing to diff without strings — output would be noise.")
 
 
-def derive_patch_date(esm_path: Path) -> str:
-    tok = version_token(esm_path)
-    if len(tok) == 8:
-        return f"{tok[:4]}-{tok[4:6]}-{tok[6:]}"
-    return tok
-
-
-def output_md_path(esm_new: Path, out_dir: Path | None) -> Path:
-    date = derive_patch_date(esm_new)
-    fname = f"patch_notes_{date}.md"
-    if out_dir:
-        return out_dir / fname
-    return esm_new.resolve().parent / fname
-
-
-def output_chunks_dir(esm_new: Path, explicit: str | None) -> Path:
-    date = derive_patch_date(esm_new)
-    if explicit:
-        return Path(explicit)
-    return esm_new.resolve().parent / f"discord_chunks_{date}"
-
-
 # --------------------------------------------------------------------------
-# Step 1: Run esm diff
+# Step 2: Run esm diff
 # --------------------------------------------------------------------------
 
-def run_esm_diff(
+
+def build_diff_cmd(
     esm_bin: Path,
     esm_a: Path,
     esm_b: Path,
+    *,
+    lang: str,
     strings_dir_a: Path | None,
     strings_dir_b: Path | None,
-    lang: str,
-    json_out: Path,
     record_type: str | None,
-    verbose: bool,
+    bodies: str,
+    keep_noise: bool,
+    exclude_type: str,
     startup_ba2: Path | None = None,
     curves_dir: Path | None = None,
-) -> dict:
+) -> list[str]:
+    """Build the `esm --local diff ...` argv list. Pure / side-effect-free so
+    it can be unit-tested directly without spawning a subprocess."""
     cmd = [
-        str(esm_bin),
-        "--local",
-        "diff",
-        str(esm_a),
-        str(esm_b),
-        "--lang", lang,
-        "--json",
-        "--pretty",
+        str(esm_bin), "--local", "diff", str(esm_a), str(esm_b),
+        "--lang", lang, "--json", "--bodies", bodies,
     ]
+    if keep_noise:
+        cmd.append("--keep-noise")
+    if exclude_type:
+        cmd += ["--exclude-type", exclude_type]
     # Pass string dirs: shared if identical, per-side if different.
     if strings_dir_a and strings_dir_b:
         if strings_dir_a == strings_dir_b:
@@ -308,8 +363,34 @@ def run_esm_diff(
         cmd += ["--startup-ba2", str(startup_ba2)]
     elif curves_dir:
         cmd += ["--curves-dir", str(curves_dir)]
+    return cmd
 
-    banner("Step 1: Running esm diff")
+
+def run_esm_diff(
+    esm_bin: Path,
+    esm_a: Path,
+    esm_b: Path,
+    *,
+    strings_dir_a: Path | None,
+    strings_dir_b: Path | None,
+    lang: str,
+    json_out: Path,
+    record_type: str | None,
+    bodies: str,
+    keep_noise: bool,
+    exclude_type: str,
+    verbose: bool,
+    startup_ba2: Path | None = None,
+    curves_dir: Path | None = None,
+) -> dict:
+    cmd = build_diff_cmd(
+        esm_bin, esm_a, esm_b,
+        lang=lang, strings_dir_a=strings_dir_a, strings_dir_b=strings_dir_b,
+        record_type=record_type, bodies=bodies, keep_noise=keep_noise,
+        exclude_type=exclude_type, startup_ba2=startup_ba2, curves_dir=curves_dir,
+    )
+
+    banner("Step 2: Running esm diff")
     eprint(f"  A:           {esm_a}")
     eprint(f"  B:           {esm_b}")
     if strings_dir_a == strings_dir_b:
@@ -317,11 +398,16 @@ def run_esm_diff(
     else:
         eprint(f"  strings-dir-a: {strings_dir_a}")
         eprint(f"  strings-dir-b: {strings_dir_b}")
+    eprint(f"  bodies:      {bodies}")
+    if keep_noise:
+        eprint("  keep-noise:  true")
+    if exclude_type:
+        eprint(f"  exclude-type: {exclude_type}")
     eprint(f"  json output: {json_out}")
     if record_type:
         eprint(f"  --type filter: {record_type}")
     if verbose:
-        eprint(f"\n  Command: {' '.join(str(c) for c in cmd)}")
+        eprint(f"\n  Command: {' '.join(cmd)}")
 
     t_start = time.time()
     # Always capture stdout (JSON output); in verbose mode also echo stderr live.
@@ -342,7 +428,7 @@ def run_esm_diff(
             "Check the error above. Common causes:\n"
             "  - Missing / wrong --strings-dir\n"
             "  - ESM not found or unreadable\n"
-            "  - Binary needs rebuild: cargo build --release")
+            "  - Binary needs rebuild: cargo build --release --features server")
 
     raw_output = result.stdout
 
@@ -369,99 +455,15 @@ def run_esm_diff(
 
 
 # --------------------------------------------------------------------------
-# Step 2: Generate Markdown
-# --------------------------------------------------------------------------
-
-def run_gen_patch_notes(
-    diff_data: dict,
-    esm_a: Path,
-    esm_b: Path,
-    md_out: Path,
-    highlights_file: str | None,
-    timing: dict | None,
-) -> None:
-    # Import from sibling tool (same directory as this script)
-    sys.path.insert(0, str(SCRIPT_DIR))
-    from gen_patch_notes import generate_markdown, derive_labels_from_filenames
-
-    banner("Step 2: Generating Markdown")
-
-    old_label = esm_a.name
-    new_label = esm_b.name
-    _, _, patch_date = derive_labels_from_filenames(old_label, new_label)
-    eprint(f"  old_label:  {old_label}")
-    eprint(f"  new_label:  {new_label}")
-    eprint(f"  patch_date: {patch_date}")
-    eprint(f"  output:     {md_out}")
-
-    highlights_text = None
-    if highlights_file:
-        with open(highlights_file) as f:
-            highlights_text = f.read()
-        eprint(f"  highlights: {highlights_file} ({len(highlights_text)} chars, injected verbatim)")
-    else:
-        eprint("  highlights: auto-generated from diff data")
-
-    t_start = time.time()
-    md = generate_markdown(
-        diff_data,
-        old_label=old_label,
-        new_label=new_label,
-        patch_date=patch_date,
-        timing=timing,
-        highlights_text=highlights_text,
-    )
-    t_elapsed = time.time() - t_start
-
-    if timing:
-        timing["interpret"] = t_elapsed
-        total = sum(timing.values())
-        md = md.replace("{INTERPRET_TIME}", f"{t_elapsed:.2f}s")
-        md = md.replace("{TOTAL_TIME}", f"{total:.2f}s")
-
-    md_out.parent.mkdir(parents=True, exist_ok=True)
-    with open(md_out, "w") as f:
-        f.write(md)
-
-    eprint(f"\n  ✓ Wrote {len(md):,} chars in {t_elapsed:.2f}s → {md_out}")
-
-
-# --------------------------------------------------------------------------
-# Step 3: Discord chunking
-# --------------------------------------------------------------------------
-
-def run_discord_chunker(md_path: Path, chunks_dir: Path) -> int:
-    """Run the discord_chunker, return number of chunks written."""
-    chunker = SCRIPT_DIR / "discord_chunker.py"
-    if not chunker.is_file():
-        die(4, f"discord_chunker.py not found at {chunker}")
-
-    banner("Step 3: Splitting for Discord")
-    eprint(f"  input:  {md_path}")
-    eprint(f"  output: {chunks_dir}/")
-
-    chunks_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, str(chunker), str(md_path), str(chunks_dir)]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        if result.stderr:
-            eprint(result.stderr)
-        die(4, f"discord_chunker.py failed with exit code {result.returncode}")
-
-    chunk_files = sorted(chunks_dir.glob("chunk_*.md"))
-    eprint(f"\n  ✓ {len(chunk_files)} chunk(s) written to {chunks_dir}/")
-    if result.stdout.strip():
-        eprint(f"  {result.stdout.strip()}")
-    return len(chunk_files)
-
-
-# --------------------------------------------------------------------------
 # Main
 # --------------------------------------------------------------------------
 
-def main():
+
+def build_arg_parser():
     ap = argparse.ArgumentParser(
-        description="ESM diff → patch notes → Discord chunks. One command, no LLM.",
+        description="ESM diff -> comprehensive.json/.md -> bundles.json -> lints.json "
+                     "-> manifest.json. The mechanical (deterministic) half of the "
+                     "patch-notes pipeline; no LLM involved.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -485,36 +487,62 @@ def main():
     ap.add_argument("--lang", default="en", metavar="LANG",
                     help="Localization language code (default: en)")
     ap.add_argument("--out-dir", default=None, metavar="DIR",
-                    help="Output directory for Discord chunks (default: discord_chunks_<date>/ "
-                         "next to NEW.esm)")
-    ap.add_argument("--highlights-file", default=None, metavar="FILE",
-                    help="Inject this markdown verbatim as the Highlights section")
+                    help="Output directory (default: patch_<OLDTOK>_to_<NEWTOK>/ next to NEW.esm)")
     ap.add_argument("--esm-bin", default=None, metavar="PATH",
                     help="Path to the esm binary (default: target/release/esm or $PATH)")
-    ap.add_argument("--keep-json", default=None, metavar="PATH",
-                    help="Write diff JSON to this path (default: /tmp/fo76_diff.json)")
     ap.add_argument("--type", default=None, dest="record_type", metavar="TYPE",
                     help="Only include records of this type (passed to esm diff)")
+    ap.add_argument("--bodies", default="full", choices=["none", "stub", "full"], metavar="LEVEL",
+                    help="Detail level for decoded fields on added/removed record stubs "
+                         "(default: full)")
+    ap.add_argument("--keep-noise", action="store_true",
+                    help="Keep noisy fields (placement transforms, CELL precombine "
+                         "bookkeeping, Object Bounds) instead of suppressing them")
+    ap.add_argument("--exclude-type", default=DEFAULT_EXCLUDE_TYPE, metavar="LIST",
+                    help=f"Comma-delimited record-type signatures to omit entirely "
+                         f"(default: {DEFAULT_EXCLUDE_TYPE}). Pass --exclude-type '' to disable.")
+    ap.add_argument("--categories", default=str(DEFAULT_CATEGORIES_PATH), metavar="FILE",
+                    help="Path to patch_notes_categories.json (default: the copy next to "
+                         "this script)")
+    ap.add_argument("--refs-depth", type=int, default=None, metavar="N",
+                    help="Override the categorization config's base reverse-ref BFS depth")
+    ap.add_argument("--skip-bundles", action="store_true",
+                    help="Skip bundles.json (and, necessarily, lints.json)")
+    ap.add_argument("--skip-lints", action="store_true",
+                    help="Skip lints.json (bundles.json is still built)")
+    ap.add_argument("--offline", action="store_true",
+                    help="Use esm_daemon.FakeClient instead of a live warm daemon for the "
+                         "bundles/lints stages (requires --refs-fixture)")
+    ap.add_argument("--refs-fixture", default=None, metavar="F",
+                    help="FakeClient fixture JSON (required with --offline)")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="Show full commands + esm output")
-    args = ap.parse_args()
+    return ap
+
+
+def main(argv=None):
+    args = build_arg_parser().parse_args(argv)
 
     t0 = time.time()
+    files_written: dict[str, str] = {}
 
-    # ---- Validate inputs --------------------------------------------------
-    banner("Validating inputs")
+    # ---- Step 1: Validate inputs -------------------------------------------
+    banner("Step 1: Validating inputs")
 
     esm_a = resolve_esm(args.old_esm, "Old")
     esm_b = resolve_esm(args.new_esm, "New")
 
     eprint(f"  OLD: {esm_a}  ({esm_a.stat().st_size:,} bytes)")
     eprint(f"  NEW: {esm_b}  ({esm_b.stat().st_size:,} bytes)")
-
-    if args.highlights_file and not Path(args.highlights_file).is_file():
-        die(1, f"--highlights-file not found: {args.highlights_file}")
+    eprint(f"  patch date (hint): {derive_patch_date(esm_b)}")
 
     esm_bin = find_esm_binary(args.esm_bin)
     eprint(f"  esm binary: {esm_bin}")
+
+    if args.offline and not args.refs_fixture:
+        die(1, "--offline requires --refs-fixture")
+    if args.refs_fixture and not Path(args.refs_fixture).is_file():
+        die(1, f"--refs-fixture not found: {args.refs_fixture}")
 
     strings_dir_a, strings_dir_b = locate_strings_dirs(
         esm_a, esm_b,
@@ -528,19 +556,6 @@ def main():
     else:
         eprint(f"  strings-dir-a: {strings_dir_a}  ✓")
         eprint(f"  strings-dir-b: {strings_dir_b}  ✓")
-
-    json_path = Path(args.keep_json) if args.keep_json else Path("/tmp/fo76_diff.json")
-
-    date = derive_patch_date(esm_b)
-    md_out = output_md_path(esm_b, out_dir=None)  # always next to NEW.esm
-    chunks_dir = output_chunks_dir(esm_b, args.out_dir)
-
-    eprint(f"  patch date: {date}")
-    eprint(f"  md output:  {md_out}")
-    eprint(f"  chunks dir: {chunks_dir}/")
-
-    # ---- Step 1: esm diff -------------------------------------------------
-    t_diff_start = time.time()
 
     if args.startup_ba2 and args.curves_dir:
         die(1, "--startup-ba2 and --curves-dir are mutually exclusive")
@@ -568,61 +583,169 @@ def main():
                     eprint(f"  curves-dir: {curves_dir}  (auto-detected) ✓")
                     break
 
+    out_dir = Path(args.out_dir).resolve() if args.out_dir else default_out_dir(esm_a, esm_b)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    eprint(f"  out dir: {out_dir}")
+
+    old_token = esm_token(esm_a)
+    new_token = esm_token(esm_b)
+
+    exclude_type = (args.exclude_type or "").strip()
+
+    categories_path = Path(args.categories)
+    if not categories_path.is_file():
+        die(1, f"--categories not found: {categories_path}")
+    try:
+        with categories_path.open(encoding="utf-8") as f:
+            config = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        die(1, f"failed to load --categories {categories_path}: {e}")
+    settings = dict(config.get("settings") or {})
+    if args.refs_depth is not None:
+        settings["refs_depth"] = args.refs_depth
+    config = {**config, "settings": settings}
+
+    # ---- Step 2: esm diff ---------------------------------------------------
+    diff_json_path = out_dir / "diff.json"
     diff_data = run_esm_diff(
         esm_bin, esm_a, esm_b,
         strings_dir_a=strings_dir_a,
         strings_dir_b=strings_dir_b,
         lang=args.lang,
-        json_out=json_path,
+        json_out=diff_json_path,
         record_type=args.record_type,
+        bodies=args.bodies,
+        keep_noise=args.keep_noise,
+        exclude_type=exclude_type,
         verbose=args.verbose,
         startup_ba2=startup_ba2,
         curves_dir=curves_dir,
     )
-    t_diff = time.time() - t_diff_start
+    files_written["diff"] = "diff.json"
 
-    # Build timing dict for embedding in the report.
-    # (We don't have per-side open times from the CLI — use total diff time.)
-    timing = {
-        "open_a": t_diff * 0.35,   # rough proportion for display
-        "open_b": t_diff * 0.35,
-        "diff":   t_diff * 0.30,
-    }
-
-    # ---- Step 2: Markdown -------------------------------------------------
+    # ---- Step 3: comprehensive.json / comprehensive.md ----------------------
+    banner("Step 3: Building comprehensive.json / comprehensive.md")
+    t_start = time.time()
     try:
-        run_gen_patch_notes(
-            diff_data, esm_a, esm_b,
-            md_out=md_out,
-            highlights_file=args.highlights_file,
-            timing=timing,
+        old_label, new_label, patch_date = rc.derive_labels_and_date(
+            str(diff_json_path), str(esm_a), str(esm_b), None, None, None,
         )
-    except Exception as e:
-        die(3, f"Markdown generation failed: {e}")
+        comp = rc.build_comprehensive(
+            diff_data,
+            old_esm=str(esm_a), new_esm=str(esm_b),
+            old_label=old_label, new_label=new_label, patch_date=patch_date,
+        )
+        md = rc.render_markdown(comp)
 
-    # ---- Step 3: Discord chunks -------------------------------------------
-    n_chunks = 0
+        comp_json_path = out_dir / "comprehensive.json"
+        comp_md_path = out_dir / "comprehensive.md"
+        with comp_json_path.open("w", encoding="utf-8") as f:
+            json.dump(comp, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        with comp_md_path.open("w", encoding="utf-8") as f:
+            f.write(md)
+    except Exception as e:
+        die(3, f"building comprehensive.json/.md failed: {e}")
+    files_written["comprehensive_json"] = "comprehensive.json"
+    files_written["comprehensive_md"] = "comprehensive.md"
+
+    counts = dict(comp["meta"]["counts"])
+    eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
+           f"({counts.get('added', 0)} added, {counts.get('changed', 0)} changed, "
+           f"{counts.get('removed', 0)} removed)")
+
+    # ---- Steps 4 + 5: bundles.json / lints.json ------------------------------
+    bundles_result = None
+    lints_payload = None
+    client = None
     try:
-        n_chunks = run_discord_chunker(md_out, chunks_dir)
-    except Exception as e:
-        die(4, f"Discord chunker failed: {e}")
+        if args.skip_bundles:
+            eprint("\nSkipping bundles.json and lint checks (--skip-bundles)")
+        else:
+            banner("Step 4: Building bundles.json")
+            t_start = time.time()
+            try:
+                if args.offline:
+                    client = ed.FakeClient(args.refs_fixture)
+                else:
+                    client = ed.ensure_daemon(esm_bin, esm_b)
+                bundles_result = bb.build_bundles(comp, client, str(esm_a), str(esm_b), config)
+                bundles_json_path = out_dir / "bundles.json"
+                with bundles_json_path.open("w", encoding="utf-8") as f:
+                    json.dump(bundles_result, f, indent=2, ensure_ascii=False)
+                    f.write("\n")
+            except Exception as e:
+                die(3, f"building bundles.json failed: {e}")
+            files_written["bundles"] = "bundles.json"
+            bc = bundles_result["meta"]["counts"]
+            eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
+                   f"({bc['bundles']} bundles, {bc['singletons']} singletons, "
+                   f"{bc['uncategorized']} uncategorized)")
 
-    # ---- Summary ----------------------------------------------------------
+            if args.skip_lints:
+                eprint("\nSkipping lint checks (--skip-lints)")
+            else:
+                banner("Step 5: Running lint checks")
+                t_start = time.time()
+                try:
+                    lints_payload, updated_bundles = rl.run_lints(
+                        comp, bundles_result, client,
+                        new_esm=str(esm_b), old_esm=str(esm_a),
+                        settings=config.get("settings"),
+                    )
+                    with (out_dir / "lints.json").open("w", encoding="utf-8") as f:
+                        json.dump(lints_payload, f, indent=2)
+                        f.write("\n")
+                    with (out_dir / "bundles.json").open("w", encoding="utf-8") as f:
+                        json.dump(updated_bundles, f, indent=2)
+                        f.write("\n")
+                except Exception as e:
+                    die(3, f"running lint checks failed: {e}")
+                files_written["lints"] = "lints.json"
+                lc = lints_payload["meta"]["counts"]
+                eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
+                       f"(error={lc['error']} warn={lc['warn']} info={lc['info']})")
+    finally:
+        if client is not None:
+            client.close()
+
+    # ---- Step 6: manifest.json -----------------------------------------------
+    banner("Step 6: Writing manifest.json")
+
+    manifest_counts = dict(counts)
+    if bundles_result is not None:
+        manifest_counts.update(bundles_result["meta"]["counts"])
+    if lints_payload is not None:
+        manifest_counts["lints"] = lints_payload["meta"]["counts"]
+
+    manifest = pl.new_manifest(
+        patch_date=patch_date,
+        old_token=old_token,
+        new_token=new_token,
+        new_esm_size=esm_b.stat().st_size,
+        new_esm_mtime=int(esm_b.stat().st_mtime),
+        pipeline_version=pl.SCHEMA_VERSION,
+        counts=manifest_counts,
+    )
+    manifest["stages"]["mechanical"]["completed_at"] = _now_iso()
+    manifest["stages"]["mechanical"]["files"] = dict(files_written)
+    pl.write_manifest(out_dir, manifest)
+    files_written["manifest"] = "manifest.json"
+    eprint(f"  wrote {out_dir / 'manifest.json'}")
+
+    # ---- Step 7: summary -------------------------------------------------
     t_total = time.time() - t0
     banner("Done")
-    eprint(f"\n  ✓ Diff JSON:      {json_path}")
-    eprint(f"  ✓ Patch notes MD: {md_out}")
-    eprint(f"  ✓ Discord chunks: {chunks_dir}/ ({n_chunks} files)")
+    for fname in files_written.values():
+        eprint(f"  ✓ {out_dir / fname}")
     eprint(f"\n  Total time: {t_total:.1f}s")
-    eprint(f"\nTo reproduce:")
-    eprint(f"  python3 tools/make_patch_notes.py {esm_a} {esm_b} \\")
-    if strings_dir_a == strings_dir_b:
-        eprint(f"    --strings-dir {strings_dir_a}")
-    else:
-        eprint(f"    --strings-dir-a {strings_dir_a} \\")
-        eprint(f"    --strings-dir-b {strings_dir_b}")
+    eprint(
+        "\n  Narrative stage: run the /patch-notes skill "
+        "(writes notes/, discord/, then update_manifest.py)."
+    )
     eprint()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
