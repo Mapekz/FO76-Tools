@@ -5,14 +5,17 @@
   "productName": "FO76 ESM Viewer",
   "main": "out/main/index.js",
   "scripts": {
+    "predev": "npm run build:addon",
     "dev": "electron-vite dev",
+    "prebuild": "npm run build:addon",
     "build": "electron-vite build",
+    "build:addon": "npm --prefix ../esm/bindings/napi run build",
     "preview": "electron-vite preview",
-    "package:dir": "electron-builder --dir"
+    "package:dir": "electron-builder --dir",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
   },
   "dependencies": {
-    "@fo76/esm-napi": "file:../bindings/napi",
-    "electron-updater": "^6.1.7"
+    "@fo76/esm-napi": "file:../esm/bindings/napi"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4",

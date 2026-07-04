@@ -52,7 +52,8 @@ Clean layering — edit at the right level:
 | `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
 | `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 6); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Arc<Mutex<Database>>`); async: `open_database`, `record_by_edid`, `record_by_id`, `referenced_by`, `referenced_by_id`; sync: `file_info`, `list_groups`, `list_type_records`, `record_by_formid` |
-| `app/` | Electron GUI ("FO76 ESM Viewer"); main/preload/renderer; consumes the N-API addon |
+
+The Electron GUI ("FO76 ESM Viewer") that consumes this addon lives in the sibling `../esm-viewer/` directory, not in this crate — see [`../esm-viewer/CLAUDE.md`](../esm-viewer/CLAUDE.md).
 
 Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`, `RefList`, `RefRow`, `RefPathNode`.
 
@@ -79,13 +80,13 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 
 ## N-API Binding and Electron App
 
-The `bindings/napi/` sub-crate (`esm-napi`) builds a `esm-napi.<platform>.node` addon. The Electron `app/` depends on it via the `@fo76/esm-napi` npm package (local file dep). After any Rust API change that affects `EsmDatabase`, rebuild the addon:
+The `bindings/napi/` sub-crate (`esm-napi`) builds a `esm-napi.<platform>.node` addon. The Electron app is now at `../esm-viewer/` (sibling directory of `esm/`, tracked separately at repo root) and depends on it via the `@fo76/esm-napi` npm package (local file dep, `"file:../esm/bindings/napi"`). After any Rust API change that affects `EsmDatabase`, rebuild the addon:
 
 ```sh
 cd bindings/napi && npm run build   # or build:debug
 ```
 
-The app loads the addon via `app/src/main/addon.ts`. The `app/src/shared/api-types.ts` file is the TypeScript mirror of the Rust N-API types — keep them in sync when changing `EsmDatabase` methods.
+The app loads the addon via `esm-viewer/src/main/addon.ts`. The `esm-viewer/src/shared/api-types.ts` file is the TypeScript mirror of the Rust N-API types — keep them in sync when changing `EsmDatabase` methods.
 
 ## Game Data
 

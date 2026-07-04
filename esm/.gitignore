@@ -14,11 +14,6 @@ USAGE.local.md
 # napi binding build output (platform-specific binary)
 bindings/napi/*.node
 bindings/napi/node_modules/
-
-# Electron app build output and deps
-app/node_modules/
-app/out/
-app/dist/
 *.tsbuildinfo
 
 # Generated patch-note outputs (date-stamped, non-redistributable)

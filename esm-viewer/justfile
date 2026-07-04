@@ -1,0 +1,28 @@
+# Run from esm-viewer/.
+# Install `just` once: cargo install just
+#
+# Usage:
+#   just          -> typecheck (the local CI pass for this app)
+#   just addon    -> rebuild the ../esm/bindings/napi native addon
+#   just dev      -> launch the Electron app in dev mode
+#   just build    -> production build (electron-vite build)
+
+default: check
+
+# Rebuild the native N-API addon this app depends on.
+# Run after any Rust API change under ../esm/bindings/napi.
+addon:
+    npm run build:addon
+
+# Type-check main/preload (Node lib) and renderer (DOM lib) separately — they use
+# different tsconfigs, see tsconfig.json / tsconfig.node.json.
+check:
+    npm run typecheck
+
+# Launch the app in dev mode (electron-vite dev). Rebuilds the addon first.
+dev:
+    npm run dev
+
+# Production build (electron-vite build). Rebuilds the addon first.
+build:
+    npm run build

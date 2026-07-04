@@ -1,9 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "CommonJS",
     "lib": ["ES2022"],
     "jsx": "preserve"
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "electron.vite.config.*"]
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "electron.vite.config.*"]
 }

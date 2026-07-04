@@ -1,5 +1,5 @@
-appId: com.fo76.esm-browser
-productName: FO76 ESM Browser
+appId: com.fo76.esm-viewer
+productName: FO76 ESM Viewer
 directories:
   output: dist
 files:
