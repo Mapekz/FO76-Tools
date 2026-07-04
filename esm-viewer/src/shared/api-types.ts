@@ -18,6 +18,8 @@ export const CH = {
   search: 'search',
   filterTypeRecords: 'filter-type-records',
   listTypeFieldPaths: 'list-type-field-paths',
+  recordRaw: 'record-raw',
+  coverageReport: 'coverage-report',
 } as const
 
 export type DbId = string
@@ -131,6 +133,30 @@ export interface FilterResult {
 
 export type FilterOp = 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte'
 
+export interface RawSubrecordView {
+  signature: string
+  size: number
+  hex: string
+}
+
+export interface RawRecordView {
+  header: RecordResult['header']
+  subrecords: RawSubrecordView[]
+}
+
+export interface Markers {
+  unknown_record: number
+  raw_fallback: number
+  unmapped: number
+  unresolved: number
+  records: number
+}
+
+export interface CoverageReport {
+  by_type: Record<string, Markers>
+  totals: Markers
+}
+
 export interface Fo76Api {
   openFileDialog(): Promise<string | null>
   openFolderDialog(): Promise<string | null>
@@ -169,4 +195,6 @@ export interface Fo76Api {
     limit: number
   ): Promise<FilterResult>
   listTypeFieldPaths(id: DbId, sig: string): Promise<string[]>
+  recordRaw(id: DbId, target: string): Promise<RawRecordView>
+  coverageReport(id: DbId, recordType: string | undefined, sample: number): Promise<CoverageReport>
 }

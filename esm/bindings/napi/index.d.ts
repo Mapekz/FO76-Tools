@@ -71,4 +71,12 @@ export declare class EsmDatabase {
    * an intermediate-node `path` array (empty for depth-1 results).
    */
   referencedById(id: string, depth?: number | undefined | null): Promise<any>
+  /** Hex/subrecord dump of a record, by FormID or EditorID (auto-detected). */
+  recordRaw(id: string): Promise<any>
+  /**
+   * Decode-coverage report: per-type counts of _unknown_record/_raw/_unmapped/
+   * _unresolved markers. `record_type` (4-char sig, optional) restricts to one
+   * type; `sample` caps records decoded per type (0 = unlimited).
+   */
+  coverageReport(recordType: string | undefined | null, sample: number): Promise<any>
 }

@@ -31,6 +31,9 @@ const api: Fo76Api = {
   filterTypeRecords: (id, sig, path, op, value, limit) =>
     ipcRenderer.invoke(CH.filterTypeRecords, id, sig, path, op, value, limit),
   listTypeFieldPaths: (id, sig) => ipcRenderer.invoke(CH.listTypeFieldPaths, id, sig),
+  recordRaw: (id, target) => ipcRenderer.invoke(CH.recordRaw, id, target),
+  coverageReport: (id, recordType, sample) =>
+    ipcRenderer.invoke(CH.coverageReport, id, recordType, sample),
 }
 
 contextBridge.exposeInMainWorld('api', api)

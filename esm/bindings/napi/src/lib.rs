@@ -291,6 +291,49 @@ impl EsmDatabase {
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
     }
+
+    /// Hex/subrecord dump of a record, by FormID or EditorID (auto-detected).
+    #[napi]
+    pub async fn record_raw(&self, id: String) -> napi::Result<serde_json::Value> {
+        let inner = self.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            let sel = RecordSel::from_input(&id)
+                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+            let mut db = inner
+                .lock()
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let fid = resolve_sel(&mut db, sel)?;
+            let rec = db
+                .record_raw(fid)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+            let view = esm::ipc::raw_record_view(&rec);
+            serde_json::to_value(&view).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+    }
+
+    /// Decode-coverage report: per-type counts of _unknown_record/_raw/_unmapped/
+    /// _unresolved markers. `record_type` (4-char sig, optional) restricts to one
+    /// type; `sample` caps records decoded per type (0 = unlimited).
+    #[napi]
+    pub async fn coverage_report(
+        &self,
+        record_type: Option<String>,
+        sample: u32,
+    ) -> napi::Result<serde_json::Value> {
+        let inner = self.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            let db = inner
+                .lock()
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let report = esm::ipc::coverage_report(&db, record_type.as_deref(), sample as usize)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+            serde_json::to_value(&report).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+    }
 }
 
 /// Parse a FormID hex string to its display form.

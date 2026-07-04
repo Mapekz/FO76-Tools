@@ -169,6 +169,22 @@ pub struct RawSubrecordView {
     pub hex: String,
 }
 
+/// Convert a raw parsed record into its hex-dump presentation view.
+pub fn raw_record_view(rec: &crate::reader::ParsedRecord) -> RawRecordView {
+    RawRecordView {
+        header: rec.header.clone(),
+        subrecords: rec
+            .subrecords
+            .iter()
+            .map(|sr| RawSubrecordView {
+                signature: sr.signature.to_string(),
+                size: sr.data.len(),
+                hex: sr.data.iter().map(|b| format!("{:02x}", b)).collect(),
+            })
+            .collect(),
+    }
+}
+
 /// Counts of schema-coverage markers per record type.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Markers {
@@ -265,18 +281,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
         Op::RecordRaw { sel } => {
             let form_id = resolve_sel(db, sel)?;
             let rec = db.record_raw(form_id)?;
-            let view = RawRecordView {
-                header: rec.header,
-                subrecords: rec
-                    .subrecords
-                    .iter()
-                    .map(|sr| RawSubrecordView {
-                        signature: sr.signature.to_string(),
-                        size: sr.data.len(),
-                        hex: sr.data.iter().map(|b| format!("{:02x}", b)).collect(),
-                    })
-                    .collect(),
-            };
+            let view = raw_record_view(&rec);
             Ok(serde_json::to_value(&view)?)
         }
         Op::ListByType { sig, limit } => {

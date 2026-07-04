@@ -205,4 +205,19 @@ export function registerIpc(): void {
     const validSig = validateSig(sig)
     return wrap(() => entry.db.listTypeFieldPaths(validSig))
   })
+
+  ipcMain.handle(CH.recordRaw, async (_e, id: string, target: unknown) => {
+    const entry = registry.get(id)
+    if (!entry) throw new Error(`no database with id ${id}`)
+    const validTarget = validateTarget(target)
+    return await entry.db.recordRaw(validTarget)
+  })
+
+  ipcMain.handle(CH.coverageReport, async (_e, id: string, recordType: unknown, sample: unknown) => {
+    const entry = registry.get(id)
+    if (!entry) throw new Error(`no database with id ${id}`)
+    const validRecordType = validateOptionalText('recordType', recordType, 4)
+    const validSample = validateUint('sample', sample)
+    return await entry.db.coverageReport(validRecordType, validSample)
+  })
 }
