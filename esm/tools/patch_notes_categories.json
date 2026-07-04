@@ -13,7 +13,9 @@
       "label": "Unique Weapons & Gear",
       "rules": [
         {"scope": "any", "record_type": ["KYWD"], "edid": ["if_tmp_*"]},
-        {"scope": "anchor", "record_type": ["WEAP", "ARMO"], "keyword": ["if_tmp_*"]}
+        {"scope": "anchor", "record_type": ["WEAP", "ARMO"], "keyword": ["if_tmp_*"]},
+        {"scope": "anchor", "record_type": ["OMOD"], "edid": ["mod_Custom_*"]},
+        {"scope": "member", "record_type": ["KYWD"], "edid": ["if_tmp_*"]}
       ]
     },
     {

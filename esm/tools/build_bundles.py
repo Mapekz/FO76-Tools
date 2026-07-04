@@ -87,8 +87,15 @@ _STATUS_WEIGHT = {"added": 2, "changed": 1, "removed": 0}
 
 # Context-member attachment preference (drop-source relevance), in rank
 # order; anything else (besides a unique-keyword-pattern KYWD, ranked just
-# after these) sorts last.
+# after these) sorts last. A candidate connected to a bundle member via one
+# of CONTEXT_TOP_TIER_RELATIONS outranks all of these -- see _context_rank.
 CONTEXT_PREFERRED_TYPES = ["NPC_", "CONT", "QUST", "COBJ"]
+
+# Edge relations whose target is the single most story-relevant context node
+# for this bundle -- an OMOD's own weapon/armor ("mod_for"), or a COBJ's
+# crafted item ("crafts") -- and so rank above even NPC_/CONT/QUST/COBJ in
+# attach_context's preference order (see _context_rank).
+CONTEXT_TOP_TIER_RELATIONS = {"mod_for", "crafts"}
 
 # Bundle-merge overlap threshold (non-context member Jaccard-ish ratio, see
 # `merge_by_overlap`).
@@ -134,12 +141,22 @@ def _priority_rank(record_type):
 # item's referencers) reads as "dropped via" -- same relation, different
 # phrasing, since the wire schema's relation enum has no separate
 # "dropped_via" value.
+#
+# "mod_for" is deliberately listed in BOTH directions (OMOD -> WEAP/ARMO and
+# WEAP/ARMO -> OMOD): a WEAP/ARMO's own data forward-references its
+# compatible OMODs (e.g. via its Object Template), so when the OMOD is the
+# one in the diff universe and the WEAP/ARMO isn't, `client.refs()` on the
+# OMOD surfaces the WEAP/ARMO as the referencer -- i.e. `from`=WEAP/ARMO,
+# `to`=OMOD (verified against a live ESM: refs(mod_Custom_SaltOfTheEarth)
+# returns DoubleBarrelShotgun). Both directions describe the same real-world
+# relationship and both map to the same relation/label ("mod for").
 
 _EDGE_RULES = [
     ({"LVLI"}, None, None, "contains"),
     ({"NPC_"}, None, None, "carried_by"),
     ({"CONT"}, None, None, "found_in"),
     ({"OMOD"}, {"WEAP", "ARMO"}, None, "mod_for"),
+    ({"WEAP", "ARMO"}, {"OMOD"}, None, "mod_for"),
     ({"COBJ"}, None, ["Created Object"], "crafts"),
     ({"COBJ"}, None, ["Components", "Component"], "crafted_from"),
     ({"COBJ"}, None, ["Workbench Keyword"], "crafted_at"),
@@ -584,22 +601,30 @@ def build_context_incidence(edges, u):
     return inc
 
 
-def _context_rank(stub, unique_keyword_patterns):
+def _context_rank(stub, incident_pairs, unique_keyword_patterns):
+    """Rank 0 (highest): connected to a bundle member via a
+    CONTEXT_TOP_TIER_RELATIONS edge (e.g. an OMOD's own mod target, or a
+    COBJ's crafted item) -- the single most story-relevant context node.
+    Rank 1: NPC_/CONT/QUST/COBJ. Rank 2: a unique-keyword-pattern KYWD.
+    Rank 3: everything else."""
     record_type = (stub or {}).get("record_type")
     editor_id = (stub or {}).get("editor_id") or ""
+    if any(e.get("relation") in CONTEXT_TOP_TIER_RELATIONS for _u_fid, e in incident_pairs):
+        return (0, 0)
     if record_type in CONTEXT_PREFERRED_TYPES:
-        return (0, CONTEXT_PREFERRED_TYPES.index(record_type))
+        return (1, CONTEXT_PREFERRED_TYPES.index(record_type))
     if record_type == "KYWD" and any(
         fnmatch.fnmatch(editor_id.lower(), pat.lower()) for pat in unique_keyword_patterns
     ):
-        return (1, 0)
-    return (2, 0)
+        return (2, 0)
+    return (3, 0)
 
 
 def attach_context(members, context_incidence, context_stubs, cap, unique_keyword_patterns):
     """Step 7a. Candidate context nodes = anything incident to a member of
-    this bundle. Sorted by preference (NPC_/CONT/QUST/COBJ first, then a
-    unique-keyword-pattern KYWD, then anything else; form_id as a
+    this bundle. Sorted by preference (a mod_for/crafts-linked node --
+    e.g. an OMOD's own weapon/armor -- first, then NPC_/CONT/QUST/COBJ, then
+    a unique-keyword-pattern KYWD, then anything else; form_id as a
     deterministic final tie-break), capped at `cap`. Returns (member dicts
     with role="context"/status="unchanged", their connecting edges)."""
     candidates = {
@@ -610,7 +635,8 @@ def attach_context(members, context_incidence, context_stubs, cap, unique_keywor
 
     ordered = sorted(
         candidates.keys(),
-        key=lambda c: _context_rank(context_stubs.get(c), unique_keyword_patterns) + (_int_fid(c),),
+        key=lambda c: _context_rank(context_stubs.get(c), candidates[c], unique_keyword_patterns)
+        + (_int_fid(c),),
     )
     chosen = ordered[:cap]
 

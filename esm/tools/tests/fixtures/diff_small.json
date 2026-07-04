@@ -153,8 +153,8 @@
                 "Function Type",
                 "Property"
               ],
-              "count_from": 2,
-              "count_to": 2,
+              "count_from": 3,
+              "count_to": 3,
               "added": [
                 {
                   "Function Type": "ADD",
@@ -181,6 +181,26 @@
                     "Value 1": {
                       "from": 1.1,
                       "to": 1.25
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "Function Type": {
+                      "value": 1,
+                      "name": "MUL+ADD"
+                    },
+                    "Property": {
+                      "value": 34,
+                      "name": "AimModelMaxConeDegrees"
+                    }
+                  },
+                  "index_from": 1,
+                  "index_to": 1,
+                  "changes": {
+                    "Value 1": {
+                      "from": 1.1,
+                      "to": 1.5
                     }
                   }
                 }

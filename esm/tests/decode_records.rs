@@ -311,6 +311,188 @@ fn omod_legendary_weapon_data_decodes_correctly() {
     }
 }
 
+/// OMOD DATA `Properties` resolve `Function Type` and `Property` correctly
+/// across Value-Type branches and Form-Type targets, and fall back to a bare
+/// integer (never panicking, never losing the value) for an out-of-range
+/// Property index.
+///
+/// Ground truth: `TES5Edit/Core/wbDefinitionsFO76.pas`:
+///   - `wbOMODDataFunctionTypeDecider` (~line 3229) maps Value Type →
+///     Function Type branch: `FormID,Int` (4) → branch 3 (`SET`/`REM`/`ADD`);
+///     `Float` (1) → branch 0 (`SET`/`MUL+ADD`/`ADD`).
+///   - `GetObjectModPropertyEnum` (~line 3160): for an OMOD record, the
+///     DATA struct's `Form Type` field (stored as the target record's 4-char
+///     signature) selects `wbArmorPropertyEnum` (19 entries, ~line 7197) /
+///     `wbWeaponPropertyEnum` (115 entries, ~line 7228) /
+///     `wbActorPropertyEnum` (6 entries, ~line 7219).
+///
+/// This test uses `Form Type = ARMO` with three Properties:
+///   - `Properties[0]`: Value Type `Float`, Function Type 1 → `"MUL+ADD"`;
+///     Property 5 → `"Value"` (the 6th, 0-indexed, entry of
+///     `wbArmorPropertyEnum`).
+///   - `Properties[1]`: Value Type `FormID,Int`, Function Type 1 → `"REM"`
+///     (the FormID branch is `SET`/`REM`/`ADD`).
+///   - `Properties[2]`: Property index 9999 — far beyond ARMO's 19-entry
+///     table — must decode as a bare JSON number, not an enum object, while
+///     the record as a whole still decodes fully (no `_raw`/`_unmapped`
+///     markers).
+#[test]
+fn omod_data_properties_resolve_armo_form_type_and_out_of_range_property() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx(&schema);
+
+    let data_hex = concat!(
+        "00000000", // Include Count = 0
+        "03000000", // Property Count = 3
+        "00",       // Unknown Bool 1 = False
+        "00",       // Unknown Bool 2 = False
+        "41524d4f", // Form Type = ARMO (Armor)
+        "00",       // Max Rank = 0
+        "00",       // Level Tier Scaled Offset = 0
+        "00000000", // Attach Point = null
+        "00000000", // Attach Parent Slots count (u32) = 0
+        "00000000", // Items count (u32) = 0
+        // (Includes: Include Count = 0, so no Includes bytes follow)
+        // Property[0]: VT=1(Float) Func=1(MUL+ADD) Prop=5(Value)
+        "01", "000000", "01", "000000", "0500", "0000", "0000c03f", "00000000", "00000000",
+        // Property[1]: VT=4(FormID,Int) Func=1(REM) Prop=0(Enchantments)
+        "04", "000000", "01", "000000", "0000", "0000", "34120000", "07000000", "00000000",
+        // Property[2]: VT=0(Int) Func=0(SET) Prop=9999 (out of range for ARMO's 19 entries)
+        "00", "000000", "00", "000000", "0f27", "0000", "2a000000", "00000000", "00000000",
+    );
+
+    let subrecords = vec![sr("DATA", data_hex, 0)];
+    let result = decode_record(&ctx, "OMOD", &subrecords);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Object Modification"),
+    );
+    assert_fully_decoded(&result);
+
+    let data = result.get("Data").expect("Data struct must decode");
+    assert_eq!(
+        data.pointer("/Form Type/name").and_then(|v| v.as_str()),
+        Some("Armor"),
+        "Form Type"
+    );
+
+    let props = data
+        .get("Properties")
+        .and_then(|v| v.as_array())
+        .expect("Properties must be an array");
+    assert_eq!(props.len(), 3, "expected exactly 3 Properties");
+
+    // Properties[0]: Float branch Function Type → "MUL+ADD"; ARMO Property 5 → "Value".
+    assert_eq!(
+        props[0]
+            .pointer("/Function Type/name")
+            .and_then(|v| v.as_str()),
+        Some("MUL+ADD"),
+        "P[0] Function Type (Float branch)"
+    );
+    assert_eq!(
+        props[0].pointer("/Property/name").and_then(|v| v.as_str()),
+        Some("Value"),
+        "P[0] Property (ARMO index 5)"
+    );
+
+    // Properties[1]: FormID branch Function Type → "REM".
+    assert_eq!(
+        props[1]
+            .pointer("/Function Type/name")
+            .and_then(|v| v.as_str()),
+        Some("REM"),
+        "P[1] Function Type (FormID branch)"
+    );
+
+    // Properties[2]: out-of-range Property index preserved as a bare integer
+    // (no enum object / "name"); `assert_fully_decoded` above already confirms
+    // this did not trip a raw-fallback or _unmapped marker.
+    let prop2 = props[2].get("Property").expect("Property must be present");
+    assert!(
+        prop2.is_number(),
+        "out-of-range Property index must decode as a bare integer, got {prop2:?}"
+    );
+    assert_eq!(
+        prop2.as_u64(),
+        Some(9999),
+        "P[2] Property raw value preserved"
+    );
+}
+
+/// WEAP's own `Object Template` → `Object Mod Template Item` (OBTS) embeds
+/// the same `wbObjectModProperties` array as OMOD's DATA struct, but WEAP
+/// (unlike OMOD) has no `Form Type` field anywhere — per
+/// `GetObjectModPropertyEnum` in the Pascal, when the containing record's own
+/// signature isn't OMOD, the record's signature is used directly to pick
+/// `wbWeaponPropertyEnum`/`wbArmorPropertyEnum`/`wbActorPropertyEnum`.
+///
+/// The schema bakes this in as a per-record-type `default_variant` on the
+/// `Property` union (`tools/extractor/extract.py`'s
+/// `_fixup_obts_property_default`): a WEAP-embedded OBTS's Property union
+/// defaults to the WEAP table when the `Form Type` lookup key isn't found in
+/// scope. This test locks that behaviour down directly against a WEAP record
+/// that has no `Form Type` field at all.
+#[test]
+fn weap_obts_property_resolves_via_record_signature_not_form_type() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx(&schema);
+
+    let obts_hex = concat!(
+        "00000000", // Include Count = 0
+        "01000000", // Property Count = 1
+        "00",       // Level Min = 0
+        "00",       // unused
+        "00",       // Level Max = 0
+        "00",       // unused
+        "ffff",     // Parent Combination Index = -1
+        "00",       // Default = False
+        "00",       // Keywords count_prefix(1) = 0
+        "00",       // Min Level For Ranks = 0
+        "00",       // Alt Levels Per Tier = 0
+        // (Includes: Include Count = 0, so no Includes bytes follow)
+        // Property[0]: VT=1(Float) Func=0(SET) Prop=33(AimModelMinConeDegrees)
+        "01", "000000", "00", "000000", "2100", "0000", "0000803f", "00000000", "00000000",
+    );
+
+    let subrecords = vec![
+        sr("OBTE", "01000000", 0),
+        sr("OBTF", "", 1),
+        sr("FULL", "44656661756c7400", 2), // "Default\0"
+        sr("OBTS", obts_hex, 3),
+    ];
+
+    let result = decode_record(&ctx, "WEAP", &subrecords);
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Weapon"),
+    );
+    assert_fully_decoded(&result);
+
+    // WEAP has no top-level "Form Type" field anywhere in its schema — the
+    // Property union below must still resolve purely from the record's own
+    // signature ("WEAP"), never from a "Form Type" sibling.
+    assert!(
+        result.get("Form Type").is_none(),
+        "WEAP records have no Form Type field"
+    );
+
+    let item = result
+        .pointer("/Object Template/Combinations/0/Combination/Object Mod Template Item")
+        .expect("Object Mod Template Item must decode");
+    let props = item
+        .get("Properties")
+        .and_then(|v| v.as_array())
+        .expect("Properties must be an array");
+    assert_eq!(props.len(), 1);
+    assert_eq!(
+        props[0].pointer("/Property/name").and_then(|v| v.as_str()),
+        Some("AimModelMinConeDegrees"),
+        "WEAP OBTS Property must resolve via record signature default, not a Form Type field"
+    );
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Curated CI decode tests — verbatim subrecord bytes from
 //   esm get a reference ESM --formid <ID> --raw

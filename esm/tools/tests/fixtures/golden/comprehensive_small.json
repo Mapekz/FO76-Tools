@@ -287,8 +287,8 @@
               "Function Type",
               "Property"
             ],
-            "count_from": 2,
-            "count_to": 2,
+            "count_from": 3,
+            "count_to": 3,
             "added": [
               {
                 "Function Type": "ADD",
@@ -317,6 +317,26 @@
                     "to": 1.25
                   }
                 }
+              },
+              {
+                "key": {
+                  "Function Type": {
+                    "value": 1,
+                    "name": "MUL+ADD"
+                  },
+                  "Property": {
+                    "value": 34,
+                    "name": "AimModelMaxConeDegrees"
+                  }
+                },
+                "index_from": 1,
+                "index_to": 1,
+                "changes": {
+                  "Value 1": {
+                    "from": 1.1,
+                    "to": 1.5
+                  }
+                }
               }
             ]
           },
@@ -330,8 +350,8 @@
               "Function Type",
               "Property"
             ],
-            "count_from": 2,
-            "count_to": 2,
+            "count_from": 3,
+            "count_to": 3,
             "added": [
               {
                 "key_display": "Function Type=`ADD`, Property=`NumProjectiles`",
@@ -365,6 +385,23 @@
                     "to": 1.25,
                     "from_display": "`1.1`",
                     "to_display": "`1.25`",
+                    "suppressed": null,
+                    "common_group": null,
+                    "array": null,
+                    "vmad": null
+                  }
+                ]
+              },
+              {
+                "key_display": "Function Type=`MUL+ADD`, Property=`AimModelMaxConeDegrees`",
+                "changes": [
+                  {
+                    "path": "Value 1",
+                    "kind": "scalar",
+                    "from": 1.1,
+                    "to": 1.5,
+                    "from_display": "`1.1`",
+                    "to_display": "`1.5`",
                     "suppressed": null,
                     "common_group": null,
                     "array": null,

@@ -802,10 +802,18 @@ def smart_array_diff(from_list, to_list, ref_names=None):
 # --------------------------------------------------------------------------
 
 
+_STRUCT_DISPLAY_MAX_FIELDS = 6
+
+
 def _struct_display(elem, ref_names):
     """Best-effort one-line summary of a dict array element (used for the
     generic `_array_diff` added/removed entries, which carry no shape-
-    specific renderer the way the legacy differs above do)."""
+    specific renderer the way the legacy differs above do). Dict-valued
+    fields (e.g. an OMOD Property's `{"value": .., "name": ..}` enum, or a
+    resolved FormID stub) render through `format_scalar` — which already
+    knows how to turn those into a name/annotated reference — rather than
+    being dropped; only list values and null/None are skipped, since those
+    don't have a useful one-line rendering here."""
     if "formid" in elem and ("editor_id" in elem or "record_type" in elem):
         return annotate_ref(elem, ref_names)
     if is_curve(elem):
@@ -813,11 +821,16 @@ def _struct_display(elem, ref_names):
     name = elem.get("name") or elem.get("Name")
     if name:
         return f"`{name}`"
-    keys = list(elem.keys())[:4]
-    parts = [f"{k}={format_scalar(elem[k], ref_names)}" for k in keys if not isinstance(elem[k], (dict, list))]
+    parts = []
+    for k, v in elem.items():
+        if v is None or isinstance(v, list):
+            continue
+        parts.append(f"{k}={format_scalar(v, ref_names)}")
+        if len(parts) >= _STRUCT_DISPLAY_MAX_FIELDS:
+            break
     if parts:
         return ", ".join(parts)
-    return f"`(struct: {', '.join(keys)})`"
+    return f"`(struct: {', '.join(list(elem.keys())[:4])})`"
 
 
 def _elem_display(elem, ref_names):

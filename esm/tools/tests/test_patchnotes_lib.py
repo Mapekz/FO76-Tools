@@ -258,8 +258,8 @@ class TestArrayDiffNewShape(unittest.TestCase):
     def test_strategy_and_key_fields_preserved(self):
         self.assertEqual(self.array["strategy"], "keyed")
         self.assertEqual(self.array["key_fields"], ["Function Type", "Property"])
-        self.assertEqual(self.array["count_from"], 2)
-        self.assertEqual(self.array["count_to"], 2)
+        self.assertEqual(self.array["count_from"], 3)
+        self.assertEqual(self.array["count_to"], 3)
 
     def test_added_entry(self):
         self.assertEqual(len(self.array["added"]), 1)
@@ -274,7 +274,13 @@ class TestArrayDiffNewShape(unittest.TestCase):
         self.assertEqual(removed["raw"]["Property"], "Speed")
 
     def test_changed_entry_has_nested_change_entry_list(self):
-        self.assertEqual(len(self.array["changed"]), 1)
+        # Two "changed" pairs are fixtured: [0] uses plain-scalar key values
+        # ("MUL"/"Damage" strings, the pre-Fix-A shape still legitimately
+        # emitted when the underlying decoded field is just a string) and
+        # [1] uses the enum-object ({"value", "name"}) shape Fix A now
+        # preserves on `changed[].key` instead of collapsing to a bare int —
+        # see TestArrayDiffEnumObjectKeyShape below for [1]'s key_display.
+        self.assertEqual(len(self.array["changed"]), 2)
         changed = self.array["changed"][0]
         self.assertIn("key_display", changed)
         nested = changed["changes"]
@@ -283,6 +289,115 @@ class TestArrayDiffNewShape(unittest.TestCase):
         self.assertEqual(nested[0]["kind"], "scalar")
         self.assertEqual(nested[0]["from"], 1.1)
         self.assertEqual(nested[0]["to"], 1.25)
+
+
+# ---------------------------------------------------------------------------
+# _array_diff normalization — enum-object ({value,name}) key shape.
+#
+# Fix A (src/diff.rs) now emits the ORIGINAL B-side value for a keyed
+# array's `changed[].key` fields instead of the collapsed canonical scalar
+# used only for pairing — e.g. `{"value": 1, "name": "MUL+ADD"}` rather than
+# bare `1`. changed[0] on the 0x01002001 fixture record above covers the
+# (still valid) plain-scalar-key shape; changed[1] covers this enum-object
+# shape so both are exercised end to end through extract_changes().
+# ---------------------------------------------------------------------------
+
+
+class TestArrayDiffEnumObjectKeyShape(unittest.TestCase):
+    def setUp(self):
+        self.diff_data = load_fixture("diff_small.json")
+        rec = find_changed(self.diff_data, "0x01002001")
+        entries = pl.extract_changes(rec["field_changes"], self.diff_data["ref_names"])
+        array = find_entry(entries, "Data / Properties")["array"]
+        self.changed = array["changed"][1]
+
+    def test_changed_entry_key_display_renders_enum_names(self):
+        # format_scalar() renders an enum {value,name} dict as its name.
+        self.assertIn("MUL+ADD", self.changed["key_display"])
+        self.assertIn("AimModelMaxConeDegrees", self.changed["key_display"])
+        self.assertNotIn("34", self.changed["key_display"])
+
+    def test_nested_value_change_still_reported(self):
+        value_entry = find_entry(self.changed["changes"], "Value 1")
+        self.assertEqual(value_entry["from"], 1.1)
+        self.assertEqual(value_entry["to"], 1.5)
+
+
+# ---------------------------------------------------------------------------
+# _struct_display / _key_dict_display formatting
+# ---------------------------------------------------------------------------
+
+
+class TestStructDisplay(unittest.TestCase):
+    def test_dict_values_render_via_format_scalar_not_dropped(self):
+        # Previously dict-valued fields were silently dropped from the
+        # comprehension; an enum {value,name} dict must now render as its
+        # name, and a resolved FormID stub must render as an annotated ref.
+        ref_names = {"0x00000099": {"record_type": "WEAP", "editor_id": "SomeGun"}}
+        elem = {
+            "Function Type": {"value": 1, "name": "MUL+ADD"},
+            "Property": {"value": 34, "name": "AimModelMaxConeDegrees"},
+            "Value 1": 1.5,
+        }
+        out = pl._struct_display(elem, ref_names)
+        self.assertIn("Function Type=`MUL+ADD`", out)
+        self.assertIn("Property=`AimModelMaxConeDegrees`", out)
+        self.assertIn("Value 1=`1.5`", out)
+
+    def test_list_and_null_values_skipped(self):
+        elem = {"Keywords": ["0x01", "0x02"], "Note": None, "Value 1": 2}
+        out = pl._struct_display(elem, {})
+        self.assertNotIn("Keywords", out)
+        self.assertNotIn("Note", out)
+        self.assertIn("Value 1=`2`", out)
+
+    def test_cap_extended_to_six_renderable_fields(self):
+        elem = {f"F{i}": i for i in range(8)}
+        out = pl._struct_display(elem, {})
+        for i in range(6):
+            self.assertIn(f"F{i}=`{i}`", out)
+        self.assertNotIn("F6=", out)
+        self.assertNotIn("F7=", out)
+
+    def test_lists_and_nulls_do_not_count_against_the_cap(self):
+        # A field cap of "first 6 renderable fields" means skipped
+        # (list/null) fields must not consume a slot — a property row with
+        # interleaved list/null fields should still show 6 real values.
+        elem = {
+            "A": 1, "SkipList": [1, 2], "B": 2, "SkipNull": None,
+            "C": 3, "D": 4, "E": 5, "F": 6,
+        }
+        out = pl._struct_display(elem, {})
+        for name, val in (("A", 1), ("B", 2), ("C", 3), ("D", 4), ("E", 5), ("F", 6)):
+            self.assertIn(f"{name}=`{val}`", out)
+
+    def test_falls_back_to_formid_stub_annotation(self):
+        elem = {"formid": "0x00000001", "record_type": "WEAP", "editor_id": "Foo"}
+        out = pl._struct_display(elem, {})
+        self.assertIn("WEAP", out)
+        self.assertIn("Foo", out)
+
+
+class TestKeyDictDisplay(unittest.TestCase):
+    def test_enum_object_values_render_as_names(self):
+        key = {
+            "Function Type": {"value": 1, "name": "MUL+ADD"},
+            "Property": {"value": 34, "name": "AimModelMaxConeDegrees"},
+        }
+        out = pl._key_dict_display(key, {})
+        self.assertEqual(out, "Function Type=`MUL+ADD`, Property=`AimModelMaxConeDegrees`")
+
+    def test_plain_scalar_key_with_ref_names_annotation(self):
+        # LVLI-style key: a bare FormID hex value annotated via ref_names.
+        ref_names = {"0x00AA0004": {"record_type": "WEAP", "editor_id": "SomeWeapon"}}
+        key = {"Reference": "0x00AA0004", "Minimum Level": 5}
+        out = pl._key_dict_display(key, ref_names)
+        self.assertIn("Reference=`0x00AA0004` (WEAP: `SomeWeapon`)", out)
+        self.assertIn("Minimum Level=`5`", out)
+
+    def test_empty_or_non_dict_key_falls_back_to_format_scalar(self):
+        self.assertEqual(pl._key_dict_display({}, {}), pl.format_scalar({}, {}))
+        self.assertEqual(pl._key_dict_display(5, {}), pl.format_scalar(5, {}))
 
 
 # ---------------------------------------------------------------------------

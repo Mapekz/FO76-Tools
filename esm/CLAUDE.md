@@ -16,6 +16,10 @@ cargo fmt [--check]
 # Schema tooling (requires ../TES5Edit checkout)
 python3 tools/extractor/extract.py                  # regenerate schema/fo76.json
 python3 tools/extractor/audit.py --gate             # parity audit (exits non-zero on HIGH drops)
+
+# Patch-notes pipeline (mechanical stage; narrative stage = /patch-notes skill)
+just patch-notes OLD NEW                            # diff.json + comprehensive.{md,json} + bundles.json + lints.json + manifest.json
+just patch-tools-test                               # Python tooling test suite (tools/tests/)
 ```
 
 ## Before committing

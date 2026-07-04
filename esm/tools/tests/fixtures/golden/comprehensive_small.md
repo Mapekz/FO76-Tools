@@ -99,6 +99,8 @@
   - **−** Function Type=`MUL`, Property=`Speed`, Value 1=`0.9`
   - **~** Function Type=`MUL`, Property=`Damage`
     - **Value 1:** `1.1` → `1.25`
+  - **~** Function Type=`MUL+ADD`, Property=`AimModelMaxConeDegrees`
+    - **Value 1:** `1.1` → `1.5`
 
 ### `PERK` — Perk / Ability (1)
 

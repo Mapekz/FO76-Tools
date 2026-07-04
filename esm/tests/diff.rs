@@ -173,7 +173,11 @@ fn array_diff_omod_composite_key_enum_canonicalization() {
     // Function Type/Property drift between a bare int and an enum object
     // `{"value": .., "name": ..}` across snapshots but must still canonicalize
     // to the same key so the pair is recognized as "changed" (Value: 10->20)
-    // rather than one added + one removed element.
+    // rather than one added + one removed element. The emitted "key" itself
+    // must carry the ORIGINAL B-side representation (the enum object, with
+    // its `name`) rather than the collapsed canonical int used for matching
+    // — otherwise a patch-notes renderer sees `Function Type=1` instead of
+    // `Function Type=MUL+ADD`.
     let a = json!({"Properties": [
         {"Function Type": 3, "Property": 1, "Value": 10},
     ]});
@@ -193,6 +197,48 @@ fn array_diff_omod_composite_key_enum_canonicalization() {
     );
     assert_eq!(changed[0]["changes"]["Value"]["from"], json!(10));
     assert_eq!(changed[0]["changes"]["Value"]["to"], json!(20));
+    // The emitted key is the B-side ORIGINAL value, not the canonical int
+    // used internally to pair the elements.
+    assert_eq!(
+        changed[0]["key"]["Function Type"],
+        json!({"value": 3, "name": "Health"})
+    );
+    assert_eq!(
+        changed[0]["key"]["Property"],
+        json!({"value": 1, "name": "Base"})
+    );
+}
+
+#[test]
+fn array_diff_keyed_formid_stub_key_preserved_not_collapsed_to_canonical() {
+    // A single-FormID-member key (element_key_spec case 9, e.g. a Mod
+    // reference list) drifting between a bare hex string on A and a
+    // resolved-stub object `{"formid", "editor_id"}` on B must still pair
+    // (canonicalization extracts "formid" from the stub for matching), but
+    // the emitted key must carry the FULL B-side stub object — "a FormID
+    // stub stays whatever it was" — not the collapsed bare hex.
+    let a = json!({"Mods": [
+        {"Mod": "0x00000010", "Value": 1},
+    ]});
+    let b = json!({"Mods": [
+        {"Mod": {"formid": "0x00000010", "editor_id": "SomeMod"}, "Value": 2},
+    ]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Mods"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("keyed"));
+    assert!(ad.get("added").is_none());
+    assert!(ad.get("removed").is_none());
+    let changed = ad["changed"].as_array().unwrap();
+    assert_eq!(
+        changed.len(),
+        1,
+        "bare-hex vs resolved-stub Mod must canonicalize to the same key"
+    );
+    assert_eq!(
+        changed[0]["key"]["Mod"],
+        json!({"formid": "0x00000010", "editor_id": "SomeMod"}),
+        "key must carry the original B-side stub object, not the collapsed formid string"
+    );
 }
 
 #[test]

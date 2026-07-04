@@ -748,7 +748,12 @@ fn resolve_key_component<'a>(
 /// Canonicalize a key field's raw decoded value so schema drift between
 /// snapshots — e.g. a bare int on one side vs an enum object
 /// `{"value": int, "name": ..}` on the other, or a resolved-stub object vs a
-/// bare FormID hex string — doesn't break key matching across sides.
+/// bare FormID hex string — doesn't break key *matching* across sides. Used
+/// only to compute the pairing group (`KeyInfo::group`); the `"key"` object
+/// actually emitted on a `changed` entry is built separately by
+/// [`display_key`] from the ORIGINAL (non-canonicalized) values, so a name
+/// like `MUL+ADD` survives into the diff output instead of collapsing to its
+/// bare enum int.
 fn canonical_key_value(raw: Option<&Value>) -> Value {
     match raw {
         None | Some(Value::Null) => Value::Null,
@@ -761,12 +766,12 @@ fn canonical_key_value(raw: Option<&Value>) -> Value {
     }
 }
 
-/// A single element's resolved key: `group` is a serialized canonical-value
-/// tuple used to pair elements across sides; `fields` is the display-ready
-/// `{field_name: canonical_value}` map emitted as `"key"`.
+/// A single element's resolved matching key: a serialized canonical-value
+/// tuple (see [`canonical_key_value`]) used to pair elements across sides.
+/// This is for *matching* only — the display `"key"` object emitted on a
+/// `changed` entry is computed separately by [`display_key`].
 struct KeyInfo {
     group: String,
-    fields: serde_json::Map<String, Value>,
 }
 
 /// Compute an element's `KeyInfo` for `spec`. Elements that don't match the
@@ -780,16 +785,44 @@ fn compute_key_info(elem: &Value, spec: &KeySpec) -> KeyInfo {
     let map = elem.as_object().unwrap_or(&empty);
     let (_, body) = unwrap_wrapper(map);
 
-    let mut values = Vec::with_capacity(spec.len());
+    let values: Vec<Value> = spec
+        .iter()
+        .map(|alts| canonical_key_value(resolve_key_component(alts, body).1))
+        .collect();
+    let group = serde_json::to_string(&values).unwrap_or_default();
+    KeyInfo { group }
+}
+
+/// Build the display-ready `"key"` object for a `changed` pair: each key
+/// component takes its ORIGINAL (non-canonicalized) value from `b_elem` (the
+/// B/new side), falling back to `a_elem` (the A/old side) only when the
+/// component is absent from `b_elem` entirely (every alternative name
+/// missing). This differs from [`compute_key_info`]'s canonical group, which
+/// exists purely so pairing survives schema drift (enum-object vs bare-int,
+/// resolved-stub vs bare FormID hex) — the displayed key instead preserves
+/// whichever representation the record actually carries, e.g.
+/// `{"value": 1, "name": "MUL+ADD"}` rather than the collapsed `1`.
+fn display_key(spec: &KeySpec, a_elem: &Value, b_elem: &Value) -> serde_json::Map<String, Value> {
+    let empty = serde_json::Map::new();
+    let a_map = a_elem.as_object().unwrap_or(&empty);
+    let b_map = b_elem.as_object().unwrap_or(&empty);
+    let (_, a_body) = unwrap_wrapper(a_map);
+    let (_, b_body) = unwrap_wrapper(b_map);
+
     let mut fields = serde_json::Map::new();
     for alts in spec {
-        let (name, raw) = resolve_key_component(alts, body);
-        let canon = canonical_key_value(raw);
-        values.push(canon.clone());
-        fields.insert(name.to_string(), canon);
+        let (b_name, b_raw) = resolve_key_component(alts, b_body);
+        match b_raw {
+            Some(v) => {
+                fields.insert(b_name.to_string(), v.clone());
+            }
+            None => {
+                let (a_name, a_raw) = resolve_key_component(alts, a_body);
+                fields.insert(a_name.to_string(), a_raw.cloned().unwrap_or(Value::Null));
+            }
+        }
     }
-    let group = serde_json::to_string(&values).unwrap_or_default();
-    KeyInfo { group, fields }
+    fields
 }
 
 /// Multiset ("set") diff for arrays of JSON primitives (numbers, strings,
@@ -869,6 +902,10 @@ fn positional_diff(a: &[Value], b: &[Value]) -> Value {
 /// (`element_key_spec` + `compute_key_info`) and paired 1:1 within same-key
 /// groups, in original array order — duplicate keys pair positionally
 /// within their group. Leftover unpaired elements become `added`/`removed`.
+/// Each `changed` entry's `"key"` is the *original* (non-canonicalized)
+/// value from the pairing — see [`display_key`] — so e.g. an enum key
+/// carries its `name` even though matching itself tolerated a bare int on
+/// the other side.
 fn keyed_diff(a: &[Value], b: &[Value], spec: &KeySpec) -> Value {
     let a_keys: Vec<KeyInfo> = a.iter().map(|v| compute_key_info(v, spec)).collect();
     let b_keys: Vec<KeyInfo> = b.iter().map(|v| compute_key_info(v, spec)).collect();
@@ -892,7 +929,7 @@ fn keyed_diff(a: &[Value], b: &[Value], spec: &KeySpec) -> Value {
                 let d = json_diff(&a[i], &b[j]);
                 if !is_empty_diff(&d) {
                     changed.push(serde_json::json!({
-                        "key": Value::Object(b_keys[j].fields.clone()),
+                        "key": Value::Object(display_key(spec, &a[i], &b[j])),
                         "index_from": i,
                         "index_to": j,
                         "changes": d,

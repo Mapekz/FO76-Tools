@@ -95,6 +95,31 @@ class TestEdgeRelationMapping(unittest.TestCase):
     def test_omod_non_weapon_armor_dst_falls_back(self):
         self.assertEqual(bb.edge_relation_and_label("OMOD", "MISC", None, "reverse"), ("references", "references"))
 
+    def test_weap_mod_for_omod_reverse(self):
+        # The mirror-image direction: a WEAP/ARMO forward-references its
+        # compatible OMODs (e.g. via its Object Template), so when the OMOD
+        # is the one in the diff universe, `client.refs()` on the OMOD
+        # surfaces the WEAP/ARMO as the referencer -- from=WEAP, to=OMOD.
+        # Verified against a live ESM: refs(mod_Custom_SaltOfTheEarth)
+        # returns DoubleBarrelShotgun (the OMOD's own data has no forward
+        # pointer back to the weapon at all).
+        self.assertEqual(bb.edge_relation_and_label("WEAP", "OMOD", None, "reverse"), ("mod_for", "mod for"))
+
+    def test_armo_mod_for_omod_reverse(self):
+        self.assertEqual(bb.edge_relation_and_label("ARMO", "OMOD", None, "reverse")[0], "mod_for")
+
+    def test_weap_mod_for_omod_also_matches_forward(self):
+        # If the WEAP itself were ever in U and forward-discovered the OMOD
+        # via its own refs_out, the same relation/label must apply -- the
+        # rule doesn't depend on path or discovery direction.
+        self.assertEqual(
+            bb.edge_relation_and_label("WEAP", "OMOD", "Object Template / Mod", "forward"),
+            ("mod_for", "mod for"),
+        )
+
+    def test_omod_dst_non_weapon_armor_src_falls_back(self):
+        self.assertEqual(bb.edge_relation_and_label("KYWD", "OMOD", None, "reverse"), ("references", "references"))
+
     def test_cobj_created_object_is_crafts(self):
         self.assertEqual(
             bb.edge_relation_and_label("COBJ", "WEAP", "Data / Created Object", "forward"), ("crafts", "crafts")
@@ -422,6 +447,45 @@ class TestAttachContext(unittest.TestCase):
         self.assertEqual(members_result, [])
         self.assertEqual(edges_result, [])
 
+    def test_mod_for_target_survives_cap_over_crowding_cont_cobj(self):
+        # Regression test for the real-world "Salt Of The Earth (OMOD)"
+        # bundle: an OMOD anchor with 13 CONT/COBJ context candidates (more
+        # than the cap of 12 by itself) plus the one WEAP it's a mod for.
+        # Before the mod_for-aware top tier, the WEAP -- connected only via
+        # a "references"-fallback-free "mod_for" edge -- ranked with
+        # "everything else" and was crowded out entirely by the 13
+        # preferred-type candidates.
+        members = {"OMOD1"}
+        context_incidence = {}
+        context_stubs = {}
+
+        weap_fid = "0x00090000"
+        context_incidence[weap_fid] = [
+            ("OMOD1", {"from": weap_fid, "to": "OMOD1", "relation": "mod_for", "label": "mod for", "via": [], "source": "reverse"})
+        ]
+        context_stubs[weap_fid] = {
+            "record_type": "WEAP", "editor_id": "DoubleBarrelShotgun", "name": "Double-Barrel Shotgun",
+        }
+
+        crowd_fids = []
+        for i in range(13):
+            fid = f"0x00A0{i:04X}"
+            rtype = "CONT" if i % 2 == 0 else "COBJ"
+            context_incidence[fid] = [("OMOD1", _edge(fid, "OMOD1", source="reverse"))]
+            context_stubs[fid] = {"record_type": rtype, "editor_id": f"Crowd{i}", "name": None}
+            crowd_fids.append(fid)
+
+        members_result, edges_result = bb.attach_context(members, context_incidence, context_stubs, 12, ["if_tmp_*"])
+
+        got_ids = [m["form_id"] for m in members_result]
+        self.assertEqual(len(members_result), 12)
+        self.assertIn(weap_fid, got_ids, "the mod_for target must survive the context cap")
+        self.assertEqual(got_ids[0], weap_fid, "the mod_for target must rank ahead of NPC_/CONT/QUST/COBJ")
+        self.assertTrue(
+            any(e["relation"] == "mod_for" and e["to"] == "OMOD1" for e in edges_result),
+            "the WEAP's connecting edge must be the mod_for edge",
+        )
+
 
 # ---------------------------------------------------------------------------
 # Categorization
@@ -467,6 +531,37 @@ class TestCategorization(unittest.TestCase):
         anchor = self._member("0x01", "WEAP", "SomeRifle")
         cat_id, _label, _rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
         self.assertEqual(cat_id, "weapons_combat")
+
+    def test_omod_anchor_with_mod_custom_edid_is_unique_weapons_gear(self):
+        # Regression test: an OMOD anchor named per Bethesda's unique-item
+        # mod convention (mod_Custom_*) must categorize as unique gear even
+        # with no if_tmp_* keyword member at all (the real-world
+        # "Salt Of The Earth (OMOD)" bundle had none -- the WEAP it modifies
+        # was crowded out of the context cap, see attach_context tests).
+        anchor = self._member("0x04", "OMOD", "mod_Custom_SaltOfTheEarth")
+        cat_id, _label, rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
+        self.assertEqual(cat_id, "unique_weapons_gear")
+        self.assertEqual(rule, "unique_weapons_gear/rule_2")
+
+    def test_plain_omod_anchor_still_falls_through_to_weapons_combat(self):
+        # A plain (non mod_Custom_*) OMOD anchor, with no if_tmp_* keyword
+        # anywhere, must still land in weapons_combat -- the new OMOD rule
+        # must not over-match every OMOD.
+        anchor = self._member("0x05", "OMOD", "mod_LegendaryEffect_Bloodied")
+        cat_id, _label, rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
+        self.assertEqual(cat_id, "weapons_combat")
+        self.assertEqual(rule, "weapons_combat/rule_0")
+
+    def test_member_scope_if_tmp_keyword_routes_to_unique_weapons_gear_with_other_anchor(self):
+        # The member-scoped keyword rule catches bundles whose weapon
+        # carries the unique keyword even when the anchor is something
+        # else entirely (here MISC, which would otherwise fall to ui_misc).
+        anchor = self._member("0x06", "MISC", "SomeJunkItem")
+        kywd_member = self._member("0x07", "KYWD", "if_tmp_UniqueThing", role="satellite")
+        cat_id, _label, _rule = bb.categorize_bundle(
+            anchor, [anchor, kywd_member], self.categories, self.client, "esm", {}
+        )
+        self.assertEqual(cat_id, "unique_weapons_gear")
 
     def test_uncategorized_fallback_has_no_rule(self):
         anchor = self._member("0x02", "CONT", "SomeContainer")
@@ -517,6 +612,88 @@ class TestSettingsPrecedence(unittest.TestCase):
 
     def test_resolve_settings_empty_config_uses_defaults(self):
         self.assertEqual(bb.resolve_settings({}), bb.DEFAULT_SETTINGS)
+
+
+# ---------------------------------------------------------------------------
+# Regression: "Salt Of The Earth (OMOD)" bundle -- an OMOD anchor whose only
+# forward-facing "true" bundle-mate (the WEAP it's a mod for) was crowded
+# out of the context cap by CONT/COBJ candidates, and mis-categorized as
+# weapons_combat instead of unique_weapons_gear. Runs the real, current
+# patch_notes_categories.json end to end through build_bundles(), but with
+# an inline FakeClient fixture (not the shared refs_graph.json /
+# comprehensive_mini.json, which other test modules also depend on).
+# ---------------------------------------------------------------------------
+
+
+class TestModForOmodBundleRegression(unittest.TestCase):
+    OMOD_FID = "0x008F0DCD"
+    WEAP_FID = "0x00092217"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.config = load_json(CATEGORIES_PATH)
+
+        records = {
+            cls.OMOD_FID: {
+                "record_type": "OMOD", "editor_id": "mod_Custom_SaltOfTheEarth", "name": "Salt Of The Earth",
+            },
+            cls.WEAP_FID: {
+                "record_type": "WEAP", "editor_id": "DoubleBarrelShotgun", "name": "Double-Barrel Shotgun",
+            },
+        }
+        # refs(OMOD) rows: the WEAP (a genuine forward reference from the
+        # WEAP's own Object Template, verified against a live ESM) plus 13
+        # CONT/COBJ candidates -- more than the context_cap of 12 -- so the
+        # WEAP would be crowded out entirely without the mod_for top tier.
+        refs_rows = [{"form_id": cls.WEAP_FID, "record_type": "WEAP", "editor_id": "DoubleBarrelShotgun"}]
+        for i in range(13):
+            fid = f"0x00A0{i:04X}"
+            rtype = "CONT" if i % 2 == 0 else "COBJ"
+            records[fid] = {"record_type": rtype, "editor_id": f"Crowd{i}", "name": None}
+            refs_rows.append({"form_id": fid, "record_type": rtype, "editor_id": f"Crowd{i}"})
+
+        refs_fixture = {"records": records, "refs": {cls.OMOD_FID: refs_rows}}
+
+        comp = {
+            "meta": {"patch_date": "2026-07-04"},
+            "records": {
+                cls.OMOD_FID: {
+                    "form_id": cls.OMOD_FID,
+                    "record_type": "OMOD",
+                    "editor_id": "mod_Custom_SaltOfTheEarth",
+                    "name": "Salt Of The Earth",
+                    "status": "added",
+                    "refs_out": [],
+                    "changes": [],
+                },
+            },
+            "ref_names": {},
+        }
+
+        client = esm_daemon.FakeClient(refs_fixture)
+        cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm", cls.config)
+
+    def test_single_bundle_anchored_on_the_omod(self):
+        self.assertEqual(len(self.result["bundles"]), 1)
+        bundle = self.result["bundles"][0]
+        self.assertEqual(bundle["anchor"]["form_id"], self.OMOD_FID)
+        self.assertEqual(bundle["anchor"]["record_type"], "OMOD")
+
+    def test_categorized_as_unique_weapons_gear_not_weapons_combat(self):
+        bundle = self.result["bundles"][0]
+        self.assertEqual(bundle["category"], "unique_weapons_gear")
+        self.assertEqual(bundle["category_rule"], "unique_weapons_gear/rule_2")
+
+    def test_weap_survives_the_context_cap_ahead_of_cont_cobj_crowd(self):
+        bundle = self.result["bundles"][0]
+        context_members = [m for m in bundle["members"] if m["role"] == "context"]
+        self.assertEqual(len(context_members), 12)  # default context_cap
+        context_ids = [m["form_id"] for m in context_members]
+        self.assertIn(self.WEAP_FID, context_ids, "the WEAP the OMOD mods must survive the cap")
+        self.assertEqual(context_ids[0], self.WEAP_FID, "mod_for target must rank ahead of CONT/COBJ")
+
+        weap_edges = [e for e in bundle["edges"] if e["from"] == self.WEAP_FID and e["to"] == self.OMOD_FID]
+        self.assertTrue(any(e["relation"] == "mod_for" and e["label"] == "mod for" for e in weap_edges))
 
 
 # ---------------------------------------------------------------------------
