@@ -31,7 +31,7 @@ export function OpenFilesPanel() {
     if (activeDbId === id) {
       setActiveDb(all[0]?.id ?? null)
       setActiveRecord(null)
-      setReferencedBy([])
+      setReferencedBy({ target: '', rows: [], total: 0, capped: false })
     }
   }
 

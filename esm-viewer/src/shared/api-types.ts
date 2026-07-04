@@ -13,6 +13,8 @@ export const CH = {
   referencedBy: 'referenced-by',
   referencedById: 'referenced-by-id',
   parseFormId: 'parse-form-id',
+  listTypeChildren: 'list-type-children',
+  listGroupChildren: 'list-group-children',
 } as const
 
 export type DbId = string
@@ -36,11 +38,27 @@ export interface FileInfo {
   is_localized: boolean
 }
 
+/** The interpreted label of a GRUP, decoded per its `group_type`. Discriminated by `kind`. */
+export type GroupLabel =
+  | { kind: 'record_type'; sig: string }
+  | { kind: 'form_id'; form_id: string }
+  | { kind: 'interior_block'; block: number }
+  | { kind: 'exterior_block'; grid_y: number; grid_x: number }
+  | { kind: 'cell_children'; cell: string }
+  | { kind: 'raw'; label: number }
+
 export interface GroupNode {
-  label: Record<string, unknown>
+  label: GroupLabel
   group_type: number
   child_count: number
+  /** Byte offset of this GRUP's 24-byte header in the file — used to descend further. */
+  offset: number
 }
+
+/** A single direct child of a GRUP: either a nested group or a leaf record stub. */
+export type GroupChild =
+  | ({ node: 'group' } & GroupNode)
+  | { node: 'record'; form_id: string; editor_id?: string; record_type: string; offset: number }
 
 export interface RecordRow {
   form_id: string
@@ -64,6 +82,14 @@ export interface RefRow extends RecordRow {
   depth?: number
   /** Intermediate nodes between target and this row; absent/empty for depth-1 results. */
   path?: RefPathNode[]
+}
+
+/** Full envelope returned by a recursive refs walk — mirrors Rust `RefList`. */
+export interface RefListResult {
+  target: string
+  rows: RefRow[]
+  total: number
+  capped: boolean
 }
 
 export interface FormIdStub {
@@ -98,6 +124,13 @@ export interface Fo76Api {
   recordByEdid(id: DbId, edid: string): Promise<RecordResult>
   recordById(id: DbId, target: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
   referencedBy(id: DbId, formid: string): Promise<RecordRow[]>
-  referencedById(id: DbId, target: string, depth?: number): Promise<RefRow[]>
+  referencedById(id: DbId, target: string, depth?: number): Promise<RefListResult>
   parseFormId(s: string): Promise<string>
+  listTypeChildren(id: DbId, sig: string, offset: number, limit: number): Promise<GroupChild[]>
+  listGroupChildren(
+    id: DbId,
+    groupOffset: number,
+    offset: number,
+    limit: number
+  ): Promise<GroupChild[]>
 }

@@ -13,9 +13,16 @@ function FieldValue({ value, onNavigate, dbId }: { value: unknown; onNavigate: (
   if (isFormIdStub(value)) {
     return (
       <span
+        tabIndex={0}
         style={{ color: '#7ec8e3', cursor: 'pointer', textDecoration: 'underline' }}
         onClick={(e) => { if (e.ctrlKey || e.metaKey) onNavigate(dbId, value.formid) }}
-        title={`Ctrl+Click to navigate to ${value.formid}`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onNavigate(dbId, value.formid)
+          }
+        }}
+        title={`Ctrl+Click (or focus + Enter/Space) to navigate to ${value.formid}`}
       >
         {value.editor_id ?? value.formid} [{value.record_type}]
       </span>

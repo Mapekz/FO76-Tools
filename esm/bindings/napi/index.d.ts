@@ -12,6 +12,16 @@ export declare class EsmDatabase {
   listGroups(): any
   /** Paginated record rows for the given 4-character record type signature. */
   listTypeRecords(sig: string, offset: number, limit: number): any
+  /** List direct children of the top-level GRUP with the given record type signature. */
+  listTypeChildren(sig: string, offset: number, limit: number): any
+  /**
+   * List direct children of an arbitrary GRUP by its own header offset — used for
+   * recursive descent below the top level (e.g. into a worldspace's exterior blocks,
+   * then into a block's cells). `group_offset` is passed as `f64`/JS `number` rather
+   * than a `u64`/BigInt: GRUP offsets fit exactly within f64's safe-integer range for
+   * any realistic ESM file size, and this keeps the JS side free of BigInt handling.
+   */
+  listGroupChildren(groupOffset: number, offset: number, limit: number): any
   /**
    * Decode a record by FormID hex string (e.g. "0x0000463F").
    *

@@ -124,4 +124,17 @@ export function registerIpc(): void {
   ipcMain.handle(CH.parseFormId, (_e, s: string) => {
     return wrap(() => napi.parseFormId(s))
   })
+
+  ipcMain.handle(CH.listTypeChildren, (_e, id: string, sig: unknown, offset: unknown, limit: unknown) => {
+    const entry = registry.get(id)
+    if (!entry) throw new Error(`no database with id ${id}`)
+    return wrap(() => entry.db.listTypeChildren(validateSig(sig), validateUint('offset', offset), validateUint('limit', limit)))
+  })
+
+  ipcMain.handle(CH.listGroupChildren, (_e, id: string, groupOffset: unknown, offset: unknown, limit: unknown) => {
+    const entry = registry.get(id)
+    if (!entry) throw new Error(`no database with id ${id}`)
+    const validOffset = validateUint('groupOffset', groupOffset, Number.MAX_SAFE_INTEGER)
+    return wrap(() => entry.db.listGroupChildren(validOffset, validateUint('offset', offset), validateUint('limit', limit)))
+  })
 }

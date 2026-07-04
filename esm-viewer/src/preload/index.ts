@@ -21,6 +21,10 @@ const api: Fo76Api = {
   referencedById: (id, target, depth) =>
     ipcRenderer.invoke(CH.referencedById, id, target, depth),
   parseFormId: (s) => ipcRenderer.invoke(CH.parseFormId, s),
+  listTypeChildren: (id, sig, offset, limit) =>
+    ipcRenderer.invoke(CH.listTypeChildren, id, sig, offset, limit),
+  listGroupChildren: (id, groupOffset, offset, limit) =>
+    ipcRenderer.invoke(CH.listGroupChildren, id, groupOffset, offset, limit),
 }
 
 contextBridge.exposeInMainWorld('api', api)

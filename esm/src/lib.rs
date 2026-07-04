@@ -603,6 +603,29 @@ impl Database {
             return Ok(Vec::new());
         };
 
+        Ok(self.group_children_at(group_idx, offset, limit))
+    }
+
+    /// List direct children of an arbitrary GRUP by its own header offset (for recursive
+    /// descent below the top level — e.g. into a worldspace's exterior blocks, then into
+    /// a block's cells). Returns an empty vec if no GRUP starts at that offset.
+    pub fn list_group_children(
+        &self,
+        group_offset: u64,
+        offset: usize,
+        limit: usize,
+    ) -> anyhow::Result<Vec<GroupChild>> {
+        let Some(&group_idx) = self.index.tree.offset_map.get(&group_offset) else {
+            return Ok(Vec::new());
+        };
+        Ok(self.group_children_at(group_idx, offset, limit))
+    }
+
+    /// Paginate and materialize the children of the GRUP at arena index `group_idx`.
+    ///
+    /// Infallible: pagination clamps to the child count, and `record_stub_at`
+    /// failures already collapse to `None` editor_ids rather than propagating.
+    fn group_children_at(&self, group_idx: usize, offset: usize, limit: usize) -> Vec<GroupChild> {
         // Collect the paginated child slice (avoid holding borrow into mutable self below)
         let children_slice: Vec<ChildRef> = {
             let entry = &self.index.tree.groups[group_idx];
@@ -631,7 +654,7 @@ impl Database {
                         .trim_end_matches('\0')
                         .to_string();
                     result.push(GroupChild::Record(crate::tree::RecordStub {
-                        form_id: FormId(form_id),
+                        form_id: FormId(form_id).display(),
                         editor_id,
                         record_type,
                         offset: rec_offset,
@@ -639,7 +662,7 @@ impl Database {
                 }
             }
         }
-        Ok(result)
+        result
     }
 
     /// Cheap header-only read at a file offset — no field decode.
@@ -677,7 +700,7 @@ impl Database {
         };
 
         Ok(crate::tree::RecordStub {
-            form_id: FormId(hdr.form_id),
+            form_id: FormId(hdr.form_id).display(),
             editor_id,
             record_type: hdr.signature.to_string(),
             offset,

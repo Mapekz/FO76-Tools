@@ -64,6 +64,46 @@ impl EsmDatabase {
         serde_json::to_value(&rows).map_err(|e| napi::Error::from_reason(format!("{e}")))
     }
 
+    /// List direct children of the top-level GRUP with the given record type signature.
+    #[napi]
+    pub fn list_type_children(
+        &self,
+        sig: String,
+        offset: u32,
+        limit: u32,
+    ) -> napi::Result<serde_json::Value> {
+        let db = self
+            .inner
+            .lock()
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let children = db
+            .list_type_children(&sig, offset as usize, limit as usize)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        serde_json::to_value(&children).map_err(|e| napi::Error::from_reason(format!("{e}")))
+    }
+
+    /// List direct children of an arbitrary GRUP by its own header offset — used for
+    /// recursive descent below the top level (e.g. into a worldspace's exterior blocks,
+    /// then into a block's cells). `group_offset` is passed as `f64`/JS `number` rather
+    /// than a `u64`/BigInt: GRUP offsets fit exactly within f64's safe-integer range for
+    /// any realistic ESM file size, and this keeps the JS side free of BigInt handling.
+    #[napi]
+    pub fn list_group_children(
+        &self,
+        group_offset: f64,
+        offset: u32,
+        limit: u32,
+    ) -> napi::Result<serde_json::Value> {
+        let db = self
+            .inner
+            .lock()
+            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let children = db
+            .list_group_children(group_offset as u64, offset as usize, limit as usize)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        serde_json::to_value(&children).map_err(|e| napi::Error::from_reason(format!("{e}")))
+    }
+
     /// Decode a record by FormID hex string (e.g. "0x0000463F").
     ///
     /// `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
@@ -176,7 +216,7 @@ impl EsmDatabase {
                 .unwrap_or(1);
             let list = esm::ipc::referenced_by_enriched(&mut db, fid, walk_depth, usize::MAX)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            serde_json::to_value(&list.rows).map_err(|e| napi::Error::from_reason(format!("{e}")))
+            serde_json::to_value(&list).map_err(|e| napi::Error::from_reason(format!("{e}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?

@@ -19,14 +19,17 @@ pub enum GroupLabel {
     /// group_type 0: top-level type group; label is a 4-char record signature.
     RecordType { sig: String },
     /// group_type 1 (world children), 6 (cell persistent), 7 (topic children):
-    /// label is a FormID.
-    FormId { form_id: FormId },
+    /// label is a FormID, pre-formatted as hex (e.g. "0x0000463F") — matches the
+    /// `RecordRow`/`RefRow` convention of never crossing the JSON boundary as a raw
+    /// numeric `FormId`.
+    FormId { form_id: String },
     /// group_type 2/3: interior cell block/sub-block; label is a block number.
     InteriorBlock { block: i32 },
     /// group_type 4/5: exterior cell block/sub-block; label packs grid coords.
     ExteriorBlock { grid_y: i16, grid_x: i16 },
     /// group_type 8/9/10: cell persistent/temporary/visible-distant children.
-    CellChildren { cell: FormId },
+    /// `cell` is pre-formatted hex, same rationale as `FormId` above.
+    CellChildren { cell: String },
     /// Unrecognised group_type; raw label preserved.
     Raw { label: u32 },
 }
@@ -44,7 +47,8 @@ pub struct GroupNode {
 /// A cheap, header-only record listing — no field decode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordStub {
-    pub form_id: FormId,
+    /// Pre-formatted hex (e.g. "0x0000463F") — same rationale as `GroupLabel::FormId`.
+    pub form_id: String,
     pub editor_id: Option<String>,
     pub record_type: String,
     pub offset: u64,
@@ -159,7 +163,7 @@ impl TreeIndex {
                 GroupLabel::RecordType { sig }
             }
             1 | 6 | 7 => GroupLabel::FormId {
-                form_id: FormId(label),
+                form_id: FormId(label).display(),
             },
             2 | 3 => GroupLabel::InteriorBlock {
                 block: label as i32,
@@ -170,7 +174,7 @@ impl TreeIndex {
                 GroupLabel::ExteriorBlock { grid_y, grid_x }
             }
             8..=10 => GroupLabel::CellChildren {
-                cell: FormId(label),
+                cell: FormId(label).display(),
             },
             _ => GroupLabel::Raw { label },
         }
@@ -231,11 +235,9 @@ mod tests {
         assert!(
             matches!(
                 decoded,
-                GroupLabel::FormId {
-                    form_id: FormId(0xDEAD_BEEF)
-                }
+                GroupLabel::FormId { ref form_id } if form_id == "0xDEADBEEF"
             ),
-            "expected FormId(0xDEADBEEF), got {:?}",
+            "expected FormId(\"0xDEADBEEF\"), got {:?}",
             decoded
         );
     }
@@ -256,11 +258,9 @@ mod tests {
         assert!(
             matches!(
                 decoded,
-                GroupLabel::CellChildren {
-                    cell: FormId(0x0001_0002)
-                }
+                GroupLabel::CellChildren { ref cell } if cell == "0x00010002"
             ),
-            "expected CellChildren, got {:?}",
+            "expected CellChildren(\"0x00010002\"), got {:?}",
             decoded
         );
     }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { DbHandle, RecordRow, RecordResult } from '../../shared/api-types'
+import type { DbHandle, RecordResult, RefRow, RefListResult } from '../../shared/api-types'
 
 export interface NavEntry {
   dbId: string
@@ -10,13 +10,17 @@ export interface AppStore {
   openDbs: DbHandle[]
   activeDbId: string | null
   activeRecord: RecordResult | null
-  referencedBy: RecordRow[]
+  referencedBy: RefRow[]
+  referencedByDepth: number
+  referencedByTotal: number
+  referencedByCapped: boolean
   nav: { entries: NavEntry[]; index: number }
 
   setOpenDbs: (dbs: DbHandle[]) => void
   setActiveDb: (id: string | null) => void
   setActiveRecord: (r: RecordResult | null) => void
-  setReferencedBy: (rows: RecordRow[]) => void
+  setReferencedBy: (result: RefListResult) => void
+  setReferencedByDepth: (d: number) => void
   navPush: (entry: NavEntry) => void
   navBack: () => NavEntry | null
   navForward: () => NavEntry | null
@@ -28,12 +32,21 @@ export const useStore = create<AppStore>((set, get) => ({
   activeDbId: null,
   activeRecord: null,
   referencedBy: [],
+  referencedByDepth: 1,
+  referencedByTotal: 0,
+  referencedByCapped: false,
   nav: { entries: [], index: -1 },
 
   setOpenDbs: (dbs) => set({ openDbs: dbs }),
   setActiveDb: (id) => set({ activeDbId: id }),
   setActiveRecord: (r) => set({ activeRecord: r }),
-  setReferencedBy: (rows) => set({ referencedBy: rows }),
+  setReferencedBy: (result) =>
+    set({
+      referencedBy: result.rows,
+      referencedByTotal: result.total,
+      referencedByCapped: result.capped,
+    }),
+  setReferencedByDepth: (d) => set({ referencedByDepth: d }),
 
   navPush: (entry) =>
     set((s) => {
