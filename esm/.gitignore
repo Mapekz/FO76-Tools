@@ -23,7 +23,15 @@ app/dist/
 
 # Generated patch-note outputs (date-stamped, non-redistributable)
 patch_notes_*.md
+patch_*_to_*/
 discord_chunks*/
+
+# Loose localization string tables (game data, not redistributable)
+/strings/
 
 # Python bytecode
 __pycache__/
+
+# Claude Code local state (skills/agents ARE tracked)
+/.claude/settings.local.json
+/.claude/*.lock
