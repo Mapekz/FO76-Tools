@@ -61,3 +61,29 @@ pub fn parse_formid(s: &str) -> anyhow::Result<FormId> {
     };
     Ok(FormId(raw))
 }
+
+/// Serde helper for struct fields that must stay a genuine `FormId` for
+/// internal Rust use (e.g. HashMap keys, `.raw()`/`.master_index()` calls)
+/// but need to cross a JSON API boundary as a pre-formatted hex string
+/// (`"0x0000463F"`) rather than `FormId`'s default bare-number derive.
+///
+/// `FormId`'s own `#[derive(Serialize, Deserialize)]` intentionally stays a
+/// raw `u32` newtype — it's used as a `bincode`-cached `HashMap` key
+/// (`Index::form_index` etc.), and switching that derive to a string would
+/// bloat and break the on-disk `.esm.idx` cache. Apply this module instead,
+/// per-field, via `#[serde(with = "crate::formid::hex_string")]`, wherever a
+/// struct's `FormId` field is meant for JSON output/input specifically (see
+/// `RecordHeaderInfo::form_id`).
+pub mod hex_string {
+    use super::FormId;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(id: &FormId, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&id.display())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FormId, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        s.parse::<FormId>().map_err(serde::de::Error::custom)
+    }
+}
