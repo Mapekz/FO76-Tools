@@ -2857,9 +2857,390 @@
           "len": 13
         },
         {
-          "kind": "bytes",
+          "kind": "union",
           "name": "NVNM",
-          "len": null,
+          "decider": {
+            "payload_size": {
+              "0": 0
+            },
+            "default_variant": 1
+          },
+          "variants": [
+            {
+              "kind": "empty",
+              "name": "Navmesh Marker"
+            },
+            {
+              "kind": "struct",
+              "name": "Navmesh Geometry",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Version",
+                  "width": "u32",
+                  "signed": false
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pathing Cell",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "CRC Hash",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Parent World",
+                      "valid_refs": [
+                        "WRLD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "union",
+                      "name": "Parent",
+                      "decider": {
+                        "field": "Parent World",
+                        "default_variant": 0,
+                        "map": {
+                          "null": 1
+                        }
+                      },
+                      "variants": [
+                        {
+                          "kind": "struct",
+                          "name": "Coordinates",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Grid Y",
+                              "width": "s16",
+                              "signed": true
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Grid X",
+                              "width": "s16",
+                              "signed": true
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Parent Cell",
+                          "valid_refs": [
+                            "CELL"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "array",
+                  "name": "Vertices",
+                  "element": {
+                    "kind": "vec3",
+                    "name": "Vertex"
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Triangles",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Triangle",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 0",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 0-1",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 1-2",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 2-0",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Height"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Cover Flags",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Edge Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Edge Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Type",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Navmesh",
+                        "valid_refs": [
+                          "NAVM"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Edge Index",
+                        "len": 1
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Door Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Door Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "CRC Hash",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Door Ref",
+                        "valid_refs": [
+                          "REFR"
+                        ]
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Array",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Data",
+                        "len": 4
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Triangle Mappings",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover Triangle Map",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Cover",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Waypoints",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Waypoint",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "X"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Y"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Z"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u32",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "struct",
+                  "name": "Navmesh Grid",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Divisor",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Grid Size",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "X"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Y"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Navmesh Bounds",
+                      "fields": [
+                        {
+                          "kind": "vec3",
+                          "name": "Min"
+                        },
+                        {
+                          "kind": "vec3",
+                          "name": "Max"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "array",
+                      "name": "Cells",
+                      "element": {
+                        "kind": "array",
+                        "name": "Cell",
+                        "element": {
+                          "kind": "integer",
+                          "name": "Triangle",
+                          "width": "s16",
+                          "signed": true
+                        },
+                        "count": {
+                          "count_prefix": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
           "sig": "NVNM"
         },
         {
@@ -3568,9 +3949,19 @@
           "sig": "SNTP"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "integer",
@@ -4844,9 +5235,19 @@
           "sig": "SNTP"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "lstring",
@@ -6722,9 +7123,19 @@
           "sig": "PTRN"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "formid",
@@ -7598,13 +8009,22 @@
           "sig": "INRD"
         },
         {
-          "kind": "bytes",
-          "name": "EILV",
+          "kind": "array",
+          "name": "Eligible Levels",
+          "element": {
+            "kind": "integer",
+            "name": "Level",
+            "width": "u32",
+            "signed": false
+          },
           "sig": "EILV"
         },
         {
-          "kind": "bytes",
-          "name": "IBSD",
+          "kind": "formid",
+          "name": "Break Sound",
+          "valid_refs": [
+            "SNDR"
+          ],
           "sig": "IBSD"
         },
         {
@@ -11583,9 +12003,29 @@
           "sig": "DATA"
         },
         {
-          "kind": "bytes",
+          "kind": "union",
           "name": "PreVis File Hash",
-          "len": null,
+          "decider": {
+            "payload_size": {
+              "0": 0,
+              "1": 0,
+              "2": 0,
+              "3": 0
+            },
+            "default_variant": 1
+          },
+          "variants": [
+            {
+              "kind": "bytes",
+              "name": "PreVis Files Timestamp",
+              "len": 2
+            },
+            {
+              "kind": "bytes",
+              "name": "PreVis File Hash",
+              "len": 4
+            }
+          ],
           "sig": "VISI"
         },
         {
@@ -12959,9 +13399,32 @@
                 "sig": "QRLR"
               },
               {
-                "kind": "bytes",
+                "kind": "union",
                 "name": "QRRI",
-                "len": null,
+                "decider": {
+                  "payload_size": {
+                    "0": 0
+                  },
+                  "default_variant": 1
+                },
+                "variants": [
+                  {
+                    "kind": "empty",
+                    "name": "Legendary Item Rank Random"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Legendary Item Rank Random",
+                    "width": "u8",
+                    "signed": false,
+                    "format": {
+                      "enum": [
+                        "False",
+                        "True"
+                      ]
+                    }
+                  }
+                ],
                 "sig": "QRRI"
               },
               {
@@ -15239,9 +15702,19 @@
           "sig": "PTRN"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "formid",
@@ -20100,9 +20573,19 @@
           "sig": "OBND"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "rarray",
@@ -25428,9 +25911,390 @@
           "sig": "FFEF"
         },
         {
-          "kind": "bytes",
+          "kind": "union",
           "name": "NVNM",
-          "len": null,
+          "decider": {
+            "payload_size": {
+              "0": 0
+            },
+            "default_variant": 1
+          },
+          "variants": [
+            {
+              "kind": "empty",
+              "name": "Navmesh Marker"
+            },
+            {
+              "kind": "struct",
+              "name": "Navmesh Geometry",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Version",
+                  "width": "u32",
+                  "signed": false
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pathing Cell",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "CRC Hash",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Parent World",
+                      "valid_refs": [
+                        "WRLD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "union",
+                      "name": "Parent",
+                      "decider": {
+                        "field": "Parent World",
+                        "default_variant": 0,
+                        "map": {
+                          "null": 1
+                        }
+                      },
+                      "variants": [
+                        {
+                          "kind": "struct",
+                          "name": "Coordinates",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Grid Y",
+                              "width": "s16",
+                              "signed": true
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Grid X",
+                              "width": "s16",
+                              "signed": true
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Parent Cell",
+                          "valid_refs": [
+                            "CELL"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "array",
+                  "name": "Vertices",
+                  "element": {
+                    "kind": "vec3",
+                    "name": "Vertex"
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Triangles",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Triangle",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 0",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 0-1",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 1-2",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 2-0",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Height"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Cover Flags",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Edge Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Edge Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Type",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Navmesh",
+                        "valid_refs": [
+                          "NAVM"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Edge Index",
+                        "len": 1
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Door Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Door Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "CRC Hash",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Door Ref",
+                        "valid_refs": [
+                          "REFR"
+                        ]
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Array",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Data",
+                        "len": 4
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Triangle Mappings",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover Triangle Map",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Cover",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Waypoints",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Waypoint",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "X"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Y"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Z"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u32",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "struct",
+                  "name": "Navmesh Grid",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Divisor",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Grid Size",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "X"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Y"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Navmesh Bounds",
+                      "fields": [
+                        {
+                          "kind": "vec3",
+                          "name": "Min"
+                        },
+                        {
+                          "kind": "vec3",
+                          "name": "Max"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "array",
+                      "name": "Cells",
+                      "element": {
+                        "kind": "array",
+                        "name": "Cell",
+                        "element": {
+                          "kind": "integer",
+                          "name": "Triangle",
+                          "width": "s16",
+                          "signed": true
+                        },
+                        "count": {
+                          "count_prefix": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
           "sig": "NVNM"
         }
       ]
@@ -25747,9 +26611,32 @@
                 "sig": "QRLR"
               },
               {
-                "kind": "bytes",
+                "kind": "union",
                 "name": "QRRI",
-                "len": null,
+                "decider": {
+                  "payload_size": {
+                    "0": 0
+                  },
+                  "default_variant": 1
+                },
+                "variants": [
+                  {
+                    "kind": "empty",
+                    "name": "Legendary Item Rank Random"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Legendary Item Rank Random",
+                    "width": "u8",
+                    "signed": false,
+                    "format": {
+                      "enum": [
+                        "False",
+                        "True"
+                      ]
+                    }
+                  }
+                ],
                 "sig": "QRRI"
               },
               {
@@ -26071,9 +26958,19 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "rstruct",
@@ -41054,9 +41951,19 @@
           "sig": "SNTP"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "rarray",
@@ -42920,9 +43827,19 @@
           "sig": "PTRN"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "formid",
@@ -44452,9 +45369,390 @@
           "sized": 0
         },
         {
-          "kind": "bytes",
+          "kind": "union",
           "name": "NVNM",
-          "len": null,
+          "decider": {
+            "payload_size": {
+              "0": 0
+            },
+            "default_variant": 1
+          },
+          "variants": [
+            {
+              "kind": "empty",
+              "name": "Navmesh Marker"
+            },
+            {
+              "kind": "struct",
+              "name": "Navmesh Geometry",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Version",
+                  "width": "u32",
+                  "signed": false
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pathing Cell",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "CRC Hash",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Parent World",
+                      "valid_refs": [
+                        "WRLD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "union",
+                      "name": "Parent",
+                      "decider": {
+                        "field": "Parent World",
+                        "default_variant": 0,
+                        "map": {
+                          "null": 1
+                        }
+                      },
+                      "variants": [
+                        {
+                          "kind": "struct",
+                          "name": "Coordinates",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Grid Y",
+                              "width": "s16",
+                              "signed": true
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Grid X",
+                              "width": "s16",
+                              "signed": true
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Parent Cell",
+                          "valid_refs": [
+                            "CELL"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "array",
+                  "name": "Vertices",
+                  "element": {
+                    "kind": "vec3",
+                    "name": "Vertex"
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Triangles",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Triangle",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 0",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 0-1",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 1-2",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 2-0",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Height"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Cover Flags",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Edge Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Edge Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Type",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Navmesh",
+                        "valid_refs": [
+                          "NAVM"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Edge Index",
+                        "len": 1
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Door Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Door Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "CRC Hash",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Door Ref",
+                        "valid_refs": [
+                          "REFR"
+                        ]
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Array",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Data",
+                        "len": 4
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Triangle Mappings",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover Triangle Map",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Cover",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Waypoints",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Waypoint",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "X"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Y"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Z"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u32",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "struct",
+                  "name": "Navmesh Grid",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Divisor",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Grid Size",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "X"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Y"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Navmesh Bounds",
+                      "fields": [
+                        {
+                          "kind": "vec3",
+                          "name": "Min"
+                        },
+                        {
+                          "kind": "vec3",
+                          "name": "Max"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "array",
+                      "name": "Cells",
+                      "element": {
+                        "kind": "array",
+                        "name": "Cell",
+                        "element": {
+                          "kind": "integer",
+                          "name": "Triangle",
+                          "width": "s16",
+                          "signed": true
+                        },
+                        "count": {
+                          "count_prefix": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
           "sig": "NVNM"
         },
         {
@@ -45172,9 +46470,19 @@
           "sig": "DEFL"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "integer",
@@ -56009,9 +57317,19 @@
           "sig": "OBND"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "rstruct",
@@ -58203,9 +59521,32 @@
                             "sig": "QRLR"
                           },
                           {
-                            "kind": "bytes",
+                            "kind": "union",
                             "name": "QRRI",
-                            "len": null,
+                            "decider": {
+                              "payload_size": {
+                                "0": 0
+                              },
+                              "default_variant": 1
+                            },
+                            "variants": [
+                              {
+                                "kind": "empty",
+                                "name": "Legendary Item Rank Random"
+                              },
+                              {
+                                "kind": "integer",
+                                "name": "Legendary Item Rank Random",
+                                "width": "u8",
+                                "signed": false,
+                                "format": {
+                                  "enum": [
+                                    "False",
+                                    "True"
+                                  ]
+                                }
+                              }
+                            ],
                             "sig": "QRRI"
                           },
                           {
@@ -58642,9 +59983,127 @@
                     ]
                   },
                   {
-                    "kind": "bytes",
+                    "kind": "union",
                     "name": "Flags",
-                    "len": null,
+                    "decider": {
+                      "payload_size": {
+                        "0": 0,
+                        "1": 0,
+                        "2": 0,
+                        "3": 0,
+                        "4": 0,
+                        "5": 0,
+                        "6": 0,
+                        "7": 0
+                      },
+                      "default_variant": 1
+                    },
+                    "variants": [
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u32",
+                        "signed": false,
+                        "format": {
+                          "flags": [
+                            "Reserves Location/Reference",
+                            "Optional",
+                            "Quest Object",
+                            "Allow Reuse in Quest",
+                            "Allow Dead",
+                            "Matching Ref - In Loaded Area",
+                            "Essential",
+                            "Allow Disabled",
+                            "Stores Text",
+                            "Allow Reserved",
+                            "Protected",
+                            "Forced by Aliases",
+                            "Allow Destroyed",
+                            "Matching Ref - Closest",
+                            "Uses Stored Text",
+                            "Initially Disabled",
+                            "Allow Cleared",
+                            "Clear Names When Removed",
+                            "Matching Ref - Actors Only",
+                            "Create Ref - Temp",
+                            "External Alias - Linked",
+                            "No Pickpocket",
+                            "Can Apply Data To Non-Aliased Refs",
+                            "Is Companion",
+                            "Optional All Scenes",
+                            "Unknown 25",
+                            "Unknown 26",
+                            "Unknown 27",
+                            "Unknown 28",
+                            "Unknown 29",
+                            "Unknown 30",
+                            "Unknown 31",
+                            "Unknown 32",
+                            "Unknown 33",
+                            "Unknown 34",
+                            "Unknown 35",
+                            "Unknown 36",
+                            "Unknown 37",
+                            "Unknown 38",
+                            "Unknown 39",
+                            "Unknown 40",
+                            "Unknown 41"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u64",
+                        "signed": false,
+                        "format": {
+                          "flags": [
+                            "Reserves Location/Reference",
+                            "Optional",
+                            "Quest Object",
+                            "Allow Reuse in Quest",
+                            "Allow Dead",
+                            "Matching Ref - In Loaded Area",
+                            "Essential",
+                            "Allow Disabled",
+                            "Stores Text",
+                            "Allow Reserved",
+                            "Protected",
+                            "Forced by Aliases",
+                            "Allow Destroyed",
+                            "Matching Ref - Closest",
+                            "Uses Stored Text",
+                            "Initially Disabled",
+                            "Allow Cleared",
+                            "Clear Names When Removed",
+                            "Matching Ref - Actors Only",
+                            "Create Ref - Temp",
+                            "External Alias - Linked",
+                            "No Pickpocket",
+                            "Can Apply Data To Non-Aliased Refs",
+                            "Is Companion",
+                            "Optional All Scenes",
+                            "Unknown 25",
+                            "Unknown 26",
+                            "Unknown 27",
+                            "Unknown 28",
+                            "Unknown 29",
+                            "Unknown 30",
+                            "Unknown 31",
+                            "Unknown 32",
+                            "Unknown 33",
+                            "Unknown 34",
+                            "Unknown 35",
+                            "Unknown 36",
+                            "Unknown 37",
+                            "Unknown 38",
+                            "Unknown 39",
+                            "Unknown 40",
+                            "Unknown 41"
+                          ]
+                        }
+                      }
+                    ],
                     "sig": "FNAM"
                   },
                   {
@@ -59494,9 +60953,127 @@
                     ]
                   },
                   {
-                    "kind": "bytes",
+                    "kind": "union",
                     "name": "Flags",
-                    "len": null,
+                    "decider": {
+                      "payload_size": {
+                        "0": 0,
+                        "1": 0,
+                        "2": 0,
+                        "3": 0,
+                        "4": 0,
+                        "5": 0,
+                        "6": 0,
+                        "7": 0
+                      },
+                      "default_variant": 1
+                    },
+                    "variants": [
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u32",
+                        "signed": false,
+                        "format": {
+                          "flags": [
+                            "Reserves Location/Reference",
+                            "Optional",
+                            "Quest Object",
+                            "Allow Reuse in Quest",
+                            "Allow Dead",
+                            "Matching Ref - In Loaded Area",
+                            "Essential",
+                            "Allow Disabled",
+                            "Stores Text",
+                            "Allow Reserved",
+                            "Protected",
+                            "Forced by Aliases",
+                            "Allow Destroyed",
+                            "Matching Ref - Closest",
+                            "Uses Stored Text",
+                            "Initially Disabled",
+                            "Allow Cleared",
+                            "Clear Names When Removed",
+                            "Matching Ref - Actors Only",
+                            "Create Ref - Temp",
+                            "External Alias - Linked",
+                            "No Pickpocket",
+                            "Can Apply Data To Non-Aliased Refs",
+                            "Is Companion",
+                            "Optional All Scenes",
+                            "Unknown 25",
+                            "Unknown 26",
+                            "Unknown 27",
+                            "Unknown 28",
+                            "Unknown 29",
+                            "Unknown 30",
+                            "Unknown 31",
+                            "Unknown 32",
+                            "Unknown 33",
+                            "Unknown 34",
+                            "Unknown 35",
+                            "Unknown 36",
+                            "Unknown 37",
+                            "Unknown 38",
+                            "Unknown 39",
+                            "Unknown 40",
+                            "Unknown 41"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u64",
+                        "signed": false,
+                        "format": {
+                          "flags": [
+                            "Reserves Location/Reference",
+                            "Optional",
+                            "Quest Object",
+                            "Allow Reuse in Quest",
+                            "Allow Dead",
+                            "Matching Ref - In Loaded Area",
+                            "Essential",
+                            "Allow Disabled",
+                            "Stores Text",
+                            "Allow Reserved",
+                            "Protected",
+                            "Forced by Aliases",
+                            "Allow Destroyed",
+                            "Matching Ref - Closest",
+                            "Uses Stored Text",
+                            "Initially Disabled",
+                            "Allow Cleared",
+                            "Clear Names When Removed",
+                            "Matching Ref - Actors Only",
+                            "Create Ref - Temp",
+                            "External Alias - Linked",
+                            "No Pickpocket",
+                            "Can Apply Data To Non-Aliased Refs",
+                            "Is Companion",
+                            "Optional All Scenes",
+                            "Unknown 25",
+                            "Unknown 26",
+                            "Unknown 27",
+                            "Unknown 28",
+                            "Unknown 29",
+                            "Unknown 30",
+                            "Unknown 31",
+                            "Unknown 32",
+                            "Unknown 33",
+                            "Unknown 34",
+                            "Unknown 35",
+                            "Unknown 36",
+                            "Unknown 37",
+                            "Unknown 38",
+                            "Unknown 39",
+                            "Unknown 40",
+                            "Unknown 41"
+                          ]
+                        }
+                      }
+                    ],
                     "sig": "FNAM"
                   },
                   {
@@ -72265,9 +73842,19 @@
           "sig": "SNTP"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "formid",
@@ -74152,9 +75739,19 @@
           "sig": "OBND"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "rarray",
@@ -74960,9 +76557,19 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "formid",
@@ -75778,9 +77385,390 @@
           }
         },
         {
-          "kind": "bytes",
+          "kind": "union",
           "name": "NVNM",
-          "len": null,
+          "decider": {
+            "payload_size": {
+              "0": 0
+            },
+            "default_variant": 1
+          },
+          "variants": [
+            {
+              "kind": "empty",
+              "name": "Navmesh Marker"
+            },
+            {
+              "kind": "struct",
+              "name": "Navmesh Geometry",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Version",
+                  "width": "u32",
+                  "signed": false
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pathing Cell",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "CRC Hash",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Parent World",
+                      "valid_refs": [
+                        "WRLD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "union",
+                      "name": "Parent",
+                      "decider": {
+                        "field": "Parent World",
+                        "default_variant": 0,
+                        "map": {
+                          "null": 1
+                        }
+                      },
+                      "variants": [
+                        {
+                          "kind": "struct",
+                          "name": "Coordinates",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Grid Y",
+                              "width": "s16",
+                              "signed": true
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Grid X",
+                              "width": "s16",
+                              "signed": true
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Parent Cell",
+                          "valid_refs": [
+                            "CELL"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "array",
+                  "name": "Vertices",
+                  "element": {
+                    "kind": "vec3",
+                    "name": "Vertex"
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Triangles",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Triangle",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 0",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 0-1",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 1-2",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 2-0",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Height"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Cover Flags",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Edge Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Edge Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Type",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Navmesh",
+                        "valid_refs": [
+                          "NAVM"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Edge Index",
+                        "len": 1
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Door Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Door Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "CRC Hash",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Door Ref",
+                        "valid_refs": [
+                          "REFR"
+                        ]
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Array",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Data",
+                        "len": 4
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Triangle Mappings",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover Triangle Map",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Cover",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Waypoints",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Waypoint",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "X"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Y"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Z"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u32",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "struct",
+                  "name": "Navmesh Grid",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Divisor",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Grid Size",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "X"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Y"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Navmesh Bounds",
+                      "fields": [
+                        {
+                          "kind": "vec3",
+                          "name": "Min"
+                        },
+                        {
+                          "kind": "vec3",
+                          "name": "Max"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "array",
+                      "name": "Cells",
+                      "element": {
+                        "kind": "array",
+                        "name": "Cell",
+                        "element": {
+                          "kind": "integer",
+                          "name": "Triangle",
+                          "width": "s16",
+                          "signed": true
+                        },
+                        "count": {
+                          "count_prefix": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
           "sig": "NVNM"
         },
         {
@@ -76157,9 +78145,19 @@
           "sig": "OBND"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "rstruct",
@@ -80486,9 +82484,390 @@
           "sig": "TREF"
         },
         {
-          "kind": "bytes",
+          "kind": "union",
           "name": "NVNM",
-          "len": null,
+          "decider": {
+            "payload_size": {
+              "0": 0
+            },
+            "default_variant": 1
+          },
+          "variants": [
+            {
+              "kind": "empty",
+              "name": "Navmesh Marker"
+            },
+            {
+              "kind": "struct",
+              "name": "Navmesh Geometry",
+              "fields": [
+                {
+                  "kind": "integer",
+                  "name": "Version",
+                  "width": "u32",
+                  "signed": false
+                },
+                {
+                  "kind": "struct",
+                  "name": "Pathing Cell",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "CRC Hash",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "formid",
+                      "name": "Parent World",
+                      "valid_refs": [
+                        "WRLD",
+                        "NULL"
+                      ]
+                    },
+                    {
+                      "kind": "union",
+                      "name": "Parent",
+                      "decider": {
+                        "field": "Parent World",
+                        "default_variant": 0,
+                        "map": {
+                          "null": 1
+                        }
+                      },
+                      "variants": [
+                        {
+                          "kind": "struct",
+                          "name": "Coordinates",
+                          "fields": [
+                            {
+                              "kind": "integer",
+                              "name": "Grid Y",
+                              "width": "s16",
+                              "signed": true
+                            },
+                            {
+                              "kind": "integer",
+                              "name": "Grid X",
+                              "width": "s16",
+                              "signed": true
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "formid",
+                          "name": "Parent Cell",
+                          "valid_refs": [
+                            "CELL"
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "kind": "array",
+                  "name": "Vertices",
+                  "element": {
+                    "kind": "vec3",
+                    "name": "Vertex"
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Triangles",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Triangle",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 0",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 0-1",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 1-2",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Edge 2-0",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Height"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Cover Flags",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Edge Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Edge Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Type",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Navmesh",
+                        "valid_refs": [
+                          "NAVM"
+                        ]
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "s16",
+                        "signed": true
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Edge Index",
+                        "len": 1
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Door Links",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Door Link",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "CRC Hash",
+                        "width": "u32",
+                        "signed": false
+                      },
+                      {
+                        "kind": "formid",
+                        "name": "Door Ref",
+                        "valid_refs": [
+                          "REFR"
+                        ]
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Array",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 1",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Vertex 2",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Data",
+                        "len": 4
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Cover Triangle Mappings",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Cover Triangle Map",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Cover",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "array",
+                  "name": "Waypoints",
+                  "element": {
+                    "kind": "struct",
+                    "name": "Waypoint",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "X"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Y"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Z"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Triangle",
+                        "width": "u16",
+                        "signed": false
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Flags",
+                        "width": "u32",
+                        "signed": false
+                      }
+                    ]
+                  },
+                  "count": {
+                    "count_prefix": 4
+                  }
+                },
+                {
+                  "kind": "struct",
+                  "name": "Navmesh Grid",
+                  "fields": [
+                    {
+                      "kind": "integer",
+                      "name": "Divisor",
+                      "width": "u32",
+                      "signed": false
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Grid Size",
+                      "fields": [
+                        {
+                          "kind": "float",
+                          "name": "X"
+                        },
+                        {
+                          "kind": "float",
+                          "name": "Y"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "struct",
+                      "name": "Navmesh Bounds",
+                      "fields": [
+                        {
+                          "kind": "vec3",
+                          "name": "Min"
+                        },
+                        {
+                          "kind": "vec3",
+                          "name": "Max"
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "array",
+                      "name": "Cells",
+                      "element": {
+                        "kind": "array",
+                        "name": "Cell",
+                        "element": {
+                          "kind": "integer",
+                          "name": "Triangle",
+                          "width": "s16",
+                          "signed": true
+                        },
+                        "count": {
+                          "count_prefix": 4
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
           "sig": "NVNM"
         },
         {
@@ -82679,9 +85058,19 @@
           "sig": "SNTP"
         },
         {
-          "kind": "bytes",
-          "name": "Photo Studio",
-          "sig": "PHST"
+          "kind": "integer",
+          "name": "Physics Sync Type",
+          "width": "u32",
+          "signed": false,
+          "sig": "PHST",
+          "format": {
+            "flags": [
+              "None",
+              "Initial Only",
+              "Only Deactivate",
+              "Per Frame"
+            ]
+          }
         },
         {
           "kind": "integer",
@@ -83479,13 +85868,22 @@
           "sig": "INRD"
         },
         {
-          "kind": "bytes",
-          "name": "EILV",
+          "kind": "array",
+          "name": "Eligible Levels",
+          "element": {
+            "kind": "integer",
+            "name": "Level",
+            "width": "u32",
+            "signed": false
+          },
           "sig": "EILV"
         },
         {
-          "kind": "bytes",
-          "name": "IBSD",
+          "kind": "formid",
+          "name": "Break Sound",
+          "valid_refs": [
+            "SNDR"
+          ],
           "sig": "IBSD"
         },
         {

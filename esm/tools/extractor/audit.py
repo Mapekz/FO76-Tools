@@ -365,6 +365,71 @@ def _compare_integers(
         })
 
 
+# ── Stub-downgrade check ──────────────────────────────────────────────────
+# Historical bug class: a hand-written `self.vars["wbXxx"] = ...` override in
+# extract.py silently replaced a real, richer Pascal definition with an opaque
+# `wbByteArray`/`bytes` stub (e.g. wbEILV/wbIBSD/wbPHST — introduced already
+# stubbed, never caught). The record-level walk in compare_member_trees can't
+# see this: it builds its "pascal-expected" tree from this *same* extractor
+# instance, so the stub is present on both sides of the comparison and matches
+# itself. This check instead diffs the pre-override auto-collected vars
+# snapshot (`ex._auto_vars`, taken right after `_collect_vars` in
+# `Extractor.__init__`) against the final `ex.vars` used to build the shipped
+# schema, so a hand override can't hide behind self-comparison.
+def _check_stub_downgrades(ex: "AuditExtractor", findings: list[Finding]) -> None:
+    """Flag hand overrides in self.vars that downgrade a real Pascal `wbXxx`
+    definition to an opaque byte stub (kind: 'bytes')."""
+    auto_vars: dict[str, str] = getattr(ex, "_auto_vars", {})
+
+    # parse_member() has a side effect: an unrecognized construct is recorded
+    # into ex.report (unrecognized_constructs / unrecognized_by_record), the
+    # latter attributed to whatever ex._current_record was left set to by the
+    # main ex.run() pass (e.g. the last record in WHITELIST). Probing var
+    # definitions here — outside any real record context — must not leak bogus
+    # "record X dropped construct Y" findings into the per-record section
+    # below, so snapshot and restore all of that state around the loop.
+    saved_current_record = ex._current_record
+    saved_unrecognized_constructs = dict(ex.report.unrecognized_constructs)
+    saved_unrecognized_by_record = {
+        k: dict(v) for k, v in ex.report.unrecognized_by_record.items()
+    }
+    ex._current_record = ""
+    try:
+        for name in sorted(auto_vars):
+            auto_def = auto_vars[name]
+            final_def = ex.vars.get(name)
+            if final_def is None or final_def == auto_def:
+                continue
+            try:
+                auto_parsed = ex.parse_member(auto_def)
+            except Exception:
+                auto_parsed = None
+            try:
+                final_parsed = ex.parse_member(final_def)
+            except Exception:
+                final_parsed = None
+            auto_kind = auto_parsed.get("kind") if isinstance(auto_parsed, dict) else None
+            final_kind = final_parsed.get("kind") if isinstance(final_parsed, dict) else None
+            if final_kind == "bytes" and auto_kind not in (None, "bytes"):
+                findings.append({
+                    "record": "$GLOBAL",
+                    "path": name,
+                    "class_": "stub-downgrade",
+                    "sev": HIGH,
+                    "detail": (
+                        f"hand override for '{name}' downgrades a real Pascal definition "
+                        f"(kind={auto_kind}: {auto_def[:80]!r}) to an opaque byte stub "
+                        f"(kind=bytes: {final_def[:80]!r})"
+                    ),
+                    "pascal": {"kind": auto_kind, "def": auto_def[:200]},
+                    "schema": {"kind": final_kind, "def": final_def[:200]},
+                })
+    finally:
+        ex._current_record = saved_current_record
+        ex.report.unrecognized_constructs = saved_unrecognized_constructs
+        ex.report.unrecognized_by_record = saved_unrecognized_by_record
+
+
 # ── Exceptions allowlist ──────────────────────────────────────────────────
 def _load_exceptions(path: Path) -> list[dict]:
     if not path.exists():
@@ -502,6 +567,10 @@ def run_audit(
             sig,
             all_findings,
         )
+
+    # ── Stub-downgrade check (see function docstring) ──────────────────────
+    if not record_filter:
+        _check_stub_downgrades(ex, all_findings)
 
     # ── Unrecognized-construct drops ──────────────────────────────────────
     # These members were silently dropped by parse_member's terminal return None.

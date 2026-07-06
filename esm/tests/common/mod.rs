@@ -230,18 +230,29 @@ pub fn make_xref_esm() -> Vec<u8> {
 
 /// Recursively collect every "decode problem" from a decoded record JSON value.
 ///
-/// Three marker types indicate a decode gap:
+/// Four marker types indicate a decode gap:
 ///
 /// | Marker | Key(s) present | Meaning |
 /// |---|---|---|
 /// | `_unknown_record` | `_unknown_record: true` | Signature not in schema |
 /// | `raw_fallback` | `_raw: true` + `reason: "…"` | Field used a raw-bytes fallback |
 /// | `_unmapped` | `_unmapped: { … }` | Subrecords not consumed by any schema member |
+/// | bare-hex-under-sig-key | `"EILV": {"hex": "…"}` | A `kind: bytes` schema stub masking real structure |
 ///
 /// The third column intentionally excludes `_unresolved: true` (unresolved
 /// LString IDs from localized ESMs) — that marker indicates a missing string
 /// table, not a decode bug.  Tests in this suite run against a non-localized
 /// ESM, so `_unresolved` cannot appear.
+///
+/// The fourth marker catches a schema-generation bug class discovered via the
+/// WEAP EILV/IBSD/PHST stubs (see extract.py's `self.vars` hand overrides):
+/// a member whose JSON key is a bare 4-char raw signature (e.g. `"EILV"`,
+/// `"NVNM"`) rendering as an opaque `{"hex": ...}` leaf. Genuine, intentionally
+/// opaque fields are always named descriptively by the schema/Pascal (e.g.
+/// `"Padding?"`, `"Unknown 2"`, `"Edge Index"`) rather than left under their
+/// raw signature, so this check needs no allowlist — a real subrecord-shaped
+/// key defaulting to its own signature as the display name is itself the
+/// signal that nobody gave it a proper decode.
 ///
 /// Returns a list of human-readable problem strings.  An empty return means the
 /// record decoded fully with no markers.
@@ -249,6 +260,23 @@ pub fn collect_decode_problems(v: &Value) -> Vec<String> {
     let mut problems = Vec::new();
     collect_decode_problems_inner(v, "", &mut problems);
     problems
+}
+
+/// A raw record/subrecord signature: exactly 4 bytes, each an uppercase ASCII
+/// letter or digit (e.g. `EILV`, `NVNM`, `WEAP`). Matches how xEdit/this schema
+/// spells signatures — never used for a genuine descriptive field name.
+fn is_signature_like_key(k: &str) -> bool {
+    k.len() == 4
+        && k.bytes()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+}
+
+/// True if `v` is an object whose only keys are `"hex"` (required) and
+/// optionally `"_raw"` — the bare-bytes-leaf shape emitted for a `kind: bytes`
+/// schema member with no richer decode.
+fn is_bare_hex_leaf(v: &Value) -> bool {
+    let Value::Object(map) = v else { return false };
+    map.contains_key("hex") && map.keys().all(|k| k == "hex" || k == "_raw")
 }
 
 fn collect_decode_problems_inner(v: &Value, path: &str, out: &mut Vec<String>) {
@@ -280,6 +308,15 @@ fn collect_decode_problems_inner(v: &Value, path: &str, out: &mut Vec<String>) {
             for (k, child) in map {
                 if k == "_unmapped" {
                     continue;
+                }
+                // Bare hex directly under a raw signature-shaped key (e.g.
+                // "EILV": {"hex": "..."}) — see doc comment on
+                // collect_decode_problems above.
+                if is_signature_like_key(k) && is_bare_hex_leaf(child) {
+                    out.push(format!(
+                        "[{path}] bare hex under raw signature key '{k}' \
+                         — likely an unresolved schema stub (kind: bytes)"
+                    ));
                 }
                 let child_path = if path.is_empty() {
                     k.clone()

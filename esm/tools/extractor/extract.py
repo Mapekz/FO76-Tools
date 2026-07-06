@@ -117,8 +117,10 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
              "format": {"enum": ["False", "True"]}},
         ],
     },
-    # wbRecordSizeDecider(1): QRRI is 0 bytes (empty) or 1 byte (u8 bool).
-    "wbRecordSizeDecider": {"kind": "bytes", "name": None, "len": None},
+    # wbRecordSizeDecider is handled directly in _parse_union (dynamic threshold
+    # parsed from the call site — see the dedicated elif branch there), not via
+    # this static substitution table, since the byte-size threshold varies per
+    # call site (QRRI/VISI/FNAM/NVNM each use a different N).
 
     # ---- Decider-only substitutions (no "kind" key): use Pascal variants as-is ----
     # wbGMSTUnionDecider: first char of EDID → variant index.
@@ -248,6 +250,15 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
     # wbNAVIParentDecider (Common.pas:5350): null Parent World FormID → variant 1
     # (Parent Cell); any non-null worldspace → variant 0 (Grid coords).
     "wbNAVIParentDecider": {
+        "field": "Parent World",
+        "default_variant": 0,
+        "map": {"null": 1},
+    },
+    # wbNVNMParentDecider (Common.pas:5372) — NVNM's Pathing Cell "Parent" union;
+    # identical semantics to wbNAVIParentDecider above (sibling "Parent World"
+    # FormID: null → variant 1 = Parent Cell (interior); non-null → variant 0 =
+    # Grid X/Y coordinates (exterior worldspace cell)).
+    "wbNVNMParentDecider": {
         "field": "Parent World",
         "default_variant": 0,
         "map": {"null": 1},
@@ -814,6 +825,14 @@ class Extractor:
         self.sig_lists: dict[str, list[str]] = {}
         self._collect_sig_lists(fo76)
         self._collect_vars(fo76)
+        # Snapshot of the pure Pascal-collected `wbXxx := ...` assignments, taken
+        # before any hand-written override below can overwrite them. audit.py
+        # diffs this against the final self.vars to catch a hand override that
+        # silently downgrades a real Pascal definition to an opaque byte stub
+        # (see EILV/IBSD/PHST history — these were introduced pre-stubbed and
+        # went undetected because the audit previously re-ran this same
+        # extractor to build its "expected" side, so the stub matched itself).
+        self._auto_vars: dict[str, str] = dict(self.vars)
         # Skip common.pas — helpers are injected below.
         self._inject_builtin_helpers()
         # Case-insensitive lookup map: lowercase(var_name) → canonical var_name.
@@ -979,7 +998,9 @@ class Extractor:
             "wbFromVersion(152, wbFormIDCk('Curve Table', [CURV, NULL]))]))"
         )
         self.vars["wbPTRN"] = "wbFormIDCk(PTRN, 'Preview Transform', [TRNS,NULL])"
-        self.vars["wbPHST"] = "wbByteArray(PHST, 'Photo Studio', 0)"
+        # wbPHST is auto-collected from its `:=` assignment (FO76.pas:4999) as
+        # wbInteger(PHST,'Physics Sync Type',itU32,wbPHSTFlags).IncludeFlag(...) —
+        # no stub override needed; the extractor already strips method chains.
         self.vars["wbSNTP"] = "wbFormIDCk(SNTP, 'Snap Template', [STMP])"
         # wbXALGFlags / wbXALG — wbDefinitionsFO76.pas:4815-4848 / :4931.
         self.vars["wbXALGFlags"] = (
@@ -1023,9 +1044,9 @@ class Extractor:
         self.vars["wbVCRY"] = "wbFormIDCk(VCRY, 'Value Currency', [NULL,CNCY])"
         self.vars["wbICON"] = "wbString(ICON, 'Icon Image')"
         self.vars["wbMICO"] = "wbString(MICO, 'Message Icon')"
-        self.vars["wbINRD"] = "wbFormIDCk(INRD, 'Instance Naming', [INNR])"
-        self.vars["wbEILV"] = "wbByteArray(EILV, 'EILV', 0)"
-        self.vars["wbIBSD"] = "wbByteArray(IBSD, 'IBSD', 0)"
+        # wbINRD, wbEILV, wbIBSD (FO76.pas:7084-7086) are auto-collected from their
+        # `:=` assignments — no stub overrides needed. wbEILV is a u32 array
+        # ('Eligible Levels'); wbIBSD is a FormID→SNDR ('Break Sound').
         # wbAPPR — wbDefinitionsFO76.pas:7136.
         # Sorted array of KYWD FormIDs (attach-parent slots).  Decoded as a packed
         # array of 4-byte FormIDs via the record-context Array path.
@@ -2576,6 +2597,28 @@ class Extractor:
                         "min": int(m.group(1)),
                         "max": int(m.group(2)) if m.group(2) else None,
                     }
+                }
+            else:
+                decider = {"raw": True}
+        elif "wbRecordSizeDecider" in decider_expr:
+            # wbRecordSizeDecider(N) / wbRecordSizeDecider([N]) — single-threshold
+            # forms (wbDefinitionsCommon.pas:5405/5451; the two-arg min/max and
+            # multi-element-list overloads are never used in FO76.pas). Pascal
+            # semantics for both single-arg overloads: DataSize < N → variant 0
+            # (the earlier/shorter variant, e.g. an empty marker); DataSize >= N
+            # → variant 1 (the later/richer variant — NVNM's case has a fully
+            # variable-length struct there, so it must be the *default*, not an
+            # enumerated exact-size match). Absent subrecord (effective_payload
+            # is None at decode time) also naturally falls through to
+            # default_variant, matching Pascal's "not Assigned(aElement) → 0"
+            # in practice: decode_member never inserts anything for a payload-less
+            # variant, so which index is nominally "chosen" is moot in that case.
+            m = re.search(r"wbRecordSizeDecider\(\s*\[?\s*(\d+)\s*\]?\s*\)", decider_expr)
+            if m:
+                threshold = int(m.group(1))
+                decider = {
+                    "payload_size": {str(i): 0 for i in range(threshold)},
+                    "default_variant": 1,
                 }
             else:
                 decider = {"raw": True}

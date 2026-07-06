@@ -421,7 +421,25 @@ fn decode_member(
             }
         }
         MemberDef::Vec3 { sig, name } => {
-            if let Some(sig) = sig {
+            // Two calling shapes, mirroring the Struct arm above: (1) called with
+            // an explicit `payload` slice already in hand — e.g. as a bare array
+            // element via decode_field_value (NVNM's Vertices is the first real
+            // exercise of this path); (2) called with no payload but its own
+            // `sig`, so it must pull its own subrecord's bytes via `by_sig`.
+            // Before this fix only (2) was handled, so a sig-less Vec3 array
+            // element silently decoded to `{}` (nothing inserted into `out`).
+            if let Some(data) = payload {
+                if data.len() >= 12 {
+                    out.insert(
+                        name.clone(),
+                        json!({
+                            "x": f32::from_le_bytes(data[0..4].try_into().unwrap()),
+                            "y": f32::from_le_bytes(data[4..8].try_into().unwrap()),
+                            "z": f32::from_le_bytes(data[8..12].try_into().unwrap()),
+                        }),
+                    );
+                }
+            } else if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     if sr.data.len() >= 12 {
                         out.insert(
