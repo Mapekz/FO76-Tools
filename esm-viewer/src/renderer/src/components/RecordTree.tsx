@@ -134,7 +134,9 @@ export function RecordTree({ onNavigate }: Props) {
           const sig = g.label.kind === 'record_type' ? g.label.sig : '????'
           return { sig, child_count: g.child_count }
         })
-        setGroups(parsed.filter((g) => g.child_count > 0))
+        const filtered = parsed.filter((g) => g.child_count > 0)
+        filtered.sort((a, b) => a.sig.localeCompare(b.sig))
+        setGroups(filtered)
         setExpanded(new Set())
         setRows({})
         setGroupChildren({})
