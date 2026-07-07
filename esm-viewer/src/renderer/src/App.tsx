@@ -121,8 +121,8 @@ export function App() {
     [navPush, loadRecord]
   )
 
-  // Single shared implementation of Back/Forward, used by both the NavHistory
-  // buttons and the Alt+Arrow keyboard shortcuts below.
+  // Single shared implementation of Back/Forward, used by the NavHistory buttons
+  // and the Alt+Arrow / media-key / mouse X-button shortcuts below.
   const goBack = useCallback(() => {
     const entry = navBack()
     if (entry) void loadRecord(entry.dbId, entry.formid)
@@ -135,6 +135,18 @@ export function App() {
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Media-keyboard back/forward keys never type text, so they navigate even
+      // while an input is focused.
+      if (e.key === 'BrowserBack') {
+        e.preventDefault()
+        goBack()
+        return
+      } else if (e.key === 'BrowserForward') {
+        e.preventDefault()
+        goForward()
+        return
+      }
+
       const active = document.activeElement
       const isTextInput =
         active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement
@@ -148,8 +160,28 @@ export function App() {
         goForward()
       }
     }
+    // Mouse X-buttons (back = 3, forward = 4). preventDefault on mousedown too,
+    // so Chromium never treats them as page-history navigation.
+    function onMouseDown(e: MouseEvent) {
+      if (e.button === 3 || e.button === 4) e.preventDefault()
+    }
+    function onMouseUp(e: MouseEvent) {
+      if (e.button === 3) {
+        e.preventDefault()
+        goBack()
+      } else if (e.button === 4) {
+        e.preventDefault()
+        goForward()
+      }
+    }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
   }, [goBack, goForward])
 
   return (
