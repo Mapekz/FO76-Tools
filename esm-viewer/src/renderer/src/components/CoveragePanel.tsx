@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { CoverageReport, Markers } from '../../../shared/api-types'
+import { formatRecordType } from '../recordTypeNames'
 
 const DEFAULT_SAMPLE = 200
 const ALL_TYPES = ''
@@ -73,7 +74,7 @@ export function CoveragePanel() {
             <option value={ALL_TYPES}>All types (slower)</option>
             {sigs.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {formatRecordType(s)}
               </option>
             ))}
           </select>

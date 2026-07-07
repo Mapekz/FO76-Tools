@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { FilterOp, FilterResult, RecordRow } from '../../../shared/api-types'
+import { formatRecordType } from '../recordTypeNames'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -93,7 +94,7 @@ export function FilterPanel({ onNavigate }: Props) {
           <select value={sig} onChange={(e) => setSig(e.target.value)} style={{ flex: 1 }}>
             {sigs.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {formatRecordType(s)}
               </option>
             ))}
           </select>

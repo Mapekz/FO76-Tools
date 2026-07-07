@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { RecordRow, GroupChild, GroupLabel } from '../../../shared/api-types'
+import { formatRecordType } from '../recordTypeNames'
 
 const PAGE_SIZE = 100
 
@@ -19,7 +20,7 @@ interface GroupEntry {
 function groupLabelText(label: GroupLabel): string {
   switch (label.kind) {
     case 'record_type':
-      return label.sig
+      return formatRecordType(label.sig)
     case 'form_id':
       return `World ${label.form_id}`
     case 'cell_children':
@@ -276,7 +277,7 @@ export function RecordTree({ onNavigate }: Props) {
                 borderBottom: '1px solid #333',
               }}
             >
-              {expanded.has(g.sig) ? '▼' : '▶'} {g.sig} ({g.child_count})
+              {expanded.has(g.sig) ? '▼' : '▶'} {formatRecordType(g.sig)} ({g.child_count})
             </div>
             {expanded.has(g.sig) && (
               <div>
