@@ -4826,6 +4826,8 @@ fn qust_gq_horde_alias_fill_decodes_correctly() {
 #[test]
 fn npc_comp_super_mutant_maul_vmad_decodes_correctly() {
     use esm::decode::decode_vmad;
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx(&schema);
     let data = crate::common::hex_bytes(concat!(
         "0600020005001400434f4d505f49646c6554696d65725363726970740004001700434f4d505f4964",
         "6c654368617474657254696d654d617801010000ffff861c5a001700434f4d505f49646c65436861",
@@ -4864,7 +4866,7 @@ fn npc_comp_super_mutant_maul_vmad_decodes_correctly() {
         "ffffd45c58000e0056697369746f72546f537061776e01010000ffffeb3c5700240044656661756c",
         "744163746f7249676e6f7265467269656e646c7948697473536372697074000000"
     ));
-    let result = decode_vmad(&data);
+    let result = decode_vmad(&ctx, &data);
     assert!(
         result.get("_raw").is_none(),
         "decode_vmad produced raw fallback (type-0/type-7 regression): {result}",

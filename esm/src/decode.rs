@@ -800,12 +800,12 @@ fn decode_member(
             if let Some(sig) = sig {
                 if let Some(sr) = take_first(by_sig, sig) {
                     let decoded = match ctx.record_signature {
-                        Some("QUST") => decode_vmad_qust(&sr.data),
-                        Some("INFO") => decode_vmad_info(&sr.data),
-                        Some("PACK") => decode_vmad_pack(&sr.data),
-                        Some("PERK") => decode_vmad_perk(&sr.data),
-                        Some("SCEN") => decode_vmad_scen(&sr.data),
-                        _ => decode_vmad(&sr.data),
+                        Some("QUST") => decode_vmad_qust(ctx, &sr.data),
+                        Some("INFO") => decode_vmad_info(ctx, &sr.data),
+                        Some("PACK") => decode_vmad_pack(ctx, &sr.data),
+                        Some("PERK") => decode_vmad_perk(ctx, &sr.data),
+                        Some("SCEN") => decode_vmad_scen(ctx, &sr.data),
+                        _ => decode_vmad(ctx, &sr.data),
                     };
                     out.insert(name.clone(), decoded);
                 }
@@ -1731,7 +1731,7 @@ fn take_all<'a>(
 ///
 /// VMAD stores Papyrus script attachments with properties in a compact binary format.
 /// Never panics on truncated or malformed input — returns a raw hex fallback instead.
-pub fn decode_vmad(data: &[u8]) -> Value {
+pub fn decode_vmad(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
     let mut pos = 0usize;
 
     macro_rules! need {
@@ -1784,7 +1784,7 @@ pub fn decode_vmad(data: &[u8]) -> Value {
             pos += 1;
             let _prop_status = data[pos];
             pos += 1;
-            let value = decode_vmad_property(data, &mut pos, prop_type, obj_format);
+            let value = decode_vmad_property(ctx, data, &mut pos, prop_type, obj_format);
             props.push(json!({"name": prop_name, "type": prop_type, "value": value}));
         }
         scripts.push(json!({"name": name, "status": status, "properties": props}));
@@ -1804,7 +1804,7 @@ pub fn decode_vmad(data: &[u8]) -> Value {
 /// On any bounds-check failure the function returns the same `{"_raw": true,
 /// "reason": "VMAD truncated", ...}` sentinel as `decode_vmad`, so callers can
 /// treat both uniformly.
-pub fn decode_vmad_qust(data: &[u8]) -> Value {
+pub fn decode_vmad_qust(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
     let mut pos = 0usize;
 
     macro_rules! need {
@@ -1863,7 +1863,7 @@ pub fn decode_vmad_qust(data: &[u8]) -> Value {
             pos += 1;
             let _prop_status = data[pos];
             pos += 1;
-            let value = decode_vmad_property(data, &mut pos, prop_type, obj_format);
+            let value = decode_vmad_property(ctx, data, &mut pos, prop_type, obj_format);
             props.push(json!({"name": prop_name, "type": prop_type, "value": value}));
         }
         scripts.push(json!({"name": name, "status": status, "properties": props}));
@@ -1894,7 +1894,7 @@ pub fn decode_vmad_qust(data: &[u8]) -> Value {
             pos += 1;
             let _ps = data[pos];
             pos += 1;
-            let val = decode_vmad_property(data, &mut pos, pt, obj_format);
+            let val = decode_vmad_property(ctx, data, &mut pos, pt, obj_format);
             props.push(json!({"name": pn, "type": pt, "value": val}));
         }
         json!({"flags": flags, "properties": props})
@@ -1964,14 +1964,14 @@ pub fn decode_vmad_qust(data: &[u8]) -> Value {
                 pos += 1;
                 let _ps = data[pos];
                 pos += 1;
-                let val = decode_vmad_property(data, &mut pos, pt, alias_obj_format);
+                let val = decode_vmad_property(ctx, data, &mut pos, pt, alias_obj_format);
                 props.push(json!({"name": pn, "type": pt, "value": val}));
             }
             alias_scripts.push(json!({"name": name, "status": status, "properties": props}));
         }
         aliases.push(json!({
             "alias_id": alias_id,
-            "form_id": format!("{:#010X}", form_id),
+            "form_id": resolve_formid(ctx, &[], FormId::new(form_id)),
             "alias_scripts": alias_scripts,
         }));
     }
@@ -1986,7 +1986,10 @@ pub fn decode_vmad_qust(data: &[u8]) -> Value {
 
 /// Parse the common VMAD header + scripts section, returning `(version, obj_format, scripts, pos)`
 /// on success or a truncation `Value` on failure.
-fn vmad_parse_header(data: &[u8]) -> Result<(u16, u16, Vec<Value>, usize), Value> {
+fn vmad_parse_header(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<(u16, u16, Vec<Value>, usize), Value> {
     let mut pos = 0usize;
     macro_rules! need {
         ($n:expr) => {
@@ -2030,7 +2033,7 @@ fn vmad_parse_header(data: &[u8]) -> Result<(u16, u16, Vec<Value>, usize), Value
             pos += 1;
             let _ps = data[pos];
             pos += 1;
-            let val = decode_vmad_property(data, &mut pos, pt, obj_format);
+            let val = decode_vmad_property(ctx, data, &mut pos, pt, obj_format);
             props.push(json!({"name": pn, "type": pt, "value": val}));
         }
         scripts.push(json!({"name": name, "status": status, "properties": props}));
@@ -2040,7 +2043,12 @@ fn vmad_parse_header(data: &[u8]) -> Result<(u16, u16, Vec<Value>, usize), Value
 
 /// Read a single script entry (name + status + props) from `data[*pos..]`.
 /// Returns None on truncation; advances `*pos` on success.
-fn vmad_read_script_entry(data: &[u8], pos: &mut usize, obj_format: u16) -> Option<Value> {
+fn vmad_read_script_entry(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    pos: &mut usize,
+    obj_format: u16,
+) -> Option<Value> {
     fn read_wstr(data: &[u8], pos: &mut usize) -> Option<String> {
         if *pos + 2 > data.len() {
             return None;
@@ -2075,7 +2083,7 @@ fn vmad_read_script_entry(data: &[u8], pos: &mut usize, obj_format: u16) -> Opti
         *pos += 1;
         let _ps = data[*pos];
         *pos += 1;
-        let val = decode_vmad_property(data, pos, pt, obj_format);
+        let val = decode_vmad_property(ctx, data, pos, pt, obj_format);
         props.push(json!({"name": pn, "type": pt, "value": val}));
     }
     Some(json!({"name": name, "status": status, "properties": props}))
@@ -2086,6 +2094,7 @@ fn vmad_read_script_entry(data: &[u8], pos: &mut usize, obj_format: u16) -> Opti
 /// 0x03 for INFO/SCEN (OnBegin|OnEnd), 0x07 for PACK (OnBegin|OnEnd|OnChange).
 /// Returns (flags, script_entry_value, fragments_vec, pos) or a truncation error.
 fn vmad_read_flags_fragments(
+    ctx: &DecodeContext<'_>,
     data: &[u8],
     pos: &mut usize,
     obj_format: u16,
@@ -2122,7 +2131,7 @@ fn vmad_read_flags_fragments(
     let flags = data[*pos];
     *pos += 1;
     let frag_count = (flags & flag_mask).count_ones() as usize;
-    let script_entry = vmad_read_script_entry(data, pos, obj_format).ok_or_else(
+    let script_entry = vmad_read_script_entry(ctx, data, pos, obj_format).ok_or_else(
         || json!({"_raw": true, "reason": "VMAD truncated", "hex": hex::encode(&data[*pos..])}),
     )?;
     let mut fragments = Vec::new();
@@ -2150,15 +2159,15 @@ fn vmad_read_flags_fragments(
 /// Some INFO records have scripts but no script-fragments tail (they use plain VMAD
 /// layout even though INFO is classified as a fragmented type). When data ends right
 /// after the header, return a successful result with no script_fragments key.
-pub fn decode_vmad_info(data: &[u8]) -> Value {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(data) {
+pub fn decode_vmad_info(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
+    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
         Ok(v) => v,
         Err(e) => return e,
     };
     if pos >= data.len() {
         return json!({"version": version, "scripts": scripts});
     }
-    match vmad_read_flags_fragments(data, &mut pos, obj_format, 0x03) {
+    match vmad_read_flags_fragments(ctx, data, &mut pos, obj_format, 0x03) {
         Err(e) => e,
         Ok((flags, script_entry, fragments)) => json!({
             "version": version,
@@ -2178,15 +2187,15 @@ pub fn decode_vmad_info(data: &[u8]) -> Value {
 ///
 /// Like INFO, some PACK records carry only the plain VMAD header without a
 /// script-fragments tail. Return a no-fragments result when data ends after the header.
-pub fn decode_vmad_pack(data: &[u8]) -> Value {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(data) {
+pub fn decode_vmad_pack(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
+    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
         Ok(v) => v,
         Err(e) => return e,
     };
     if pos >= data.len() {
         return json!({"version": version, "scripts": scripts});
     }
-    match vmad_read_flags_fragments(data, &mut pos, obj_format, 0x07) {
+    match vmad_read_flags_fragments(ctx, data, &mut pos, obj_format, 0x07) {
         Err(e) => e,
         Ok((flags, script_entry, fragments)) => json!({
             "version": version,
@@ -2207,8 +2216,8 @@ pub fn decode_vmad_pack(data: &[u8]) -> Value {
 ///
 /// Some PERK records carry only the plain VMAD header without a script-fragments tail.
 /// Return a no-fragments result when data ends after the header.
-pub fn decode_vmad_perk(data: &[u8]) -> Value {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(data) {
+pub fn decode_vmad_perk(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
+    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -2253,7 +2262,7 @@ pub fn decode_vmad_perk(data: &[u8]) -> Value {
     }
     let extra_bind_data_version = data[pos] as i8;
     pos += 1;
-    let script_entry = match vmad_read_script_entry(data, &mut pos, obj_format) {
+    let script_entry = match vmad_read_script_entry(ctx, data, &mut pos, obj_format) {
         Some(v) => v,
         None => trunc!(),
     };
@@ -2289,8 +2298,8 @@ pub fn decode_vmad_perk(data: &[u8]) -> Value {
 /// Script Fragments: extra_bind_data_version(s8) + flags(u8) + script_entry + fragments + phase_fragments
 /// Fragment count = popcount(flags & 0x03) — OnBegin (bit 1) and OnEnd (bit 2 in Pascal, but flags byte bits 0-1).
 /// Phase fragments: u16-count-prefixed array; each = phase_flag(u8) + phase_index(u32) + unknown(1) + script_name + fragment_name.
-pub fn decode_vmad_scen(data: &[u8]) -> Value {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(data) {
+pub fn decode_vmad_scen(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
+    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
         Ok(v) => v,
         Err(e) => return e,
     };
@@ -2299,7 +2308,7 @@ pub fn decode_vmad_scen(data: &[u8]) -> Value {
         return json!({"version": version, "scripts": scripts});
     }
     let (flags, script_entry, fragments) =
-        match vmad_read_flags_fragments(data, &mut pos, obj_format, 0x03) {
+        match vmad_read_flags_fragments(ctx, data, &mut pos, obj_format, 0x03) {
             Ok(v) => v,
             Err(e) => return e,
         };
@@ -2374,7 +2383,13 @@ pub fn decode_vmad_scen(data: &[u8]) -> Value {
     })
 }
 
-fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format: u16) -> Value {
+fn decode_vmad_property(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    pos: &mut usize,
+    prop_type: u8,
+    obj_format: u16,
+) -> Value {
     fn read_vmad_wstring(data: &[u8], pos: &mut usize) -> Option<String> {
         if *pos + 2 > data.len() {
             return None;
@@ -2389,7 +2404,14 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
         Some(s)
     }
 
-    fn decode_vmad_struct(data: &[u8], pos: &mut usize, obj_format: u16) -> Value {
+    // Nested `fn` items don't capture the enclosing function's variables, so
+    // `ctx` must be threaded through explicitly rather than closed over.
+    fn decode_vmad_struct(
+        ctx: &DecodeContext<'_>,
+        data: &[u8],
+        pos: &mut usize,
+        obj_format: u16,
+    ) -> Value {
         if *pos + 4 > data.len() {
             return json!(null);
         }
@@ -2412,7 +2434,7 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
             let _member_status = data[*pos];
             *pos += 1;
             let before = *pos;
-            let value = decode_vmad_property(data, pos, member_type, obj_format);
+            let value = decode_vmad_property(ctx, data, pos, member_type, obj_format);
             // Type 0 (None) is zero-width — pos not advancing is correct, not a stall.
             if member_type != 0 && *pos == before {
                 break;
@@ -2422,14 +2444,25 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
         json!(members)
     }
 
-    fn read_scalar(data: &[u8], pos: &mut usize, base_type: u8, obj_format: u16) -> Value {
+    fn read_scalar(
+        ctx: &DecodeContext<'_>,
+        data: &[u8],
+        pos: &mut usize,
+        base_type: u8,
+        obj_format: u16,
+    ) -> Value {
         match base_type {
             1 => {
                 // Scripted object: always 8 bytes (FormID + Alias + Unused).
                 if *pos + 8 > data.len() {
                     return json!(null);
                 }
-                let form_off = if obj_format == 2 { 0 } else { 4 };
+                // xEdit ground truth (wbDefinitionsFO76.pas `wbScriptPropertyObject`
+                // + `wbGetScriptObjFormat`): objFormat == 1 selects "Object v1"
+                // (FormID, Alias, Unused — FormID first); anything else (incl. the
+                // common objFormat == 2) selects "Object v2" (Unused, Alias, FormID
+                // — FormID last).
+                let form_off = if obj_format == 1 { 0 } else { 4 };
                 let form_id = u32::from_le_bytes([
                     data[*pos + form_off],
                     data[*pos + form_off + 1],
@@ -2437,7 +2470,7 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
                     data[*pos + form_off + 3],
                 ]);
                 *pos += 8;
-                json!(format!("{:#010X}", form_id))
+                resolve_formid(ctx, &[], FormId::new(form_id))
             }
             2 => {
                 if *pos + 2 > data.len() {
@@ -2493,10 +2526,10 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
                 }
                 let sub_type = data[*pos];
                 *pos += 1;
-                read_scalar(data, pos, sub_type, obj_format)
+                read_scalar(ctx, data, pos, sub_type, obj_format)
             }
             // Type 7 = Struct: u32 member count, then N × (name + type + status + value).
-            7 => decode_vmad_struct(data, pos, obj_format),
+            7 => decode_vmad_struct(ctx, data, pos, obj_format),
             _ => json!({"_raw": true, "type": base_type}),
         }
     }
@@ -2507,7 +2540,7 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
     }
 
     if prop_type == 7 {
-        return decode_vmad_struct(data, pos, obj_format);
+        return decode_vmad_struct(ctx, data, pos, obj_format);
     }
 
     if (11..=15).contains(&prop_type) {
@@ -2521,7 +2554,7 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
         let mut items = Vec::with_capacity(count.min(1024));
         for _ in 0..count {
             let before = *pos;
-            items.push(read_scalar(data, pos, base_type, obj_format));
+            items.push(read_scalar(ctx, data, pos, base_type, obj_format));
             if *pos == before {
                 break;
             }
@@ -2539,7 +2572,7 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
         let mut items = Vec::with_capacity(count.min(1024));
         for _ in 0..count {
             let before = *pos;
-            items.push(decode_vmad_struct(data, pos, obj_format));
+            items.push(decode_vmad_struct(ctx, data, pos, obj_format));
             if *pos == before {
                 break;
             }
@@ -2562,7 +2595,7 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
             let elem_type = data[*pos];
             *pos += 1;
             let before = *pos;
-            items.push(decode_vmad_property(data, pos, elem_type, obj_format));
+            items.push(decode_vmad_property(ctx, data, pos, elem_type, obj_format));
             if *pos == before {
                 break;
             }
@@ -2570,7 +2603,7 @@ fn decode_vmad_property(data: &[u8], pos: &mut usize, prop_type: u8, obj_format:
         return json!({"_variable_array": true, "items": items});
     }
 
-    read_scalar(data, pos, prop_type, obj_format)
+    read_scalar(ctx, data, pos, prop_type, obj_format)
 }
 
 /// Map a schema [`LStringTable`] selector to the runtime [`StringKind`].
@@ -2945,9 +2978,14 @@ mod tests {
         out
     }
 
-    /// Object format 2: FormID at offset 0 within the 8-byte object.
+    /// Object format 2 (the common case): xEdit's "Object v2" layout is
+    /// Unused(u16) + Alias(s16) + FormID(u32) — FormID at offset 4 within the
+    /// 8-byte union. See `wbScriptPropertyObject` / `wbGetScriptObjFormat` in
+    /// TES5Edit's `wbDefinitionsFO76.pas` / `wbDefinitionsCommon.pas`.
     #[test]
     fn vmad_object_format2_reads_eight_bytes() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let mut data = vmad_header(2, 1);
         data.extend(vmad_wstring("TestScript"));
         data.push(0); // status
@@ -2956,17 +2994,17 @@ mod tests {
         data.push(1); // type = object
         data.push(0); // status
 
-        // FormID @0, Alias i16, Unused u16
-        data.extend_from_slice(&0x00000042u32.to_le_bytes());
-        data.extend_from_slice(&3i16.to_le_bytes());
+        // Unused u16, Alias i16, FormID @4
         data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&3i16.to_le_bytes());
+        data.extend_from_slice(&0x00000042u32.to_le_bytes());
         // Second property: int32 — must not be misaligned
         data.extend(vmad_wstring("Count"));
         data.push(3); // type = int
         data.push(0); // status
         data.extend_from_slice(&7i32.to_le_bytes());
 
-        let decoded = decode_vmad(&data);
+        let decoded = decode_vmad(&ctx, &data);
         assert!(
             decoded.get("_raw").is_none(),
             "must not truncate: {decoded}"
@@ -2982,9 +3020,12 @@ mod tests {
         assert_eq!(props[1].pointer("/value").and_then(|v| v.as_i64()), Some(7));
     }
 
-    /// Object format 1: FormID at offset 4 within the 8-byte object.
+    /// Object format 1: xEdit's "Object v1" layout is FormID(u32) + Alias(s16)
+    /// + Unused(u16) — FormID at offset 0 within the 8-byte union.
     #[test]
     fn vmad_object_format1_reads_eight_bytes() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let mut data = vmad_header(1, 1);
         data.extend(vmad_wstring("TestScript"));
         data.push(0);
@@ -2992,12 +3033,12 @@ mod tests {
         data.extend(vmad_wstring("MyRef"));
         data.push(1);
         data.push(0);
-        // Unused u16, Alias i16, FormID @4
-        data.extend_from_slice(&0u16.to_le_bytes());
-        data.extend_from_slice(&1i16.to_le_bytes());
+        // FormID @0, Alias i16, Unused u16
         data.extend_from_slice(&0x00000099u32.to_le_bytes());
+        data.extend_from_slice(&1i16.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes());
 
-        let decoded = decode_vmad(&data);
+        let decoded = decode_vmad(&ctx, &data);
         assert!(
             decoded.get("_raw").is_none(),
             "must not truncate: {decoded}"
@@ -3008,9 +3049,11 @@ mod tests {
         assert_eq!(value, Some("0x00000099"));
     }
 
-    /// Array property type 11 = count + N objects.
+    /// Array property type 11 = count + N objects (object format 2: FormID last).
     #[test]
     fn vmad_object_array_decodes_without_truncation() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let mut data = vmad_header(2, 1);
         data.extend(vmad_wstring("TestScript"));
         data.push(0);
@@ -3020,12 +3063,13 @@ mod tests {
         data.push(0);
         data.extend_from_slice(&2u32.to_le_bytes()); // count
         for fid in [0x11u32, 0x22u32] {
-            data.extend_from_slice(&fid.to_le_bytes());
-            data.extend_from_slice(&0i16.to_le_bytes());
+            // Unused u16, Alias i16, FormID @4 (object format 2)
             data.extend_from_slice(&0u16.to_le_bytes());
+            data.extend_from_slice(&0i16.to_le_bytes());
+            data.extend_from_slice(&fid.to_le_bytes());
         }
 
-        let decoded = decode_vmad(&data);
+        let decoded = decode_vmad(&ctx, &data);
         assert!(
             decoded.get("_raw").is_none(),
             "must not truncate: {decoded}"
@@ -3039,9 +3083,102 @@ mod tests {
         assert_eq!(arr[1].as_str(), Some("0x00000022"));
     }
 
+    /// Regression test for the real `Serum_AdrenalReactionApplier` MGEF
+    /// (`0x0050A5D8`) bug: its VMAD script property `MutationSpell` (object
+    /// format 2) carries the verbatim union bytes
+    /// `00 00 ff ff 14 1f 4e 00` — Unused(u16)=0, Alias(s16)=-1,
+    /// FormID(u32)=0x004E1F14 (the SPEL `Mutation_AdrenalReaction`).
+    ///
+    /// The inverted offset (`if obj_format == 2 { 0 } else { 4 }`) used to read
+    /// the *first* 4 bytes instead — `00 00 ff ff` — producing the garbage
+    /// FormID `0xFFFF0000`, which doesn't exist in any ESM, so the real
+    /// mutation-SPEL reference silently vanished from both the decoded record
+    /// and the xref index.
+    #[test]
+    fn vmad_object_property_decodes_real_serum_adrenal_reaction_bug_bytes() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let mut data = vmad_header(2, 1);
+        data.extend(vmad_wstring("AddMutationOnEffectScript"));
+        data.push(0); // status
+        data.extend_from_slice(&1u16.to_le_bytes()); // prop_count
+        data.extend(vmad_wstring("MutationSpell"));
+        data.push(1); // type = object
+        data.push(1); // status
+        data.extend_from_slice(&[0x00, 0x00, 0xff, 0xff, 0x14, 0x1f, 0x4e, 0x00]);
+
+        let decoded = decode_vmad(&ctx, &data);
+        assert!(
+            decoded.get("_raw").is_none(),
+            "must not truncate: {decoded}"
+        );
+        let value = decoded
+            .pointer("/scripts/0/properties/0/value")
+            .and_then(|v| v.as_str());
+        assert_eq!(
+            value,
+            Some("0x004E1F14"),
+            "must read the FormID from the last 4 bytes of the union (object \
+             format 2), not the Unused+Alias bytes (which decode as the \
+             nonexistent 0xFFFF0000)"
+        );
+    }
+
+    /// Same bug-reproducing bytes as above, but with a resolving ctx: the
+    /// object-property FormID must come out as a `{formid, editor_id,
+    /// record_type}` stub (matching a normal `MemberDef::FormId` field), not a
+    /// bare hex string — that's what makes it a clickable, named reference in
+    /// the ESM Viewer.
+    #[test]
+    fn vmad_object_property_resolves_to_stub_with_resolver() {
+        let schema = empty_schema();
+        let target_id = FormId::new(0x004E_1F14);
+        let resolver = StubResolver {
+            stubs: std::collections::HashMap::from([(
+                target_id,
+                FormIdStub {
+                    formid: target_id.display(),
+                    editor_id: Some("Mutation_AdrenalReaction".into()),
+                    record_type: "SPEL".into(),
+                },
+            )]),
+        };
+        let mut ctx = bare_ctx(&schema);
+        ctx.resolve_depth = ResolveDepth::Stub;
+        ctx.resolver = Some(&resolver);
+
+        let mut data = vmad_header(2, 1);
+        data.extend(vmad_wstring("AddMutationOnEffectScript"));
+        data.push(0);
+        data.extend_from_slice(&1u16.to_le_bytes());
+        data.extend(vmad_wstring("MutationSpell"));
+        data.push(1);
+        data.push(1);
+        data.extend_from_slice(&[0x00, 0x00, 0xff, 0xff, 0x14, 0x1f, 0x4e, 0x00]);
+
+        let decoded = decode_vmad(&ctx, &data);
+        let value = decoded
+            .pointer("/scripts/0/properties/0/value")
+            .expect("value present");
+        assert_eq!(
+            value.get("editor_id").and_then(|v| v.as_str()),
+            Some("Mutation_AdrenalReaction")
+        );
+        assert_eq!(
+            value.get("record_type").and_then(|v| v.as_str()),
+            Some("SPEL")
+        );
+        assert_eq!(
+            value.get("formid").and_then(|v| v.as_str()),
+            Some("0x004E1F14")
+        );
+    }
+
     /// Struct property type 6 = member-count + (wstring name + u8 type + value)*.
     #[test]
     fn vmad_struct_property_decodes_without_truncation() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let mut data = vmad_header(2, 1);
         data.extend(vmad_wstring("TestScript"));
         data.push(0);
@@ -3059,7 +3196,7 @@ mod tests {
         data.push(0); // status
         data.extend(vmad_wstring("hello"));
 
-        let decoded = decode_vmad(&data);
+        let decoded = decode_vmad(&ctx, &data);
         assert!(
             decoded.get("_raw").is_none(),
             "must not truncate: {decoded}"
@@ -3082,6 +3219,8 @@ mod tests {
     /// Array-of-struct property type 17 = count + N struct payloads.
     #[test]
     fn vmad_struct_array_decodes_without_truncation() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let mut data = vmad_header(2, 1);
         data.extend(vmad_wstring("TestScript"));
         data.push(0);
@@ -3099,7 +3238,7 @@ mod tests {
             data.extend_from_slice(&val.to_le_bytes());
         }
 
-        let decoded = decode_vmad(&data);
+        let decoded = decode_vmad(&ctx, &data);
         assert!(
             decoded.get("_raw").is_none(),
             "must not truncate: {decoded}"
@@ -3394,8 +3533,10 @@ mod tests {
     fn decode_vmad_info_no_fragments_tail_returns_success() {
         // An INFO VMAD that ends after the scripts header (no fragments tail)
         // must NOT be treated as truncated — it's a valid plain-VMAD layout.
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_info(&data);
+        let v = decode_vmad_info(&ctx, &data);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -3407,8 +3548,10 @@ mod tests {
 
     #[test]
     fn decode_vmad_pack_no_fragments_tail_returns_success() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_pack(&data);
+        let v = decode_vmad_pack(&ctx, &data);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -3416,8 +3559,10 @@ mod tests {
 
     #[test]
     fn decode_vmad_perk_no_fragments_tail_returns_success() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_perk(&data);
+        let v = decode_vmad_perk(&ctx, &data);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -3425,8 +3570,10 @@ mod tests {
 
     #[test]
     fn decode_vmad_scen_no_fragments_tail_returns_success() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_scen(&data);
+        let v = decode_vmad_scen(&ctx, &data);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -3434,8 +3581,10 @@ mod tests {
 
     #[test]
     fn decode_vmad_qust_no_fragments_tail_returns_success() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_qust(&data);
+        let v = decode_vmad_qust(&ctx, &data);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");

@@ -15,7 +15,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-const CACHE_VERSION: u32 = 9;
+// Bumped 9 -> 10: fixed the VMAD Object-property FormID offset (decode.rs
+// `read_scalar` base type 1) — it was reading the wrong 4 bytes of the 8-byte
+// union for the common `obj_format == 2` case, so xref edges sourced from
+// script properties (e.g. a MGEF's "apply effect" script pointing at its
+// SPEL) were silently dropped. Bump forces a rebuild so `refs` picks up the
+// now-correct FormIDs.
+const CACHE_VERSION: u32 = 10;
 
 /// Per-record data stored in the lazy search index.
 ///
