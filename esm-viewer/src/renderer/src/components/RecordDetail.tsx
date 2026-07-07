@@ -44,6 +44,18 @@ function isNonEmptyObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length > 0
 }
 
+/** True only when the schema has no mapping for this record type at all
+ * (top-level `_unknown_record`) — the byte dump is then the only useful view.
+ * Unlike `hasCoverageMarkers`, this does NOT recurse: a record that's mostly
+ * decoded but has a few nested `_raw`/`_unmapped` fields still counts as known. */
+function isUnknownRecordType(fields: unknown): boolean {
+  return (
+    typeof fields === 'object' &&
+    fields !== null &&
+    (fields as Record<string, unknown>)._unknown_record === true
+  )
+}
+
 /** Insert a space every 2 hex chars (byte boundary) and a line break every
  * 16 bytes — a plain hex-dump first pass with no ASCII sidebar or offset gutter. */
 function formatHexDump(hex: string): string {
@@ -175,10 +187,11 @@ export function RecordDetail({ onNavigate }: Props) {
     }
   }, [])
 
-  // Re-default the toggle per-record: raw when the decoded fields trip a
-  // coverage-gap marker anywhere in the tree, decoded otherwise. Recomputed
-  // whenever the active record changes so it doesn't get stuck on a prior
-  // record's choice.
+  // Re-default the toggle per-record: raw only when the record's type has no
+  // schema mapping at all (nothing to decode); decoded otherwise, even if a
+  // few nested fields carry coverage-gap markers (see the inline badges and
+  // the header note below). Recomputed whenever the active record changes so
+  // it doesn't get stuck on a prior record's choice.
   useEffect(() => {
     setRawView(null)
     setRawError(null)
@@ -186,7 +199,7 @@ export function RecordDetail({ onNavigate }: Props) {
       setMode('decoded')
       return
     }
-    const defaultMode: ViewMode = hasCoverageMarkers(activeRecord.fields) ? 'raw' : 'decoded'
+    const defaultMode: ViewMode = isUnknownRecordType(activeRecord.fields) ? 'raw' : 'decoded'
     setMode(defaultMode)
     if (defaultMode === 'raw') {
       void loadRaw(activeDbId, activeRecord.header.form_id)
@@ -243,6 +256,12 @@ export function RecordDetail({ onNavigate }: Props) {
           ))}
         </div>
       </div>
+      {mode === 'decoded' && hasCoverageMarkers(fields) && (
+        <div style={{ marginBottom: 8, color: COVERAGE_COLOR, fontSize: 11 }}>
+          Some fields are undecoded (see [raw]/[unmapped] badges below) — switch to Raw for the
+          full byte dump.
+        </div>
+      )}
       {mode === 'decoded' ? (
         Object.entries(fields as Record<string, unknown>).map(([key, value]) => (
           <div key={key} style={{ marginBottom: 4 }}>
