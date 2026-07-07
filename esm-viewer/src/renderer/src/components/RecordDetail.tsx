@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useStore } from '../store'
+import { RecordTable } from './RecordTable'
+import { hasCoverageMarkers, isUnknownRecordType } from '../lib/alignedTree'
 import type { RawRecordView } from '../../../shared/api-types'
 
 interface Props {
@@ -8,53 +10,6 @@ interface Props {
 
 /** Amber/warning accent for undecoded content — distinct from the `#e88` error red used elsewhere. */
 const COVERAGE_COLOR = '#e8a838'
-
-function isFormIdStub(v: unknown): v is { formid: string; editor_id?: string; record_type: string } {
-  return typeof v === 'object' && v !== null && 'formid' in v && 'record_type' in v
-}
-
-/** Recursively checks a decoded `fields` tree for any schema decode-coverage gap
- * marker (`_unknown_record`, `_raw`, `_unmapped`, `_unresolved`) — see
- * esm/CLAUDE.md "Decode output key conventions". Used to auto-default the
- * raw/decoded toggle and to drive inline coverage badges. */
-function hasCoverageMarkers(value: unknown): boolean {
-  if (Array.isArray(value)) {
-    return value.some((item) => hasCoverageMarkers(item))
-  }
-  if (typeof value === 'object' && value !== null) {
-    const obj = value as Record<string, unknown>
-    if (coverageBadges(obj).length > 0) return true
-    return Object.values(obj).some((v) => hasCoverageMarkers(v))
-  }
-  return false
-}
-
-/** Which coverage-gap badges (if any) apply directly to this object node
- * (not its descendants) — e.g. `{ "_raw": true, ... }`. */
-function coverageBadges(obj: Record<string, unknown>): string[] {
-  const badges: string[] = []
-  if (obj._unknown_record === true) badges.push('unknown record')
-  if (obj._raw === true) badges.push('raw')
-  if (isNonEmptyObject(obj._unmapped)) badges.push('unmapped')
-  if (obj._unresolved === true) badges.push('unresolved')
-  return badges
-}
-
-function isNonEmptyObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v) && Object.keys(v).length > 0
-}
-
-/** True only when the schema has no mapping for this record type at all
- * (top-level `_unknown_record`) — the byte dump is then the only useful view.
- * Unlike `hasCoverageMarkers`, this does NOT recurse: a record that's mostly
- * decoded but has a few nested `_raw`/`_unmapped` fields still counts as known. */
-function isUnknownRecordType(fields: unknown): boolean {
-  return (
-    typeof fields === 'object' &&
-    fields !== null &&
-    (fields as Record<string, unknown>)._unknown_record === true
-  )
-}
 
 /** Insert a space every 2 hex chars (byte boundary) and a line break every
  * 16 bytes — a plain hex-dump first pass with no ASCII sidebar or offset gutter. */
@@ -65,56 +20,6 @@ function formatHexDump(hex: string): string {
     lines.push(bytes.slice(i, i + 16).join(' '))
   }
   return lines.join('\n')
-}
-
-function FieldValue({ value, onNavigate, dbId }: { value: unknown; onNavigate: (dbId: string, fid: string) => void; dbId: string }) {
-  if (isFormIdStub(value)) {
-    return (
-      <span
-        tabIndex={0}
-        style={{ color: '#7ec8e3', cursor: 'pointer', textDecoration: 'underline' }}
-        onClick={(e) => { if (e.ctrlKey || e.metaKey) onNavigate(dbId, value.formid) }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onNavigate(dbId, value.formid)
-          }
-        }}
-        title={`Ctrl+Click (or focus + Enter/Space) to navigate to ${value.formid}`}
-      >
-        {value.editor_id ?? value.formid} [{value.record_type}]
-      </span>
-    )
-  }
-  if (Array.isArray(value)) {
-    return (
-      <div style={{ paddingLeft: 16 }}>
-        {value.map((item, i) => (
-          <div key={i}>[{i}]: <FieldValue value={item} onNavigate={onNavigate} dbId={dbId} /></div>
-        ))}
-      </div>
-    )
-  }
-  if (typeof value === 'object' && value !== null) {
-    const obj = value as Record<string, unknown>
-    const badges = coverageBadges(obj)
-    return (
-      <div style={{ paddingLeft: 16 }}>
-        {badges.length > 0 && (
-          <div style={{ color: COVERAGE_COLOR, fontWeight: 'bold' }}>
-            {badges.map((b) => `[${b}]`).join(' ')}
-          </div>
-        )}
-        {Object.entries(obj).map(([k, v]) => (
-          <div key={k}>
-            <span style={{ color: '#aaa' }}>{k}</span>:{' '}
-            <FieldValue value={v} onNavigate={onNavigate} dbId={dbId} />
-          </div>
-        ))}
-      </div>
-    )
-  }
-  return <span style={{ color: '#c3e88d' }}>{String(value)}</span>
 }
 
 /** Simple first-pass hex-dump renderer for a raw-parsed record: one block per
@@ -168,7 +73,7 @@ function RawRecordSection({
 type ViewMode = 'decoded' | 'raw'
 
 export function RecordDetail({ onNavigate }: Props) {
-  const { activeRecord, activeDbId } = useStore()
+  const { activeRecord, activeDbId, recordColumns } = useStore()
   const [mode, setMode] = useState<ViewMode>('decoded')
   const [rawView, setRawView] = useState<RawRecordView | null>(null)
   const [rawLoading, setRawLoading] = useState(false)
@@ -222,7 +127,20 @@ export function RecordDetail({ onNavigate }: Props) {
   const { header, editor_id, fields } = activeRecord
 
   return (
-    <div style={{ padding: 8, overflow: 'auto', flex: 1, fontSize: 12 }}>
+    // Decoded mode: flex column with overflow hidden, so RecordTable's inner
+    // scroll region gets a constrained height and its sticky <thead> works.
+    // Raw mode: plain scrolling container, as before.
+    <div
+      style={{
+        padding: 8,
+        flex: 1,
+        fontSize: 12,
+        minHeight: 0,
+        ...(mode === 'decoded'
+          ? { display: 'flex', flexDirection: 'column' as const, overflow: 'hidden' }
+          : { overflow: 'auto' }),
+      }}
+    >
       <div
         style={{
           marginBottom: 8,
@@ -241,6 +159,7 @@ export function RecordDetail({ onNavigate }: Props) {
             <button
               key={m}
               onClick={() => switchMode(m)}
+              title={m === 'raw' ? 'Raw shows the active file' : undefined}
               style={{
                 fontSize: 11,
                 padding: '2px 8px',
@@ -263,12 +182,12 @@ export function RecordDetail({ onNavigate }: Props) {
         </div>
       )}
       {mode === 'decoded' ? (
-        Object.entries(fields as Record<string, unknown>).map(([key, value]) => (
-          <div key={key} style={{ marginBottom: 4 }}>
-            <span style={{ color: '#82aaff', fontWeight: 'bold' }}>{key}</span>:{' '}
-            <FieldValue value={value} onNavigate={onNavigate} dbId={activeDbId} />
-          </div>
-        ))
+        <RecordTable
+          key={header.form_id + activeDbId}
+          columns={recordColumns}
+          activeDbId={activeDbId}
+          onNavigate={onNavigate}
+        />
       ) : (
         <RawRecordSection view={rawView} loading={rawLoading} error={rawError} />
       )}

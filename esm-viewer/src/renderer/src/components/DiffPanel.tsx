@@ -12,60 +12,21 @@ function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
 }
 
-function isLeafChange(node: unknown): node is { from: unknown; to: unknown } {
-  if (typeof node !== 'object' || node === null || Array.isArray(node)) return false
-  const keys = Object.keys(node as Record<string, unknown>)
-  return keys.length === 2 && keys.includes('from') && keys.includes('to')
-}
-
-function formatVal(v: unknown): string {
-  if (v === null || v === undefined) return 'null'
-  if (typeof v === 'object') return JSON.stringify(v)
-  return String(v)
-}
-
-/** Recursive renderer for a `field_changes` sparse tree: a `{from, to}` node is
- * a leaf (rendered as a colored diff); `_array_diff` nodes render as raw JSON
- * for this first pass (see note below); everything else recurses as a nested
- * object, mirroring `RecordDetail.tsx`'s `FieldValue` indentation style. */
-function FieldChangeNode({ fieldKey, node }: { fieldKey: string; node: unknown }) {
-  if (fieldKey === '_array_diff') {
-    // Known simplification: keyed per-element array diffs are rendered as raw
-    // JSON here rather than a bespoke array-diff UI. Not a bug — a follow-up
-    // could build a proper added/removed/reordered element view.
-    return (
-      <div style={{ paddingLeft: 16 }}>
-        <span style={{ color: '#aaa' }}>{fieldKey}</span>:{' '}
-        <code style={{ fontSize: 11, wordBreak: 'break-all' }}>{JSON.stringify(node)}</code>
-      </div>
-    )
+/** Recursively counts `{from, to}` leaves in a `field_changes` sparse tree for
+ * the one-line "N fields changed" summary; an `_array_diff` node (keyed
+ * per-element array diff) counts as a single change rather than being
+ * expanded — the detail pane's side-by-side columns are now where you'd
+ * actually inspect what changed. */
+function countFieldChanges(node: unknown): number {
+  if (typeof node !== 'object' || node === null || Array.isArray(node)) return 0
+  const obj = node as Record<string, unknown>
+  const keys = Object.keys(obj)
+  if (keys.length === 2 && keys.includes('from') && keys.includes('to')) return 1
+  let total = 0
+  for (const [k, v] of Object.entries(obj)) {
+    total += k === '_array_diff' ? 1 : countFieldChanges(v)
   }
-  if (isLeafChange(node)) {
-    return (
-      <div style={{ paddingLeft: 16 }}>
-        <span style={{ color: '#82aaff' }}>{fieldKey}</span>:{' '}
-        <span style={{ color: '#e88' }}>{formatVal(node.from)}</span>{' '}
-        <span style={{ color: '#aaa' }}>&rarr;</span>{' '}
-        <span style={{ color: '#c3e88d' }}>{formatVal(node.to)}</span>
-      </div>
-    )
-  }
-  if (typeof node === 'object' && node !== null && !Array.isArray(node)) {
-    const obj = node as Record<string, unknown>
-    return (
-      <div style={{ paddingLeft: 16 }}>
-        <span style={{ color: '#82aaff' }}>{fieldKey}</span>
-        {Object.entries(obj).map(([k, v]) => (
-          <FieldChangeNode key={k} fieldKey={k} node={v} />
-        ))}
-      </div>
-    )
-  }
-  return (
-    <div style={{ paddingLeft: 16 }}>
-      <span style={{ color: '#82aaff' }}>{fieldKey}</span>: {formatVal(node)}
-    </div>
-  )
+  return total
 }
 
 function StubRow({ row, onClick }: { row: RecordStubDiff; onClick: () => void }) {
@@ -81,12 +42,9 @@ function StubRow({ row, onClick }: { row: RecordStubDiff; onClick: () => void })
 
 function ChangedRow({ change, onClick }: { change: RecordChangeDiff; onClick: () => void }) {
   const { stub, field_changes, prev_editor_id } = change
-  const changesObj =
-    typeof field_changes === 'object' && field_changes !== null && !Array.isArray(field_changes)
-      ? (field_changes as Record<string, unknown>)
-      : {}
+  const changeCount = countFieldChanges(field_changes)
   return (
-    <div style={{ marginBottom: 8, borderBottom: '1px solid #222', paddingBottom: 6 }}>
+    <div style={{ marginBottom: 4, borderBottom: '1px solid #222', paddingBottom: 4 }}>
       <div style={{ cursor: 'pointer' }} onClick={onClick}>
         <span style={{ fontFamily: 'monospace', color: '#7ec8e3' }}>{stub.form_id}</span>{' '}
         <span style={{ color: '#aaa' }}>[{stub.record_type}]</span>{' '}
@@ -98,10 +56,8 @@ function ChangedRow({ change, onClick }: { change: RecordChangeDiff; onClick: ()
           </span>
         )}
       </div>
-      <div>
-        {Object.entries(changesObj).map(([k, v]) => (
-          <FieldChangeNode key={k} fieldKey={k} node={v} />
-        ))}
+      <div style={{ color: '#aaa', fontSize: 11 }}>
+        {changeCount} {changeCount === 1 ? 'field' : 'fields'} changed
       </div>
     </div>
   )
@@ -144,7 +100,6 @@ export function DiffPanel({ onNavigate }: Props) {
   const [oldId, setOldId] = useState('')
   const [newId, setNewId] = useState('')
   const [recordType, setRecordType] = useState('')
-  const [bodies, setBodies] = useState<'none' | 'stub' | 'full'>('full')
   const [suppressNoise, setSuppressNoise] = useState(true)
   const [excludeTypes, setExcludeTypes] = useState('')
   const [result, setResult] = useState<DiffResult | null>(null)
@@ -201,7 +156,11 @@ export function DiffPanel({ onNavigate }: Props) {
         oldId,
         newId,
         recordType.trim() || undefined,
-        bodies,
+        // Bodies are never rendered here (see ChangedRow's one-line summary +
+        // the detail pane's side-by-side columns), so skip decoding them
+        // server-side — faster, and `field_changes` is computed unconditionally
+        // regardless of this param (verified against esm/src/diff.rs).
+        'none',
         suppressNoise,
         excludeList
       )
@@ -271,14 +230,6 @@ export function DiffPanel({ onNavigate }: Props) {
               fontFamily: 'monospace',
             }}
           />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            Bodies:
-            <select value={bodies} onChange={(e) => setBodies(e.target.value as 'none' | 'stub' | 'full')}>
-              <option value="none">None</option>
-              <option value="stub">Stub</option>
-              <option value="full">Full</option>
-            </select>
-          </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <input
               type="checkbox"

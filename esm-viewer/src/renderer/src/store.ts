@@ -6,10 +6,21 @@ export interface NavEntry {
   formid: string
 }
 
+/** One xEdit-style value column in `RecordTable` — one per open file containing
+ * the active FormID. `record` is null when the file doesn't have it (dropped
+ * before reaching the store; see `App.tsx`'s `loadRecord`), kept nullable here
+ * so `RecordTable`/`buildAlignedTree` don't have to assume otherwise. */
+export interface RecordColumn {
+  dbId: string
+  fileName: string
+  record: RecordResult | null
+}
+
 export interface AppStore {
   openDbs: DbHandle[]
   activeDbId: string | null
   activeRecord: RecordResult | null
+  recordColumns: RecordColumn[]
   referencedBy: RefRow[]
   referencedByDepth: number
   referencedByTotal: number
@@ -19,6 +30,7 @@ export interface AppStore {
   setOpenDbs: (dbs: DbHandle[]) => void
   setActiveDb: (id: string | null) => void
   setActiveRecord: (r: RecordResult | null) => void
+  setRecordColumns: (cols: RecordColumn[]) => void
   setReferencedBy: (result: RefListResult) => void
   setReferencedByDepth: (d: number) => void
   navPush: (entry: NavEntry) => void
@@ -31,6 +43,7 @@ export const useStore = create<AppStore>((set, get) => ({
   openDbs: [],
   activeDbId: null,
   activeRecord: null,
+  recordColumns: [],
   referencedBy: [],
   referencedByDepth: 1,
   referencedByTotal: 0,
@@ -40,6 +53,7 @@ export const useStore = create<AppStore>((set, get) => ({
   setOpenDbs: (dbs) => set({ openDbs: dbs }),
   setActiveDb: (id) => set({ activeDbId: id }),
   setActiveRecord: (r) => set({ activeRecord: r }),
+  setRecordColumns: (cols) => set({ recordColumns: cols }),
   setReferencedBy: (result) =>
     set({
       referencedBy: result.rows,

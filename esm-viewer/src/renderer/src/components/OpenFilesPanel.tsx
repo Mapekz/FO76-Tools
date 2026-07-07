@@ -2,7 +2,16 @@ import React from 'react'
 import { useStore } from '../store'
 
 export function OpenFilesPanel() {
-  const { openDbs, activeDbId, setOpenDbs, setActiveDb, setActiveRecord, setReferencedBy } = useStore()
+  const {
+    openDbs,
+    activeDbId,
+    recordColumns,
+    setOpenDbs,
+    setActiveDb,
+    setActiveRecord,
+    setRecordColumns,
+    setReferencedBy,
+  } = useStore()
 
   async function handleOpenPath(path: string | null) {
     if (!path) return
@@ -28,6 +37,9 @@ export function OpenFilesPanel() {
     await window.api.closeDatabase(id)
     const all = await window.api.listOpen()
     setOpenDbs(all)
+    // Drop the closed file's column so RecordTable doesn't keep rendering a
+    // now-invalid dbId; other open files stay put until the next navigation.
+    setRecordColumns(recordColumns.filter((c) => c.dbId !== id))
     if (activeDbId === id) {
       setActiveDb(all[0]?.id ?? null)
       setActiveRecord(null)
