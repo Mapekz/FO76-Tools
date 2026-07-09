@@ -1630,6 +1630,128 @@ fn perk_raging_armor_epf2_decodes_to_int() {
     );
 }
 
+/// PERK 0x003DE597 — `Suppressor_TargetDebuff` — regression test for a bug
+/// where an `EPFT`=8 ("Actor Value and Value") entry-point effect with an
+/// 8-byte `EPFD` payload (FormID + float) was decoded as a single bare
+/// `float`, reinterpreting the leading FormID bytes as garbage (e.g.
+/// `6.211654813182083e-39` for FormID `0x0043A391`) and silently dropping the
+/// trailing float value.
+///
+/// Ground truth (TES5Edit `wbEPFDAVDataDecider`,
+/// `Core/wbDefinitionsFO76.pas:9899-9905`): `EPFD` DataSize >= 8 selects a
+/// `{Actor Value, Float}` struct; DataSize < 8 selects a bare `Float` (see
+/// `perk_ticket_to_revenge_actor_value_and_value_short_epfd_decodes_float`
+/// below for that companion case).
+#[test]
+fn perk_suppressor_target_debuff_actor_value_and_value_decodes_formid() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 181);
+
+    // Verbatim subrecords from `esm get <esm> Suppressor_TargetDebuff --raw`.
+    let subs = subrecords_from(&[
+        ("EDID", "53757070726573736f725f54617267657444656275666600"),
+        (
+            "FULL",
+            "3c49443d30303033423338413e53757070726573736f7220285461726765742900",
+        ),
+        (
+            "DESC",
+            "3c49443d30303033423338423e5265647563652074617267657427732064616d616765206f7574707574206279202876616c7565206f66205065726b53757070726573736f7243757272656e74446562756666206163746f722076616c75652920666f722058207365636f6e647320616674657220796f752061747461636b2e00",
+        ),
+        ("DATA", "0001010001"),
+        ("SNAM", "33761a00"),
+        ("PRKE", "0200"),
+        ("DATA", "230e0300"),
+        ("EPFT", "08"),
+        ("EPFB", "0000"),
+        ("EPFD", "91a343000ad723bc"),
+        ("PRKF", ""),
+    ]);
+
+    let result = decode_record(&ctx, "PERK", &subs);
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Editor ID").and_then(|v| v.as_str()),
+        Some("Suppressor_TargetDebuff"),
+        "Editor ID"
+    );
+
+    let effect = &result["Effects"][0]["Effect"];
+    let av_float = &effect["Actor Value, Float"];
+    assert_eq!(
+        av_float["Actor Value"].as_str(),
+        Some("0x0043A391"),
+        "EPFD's leading 4 bytes must decode as the Actor Value FormID, not a float"
+    );
+    let float_val = av_float["Float"]
+        .as_f64()
+        .expect("Actor Value, Float.Float must decode as a number");
+    assert!(
+        (float_val - -0.01).abs() < 1e-6,
+        "EPFD's trailing 4 bytes must decode as the float -0.01, got {float_val}"
+    );
+    assert!(
+        effect.get("Float").is_none(),
+        "an 8-byte EPFD under Function Type=8 must not fall back to the bare Float variant"
+    );
+}
+
+/// PERK 0x00913B5F — `custom_TickettoRevenge_Perk` — companion regression
+/// case for the fix above: an `EPFT`=8 effect whose `EPFD` payload is only 4
+/// bytes (the actor value instead lives in the sibling `EPF3` FormID field)
+/// must keep decoding as a bare `Float`, not the `{Actor Value, Float}`
+/// struct.
+#[test]
+fn perk_ticket_to_revenge_actor_value_and_value_short_epfd_decodes_float() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Verbatim subrecords from `esm get <esm> custom_TickettoRevenge_Perk --raw`.
+    let subs = subrecords_from(&[
+        (
+            "EDID",
+            "637573746f6d5f5469636b6574746f526576656e67655f5065726b00",
+        ),
+        ("FULL", "3c49443d36313032414534343e5469636b657420746f20526576656e676500"),
+        (
+            "DESC",
+            "3c49443d36313032414534353e2b33252041726d6f722050656e6574726174696f6e20706572204f6e736c617567687420737461636b00",
+        ),
+        ("DATA", "010001"),
+        ("FNAM", "436f6d6d616e646f00"),
+        ("PRKE", "0201"),
+        ("DATA", "250e0300"),
+        ("EPFT", "08"),
+        ("EPFB", "0000"),
+        ("EPFD", "8fc2f5bc"),
+        ("EPF3", "95030000"),
+        ("PRKF", ""),
+    ]);
+
+    let result = decode_record(&ctx, "PERK", &subs);
+    assert_fully_decoded(&result);
+
+    let effect = &result["Effects"][0]["Effect"];
+    let float_val = effect
+        .get("Float")
+        .and_then(|v| v.as_f64())
+        .expect("4-byte EPFD under Function Type=8 must still decode as a bare Float");
+    assert!(
+        (float_val - -0.03).abs() < 1e-6,
+        "expected Float ~= -0.03, got {float_val}"
+    );
+    assert_eq!(
+        effect["Function Parameter 3 (Actor Value)"].as_str(),
+        Some("0x00000395"),
+        "EPF3 must still decode as the Actor Value FormID for the short-EPFD form"
+    );
+    assert!(
+        effect.get("Actor Value, Float").is_none(),
+        "a 4-byte EPFD must not be mis-routed into the struct variant"
+    );
+}
+
 /// PERK 0x004E1F1C — `PlayerTeamPerk` (fv 201, 47 subs) — fully decoded.
 #[test]
 fn perk_player_team_perk_decodes_correctly() {

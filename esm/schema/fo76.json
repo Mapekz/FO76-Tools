@@ -53033,9 +53033,69 @@
                     "name": "Text"
                   },
                   {
-                    "kind": "float",
+                    "kind": "union",
                     "sig": "EPFD",
-                    "name": "Float"
+                    "name": "Function Data",
+                    "decider": {
+                      "payload_size": {
+                        "0": 1,
+                        "1": 1,
+                        "2": 1,
+                        "3": 1,
+                        "4": 1,
+                        "5": 1,
+                        "6": 1,
+                        "7": 1
+                      },
+                      "default_variant": 0
+                    },
+                    "variants": [
+                      {
+                        "kind": "struct",
+                        "name": "Actor Value, Float",
+                        "fields": [
+                          {
+                            "kind": "union",
+                            "name": "Actor Value",
+                            "decider": {
+                              "form_version": {
+                                "min": 77,
+                                "max": null
+                              }
+                            },
+                            "variants": [
+                              {
+                                "kind": "integer",
+                                "name": "Actor Value",
+                                "width": "u32",
+                                "signed": false,
+                                "format": {
+                                  "enum": {
+                                    "-1": "None"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "formid",
+                                "name": "Actor Value",
+                                "valid_refs": [
+                                  "AVIF",
+                                  "NULL"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "float",
+                            "name": "Float"
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Float"
+                      }
+                    ]
                   },
                   {
                     "kind": "formid",
