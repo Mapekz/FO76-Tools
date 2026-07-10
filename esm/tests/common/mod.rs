@@ -481,3 +481,76 @@ pub fn write_and_open(buf: &[u8], stem: &str) -> (PathBuf, Database) {
     let db = Database::open(&tmp).expect("open db");
     (tmp, db)
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Synthetic BA2 (BTDX/GNRL) archive builder
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Build a minimal, valid BTDX/GNRL BA2 archive containing the given
+/// `(internal_name, contents)` entries, stored uncompressed (`packed_size = 0`).
+///
+/// Names are written to the name table verbatim — exact case and path
+/// separator as given — so tests can exercise backslash-separated, mixed-case
+/// names the way real Bethesda-shipped archives use them; `Ba2Archive::open`
+/// is responsible for normalizing them.
+pub fn make_ba2(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    const RECORD_SIZE: usize = 36;
+    let file_count = entries.len() as u32;
+
+    // Payloads are concatenated after the name table; compute each entry's
+    // absolute offset up front.
+    let header_size = 24usize;
+    let records_size = entries.len() * RECORD_SIZE;
+    let name_table_offset = (header_size + records_size) as u64;
+
+    let name_table_size: usize = entries.iter().map(|(name, _)| 2 + name.len()).sum();
+    let data_start = header_size + records_size + name_table_size;
+
+    let mut buf = Vec::new();
+    buf.extend_from_slice(b"BTDX");
+    buf.extend_from_slice(&1u32.to_le_bytes()); // version
+    buf.extend_from_slice(b"GNRL");
+    buf.extend_from_slice(&file_count.to_le_bytes());
+    buf.extend_from_slice(&name_table_offset.to_le_bytes());
+
+    let mut offset = data_start as u64;
+    for (_, data) in entries {
+        buf.extend_from_slice(&0u32.to_le_bytes()); // name_hash
+        buf.extend_from_slice(b"\0\0\0\0"); // ext
+        buf.extend_from_slice(&0u32.to_le_bytes()); // dir_hash
+        buf.extend_from_slice(&0u32.to_le_bytes()); // flags
+        buf.extend_from_slice(&offset.to_le_bytes()); // data_offset
+        buf.extend_from_slice(&0u32.to_le_bytes()); // packed_size (0 = uncompressed)
+        buf.extend_from_slice(&(data.len() as u32).to_le_bytes()); // unpacked_size
+        buf.extend_from_slice(&0xBAADF00Du32.to_le_bytes()); // padding
+        offset += data.len() as u64;
+    }
+
+    for (name, _) in entries {
+        let name_bytes = name.as_bytes();
+        buf.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes());
+        buf.extend_from_slice(name_bytes);
+    }
+
+    for (_, data) in entries {
+        buf.extend_from_slice(data);
+    }
+
+    buf
+}
+
+/// Write `buf` (from [`make_ba2`]) to a unique temp `.ba2` path. The caller is
+/// responsible for `std::fs::remove_file`-ing it once done.
+pub fn write_ba2(buf: &[u8], stem: &str) -> PathBuf {
+    let tmp = std::env::temp_dir().join(format!(
+        "fo76_ba2_test_{stem}_{}_{}.ba2",
+        std::process::id(),
+        {
+            static COUNTER: AtomicU32 = AtomicU32::new(0);
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        }
+    ));
+    let mut f = std::fs::File::create(&tmp).expect("create temp ba2");
+    f.write_all(buf).expect("write temp ba2");
+    tmp
+}

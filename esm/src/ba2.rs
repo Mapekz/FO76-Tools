@@ -11,7 +11,8 @@ use std::path::Path;
 
 /// A single file entry in a BA2 GNRL archive.
 pub struct Ba2Entry {
-    /// Lowercase path as stored in the name table.
+    /// Lowercase, forward-slash-normalized path (backslashes in the raw name
+    /// table, as used by real Bethesda-shipped archives, are converted to `/`).
     pub name: String,
     pub data_offset: u64,
     /// Compressed size; 0 means the data is stored uncompressed.
@@ -115,7 +116,9 @@ impl Ba2Archive {
             if pos + name_len > data.len() {
                 bail!("BA2 name {} bytes out of range", i);
             }
-            let name = String::from_utf8_lossy(&data[pos..pos + name_len]).to_lowercase();
+            let name = String::from_utf8_lossy(&data[pos..pos + name_len])
+                .replace('\\', "/")
+                .to_lowercase();
             pos += name_len;
             by_name.insert(name.clone(), i);
             entries.push(Ba2Entry {
