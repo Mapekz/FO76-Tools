@@ -1,12 +1,27 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useStore } from '../store'
 import type { RecordRow, GroupChild, GroupLabel } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
+import { sortRows, type SortColumn, type SortState } from '../lib/recordSort'
 
 const PAGE_SIZE = 100
 
 /** Top-level GRUP types that get true hierarchical descent instead of a flat record list. */
 const HIERARCHICAL = new Set(['WRLD', 'CELL'])
+
+/** Flat per-type table layout: shared by the header and every virtualized row
+ * so columns line up. */
+const COLUMN_TEMPLATE = '95px 1fr 1fr'
+const ROW_HEIGHT = 22
+/** Viewport cap (in rows) before a group's table gets its own inner scrollbar —
+ * below this, the viewport is sized exactly to content (no virtualization overhead visible). */
+const MAX_VISIBLE_ROWS = 15
+/** Auto-load-all fetch chunk size. `listTypeRecords` blocks Electron's main
+ * process for the duration of each call, so this must stay small enough that
+ * one call doesn't freeze the app — bigger than old PAGE_SIZE=100 is fine since
+ * nothing renders per-page anymore. Tune against real large record types. */
+const CHUNK_SIZE = 2000
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -121,6 +136,7 @@ export function RecordTree({ onNavigate }: Props) {
   const [groupChildren, setGroupChildren] = useState<Record<string, GroupChild[]>>({})
   const [loading, setLoading] = useState<Set<string>>(new Set())
   const [focusedIndex, setFocusedIndex] = useState(0)
+  const [sortStateBySig, setSortStateBySig] = useState<Record<string, SortState>>({})
 
   useEffect(() => {
     if (!activeDbId) {
@@ -173,11 +189,31 @@ export function RecordTree({ onNavigate }: Props) {
       return
     }
 
-    if (rows[sig]) return // already loaded
+    if (rows[sig]) return // already loaded (or loading)
+    const total = groups.find((g) => g.sig === sig)?.child_count ?? 0
+    void loadAllRecords(sig, total)
+  }
+
+  /** Auto-loads every record of `sig` in the background, fetching in bounded
+   * chunks so no single IPC round-trip blocks Electron's main process for too
+   * long. Fire-and-forget: expanding a group returns immediately and this
+   * keeps running (and isn't cancelled) even if the group is collapsed again. */
+  async function loadAllRecords(sig: string, total: number) {
+    if (!activeDbId) return
+    setRows((r) => ({ ...r, [sig]: [] })) // arm "already loading" guard; shows "0 / total" immediately
     setLoading((s) => new Set([...s, sig]))
     try {
-      const page = await window.api.listTypeRecords(activeDbId, sig, 0, PAGE_SIZE)
-      setRows((r) => ({ ...r, [sig]: page }))
+      let offset = 0
+      let acc: RecordRow[] = []
+      while (offset < total) {
+        const chunk = await window.api.listTypeRecords(activeDbId, sig, offset, CHUNK_SIZE)
+        if (chunk.length === 0) break // defensive: avoid an infinite loop on a short backend response
+        acc = acc.concat(chunk)
+        offset += chunk.length
+        setRows((r) => ({ ...r, [sig]: acc }))
+      }
+    } catch (err) {
+      console.error(err)
     } finally {
       setLoading((s) => {
         const n = new Set(s)
@@ -189,28 +225,51 @@ export function RecordTree({ onNavigate }: Props) {
 
   async function loadMore(sig: string) {
     if (!activeDbId) return
-    if (HIERARCHICAL.has(sig)) {
-      const current = groupChildren[sig] ?? []
-      const next = await window.api.listTypeChildren(activeDbId, sig, current.length, PAGE_SIZE)
-      setGroupChildren((c) => ({ ...c, [sig]: [...current, ...next] }))
-      return
-    }
-    const current = rows[sig] ?? []
-    const next = await window.api.listTypeRecords(activeDbId, sig, current.length, PAGE_SIZE)
-    setRows((r) => ({ ...r, [sig]: [...current, ...next] }))
+    const current = groupChildren[sig] ?? []
+    const next = await window.api.listTypeChildren(activeDbId, sig, current.length, PAGE_SIZE)
+    setGroupChildren((c) => ({ ...c, [sig]: [...current, ...next] }))
   }
 
+  function handleSortClick(sig: string, column: SortColumn) {
+    setSortStateBySig((prev) => {
+      const cur = prev[sig]
+      const next: SortState =
+        cur?.column === column
+          ? { column, direction: cur.direction === 'asc' ? 'desc' : 'asc' } // same column: flip
+          : { column, direction: 'asc' } // new column: ascending
+      return { ...prev, [sig]: next }
+    })
+  }
+
+  // Sorted view of each expanded flat group's rows. Deferred while a group is
+  // still loading (raw arrival order is already FormID-ascending) to avoid
+  // re-sorting the whole array on every auto-load chunk.
+  const sortedRowsBySig = useMemo(() => {
+    const out: Record<string, RecordRow[]> = {}
+    for (const g of groups) {
+      if (HIERARCHICAL.has(g.sig) || !expanded.has(g.sig)) continue
+      const list = rows[g.sig] ?? []
+      const sort = sortStateBySig[g.sig]
+      out[g.sig] = !sort || loading.has(g.sig) ? list : sortRows(list, sort)
+    }
+    return out
+  }, [groups, expanded, rows, loading, sortStateBySig])
+
   // Flat "focusable rows" model for keyboard navigation: top-level groups, plus
-  // (for non-hierarchical expanded groups only) their loaded record rows.
+  // (for non-hierarchical expanded groups only) their loaded record rows, in
+  // the same order the table visually renders (post-sort).
   const focusRows: FocusRow[] = []
   for (const g of groups) {
     focusRows.push({ kind: 'group', sig: g.sig })
     if (expanded.has(g.sig) && !HIERARCHICAL.has(g.sig)) {
-      for (const row of rows[g.sig] ?? []) {
+      for (const row of sortedRowsBySig[g.sig] ?? []) {
         focusRows.push({ kind: 'record', row })
       }
     }
   }
+
+  const focusedRow = focusRows[focusedIndex]
+  const focusedFormId = focusedRow?.kind === 'record' ? focusedRow.row.form_id : null
 
   useEffect(() => {
     if (focusedIndex >= focusRows.length) {
@@ -283,7 +342,13 @@ export function RecordTree({ onNavigate }: Props) {
             </div>
             {expanded.has(g.sig) && (
               <div>
-                {loading.has(g.sig) && <div style={{ padding: 4 }}>Loading…</div>}
+                {loading.has(g.sig) && (
+                  <div style={{ padding: 4 }}>
+                    {HIERARCHICAL.has(g.sig)
+                      ? 'Loading…'
+                      : `Loading… ${(rows[g.sig]?.length ?? 0).toLocaleString()} / ${g.child_count.toLocaleString()}`}
+                  </div>
+                )}
                 {HIERARCHICAL.has(g.sig) ? (
                   activeDbId && (
                     <div style={{ paddingLeft: 8 }}>
@@ -306,53 +371,119 @@ export function RecordTree({ onNavigate }: Props) {
                     </div>
                   )
                 ) : (
-                  <>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                      <thead>
-                        <tr style={{ background: '#16213e' }}>
-                          <th style={{ padding: '2px 6px', textAlign: 'left' }}>FormID</th>
-                          <th style={{ padding: '2px 6px', textAlign: 'left' }}>EditorID</th>
-                          <th style={{ padding: '2px 6px', textAlign: 'left' }}>Name</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(rows[g.sig] ?? []).map((row) => {
-                          const rowFocusIdx = focusRows.findIndex(
-                            (fr) => fr.kind === 'record' && fr.row === row
-                          )
-                          const rowFocused = rowFocusIdx === focusedIndex
-                          return (
-                            <tr
-                              key={row.form_id}
-                              onClick={() => activeDbId && onNavigate(activeDbId, row.form_id)}
-                              style={{
-                                cursor: 'pointer',
-                                borderBottom: '1px solid #222',
-                                background: rowFocused ? '#33395a' : undefined,
-                              }}
-                            >
-                              <td style={{ padding: '2px 6px', fontFamily: 'monospace' }}>
-                                {row.form_id}
-                              </td>
-                              <td style={{ padding: '2px 6px' }}>{row.editor_id ?? ''}</td>
-                              <td style={{ padding: '2px 6px' }}>{row.name ?? ''}</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    {(rows[g.sig]?.length ?? 0) < g.child_count && (
-                      <button onClick={() => void loadMore(g.sig)} style={{ margin: 4, fontSize: 11 }}>
-                        Load more…
-                      </button>
-                    )}
-                  </>
+                  <RecordTypeTable
+                    rows={sortedRowsBySig[g.sig] ?? []}
+                    sortState={sortStateBySig[g.sig]}
+                    onSortChange={(column) => handleSortClick(g.sig, column)}
+                    focusedFormId={focusedFormId}
+                    activeDbId={activeDbId}
+                    onNavigate={onNavigate}
+                  />
                 )}
               </div>
             )}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+const HEADER_CELL_STYLE: React.CSSProperties = { padding: '2px 6px', textAlign: 'left', cursor: 'pointer' }
+const BODY_CELL_STYLE: React.CSSProperties = { padding: '2px 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+
+function sortIndicator(column: SortColumn, sortState: SortState | undefined): string {
+  if (sortState?.column !== column) return ''
+  return sortState.direction === 'asc' ? ' ▲' : ' ▼'
+}
+
+/** Virtualized, sortable, click-to-navigate table for one record type's flat
+ * row list. Rows are rendered as CSS-Grid `<div>`s rather than a native
+ * `<table>`/`<tr>` because `@tanstack/react-virtual` positions items via
+ * `transform: translateY()` on absolutely-positioned elements, which native
+ * table row layout does not support. */
+function RecordTypeTable({
+  rows,
+  sortState,
+  onSortChange,
+  focusedFormId,
+  activeDbId,
+  onNavigate,
+}: {
+  rows: RecordRow[]
+  sortState: SortState | undefined
+  onSortChange: (column: SortColumn) => void
+  focusedFormId: string | null
+  activeDbId: string | null
+  onNavigate: (dbId: string, formid: string) => void
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    getItemKey: (i) => rows[i].form_id,
+    overscan: 8,
+  })
+
+  useEffect(() => {
+    if (focusedFormId == null) return
+    const idx = rows.findIndex((r) => r.form_id === focusedFormId)
+    if (idx >= 0) rowVirtualizer.scrollToIndex(idx, { align: 'auto' })
+  }, [focusedFormId, rows, rowVirtualizer])
+
+  const viewportHeight = Math.min(rows.length, MAX_VISIBLE_ROWS) * ROW_HEIGHT
+
+  return (
+    <div style={{ fontSize: 11 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: COLUMN_TEMPLATE,
+          background: '#16213e',
+        }}
+      >
+        <div style={HEADER_CELL_STYLE} onClick={() => onSortChange('form_id')}>
+          FormID{sortIndicator('form_id', sortState)}
+        </div>
+        <div style={HEADER_CELL_STYLE} onClick={() => onSortChange('editor_id')}>
+          EditorID{sortIndicator('editor_id', sortState)}
+        </div>
+        <div style={HEADER_CELL_STYLE} onClick={() => onSortChange('name')}>
+          Name{sortIndicator('name', sortState)}
+        </div>
+      </div>
+      <div ref={parentRef} style={{ height: viewportHeight, overflow: 'auto', position: 'relative' }}>
+        <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+          {rowVirtualizer.getVirtualItems().map((vi) => {
+            const row = rows[vi.index]
+            const rowFocused = row.form_id === focusedFormId
+            return (
+              <div
+                key={vi.key}
+                onClick={() => activeDbId && onNavigate(activeDbId, row.form_id)}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  transform: `translateY(${vi.start}px)`,
+                  height: ROW_HEIGHT,
+                  display: 'grid',
+                  gridTemplateColumns: COLUMN_TEMPLATE,
+                  cursor: 'pointer',
+                  borderBottom: '1px solid #222',
+                  background: rowFocused ? '#33395a' : undefined,
+                }}
+              >
+                <div style={{ ...BODY_CELL_STYLE, fontFamily: 'monospace' }}>{row.form_id}</div>
+                <div style={BODY_CELL_STYLE}>{row.editor_id ?? ''}</div>
+                <div style={BODY_CELL_STYLE}>{row.name ?? ''}</div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }

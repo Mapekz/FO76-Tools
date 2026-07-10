@@ -20,6 +20,7 @@
     "@fo76/esm-napi": "file:../esm/bindings/napi"
   },
   "devDependencies": {
+    "@tanstack/react-virtual": "^3.14.5",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^4",
