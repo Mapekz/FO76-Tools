@@ -15,7 +15,8 @@ npm run build:addon        # rebuild ../esm/bindings/napi (native addon this app
 npm run dev                # electron-vite dev (runs build:addon first via "predev")
 npm run build              # electron-vite build (runs build:addon first via "prebuild")
 npm run typecheck          # tsc --noEmit against both tsconfig.json and tsconfig.node.json
-just                        # = just check = npm run typecheck
+npm run test                # vitest run (unit tests for renderer/src/lib/*)
+just                        # = just check = npm run typecheck && npm run test
 just dev / just build       # thin wrappers over the npm scripts above
 ```
 

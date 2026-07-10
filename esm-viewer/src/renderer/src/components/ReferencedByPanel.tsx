@@ -1,5 +1,6 @@
 import React from 'react'
 import { useStore } from '../store'
+import { fetchReferencedBy } from '../lib/referencedBy'
 import type { RefPathNode, RefRow } from '../../../shared/api-types'
 
 interface Props {
@@ -42,10 +43,11 @@ export function ReferencedByPanel({ onNavigate }: Props) {
     setReferencedByDepth(newDepth)
     if (!activeDbId || !activeRecord) return
     try {
-      const result = await window.api.referencedById(
+      const result = await fetchReferencedBy(
         activeDbId,
         activeRecord.header.form_id,
-        newDepth
+        newDepth,
+        window.api
       )
       setReferencedBy(result)
     } catch (err) {

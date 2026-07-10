@@ -2,7 +2,7 @@
 # Install `just` once: cargo install just
 #
 # Usage:
-#   just          -> typecheck (the local CI pass for this app)
+#   just          -> typecheck + test (the local CI pass for this app)
 #   just addon    -> rebuild the ../esm/bindings/napi native addon
 #   just dev      -> launch the Electron app in dev mode
 #   just build    -> production build (electron-vite build)
@@ -15,9 +15,11 @@ addon:
     npm run build:addon
 
 # Type-check main/preload (Node lib) and renderer (DOM lib) separately — they use
-# different tsconfigs, see tsconfig.json / tsconfig.node.json.
+# different tsconfigs, see tsconfig.json / tsconfig.node.json — then run the
+# vitest unit suite.
 check:
     npm run typecheck
+    npm run test
 
 # Launch the app in dev mode (electron-vite dev). Rebuilds the addon first.
 dev:

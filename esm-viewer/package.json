@@ -12,12 +12,16 @@
     "build:addon": "npm --prefix ../esm/bindings/napi run build",
     "preview": "electron-vite preview",
     "package:dir": "electron-builder --dir",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fo76/esm-napi": "file:../esm/bindings/napi"
   },
   "devDependencies": {
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
     "@vitejs/plugin-react": "^4",
     "electron": "^34",
     "electron-builder": "^25",
@@ -25,8 +29,7 @@
     "react": "^18",
     "react-dom": "^18",
     "typescript": "^5",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "vitest": "^4.1.10",
     "zustand": "^5"
   },
   "allowScripts": {

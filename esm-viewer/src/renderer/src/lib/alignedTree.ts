@@ -95,6 +95,26 @@ export function deepEqualForConflict(a: unknown, b: unknown): boolean {
   return false
 }
 
+/** Build a leaf `AlignedNode` purely from its per-column values: conflict is a
+ * presence mismatch (present in some columns, absent in others) or the present
+ * values not all being equal by `deepEqualForConflict`. Shared by `buildNode`'s
+ * own leaf branch and by callers that hand-build a leaf outside the recursive
+ * walk (`RecordTable`'s synthesized Record Header / EDID rows). */
+export function buildLeafNode(label: string, path: string, values: unknown[]): AlignedNode {
+  const present = values.filter((v) => v !== MISSING)
+  const presenceMismatch = present.length > 0 && present.length < values.length
+  const allEqual = present.length <= 1 || present.every((v) => deepEqualForConflict(v, present[0]))
+  return {
+    label,
+    path,
+    isLeaf: true,
+    values,
+    children: [],
+    conflict: presenceMismatch || !allEqual,
+    badgesPerCol: values.map(() => []),
+  }
+}
+
 type Kind = 'missing' | 'leaf' | 'object' | 'array'
 
 /** MISSING values don't vote on kind. A FormID stub is object-shaped but is a
@@ -188,17 +208,7 @@ function buildNode(label: string, path: string, values: unknown[]): AlignedNode 
   }
 
   // Leaf: scalars and/or FormID stubs.
-  const present = values.filter((v) => v !== MISSING)
-  const allEqual = present.length <= 1 || present.every((v) => deepEqualForConflict(v, present[0]))
-  return {
-    label,
-    path,
-    isLeaf: true,
-    values,
-    children: [],
-    conflict: presenceMismatch || !allEqual,
-    badgesPerCol: values.map(() => []),
-  }
+  return buildLeafNode(label, path, values)
 }
 
 /** Build the aligned row tree for `RecordTable` from one decoded `fields`

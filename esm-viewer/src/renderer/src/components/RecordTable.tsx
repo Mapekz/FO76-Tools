@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, type RecordColumn } from '../store'
-import { buildAlignedTree, deepEqualForConflict, isFormIdStub, MISSING, type AlignedNode } from '../lib/alignedTree'
+import { buildAlignedTree, buildLeafNode, isFormIdStub, MISSING, type AlignedNode } from '../lib/alignedTree'
 
 interface Props {
   columns: RecordColumn[]
@@ -16,25 +16,6 @@ const VALUE_COL_WIDTH = 200
  * collapse state and to give them stable React/collapse-toggle keys. */
 const HEADER_PATH = '__header'
 const EDID_PATH = '__edid'
-
-/** Hand-build a leaf `AlignedNode` outside of `buildAlignedTree` — used for the
- * synthesized Record Header / EDID rows, which come from `header`/`editor_id`
- * rather than a real `fields` object. Mirrors `buildAlignedTree`'s own leaf
- * conflict rule (presence mismatch, or present values not all equal). */
-function makeLeafNode(label: string, path: string, values: unknown[]): AlignedNode {
-  const present = values.filter((v) => v !== MISSING)
-  const presenceMismatch = present.length > 0 && present.length < values.length
-  const allEqual = present.length <= 1 || present.every((v) => deepEqualForConflict(v, present[0]))
-  return {
-    label,
-    path,
-    isLeaf: true,
-    values,
-    children: [],
-    conflict: presenceMismatch || !allEqual,
-    badgesPerCol: values.map(() => []),
-  }
-}
 
 /** `buildAlignedTree`'s array branches are the only place children get `[i]`
  * labels — used as a cheap way to tell "this is an array node" apart from an
@@ -64,8 +45,8 @@ function buildSyntheticNodes(columns: RecordColumn[]): AlignedNode[] {
     c.record ? { flags: c.record.header.flags, form_version: c.record.header.form_version } : MISSING
   )
 
-  const flagsNode = makeLeafNode('flags', `${HEADER_PATH}.flags`, flagsValues)
-  const versionNode = makeLeafNode('form_version', `${HEADER_PATH}.form_version`, versionValues)
+  const flagsNode = buildLeafNode('flags', `${HEADER_PATH}.flags`, flagsValues)
+  const versionNode = buildLeafNode('form_version', `${HEADER_PATH}.form_version`, versionValues)
   const headerBranch: AlignedNode = {
     label: 'Record Header',
     path: HEADER_PATH,
@@ -75,7 +56,7 @@ function buildSyntheticNodes(columns: RecordColumn[]): AlignedNode[] {
     conflict: flagsNode.conflict || versionNode.conflict,
     badgesPerCol: columns.map(() => []),
   }
-  const edidNode = makeLeafNode('EDID', EDID_PATH, edidValues)
+  const edidNode = buildLeafNode('EDID', EDID_PATH, edidValues)
 
   return [headerBranch, edidNode]
 }

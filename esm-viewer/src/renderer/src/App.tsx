@@ -8,34 +8,11 @@ import { SearchPanel } from './components/SearchPanel'
 import { FilterPanel } from './components/FilterPanel'
 import { CoveragePanel } from './components/CoveragePanel'
 import { DiffPanel } from './components/DiffPanel'
-import { useStore, type RecordColumn } from './store'
-import type { RecordResult } from '../../shared/api-types'
+import { useStore } from './store'
+import { buildRecordColumns } from './lib/recordColumns'
+import { fetchReferencedBy } from './lib/referencedBy'
 
 type LeftView = 'tree' | 'search' | 'filter' | 'coverage' | 'diff'
-
-function basename(path: string): string {
-  return path.split(/[\\/]/).pop() ?? path
-}
-
-/** Column-header labels for a set of open files. Plain basename normally, but
- * when several open files share one (the common case here: comparing dated
- * versions of SeventySix.esm), prefix the parent directory so the columns are
- * tellable apart — e.g. "20260619/SeventySix.esm" vs "20260702/SeventySix.esm". */
-function columnLabels(paths: string[]): Map<string, string> {
-  const counts = new Map<string, number>()
-  for (const p of paths) {
-    const b = basename(p)
-    counts.set(b, (counts.get(b) ?? 0) + 1)
-  }
-  const labels = new Map<string, string>()
-  for (const p of paths) {
-    const parts = p.split(/[\\/]/)
-    const b = parts.pop() ?? p
-    const dir = parts.pop()
-    labels.set(p, (counts.get(b) ?? 0) > 1 && dir ? `${dir}/${b}` : b)
-  }
-  return labels
-}
 
 export function App() {
   const {
@@ -62,46 +39,16 @@ export function App() {
     async (dbId: string, target: string) => {
       const seq = ++loadSeq.current
       try {
-        // Resolve first — `target` may be an EditorID (from search), and every
-        // other DB must be probed by the canonical `header.form_id`, not the raw target.
-        const rec = await window.api.recordById(dbId, target, 'stub')
-        const formId = rec.header.form_id
-
         // Read openDbs fresh (not from the component's closure) so this callback's
         // identity doesn't have to change every time a file is opened/closed.
         const { openDbs } = useStore.getState()
-        const others = openDbs.filter((db) => db.id !== dbId)
-        const settled = await Promise.allSettled(
-          others.map((db) => window.api.recordById(db.id, formId, 'stub'))
-        )
+        const { active, columns } = await buildRecordColumns(target, dbId, openDbs, window.api)
         if (seq !== loadSeq.current) return
 
-        // recordById rejects when the FormID is absent from that file — that
-        // rejection IS the "not in this file" signal, so the column is dropped.
-        const otherResults = new Map<string, PromiseSettledResult<RecordResult>>()
-        others.forEach((db, i) => otherResults.set(db.id, settled[i]))
-
-        const labels = columnLabels(openDbs.map((db) => db.path))
-        const columns: RecordColumn[] = []
-        for (const db of openDbs) {
-          if (db.id === dbId) {
-            columns.push({ dbId: db.id, fileName: labels.get(db.path) ?? basename(db.path), record: rec })
-            continue
-          }
-          const result = otherResults.get(db.id)
-          if (result?.status === 'fulfilled') {
-            columns.push({
-              dbId: db.id,
-              fileName: labels.get(db.path) ?? basename(db.path),
-              record: result.value,
-            })
-          }
-        }
-
-        setActiveRecord(rec)
+        setActiveRecord(active)
         setRecordColumns(columns)
 
-        const refs = await window.api.referencedById(dbId, target, referencedByDepth)
+        const refs = await fetchReferencedBy(dbId, target, referencedByDepth, window.api)
         if (seq !== loadSeq.current) return
         setReferencedBy(refs)
       } catch (e) {
