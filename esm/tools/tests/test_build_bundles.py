@@ -563,6 +563,53 @@ class TestCategorization(unittest.TestCase):
         )
         self.assertEqual(cat_id, "unique_weapons_gear")
 
+    def test_member_scope_omod_routes_cobj_anchor_to_weapons_combat(self):
+        # Regression test: ANCHOR_PRIORITY ranks COBJ above OMOD, so a
+        # crafting-recipe bundle for a legendary mod always anchors on the
+        # COBJ. Without a member-scope rule here, the OMOD satellite (the
+        # actually-interesting new content) was invisible to every
+        # anchor-only rule and fell through to uncategorized.
+        anchor = self._member("0x08", "COBJ", "co_mod_Legendary_Weapon2_Cryo")
+        omod_member = self._member(
+            "0x09", "OMOD", "mod_Legendary_Weapon2_Cryo", role="satellite"
+        )
+        cat_id, _label, rule = bb.categorize_bundle(
+            anchor, [anchor, omod_member], self.categories, self.client, "esm", {}
+        )
+        self.assertEqual(cat_id, "weapons_combat")
+        self.assertEqual(rule, "weapons_combat/rule_1")
+
+    def test_member_scope_armo_routes_cobj_anchor_to_armor(self):
+        anchor = self._member("0x0A", "COBJ", "co_Headwear_Clothes_SlasherHat01")
+        armo_member = self._member("0x0B", "ARMO", "Headwear_SlasherHat01", role="satellite")
+        cat_id, _label, rule = bb.categorize_bundle(
+            anchor, [anchor, armo_member], self.categories, self.client, "esm", {}
+        )
+        self.assertEqual(cat_id, "armor")
+        self.assertEqual(rule, "armor/rule_1")
+
+    def test_member_scope_alch_routes_cobj_anchor_to_consumables(self):
+        anchor = self._member("0x0C", "COBJ", "co_Chem_NewStimpak")
+        alch_member = self._member("0x0D", "ALCH", "Chem_NewStimpak", role="satellite")
+        cat_id, _label, rule = bb.categorize_bundle(
+            anchor, [anchor, alch_member], self.categories, self.client, "esm", {}
+        )
+        self.assertEqual(cat_id, "consumables")
+        self.assertEqual(rule, "consumables/rule_1")
+
+    def test_member_scope_context_role_does_not_match(self):
+        # A weapon/armor/chem that's only pulled in as loose "context"
+        # (role="context") must not trigger the member-scope rule -- only
+        # real satellite members should route a COBJ bundle out of
+        # uncategorized.
+        anchor = self._member("0x0E", "COBJ", "co_SomeUnrelatedRecipe")
+        weap_context = self._member("0x0F", "WEAP", "SomeContextWeapon", role="context")
+        cat_id, _label, rule = bb.categorize_bundle(
+            anchor, [anchor, weap_context], self.categories, self.client, "esm", {}
+        )
+        self.assertEqual(cat_id, "uncategorized")
+        self.assertIsNone(rule)
+
     def test_uncategorized_fallback_has_no_rule(self):
         anchor = self._member("0x02", "CONT", "SomeContainer")
         cat_id, _label, rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})

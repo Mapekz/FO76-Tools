@@ -30,21 +30,24 @@
       "id": "weapons_combat",
       "label": "Weapons & Combat Balance",
       "rules": [
-        {"scope": "anchor", "record_type": ["WEAP", "AMMO", "PROJ", "EXPL", "OMOD", "ENCH"]}
+        {"scope": "anchor", "record_type": ["WEAP", "AMMO", "PROJ", "EXPL", "OMOD", "ENCH"]},
+        {"scope": "member", "record_type": ["WEAP", "AMMO", "PROJ", "EXPL", "OMOD", "ENCH"]}
       ]
     },
     {
       "id": "armor",
       "label": "Armor",
       "rules": [
-        {"scope": "anchor", "record_type": ["ARMO", "ARMA", "INNR"]}
+        {"scope": "anchor", "record_type": ["ARMO", "ARMA", "INNR"]},
+        {"scope": "member", "record_type": ["ARMO", "ARMA", "INNR"]}
       ]
     },
     {
       "id": "consumables",
       "label": "Consumables & Chems",
       "rules": [
-        {"scope": "anchor", "record_type": ["ALCH"]}
+        {"scope": "anchor", "record_type": ["ALCH"]},
+        {"scope": "member", "record_type": ["ALCH"]}
       ]
     },
     {
