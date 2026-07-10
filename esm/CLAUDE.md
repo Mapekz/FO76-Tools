@@ -89,7 +89,7 @@ The `bindings/napi/` sub-crate (`esm-napi`) builds a `esm-napi.<platform>.node` 
 cd bindings/napi && npm run build   # or build:debug
 ```
 
-The app loads the addon via `esm-viewer/src/main/addon.ts`. The `esm-viewer/src/shared/api-types.ts` file is the TypeScript mirror of the Rust N-API types — keep them in sync when changing `EsmDatabase` methods.
+The app loads the addon via `esm-viewer/src/main/addon.ts`. Most of the Rust N-API DTOs are mirrored to TypeScript via `ts-rs` (dev-dependency; `#[cfg_attr(test, derive(ts_rs::TS))]` + `#[cfg_attr(test, ts(export))]` on the DTOs in `lib.rs`/`ipc.rs`/`reader.rs`/`tree.rs`/`diff.rs`/`decode.rs`) — run `just gen-types` after changing any of those structs' shape, which regenerates `esm-viewer/src/shared/generated/*.ts`; `just check` fails if that regen produces an uncommitted diff. `esm-viewer/src/shared/api-types.ts` re-exports those generated types (aliasing a few names) and hand-writes only the IPC-contract-specific bits (`CH` channel names, `Fo76Api`, `FilterOp`) — keep *that* in sync when adding/removing `EsmDatabase` methods.
 
 ## Game Data
 

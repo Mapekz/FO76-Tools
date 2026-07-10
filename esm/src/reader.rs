@@ -34,6 +34,8 @@ pub enum WalkEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct FileInfo {
     pub path: PathBuf,
     pub version: f32,
@@ -56,11 +58,14 @@ pub struct RecordMeta {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RecordHeaderInfo {
     pub signature: String,
     /// Pre-formatted hex on the JSON boundary (e.g. "0x0000463F") while staying
     /// a genuine `FormId` for internal Rust use — see `crate::formid::hex_string`.
     #[serde(with = "crate::formid::hex_string")]
+    #[cfg_attr(test, ts(type = "string"))]
     pub form_id: FormId,
     pub flags: u32,
     pub form_version: u16,

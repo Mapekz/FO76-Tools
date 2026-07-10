@@ -172,7 +172,7 @@ export function DiffPanel({ onNavigate }: Props) {
     }
   }
 
-  const suppressedEntries = result ? Object.entries(result.suppressed_counts) : []
+  const suppressedEntries = result ? Object.entries(result.suppressed_counts ?? {}) : []
 
   return (
     <div

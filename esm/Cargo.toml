@@ -46,3 +46,4 @@ tower-http = { version = "0.7", features = ["trace"], optional = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
+ts-rs = "12.0.1"

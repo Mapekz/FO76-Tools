@@ -167,6 +167,8 @@ pub enum Op {
 
 /// One node on the hop chain from the lookup target to a result record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RefPathNode {
     pub form_id: String,
     pub record_type: Option<String>,
@@ -175,6 +177,8 @@ pub struct RefPathNode {
 
 /// One referencer row enriched with record type (refs command output).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RefRow {
     pub form_id: String,
     pub record_type: Option<String>,
@@ -191,6 +195,8 @@ pub struct RefRow {
 
 /// Referenced-by result with total count and optional cap flag.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RefList {
     pub target: String,
     pub rows: Vec<RefRow>,
@@ -200,12 +206,16 @@ pub struct RefList {
 
 /// Hex dump view of a raw record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RawRecordView {
     pub header: crate::reader::RecordHeaderInfo,
     pub subrecords: Vec<RawSubrecordView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RawSubrecordView {
     pub signature: String,
     pub size: usize,
@@ -230,6 +240,8 @@ pub fn raw_record_view(rec: &crate::reader::ParsedRecord) -> RawRecordView {
 
 /// Counts of schema-coverage markers per record type.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct Markers {
     pub unknown_record: u64,
     pub raw_fallback: u64,
@@ -254,6 +266,8 @@ impl Markers {
 
 /// Coverage audit report.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct CoverageReport {
     pub by_type: BTreeMap<String, Markers>,
     pub totals: Markers,
@@ -540,18 +554,19 @@ pub fn referenced_by_enriched(
 }
 
 fn count_markers(v: &Value, m: &mut Markers) {
+    use crate::decode::markers;
     match v {
         Value::Object(obj) => {
-            if obj.get("_unknown_record") == Some(&Value::Bool(true)) {
+            if obj.get(markers::UNKNOWN_RECORD) == Some(&Value::Bool(true)) {
                 m.unknown_record += 1;
             }
-            if obj.get("_raw") == Some(&Value::Bool(true)) && obj.contains_key("reason") {
+            if obj.get(markers::RAW) == Some(&Value::Bool(true)) && obj.contains_key("reason") {
                 m.raw_fallback += 1;
             }
-            if obj.get("_unresolved") == Some(&Value::Bool(true)) {
+            if obj.get(markers::UNRESOLVED) == Some(&Value::Bool(true)) {
                 m.unresolved += 1;
             }
-            if let Some(Value::Object(unmapped)) = obj.get("_unmapped") {
+            if let Some(Value::Object(unmapped)) = obj.get(markers::UNMAPPED) {
                 for subs in unmapped.values() {
                     if let Value::Array(arr) = subs {
                         m.unmapped += arr.len() as u64;
@@ -559,7 +574,7 @@ fn count_markers(v: &Value, m: &mut Markers) {
                 }
             }
             for (key, child) in obj {
-                if key == "_unmapped" {
+                if key == markers::UNMAPPED {
                     continue;
                 }
                 count_markers(child, m);

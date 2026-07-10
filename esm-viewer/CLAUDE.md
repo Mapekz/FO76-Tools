@@ -27,8 +27,12 @@ a symlinked local dependency, not a published package. It is a Rust workspace me
 (from `esm/app/` to repo-root `esm-viewer/`, via `git mv`, preserving history).
 
 **After any Rust API change to `EsmDatabase` in `esm/bindings/napi/src/lib.rs`, rebuild the
-addon** (`npm run build:addon`, or just let `predev`/`prebuild` do it automatically) and keep
-`src/shared/api-types.ts` (the TypeScript mirror of the N-API types) in sync by hand.
+addon** (`npm run build:addon`, or just let `predev`/`prebuild` do it automatically). Most DTO
+shapes are generated, not hand-mirrored: run `just gen-types` in `esm/` (part of `esm/`'s
+`just check`) to regenerate `src/shared/generated/*.ts` from the `ts-rs`-derived Rust structs.
+`src/shared/api-types.ts` re-exports those under their existing names and hand-writes only the
+IPC-contract pieces that aren't Rust types (`CH` channel names, `Fo76Api`, `FilterOp`) — update
+`Fo76Api` by hand when adding/removing/reshaping an `EsmDatabase` method.
 
 If `node_modules/@fo76/esm-napi` ever fails to resolve (e.g. after moving either directory
 again), `rm -rf node_modules package-lock.json && npm install` to force a clean relink, then
@@ -51,4 +55,5 @@ because main/preload and renderer target different environments:
 | `src/main/` | Electron main process: window creation (`index.ts`), addon loading (`addon.ts`), per-file `EsmDatabase` cache (`db-registry.ts`), IPC handlers (`ipc.ts`) |
 | `src/preload/` | Context-isolated preload bridge exposed to the renderer |
 | `src/renderer/` | React UI (record tree, detail panel, referenced-by panel, open-files panel, nav history), Zustand store |
-| `src/shared/api-types.ts` | TypeScript mirror of the Rust N-API types — keep in sync with `esm/bindings/napi` |
+| `src/shared/api-types.ts` | Re-exports the `ts-rs`-generated Rust N-API DTOs (`./generated/`) plus hand-written IPC-contract types (`CH`, `Fo76Api`, `FilterOp`) |
+| `src/shared/generated/` | Generated TypeScript mirrors (`ts-rs` + two hand-written generators) — regenerate via `just gen-types` in `esm/`; never hand-edit |

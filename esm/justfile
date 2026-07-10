@@ -2,14 +2,17 @@
 # Install `just` once: cargo install just
 #
 # Usage:
-#   just          -> fmt + clippy + test  (the full local CI pass)
+#   just          -> fmt + clippy + test + gen-types + drift check (the full local CI pass)
+#   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
 #   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
 #   just test-esm /path/a.esm /path/b.esm  -> env-gated diff integration test
 
 default: check
 
-# Run the full check suite (same as CI rust matrix).
-check: fmt clippy test
+# Run the full check suite (same as CI rust matrix), plus the generated-types
+# drift guard: `gen-types` must produce no uncommitted diff.
+check: fmt clippy test gen-types
+    git diff --exit-code -- ../esm-viewer/src/shared/generated/
 
 # Verify formatting.
 fmt:
@@ -24,6 +27,18 @@ clippy:
 test:
     cargo test
     cargo test --features server
+
+# Regenerate the TypeScript mirrors of the N-API DTOs (ts-rs, see Cargo.toml
+# dev-dependencies) plus their hand-written companions (esm/tests/gen_bindings.rs:
+# recordTypeNames.generated.ts from schema/fo76.json, markers.generated.ts from
+# src/decode.rs's `markers` module) into ../esm-viewer/src/shared/generated/.
+# TS_RS_EXPORT_DIR/TS_RS_LARGE_INT are set globally in .cargo/config.toml (not
+# just here) so a bare `cargo test` can never fall back to ts-rs's default
+# `./bindings` dir, which would collide with the tracked `bindings/napi/` crate.
+# --test-threads=1: some of these tests share a target directory (mkdir +
+# sibling files) and ts-rs itself recommends serializing export tests.
+gen-types:
+    cargo test export_bindings -- --test-threads=1
 
 # Schema parity audit against the Pascal source in ../TES5Edit.
 # Expects ../TES5Edit = Eckserah/TES5Edit @ 80a2c3c6 (branch dev-4.1.6).

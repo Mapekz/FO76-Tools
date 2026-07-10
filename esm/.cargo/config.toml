@@ -1,0 +1,16 @@
+# `ts-rs` (dev-dependency, see Cargo.toml) reads these at test time to decide
+# where/how to export the TypeScript mirrors under `#[cfg_attr(test,
+# derive(ts_rs::TS))]` (see `just gen-types` in the justfile).
+#
+# Setting these globally — rather than only in the `gen-types` recipe — avoids
+# a real footgun: ts-rs's own default export dir is `./bindings`, which would
+# collide with the *tracked* `bindings/napi/` sub-crate if anyone ever runs a
+# bare `cargo test` without the recipe's env vars.
+[env]
+# Relative to this file's parent directory (the `esm/` crate root), per Cargo's
+# `relative = true` resolution — NOT relative to the process's cwd.
+TS_RS_EXPORT_DIR = { value = "../esm-viewer/src/shared/generated", relative = true }
+# u64/i64 fields (e.g. byte offsets) must render as `number`, not the ts-rs
+# default `bigint` — `serde_json` serializes them as plain JSON numbers, and
+# every hand-written type they're replacing already used `number`.
+TS_RS_LARGE_INT = "number"

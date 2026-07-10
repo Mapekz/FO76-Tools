@@ -9,9 +9,33 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{HashMap, VecDeque};
 
+/// Single source of truth for the schema decode-coverage marker keys (see
+/// "Decode output key conventions" in esm/CLAUDE.md). Exported to TypeScript
+/// (`esm-viewer/src/shared/generated/markers.generated.ts`) so the renderer's
+/// coverage-badge logic (`alignedTree.ts`'s `coverageBadges`) never hardcodes
+/// these strings independently of the decoder that produces them.
+pub mod markers {
+    /// Emitted at the top level of a record with no schema mapping at all.
+    pub const UNKNOWN_RECORD: &str = "_unknown_record";
+    /// Emitted on a value that fell back to a raw hex dump (malformed/unmapped bytes).
+    pub const RAW: &str = "_raw";
+    /// Emitted alongside leftover subrecords the schema didn't consume.
+    pub const UNMAPPED: &str = "_unmapped";
+    /// Emitted on an LString field whose ID had no match in the loaded string tables.
+    pub const UNRESOLVED: &str = "_unresolved";
+}
+
 /// Controls how deeply FormID references are followed during decode.
+///
+/// `ts_rs::TS` is derived only under `#[cfg(test)]` (`ts-rs` is a dev-dependency,
+/// not a regular one — see `esm/CLAUDE.md` "N-API Binding and Electron App").
+/// The export test itself lives behind `#[ts(export)]`, which `ts-rs` already
+/// gates on `#[cfg(test)]` internally; the outer `cfg_attr` is what keeps the
+/// `TS` impl (and the `ts_rs` extern crate reference) out of non-test builds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(test, ts(export))]
 pub enum ResolveDepth {
     /// Emit raw hex string — no resolution (default).
     #[default]
@@ -30,6 +54,8 @@ pub trait FormIdRefResolver: Send + Sync {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct FormIdStub {
     pub formid: String,
     pub editor_id: Option<String>,
@@ -224,7 +250,7 @@ pub fn decode_record(
         }
     } else {
         out.insert("_record_type".into(), json!(signature));
-        out.insert("_unknown_record".into(), json!(true));
+        out.insert(markers::UNKNOWN_RECORD.into(), json!(true));
     }
 
     // Emit any subrecords not consumed
@@ -245,7 +271,7 @@ pub fn decode_record(
         }
     }
     if !raw_remaining.is_empty() {
-        out.insert("_unmapped".into(), Value::Object(raw_remaining));
+        out.insert(markers::UNMAPPED.into(), Value::Object(raw_remaining));
     }
 
     Value::Object(out)
@@ -355,7 +381,7 @@ fn decode_member(
                                     name.clone(),
                                     json!({
                                         "lstring_id": format!("0x{:08X}", id),
-                                        "_unresolved": true
+                                        (markers::UNRESOLVED): true
                                     }),
                                 );
                             }

@@ -67,6 +67,8 @@ impl Default for DiffOptions {
 
 /// Lightweight record identity for added/removed entries.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RecordStub {
     pub form_id: String,
     pub editor_id: Option<String>,
@@ -78,20 +80,24 @@ pub struct RecordStub {
     /// Resolved DESC description (when localization is available).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Decoded fields for *added*/*removed* records, at the depth requested
+    /// Decoded fields for `added`/`removed` records, at the depth requested
     /// by `DiffOptions::bodies` (see [`BodyDetail`]). `None` when
     /// `BodyDetail::None` was requested, or when the record failed to
     /// decode. Always absent on `changed` stubs (see `RecordDiff::field_changes`
     /// instead).
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub fields: Option<Value>,
 }
 
 /// A record present in both ESMs whose decoded fields changed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RecordDiff {
     pub stub: RecordStub,
     /// Sparse JSON object: only changed fields, each `{ "from": .., "to": .. }`.
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub field_changes: Value,
     /// EditorID from the A (old) side.  Only present when it differs from
     /// `stub.editor_id` (the B side), which indicates an EDID rename this
@@ -101,19 +107,29 @@ pub struct RecordDiff {
 }
 
 /// Resolved display information for a FormID that appears in `field_changes`.
+///
+/// Only ever constructed and serialized (see `resolve_ref_name`) — never
+/// deserialized from wire JSON — so adding `#[serde(default)]` here (needed
+/// for `ts-rs` to correctly infer these fields as omittable, not just
+/// nullable, matching `skip_serializing_if`) has no effect on the actual
+/// JSON this type produces.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RefName {
     pub record_type: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 
 /// Top-level result of comparing two ESM files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct DiffResult {
     /// FormIDs present in B but not A.
     pub added: Vec<RecordStub>,

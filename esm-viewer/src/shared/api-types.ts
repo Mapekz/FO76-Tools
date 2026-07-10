@@ -1,3 +1,53 @@
+// TypeScript mirrors of the Rust N-API DTOs, generated from `esm`'s structs via
+// `ts-rs` (plus two hand-written generators for schema/marker data) — see
+// `esm/justfile`'s `gen-types` recipe and `esm/CLAUDE.md`. Do NOT hand-edit
+// anything under `./generated/`; regenerate it there instead.
+//
+// This file re-exports the generated types under their existing external names
+// (aliasing where the Rust struct name collides with another, or where the
+// TS-facing name predates this generation and downstream code depends on it),
+// and keeps `CH` (Electron IPC channel names) and `Fo76Api` (the preload
+// bridge contract) hand-written — those aren't Rust types, they're the IPC
+// contract layered on top of them.
+export type { FileInfo } from './generated/FileInfo'
+export type { GroupLabel } from './generated/GroupLabel'
+export type { GroupNode } from './generated/GroupNode'
+export type { GroupChild } from './generated/GroupChild'
+export type { RecordRow } from './generated/RecordRow'
+export type { RefPathNode } from './generated/RefPathNode'
+export type { RefRow } from './generated/RefRow'
+/** Full envelope returned by a recursive refs walk — generated Rust name is `RefList`. */
+export type { RefList as RefListResult } from './generated/RefList'
+export type { FormIdStub } from './generated/FormIdStub'
+export type { RecordHeaderInfo } from './generated/RecordHeaderInfo'
+export type { RecordResult } from './generated/RecordResult'
+export type { FilterResult } from './generated/FilterResult'
+export type { RawSubrecordView } from './generated/RawSubrecordView'
+export type { RawRecordView } from './generated/RawRecordView'
+export type { Markers } from './generated/Markers'
+export type { CoverageReport } from './generated/CoverageReport'
+/** Lightweight record identity for added/removed diff entries — generated Rust name is `RecordStub`
+ * (renamed here to avoid colliding with the tree module's own record stub). */
+export type { RecordStub as RecordStubDiff } from './generated/RecordStub'
+/** One record present in both snapshots whose decoded fields differ — generated Rust name is `RecordDiff`. */
+export type { RecordDiff as RecordChangeDiff } from './generated/RecordDiff'
+/** Resolved display info for a FormID referenced in a diff — generated Rust name is `RefName`. */
+export type { RefName as RefNameEntry } from './generated/RefName'
+export type { DiffResult } from './generated/DiffResult'
+export type { ResolveDepth } from './generated/ResolveDepth'
+
+import type { FileInfo } from './generated/FileInfo'
+import type { GroupChild } from './generated/GroupChild'
+import type { GroupNode } from './generated/GroupNode'
+import type { RecordRow } from './generated/RecordRow'
+import type { RecordResult } from './generated/RecordResult'
+import type { RefList } from './generated/RefList'
+import type { RawRecordView } from './generated/RawRecordView'
+import type { CoverageReport } from './generated/CoverageReport'
+import type { DiffResult } from './generated/DiffResult'
+import type { FilterResult } from './generated/FilterResult'
+import type { ResolveDepth } from './generated/ResolveDepth'
+
 export const CH = {
   openFileDialog: 'open-file-dialog',
   openFolderDialog: 'open-folder-dialog',
@@ -31,170 +81,10 @@ export interface DbHandle {
   info: FileInfo
 }
 
-export interface FileInfo {
-  path: string
-  version: number
-  record_count: number
-  next_object_id: number
-  author?: string
-  description?: string
-  masters: string[]
-  flags: number
-  is_esm: boolean
-  is_localized: boolean
-}
-
-/** The interpreted label of a GRUP, decoded per its `group_type`. Discriminated by `kind`. */
-export type GroupLabel =
-  | { kind: 'record_type'; sig: string }
-  | { kind: 'form_id'; form_id: string }
-  | { kind: 'interior_block'; block: number }
-  | { kind: 'exterior_block'; grid_y: number; grid_x: number }
-  | { kind: 'cell_children'; cell: string }
-  | { kind: 'raw'; label: number }
-
-export interface GroupNode {
-  label: GroupLabel
-  group_type: number
-  child_count: number
-  /** Byte offset of this GRUP's 24-byte header in the file — used to descend further. */
-  offset: number
-}
-
-/** A single direct child of a GRUP: either a nested group or a leaf record stub. */
-export type GroupChild =
-  | ({ node: 'group' } & GroupNode)
-  | { node: 'record'; form_id: string; editor_id?: string; record_type: string; offset: number }
-
-export interface RecordRow {
-  form_id: string
-  record_type?: string
-  editor_id?: string
-  name?: string
-  offset: number
-}
-
-/** One intermediate hop on the path from the lookup target to a result record. */
-export interface RefPathNode {
-  form_id: string
-  record_type?: string
-  editor_id?: string
-}
-
-/** A referencer row returned by a recursive refs walk (referencedById). */
-export interface RefRow extends RecordRow {
-  record_type?: string
-  /** Hop distance from the lookup target (1 = direct reference). */
-  depth?: number
-  /** Intermediate nodes between target and this row; absent/empty for depth-1 results. */
-  path?: RefPathNode[]
-}
-
-/** Full envelope returned by a recursive refs walk — mirrors Rust `RefList`. */
-export interface RefListResult {
-  target: string
-  rows: RefRow[]
-  total: number
-  capped: boolean
-}
-
-export interface FormIdStub {
-  formid: string
-  editor_id?: string
-  record_type: string
-}
-
-export interface RecordResult {
-  header: {
-    signature: string
-    form_id: string
-    flags: number
-    form_version: number
-    data_size: number
-    offset: number
-  }
-  editor_id?: string
-  fields: Record<string, unknown>
-}
-
-/** Result envelope for `filterTypeRecords` — mirrors Rust `FilterResult`. */
-export interface FilterResult {
-  rows: RecordRow[]
-  /** Total matches found within the scanned set (may exceed rows.length if `limit` truncated). */
-  matched: number
-  /** How many records of this type were actually decoded and tested. */
-  scanned: number
-  /** Total records of this type that exist in the file. */
-  total: number
-  /** True if rows.length < matched (the match list itself was truncated by `limit`). */
-  capped: boolean
-  /** True if scanned < total (the decode pass itself stopped at the internal scan cap). */
-  scan_capped: boolean
-}
-
+/** Not a generated type — this is a query-input enum, never part of a
+ * decode-output DTO crossing the N-API boundary as JSON, so it stays
+ * hand-written (mirrors Rust's `FilterOp`, used only to build a request). */
 export type FilterOp = 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte'
-
-export interface RawSubrecordView {
-  signature: string
-  size: number
-  hex: string
-}
-
-export interface RawRecordView {
-  header: RecordResult['header']
-  subrecords: RawSubrecordView[]
-}
-
-export interface Markers {
-  unknown_record: number
-  raw_fallback: number
-  unmapped: number
-  unresolved: number
-  records: number
-}
-
-export interface CoverageReport {
-  by_type: Record<string, Markers>
-  totals: Markers
-}
-
-/** Lightweight record identity for added/removed entries (diff output). */
-export interface RecordStubDiff {
-  form_id: string
-  editor_id?: string
-  record_type: string
-  offset: number
-  name?: string
-  description?: string
-  /** Decoded fields, present only when `bodies` was `'stub'` or `'full'`. */
-  fields?: unknown
-}
-
-/** One record present in both snapshots whose decoded fields differ. */
-export interface RecordChangeDiff {
-  stub: RecordStubDiff
-  /** Sparse tree: only changed paths, each leaf `{ from, to }`. */
-  field_changes: unknown
-  /** Set only when the EditorID was renamed (this is the "old" snapshot's EDID). */
-  prev_editor_id?: string
-}
-
-/** Resolved display info for a FormID referenced in a diff (added/removed bodies or field_changes). */
-export interface RefNameEntry {
-  record_type: string
-  editor_id?: string
-  name?: string
-  description?: string
-}
-
-/** Full envelope returned by `diff` — mirrors Rust `DiffResult`. */
-export interface DiffResult {
-  added: RecordStubDiff[]
-  removed: RecordStubDiff[]
-  changed: RecordChangeDiff[]
-  ref_names: Record<string, RefNameEntry>
-  suppressed_counts: Record<string, number>
-}
 
 export interface Fo76Api {
   openFileDialog(): Promise<string | null>
@@ -205,11 +95,11 @@ export interface Fo76Api {
   fileInfo(id: DbId): Promise<FileInfo>
   listGroups(id: DbId): Promise<GroupNode[]>
   listTypeRecords(id: DbId, sig: string, offset: number, limit: number): Promise<RecordRow[]>
-  recordByFormid(id: DbId, formid: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
-  recordByEdid(id: DbId, edid: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
-  recordById(id: DbId, target: string, resolve?: 'none' | 'stub' | 'full'): Promise<RecordResult>
+  recordByFormid(id: DbId, formid: string, resolve?: ResolveDepth): Promise<RecordResult>
+  recordByEdid(id: DbId, edid: string, resolve?: ResolveDepth): Promise<RecordResult>
+  recordById(id: DbId, target: string, resolve?: ResolveDepth): Promise<RecordResult>
   referencedBy(id: DbId, formid: string): Promise<RecordRow[]>
-  referencedById(id: DbId, target: string, depth?: number): Promise<RefListResult>
+  referencedById(id: DbId, target: string, depth?: number): Promise<RefList>
   parseFormId(s: string): Promise<string>
   listTypeChildren(id: DbId, sig: string, offset: number, limit: number): Promise<GroupChild[]>
   listGroupChildren(

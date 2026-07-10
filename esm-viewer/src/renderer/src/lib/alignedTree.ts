@@ -2,6 +2,8 @@
  * side-by-side record view) — builds one tree from N per-file `fields`
  * objects, keyed so identical paths land on the same row across columns. */
 
+import { MARKERS } from '../../../shared/generated/markers.generated'
+
 /** Sentinel for "this column's file has no value at this path" — distinct from
  * a real `null`/`undefined` field value, which columns can and do carry. */
 export const MISSING = Symbol('missing')
@@ -35,10 +37,10 @@ function isNonEmptyObject(v: unknown): v is Record<string, unknown> {
  * (not its descendants) — e.g. `{ "_raw": true, ... }`. */
 export function coverageBadges(obj: Record<string, unknown>): string[] {
   const badges: string[] = []
-  if (obj._unknown_record === true) badges.push('unknown record')
-  if (obj._raw === true) badges.push('raw')
-  if (isNonEmptyObject(obj._unmapped)) badges.push('unmapped')
-  if (obj._unresolved === true) badges.push('unresolved')
+  if (obj[MARKERS.UNKNOWN_RECORD] === true) badges.push('unknown record')
+  if (obj[MARKERS.RAW] === true) badges.push('raw')
+  if (isNonEmptyObject(obj[MARKERS.UNMAPPED])) badges.push('unmapped')
+  if (obj[MARKERS.UNRESOLVED] === true) badges.push('unresolved')
   return badges
 }
 
@@ -66,7 +68,7 @@ export function isUnknownRecordType(fields: unknown): boolean {
   return (
     typeof fields === 'object' &&
     fields !== null &&
-    (fields as Record<string, unknown>)._unknown_record === true
+    (fields as Record<string, unknown>)[MARKERS.UNKNOWN_RECORD] === true
   )
 }
 

@@ -88,12 +88,18 @@ struct FilterCacheEntry {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RecordResult {
     pub header: RecordHeaderInfo,
     pub editor_id: Option<String>,
+    #[cfg_attr(test, ts(type = "Record<string, unknown>"))]
     pub fields: Value,
 }
 
+/// Presentation type for the CLI's own `list_by_type` printing — does not cross
+/// the N-API boundary (no napi binding calls `Database::list_by_type`), so it
+/// is intentionally not derived for TS export; see esm-viewer/CLAUDE.md.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListEntry {
     pub form_id: String,
@@ -103,6 +109,8 @@ pub struct ListEntry {
 
 /// A tree row combining FormID, record type, EditorID, and resolved translated name.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RecordRow {
     pub form_id: String,
     pub record_type: Option<String>,
@@ -346,6 +354,8 @@ fn collect_field_paths(v: &Value, prefix: &str, out: &mut HashSet<String>, cap: 
 /// the first K of L total records of this type" rather than silently
 /// under-covering.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct FilterResult {
     pub rows: Vec<RecordRow>,
     /// Total matches found within the scanned set (may exceed rows.len() if `limit` truncated).

@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 
 /// The interpreted label of a GRUP, decoded per its `group_type`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(test, ts(export))]
 pub enum GroupLabel {
     /// group_type 0: top-level type group; label is a 4-char record signature.
     RecordType { sig: String },
@@ -36,6 +38,8 @@ pub enum GroupLabel {
 
 /// A GRUP node in the tree (presentation form, not the cached internal form).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct GroupNode {
     pub group_type: i32,
     pub label: GroupLabel,
@@ -45,7 +49,13 @@ pub struct GroupNode {
 }
 
 /// A cheap, header-only record listing — no field decode.
+///
+/// Renamed to `TreeRecordStub` on the TypeScript side (`#[ts(rename)]`) to
+/// avoid colliding with `diff::RecordStub`'s generated file — mirrors the
+/// `RecordStub as TreeRecordStub` alias `lib.rs` already uses on the Rust side.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, rename = "TreeRecordStub"))]
 pub struct RecordStub {
     /// Pre-formatted hex (e.g. "0x0000463F") — same rationale as `GroupLabel::FormId`.
     pub form_id: String,
@@ -56,7 +66,9 @@ pub struct RecordStub {
 
 /// A single direct child of a GRUP.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "node", rename_all = "snake_case")]
+#[cfg_attr(test, ts(export))]
 pub enum GroupChild {
     Group(GroupNode),
     Record(RecordStub),
