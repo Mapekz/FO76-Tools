@@ -965,20 +965,15 @@ impl Database {
     pub fn record_at_meta(&self, meta: &crate::reader::RecordMeta) -> anyhow::Result<RecordResult> {
         let parsed = self.esm.parse_record_at(meta.offset)?;
         let editor_id = edid_from_subrecords(&parsed.subrecords);
-        let ctx = DecodeContext {
-            schema: &self.schema,
-            form_version: parsed.header.form_version,
-            is_localized: self.is_localized,
-            localization: self.localization.as_ref(),
-            curves: self.curves.as_ref(),
-            resolve_depth: crate::decode::ResolveDepth::None,
-            resolver: None,
-            outer_struct: None,
-            record_signature: None,
-            record_edid_char: None,
-            scope_min_doc_index: None,
-            scope_max_doc_index: None,
-        };
+        let ctx = DecodeContext::for_record(
+            &self.schema,
+            parsed.header.form_version,
+            self.is_localized,
+            self.localization.as_ref(),
+            self.curves.as_ref(),
+            crate::decode::ResolveDepth::None,
+            None,
+        );
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
             header: parsed.header,
@@ -999,22 +994,17 @@ impl Database {
         } else {
             None
         };
-        let ctx = DecodeContext {
-            schema: &self.schema,
-            form_version: parsed.header.form_version,
-            is_localized: self.is_localized,
-            localization: self.localization.as_ref(),
-            curves: self.curves.as_ref(),
-            resolve_depth: depth,
-            resolver: resolver
+        let ctx = DecodeContext::for_record(
+            &self.schema,
+            parsed.header.form_version,
+            self.is_localized,
+            self.localization.as_ref(),
+            self.curves.as_ref(),
+            depth,
+            resolver
                 .as_ref()
                 .map(|r| r as &dyn crate::decode::FormIdRefResolver),
-            outer_struct: None,
-            record_signature: None,
-            record_edid_char: None,
-            scope_min_doc_index: None,
-            scope_max_doc_index: None,
-        };
+        );
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Ok(RecordResult {
             header: parsed.header,
@@ -1070,20 +1060,15 @@ impl Database {
         for (form_id, offset) in records {
             let parsed = self.esm.parse_record_at(offset)?;
             let editor_id = edid_from_subrecords(&parsed.subrecords);
-            let ctx = DecodeContext {
-                schema: &self.schema,
-                form_version: parsed.header.form_version,
-                is_localized: self.is_localized,
-                localization: self.localization.as_ref(),
-                curves: self.curves.as_ref(),
-                resolve_depth: crate::decode::ResolveDepth::None,
-                resolver: None,
-                outer_struct: None,
-                record_signature: None,
-                record_edid_char: None,
-                scope_min_doc_index: None,
-                scope_max_doc_index: None,
-            };
+            let ctx = DecodeContext::for_record(
+                &self.schema,
+                parsed.header.form_version,
+                self.is_localized,
+                self.localization.as_ref(),
+                self.curves.as_ref(),
+                crate::decode::ResolveDepth::None,
+                None,
+            );
             let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
             entries.push(FilterCacheEntry {
                 form_id,
@@ -1225,20 +1210,15 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             db: self.db,
             remaining: self.remaining - 1,
         };
-        let ctx = DecodeContext {
-            schema: &self.db.schema,
-            form_version: parsed.header.form_version,
-            is_localized: self.db.is_localized,
-            localization: self.db.localization.as_ref(),
-            curves: self.db.curves.as_ref(),
-            resolve_depth: crate::decode::ResolveDepth::Full,
-            resolver: Some(&nested_resolver),
-            outer_struct: None,
-            record_signature: None,
-            record_edid_char: None,
-            scope_min_doc_index: None,
-            scope_max_doc_index: None,
-        };
+        let ctx = DecodeContext::for_record(
+            &self.db.schema,
+            parsed.header.form_version,
+            self.db.is_localized,
+            self.db.localization.as_ref(),
+            self.db.curves.as_ref(),
+            crate::decode::ResolveDepth::Full,
+            Some(&nested_resolver),
+        );
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Some(serde_json::json!({
             "formid": id.display(),

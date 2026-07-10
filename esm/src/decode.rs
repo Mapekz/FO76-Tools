@@ -36,6 +36,7 @@ pub struct FormIdStub {
     pub record_type: String,
 }
 
+#[derive(Clone)]
 pub struct DecodeContext<'a> {
     pub schema: &'a Schema,
     pub form_version: u16,
@@ -73,38 +74,49 @@ pub struct DecodeContext<'a> {
 }
 
 impl<'a> DecodeContext<'a> {
+    /// Build a fresh top-level context for decoding a record: the five
+    /// recursion-threading fields (`outer_struct`, `record_signature`,
+    /// `record_edid_char`, `scope_min_doc_index`, `scope_max_doc_index`) start
+    /// unset. `decode_record` populates `record_signature`/`record_edid_char`
+    /// itself once it has scanned the record's subrecords.
+    pub fn for_record(
+        schema: &'a Schema,
+        form_version: u16,
+        is_localized: bool,
+        localization: Option<&'a Localization>,
+        curves: Option<&'a crate::curves::CurveIndex>,
+        resolve_depth: ResolveDepth,
+        resolver: Option<&'a dyn FormIdRefResolver>,
+    ) -> DecodeContext<'a> {
+        DecodeContext {
+            schema,
+            form_version,
+            is_localized,
+            localization,
+            curves,
+            resolve_depth,
+            resolver,
+            outer_struct: None,
+            record_signature: None,
+            record_edid_char: None,
+            scope_min_doc_index: None,
+            scope_max_doc_index: None,
+        }
+    }
+
     /// Return a new context identical to `self` but with `outer_struct` set.
     fn with_outer_struct(&self, outer: Map<String, Value>) -> DecodeContext<'a> {
         DecodeContext {
-            schema: self.schema,
-            form_version: self.form_version,
-            is_localized: self.is_localized,
-            localization: self.localization,
-            curves: self.curves,
-            resolve_depth: self.resolve_depth,
-            resolver: self.resolver,
             outer_struct: Some(outer),
-            record_signature: self.record_signature,
-            record_edid_char: self.record_edid_char,
-            scope_min_doc_index: self.scope_min_doc_index,
-            scope_max_doc_index: self.scope_max_doc_index,
+            ..self.clone()
         }
     }
 
     fn with_scope(&self, min: Option<usize>, max: Option<usize>) -> DecodeContext<'a> {
         DecodeContext {
-            schema: self.schema,
-            form_version: self.form_version,
-            is_localized: self.is_localized,
-            localization: self.localization,
-            curves: self.curves,
-            resolve_depth: self.resolve_depth,
-            resolver: self.resolver,
-            outer_struct: self.outer_struct.clone(),
-            record_signature: self.record_signature,
-            record_edid_char: self.record_edid_char,
             scope_min_doc_index: min,
             scope_max_doc_index: max,
+            ..self.clone()
         }
     }
 }

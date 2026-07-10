@@ -226,20 +226,15 @@ impl Index {
             if !form_index.contains_key(&referencer) {
                 return Ok(());
             }
-            let ctx = DecodeContext {
+            let ctx = DecodeContext::for_record(
                 schema,
-                form_version: rec.header.form_version,
+                rec.header.form_version,
                 is_localized,
                 localization,
                 curves,
-                resolve_depth: ResolveDepth::None,
-                resolver: None,
-                outer_struct: None,
-                record_signature: None,
-                record_edid_char: None,
-                scope_min_doc_index: None,
-                scope_max_doc_index: None,
-            };
+                ResolveDepth::None,
+                None,
+            );
             let fields = decode_record(&ctx, &rec.header.signature, &rec.subrecords);
             let mut refs = Vec::new();
             harvest_formids(&fields, &mut refs);
