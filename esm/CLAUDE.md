@@ -39,9 +39,12 @@ Clean layering — edit at the right level:
 | `src/ba2.rs` | Minimal BTDX/GNRL BA2 reader (memory-mapped); used by strings + curves |
 | `src/strings.rs` | `.strings`/`.dlstrings`/`.ilstrings` parser; `Localization::from_ba2` / `from_loose_files` |
 | `src/curves.rs` | `CurveIndex` (FormID → `Curve`); loads JSON from Startup BA2; `Curve::eval` (linear interp) |
+| `src/discover.rs` | Generic ESM+strings+curves discovery from a file or folder input; `resolve_sources` locates the `.esm` plus sibling `strings/`/curvetables sources (loose or BA2) |
 | `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; `bincode` disk cache (`*.esm.idx`, `CACHE_VERSION = 9`) |
 | `src/mindex.rs` | Zero-copy mmap'd FormID index (`*.esm.midx`); 40-byte header + 24-byte sorted entries; `MmapFormIndex` (binary search, O(log n)); written opportunistically in `build_fresh` |
 | `src/registry.rs` | `Registry`: lazily opens and caches `Database` per canonical path; stale-file eviction via `FileSig` (one `fs::metadata` check per cache hit); `auto_warm` flag for daemon mode |
+| `src/ipc.rs` | Wire types (`Op`, `Request`/`Response`, `RecordSel`) and the canonical `dispatch_op`/`dispatch_inner` — the one query-dispatch surface shared by the daemon, CLI, HTTP/MCP server, and N-API bindings; `diff_locked` (post-lock diff + type-filter, shared by the registry-backed and N-API diff paths) |
+| `src/backend.rs` | `QueryBackend` trait; `LocalBackend` (in-process, no daemon) / `RemoteBackend` (HTTP client to the warm daemon); daemon lifecycle — spawn/stop, staleness detection via `exe_sig`/`daemon_fresh` |
 | `src/tree.rs` | GRUP tree arena (`TreeIndex`); `GroupNode`, `RecordStub`, `GroupLabel` enum |
 | `src/schema.rs` | Serde model for `schema/fo76.json`; `MemberDef` enum (18 variants, `#[serde(tag="kind")]`); `load_embedded()` |
 | `src/decode.rs` | Schema-driven decoder → `serde_json::Value`; `DecodeContext<'a>`, `FormIdRefResolver` trait; never panics |

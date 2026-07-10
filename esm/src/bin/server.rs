@@ -580,15 +580,7 @@ fn sel_from_args(args: &serde_json::Value) -> anyhow::Result<esm::ipc::RecordSel
     let formid = args.get("formid").and_then(|v| v.as_str());
     let edid = args.get("edid").and_then(|v| v.as_str());
     let id = args.get("id").and_then(|v| v.as_str());
-    if let Some(fid_str) = formid {
-        Ok(RecordSel::FormId(esm::parse_form_id_input(fid_str)?))
-    } else if let Some(e) = edid {
-        Ok(RecordSel::Edid(e.to_string()))
-    } else if let Some(id) = id {
-        Ok(RecordSel::from_input(id)?)
-    } else {
-        anyhow::bail!("specify 'id', 'formid', or 'edid' argument");
-    }
+    RecordSel::from_parts(formid, edid, id)
 }
 
 fn call_tool_proxy(

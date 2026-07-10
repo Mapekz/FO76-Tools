@@ -107,10 +107,15 @@ impl EsmDatabase {
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let result = db
-            .filter_type_records(&sig, path.as_deref(), op, value.as_deref(), limit as usize)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        let wire_op = esm::ipc::Op::FilterTypeRecords {
+            sig,
+            path,
+            filter_op: op,
+            value,
+            limit: limit as usize,
+        };
+        esm::ipc::dispatch_op(&mut db, &wire_op)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List every dot-notation field path observed across a (possibly capped)
@@ -121,10 +126,8 @@ impl EsmDatabase {
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let paths = db
-            .list_type_field_paths(&sig)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&paths).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        esm::ipc::dispatch_op(&mut db, &esm::ipc::Op::ListTypeFieldPaths { sig })
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List direct children of the top-level GRUP with the given record type signature.
@@ -157,14 +160,17 @@ impl EsmDatabase {
         offset: u32,
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
-        let db = self
+        let mut db = self
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let children = db
-            .list_group_children(group_offset as u64, offset as usize, limit as usize)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&children).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        let wire_op = esm::ipc::Op::ListGroupChildren {
+            group_offset: group_offset as u64,
+            offset: offset as usize,
+            limit: limit as usize,
+        };
+        esm::ipc::dispatch_op(&mut db, &wire_op)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Decode a record by FormID hex string (e.g. "0x0000463F").
@@ -280,7 +286,8 @@ impl EsmDatabase {
             let mut db = inner
                 .lock()
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let fid = resolve_sel(&mut db, sel)?;
+            let fid = esm::ipc::resolve_sel(&mut db, &sel)
+                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let walk_depth = depth
                 .map(|d| (d as usize).clamp(1, esm::ipc::DEFAULT_MAX_DEPTH))
                 .unwrap_or(1);
@@ -302,7 +309,8 @@ impl EsmDatabase {
             let mut db = inner
                 .lock()
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let fid = resolve_sel(&mut db, sel)?;
+            let fid = esm::ipc::resolve_sel(&mut db, &sel)
+                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let rec = db
                 .record_raw(fid)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
@@ -360,12 +368,15 @@ impl EsmDatabase {
                 suppress_noise,
                 exclude_types,
             };
+            // Lock ordering doesn't have a `Registry`'s canonical keys to compare here
+            // (unlike `dispatch_inner`'s `Diff` arm) — order by raw `Arc` pointer address
+            // instead, which is just as deadlock-safe as long as it's used consistently.
             let same_db = Arc::ptr_eq(&arc_a, &arc_b);
-            let mut result = if same_db {
+            if same_db {
                 let db = arc_a
                     .lock()
                     .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                esm::diff::diff_databases_with(&db, &db, &options)
+                esm::ipc::diff_locked(&db, &db, &options, &record_type)
             } else if (Arc::as_ptr(&arc_a) as usize) < (Arc::as_ptr(&arc_b) as usize) {
                 let db_a = arc_a
                     .lock()
@@ -373,7 +384,7 @@ impl EsmDatabase {
                 let db_b = arc_b
                     .lock()
                     .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                esm::diff::diff_databases_with(&db_a, &db_b, &options)
+                esm::ipc::diff_locked(&db_a, &db_b, &options, &record_type)
             } else {
                 let db_b = arc_b
                     .lock()
@@ -381,11 +392,9 @@ impl EsmDatabase {
                 let db_a = arc_a
                     .lock()
                     .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                esm::diff::diff_databases_with(&db_a, &db_b, &options)
+                esm::ipc::diff_locked(&db_a, &db_b, &options, &record_type)
             }
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            esm::diff::apply_type_filter(&mut result, &record_type);
-            serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -446,19 +455,5 @@ fn parse_filter_op(s: &str) -> napi::Result<FilterOp> {
         other => Err(napi::Error::from_reason(format!(
             "unknown filter op '{other}'; expected exists|eq|contains|gt|lt|gte|lte"
         ))),
-    }
-}
-
-fn resolve_sel(db: &mut Database, sel: RecordSel) -> napi::Result<FormId> {
-    match sel {
-        RecordSel::FormId(fid) => Ok(fid),
-        RecordSel::Edid(edid) => {
-            db.index
-                .ensure_edid_index(&db.esm)
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            db.index
-                .get_by_edid(&edid)
-                .ok_or_else(|| napi::Error::from_reason(format!("EditorID '{}' not found", edid)))
-        }
     }
 }

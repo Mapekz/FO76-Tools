@@ -2,7 +2,7 @@
 
 use crate::diff::{diff_databases_with, DiffOptions};
 use crate::registry::Registry;
-use crate::{Database, FormId, ResolveDepth, SearchField};
+use crate::{Database, FilterOp, FormId, ResolveDepth, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -61,6 +61,26 @@ impl RecordSel {
             Ok(RecordSel::Edid(s.to_string()))
         }
     }
+
+    /// Build a selector from explicit `--formid`/`--edid` inputs, falling back to
+    /// auto-detecting a single ambiguous token (a positional CLI arg, or an MCP
+    /// `"id"` argument) via [`RecordSel::from_input`]. The one parser shared by
+    /// the CLI's `record_sel` and the MCP server's `sel_from_args` call sites.
+    pub fn from_parts(
+        formid: Option<&str>,
+        edid: Option<&str>,
+        target: Option<&str>,
+    ) -> anyhow::Result<RecordSel> {
+        if let Some(fid) = formid {
+            Ok(RecordSel::FormId(crate::parse_form_id_input(fid)?))
+        } else if let Some(e) = edid {
+            Ok(RecordSel::Edid(e.to_string()))
+        } else if let Some(t) = target {
+            RecordSel::from_input(t)
+        } else {
+            bail!("specify a FormID/EditorID, or --formid/--edid")
+        }
+    }
 }
 
 /// All operations routable through `dispatch`.
@@ -84,6 +104,22 @@ pub enum Op {
         offset: usize,
         limit: usize,
     },
+    /// Filter records of type `sig` by a predicate against their decoded field
+    /// body. See [`crate::Database::filter_type_records`] for path/operator semantics.
+    FilterTypeRecords {
+        sig: String,
+        path: Option<String>,
+        // Named `filter_op` (not `op`) to avoid colliding with this enum's own
+        // `#[serde(tag = "op")]` wire discriminant.
+        filter_op: FilterOp,
+        value: Option<String>,
+        limit: usize,
+    },
+    /// Union of all dot-notation field paths observed across a decoded sample
+    /// of a type's records — see [`crate::Database::list_type_field_paths`].
+    ListTypeFieldPaths {
+        sig: String,
+    },
     Search {
         pattern: String,
         types: Vec<String>,
@@ -100,6 +136,13 @@ pub enum Op {
     ListGroups,
     ListTypeChildren {
         sig: String,
+        offset: usize,
+        limit: usize,
+    },
+    /// List direct children of an arbitrary GRUP by its own header offset — see
+    /// [`crate::Database::list_group_children`].
+    ListGroupChildren {
+        group_offset: u64,
         offset: usize,
         limit: usize,
     },
@@ -236,23 +279,19 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
             let same_db = key_a == key_b || std::sync::Arc::ptr_eq(&arc_a, &arc_b);
             if same_db {
                 let db = arc_a.lock().unwrap();
-                let mut result = diff_databases_with(&db, &db, options)?;
                 // same_db means no added records — enrich_added_sources is a no-op.
-                crate::diff::apply_type_filter(&mut result, record_type);
-                return Ok(serde_json::to_value(&result)?);
+                return diff_locked(&db, &db, options, record_type);
             }
             // Lock in key order (deadlock-safe).
-            let mut result = if key_a < key_b {
+            if key_a < key_b {
                 let db_a = arc_a.lock().unwrap();
                 let db_b = arc_b.lock().unwrap();
-                diff_databases_with(&db_a, &db_b, options)?
+                diff_locked(&db_a, &db_b, options, record_type)
             } else {
                 let db_b = arc_b.lock().unwrap();
                 let db_a = arc_a.lock().unwrap();
-                diff_databases_with(&db_a, &db_b, options)?
-            };
-            crate::diff::apply_type_filter(&mut result, record_type);
-            Ok(serde_json::to_value(&result)?)
+                diff_locked(&db_a, &db_b, options, record_type)
+            }
         }
         _ => {
             let arc = reg.get_or_open(&req.esm)?;
@@ -292,6 +331,21 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             let rows = db.list_type_records(sig, *offset, *limit)?;
             Ok(serde_json::to_value(&rows)?)
         }
+        Op::FilterTypeRecords {
+            sig,
+            path,
+            filter_op,
+            value,
+            limit,
+        } => {
+            let result =
+                db.filter_type_records(sig, path.as_deref(), *filter_op, value.as_deref(), *limit)?;
+            Ok(serde_json::to_value(&result)?)
+        }
+        Op::ListTypeFieldPaths { sig } => {
+            let paths = db.list_type_field_paths(sig)?;
+            Ok(serde_json::to_value(&paths)?)
+        }
         Op::Search {
             pattern,
             types,
@@ -327,6 +381,14 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             let children = db.list_type_children(sig, *offset, *limit)?;
             Ok(serde_json::to_value(&children)?)
         }
+        Op::ListGroupChildren {
+            group_offset,
+            offset,
+            limit,
+        } => {
+            let children = db.list_group_children(*group_offset, *offset, *limit)?;
+            Ok(serde_json::to_value(&children)?)
+        }
         Op::Coverage {
             record_type,
             sample,
@@ -340,7 +402,10 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
     }
 }
 
-fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId> {
+/// Resolve a [`RecordSel`] to a concrete [`FormId`], looking up the EditorID
+/// index when needed. The one canonical selector-resolution used by every
+/// serving surface (daemon, CLI, N-API) — do not reimplement this locally.
+pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId> {
     match sel {
         RecordSel::FormId(fid) => Ok(*fid),
         RecordSel::Edid(edid) => {
@@ -357,22 +422,31 @@ fn record_resolved(
     sel: &RecordSel,
     depth: ResolveDepth,
 ) -> anyhow::Result<crate::RecordResult> {
+    // `record_by_formid_resolved`/`record_by_edid_resolved` already collapse to
+    // an unresolved decode when `depth == ResolveDepth::None`, so there's no
+    // separate "unresolved" path to special-case here.
     match sel {
-        RecordSel::FormId(fid) => {
-            if depth != ResolveDepth::None {
-                db.record_by_formid_resolved(*fid, depth)
-            } else {
-                db.record_by_formid(*fid)
-            }
-        }
-        RecordSel::Edid(edid) => {
-            if depth != ResolveDepth::None {
-                db.record_by_edid_resolved(edid, depth)
-            } else {
-                db.record_by_edid(edid)
-            }
-        }
+        RecordSel::FormId(fid) => db.record_by_formid_resolved(*fid, depth),
+        RecordSel::Edid(edid) => db.record_by_edid_resolved(edid, depth),
     }
+}
+
+/// Post-lock part of a database diff: run [`diff_databases_with`] and apply
+/// the optional record-type filter, once both `Database` locks are already
+/// held. Shared by `dispatch_inner`'s `Diff` arm (which locks two handles via
+/// a [`Registry`]'s key ordering) and the N-API binding's `diff` method
+/// (which locks two separate `Arc<Mutex<Database>>` handles ordered by raw
+/// pointer address) — each keeps its own lock-acquisition code, since only
+/// the registry path has a `Registry` to source canonical keys from.
+pub fn diff_locked(
+    db_a: &Database,
+    db_b: &Database,
+    options: &DiffOptions,
+    record_type: &Option<String>,
+) -> anyhow::Result<Value> {
+    let mut result = diff_databases_with(db_a, db_b, options)?;
+    crate::diff::apply_type_filter(&mut result, record_type);
+    Ok(serde_json::to_value(&result)?)
 }
 
 /// Walk reverse references from `target` up to `depth` hops using BFS.
@@ -536,7 +610,7 @@ pub fn coverage_report(
 
         let mut type_markers = Markers::default();
         for meta in &metas {
-            match db.record_at_meta(meta) {
+            match db.record_at_meta_with_depth(meta, ResolveDepth::None) {
                 Ok(result) => {
                     type_markers.records += 1;
                     let mut rec_markers = Markers::default();

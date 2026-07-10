@@ -6,8 +6,8 @@ use esm::backend::{
 };
 use esm::ipc::{Op, RecordSel};
 use esm::{
-    parse_form_id_input, BodyDetail, CoverageReport, Database, DiffOptions, DiffResult, Markers,
-    RawRecordView, RecordRow, RefList, ResolveDepth, SearchField,
+    BodyDetail, CoverageReport, Database, DiffOptions, DiffResult, Markers, RawRecordView,
+    RecordRow, RefList, ResolveDepth, SearchField,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -856,15 +856,7 @@ fn record_sel(
     edid: Option<String>,
     target: Option<String>,
 ) -> anyhow::Result<RecordSel> {
-    if let Some(fid) = formid {
-        Ok(RecordSel::FormId(parse_form_id_input(&fid)?))
-    } else if let Some(e) = edid {
-        Ok(RecordSel::Edid(e))
-    } else if let Some(t) = target {
-        RecordSel::from_input(&t)
-    } else {
-        anyhow::bail!("specify a FormID/EditorID (positional), or --formid/--edid");
-    }
+    RecordSel::from_parts(formid.as_deref(), edid.as_deref(), target.as_deref())
 }
 
 #[allow(clippy::too_many_arguments)]

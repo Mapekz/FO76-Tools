@@ -551,7 +551,7 @@ impl Database {
 
     pub fn record_by_formid(&mut self, form_id: FormId) -> anyhow::Result<RecordResult> {
         let meta = self.get_formid_meta(form_id)?;
-        self.record_at_meta(&meta)
+        self.record_at_meta_with_depth(&meta, crate::decode::ResolveDepth::None)
     }
 
     pub fn record_by_edid(&mut self, edid: &str) -> anyhow::Result<RecordResult> {
@@ -962,27 +962,11 @@ impl Database {
         })
     }
 
-    pub fn record_at_meta(&self, meta: &crate::reader::RecordMeta) -> anyhow::Result<RecordResult> {
-        let parsed = self.esm.parse_record_at(meta.offset)?;
-        let editor_id = edid_from_subrecords(&parsed.subrecords);
-        let ctx = DecodeContext::for_record(
-            &self.schema,
-            parsed.header.form_version,
-            self.is_localized,
-            self.localization.as_ref(),
-            self.curves.as_ref(),
-            crate::decode::ResolveDepth::None,
-            None,
-        );
-        let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
-        Ok(RecordResult {
-            header: parsed.header,
-            editor_id,
-            fields,
-        })
-    }
-
-    fn record_at_meta_with_depth(
+    /// Decode a record at `meta`'s offset with the given resolution depth.
+    /// `ResolveDepth::None` decodes with no FormID-reference resolver — the one
+    /// codepath used by every unresolved-decode call site (coverage scans,
+    /// unchanged-side diff decodes, plain `record_by_formid`/`record_by_edid`).
+    pub(crate) fn record_at_meta_with_depth(
         &self,
         meta: &crate::reader::RecordMeta,
         depth: crate::decode::ResolveDepth,

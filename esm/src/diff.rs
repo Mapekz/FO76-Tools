@@ -250,10 +250,10 @@ pub fn diff_databases_with(
 
         // Decode both and field-diff
         let ra = a
-            .record_at_meta(&meta_a)
+            .record_at_meta_with_depth(&meta_a, ResolveDepth::None)
             .with_context(|| format!("decode A for {}", id))?;
         let rb = b
-            .record_at_meta(&meta_b)
+            .record_at_meta_with_depth(&meta_b, ResolveDepth::None)
             .with_context(|| format!("decode B for {}", id))?;
 
         let mut field_changes = json_diff(&ra.fields, &rb.fields);
