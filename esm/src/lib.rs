@@ -396,7 +396,7 @@ impl Database {
 
         let localization = match resolved.strings {
             Some(crate::discover::StringsSrc::Ba2(ref ba2_path)) => {
-                match Localization::from_ba2(ba2_path, &resolved.locale) {
+                match Localization::from_ba2(ba2_path, &resolved.locale, &resolved.loose_prefix) {
                     Ok(loc) => Some(loc),
                     Err(e) => {
                         log::warn!("failed to load localization from BA2: {}", e);

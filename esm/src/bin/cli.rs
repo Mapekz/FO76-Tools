@@ -822,7 +822,8 @@ fn apply_strings_override(
     lang: &str,
 ) {
     if let Some(ba2_path) = localization_ba2 {
-        match esm::strings::Localization::from_ba2(&ba2_path, lang) {
+        let prefix = esm_string_prefix(esm_path);
+        match esm::strings::Localization::from_ba2(&ba2_path, lang, &prefix) {
             Ok(loc) => db.set_localization(loc),
             Err(e) => eprintln!(
                 "Warning: failed to load localization from {}: {}",
@@ -1286,7 +1287,7 @@ fn resolve_localization_or_bail(
 
     // 1. Explicit BA2.
     if let Some(ba2) = strings_ba2 {
-        return Localization::from_ba2(&ba2, lang)
+        return Localization::from_ba2(&ba2, lang, &stem)
             .with_context(|| format!("loading localization from {}", ba2.display()));
     }
 
@@ -1312,7 +1313,7 @@ fn resolve_localization_or_bail(
 
     // 3. Any *localization*.ba2 in the esm directory.
     if let Some(ba2) = esm::discover::find_ba2_containing(esm_dir, "localization") {
-        return Localization::from_ba2(&ba2, lang)
+        return Localization::from_ba2(&ba2, lang, &stem)
             .with_context(|| format!("loading localization BA2 from {}", ba2.display()));
     }
 

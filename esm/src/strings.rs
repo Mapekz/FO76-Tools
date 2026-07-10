@@ -157,40 +157,34 @@ pub struct Localization {
 impl Localization {
     /// Load all three string tables from a GNRL BA2 archive.
     ///
-    /// The prefix is discovered automatically by scanning the archive for an
-    /// entry matching `strings/<prefix>_<locale>.strings`.  `locale` is the
-    /// language code (e.g. `"en"`).
-    pub fn from_ba2(ba2_path: impl AsRef<std::path::Path>, locale: &str) -> Result<Self> {
+    /// `prefix` is the ESM's file stem (e.g. `"SeventySix"`) and `locale` is
+    /// the language code (e.g. `"en"`); entries are looked up at
+    /// `strings/<prefix>_<locale>.{strings,dlstrings,ilstrings}` (matched
+    /// case-insensitively — see [`Ba2Archive::read`](crate::ba2::Ba2Archive::read)).
+    ///
+    /// The prefix is **not** auto-discovered by scanning the archive: a real
+    /// Localization BA2 can bundle more than one product's string tables
+    /// alongside the game's own (e.g. a shared `nw_<locale>.strings` family
+    /// next to `<esm-stem>_<locale>.strings`), so picking "the first
+    /// `strings/*_<locale>.strings` entry found" is not reliable — it can
+    /// silently select the wrong table's IDs. Always resolve against the
+    /// known ESM stem instead.
+    pub fn from_ba2(
+        ba2_path: impl AsRef<std::path::Path>,
+        locale: &str,
+        prefix: &str,
+    ) -> Result<Self> {
         let ba2_path = ba2_path.as_ref();
         let archive = crate::ba2::Ba2Archive::open(ba2_path)
             .with_context(|| format!("opening BA2 {}", ba2_path.display()))?;
 
-        // Auto-discover the prefix by finding strings/<prefix>_<locale>.strings.
-        // All entry names in the archive are already lower-cased by the BA2 reader.
-        let suffix = format!("_{}.strings", locale.to_lowercase());
-        let prefix = archive
-            .list()
-            .iter()
-            .find_map(|e| {
-                let name = &e.name;
-                if name.starts_with("strings/") && name.ends_with(&suffix) {
-                    let inner = &name["strings/".len()..name.len() - suffix.len()];
-                    if !inner.is_empty() {
-                        return Some(inner.to_string());
-                    }
-                }
-                None
-            })
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "no strings/*_{locale}.strings entry found in {path}",
-                    locale = locale,
-                    path = ba2_path.display()
-                )
-            })?;
-
         let read = |ext: &str| -> Result<StringTable> {
-            let name = format!("strings/{}_{}.{}", prefix, locale.to_lowercase(), ext);
+            let name = format!(
+                "strings/{}_{}.{}",
+                prefix.to_lowercase(),
+                locale.to_lowercase(),
+                ext
+            );
             let bytes = archive
                 .read(&name)
                 .with_context(|| format!("reading {} from BA2", name))?;
