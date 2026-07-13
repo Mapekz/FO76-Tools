@@ -16,11 +16,6 @@
       source-parser already covers 168 record types with raw_fallback=0, so this is
       a fidelity hedge, not a known gap.
 
-## FormID / load order
-- [ ] Cross-file FormID resolution & load-order fixup across masters (multi-plugin).
-      `Database` currently wraps a single `EsmFile`; the TES4 masters list is exposed
-      via `file_info()`, but there is no multi-plugin load or cross-file FormID fixup.
-
 ## Productization (post-POC)
 - [ ] Chatbot front page over the HTTP/MCP server. The static UI is a record browser;
       the MCP server already exposes the six read-only tools a chatbot would call.

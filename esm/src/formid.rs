@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 
-pub const HARDCODED_MAX: u32 = 0x800;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct FormId(pub u32);
 
@@ -14,18 +12,6 @@ impl FormId {
 
     pub fn raw(self) -> u32 {
         self.0
-    }
-
-    pub fn master_index(self) -> u8 {
-        (self.0 >> 24) as u8
-    }
-
-    pub fn object_id(self) -> u32 {
-        self.0 & 0x00FF_FFFF
-    }
-
-    pub fn is_hardcoded(self) -> bool {
-        self.0 < HARDCODED_MAX
     }
 
     pub fn display(self) -> String {
@@ -63,7 +49,7 @@ pub fn parse_formid(s: &str) -> anyhow::Result<FormId> {
 }
 
 /// Serde helper for struct fields that must stay a genuine `FormId` for
-/// internal Rust use (e.g. HashMap keys, `.raw()`/`.master_index()` calls)
+/// internal Rust use (e.g. HashMap keys, `.raw()` calls)
 /// but need to cross a JSON API boundary as a pre-formatted hex string
 /// (`"0x0000463F"`) rather than `FormId`'s default bare-number derive.
 ///
