@@ -845,6 +845,105 @@ fn alch_tracking_dart_decodes_correctly() {
     assert_eq!(kws.len(), 2, "expected 2 keywords");
 }
 
+/// Synthetic ALCH with two effects — regression test for the cross-effect
+/// trailer-stealing bug fixed by scoping `MemberDef::RArray` elements to
+/// `[this element's anchor doc_index, next element's anchor doc_index)`.
+///
+/// `by_sig` is one global FIFO queue per signature across the whole record.
+/// Before the fix, an effect's *optional* trailing sig-bearing members
+/// (`CVT0`/`MAGA`/`DURG`/`MAGG`/`EIES`/`CODG`/`CODV`) were popped via a bare,
+/// unbounded `take_first`, so an earlier effect with no `DURG`/`MAGG` of its
+/// own would steal a *later* effect's `DURG`/`MAGG` — exactly the pattern
+/// proven against the live ESM for ALCH `Psycho` (0x0003377D) and `Buffout`
+/// (0x00033778), where a ghoul-only effect's `GLOB` landed on an earlier,
+/// unrelated damage effect.
+///
+/// Effect 0 here carries only the mandatory `EFID`/`EFIT` pair (no
+/// `DURG`/`MAGG`); Effect 1 carries `EFID`/`EFIT` plus its own `DURG`/`MAGG`.
+/// Pre-fix, Effect 0 would wrongly inherit Effect 1's `DURG`/`MAGG` FormIDs
+/// (stolen out from under it) and Effect 1 would decode with no
+/// Duration/Magnitude at all (already stolen). Post-fix, Effect 0 must have
+/// neither key, and Effect 1 must resolve to exactly the FormIDs encoded in
+/// its own `DURG`/`MAGG` bytes.
+#[test]
+fn alch_two_effects_do_not_cross_contaminate_optional_trailers() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // EFIT payload at form_version 209 (>=183, so neither below_version-gated
+    // `_unknown` field applies): Effect ID(u32) + Magnitude(f32) + Area(u32) +
+    // Duration(u32) = 16 zeroed bytes. Values are irrelevant here — only
+    // EFID/DURG/MAGG FormIDs are asserted.
+    let subs = subrecords_from(&[
+        ("EDID", "54776f4566666563745465737400"),
+        // Effect 0: EFID + EFIT only — no DURG/MAGG of its own.
+        ("EFID", "3c2b1a00"), // Base Effect = 0x001A2B3C
+        ("EFIT", "00000000000000000000000000000000"),
+        // Effect 1: EFID + EFIT + DURG + MAGG.
+        ("EFID", "7c6b5a00"), // Base Effect = 0x005A6B7C
+        ("EFIT", "00000000000000000000000000000000"),
+        ("DURG", "ccbbaa00"), // Duration GLOB = 0x00AABBCC
+        ("MAGG", "ffeedd00"), // Magnitude GLOB = 0x00DDEEFF
+    ]);
+
+    let result = decode_record(&ctx, "ALCH", &subs);
+
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Ingestible"),
+    );
+    assert_fully_decoded(&result);
+
+    let effects = result
+        .get("Effects")
+        .and_then(|v| v.as_array())
+        .expect("Effects array must decode");
+    assert_eq!(effects.len(), 2, "expected exactly 2 effects");
+
+    // Effect 0 must have neither Duration nor Magnitude — it has no DURG/MAGG
+    // of its own, and must not steal Effect 1's.
+    assert_eq!(
+        effects[0]
+            .pointer("/Effect/Base Effect")
+            .and_then(|v| v.as_str()),
+        Some("0x001A2B3C"),
+        "Effect 0 Base Effect"
+    );
+    assert!(
+        effects[0].pointer("/Effect/Duration").is_none(),
+        "Effect 0 must not have a Duration (it has no DURG of its own): {:?}",
+        effects[0].pointer("/Effect/Duration")
+    );
+    assert!(
+        effects[0].pointer("/Effect/Magnitude").is_none(),
+        "Effect 0 must not have a Magnitude (it has no MAGG of its own): {:?}",
+        effects[0].pointer("/Effect/Magnitude")
+    );
+
+    // Effect 1 must resolve Duration/Magnitude to its own DURG/MAGG FormIDs.
+    assert_eq!(
+        effects[1]
+            .pointer("/Effect/Base Effect")
+            .and_then(|v| v.as_str()),
+        Some("0x005A6B7C"),
+        "Effect 1 Base Effect"
+    );
+    assert_eq!(
+        effects[1]
+            .pointer("/Effect/Duration")
+            .and_then(|v| v.as_str()),
+        Some("0x00AABBCC"),
+        "Effect 1 Duration must resolve to its own DURG FormID"
+    );
+    assert_eq!(
+        effects[1]
+            .pointer("/Effect/Magnitude")
+            .and_then(|v| v.as_str()),
+        Some("0x00DDEEFF"),
+        "Effect 1 Magnitude must resolve to its own MAGG FormID"
+    );
+}
+
 /// PROJ 0x000021E1 — `ProjectileAudioGrenade` — decodes to Projectile fully.
 ///
 /// 13-subrecord record with a DEST/DSTD/DSTF destructible block and a large

@@ -138,10 +138,26 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
+    /// Narrow the current scope to `min`/`max`, intersecting with (rather
+    /// than replacing) any scope already in effect. This matters because a
+    /// scope set up by an enclosing `MemberDef::RArray` element (see its
+    /// per-element anchor-bounded scope) must survive a nested rstruct's own
+    /// scope computation — e.g. `rstruct_present_signature_scope`'s QUST
+    /// alias ALED bounding — instead of being silently widened back to
+    /// unbounded when that inner call has no opinion about one side of the
+    /// range (`None`).
     fn with_scope(&self, min: Option<usize>, max: Option<usize>) -> DecodeContext<'a> {
+        let scope_min_doc_index = match (self.scope_min_doc_index, min) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        };
+        let scope_max_doc_index = match (self.scope_max_doc_index, max) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         DecodeContext {
-            scope_min_doc_index: min,
-            scope_max_doc_index: max,
+            scope_min_doc_index,
+            scope_max_doc_index,
             ..self.clone()
         }
     }
@@ -325,7 +341,7 @@ fn decode_member(
                 // the pool for the correctly-positioned schema member.
                 if !stop_before.is_empty() && stop_before_check(by_sig, sig, stop_before) {
                     // deferred
-                } else if let Some(sr) = take_first(by_sig, sig) {
+                } else if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if let Some(v) = read_int(&sr.data, *width, *signed) {
                         out.insert(name.clone(), format_int(v, format.as_ref()));
                     }
@@ -339,7 +355,7 @@ fn decode_member(
                     out.insert(name.clone(), json!(f));
                 }
             } else if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if sr.data.len() >= 4 {
                         let f = f32::from_le_bytes(sr.data[0..4].try_into().unwrap());
                         out.insert(name.clone(), json!(f));
@@ -351,7 +367,7 @@ fn decode_member(
             sig, name, sized, ..
         } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     let s = match sized {
                         Some(n) if *n > 0 => {
                             String::from_utf8_lossy(&sr.data[..sr.data.len().min(*n as usize)])
@@ -419,7 +435,7 @@ fn decode_member(
                     out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
                 }
             } else if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if sr.data.len() >= 4 {
                         let id = FormId::new(u32::from_le_bytes(sr.data[0..4].try_into().unwrap()));
                         out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
@@ -435,7 +451,7 @@ fn decode_member(
                     json!({"hex": hex::encode(&data[..data.len().min(n)])}),
                 );
             } else if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     let n = len.unwrap_or(sr.data.len());
                     out.insert(
                         name.clone(),
@@ -515,19 +531,50 @@ fn decode_member(
         } => {
             let mut items = Vec::new();
             let target_count = rarray_count(count.as_ref(), out, ctx);
+            let anchor = anchor_sig(element);
             while target_count.is_none_or(|n| items.len() < n) {
                 // If stop_before is set, halt when a boundary sig precedes
                 // the element's anchor in document order.
                 if !stop_before.is_empty() {
-                    if let Some(anchor) = anchor_sig(element) {
+                    if let Some(anchor) = anchor {
                         if stop_before_check(by_sig, anchor, stop_before) {
                             break;
                         }
                     }
                 }
                 let before: usize = by_sig.values().map(|v| v.len()).sum();
+
+                // Bound this element to [its own anchor's doc_index, the next
+                // anchor's doc_index) before decoding it. `by_sig` is one
+                // global FIFO queue per signature across the whole record, so
+                // without this an element's *optional* trailing sig-bearing
+                // members (e.g. ALCH/SPEL Effect's CVT0/MAGA/DURG/MAGG/CODV)
+                // can be stolen from a later element that happens to share
+                // the same signature — the earlier element decodes with the
+                // later element's subrecord instead of leaving it absent.
+                // Mandatory members (present on every element, e.g.
+                // EFID/EFIT) are unaffected: FIFO order already aligns them
+                // correctly, and `take_first_in_scope` is a no-op restriction
+                // when the popped subrecord is genuinely this element's own.
+                let element_scope = anchor.and_then(|sig| {
+                    by_sig.get(sig).and_then(|queue| {
+                        let mut iter = queue.iter();
+                        iter.next().map(|first| {
+                            (first.doc_index, iter.next().map(|second| second.doc_index))
+                        })
+                    })
+                });
+                let scoped_ctx;
+                let element_ctx: &DecodeContext<'_> = match element_scope {
+                    Some((current_idx, next_idx)) => {
+                        scoped_ctx = ctx.with_scope(Some(current_idx), next_idx);
+                        &scoped_ctx
+                    }
+                    None => ctx,
+                };
+
                 let mut item = Map::new();
-                decode_member(ctx, element, &mut item, by_sig, None);
+                decode_member(element_ctx, element, &mut item, by_sig, None);
                 let after: usize = by_sig.values().map(|v| v.len()).sum();
                 if before == after {
                     break; // no subrecords consumed — done
@@ -1623,6 +1670,37 @@ fn take_first<'a>(
     sig: &str,
 ) -> Option<&'a OwnedSubrecord> {
     by_sig.get_mut(sig).and_then(|v| v.pop_front())
+}
+
+/// Like `take_first`, but only pops the front subrecord when its `doc_index`
+/// falls inside `ctx`'s current scope.
+///
+/// `by_sig` is one global FIFO queue per signature across the *entire*
+/// record, with no per-element partitioning. For a mandatory, always-present
+/// member (e.g. an `Effect`'s `EFID`/`EFIT`) that FIFO order happens to align
+/// correctly element-by-element. But an *optional* trailing sig-bearing
+/// member (e.g. an ALCH/SPEL `Effect`'s `CVT0`/`MAGA`/`DURG`/`MAGG`/`CODV`)
+/// is not guaranteed to be present on every element, so a bare `pop_front`
+/// can steal a later element's subrecord when an earlier element lacks its
+/// own. Scoping the pop to `[scope_min_doc_index, scope_max_doc_index)` (set
+/// up per-element by `MemberDef::RArray`) keeps each element's optional
+/// members bound to that element's own document span. Returns `None`
+/// (without popping) when the front subrecord is out of scope, leaving it
+/// queued for the correctly-scoped element to consume later.
+fn take_first_in_scope<'a>(
+    by_sig: &mut HashMap<String, VecDeque<&'a OwnedSubrecord>>,
+    sig: &str,
+    ctx: &DecodeContext<'_>,
+) -> Option<&'a OwnedSubrecord> {
+    let front_idx = by_sig
+        .get(sig)
+        .and_then(|v| v.front())
+        .map(|sr| sr.doc_index)?;
+    if doc_index_in_present_signature_scope(ctx, front_idx) {
+        by_sig.get_mut(sig).and_then(|v| v.pop_front())
+    } else {
+        None
+    }
 }
 
 fn doc_index_in_present_signature_scope(ctx: &DecodeContext<'_>, doc_index: usize) -> bool {
