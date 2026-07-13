@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "settings": {
+    "ambiguous_digest_max_chars": 1200,
+    "ambiguous_change_truncate_chars": 200
+  },
+  "_comment_field_path_drop_patterns": "Case-insensitive fnmatch glob patterns matched against a ChangeEntry's top-level `path` string (comprehensive.json records[].changes[].path). Used by drop_rules whose require_all_changes_drop is true: a bundle only drops this way if EVERY non-suppressed change path across its non-context members matches one of these.",
+  "field_path_drop_patterns": [
+    "*model*",
+    "*material*",
+    "*texture*",
+    "*previs*",
+    "*precombine*",
+    "*master*references*",
+    "*position*",
+    "*rotation*",
+    "*scale*",
+    "*alternate textures*",
+    "*bound*",
+    "*storefront*image*"
+  ],
+  "_comment_narrative_signal_patterns": "Case-insensitive fnmatch glob patterns matched against a ChangeEntry's top-level `path` string. Used by drop_rules whose require_no_narrative_change is true: if ANY non-suppressed change path matches one of these, that disqualifies the bundle from being dropped (a name/description/value change is player-visible, not pure plumbing).",
+  "narrative_signal_patterns": [
+    "*name*",
+    "*description*",
+    "*full*",
+    "*value*"
+  ],
+  "deep_rules": [
+    {
+      "id": "omod_custom_or_legendary_edid",
+      "description": "OMOD content whose EDID marks it a unique/legendary item mod (mod_Custom_*, *_mod_Custom_*, mod_Legendary_*) is always worth a full writeup.",
+      "member_scope": "member",
+      "member_match": "any",
+      "record_type": ["OMOD"],
+      "edid": ["mod_Custom_*", "*_mod_Custom_*", "mod_Legendary_*"]
+    },
+    {
+      "id": "post_prefix_datamined",
+      "description": "POST_-prefixed EDIDs mark deferred/not-yet-released (datamined) content on a record actually in the diff (not merely context) -- always flagged for a human/agent look, regardless of record type.",
+      "member_scope": "member",
+      "member_match": "any",
+      "edid": ["POST_*"]
+    },
+    {
+      "id": "added_major_record_type",
+      "description": "A brand-new WEAP/QUST/NPC_/PERK/ALCH/COBJ is always a deep-writeup candidate -- new obtainable content, not a tweak.",
+      "member_scope": "member",
+      "member_match": "any",
+      "record_type": ["WEAP", "QUST", "NPC_", "PERK", "ALCH", "COBJ"],
+      "status": ["added"]
+    },
+    {
+      "id": "substantive_change_major_record_type",
+      "description": "A changed record of a gameplay-major type with at least one real NUMERIC stat delta (a scalar/curve-table change, not just any field touch). Deliberately tighter than 'any non-rename change': a HAZD bundle whose only change is one unmapped flag bit (a hex-string bitmask, not a number) or a BOOK's holotape text edit does NOT qualify here -- those fall through to ambiguous, where the assessor can still promote them if they actually matter. Bundles whose ONLY change is an EditorID rename don't qualify either -- those route to brief_rules/renamed_or_cut_only instead. See triage_bundles.py's is_numeric_change_entry for the exact predicate.",
+      "member_scope": "member",
+      "member_match": "any",
+      "record_type": [
+        "PERK", "PCRD", "WEAP", "ARMO", "AMMO", "ALCH", "ENCH", "MGEF", "SPEL",
+        "AVIF", "COBJ", "QUST", "NPC_", "EXPL", "HAZD", "GLOB", "GMST", "LVLI", "FLST"
+      ],
+      "status": ["changed"],
+      "require_numeric_change": true
+    }
+  ],
+  "brief_rules": [
+    {
+      "id": "all_added",
+      "description": "Every non-context member of the bundle is a brand-new record (of a type not already claimed by a deep_rules added rule) -- existence is the whole story, e.g. added cosmetic-type records (ARTO/SNDR/AVTR/ENTM).",
+      "bucket": "Added",
+      "member_scope": "member",
+      "member_match": "all",
+      "status": ["added"]
+    },
+    {
+      "id": "all_removed",
+      "description": "Every non-context member of the bundle was removed this patch.",
+      "bucket": "Removed",
+      "member_scope": "member",
+      "member_match": "all",
+      "status": ["removed"]
+    },
+    {
+      "id": "renamed_or_cut_only",
+      "description": "Every non-context member is 'changed' status, has an EditorID rename and/or a cut/deprecation marker classification, and has NO other substantive field delta -- a pure rename/vaulting, e.g. a cut-rename (zzz_/CUT_/DEL_ prefix added this patch) with nothing else touched.",
+      "bucket": "Renamed / Cut",
+      "member_scope": "member",
+      "member_match": "all",
+      "status": ["changed"],
+      "require_cut_or_renamed": true,
+      "require_no_substantive_change": true
+    }
+  ],
+  "drop_rules": [
+    {
+      "id": "refr_only_placement",
+      "description": "Bundle is nothing but placed-object-reference (REFR) placement churn -- world positioning, not gameplay content -- regardless of status.",
+      "member_scope": "member",
+      "member_match": "all",
+      "record_type": ["REFR"]
+    },
+    {
+      "id": "cosmetic_type_only_no_narrative_change",
+      "description": "Bundle is nothing but SNDR/MSWP/PLYT/STMP/TRNS/ARTO/IMAD tweaks (sound/material-swap/playlist/stamp/transform/art-object/image-space-adapter) with no name/description/value change anywhere -- purely technical/cosmetic plumbing.",
+      "member_scope": "member",
+      "member_match": "all",
+      "record_type": ["SNDR", "MSWP", "PLYT", "STMP", "TRNS", "ARTO", "IMAD"],
+      "status": ["changed"],
+      "require_no_narrative_change": true
+    },
+    {
+      "id": "field_path_drop_patterns",
+      "description": "Every non-suppressed field change across the bundle's non-context 'changed' members matches a data-driven drop pattern (top-level field_path_drop_patterns: model/material/texture paths, previs/precombine flags, LCTN 'Master * References' arrays, REFR placement transforms). Bundles with zero recorded changes do NOT match this rule (avoids treating an empty/vacuous diff as drop-worthy noise instead of leaving it to the rename/cut brief rule or ambiguous).",
+      "member_scope": "member",
+      "member_match": "all",
+      "status": ["changed"],
+      "require_all_changes_drop": true
+    }
+  ]
+}

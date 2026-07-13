@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """
 update_manifest.py — narrative-stage manifest updater for the FO76 patch-notes
-pipeline.
+pipeline (tiered edition).
 
-The mechanical stage (`make_patch_notes.py`) writes `manifest.json` with an
-empty `stages.narrative` section. The narrative stage (the `/patch-notes`
-Claude skill — see `.claude/skills/patch-notes/SKILL.md`) writes one
-`notes/<slug>.md` per category and, for each, a `discord/<slug>/chunk_*.md`
-sequence. This script is the last step of that skill: it scans those two
-directories and fills in `stages.narrative`, leaving everything else in the
-manifest untouched.
+The mechanical stage (`make_patch_notes.py` + `triage_bundles.py`) writes
+`manifest.json` with an empty `stages.narrative` section. The narrative
+stage (the `/patch-notes` Claude skill — see
+`.claude/skills/patch-notes/SKILL.md`) assembles ONE `patch-summary.md` and
+chunks it into `discord/chunk_*.md`. This script is the last step of that
+skill: it records those two outputs, plus the final `work/triage.json` tier
+counts, into `stages.narrative`, leaving everything else in the manifest
+untouched.
+
+This is schema_version 2 of `stages.narrative` (the pipeline's older
+per-category shape -- `categories: [{id, label, notes_md, discord_dir,
+chunk_count, chunks}, ...]`, one `notes/<slug>.md` + `discord/<slug>/` per
+category -- is retired along with the category-slicing narrative flow; see
+`triage_bundles.py` and `deep-writer-prompt.md`). This version instead
+records a single `patch_summary_md` path, a flat `discord/` chunk list, and
+the triage tier counts, keyed under `stages.narrative.schema_version: 2` so
+any downstream consumer can tell the two shapes apart.
 
 Usage:
     python3 tools/update_manifest.py OUT_DIR [--max-chunk-chars 2000]
-
-Category labels are resolved from `<OUT_DIR>/work/categories.json` (written
-by `slice_bundles.py`, whose `categories[].{id,label,slug,post_order}` is the
-authoritative id/label/order mapping) when that file is present; otherwise
-the slug itself is titleized into a label and no `post_order` is available
-(such categories sort after every known one, by slug).
 
 Python 3, stdlib only.
 """
@@ -27,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +39,14 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import patchnotes_lib as pl  # noqa: E402
+
+#: stages.narrative's own schema version (independent of the pipeline-wide
+#: pl.SCHEMA_VERSION, which covers diff/comprehensive/bundles/lints shapes
+#: this script doesn't touch).
+NARRATIVE_SCHEMA_VERSION = 2
+
+PATCH_SUMMARY_FILENAME = "patch-summary.md"
+DISCORD_DIRNAME = "discord"
 
 
 def eprint(*args, **kwargs):
@@ -46,119 +57,91 @@ def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-_SLUG_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+def discover_patch_summary(out_dir: Path) -> str | None:
+    """Relative path to `<out_dir>/patch-summary.md`, or None if it doesn't
+    exist yet (never raises)."""
+    path = out_dir / PATCH_SUMMARY_FILENAME
+    return PATCH_SUMMARY_FILENAME if path.is_file() else None
 
 
-def titleize_slug(slug: str) -> str:
-    """Fallback label for a slug with no `work/categories.json` entry: split
-    on non-alphanumeric runs and title-case each word (e.g. `camp_workshop`
-    -> `Camp Workshop`, `ui-misc` -> `Ui Misc`)."""
-    words = _SLUG_WORD_RE.findall(slug)
-    return " ".join(w.capitalize() for w in words) if words else slug
+def discover_discord_chunks(out_dir: Path) -> list[str]:
+    """Sorted `discord/chunk_*.md` paths, relative to out_dir -- a single
+    flat directory now (one merged patch-summary.md, not one per category),
+    filenames are zero-padded (chunk_001.md, ...) so a plain name sort is
+    already numeric order."""
+    chunk_dir = out_dir / DISCORD_DIRNAME
+    if not chunk_dir.is_dir():
+        return []
+    paths = sorted(p for p in chunk_dir.glob("chunk_*.md") if p.is_file())
+    return [f"{DISCORD_DIRNAME}/{p.name}" for p in paths]
 
 
-def load_category_labels(out_dir: Path) -> dict:
-    """`{slug: {"id", "label", "post_order"}}` sourced from
-    `<out_dir>/work/categories.json` (slice_bundles.py's output) when
-    present, else `{}`. Missing/unreadable/malformed file -> `{}` (never
-    raises)."""
-    path = out_dir / "work" / "categories.json"
+def load_triage_stats(out_dir: Path) -> dict | None:
+    """`{"deep","brief","drop","ambiguous","total_bundles",
+    "resolved_by_assessor"}` sourced from `<out_dir>/work/triage.json`
+    (triage_bundles.py's output), or None if that file doesn't exist / is
+    unreadable / malformed (never raises)."""
+    path = out_dir / "work" / "triage.json"
     if not path.is_file():
-        return {}
+        return None
     try:
         with path.open(encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
-        return {}
+        return None
     if not isinstance(data, dict):
-        return {}
+        return None
 
-    out = {}
-    for cat in data.get("categories") or []:
-        if not isinstance(cat, dict):
-            continue
-        slug = cat.get("slug")
-        if not slug:
-            continue
-        out[slug] = {
-            "id": cat.get("id", slug),
-            "label": cat.get("label") or slug,
-            "post_order": cat.get("post_order"),
-        }
-    return out
-
-
-def discover_notes(out_dir: Path) -> list[str]:
-    """Sorted list of slugs with a `notes/<slug>.md` file."""
-    notes_dir = out_dir / "notes"
-    if not notes_dir.is_dir():
-        return []
-    return sorted(p.stem for p in notes_dir.glob("*.md") if p.is_file())
+    stats = data.get("stats") or {}
+    deep = stats.get("deep", len(data.get("deep") or []))
+    brief = stats.get("brief", len(data.get("brief") or []))
+    drop = stats.get("drop", len(data.get("drop") or []))
+    ambiguous = stats.get("ambiguous", len(data.get("ambiguous") or []))
+    return {
+        "deep": deep,
+        "brief": brief,
+        "drop": drop,
+        "ambiguous": ambiguous,
+        "total_bundles": stats.get("total_bundles", deep + brief + drop + ambiguous),
+        "resolved_by_assessor": stats.get("resolved_by_assessor", 0),
+    }
 
 
-def discover_chunks(out_dir: Path, slug: str) -> list[str]:
-    """`discord/<slug>/chunk_*.md` paths, relative to `out_dir`, in filename
-    order (chunk files are zero-padded, e.g. `chunk_001.md`, so a plain name
-    sort is already numeric order)."""
-    chunk_dir = out_dir / "discord" / slug
-    if not chunk_dir.is_dir():
-        return []
-    paths = sorted(p for p in chunk_dir.glob("chunk_*.md") if p.is_file())
-    return [f"discord/{slug}/{p.name}" for p in paths]
+def build_narrative_stage(out_dir: Path, max_chunk_chars: int) -> dict:
+    """Build the full `stages.narrative` payload (schema_version 2)."""
+    chunks = discover_discord_chunks(out_dir)
+    return {
+        "schema_version": NARRATIVE_SCHEMA_VERSION,
+        "completed_at": _now_iso(),
+        "patch_summary_md": discover_patch_summary(out_dir),
+        "discord_dir": DISCORD_DIRNAME,
+        "chunk_count": len(chunks),
+        "chunks": chunks,
+        "max_chunk_chars": max_chunk_chars,
+        "triage": load_triage_stats(out_dir),
+    }
 
 
-def build_narrative_categories(out_dir: Path):
-    """Return `(categories, warnings)` — `categories` is the fully-built
-    `stages.narrative.categories` list (sorted by `post_order`, falling back
-    to the slug for categories `work/categories.json` doesn't know about);
-    `warnings` is a list of human-readable strings for categories that have
-    notes but zero Discord chunks."""
-    labels = load_category_labels(out_dir)
-    slugs = discover_notes(out_dir)
-
-    entries = []
-    for slug in slugs:
-        meta = labels.get(slug, {})
-        chunks = discover_chunks(out_dir, slug)
-        post_order = meta.get("post_order")
-        entries.append({
-            "id": meta.get("id", slug),
-            "label": meta.get("label") or titleize_slug(slug),
-            "notes_md": f"notes/{slug}.md",
-            "discord_dir": f"discord/{slug}",
-            "chunk_count": len(chunks),
-            "chunks": chunks,
-            "_slug": slug,
-            "_sort_key": (post_order if post_order is not None else float("inf"), slug),
-        })
-
-    entries.sort(key=lambda e: e["_sort_key"])
-
-    warnings = []
-    for e in entries:
-        if e["chunk_count"] == 0:
-            warnings.append(
-                f"warning: category '{e['_slug']}' has a notes file but zero Discord "
-                "chunks (chunk_count=0)"
-            )
-        del e["_sort_key"]
-        del e["_slug"]
-
-    return entries, warnings
-
-
-def print_summary(categories, stream=sys.stderr):
-    header = f"{'category':<28}{'label':<28}{'chunks':>8}"
-    print(header, file=stream)
-    print("-" * len(header), file=stream)
-    for cat in categories:
-        print(f"{cat['id']:<28}{cat['label']:<28}{cat['chunk_count']:>8}", file=stream)
+def print_summary(narrative: dict, stream=sys.stderr):
+    print(f"patch_summary_md: {narrative.get('patch_summary_md') or '(missing)'}", file=stream)
+    print(f"discord chunks:   {narrative.get('chunk_count', 0)}", file=stream)
+    triage = narrative.get("triage")
+    if triage:
+        print(
+            f"triage tiers:     deep={triage.get('deep', 0)} brief={triage.get('brief', 0)} "
+            f"drop={triage.get('drop', 0)} ambiguous={triage.get('ambiguous', 0)}",
+            file=stream,
+        )
+        if triage.get("resolved_by_assessor"):
+            print(f"resolved by assessor: {triage['resolved_by_assessor']}", file=stream)
+    else:
+        print("triage tiers:     (no work/triage.json found)", file=stream)
 
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
         prog="update_manifest.py",
-        description="Fill in manifest.json's narrative stage from notes/ + discord/ output.",
+        description="Fill in manifest.json's narrative stage from patch-summary.md + discord/ + work/triage.json.",
     )
     ap.add_argument("out_dir", help="Pipeline output directory (must already contain manifest.json).")
     ap.add_argument(
@@ -177,21 +160,19 @@ def main(argv=None):
         eprint(f"error: no manifest.json found in {out_dir}")
         return 1
 
-    categories, warnings = build_narrative_categories(out_dir)
+    narrative = build_narrative_stage(out_dir, args.max_chunk_chars)
 
     manifest.setdefault("stages", {})
-    manifest["stages"]["narrative"] = {
-        "completed_at": _now_iso(),
-        "max_chunk_chars": args.max_chunk_chars,
-        "categories": categories,
-    }
+    manifest["stages"]["narrative"] = narrative
 
     pl.write_manifest(out_dir, manifest)
 
-    print_summary(categories)
-    for w in warnings:
-        eprint(w)
-    eprint(f"\nwrote {out_dir / 'manifest.json'} ({len(categories)} categories)")
+    print_summary(narrative)
+    if narrative["patch_summary_md"] is None:
+        eprint(f"warning: no {PATCH_SUMMARY_FILENAME} found in {out_dir}")
+    if narrative["chunk_count"] == 0:
+        eprint(f"warning: zero Discord chunks found under {out_dir / DISCORD_DIRNAME}")
+    eprint(f"\nwrote {out_dir / 'manifest.json'}")
     return 0
 
 

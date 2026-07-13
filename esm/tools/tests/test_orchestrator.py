@@ -323,6 +323,12 @@ class TestOrchestratorEndToEnd(unittest.TestCase):
 
 
 class TestUpdateManifest(unittest.TestCase):
+    """Covers update_manifest.py's tiered-edition narrative schema
+    (schema_version 2): a single patch-summary.md, a flat discord/ chunk
+    list, and work/triage.json tier counts -- the old per-category
+    notes/<slug>.md + discord/<slug>/ + work/categories.json flow is
+    retired (see triage_bundles.py / deep-writer-prompt.md)."""
+
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.out_dir = Path(self._tmp.name)
@@ -342,24 +348,35 @@ class TestUpdateManifest(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _write_notes(self, slugs):
-        notes_dir = self.out_dir / "notes"
-        notes_dir.mkdir(exist_ok=True)
-        for slug in slugs:
-            (notes_dir / f"{slug}.md").write_text(f"# {slug}\n")
+    def _write_patch_summary(self, text="# Patch Summary\n"):
+        (self.out_dir / "patch-summary.md").write_text(text)
 
-    def _write_chunks(self, slug, n):
-        chunk_dir = self.out_dir / "discord" / slug
+    def _write_chunks(self, n):
+        chunk_dir = self.out_dir / "discord"
         chunk_dir.mkdir(parents=True, exist_ok=True)
         for i in range(1, n + 1):
             (chunk_dir / f"chunk_{i:03d}.md").write_text(f"chunk {i}")
 
-    def _write_categories_json(self, entries):
+    def _write_triage_json(self, deep=0, brief=0, drop=0, ambiguous=0, resolved_by_assessor=0):
         work_dir = self.out_dir / "work"
         work_dir.mkdir(exist_ok=True)
-        (work_dir / "categories.json").write_text(
-            json.dumps({"schema_version": 1, "categories": entries})
-        )
+        payload = {
+            "schema_version": 1,
+            "deep": [f"B{i:04d}" for i in range(1, deep + 1)],
+            "brief": [f"B{i:04d}" for i in range(deep + 1, deep + brief + 1)],
+            "drop": [f"B{i:04d}" for i in range(deep + brief + 1, deep + brief + drop + 1)],
+            "ambiguous": [
+                f"B{i:04d}"
+                for i in range(deep + brief + drop + 1, deep + brief + drop + ambiguous + 1)
+            ],
+            "stats": {
+                "total_bundles": deep + brief + drop + ambiguous,
+                "deep": deep, "brief": brief, "drop": drop, "ambiguous": ambiguous,
+                "resolved_by_assessor": resolved_by_assessor,
+            },
+            "reasons": {},
+        }
+        (work_dir / "triage.json").write_text(json.dumps(payload))
 
     def test_missing_manifest_errors(self):
         empty = Path(tempfile.mkdtemp())
@@ -368,21 +385,24 @@ class TestUpdateManifest(unittest.TestCase):
         finally:
             shutil.rmtree(empty)
 
-    def test_no_notes_yields_empty_categories(self):
+    def test_no_outputs_yields_null_summary_and_zero_chunks(self):
         rc = um.main([str(self.out_dir)])
         self.assertEqual(rc, 0)
-        manifest = json.loads((self.out_dir / "manifest.json").read_text())
-        self.assertEqual(manifest["stages"]["narrative"]["categories"], [])
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertIsNone(narrative["patch_summary_md"])
+        self.assertEqual(narrative["chunk_count"], 0)
+        self.assertEqual(narrative["chunks"], [])
+        self.assertIsNone(narrative["triage"])
 
-    def test_categories_sorted_by_post_order_with_labels(self):
-        self._write_categories_json([
-            {"id": "perks", "label": "Perks & Legendary Perks", "slug": "perks", "post_order": 1},
-            {"id": "weapons_combat", "label": "Weapons & Combat Balance", "slug": "weapons_combat", "post_order": 0},
-        ])
-        self._write_notes(["perks", "weapons_combat"])
-        self._write_chunks("perks", 1)
-        self._write_chunks("weapons_combat", 2)
+    def test_schema_version_is_2(self):
+        rc = um.main([str(self.out_dir)])
+        self.assertEqual(rc, 0)
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertEqual(narrative["schema_version"], 2)
 
+    def test_patch_summary_and_chunks_discovered(self):
+        self._write_patch_summary()
+        self._write_chunks(3)
         rc = um.main([str(self.out_dir)])
         self.assertEqual(rc, 0)
 
@@ -390,82 +410,76 @@ class TestUpdateManifest(unittest.TestCase):
         narrative = manifest["stages"]["narrative"]
         self.assertIsNotNone(narrative["completed_at"])
         self.assertEqual(narrative["max_chunk_chars"], 2000)
-
-        cats = narrative["categories"]
-        self.assertEqual([c["id"] for c in cats], ["weapons_combat", "perks"])
-        self.assertEqual(cats[0]["label"], "Weapons & Combat Balance")
-        self.assertEqual(cats[0]["notes_md"], "notes/weapons_combat.md")
-        self.assertEqual(cats[0]["discord_dir"], "discord/weapons_combat")
-        self.assertEqual(cats[0]["chunk_count"], 2)
+        self.assertEqual(narrative["patch_summary_md"], "patch-summary.md")
+        self.assertEqual(narrative["discord_dir"], "discord")
+        self.assertEqual(narrative["chunk_count"], 3)
         self.assertEqual(
-            cats[0]["chunks"],
-            ["discord/weapons_combat/chunk_001.md", "discord/weapons_combat/chunk_002.md"],
+            narrative["chunks"],
+            ["discord/chunk_001.md", "discord/chunk_002.md", "discord/chunk_003.md"],
         )
 
-    def test_titleized_label_when_no_categories_json(self):
-        self._write_notes(["camp_workshop"])
-        self._write_chunks("camp_workshop", 1)
+    def test_triage_stats_included(self):
+        self._write_patch_summary()
+        self._write_chunks(1)
+        self._write_triage_json(deep=5, brief=10, drop=80, ambiguous=3)
         rc = um.main([str(self.out_dir)])
         self.assertEqual(rc, 0)
-        cats = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["categories"]
-        self.assertEqual(cats[0]["label"], "Camp Workshop")
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertEqual(
+            narrative["triage"],
+            {
+                "deep": 5, "brief": 10, "drop": 80, "ambiguous": 3,
+                "total_bundles": 98, "resolved_by_assessor": 0,
+            },
+        )
 
-    def test_fallback_sort_by_slug_when_no_post_order(self):
-        self._write_notes(["zzz_cat", "aaa_cat"])
-        self._write_chunks("zzz_cat", 1)
-        self._write_chunks("aaa_cat", 1)
-        rc = um.main([str(self.out_dir)])
-        self.assertEqual(rc, 0)
-        cats = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["categories"]
-        self.assertEqual([c["id"] for c in cats], ["aaa_cat", "zzz_cat"])
+    def test_triage_stats_include_assessor_resolution_count(self):
+        self._write_triage_json(deep=2, brief=1, drop=1, ambiguous=0, resolved_by_assessor=4)
+        um.main([str(self.out_dir)])
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertEqual(narrative["triage"]["resolved_by_assessor"], 4)
 
-    def test_known_post_order_sorts_before_unknown_fallback(self):
-        self._write_categories_json([
-            {"id": "zzz_known", "label": "ZZZ Known", "slug": "zzz_known", "post_order": 5},
-        ])
-        self._write_notes(["zzz_known", "aaa_unknown"])
-        self._write_chunks("zzz_known", 1)
-        self._write_chunks("aaa_unknown", 1)
-        rc = um.main([str(self.out_dir)])
-        self.assertEqual(rc, 0)
-        cats = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["categories"]
-        # Known post_order (5) sorts before the unknown fallback (inf), even
-        # though "aaa_unknown" would win a plain alphabetic sort.
-        self.assertEqual([c["id"] for c in cats], ["zzz_known", "aaa_unknown"])
+    def test_missing_triage_json_yields_null_triage(self):
+        self._write_patch_summary()
+        um.main([str(self.out_dir)])
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertIsNone(narrative["triage"])
 
-    def test_notes_without_chunks_warned_and_zero_count(self):
-        self._write_notes(["orphan"])
+    def test_malformed_triage_json_yields_null_triage_not_a_crash(self):
+        work_dir = self.out_dir / "work"
+        work_dir.mkdir(exist_ok=True)
+        (work_dir / "triage.json").write_text("{not valid json")
         rc = um.main([str(self.out_dir)])
         self.assertEqual(rc, 0)
-        cats = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["categories"]
-        self.assertEqual(cats[0]["chunk_count"], 0)
-        self.assertEqual(cats[0]["chunks"], [])
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertIsNone(narrative["triage"])
 
     def test_paths_relative_to_out_dir(self):
-        self._write_notes(["armor"])
-        self._write_chunks("armor", 1)
+        self._write_patch_summary()
+        self._write_chunks(1)
         um.main([str(self.out_dir)])
-        cats = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["categories"]
-        for c in cats:
-            self.assertFalse(c["notes_md"].startswith("/"))
-            self.assertFalse(c["discord_dir"].startswith("/"))
-            for chunk in c["chunks"]:
-                self.assertFalse(chunk.startswith("/"))
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertFalse(narrative["patch_summary_md"].startswith("/"))
+        for chunk in narrative["chunks"]:
+            self.assertFalse(chunk.startswith("/"))
 
     def test_idempotent_rerun(self):
-        self._write_categories_json([{"id": "armor", "label": "Armor", "slug": "armor", "post_order": 0}])
-        self._write_notes(["armor"])
-        self._write_chunks("armor", 1)
+        self._write_patch_summary()
+        self._write_chunks(2)
+        self._write_triage_json(deep=1, brief=1, drop=1, ambiguous=0)
 
         um.main([str(self.out_dir)])
         first = json.loads((self.out_dir / "manifest.json").read_text())
         um.main([str(self.out_dir)])
         second = json.loads((self.out_dir / "manifest.json").read_text())
 
-        self.assertEqual(
-            first["stages"]["narrative"]["categories"],
-            second["stages"]["narrative"]["categories"],
-        )
+        # completed_at legitimately ticks forward on every run; compare
+        # everything else byte-for-byte.
+        first_narrative = dict(first["stages"]["narrative"])
+        second_narrative = dict(second["stages"]["narrative"])
+        del first_narrative["completed_at"]
+        del second_narrative["completed_at"]
+        self.assertEqual(first_narrative, second_narrative)
         self.assertEqual(first["stages"]["mechanical"], second["stages"]["mechanical"])
         self.assertEqual(first["inputs"], second["inputs"])
 
@@ -477,6 +491,12 @@ class TestUpdateManifest(unittest.TestCase):
         self.assertEqual(manifest["inputs"]["old_token"], "20260626")
         self.assertEqual(manifest["counts"], {"added": 1, "changed": 2, "removed": 0})
         self.assertEqual(manifest["stages"]["mechanical"]["completed_at"], "2026-07-03T00:00:00Z")
+
+    def test_custom_max_chunk_chars(self):
+        rc = um.main([str(self.out_dir), "--max-chunk-chars", "1500"])
+        self.assertEqual(rc, 0)
+        narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
+        self.assertEqual(narrative["max_chunk_chars"], 1500)
 
 
 if __name__ == "__main__":

@@ -1,23 +1,24 @@
 ---
 name: patch-notes
 description: >
-  Weekly Fallout 76 patch-notes narrative stage. Resolves the latest two snapshots
-  from $FO76_DATA_DIR, runs (or reuses) the deterministic diff pipeline, fans out one
-  Sonnet writer subagent per category over sliced bundles, verifies claims against the
-  warm esm daemon, reviews and assembles player-facing notes per category, chunks them
-  for Discord, and updates the manifest. Use when asked to write, refresh, or re-run
+  Weekly Fallout 76 patch-notes narrative stage, tiered edition. Resolves the latest two
+  snapshots from $FO76_DATA_DIR, runs (or reuses) the deterministic diff pipeline, triages
+  bundles into DEEP / BRIEF / DROP (rules + one cheap assessor agent for the ambiguous
+  middle), fans out 1-2 Sonnet deep writers armed with the mechanics KB over the DEEP tier
+  only, reconciles deferrals and unresolved chases in the orchestrator, assembles a single
+  patch-summary.md, and chunks it for Discord. Use when asked to write, refresh, or re-run
   weekly patch notes.
-argument-hint: "[old-snapshot] [new-snapshot] [--out-dir DIR] [--category NAME]... [--force-pipeline] [--force]"
+argument-hint: "[old-snapshot] [new-snapshot] [--out-dir DIR] [--official-notes URL_OR_FILE] [--force-pipeline] [--force]"
 ---
 
 You are the orchestrator for the narrative stage of the FO76 patch-notes pipeline. The
-mechanical stage (diffing, bundling, linting) is already deterministic Python; your job is
+mechanical stage (diffing, bundling, linting, triage) is deterministic Python; your job is
 steps 1-8 below. Run every command from the `esm/` repo root.
 
 ## 1. Resolve inputs
 
-Parse positional args (ignore `--out-dir`, `--category`, `--force-pipeline`, `--force`, handled
-below).
+Parse positional args (ignore `--out-dir`, `--official-notes`, `--force-pipeline`, `--force`,
+handled below).
 
 - **0 positional args** → `NEW_TOKEN`/`OLD_TOKEN` = the last two entries of
   `ls "$FO76_DATA_DIR" | sort`.
@@ -53,8 +54,12 @@ Fail fast, with a clear message, unless both hold:
 OUT="$FO76_DATA_DIR/notes/${OLD_TOKEN}_to_${NEW_TOKEN}"
 ```
 
+If `--official-notes` was given: a URL → fetch it now (WebFetch) and save the article text to
+`$OUT/work/official-notes.txt`; a file path → copy it there. This is optional input; absence
+changes nothing downstream except the discrepancy callouts.
+
 **Never write the expanded value of `$FO76_DATA_DIR` (or any absolute path) into a file under
-`$OUT` — not in drafts, notes, discord chunks, or the manifest.** Tokens (`20260626`) are fine;
+`$OUT` — not in the summary, discord chunks, or the manifest.** Tokens (`20260626`) are fine;
 full paths are not.
 
 ## 2. Run or reuse the pipeline
@@ -80,102 +85,111 @@ print("yes" if ok else "no")
 fi
 ```
 
-If `REUSE=no` or `--force-pipeline` was passed, run the pipeline fresh:
+If `REUSE=no` or `--force-pipeline` was passed:
 
 ```sh
 python3 tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT"
 ```
 
-This writes `diff.json`, `comprehensive.{md,json}`, `bundles.json`, `lints.json`,
-`manifest.json` into `$OUT`.
-
 ## 3. Prewarm the daemon
 
-Before fanning out any writers, make one warm call so the index is loaded once, up front,
-instead of N writers racing a cold spawn:
+Before any agent work, one warm call so the index loads once, up front:
 
 ```sh
 target/release/esm -p info "$NEW_ESM"
 ```
 
-The spawn-lock makes concurrent autostart safe, but a cold index takes minutes — always do this
-serially first.
-
-## 4. Slice
+## 4. Triage
 
 ```sh
-python3 tools/slice_bundles.py "$OUT"
+python3 tools/triage_bundles.py "$OUT"
 ```
 
-Read `$OUT/work/categories.json` — an ordered list of `{id, label, slug, slices, bundle_ids,
-bundle_count, bug_watch_count, bytes, post_order}`. `slices` is a list of one or more
-`work/bundles.<slug>[.partN].json` paths (a category is split into parts only when its combined
-slice is oversized — a single bundle is never split across parts).
+This writes `$OUT/work/triage.json` (tier assignment + per-bundle reasons),
+`$OUT/work/deep-slice.json` (DEEP bundles in writer-slice shape),
+`$OUT/work/ambiguous.json` (compact field-diff digests for the middle tier), and
+`$OUT/work/brief-lines.md` (templated one-liners for the BRIEF tier).
 
-If `--category NAME` was given (repeatable), keep only categories whose `slug` matches (or a
-supplied `NAME`) case-insensitively. If a given name matches nothing, error out listing every
-available slug from `categories.json`.
+If `ambiguous.json` has entries, spawn **one assessor subagent** (Agent tool,
+`model: haiku`) with this prompt shape — paste the digests inline, give it NO daemon
+access and no other tools than Read/Write:
 
-## 5. Fan out writers
+> You are triaging Fallout 76 patch-diff bundles. For each bundle below you get the actual
+> field-level before/after values. Assign each a tier: `deep` (real gameplay meaning —
+> stats, drops, costs, spawns, quest logic, new obtainable content, datamined features;
+> a reader would want the full story), `brief` (existence is the story — a one-liner
+> suffices), or `drop` (bookkeeping churn a player can never observe). When in doubt
+> between drop and brief, pick brief; between brief and deep, pick deep. Write
+> `<OUT>/work/assessment.json`: `{"tiers": {"<bundle_id>": {"tier": "...", "reason":
+> "<one line>"}}}` covering every bundle. Reply with just the tier counts.
 
-**Resume rule:** on a plain re-run, skip any category whose `$OUT/notes/<slug>.md` is newer than
-`$OUT/bundles.json` (it's already fresh) — go straight to including it in the final summary.
-`--force` disables this skip for all selected categories. Drafts already on disk are never
-deleted, only overwritten by the writer that regenerates them.
+Then merge:
 
-For every remaining category, for every part in its `slices` list, launch one
-`patch-notes-writer` subagent (via the Agent tool, `subagent_type: "patch-notes-writer"`). Build
-the prompt by taking `.claude/skills/patch-notes/writer-prompt.md` and substituting:
+```sh
+python3 tools/triage_bundles.py "$OUT" --merge-assessment "$OUT/work/assessment.json"
+```
+
+Sanity-check the final tier stats in `triage.json` — if DEEP exceeds ~40 bundles or DROP
+swallowed a record type you'd expect to matter (WEAP/PERK/OMOD), inspect `reasons` before
+proceeding; the config (`tools/patch_notes_tiers.json`) may need a rule fix, and silent
+mis-tiering is exactly the failure mode this step exists to catch.
+
+## 5. Deep pass
+
+**Resume rule:** on a plain re-run, skip straight to Step 6 if `$OUT/drafts/deep.md` is newer
+than `$OUT/work/triage.json`; `--force` disables the skip.
+
+Count DEEP bundles. **≤20** → one writer owns the whole `deep-slice.json`. **>20** → split
+the slice in two by bundle (keep related bundles together; `tools/triage_bundles.py` emits
+them in dependency-sorted order, so a simple contiguous split is fine) and launch two
+writers in one message.
+
+For each writer, spawn a subagent (Agent tool, `model: sonnet`) with
+`.claude/skills/patch-notes/deep-writer-prompt.md`, substituting:
 
 | Placeholder | Value |
 |---|---|
-| `{CATEGORY}` | category `id` |
-| `{CATEGORY_LABEL}` | category `label` |
-| `{SLICE_PATH}` | this part's slice file, e.g. `$OUT/work/bundles.<slug>.json` |
+| `{OLD_TOKEN}` / `{NEW_TOKEN}` | snapshot tokens |
+| `{SLICE_PATH}` | `$OUT/work/deep-slice.json` (or its part file) |
+| `{KB_PATH}` | `.claude/skills/patch-notes/mechanics-kb.md` |
 | `{OUT}` | `$OUT` |
-| `{NEW_ESM}` | `$NEW_ESM` |
-| `{OLD_ESM}` | `$OLD_ESM` |
+| `{NEW_ESM}` / `{OLD_ESM}` | resolved ESM paths |
 | `{STYLE_GUIDE_PATH}` | `.claude/skills/patch-notes/style-guide.md` |
-| `{DRAFT_PATH}` | `$OUT/drafts/<slug>.md` (single-part) or `$OUT/drafts/<slug>.partN.md` (multi-part) |
-| `{REPORT_PATH}` | `$OUT/drafts/<slug>.report.json` (single-part) or `$OUT/drafts/<slug>.partN.report.json` (multi-part) |
+| `{OTHER_SLICES}` | the other writer's slice path, or "none — you own everything DEEP" |
+| `{DRAFT_PATH}` / `{REPORT_PATH}` | `$OUT/drafts/deep[.partN].{md,report.json}` |
+| `{OFFICIAL_NOTES_BLOCK}` | if official notes were provided: a bullet pointing at `$OUT/work/official-notes.txt` with the instruction "cross-reference every claim: data contradicting the article → `⚠️ Mismatch (official notes):`; significant changes the article omits → `⚠️ Undocumented:`". Otherwise empty. |
 
-Multi-part categories get one writer *per part*, each with its own draft/report — Step 6 merges
-them before writing the single `notes/<slug>.md`.
+## 6. Review & assemble (orchestrator — you)
 
-Cap **6 concurrent writers**. Put all Agent calls for one batch in a single assistant message so
-they run in parallel; if the total (category × part) count exceeds 6, split into sequential
-batches and wait for each batch to fully return before starting the next.
+Read every draft + report. Then, in order:
 
-## 6. Review & assemble (main agent, per category)
-
-For each category, read every draft and report file it produced (all parts). Then:
-
-- **Cross-category dedup**: for each `cross_category_formids` entry in a report, keep the full
-  story in the FormID's own anchor category; reduce other mentions to a one-line cross-reference.
-- **Tone/structure normalization** against `.claude/skills/patch-notes/style-guide.md` — section
-  order, voice, length budgets.
-- **Independently spot-verify** the 2-3 highest-impact numeric claims per category yourself, via
-  `target/release/esm -p get "$NEW_ESM" <id> --resolve stub --pretty` (never `--local`).
-- Every claim a report lists as `unverified_claims`: verify it now, soften to "Unconfirmed:", or
-  cut it — never pass it through silently.
-- **Audit**: no `POST_`/`zzz_`-prefixed content appears outside "Datamined / coming soon" /
-  "Vaulted / cut this patch"; every Bug Watch entry has an Evidence line (record type,
-  EditorID/FormID, field, observed value).
-
-Write the merged, reviewed result to `$OUT/notes/<slug>.md` (one file per category, regardless
-of how many parts fed it).
+1. **Reconcile every deferral.** For each report's `deferred[]` entry, confirm the expected
+   owner's draft actually covers those FormIDs (search the draft text). Anything uncovered:
+   chase it yourself now — extract the record diff, run the KB chase pattern against the
+   daemon, write the missing bullets. This step exists because deferrals DO fall through;
+   never skip it.
+2. **Chase every `unresolved[]` item** worth a story: resolve it live, soften it to
+   "Unconfirmed:", or cut it. Never pass one through silently.
+3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself via
+   `target/release/esm -p get "$NEW_ESM" <id> --resolve stub --pretty`.
+4. **Merge `kb_proposals[]`** into `.claude/skills/patch-notes/mechanics-kb.md` (dedupe
+   against existing entries; keep the KB's format and verified-date convention). This is the
+   only file outside `$OUT` this skill may write.
+5. **Assemble `$OUT/patch-summary.md`** — ONE document, sections ordered by signal:
+   `# FO76 Datamine — Patch <date>` / `## TL;DR` (≤6 bullets) / unique & legendary changes /
+   balance / events & quests / new items / `## Datamined: <feature> (not live)` (standing
+   disclaimer first) / `## Cut / Vaulted` / then append the BRIEF one-liners from
+   `work/brief-lines.md` under `## Also this patch` (prune any line a deep section already
+   covers). Style guide applies throughout; cut prose over numbers when over budget.
 
 ## 7. Chunk for Discord
 
-For each category with a `notes/<slug>.md`:
-
 ```sh
-python3 tools/discord_chunker.py "$OUT/notes/<slug>.md" "$OUT/discord/<slug>"
+python3 tools/discord_chunker.py "$OUT/patch-summary.md" "$OUT/discord"
 ```
 
-If the chunker's stderr warns about hard truncation (`WARNING: N chunks exceeded 2000 chars`),
-that's a review failure, not an acceptable output — go back to Step 6, shorten the offending
-section (cut prose, never numbers or facts), and re-run the chunker.
+If stderr warns about hard truncation (`WARNING: N chunks exceeded 2000 chars`), fix the
+summary (cut prose, never numbers) and re-run.
 
 ## 8. Manifest + summary
 
@@ -183,20 +197,23 @@ section (cut prose, never numbers or facts), and re-run the chunker.
 python3 tools/update_manifest.py "$OUT"
 ```
 
-Then print a per-category table (label, bundle count, chunk count, bug-watch count) plus the
-output paths (`$OUT/notes/`, `$OUT/discord/`, `$OUT/manifest.json`) — no game-data paths, no
-`$FO76_DATA_DIR` expansion, in that printed summary either.
+Print: tier counts (deep/brief/drop, plus how many the assessor promoted/demoted), writer
+count, chunk count, unresolved-chased count, KB entries added, and the output paths
+(`$OUT/patch-summary.md`, `$OUT/discord/`) — no game-data paths or `$FO76_DATA_DIR`
+expansions in the printed summary either.
 
 ## Guardrails
 
-- Never assert a record's liveness from an EDID prefix alone (`zzz_`/`CUT_`/`DEL_`/`POST_`) —
-  it's a heuristic, not proof. For PERK ranks, the only clean signal is a `PCRD` actually listing
-  that rank in `Perks[].Perk`.
-- Every lint that reaches a final note must be re-verified against the live daemon in this run;
-  one that can't be reproduced is dropped, not asserted on stale/static data.
-- Every number in a final note traces to the slice, an `--extract`, or a live `esm -p` call —
-  never memory, never estimation, never rounding.
-- No absolute filesystem paths, ESM filenames, or `$FO76_DATA_DIR` expansions in any file under
-  `$OUT` — drafts, notes, discord chunks, or manifest.
-- This skill only ever writes inside `$OUT`. It never modifies game data, the repo, or anything
-  outside the output directory — no exceptions.
+- Never assert a record's liveness from an EDID prefix alone (`zzz_`/`CUT_`/`DEL_`/`POST_`).
+  For PCRD-granted perks the clean signal is a PCRD listing the rank; item-granted perks
+  (OMOD/ENCH Perks property) legitimately have no PCRD — verify the grant path instead.
+- Every number in the final summary traces to the slice, an `--extract`, or a live `esm -p`
+  call this run — never memory, never estimation, never rounding.
+- Every lint reaching the summary was re-verified live this run.
+- DROP-tier bundles are dropped *with logged reasons* (`triage.json`); the printed summary
+  states the drop count so the user can audit `work/triage.json` when something seems missing.
+- No absolute filesystem paths, ESM filenames, or `$FO76_DATA_DIR` expansions in any file
+  under `$OUT`.
+- This skill writes only inside `$OUT`, plus exactly one repo file:
+  `.claude/skills/patch-notes/mechanics-kb.md` (KB merges in Step 6). It never modifies game
+  data or anything else in the repo.

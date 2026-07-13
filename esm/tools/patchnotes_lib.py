@@ -240,7 +240,11 @@ def _marker_token(edid, markers):
     """
     Return (marker, confidence) if edid has a deprecation prefix, else None.
     Confidence: 'high' = MARKER_ or marker_ prefix exactly delimited;
-                'medium' = bare prefix before CamelCase or digit;
+                'medium' = bare prefix (either case: MARKER or marker) before
+                CamelCase or digit -- e.g. "zzzLegendaryWeaponPerk" (lower-
+                case "zzz" immediately followed by an uppercase letter, no
+                underscore) matches exactly like "ZZZLegendaryWeaponPerk"
+                would;
                 'low' = suffix or mid-word (only for non-POST markers).
     POST is only ever high/medium to avoid false positives (e.g. "Poster").
     """
@@ -251,12 +255,15 @@ def _marker_token(edid, markers):
         if edid.startswith(m + "_") or edid.startswith(m.lower() + "_"):
             conf = "medium" if m == "POST" else "high"
             return (m, conf)
-        # Medium: bare all-caps prefix before CamelCase or digit
-        if edid.startswith(m) and len(edid) > len(m):
-            ch = edid[len(m)]
-            if ch.isupper() or ch.isdigit():
-                conf = "low" if m == "POST" else "medium"
-                return (m, conf)
+        # Medium: bare prefix (either case) before CamelCase or digit -- e.g.
+        # "zzzLegendaryPerk" (lowercase "zzz" prefix, no underscore) is just
+        # as much a deprecation marker as "ZZZLegendaryPerk" would be.
+        for candidate in (m, m.lower()):
+            if edid.startswith(candidate) and len(edid) > len(candidate):
+                ch = edid[len(candidate)]
+                if ch.isupper() or ch.isdigit():
+                    conf = "low" if m == "POST" else "medium"
+                    return (m, conf)
         # Low: suffix (skip POST to avoid false positives)
         if m != "POST":
             if edid.endswith("_" + m) or edid.endswith("_" + m.lower()):

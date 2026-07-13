@@ -79,6 +79,28 @@ class TestClassifyCut(unittest.TestCase):
         self.assertEqual(ci["marker"], "DELETE")
         self.assertEqual(ci["confidence"], "low")
 
+    def test_lowercase_bare_prefix_before_camelcase_medium_confidence(self):
+        # Regression: "zzzLegendaryWeaponPyromaniacPerk" (lowercase "zzz",
+        # no underscore, immediately followed by an uppercase letter) is
+        # exactly as much a deprecation marker as the uppercase
+        # "ZZZLegendaryWeaponPyromaniacPerk" would be -- real game data uses
+        # this lowercase-no-underscore convention for some legendary perk
+        # renames (e.g. Legendary_Weapon_PyromaniacPerk ->
+        # zzzLegendary_Weapon_PyromaniacPerk).
+        ci = pl.classify_cut("zzzLegendary_Weapon_PyromaniacPerk", prev_edid="Legendary_Weapon_PyromaniacPerk")
+        self.assertIsNotNone(ci)
+        self.assertEqual(ci["marker"], "ZZZ")
+        self.assertEqual(ci["confidence"], "medium")
+        self.assertEqual(ci["kind"], "newly_deprecated")
+
+    def test_uppercase_bare_prefix_before_camelcase_still_works(self):
+        # The pre-existing uppercase-only bare-prefix case must be unaffected
+        # by adding the lowercase variant above.
+        ci = pl.classify_cut("ZZZLegendaryPerk")
+        self.assertIsNotNone(ci)
+        self.assertEqual(ci["marker"], "ZZZ")
+        self.assertEqual(ci["confidence"], "medium")
+
     def test_clean_edid_not_cut(self):
         self.assertIsNone(pl.classify_cut("AssaultRifle"))
 
