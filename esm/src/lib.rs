@@ -1000,7 +1000,26 @@ impl Database {
                 .as_ref()
                 .map(|r| r as &dyn crate::decode::FormIdRefResolver),
         );
-        let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
+        let mut fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
+        // CURV records only carry a path to an external curve-points JSON file
+        // (see schema `JSON File Path[/2]`) — inline the parsed points too, so a
+        // plain `get` on a CURV record doesn't require a second out-of-band read
+        // of that file. Referencing records already get this via `resolve_formid`
+        // (decode.rs); this covers the CURV record itself.
+        if parsed.header.signature == "CURV" {
+            if let Some(curve) = self
+                .curves
+                .as_ref()
+                .and_then(|curves| curves.get(parsed.header.form_id))
+            {
+                if let Value::Object(map) = &mut fields {
+                    map.insert(
+                        "Curve".to_string(),
+                        crate::decode::curve_points_value(curve),
+                    );
+                }
+            }
+        }
         Ok(RecordResult {
             header: parsed.header,
             editor_id,

@@ -1,3 +1,4 @@
+use crate::curves::Curve;
 use crate::formid::{parse_formid, FormId};
 use crate::reader::OwnedSubrecord;
 use crate::schema::{
@@ -163,6 +164,21 @@ impl<'a> DecodeContext<'a> {
     }
 }
 
+/// Render a curve's points as a JSON array of `{"x", "y"}` objects.
+///
+/// Shared by [`resolve_formid`]'s inline curve branch and the CURV-record's own
+/// `"Curve"` field injection (`Database::record_at_meta_with_depth`) so both
+/// render identically.
+pub(crate) fn curve_points_value(curve: &Curve) -> Value {
+    Value::Array(
+        curve
+            .points
+            .iter()
+            .map(|p| json!({"x": json_f32(p.x), "y": json_f32(p.y)}))
+            .collect(),
+    )
+}
+
 /// Resolve a FormID field to its JSON representation.
 ///
 /// If the field's `valid_refs` includes `"CURV"` and a curve index is loaded,
@@ -177,7 +193,7 @@ pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id:
                 return json!({
                     "formid": id.display(),
                     "curve_path": curve.path,
-                    "curve": curve.points.iter().map(|p| json!({"x": json_f32(p.x), "y": json_f32(p.y)})).collect::<Vec<_>>()
+                    "curve": curve_points_value(curve)
                 });
             }
         }
