@@ -8,6 +8,7 @@ pub mod diff;
 pub mod discover;
 pub mod format;
 pub mod formid;
+pub mod hardcoded;
 pub mod index;
 pub mod ipc;
 pub mod mindex;
@@ -1179,7 +1180,18 @@ impl<'a> DatabaseResolver<'a> {
 
 impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
     fn stub(&self, id: FormId) -> Option<crate::decode::FormIdStub> {
-        let meta = self.db.get_formid_meta(id).ok()?;
+        let Ok(meta) = self.db.get_formid_meta(id) else {
+            // Index miss — this may be a hardcoded engine form (e.g. AVIF `Kill
+            // Streak` at 0x399) that has no record in the ESM at all. Real
+            // records always win; this fallback only fires when the index
+            // lookup itself fails.
+            let form = crate::hardcoded::lookup(id)?;
+            return Some(crate::decode::FormIdStub {
+                formid: id.display(),
+                editor_id: form.editor_id.clone(),
+                record_type: form.record_type.clone(),
+            });
+        };
         let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
         let editor_id = crate::reader::edid_from_subrecords(&parsed.subrecords);
         let record_type = parsed.header.signature.clone();
@@ -1195,7 +1207,13 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             // At depth limit — fall back to stub
             return self.stub(id).and_then(|s| serde_json::to_value(&s).ok());
         }
-        let meta = self.db.get_formid_meta(id).ok()?;
+        let Ok(meta) = self.db.get_formid_meta(id) else {
+            // Index miss — fall back to the hardcoded-form table, same as `stub`.
+            // There's no further record to recurse into, so this returns the
+            // same stub-shaped JSON `stub()` would (matching the existing
+            // depth-limit fallback above).
+            return self.stub(id).and_then(|s| serde_json::to_value(&s).ok());
+        };
         let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
         let editor_id = crate::reader::edid_from_subrecords(&parsed.subrecords);
         let record_type = parsed.header.signature.clone();

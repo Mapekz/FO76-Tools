@@ -1,0 +1,1177 @@
+[
+  {
+    "formid": "0x0000001A",
+    "type": "EYES",
+    "editor_id": "eyeReanimate",
+    "full": "Reanimate Eyes"
+  },
+  {
+    "formid": "0x0000001C",
+    "type": "BPTD",
+    "editor_id": "PlayerBodyPartData"
+  },
+  {
+    "formid": "0x0000001E",
+    "type": "ECZN",
+    "editor_id": "NoZoneZone"
+  },
+  {
+    "formid": "0x00000031",
+    "type": "DOBJ",
+    "editor_id": "DefaultObjectManager"
+  },
+  {
+    "formid": "0x0000005B",
+    "type": "SMBN",
+    "editor_id": "Root"
+  },
+  {
+    "formid": "0x00000276",
+    "type": "IPDS",
+    "editor_id": "DefaultImpactDataSet"
+  },
+  {
+    "formid": "0x000002BC",
+    "type": "AVIF",
+    "editor_id": "Aggression"
+  },
+  {
+    "formid": "0x000002BD",
+    "type": "AVIF",
+    "editor_id": "Confidence"
+  },
+  {
+    "formid": "0x000002BE",
+    "type": "AVIF",
+    "editor_id": "Energy"
+  },
+  {
+    "formid": "0x000002BF",
+    "type": "AVIF",
+    "editor_id": "Morality"
+  },
+  {
+    "formid": "0x000002C1",
+    "type": "AVIF",
+    "editor_id": "Assistance"
+  },
+  {
+    "formid": "0x000002C2",
+    "type": "AVIF",
+    "editor_id": "Strength",
+    "full": "Strength"
+  },
+  {
+    "formid": "0x000002C3",
+    "type": "AVIF",
+    "editor_id": "Perception",
+    "full": "Perception"
+  },
+  {
+    "formid": "0x000002C4",
+    "type": "AVIF",
+    "editor_id": "Endurance",
+    "full": "Endurance"
+  },
+  {
+    "formid": "0x000002C5",
+    "type": "AVIF",
+    "editor_id": "Charisma",
+    "full": "Charisma"
+  },
+  {
+    "formid": "0x000002C6",
+    "type": "AVIF",
+    "editor_id": "Intelligence",
+    "full": "Intelligence"
+  },
+  {
+    "formid": "0x000002C7",
+    "type": "AVIF",
+    "editor_id": "Agility",
+    "full": "Agility"
+  },
+  {
+    "formid": "0x000002C8",
+    "type": "AVIF",
+    "editor_id": "Luck",
+    "full": "Luck"
+  },
+  {
+    "formid": "0x000002C9",
+    "type": "AVIF",
+    "editor_id": "Experience"
+  },
+  {
+    "formid": "0x000002CA",
+    "type": "AVIF",
+    "editor_id": "AttackConditionAlt1"
+  },
+  {
+    "formid": "0x000002CB",
+    "type": "AVIF",
+    "editor_id": "AttackConditionAlt2"
+  },
+  {
+    "formid": "0x000002CC",
+    "type": "AVIF",
+    "editor_id": "IdleChatterTimeMin"
+  },
+  {
+    "formid": "0x000002CD",
+    "type": "AVIF",
+    "editor_id": "IdleChatterTimeMax"
+  },
+  {
+    "formid": "0x000002CE",
+    "type": "AVIF",
+    "editor_id": "RotationSpeedCondition"
+  },
+  {
+    "formid": "0x000002CF",
+    "type": "AVIF",
+    "editor_id": "AttackConditionAlt3"
+  },
+  {
+    "formid": "0x000002D0",
+    "type": "AVIF",
+    "editor_id": "WorkshopPowerConnection"
+  },
+  {
+    "formid": "0x000002D1",
+    "type": "AVIF",
+    "editor_id": "WorkshopID"
+  },
+  {
+    "formid": "0x000002D2",
+    "type": "AVIF",
+    "editor_id": "AnimationMult"
+  },
+  {
+    "formid": "0x000002D3",
+    "type": "AVIF",
+    "editor_id": "WeapReloadSpeedMult"
+  },
+  {
+    "formid": "0x000002D4",
+    "type": "AVIF",
+    "editor_id": "Health",
+    "full": "Health"
+  },
+  {
+    "formid": "0x000002D5",
+    "type": "AVIF",
+    "editor_id": "ActionPoints"
+  },
+  {
+    "formid": "0x000002D6",
+    "type": "AVIF",
+    "editor_id": "UnusedStamina"
+  },
+  {
+    "formid": "0x000002D7",
+    "type": "AVIF",
+    "editor_id": "HealRate",
+    "full": "Heal Rate"
+  },
+  {
+    "formid": "0x000002D8",
+    "type": "AVIF",
+    "editor_id": "ActionPointsRate",
+    "full": "Action Point Regen"
+  },
+  {
+    "formid": "0x000002D9",
+    "type": "AVIF",
+    "editor_id": "ConditionRate"
+  },
+  {
+    "formid": "0x000002DA",
+    "type": "AVIF",
+    "editor_id": "SpeedMult"
+  },
+  {
+    "formid": "0x000002DB",
+    "type": "AVIF",
+    "editor_id": "RadsRate"
+  },
+  {
+    "formid": "0x000002DC",
+    "type": "AVIF",
+    "editor_id": "CarryWeight"
+  },
+  {
+    "formid": "0x000002DD",
+    "type": "AVIF",
+    "editor_id": "CritChance"
+  },
+  {
+    "formid": "0x000002DE",
+    "type": "AVIF",
+    "editor_id": "MeleeDamage",
+    "full": "Melee Damage"
+  },
+  {
+    "formid": "0x000002DF",
+    "type": "AVIF",
+    "editor_id": "UnarmedDamage"
+  },
+  {
+    "formid": "0x000002E0",
+    "type": "AVIF",
+    "editor_id": "Mass"
+  },
+  {
+    "formid": "0x000002E1",
+    "type": "AVIF",
+    "editor_id": "Rads",
+    "full": "Rads"
+  },
+  {
+    "formid": "0x000002E2",
+    "type": "AVIF",
+    "editor_id": "VoiceRate"
+  },
+  {
+    "formid": "0x000002E3",
+    "type": "AVIF",
+    "editor_id": "DamageResist",
+    "full": "Damage Resistance"
+  },
+  {
+    "formid": "0x000002E4",
+    "type": "AVIF",
+    "editor_id": "PoisonResist",
+    "full": "Poison Resistance"
+  },
+  {
+    "formid": "0x000002E5",
+    "type": "AVIF",
+    "editor_id": "FireResist",
+    "full": "Fire Resistance"
+  },
+  {
+    "formid": "0x000002E6",
+    "type": "AVIF",
+    "editor_id": "ElectricResist",
+    "full": "Electrical Resistance"
+  },
+  {
+    "formid": "0x000002E7",
+    "type": "AVIF",
+    "editor_id": "FrostResist",
+    "full": "Cold Resistance"
+  },
+  {
+    "formid": "0x000002E8",
+    "type": "AVIF",
+    "editor_id": "MagicResist"
+  },
+  {
+    "formid": "0x000002E9",
+    "type": "AVIF",
+    "editor_id": "RadResistIngestion",
+    "full": "Radiation Ingestion"
+  },
+  {
+    "formid": "0x000002EA",
+    "type": "AVIF",
+    "editor_id": "RadResistExposure",
+    "full": "Radiation Exposure"
+  },
+  {
+    "formid": "0x000002EB",
+    "type": "AVIF",
+    "editor_id": "EnergyResist",
+    "full": "Energy Resistance"
+  },
+  {
+    "formid": "0x000002EC",
+    "type": "AVIF",
+    "editor_id": "Suspicious"
+  },
+  {
+    "formid": "0x000002ED",
+    "type": "AVIF",
+    "editor_id": "BloodyMess"
+  },
+  {
+    "formid": "0x000002EE",
+    "type": "AVIF",
+    "editor_id": "RadHealthMax"
+  },
+  {
+    "formid": "0x000002EF",
+    "type": "AVIF",
+    "editor_id": "PowerArmorHeadCondition"
+  },
+  {
+    "formid": "0x000002F0",
+    "type": "AVIF",
+    "editor_id": "PowerArmorTorsoCondition"
+  },
+  {
+    "formid": "0x000002F1",
+    "type": "AVIF",
+    "editor_id": "PowerArmorLeftArmCondition"
+  },
+  {
+    "formid": "0x000002F2",
+    "type": "AVIF",
+    "editor_id": "Paralysis"
+  },
+  {
+    "formid": "0x000002F3",
+    "type": "AVIF",
+    "editor_id": "Invisibility"
+  },
+  {
+    "formid": "0x000002F4",
+    "type": "AVIF",
+    "editor_id": "NightEye"
+  },
+  {
+    "formid": "0x000002F5",
+    "type": "AVIF",
+    "editor_id": "WorkshopState"
+  },
+  {
+    "formid": "0x000002F6",
+    "type": "AVIF",
+    "editor_id": "WaterBreathing",
+    "full": "Water Breathing"
+  },
+  {
+    "formid": "0x000002F7",
+    "type": "AVIF",
+    "editor_id": "WaterWalking"
+  },
+  {
+    "formid": "0x000002F8",
+    "type": "AVIF",
+    "editor_id": "IgnoreCrippledLimbs",
+    "full": "Health"
+  },
+  {
+    "formid": "0x000002F9",
+    "type": "AVIF",
+    "editor_id": "Fame"
+  },
+  {
+    "formid": "0x000002FA",
+    "type": "AVIF",
+    "editor_id": "Infamy"
+  },
+  {
+    "formid": "0x000002FB",
+    "type": "AVIF",
+    "editor_id": "WorkshopStateTransition"
+  },
+  {
+    "formid": "0x000002FC",
+    "type": "AVIF",
+    "editor_id": "WardPower"
+  },
+  {
+    "formid": "0x000002FD",
+    "type": "AVIF",
+    "editor_id": "RightItemCharge"
+  },
+  {
+    "formid": "0x000002FE",
+    "type": "AVIF",
+    "editor_id": "ArmorPerks"
+  },
+  {
+    "formid": "0x000002FF",
+    "type": "AVIF",
+    "editor_id": "ShieldPerks"
+  },
+  {
+    "formid": "0x00000300",
+    "type": "AVIF",
+    "editor_id": "WorkshopStateTimeout"
+  },
+  {
+    "formid": "0x00000301",
+    "type": "AVIF",
+    "editor_id": "Variable01"
+  },
+  {
+    "formid": "0x00000302",
+    "type": "AVIF",
+    "editor_id": "Variable02"
+  },
+  {
+    "formid": "0x00000303",
+    "type": "AVIF",
+    "editor_id": "Variable03"
+  },
+  {
+    "formid": "0x00000304",
+    "type": "AVIF",
+    "editor_id": "Variable04"
+  },
+  {
+    "formid": "0x00000305",
+    "type": "AVIF",
+    "editor_id": "Variable05"
+  },
+  {
+    "formid": "0x00000306",
+    "type": "AVIF",
+    "editor_id": "Variable06"
+  },
+  {
+    "formid": "0x00000307",
+    "type": "AVIF",
+    "editor_id": "Variable07"
+  },
+  {
+    "formid": "0x00000308",
+    "type": "AVIF",
+    "editor_id": "Variable08"
+  },
+  {
+    "formid": "0x00000309",
+    "type": "AVIF",
+    "editor_id": "Variable09"
+  },
+  {
+    "formid": "0x0000030A",
+    "type": "AVIF",
+    "editor_id": "Variable10"
+  },
+  {
+    "formid": "0x0000030B",
+    "type": "AVIF",
+    "editor_id": "BowSpeedBonus"
+  },
+  {
+    "formid": "0x0000030C",
+    "type": "AVIF",
+    "editor_id": "FavorActive"
+  },
+  {
+    "formid": "0x0000030D",
+    "type": "AVIF",
+    "editor_id": "FavorsPerDay"
+  },
+  {
+    "formid": "0x0000030E",
+    "type": "AVIF",
+    "editor_id": "FavorsPerDayTimer"
+  },
+  {
+    "formid": "0x0000030F",
+    "type": "AVIF",
+    "editor_id": "LeftItemCharge"
+  },
+  {
+    "formid": "0x00000310",
+    "type": "AVIF",
+    "editor_id": "AbsorbChance"
+  },
+  {
+    "formid": "0x00000311",
+    "type": "AVIF",
+    "editor_id": "Blindness"
+  },
+  {
+    "formid": "0x00000312",
+    "type": "AVIF",
+    "editor_id": "weaponSpeedMult"
+  },
+  {
+    "formid": "0x00000313",
+    "type": "AVIF",
+    "editor_id": "ShoutRecoveryMult"
+  },
+  {
+    "formid": "0x00000314",
+    "type": "AVIF",
+    "editor_id": "FreeCampPlacement"
+  },
+  {
+    "formid": "0x00000315",
+    "type": "AVIF",
+    "editor_id": "FallSpeedMult"
+  },
+  {
+    "formid": "0x00000316",
+    "type": "AVIF",
+    "editor_id": "FavorPointsBonus"
+  },
+  {
+    "formid": "0x00000317",
+    "type": "AVIF",
+    "editor_id": "LastBribedIntimidated"
+  },
+  {
+    "formid": "0x00000318",
+    "type": "AVIF",
+    "editor_id": "LastFlattered"
+  },
+  {
+    "formid": "0x00000319",
+    "type": "AVIF",
+    "editor_id": "MovementNoiseMult"
+  },
+  {
+    "formid": "0x0000031A",
+    "type": "AVIF",
+    "editor_id": "BypassVendorStolenCheck"
+  },
+  {
+    "formid": "0x0000031B",
+    "type": "AVIF",
+    "editor_id": "BypassVendorKeywordCheck"
+  },
+  {
+    "formid": "0x0000031C",
+    "type": "AVIF",
+    "editor_id": "WaitingForPlayer"
+  },
+  {
+    "formid": "0x0000031D",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV01"
+  },
+  {
+    "formid": "0x0000031E",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV02"
+  },
+  {
+    "formid": "0x0000031F",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV03"
+  },
+  {
+    "formid": "0x00000320",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV04"
+  },
+  {
+    "formid": "0x00000321",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV05"
+  },
+  {
+    "formid": "0x00000322",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV06"
+  },
+  {
+    "formid": "0x00000323",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV07"
+  },
+  {
+    "formid": "0x00000324",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV08"
+  },
+  {
+    "formid": "0x00000325",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV09"
+  },
+  {
+    "formid": "0x00000326",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV10"
+  },
+  {
+    "formid": "0x00000327",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV11"
+  },
+  {
+    "formid": "0x00000328",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV12"
+  },
+  {
+    "formid": "0x00000329",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV13"
+  },
+  {
+    "formid": "0x0000032A",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV14"
+  },
+  {
+    "formid": "0x0000032B",
+    "type": "AVIF",
+    "editor_id": "SkillMagAV15"
+  },
+  {
+    "formid": "0x0000032C",
+    "type": "AVIF",
+    "editor_id": "PlayerLevel"
+  },
+  {
+    "formid": "0x0000032D",
+    "type": "AVIF",
+    "editor_id": "Deafness"
+  },
+  {
+    "formid": "0x0000032E",
+    "type": "AVIF",
+    "editor_id": "PowerGenerated"
+  },
+  {
+    "formid": "0x0000032F",
+    "type": "AVIF",
+    "editor_id": "PowerRadiation"
+  },
+  {
+    "formid": "0x00000330",
+    "type": "AVIF",
+    "editor_id": "PowerRequired"
+  },
+  {
+    "formid": "0x00000331",
+    "type": "AVIF",
+    "editor_id": "Food",
+    "full": "Food"
+  },
+  {
+    "formid": "0x00000332",
+    "type": "AVIF",
+    "editor_id": "Water",
+    "full": "Water"
+  },
+  {
+    "formid": "0x00000333",
+    "type": "AVIF",
+    "editor_id": "Safety",
+    "full": "Defense"
+  },
+  {
+    "formid": "0x00000334",
+    "type": "AVIF",
+    "editor_id": "Bed"
+  },
+  {
+    "formid": "0x00000335",
+    "type": "AVIF",
+    "editor_id": "Happiness"
+  },
+  {
+    "formid": "0x00000336",
+    "type": "AVIF",
+    "editor_id": "Artillery"
+  },
+  {
+    "formid": "0x00000337",
+    "type": "AVIF",
+    "editor_id": "WorkshopItemOverlap"
+  },
+  {
+    "formid": "0x00000338",
+    "type": "AVIF",
+    "editor_id": "LogicOperation"
+  },
+  {
+    "formid": "0x00000339",
+    "type": "AVIF",
+    "editor_id": "WorkshopItemClampDirection"
+  },
+  {
+    "formid": "0x0000033A",
+    "type": "AVIF",
+    "editor_id": "WorkshopItemZOffset"
+  },
+  {
+    "formid": "0x0000033B",
+    "type": "AVIF",
+    "editor_id": "WorkshopActorWounded"
+  },
+  {
+    "formid": "0x0000033C",
+    "type": "AVIF",
+    "editor_id": "WorkshopPlayerOwned"
+  },
+  {
+    "formid": "0x0000033D",
+    "type": "AVIF",
+    "editor_id": "WorkshopStackableItem"
+  },
+  {
+    "formid": "0x0000033E",
+    "type": "AVIF",
+    "editor_id": "WorkshopSnapPointRadius"
+  },
+  {
+    "formid": "0x0000033F",
+    "type": "AVIF",
+    "editor_id": "WorkshopAnythingIsGround"
+  },
+  {
+    "formid": "0x00000340",
+    "type": "AVIF",
+    "editor_id": "IgnorePlayerWhileFrenzied"
+  },
+  {
+    "formid": "0x00000341",
+    "type": "AVIF",
+    "editor_id": "LeftWeaponSpeedMult"
+  },
+  {
+    "formid": "0x00000342",
+    "type": "AVIF",
+    "editor_id": "ProduceUses"
+  },
+  {
+    "formid": "0x00000343",
+    "type": "AVIF",
+    "editor_id": "CombatHealthRegenMult"
+  },
+  {
+    "formid": "0x00000344",
+    "type": "AVIF",
+    "editor_id": "FollowerState"
+  },
+  {
+    "formid": "0x00000345",
+    "type": "AVIF",
+    "editor_id": "FollowerDistance"
+  },
+  {
+    "formid": "0x00000346",
+    "type": "AVIF",
+    "editor_id": "FollowerStance"
+  },
+  {
+    "formid": "0x00000347",
+    "type": "AVIF",
+    "editor_id": "FollowerStanceAllowCombatOverride"
+  },
+  {
+    "formid": "0x00000348",
+    "type": "AVIF",
+    "editor_id": "WorkshopCurrentTriangles"
+  },
+  {
+    "formid": "0x00000349",
+    "type": "AVIF",
+    "editor_id": "WorkshopMaxTriangles"
+  },
+  {
+    "formid": "0x0000034A",
+    "type": "AVIF",
+    "editor_id": "WorkshopCurrentDraws"
+  },
+  {
+    "formid": "0x0000034B",
+    "type": "AVIF",
+    "editor_id": "WorkshopMaxDraws"
+  },
+  {
+    "formid": "0x0000034D",
+    "type": "AVIF",
+    "editor_id": "WorkshopIgnoreSimpleIntersections"
+  },
+  {
+    "formid": "0x0000034E",
+    "type": "AVIF",
+    "editor_id": "WorkshopAllowUnsupportedStacking"
+  },
+  {
+    "formid": "0x0000034F",
+    "type": "AVIF",
+    "editor_id": "Fatigue"
+  },
+  {
+    "formid": "0x00000350",
+    "type": "AVIF",
+    "editor_id": "FatigueAPMax"
+  },
+  {
+    "formid": "0x00000351",
+    "type": "AVIF",
+    "editor_id": "FatigueRate"
+  },
+  {
+    "formid": "0x00000352",
+    "type": "AVIF",
+    "editor_id": "FatigueRateMult"
+  },
+  {
+    "formid": "0x00000353",
+    "type": "AVIF",
+    "editor_id": "LogicOutput"
+  },
+  {
+    "formid": "0x00000354",
+    "type": "AVIF",
+    "editor_id": "WorkshopSnapTransmitsPower"
+  },
+  {
+    "formid": "0x00000355",
+    "type": "AVIF",
+    "editor_id": "RadsRateMult"
+  },
+  {
+    "formid": "0x00000356",
+    "type": "AVIF",
+    "editor_id": "DragonRend"
+  },
+  {
+    "formid": "0x00000357",
+    "type": "AVIF",
+    "editor_id": "AttackDamageMult"
+  },
+  {
+    "formid": "0x00000358",
+    "type": "AVIF",
+    "editor_id": "HealRateMult",
+    "full": "All Healing"
+  },
+  {
+    "formid": "0x00000359",
+    "type": "AVIF",
+    "editor_id": "ActionPointsRateMult"
+  },
+  {
+    "formid": "0x0000035A",
+    "type": "AVIF",
+    "editor_id": "ConditionRateMult",
+    "full": "Limb Regen"
+  },
+  {
+    "formid": "0x0000035B",
+    "type": "AVIF",
+    "editor_id": "AimStability"
+  },
+  {
+    "formid": "0x0000035C",
+    "type": "AVIF",
+    "editor_id": "PowerArmorBattery"
+  },
+  {
+    "formid": "0x0000035D",
+    "type": "AVIF",
+    "editor_id": "PowerArmorRightArmCondition"
+  },
+  {
+    "formid": "0x0000035E",
+    "type": "AVIF",
+    "editor_id": "PowerArmorLeftLegCondition"
+  },
+  {
+    "formid": "0x0000035F",
+    "type": "AVIF",
+    "editor_id": "ReflectDamage"
+  },
+  {
+    "formid": "0x00000360",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilityGeneral"
+  },
+  {
+    "formid": "0x00000361",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilityExplosives"
+  },
+  {
+    "formid": "0x00000362",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilityGuns"
+  },
+  {
+    "formid": "0x00000363",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilityMechanics"
+  },
+  {
+    "formid": "0x00000364",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilityMedicine"
+  },
+  {
+    "formid": "0x00000365",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilityMelee"
+  },
+  {
+    "formid": "0x00000366",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilityScience"
+  },
+  {
+    "formid": "0x00000367",
+    "type": "AVIF",
+    "editor_id": "CraftingAbilitySurvival"
+  },
+  {
+    "formid": "0x00000368",
+    "type": "AVIF",
+    "editor_id": "ComponentUsageMultChemical"
+  },
+  {
+    "formid": "0x00000369",
+    "type": "AVIF",
+    "editor_id": "ComponentUsageMultMetallic"
+  },
+  {
+    "formid": "0x0000036A",
+    "type": "AVIF",
+    "editor_id": "ComponentUsageMultOrganic"
+  },
+  {
+    "formid": "0x0000036B",
+    "type": "AVIF",
+    "editor_id": "ComponentUsageMultTechnical"
+  },
+  {
+    "formid": "0x0000036C",
+    "type": "AVIF",
+    "editor_id": "PerceptionCondition",
+    "full": "Head"
+  },
+  {
+    "formid": "0x0000036D",
+    "type": "AVIF",
+    "editor_id": "EnduranceCondition",
+    "full": "Torso"
+  },
+  {
+    "formid": "0x0000036E",
+    "type": "AVIF",
+    "editor_id": "LeftAttackCondition",
+    "full": "Left Arm"
+  },
+  {
+    "formid": "0x0000036F",
+    "type": "AVIF",
+    "editor_id": "RightAttackCondition",
+    "full": "Right Arm"
+  },
+  {
+    "formid": "0x00000370",
+    "type": "AVIF",
+    "editor_id": "LeftMobilityCondition",
+    "full": "Left Leg"
+  },
+  {
+    "formid": "0x00000371",
+    "type": "AVIF",
+    "editor_id": "RightMobilityCondition",
+    "full": "Right Leg"
+  },
+  {
+    "formid": "0x00000372",
+    "type": "AVIF",
+    "editor_id": "BrainCondition",
+    "full": "Head Condition"
+  },
+  {
+    "formid": "0x00000373",
+    "type": "AVIF",
+    "editor_id": "AvailableCondition1"
+  },
+  {
+    "formid": "0x00000374",
+    "type": "AVIF",
+    "editor_id": "AvailableCondition2"
+  },
+  {
+    "formid": "0x00000375",
+    "type": "AVIF",
+    "editor_id": "AvailableCondition3"
+  },
+  {
+    "formid": "0x00000376",
+    "type": "AVIF",
+    "editor_id": "OneHandedWeapons"
+  },
+  {
+    "formid": "0x00000377",
+    "type": "AVIF",
+    "editor_id": "TwoHandedWeapons"
+  },
+  {
+    "formid": "0x00000378",
+    "type": "AVIF",
+    "editor_id": "Marksman"
+  },
+  {
+    "formid": "0x00000379",
+    "type": "AVIF",
+    "editor_id": "Block"
+  },
+  {
+    "formid": "0x0000037A",
+    "type": "AVIF",
+    "editor_id": "Smithing"
+  },
+  {
+    "formid": "0x0000037B",
+    "type": "AVIF",
+    "editor_id": "HeavyArmor"
+  },
+  {
+    "formid": "0x0000037C",
+    "type": "AVIF",
+    "editor_id": "LightArmor"
+  },
+  {
+    "formid": "0x0000037D",
+    "type": "AVIF",
+    "editor_id": "PickPocket"
+  },
+  {
+    "formid": "0x0000037E",
+    "type": "AVIF",
+    "editor_id": "Lockpicking"
+  },
+  {
+    "formid": "0x0000037F",
+    "type": "AVIF",
+    "editor_id": "Sneak"
+  },
+  {
+    "formid": "0x00000380",
+    "type": "AVIF",
+    "editor_id": "Alchemy"
+  },
+  {
+    "formid": "0x00000381",
+    "type": "AVIF",
+    "editor_id": "Speechcraft"
+  },
+  {
+    "formid": "0x00000382",
+    "type": "AVIF",
+    "editor_id": "Alteration"
+  },
+  {
+    "formid": "0x00000383",
+    "type": "AVIF",
+    "editor_id": "Conjuration"
+  },
+  {
+    "formid": "0x00000384",
+    "type": "AVIF",
+    "editor_id": "Destruction"
+  },
+  {
+    "formid": "0x00000385",
+    "type": "AVIF",
+    "editor_id": "Illusion"
+  },
+  {
+    "formid": "0x00000386",
+    "type": "AVIF",
+    "editor_id": "Restoration"
+  },
+  {
+    "formid": "0x00000387",
+    "type": "AVIF",
+    "editor_id": "Enchanting"
+  },
+  {
+    "formid": "0x00000388",
+    "type": "AVIF",
+    "editor_id": "PowerArmorRightLegCondition"
+  },
+  {
+    "formid": "0x00000389",
+    "type": "AVIF",
+    "editor_id": "VANSPerk"
+  },
+  {
+    "formid": "0x0000038A",
+    "type": "AVIF",
+    "editor_id": "WorkshopLevelObject"
+  },
+  {
+    "formid": "0x0000038B",
+    "type": "AVIF",
+    "editor_id": "WorkshopLevel"
+  },
+  {
+    "formid": "0x0000038C",
+    "type": "AVIF",
+    "editor_id": "WorkshopLevelHealthPercent"
+  },
+  {
+    "formid": "0x0000038D",
+    "type": "AVIF",
+    "editor_id": "WorkshopCurrentBudget"
+  },
+  {
+    "formid": "0x0000038E",
+    "type": "AVIF",
+    "editor_id": "WorkshopFlagStatus"
+  },
+  {
+    "formid": "0x0000038F",
+    "type": "AVIF",
+    "editor_id": "DamageResistPVP"
+  },
+  {
+    "formid": "0x00000390",
+    "type": "AVIF",
+    "editor_id": "FreeQuickCampPlacement"
+  },
+  {
+    "formid": "0x00000391",
+    "type": "AVIF",
+    "editor_id": "WeightInContainer"
+  },
+  {
+    "formid": "0x00000392",
+    "type": "AVIF",
+    "editor_id": "HealthPercent"
+  },
+  {
+    "formid": "0x00000393",
+    "type": "AVIF",
+    "editor_id": "Caps"
+  },
+  {
+    "formid": "0x00000394",
+    "type": "AVIF",
+    "editor_id": "JunkItemCount"
+  },
+  {
+    "formid": "0x00000395",
+    "type": "AVIF",
+    "editor_id": "ConsecutiveHitCount"
+  },
+  {
+    "formid": "0x00000396",
+    "type": "AVIF",
+    "editor_id": "ActionPointsMax"
+  },
+  {
+    "formid": "0x00000397",
+    "type": "AVIF",
+    "editor_id": "DamageRecieved"
+  },
+  {
+    "formid": "0x00000398",
+    "type": "AVIF",
+    "editor_id": "Projectiles Fired"
+  },
+  {
+    "formid": "0x00000399",
+    "type": "AVIF",
+    "editor_id": "Kill Streak"
+  },
+  {
+    "formid": "0x0000039A",
+    "type": "AVIF",
+    "editor_id": "Fishing_MaxBobModifier"
+  },
+  {
+    "formid": "0x0000039B",
+    "type": "AVIF",
+    "editor_id": "AmmoSpenderStacks"
+  }
+]
