@@ -12,8 +12,9 @@ use common::{append_record, append_subrecord, cstr, tes4_header, wrap_grup, writ
 use esm::decode::FormIdRefResolver;
 use esm::{DatabaseResolver, FormId};
 
-/// FormID 0x00000399 is the engine-hardcoded AVIF `Kill Streak` (verified
-/// against xEdit's `Core/Hardcoded/Fallout76.esp`). No record in this
+/// FormID 0x00000399 is the engine-hardcoded AVIF `KillStreak` (verified
+/// against xEdit's `Core/Hardcoded/Fallout76.esp`; the pseudo-plugin spells
+/// it "Kill Streak", which the extractor normalizes). No record in this
 /// synthetic ESM defines it, so the resolver must fall back to the embedded
 /// hardcoded table rather than leaving it unresolved.
 const KILL_STREAK: u32 = 0x0000_0399;
@@ -33,7 +34,7 @@ fn stub_falls_back_to_hardcoded_table_on_index_miss() {
         .expect("0x399 should resolve via the hardcoded fallback");
     assert_eq!(stub.formid, "0x00000399");
     assert_eq!(stub.record_type, "AVIF");
-    assert_eq!(stub.editor_id.as_deref(), Some("Kill Streak"));
+    assert_eq!(stub.editor_id.as_deref(), Some("KillStreak"));
 
     let _ = std::fs::remove_file(&path);
 }
@@ -53,17 +54,17 @@ fn decode_full_falls_back_to_hardcoded_table_on_index_miss() {
         .expect("0x399 should resolve via the hardcoded fallback");
     assert_eq!(value["formid"], "0x00000399");
     assert_eq!(value["record_type"], "AVIF");
-    assert_eq!(value["editor_id"], "Kill Streak");
+    assert_eq!(value["editor_id"], "KillStreak");
 
     let _ = std::fs::remove_file(&path);
 }
 
 #[test]
 fn real_esm_record_wins_over_hardcoded_table_entry() {
-    // Deliberately reuse the hardcoded AVIF `Kill Streak` FormID for a WEAP
+    // Deliberately reuse the hardcoded AVIF `KillStreak` FormID for a WEAP
     // record in the synthetic ESM. The index lookup must succeed here, so the
     // resolver should never consult the hardcoded table — the real record's
-    // type and EditorID must come back, not "AVIF"/"Kill Streak".
+    // type and EditorID must come back, not "AVIF"/"KillStreak".
     let mut buf = tes4_header();
     let mut edid = Vec::new();
     append_subrecord(&mut edid, b"EDID", &cstr("TestOverride"));

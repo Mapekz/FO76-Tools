@@ -2,7 +2,7 @@
 //!
 //! A handful of low FormIDs (roughly `< 0x800`) are hardcoded into the FO76
 //! game executable itself and never appear as a record in `SeventySix.esm` —
-//! e.g. AVIF `Kill Streak` at `0x00000399`, which shows up as an EPF3
+//! e.g. AVIF `KillStreak` at `0x00000399`, which shows up as an EPF3
 //! actor-value reference on PERK effects. xEdit ships a pseudo-plugin
 //! (`Core/Hardcoded/Fallout76.esp`) purely so it has something to resolve
 //! these FormIDs against.
@@ -92,7 +92,7 @@ mod tests {
     fn kill_streak_avif_resolves() {
         let form = lookup(FormId::new(0x0000_0399)).expect("0x399 should resolve");
         assert_eq!(form.record_type, "AVIF");
-        assert_eq!(form.editor_id.as_deref(), Some("Kill Streak"));
+        assert_eq!(form.editor_id.as_deref(), Some("KillStreak"));
     }
 
     #[test]

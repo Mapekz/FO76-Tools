@@ -3,7 +3,7 @@
 
 Fallout76.esm only contains records with FormIDs the game's data files define.
 A handful of low FormIDs (roughly < 0x800) are instead hardcoded into the game
-executable itself — e.g. AVIF `Kill Streak` at 0x399 — and never appear as a
+executable itself — e.g. AVIF `KillStreak` at 0x399 — and never appear as a
 record in the ESM. xEdit ships these as a pseudo-plugin at
 ``Core/Hardcoded/Fallout76.esp`` inside the TES5Edit checkout, purely so it has
 something to resolve those FormIDs against.
@@ -122,6 +122,11 @@ def walk_records(data: bytes, pos: int, end: int, out: list[dict]) -> None:
                     editor_id = read_zstring(sub_data)
                 elif sub_sig == "FULL" and full is None:
                     full = read_zstring(sub_data)
+            # xEdit authored a few EDIDs in the pseudo-plugin as display-style
+            # labels ("Kill Streak", "Projectiles Fired"); real EditorIDs never
+            # contain spaces, so normalize them away.
+            if editor_id is not None:
+                editor_id = editor_id.replace(" ", "")
             entry = {
                 "formid": f"0x{form_id:08X}",
                 "type": record_sig,

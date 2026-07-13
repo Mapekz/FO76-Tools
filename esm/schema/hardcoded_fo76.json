@@ -1157,12 +1157,12 @@
   {
     "formid": "0x00000398",
     "type": "AVIF",
-    "editor_id": "Projectiles Fired"
+    "editor_id": "ProjectilesFired"
   },
   {
     "formid": "0x00000399",
     "type": "AVIF",
-    "editor_id": "Kill Streak"
+    "editor_id": "KillStreak"
   },
   {
     "formid": "0x0000039A",
