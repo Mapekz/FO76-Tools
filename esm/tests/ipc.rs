@@ -227,6 +227,41 @@ fn record_sel_json_round_trip() {
     }
 }
 
+/// A `Response::Ok { data }` carrying an extreme-magnitude decoded float
+/// (subnormal or near f32::MAX) must survive a JSON text round-trip exactly —
+/// this is what happens on every `-p`/daemon request: the server serializes
+/// `Response` to text, sends it over HTTP, and the client re-parses it.
+///
+/// serde_json's *default* float parser does not guarantee exact round-trip
+/// precision for every f64 (particularly extreme exponents): parsing back a
+/// clean, shortest-round-trip string like `"2.803e-42"` can land on a
+/// *different* nearby f64 whose own shortest representation needs many more
+/// digits (`"2.8030000000000003e-42"`), silently reintroducing noise that
+/// `decode::json_f32` (see decode.rs) already removed at decode time. This is
+/// fixed by enabling serde_json's `float_roundtrip` feature in Cargo.toml —
+/// this test guards against that feature flag ever being dropped.
+#[test]
+fn response_json_round_trip_preserves_extreme_float_precision() {
+    let cases: &[f64] = &[
+        2.803e-42,    // subnormal-range f32 widened to f64 (real QUST QSTA "Radius" case)
+        3.4028235e38, // f32::MAX widened to f64 (used elsewhere as a sentinel)
+        1.401298e-45, // smallest positive subnormal f32, widened to f64
+    ];
+
+    for &value in cases {
+        let resp = Response::Ok {
+            data: serde_json::json!({ "Radius": value }),
+        };
+        let json = serde_json::to_string(&resp).expect("serialize");
+        let back: Response = serde_json::from_str(&json).expect("deserialize");
+        let json2 = serde_json::to_string(&back).expect("re-serialize");
+        assert_eq!(
+            json, json2,
+            "extreme float {value} did not round-trip losslessly through JSON text"
+        );
+    }
+}
+
 /// A pre-`options` wire client (e.g. an older N-API build) sends `Op::Diff`
 /// JSON with no `options` field at all. `#[serde(default)]` on that field
 /// must fill in `DiffOptions::default()` rather than failing to deserialize.

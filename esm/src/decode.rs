@@ -177,7 +177,7 @@ pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id:
                 return json!({
                     "formid": id.display(),
                     "curve_path": curve.path,
-                    "curve": curve.points.iter().map(|p| json!({"x": p.x, "y": p.y})).collect::<Vec<_>>()
+                    "curve": curve.points.iter().map(|p| json!({"x": json_f32(p.x), "y": json_f32(p.y)})).collect::<Vec<_>>()
                 });
             }
         }
@@ -352,13 +352,13 @@ fn decode_member(
             if let Some(data) = payload {
                 if data.len() >= 4 {
                     let f = f32::from_le_bytes(data[0..4].try_into().unwrap());
-                    out.insert(name.clone(), json!(f));
+                    out.insert(name.clone(), json_f32(f));
                 }
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if sr.data.len() >= 4 {
                         let f = f32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                        out.insert(name.clone(), json!(f));
+                        out.insert(name.clone(), json_f32(f));
                     }
                 }
             }
@@ -487,9 +487,9 @@ fn decode_member(
                     out.insert(
                         name.clone(),
                         json!({
-                            "x": f32::from_le_bytes(data[0..4].try_into().unwrap()),
-                            "y": f32::from_le_bytes(data[4..8].try_into().unwrap()),
-                            "z": f32::from_le_bytes(data[8..12].try_into().unwrap()),
+                            "x": json_f32(f32::from_le_bytes(data[0..4].try_into().unwrap())),
+                            "y": json_f32(f32::from_le_bytes(data[4..8].try_into().unwrap())),
+                            "z": json_f32(f32::from_le_bytes(data[8..12].try_into().unwrap())),
                         }),
                     );
                 }
@@ -499,9 +499,9 @@ fn decode_member(
                         out.insert(
                             name.clone(),
                             json!({
-                                "x": f32::from_le_bytes(sr.data[0..4].try_into().unwrap()),
-                                "y": f32::from_le_bytes(sr.data[4..8].try_into().unwrap()),
-                                "z": f32::from_le_bytes(sr.data[8..12].try_into().unwrap()),
+                                "x": json_f32(f32::from_le_bytes(sr.data[0..4].try_into().unwrap())),
+                                "y": json_f32(f32::from_le_bytes(sr.data[4..8].try_into().unwrap())),
+                                "z": json_f32(f32::from_le_bytes(sr.data[8..12].try_into().unwrap())),
                             }),
                         );
                     }
@@ -989,7 +989,7 @@ fn decode_struct_fields(
             MemberDef::Float { name, .. } => {
                 if pos + 4 <= data.len() {
                     let f = f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
-                    struct_out.insert(name.clone(), json!(f));
+                    struct_out.insert(name.clone(), json_f32(f));
                     pos += 4;
                 }
             }
@@ -1048,9 +1048,9 @@ fn decode_struct_fields(
                     struct_out.insert(
                         name.clone(),
                         json!({
-                            "x": f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()),
-                            "y": f32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap()),
-                            "z": f32::from_le_bytes(data[pos + 8..pos + 12].try_into().unwrap()),
+                            "x": json_f32(f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap())),
+                            "y": json_f32(f32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap())),
+                            "z": json_f32(f32::from_le_bytes(data[pos + 8..pos + 12].try_into().unwrap())),
                         }),
                     );
                     pos += 12;
@@ -1286,7 +1286,7 @@ fn apply_crafting_quantity(struct_out: &mut Map<String, Value>) {
                     })
                     .collect();
                 match crate::curves::eval(&points, count as f32) {
-                    Some(y) => (serde_json::json!(y), "curve"),
+                    Some(y) => (json_f32(y), "curve"),
                     None => (serde_json::json!(count), "count"),
                 }
             }
@@ -1594,6 +1594,26 @@ fn read_int(data: &[u8], width: IntegerWidth, signed: bool) -> Option<i64> {
         return Some(v as u64 as i64);
     }
     Some(v)
+}
+
+/// Emit a decoded f32 game value as a JSON number, free of f32→f64 widening
+/// noise (e.g. `0.5f32` printing as `0.49999998`). `serde_json::Value` only
+/// stores `f64`, and casting `f as f64` widens losslessly but then gets
+/// formatted at *f64* round-trip precision (52-bit mantissa) instead of the
+/// value's real *f32* precision (23-bit mantissa) — exposing bits that were
+/// never meaningful. Routing through `f32::to_string()` (which already
+/// implements shortest-round-trip formatting for f32) and re-parsing as f64
+/// keeps exactly the digits the f32 actually carries, no more, no less. Non-
+/// finite inputs are passed through unchanged so serde_json's existing
+/// inf/NaN → null behavior is preserved.
+pub(crate) fn json_f32(f: f32) -> Value {
+    if !f.is_finite() {
+        return json!(f);
+    }
+    json!(f
+        .to_string()
+        .parse::<f64>()
+        .expect("f32::to_string output must parse as f64"))
 }
 
 fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
@@ -2625,7 +2645,7 @@ fn decode_vmad_property(
                     data[*pos + 3],
                 ]);
                 *pos += 4;
-                json!(v)
+                json_f32(v)
             }
             5 => {
                 if *pos >= data.len() {

@@ -544,6 +544,49 @@ fn glob_game_year_decodes_correctly() {
     );
 }
 
+/// GLOB `FLTV` — decoded f32 values are emitted free of f32->f64 widening noise.
+///
+/// Reuses the GLOB float path exercised above. serde_json's `f32 -> Value`
+/// conversion widens to f64 before ryu formats it, which prints at f64
+/// round-trip precision (52-bit mantissa) instead of the value's real f32
+/// precision (23-bit mantissa) — surfacing bits that were never meaningful
+/// (e.g. `0.10000000149011612` instead of `0.1`) unless the decoder corrects
+/// for it. This asserts the fix runs and preserves real precision rather than
+/// truncating it:
+///   - clean values pass through unchanged (0.5, 0.0)
+///   - f32->f64 widening noise on an exact-in-decimal value is erased (0.1)
+///   - a value with genuine f32 precision beyond 5 decimal places keeps all
+///     of it (1/3 as f32 -> 0.33333334, matching `f32::to_string()` exactly —
+///     not truncated to 0.33333)
+///   - a huge-magnitude value (f32::MAX, used elsewhere as a sentinel) also
+///     comes out clean, since the fix isn't a decimal-place rounding hack
+#[test]
+fn glob_float_value_has_no_f64_widening_noise() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 157);
+
+    let cases: &[(&str, f64)] = &[
+        ("cdcccc3d", 0.1),            // 0.1f32, widens to 0.10000000149011612 raw
+        ("abaaaa3e", 0.333_333_34),   // (1/3)f32, widens to 0.3333333432674408 raw
+        ("0000003f", 0.5),            // 0.5f32, exact — must survive untouched
+        ("00000000", 0.0),            // 0.0f32, exact
+        ("ffff7f7f", 3.402_823_5e38), // f32::MAX, widens to a noisy 41-digit f64 raw
+    ];
+
+    for (fltv_hex, expected) in cases {
+        let subs = subrecords_from(&[("EDID", "47616d655965617200"), ("FLTV", fltv_hex)]);
+        let result = decode_record(&ctx, "GLOB", &subs);
+        let value = result
+            .get("Value")
+            .and_then(|v| v.as_f64())
+            .expect("Value must be present");
+        assert_eq!(
+            value, *expected,
+            "FLTV {fltv_hex} should decode to exactly {expected}, got {value}"
+        );
+    }
+}
+
 /// KYWD 0x000000C1 — `SplineLink` — decodes to Keyword with RGBA color and type enum.
 ///
 /// 3-subrecord record (EDID + CNAM + TNAM).  Exercises the keyword color struct

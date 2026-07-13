@@ -4,7 +4,7 @@
 //! type byte, resolves the function index to a human-readable name, and decodes
 //! each parameter field according to the function's declared parameter types.
 
-use crate::decode::{hex, resolve_formid, DecodeContext};
+use crate::decode::{hex, json_f32, resolve_formid, DecodeContext};
 use crate::formid::FormId;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -265,7 +265,7 @@ fn avif_refs() -> &'static [String] {
 fn decode_param(bytes: &[u8; 4], class: char, ctx: &DecodeContext<'_>) -> Value {
     match class {
         'N' | 'S' => json!(null),
-        'F' => json!(f32::from_le_bytes(*bytes)),
+        'F' => json_f32(f32::from_le_bytes(*bytes)),
         'I' => json!(i32::from_le_bytes(*bytes)),
         'A' => {
             if ctx.form_version >= 77 {
@@ -311,7 +311,7 @@ pub fn decode_ctda(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
     let comp_value: Value = if use_global {
         resolve_formid(ctx, &[], FormId(u32::from_le_bytes(comp_bytes)))
     } else {
-        json!(f32::from_le_bytes(comp_bytes))
+        json_f32(f32::from_le_bytes(comp_bytes))
     };
 
     // Bytes 8-9: function index.
