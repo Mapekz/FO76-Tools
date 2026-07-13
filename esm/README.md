@@ -1,6 +1,6 @@
 # esm — FO76 ESM Reader
 
-A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 173 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, and schema coverage auditing.
+A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 181 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, and schema coverage auditing.
 
 > **Read-only.** This tool never modifies your `.esm` files. The only files it writes are sidecar index caches next to the ESM: `<name>.esm.idx` (full bincode cache, ~280 MiB) and `<name>.esm.midx` (compact mmap index, ~24 MiB). Game data files (`*.esm`, `*.ba2`, `*.esm.idx`, `*.esm.midx`) are gitignored and non-redistributable — obtain them from your own game install.
 
@@ -10,12 +10,14 @@ A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master file
 esm/
   src/             Engine library + two binaries (esm CLI, esm-server)
   bindings/napi/   N-API addon (esm-napi) for Electron/Node.js
-  app/             Electron GUI ("FO76 ESM Viewer")
-  schema/          fo76.json (173 record types, embedded at compile time)
+  schema/          fo76.json (181 record types, embedded at compile time)
   tools/           Schema extractor (xEdit Pascal → JSON) + patch-note scripts
   static/          Embedded HTML for the HTTP server UI
-  todos/           Deferred work backlog
 ```
+
+The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling
+[`../esm-viewer/`](../esm-viewer/) directory, not in this crate. Deferred work for every
+subproject is tracked in the repo-root [`todos.md`](../todos.md).
 
 ## Requirements
 

@@ -17,6 +17,10 @@ This repository contains three Fallout 76 tools. Most share no code, no workspac
 - `esm/` uses `cargo` (Rust workspace). See [`esm/CLAUDE.md`](esm/CLAUDE.md).
 - `esm-viewer/` uses `npm` + `just`. See [`esm-viewer/CLAUDE.md`](esm-viewer/CLAUDE.md).
 
+## Backlog
+
+Deferred work for **all** subprojects lives in one place: [`todos.md`](todos.md) at the repo root, grouped by project. Add follow-ups there — do not create per-project `todos.md` files or a `todos/` directory.
+
 ## Before committing
 
 Before committing in any subproject, run that subproject's full check suite and only commit when everything passes — formatting, lint with `-D warnings`, and tests:
