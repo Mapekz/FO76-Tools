@@ -182,16 +182,17 @@ pub(crate) fn curve_points_value(curve: &Curve) -> Value {
 /// Resolve a FormID field to its JSON representation.
 ///
 /// If the field's `valid_refs` includes `"CURV"` and a curve index is loaded,
-/// the curve's path and point data are inlined into the output object.
-/// When `ctx.resolve_depth` is `Stub` or `Full` and a resolver is present,
-/// the referenced record is expanded inline. Otherwise, a bare hex string is returned.
+/// the curve's EditorID, path, and point data are inlined into the output
+/// object. When `ctx.resolve_depth` is `Stub` or `Full` and a resolver is
+/// present, the referenced record is expanded inline. Otherwise, a bare hex
+/// string is returned.
 pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
-    // Existing curve branch — unchanged
     if valid_refs.iter().any(|r| r == "CURV") {
         if let Some(curves) = ctx.curves {
             if let Some(curve) = curves.get(id) {
                 return json!({
                     "formid": id.display(),
+                    "editor_id": curve.edid,
                     "curve_path": curve.path,
                     "curve": curve_points_value(curve)
                 });
@@ -2966,6 +2967,41 @@ mod tests {
             data,
             doc_index,
         }
+    }
+
+    /// Regression test: `resolve_formid`'s CURV branch inlines `formid`,
+    /// `curve_path`, and `curve`, but was missing `editor_id` even though
+    /// `Curve` already carries the EditorID parsed off the CURV record at
+    /// index-build time — every FormID field referencing a curve table (e.g.
+    /// ALCH `Health`, ENCH `Curve Table`) silently dropped the curve's own
+    /// EditorID. Pin that it's now surfaced, and that a curve with no EDID
+    /// subrecord serializes as `null` rather than an empty string.
+    #[test]
+    fn resolve_formid_curv_branch_includes_editor_id() {
+        let curve = crate::curves::Curve {
+            edid: Some("CT_Legendary_Weapon_Adrenal".to_string()),
+            path: r"LegendaryMods\Weapon_DamagePerKill.json".to_string(),
+            points: vec![crate::curves::CurvePoint { x: 0.0, y: 0.0 }],
+        };
+        let curves = crate::curves::CurveIndex::from_entries(vec![(0x1, curve)]);
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.curves = Some(&curves);
+
+        let result = resolve_formid(&ctx, &["CURV".to_string()], FormId::new(0x1));
+        assert_eq!(result["editor_id"], json!("CT_Legendary_Weapon_Adrenal"));
+        assert_eq!(result["formid"], json!(FormId::new(0x1).display()));
+
+        let curve_no_edid = crate::curves::Curve {
+            edid: None,
+            path: "Foo.json".to_string(),
+            points: vec![],
+        };
+        let curves_no_edid = crate::curves::CurveIndex::from_entries(vec![(0x2, curve_no_edid)]);
+        let mut ctx2 = bare_ctx(&schema);
+        ctx2.curves = Some(&curves_no_edid);
+        let result2 = resolve_formid(&ctx2, &["CURV".to_string()], FormId::new(0x2));
+        assert_eq!(result2["editor_id"], Value::Null);
     }
 
     /// `CountPrefix(4)`: pins the 4-byte-prefix `Attach Parent Slots` / `Items`

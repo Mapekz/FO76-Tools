@@ -19,7 +19,7 @@ pub struct CurvePoint {
 /// A parsed curve table: EditorID, source path, and interpolatable points.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Curve {
-    pub edid: String,
+    pub edid: Option<String>,
     pub path: String,
     pub points: Vec<CurvePoint>,
 }
@@ -70,6 +70,18 @@ impl CurveIndex {
         self.by_formid.get(&id.raw())
     }
 
+    /// Build a `CurveIndex` directly from `(form_id, Curve)` pairs, bypassing
+    /// the loose-dir/BA2 file I/O in [`Self::build`]/[`Self::build_from_dir`]
+    /// (already covered by `tests/curves.rs`). For unit tests in `decode.rs`
+    /// that only need a populated index to exercise `resolve_formid`'s CURV
+    /// branch.
+    #[cfg(test)]
+    pub(crate) fn from_entries(entries: Vec<(u32, Curve)>) -> CurveIndex {
+        CurveIndex {
+            by_formid: entries.into_iter().collect(),
+        }
+    }
+
     /// Build the curve index from a live ESM + loose curve JSON files.
     ///
     /// `misc_dir` is the `misc/` directory extracted from a Startup BA2
@@ -99,7 +111,7 @@ impl CurveIndex {
                 }
             };
 
-            let edid = crate::reader::edid_from_subrecords(&parsed.subrecords).unwrap_or_default();
+            let edid = crate::reader::edid_from_subrecords(&parsed.subrecords);
 
             let path_sub = parsed
                 .subrecords
@@ -160,7 +172,7 @@ impl CurveIndex {
                 }
             };
 
-            let edid = crate::reader::edid_from_subrecords(&parsed.subrecords).unwrap_or_default();
+            let edid = crate::reader::edid_from_subrecords(&parsed.subrecords);
 
             // Find the path subrecord — try CRVE first, then JASF
             let path_sub = parsed
