@@ -47,30 +47,41 @@ import type { CoverageReport } from './generated/CoverageReport'
 import type { DiffResult } from './generated/DiffResult'
 import type { FilterResult } from './generated/FilterResult'
 import type { ResolveDepth } from './generated/ResolveDepth'
+import { CONTRACT } from './ipc-contract'
 
-export const CH = {
+// Non-registry-keyed / bespoke-logic channels — these have no place in
+// `ipc-contract.ts`'s uniform table (see that file's header comment for why),
+// so their channel names stay hand-written here, same as before this table
+// existed.
+const SPECIAL_CH = {
   openFileDialog: 'open-file-dialog',
   openFolderDialog: 'open-folder-dialog',
   openDatabase: 'open-database',
   closeDatabase: 'close-database',
   listOpen: 'list-open',
-  fileInfo: 'file-info',
-  listGroups: 'list-groups',
-  listTypeRecords: 'list-type-records',
-  recordByFormid: 'record-by-formid',
-  recordByEdid: 'record-by-edid',
-  recordById: 'record-by-id',
-  referencedBy: 'referenced-by',
-  referencedById: 'referenced-by-id',
   parseFormId: 'parse-form-id',
-  listTypeChildren: 'list-type-children',
-  listGroupChildren: 'list-group-children',
-  search: 'search',
-  filterTypeRecords: 'filter-type-records',
-  listTypeFieldPaths: 'list-type-field-paths',
-  recordRaw: 'record-raw',
-  coverageReport: 'coverage-report',
   diff: 'diff',
+} as const
+
+/** Every `Fo76Api` method name not covered by `SPECIAL_CH` — i.e. the ones
+ * `CONTRACT` provides a channel for. `Object.fromEntries`'s return type is a
+ * plain string index signature (it doesn't preserve literal keys), so this
+ * cast is needed to give `CH`'s table-derived half named properties again —
+ * without it, `CH.recordByFormid` etc. wouldn't type-check as a known key
+ * even though it's present at runtime. */
+type TableMethod = Exclude<keyof Fo76Api, keyof typeof SPECIAL_CH>
+
+/** Electron IPC channel-name constants. The uniform DB-method channels are
+ * derived from `ipc-contract.ts`'s `CONTRACT` table (their one source of
+ * truth); `SPECIAL_CH` above hand-writes the rest. External shape/usage
+ * (`CH.someMethod`) is unchanged by this — only the declaration site of the
+ * table-driven half moved. */
+export const CH = {
+  ...SPECIAL_CH,
+  ...(Object.fromEntries(CONTRACT.map((entry) => [entry.method, entry.channel])) as Record<
+    TableMethod,
+    string
+  >),
 } as const
 
 export type DbId = string
@@ -98,7 +109,6 @@ export interface Fo76Api {
   recordByFormid(id: DbId, formid: string, resolve?: ResolveDepth): Promise<RecordResult>
   recordByEdid(id: DbId, edid: string, resolve?: ResolveDepth): Promise<RecordResult>
   recordById(id: DbId, target: string, resolve?: ResolveDepth): Promise<RecordResult>
-  referencedBy(id: DbId, formid: string): Promise<RecordRow[]>
   referencedById(id: DbId, target: string, depth?: number): Promise<RefList>
   parseFormId(s: string): Promise<string>
   listTypeChildren(id: DbId, sig: string, offset: number, limit: number): Promise<GroupChild[]>

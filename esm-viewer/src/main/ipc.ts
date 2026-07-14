@@ -2,54 +2,13 @@ import { ipcMain, dialog } from 'electron'
 import { napi } from './addon'
 import * as registry from './db-registry'
 import { CH } from '../shared/api-types'
+import { CONTRACT } from '../shared/ipc-contract'
+import { validateOptionalText, validateBodies, validateSigArray } from './ipc-validators'
 
-function validateResolve(v: unknown): 'none' | 'stub' | 'full' {
-  if (v === 'none' || v === 'stub' || v === 'full') return v
-  throw new Error(`invalid resolve value: expected none|stub|full, got ${String(v)}`)
-}
-
-function validateSig(v: unknown): string {
-  if (typeof v === 'string' && /^[A-Z_0-9]{1,4}$/.test(v)) return v
-  throw new Error(`invalid record signature: ${String(v)}`)
-}
-
-function validateSigArray(v: unknown): string[] {
-  if (!Array.isArray(v)) throw new Error(`invalid record signature list: ${String(v)}`)
-  return v.map((sig) => validateSig(sig))
-}
-
-function validateSearchField(v: unknown): 'edid' | 'name' | 'both' {
-  if (v === 'edid' || v === 'name' || v === 'both') return v
-  throw new Error(`invalid search field: expected edid|name|both, got ${String(v)}`)
-}
-
-function validateBodies(v: unknown): 'none' | 'stub' | 'full' {
-  if (v === 'none' || v === 'stub' || v === 'full') return v
-  throw new Error(`invalid bodies value: expected none|stub|full, got ${String(v)}`)
-}
-
-function validateFilterOp(v: unknown): 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' {
-  if (v === 'exists' || v === 'eq' || v === 'contains' || v === 'gt' || v === 'lt' || v === 'gte' || v === 'lte') {
-    return v
-  }
-  throw new Error(`invalid filter op: expected exists|eq|contains|gt|lt|gte|lte, got ${String(v)}`)
-}
-
-function validateOptionalText(name: string, v: unknown, max = 512): string | undefined {
-  if (v === undefined || v === null) return undefined
-  if (typeof v === 'string' && v.length <= max) return v
-  throw new Error(`invalid ${name}: must be a string of length <= ${max}`)
-}
-
-function validateUint(name: string, v: unknown, max = 100_000): number {
-  if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max) return v
-  throw new Error(`invalid ${name}: expected integer 0–${max}, got ${String(v)}`)
-}
-
-function validateTarget(v: unknown): string {
-  if (typeof v === 'string' && v.length > 0 && v.length <= 512) return v
-  throw new Error(`invalid target: must be a non-empty string`)
-}
+// Re-export the validators so existing/external importers of `./ipc` keep
+// working, and so `ipc-validators.test.ts` (and `../shared/ipc-contract.ts`)
+// have one canonical module to pull them from.
+export * from './ipc-validators'
 
 function wrap(fn: () => unknown) {
   try {
@@ -90,141 +49,31 @@ export function registerIpc(): void {
     registry.listAll().map(({ id, path, info }) => ({ id, path, info }))
   )
 
-  ipcMain.handle(CH.fileInfo, (_e, id: string) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => entry.db.fileInfo())
-  })
-
-  ipcMain.handle(CH.listGroups, (_e, id: string) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => entry.db.listGroups())
-  })
-
-  ipcMain.handle(CH.listTypeRecords, (_e, id: string, sig: unknown, offset: unknown, limit: unknown) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validSig = validateSig(sig)
-    const validOffset = validateUint('offset', offset)
-    const validLimit = validateUint('limit', limit)
-    return wrap(() => entry.db.listTypeRecords(validSig, validOffset, validLimit))
-  })
-
-  ipcMain.handle(CH.recordByFormid, (_e, id: string, formid: unknown, resolve: unknown = 'stub') => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validFormid = validateTarget(formid)
-    const validResolve = validateResolve(resolve)
-    return wrap(() => entry.db.recordByFormid(validFormid, validResolve))
-  })
-
-  ipcMain.handle(CH.recordByEdid, async (_e, id: string, edid: unknown, resolve: unknown = 'stub') => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validEdid = validateTarget(edid)
-    const validResolve = validateResolve(resolve)
-    return await entry.db.recordByEdid(validEdid, validResolve)
-  })
-
-  ipcMain.handle(CH.recordById, async (_e, id: string, target: unknown, resolve: unknown = 'stub') => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validTarget = validateTarget(target)
-    const validResolve = validateResolve(resolve)
-    return await entry.db.recordById(validTarget, validResolve)
-  })
-
-  ipcMain.handle(CH.referencedBy, async (_e, id: string, formid: unknown) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validFormid = validateTarget(formid)
-    return await entry.db.referencedBy(validFormid)
-  })
-
-  ipcMain.handle(CH.referencedById, async (_e, id: string, target: unknown, depth?: number) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validTarget = validateTarget(target)
-    const clampedDepth = Math.max(1, Math.min(depth ?? 1, 6))
-    return await entry.db.referencedById(validTarget, clampedDepth)
-  })
-
   ipcMain.handle(CH.parseFormId, (_e, s: string) => {
     return wrap(() => napi.parseFormId(s))
   })
 
-  ipcMain.handle(CH.listTypeChildren, (_e, id: string, sig: unknown, offset: unknown, limit: unknown) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    return wrap(() => entry.db.listTypeChildren(validateSig(sig), validateUint('offset', offset), validateUint('limit', limit)))
-  })
-
-  ipcMain.handle(CH.listGroupChildren, (_e, id: string, groupOffset: unknown, offset: unknown, limit: unknown) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validOffset = validateUint('groupOffset', groupOffset, Number.MAX_SAFE_INTEGER)
-    return wrap(() => entry.db.listGroupChildren(validOffset, validateUint('offset', offset), validateUint('limit', limit)))
-  })
-
-  ipcMain.handle(
-    CH.search,
-    (_e, id: string, pattern: unknown, types: unknown, field: unknown, limit: unknown) => {
-      const entry = registry.get(id)
-      if (!entry) throw new Error(`no database with id ${id}`)
-      const validPattern = validateOptionalText('pattern', pattern, 512) ?? ''
-      const validTypes = validateSigArray(types)
-      const validField = validateSearchField(field)
-      const validLimit = validateUint('limit', limit)
-      return wrap(() => entry.db.search(validPattern, validTypes, validField, validLimit))
-    }
-  )
-
-  ipcMain.handle(
-    CH.filterTypeRecords,
-    (
-      _e,
-      id: string,
-      sig: unknown,
-      path: unknown,
-      op: unknown,
-      value: unknown,
-      limit: unknown
-    ) => {
-      const entry = registry.get(id)
-      if (!entry) throw new Error(`no database with id ${id}`)
-      const validSig = validateSig(sig)
-      const validPath = validateOptionalText('path', path, 1024)
-      const validOp = validateFilterOp(op)
-      const validValue = validateOptionalText('value', value, 1024)
-      const validLimit = validateUint('limit', limit)
-      return wrap(() =>
-        entry.db.filterTypeRecords(validSig, validPath, validOp, validValue, validLimit)
-      )
-    }
-  )
-
-  ipcMain.handle(CH.listTypeFieldPaths, (_e, id: string, sig: unknown) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validSig = validateSig(sig)
-    return wrap(() => entry.db.listTypeFieldPaths(validSig))
-  })
-
-  ipcMain.handle(CH.recordRaw, async (_e, id: string, target: unknown) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validTarget = validateTarget(target)
-    return await entry.db.recordRaw(validTarget)
-  })
-
-  ipcMain.handle(CH.coverageReport, async (_e, id: string, recordType: unknown, sample: unknown) => {
-    const entry = registry.get(id)
-    if (!entry) throw new Error(`no database with id ${id}`)
-    const validRecordType = validateOptionalText('recordType', recordType, 4)
-    const validSample = validateUint('sample', sample)
-    return await entry.db.coverageReport(validRecordType, validSample)
-  })
+  // Table-driven: the ~14 uniform "look up one db by id, validate the rest of
+  // the args, call one method on it" handlers, collapsed from one hand-written
+  // near-identical block per method into a single loop over the shared
+  // descriptor table (`../shared/ipc-contract.ts`). Each does exactly what
+  // every hand-written block above/below still does explicitly: registry
+  // lookup + not-found guard + validate + wrap() + the addon call.
+  for (const entry of CONTRACT) {
+    ipcMain.handle(entry.channel, (_e, id: string, ...rawArgs: unknown[]) => {
+      const dbEntry = registry.get(id)
+      if (!dbEntry) throw new Error(`no database with id ${id}`)
+      const args = entry.validate(rawArgs)
+      return wrap(() => {
+        // Cast unavoidable: CONTRACT is heterogeneous (each method has its own
+        // arity/argument types), so there's no single call signature TS can
+        // check generically here — `entry.validate` is each method's own
+        // type-safe boundary, already run above.
+        const method = dbEntry.db[entry.method] as (...a: unknown[]) => unknown
+        return method.apply(dbEntry.db, args)
+      })
+    })
+  }
 
   ipcMain.handle(
     CH.diff,
