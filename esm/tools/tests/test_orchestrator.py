@@ -7,7 +7,7 @@ diff step is satisfied by a tiny generated shell script that ignores its
 arguments and `cat`s `tools/tests/fixtures/diff_small.json` followed by the
 `--local` REPL's trailing `esm> ` prompt (exercising make_patch_notes.py's
 `json.JSONDecoder().raw_decode`-based tolerance of that prompt), and the
-bundles/lints stages run against `esm_daemon.FakeClient` backed by
+bundles/lints stages run against `esm_gateway.FakeGateway` backed by
 `tools/tests/fixtures/refs_graph.json` (`--offline --refs-fixture`). No real
 daemon or ESM is touched.
 """
@@ -170,7 +170,7 @@ class TestBuildDiffCmd(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# End-to-end: make_patch_notes.main() against the fake esm binary + FakeClient
+# End-to-end: make_patch_notes.main() against the fake esm binary + FakeGateway
 # ---------------------------------------------------------------------------
 
 

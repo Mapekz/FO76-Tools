@@ -19,7 +19,7 @@ Covers:
   - Categorization against the real patch_notes_categories.json (first-
     rule-match-wins, the "keyword" scope's `client.record()` lookup +
     caching + failure-as-no-match, the uncategorized fallback).
-  - The full offline pipeline (FakeClient + refs_graph.json + a
+  - The full offline pipeline (FakeGateway + refs_graph.json + a
     hand-written comprehensive_mini.json aligned to that fixture's node
     ids): the WEAP/OMOD/LVLI/KYWD cluster forming one bundle with a WEAP
     anchor, NPC_/CONT/QUST context members with the right edge labels, the
@@ -31,7 +31,7 @@ Covers:
     smoke test).
 
 No real daemon or ESM is touched -- everything runs against
-esm_daemon.FakeClient and the checked-in fixtures.
+esm_gateway.FakeGateway and the checked-in fixtures.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import build_bundles as bb  # noqa: E402
-import esm_daemon  # noqa: E402
+import esm_gateway  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "build_bundles.py"
@@ -646,7 +646,7 @@ class TestCategorization(unittest.TestCase):
     def test_keyword_lookup_failure_is_treated_as_no_match(self):
         class _FailingClient:
             def record(self, esm, formid, *, resolve="stub"):
-                raise esm_daemon.DaemonError("not found")
+                raise esm_gateway.DaemonError("not found")
 
         self.assertEqual(bb._anchor_keyword_edids(_FailingClient(), "esm", "0xBB", {}), [])
 
@@ -667,7 +667,7 @@ class TestSettingsPrecedence(unittest.TestCase):
 # out of the context cap by CONT/COBJ candidates, and mis-categorized as
 # weapons_combat instead of unique_weapons_gear. Runs the real, current
 # patch_notes_categories.json end to end through build_bundles(), but with
-# an inline FakeClient fixture (not the shared refs_graph.json /
+# an inline FakeGateway fixture (not the shared refs_graph.json /
 # comprehensive_mini.json, which other test modules also depend on).
 # ---------------------------------------------------------------------------
 
@@ -717,7 +717,7 @@ class TestModForOmodBundleRegression(unittest.TestCase):
             "ref_names": {},
         }
 
-        client = esm_daemon.FakeClient(refs_fixture)
+        client = esm_gateway.FakeGateway(refs_fixture)
         cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm", cls.config)
 
     def test_single_bundle_anchored_on_the_omod(self):
@@ -744,7 +744,7 @@ class TestModForOmodBundleRegression(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Full offline pipeline (FakeClient + refs_graph.json + comprehensive_mini.json)
+# Full offline pipeline (FakeGateway + refs_graph.json + comprehensive_mini.json)
 # ---------------------------------------------------------------------------
 
 
@@ -753,7 +753,7 @@ class TestFullPipelineOffline(unittest.TestCase):
     def setUpClass(cls):
         cls.comp = load_json(COMPREHENSIVE_MINI_PATH)
         cls.config = load_json(CATEGORIES_PATH)
-        cls.client = esm_daemon.FakeClient(REFS_FIXTURE_PATH)
+        cls.client = esm_gateway.FakeGateway(REFS_FIXTURE_PATH)
         cls.result = bb.build_bundles(cls.comp, cls.client, "OLD.esm", "NEW.esm", cls.config)
 
     def _bundle_containing(self, form_id):
@@ -856,7 +856,7 @@ class TestFullPipelineOffline(unittest.TestCase):
             def record(self, esm, formid, *, resolve="stub"):
                 return self.inner.record(esm, formid, resolve=resolve)
 
-        spy = _SpyClient(esm_daemon.FakeClient(REFS_FIXTURE_PATH))
+        spy = _SpyClient(esm_gateway.FakeGateway(REFS_FIXTURE_PATH))
         bb.build_bundles(self.comp, spy, "OLD.esm", "NEW.esm", self.config)
 
         removed_calls = [c for c in spy.calls if c[1] == "0x00300001"]  # ALCH_TestChem, status=removed
@@ -868,7 +868,7 @@ class TestFullPipelineOffline(unittest.TestCase):
         self.assertTrue(all(esm == "NEW.esm" for esm, _fid in changed_calls))
 
     def test_deterministic_ids_across_two_runs(self):
-        client2 = esm_daemon.FakeClient(REFS_FIXTURE_PATH)
+        client2 = esm_gateway.FakeGateway(REFS_FIXTURE_PATH)
         result2 = bb.build_bundles(self.comp, client2, "OLD.esm", "NEW.esm", self.config)
         ids1 = [(b["id"], b["category"], b["anchor"]["form_id"]) for b in self.result["bundles"]]
         ids2 = [(b["id"], b["category"], b["anchor"]["form_id"]) for b in result2["bundles"]]
@@ -891,7 +891,7 @@ class TestBundleShapeContract(unittest.TestCase):
     def setUpClass(cls):
         comp = load_json(COMPREHENSIVE_MINI_PATH)
         config = load_json(CATEGORIES_PATH)
-        client = esm_daemon.FakeClient(REFS_FIXTURE_PATH)
+        client = esm_gateway.FakeGateway(REFS_FIXTURE_PATH)
         cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm", config)
         cls.categories = config["categories"]
 

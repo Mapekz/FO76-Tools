@@ -43,7 +43,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import esm_daemon  # noqa: E402
+import esm_gateway  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -1056,8 +1056,8 @@ def build_arg_parser():
         "--esm-bin", default="target/release/esm", help="Path to the esm CLI binary (used to spawn/reuse the daemon)."
     )
     ap.add_argument("--categories", help="Config file supplying rule tunables (e.g. unique_keyword_patterns).")
-    ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeClient instead of a real daemon.")
-    ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see esm_daemon.FakeClient).")
+    ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeGateway instead of a real daemon.")
+    ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see esm_gateway.FakeGateway).")
     ap.add_argument("--rules", help="Comma-separated subset of rules to run (default: all).")
     return ap
 
@@ -1090,14 +1090,14 @@ def main(argv=None):
             if not args.refs_fixture:
                 print("error: --offline requires --refs-fixture", file=sys.stderr)
                 return 1
-            client = esm_daemon.FakeClient(args.refs_fixture)
+            client = esm_gateway.FakeGateway(args.refs_fixture)
             new_esm = args.new_esm or "new.esm"
             old_esm = args.old_esm or "old.esm"
         else:
             if not args.new_esm:
                 print("error: --new-esm is required unless --offline", file=sys.stderr)
                 return 1
-            client = esm_daemon.ensure_daemon(args.esm_bin, args.new_esm)
+            client = esm_gateway.ensure_daemon(args.esm_bin, args.new_esm)
             new_esm = args.new_esm
             old_esm = args.old_esm
 

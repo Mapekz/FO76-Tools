@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for tools/esm_daemon.py.
+"""Tests for tools/esm_gateway.py.
 
 Covers:
   - Wire-format correctness against a stdlib `http.server`-based stub daemon
@@ -7,11 +7,19 @@ Covers:
     keep-alive connection reuse, reconnect-after-close retry).
   - Discovery-path resolution (`runtime_dir` / `read_daemon_info`) with
     monkeypatched environment variables pointing at a temp dir.
-  - `FakeClient`'s BFS reverse-reference walk against the checked-in fixture
+  - `FakeGateway`'s BFS reverse-reference walk against the checked-in fixture
     (depth-1 vs depth-3 expansion, cycle safety, path/depth fields, int vs
     hex FormID acceptance).
+  - `EsmGateway.diff`/`build_diff_cmd`/`find_esm_binary`, exercised against a
+    tiny shell-script stand-in for the `esm` binary.
 
-No real daemon is spawned and no real game data is touched.
+Every test above uses only synthetic fixtures/stubs -- no real daemon or game
+data. `RealEsmIntegrationTests` at the bottom is the one exception: it drives
+`EsmGateway` end-to-end against the real `esm` binary and a live warm daemon,
+gated on `$FO76_ESM_PATH` (see esm/CLAUDE.local.md) exactly like
+`tests/diff.rs`'s `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B` gate the Rust side --
+it skips silently (via `setUpClass` raising `SkipTest`) when unset, so it is
+a no-op in CI/sandboxes without game data.
 """
 
 from __future__ import annotations
@@ -19,19 +27,21 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import stat
 import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import esm_daemon  # noqa: E402
-from esm_daemon import (  # noqa: E402
-    DaemonClient,
+import esm_gateway  # noqa: E402
+from esm_gateway import (  # noqa: E402
     DaemonError,
-    FakeClient,
+    EsmGateway,
+    FakeGateway,
     daemon_fresh,
     daemon_info_path,
     formid_to_hex,
@@ -151,7 +161,7 @@ class _StubServer:
 class WireFormatTests(unittest.TestCase):
     def setUp(self):
         self.server: _StubServer | None = None
-        self.client: DaemonClient | None = None
+        self.client: EsmGateway | None = None
 
     def tearDown(self):
         if self.client is not None:
@@ -159,9 +169,9 @@ class WireFormatTests(unittest.TestCase):
         if self.server is not None:
             self.server.stop()
 
-    def _client(self, op_responses: list, token: str = "test-token-abc123") -> DaemonClient:
+    def _client(self, op_responses: list, token: str = "test-token-abc123") -> EsmGateway:
         self.server = _StubServer(op_responses, token=token)
-        self.client = DaemonClient(self.server.port, token)
+        self.client = EsmGateway(self.server.port, token)
         return self.client
 
     def test_refs_request_shape(self):
@@ -191,6 +201,58 @@ class WireFormatTests(unittest.TestCase):
         client.refs("/data/x.esm", "0x00100001", depth=1)
         body = self.server.requests_seen[0]["body"]
         self.assertEqual(body["op"]["sel"], {"kind": "form_id", "value": 0x00100001})
+
+    def test_refs_request_shape_omits_type_filter_and_paths_by_default(self):
+        # Same assertion as test_refs_request_shape but named to make the
+        # backward-compat guarantee explicit: callers that never pass
+        # type_filter/paths get the exact pre-existing wire shape.
+        client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
+        client.refs("/data/x.esm", 0x00100001, depth=2, limit=0)
+        body = self.server.requests_seen[0]["body"]["op"]
+        self.assertNotIn("type_filter", body)
+        self.assertNotIn("paths", body)
+
+    def test_refs_request_shape_with_type_filter_and_paths(self):
+        client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
+        client.refs("/data/x.esm", 0x00100001, depth=1, limit=25, type_filter="SPEL", paths=True)
+        body = self.server.requests_seen[0]["body"]["op"]
+        self.assertEqual(
+            body,
+            {
+                "op": "referenced_by",
+                "sel": {"kind": "form_id", "value": 0x00100001},
+                "limit": 25,
+                "depth": 1,
+                "type_filter": "SPEL",
+                "paths": True,
+            },
+        )
+
+    def test_bulk_get_request_shape_mixed_formid_and_edid(self):
+        client = self._client([(200, {"status": "ok", "data": []})])
+        client.bulk_get("/data/x.esm", [0x463F, "0x00100010", "AssaultRifle"], resolve="stub")
+        body = self.server.requests_seen[0]["body"]["op"]
+        self.assertEqual(
+            body,
+            {
+                "op": "record_bulk",
+                "sels": [
+                    {"kind": "form_id", "value": 0x463F},
+                    {"kind": "form_id", "value": 0x00100010},
+                    {"kind": "edid", "value": "AssaultRifle"},
+                ],
+                "depth": "stub",
+            },
+        )
+
+    def test_bulk_get_returns_entries_verbatim(self):
+        entries = [
+            {"sel": "0x0000463F", "header": {}, "editor_id": "Foo", "fields": {}},
+            {"sel": "0xDEADBEEF", "error": "FormID 0xDEADBEEF not found"},
+        ]
+        client = self._client([(200, {"status": "ok", "data": entries})])
+        result = client.bulk_get("/data/x.esm", [0x463F, 0xDEADBEEF])
+        self.assertEqual(result, entries)
 
     def test_record_request_shape(self):
         client = self._client([(200, {"status": "ok", "data": {"header": {}, "editor_id": "WEAP_TestRifle", "fields": {}}})])
@@ -407,12 +469,12 @@ class FormIdHelperTests(unittest.TestCase):
         self.assertEqual(formid_to_hex("0x00abcdef"), "0x00ABCDEF")
 
 
-# ─── FakeClient BFS tests ─────────────────────────────────────────────────────
+# ─── FakeGateway BFS tests ────────────────────────────────────────────────────
 
 
-class FakeClientRefsTests(unittest.TestCase):
+class FakeGatewayRefsTests(unittest.TestCase):
     def setUp(self):
-        self.client = FakeClient(FIXTURE_PATH)
+        self.client = FakeGateway(FIXTURE_PATH)
         self.WEAP = 0x00100001
         self.OMOD1 = 0x00100010
         self.OMOD2 = 0x00100011
@@ -536,6 +598,314 @@ class FakeClientRefsTests(unittest.TestCase):
         )
         via_method = self.client.refs("esm", self.WEAP, depth=2)
         self.assertEqual(via_op, via_method)
+
+    def test_type_filter_narrows_emission_but_keeps_traversal(self):
+        # OMOD1/OMOD2/LVLI/COBJ are the direct (depth-1) referencers, none of
+        # them NPC_ -- type_filter must drop all four from the emitted rows
+        # while still traversing through LVLI to reach the depth-2 NPC_.
+        result = self.client.refs("esm", self.WEAP, depth=2, type_filter="NPC_")
+        self.assertEqual(self._form_ids(result["rows"]), {formid_to_hex(self.NPC)})
+        self.assertEqual(result["total"], 1)
+
+    def test_type_filter_is_case_insensitive(self):
+        result = self.client.refs("esm", self.WEAP, depth=1, type_filter="omod")
+        self.assertEqual(
+            self._form_ids(result["rows"]), {formid_to_hex(self.OMOD1), formid_to_hex(self.OMOD2)}
+        )
+
+
+# ─── FakeGateway paths= / bulk_get tests (inline fixture) ───────────────────
+
+
+class FakeGatewayPathsAndBulkGetTests(unittest.TestCase):
+    """Uses a small inline fixture (rather than the shared refs_graph.json)
+    because it needs a `fields` payload on records and a `field_paths` entry
+    on an adjacency row -- extensions to the fixture schema that the other
+    shared-fixture tests above don't exercise."""
+
+    def setUp(self):
+        self.client = FakeGateway(
+            {
+                "records": {
+                    "0x00000010": {"record_type": "KYWD", "editor_id": "if_tmp_Test"},
+                    "0x00000020": {
+                        "record_type": "SPEL",
+                        "editor_id": "TestSpell",
+                        "fields": {"Effects": [{"Effect": {"Magnitude": 5}}]},
+                    },
+                    "0x00000030": {
+                        "record_type": "OMOD",
+                        "editor_id": "mod_Custom_Test",
+                        "fields": {"Data": {"Properties": []}},
+                    },
+                },
+                "refs": {
+                    "0x00000010": [
+                        {
+                            "form_id": "0x00000020",
+                            "record_type": "SPEL",
+                            "editor_id": "TestSpell",
+                            "field_paths": ["Effects[0].Conditions.Conditions[0].Parameter 1"],
+                        },
+                    ],
+                },
+            }
+        )
+
+    def test_paths_true_passes_through_fixture_field_paths(self):
+        result = self.client.refs("esm", 0x10, depth=1, paths=True)
+        self.assertEqual(
+            result["rows"][0]["field_paths"],
+            ["Effects[0].Conditions.Conditions[0].Parameter 1"],
+        )
+
+    def test_paths_false_omits_field_paths_key(self):
+        result = self.client.refs("esm", 0x10, depth=1)
+        self.assertNotIn("field_paths", result["rows"][0])
+
+    def test_bulk_get_isolates_errors_per_selector(self):
+        entries = self.client.bulk_get("esm", [0x20, 0xFFFFFFFF, "mod_Custom_Test"])
+        self.assertEqual(entries[0], {
+            "sel": "0x00000020",
+            "header": None,
+            "editor_id": "TestSpell",
+            "fields": {"Effects": [{"Effect": {"Magnitude": 5}}]},
+        })
+        self.assertEqual(entries[1]["sel"], "0xFFFFFFFF")
+        self.assertIn("error", entries[1])
+        # EditorID selectors display as the literal input text (mirrors
+        # RecordSel::display() in ipc.rs), not the resolved FormID.
+        self.assertEqual(entries[2]["sel"], "mod_Custom_Test")
+        self.assertEqual(entries[2]["fields"], {"Data": {"Properties": []}})
+
+    def test_bulk_get_via_generic_op_matches_convenience_method(self):
+        via_op = self.client.op(
+            "esm", {"op": "record_bulk", "sels": [{"kind": "form_id", "value": 0x20}]}
+        )
+        via_method = self.client.bulk_get("esm", [0x20])
+        self.assertEqual(via_op, via_method)
+
+    def test_bulk_get_empty_list_returns_empty_list(self):
+        self.assertEqual(self.client.bulk_get("esm", []), [])
+
+
+# ─── find_esm_binary tests ───────────────────────────────────────────────────
+
+
+class FindEsmBinaryTests(unittest.TestCase):
+    def test_explicit_non_executable_path_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            not_exec = Path(tmp) / "esm"
+            not_exec.write_text("not executable")
+            with self.assertRaises(DaemonError):
+                esm_gateway.find_esm_binary(str(not_exec))
+
+    def test_explicit_executable_path_is_returned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            exe = Path(tmp) / "esm"
+            exe.write_text("#!/bin/sh\n")
+            exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+            self.assertEqual(esm_gateway.find_esm_binary(str(exe)), exe)
+
+    def test_nothing_found_raises(self):
+        with mock.patch.object(esm_gateway, "WORKSPACE_ROOT", Path("/nonexistent-workspace-root")):
+            with mock.patch("shutil.which", return_value=None):
+                with self.assertRaises(DaemonError):
+                    esm_gateway.find_esm_binary(None)
+
+
+# ─── build_diff_cmd / EsmGateway.diff tests ─────────────────────────────────
+
+
+class BuildDiffCmdTests(unittest.TestCase):
+    def _cmd(self, **overrides):
+        kwargs = dict(
+            lang="en", strings_dir_a=None, strings_dir_b=None, record_type=None,
+            bodies="full", keep_noise=False, exclude_type="LAND,NAVM",
+        )
+        kwargs.update(overrides)
+        return esm_gateway.build_diff_cmd(Path("esm"), Path("a.esm"), Path("b.esm"), **kwargs)
+
+    def test_shared_strings_dir_uses_single_flag(self):
+        d = Path("/strings")
+        cmd = self._cmd(strings_dir_a=d, strings_dir_b=d)
+        self.assertIn("--strings-dir", cmd)
+        self.assertNotIn("--strings-dir-a", cmd)
+
+    def test_empty_exclude_type_omits_flag(self):
+        self.assertNotIn("--exclude-type", self._cmd(exclude_type=""))
+
+    def test_always_uses_local_diff(self):
+        # diff() only ever shells out to `--local diff` -- see EsmGateway.diff's
+        # docstring for why the /op Diff HTTP route isn't used here.
+        cmd = self._cmd()
+        self.assertIn("--local", cmd)
+        self.assertIn("diff", cmd)
+
+
+class EsmGatewayDiffTests(unittest.TestCase):
+    """Exercises `EsmGateway.diff` directly against a tiny shell-script
+    stand-in for the `esm` binary -- same technique as
+    tools/tests/test_orchestrator.py's `make_fake_esm`, at the transport
+    layer this delegates to."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_dir = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _fake_esm(self, stdout_text: str, *, exit_code: int = 0) -> Path:
+        # Write the desired stdout to its own file and `cat` it, rather than
+        # inlining it into the shell script, to sidestep shell-quoting
+        # entirely (mirrors test_orchestrator.py's make_fake_esm).
+        payload = self.tmp_dir / "stdout.txt"
+        payload.write_text(stdout_text)
+        script = self.tmp_dir / "fake_esm.sh"
+        script.write_text(f'#!/bin/sh\ncat "{payload}"\nexit {exit_code}\n')
+        script.chmod(script.stat().st_mode | stat.S_IEXEC)
+        return script
+
+    def _diff(self, esm_bin):
+        return esm_gateway.EsmGateway.diff(
+            esm_bin, Path("a.esm"), Path("b.esm"),
+            strings_dir_a=Path("/strings"), strings_dir_b=Path("/strings"),
+            lang="en", record_type=None, bodies="full", keep_noise=False,
+            exclude_type="LAND,NAVM",
+        )
+
+    def test_parses_json_and_strips_trailing_repl_prompt(self):
+        fake_esm = self._fake_esm('{"added": [], "removed": [], "changed": []}esm> ')
+        result = self._diff(fake_esm)
+        self.assertEqual(result.data, {"added": [], "removed": [], "changed": []})
+        self.assertEqual(result.raw_json, '{"added": [], "removed": [], "changed": []}')
+
+    def test_cmd_reflects_argv_used(self):
+        fake_esm = self._fake_esm("{}")
+        result = self._diff(fake_esm)
+        self.assertEqual(result.cmd[0], str(fake_esm))
+        self.assertIn("--local", result.cmd)
+        self.assertIn("--strings-dir", result.cmd)
+
+    def test_nonzero_exit_raises_daemon_error(self):
+        fake_esm = self._fake_esm("irrelevant", exit_code=1)
+        with self.assertRaises(DaemonError) as ctx:
+            self._diff(fake_esm)
+        self.assertIn("exit code 1", str(ctx.exception))
+
+    def test_invalid_json_raises_daemon_error(self):
+        fake_esm = self._fake_esm("not json at all")
+        with self.assertRaises(DaemonError):
+            self._diff(fake_esm)
+
+
+# ─── Real-ESM integration test (env-gated, silent no-op without game data) ──
+
+
+class RealEsmIntegrationTests(unittest.TestCase):
+    """End-to-end smoke test of `EsmGateway` against the real `esm` binary
+    and a live warm daemon it spawns/reuses -- no fixtures, no stub server.
+
+    Gated on `$FO76_ESM_PATH` (an absolute path to a real `SeventySix.esm`,
+    per esm/CLAUDE.local.md), mirroring `tests/diff.rs`'s
+    `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B` silent-skip convention on the Rust
+    side. Skips (not fails) in any environment without real game data --
+    this must be a no-op in CI/sandboxes.
+
+    Deliberately does not exercise `EsmGateway.diff` here: `diff` needs a
+    *second* snapshot with strings resolvable by the Rust CLI's exact
+    `<esm-stem>_<lang>.strings` match (see `cli.rs::resolve_localization_or_bail`),
+    which not every `$FO76_DATA_DIR` snapshot layout satisfies (e.g. an
+    undated `SeventySix.esm` next to date-stamped `SeventySix_<date>_en.strings`
+    -- a real, pre-existing mismatch between `make_patch_notes.py`'s lenient
+    glob-based `locate_strings_dirs` and the Rust CLI's strict stem match,
+    unrelated to this refactor). `bulk_get`/`refs`/`record`/`file_info` need
+    no strings and are exercised below.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.esm_path = os.environ.get("FO76_ESM_PATH")
+        if not cls.esm_path or not Path(cls.esm_path).is_file():
+            raise unittest.SkipTest(
+                "FO76_ESM_PATH not set (or not a file) -- skipping real-ESM integration test"
+            )
+        try:
+            cls.esm_bin = esm_gateway.find_esm_binary(None)
+        except DaemonError as exc:
+            raise unittest.SkipTest(f"esm binary not found -- skipping: {exc}")
+        cls.gateway = esm_gateway.ensure_daemon(cls.esm_bin, cls.esm_path)
+
+    @classmethod
+    def tearDownClass(cls):
+        gateway = getattr(cls, "gateway", None)
+        if gateway is not None:
+            gateway.close()
+
+    def test_file_info_returns_the_esm_path(self):
+        info = self.gateway.file_info(self.esm_path)
+        self.assertEqual(Path(info["path"]).resolve(), Path(self.esm_path).resolve())
+        self.assertGreater(info["record_count"], 0)
+
+    def test_record_lookup_by_formid(self):
+        # Any real ESM has a TES4 header record at 0x00000000... use search
+        # instead of a hardcoded FormID, since specific FormIDs are not
+        # guaranteed stable across snapshots.
+        results = self.gateway.search(self.esm_path, "*", record_type="OMOD", limit=1)
+        self.assertTrue(results, "expected at least one OMOD record in the ESM")
+        formid = results[0]["form_id"]
+        rec = self.gateway.record(self.esm_path, formid, resolve="none")
+        self.assertEqual(rec["header"]["form_id"], formid)
+
+    def test_bulk_get_isolates_a_bad_selector_among_good_ones(self):
+        good = self.gateway.search(self.esm_path, "*", record_type="OMOD", limit=2)
+        self.assertGreaterEqual(len(good), 2, "expected at least two OMOD records in the ESM")
+        targets = [good[0]["form_id"], good[1]["form_id"], "0xFFFFFFF0"]
+        entries = self.gateway.bulk_get(self.esm_path, targets, resolve="stub")
+        self.assertEqual(len(entries), 3)
+        self.assertEqual(entries[0]["sel"], good[0]["form_id"])
+        self.assertNotIn("error", entries[0])
+        self.assertIsNotNone(entries[0]["fields"])
+        self.assertEqual(entries[2]["sel"], "0xFFFFFFF0")
+        self.assertIn("error", entries[2])
+
+    def test_refs_with_type_filter_and_paths_matches_a_real_omod_keyword(self):
+        # An OMOD's Data.Properties[] Value 1 forward-references a KYWD --
+        # walk any OMOD's first Keywords-typed property back to find it, then
+        # confirm the reverse walk (type_filter="OMOD", paths=True) rediscovers
+        # this exact OMOD with a field_paths entry pointing back at that
+        # property (see chase/chase.py's keyword_hook pattern, which this
+        # capability was added for).
+        omods = self.gateway.search(self.esm_path, "*", record_type="OMOD", limit=25)
+        self.assertTrue(omods)
+        for stub in omods:
+            rec = self.gateway.record(self.esm_path, stub["form_id"], resolve="stub")
+            props = ((rec.get("fields") or {}).get("Data") or {}).get("Properties") or []
+            kywd_targets = [
+                p["Value 1"]
+                for p in props
+                if isinstance(p.get("Value 1"), dict) and p["Value 1"].get("record_type") == "KYWD"
+            ]
+            if not kywd_targets:
+                continue
+            kywd_fid = kywd_targets[0]["formid"]
+            result = self.gateway.refs(
+                self.esm_path, kywd_fid, depth=1, limit=10, type_filter="OMOD", paths=True
+            )
+            rows = result["rows"]
+            self.assertTrue(rows)
+            matching = [r for r in rows if r["form_id"] == stub["form_id"]]
+            self.assertTrue(matching, "the OMOD itself must show up as a type_filter=OMOD referencer of its own KYWD")
+            self.assertTrue(matching[0].get("field_paths"), "paths=True must annotate the field path")
+            return
+        self.skipTest("no OMOD in this ESM has a Keywords-typed property to test with")
+
+    def test_exists_true_and_false(self):
+        omods = self.gateway.search(self.esm_path, "*", record_type="OMOD", limit=1)
+        self.assertTrue(omods)
+        self.assertTrue(self.gateway.exists(self.esm_path, omods[0]["form_id"]))
+        self.assertFalse(self.gateway.exists(self.esm_path, "0xFFFFFFF0"))
 
 
 if __name__ == "__main__":

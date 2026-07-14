@@ -3,7 +3,7 @@
 
 Uses hand-built minimal comprehensive.json/bundles.json dicts (rather than
 loading the full diff_small.json fixture for every case) plus
-`esm_daemon.FakeClient` backed by the shared `refs_graph.json` fixture for
+`esm_gateway.FakeGateway` backed by the shared `refs_graph.json` fixture for
 the rules that need a reverse-reference walk (orphaned_unique,
 unreferenced_perk_rank). No real daemon or ESM is touched.
 """
@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import patchnotes_lib as pnl  # noqa: E402
 import run_lints as rl  # noqa: E402
-from esm_daemon import FakeClient  # noqa: E402
+from esm_gateway import FakeGateway  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 REFS_GRAPH_FIXTURE = FIXTURES_DIR / "refs_graph.json"
@@ -85,15 +85,15 @@ def make_bundles(bundles=None):
 
 
 def no_op_client():
-    """A FakeClient over an empty fixture -- fine for rules that never touch
+    """A FakeGateway over an empty fixture -- fine for rules that never touch
     the client (lvli_blocked_entry, desc_changed_stats_same,
     stats_changed_desc_same, cut_newly_deprecated) and for dangling_ref tests
     that build their own records/exists universe."""
-    return FakeClient({"records": {}, "refs": {}})
+    return FakeGateway({"records": {}, "refs": {}})
 
 
 def refs_graph_client():
-    return FakeClient(REFS_GRAPH_FIXTURE)
+    return FakeGateway(REFS_GRAPH_FIXTURE)
 
 
 class TestRunLintsBase(unittest.TestCase):
@@ -317,7 +317,7 @@ class TestDanglingRef(TestRunLintsBase):
             editor_id="WEAP_Test",
             refs_out=[{"formid": "0x0BADF00D", "path": "Data / Ammo"}],
         )
-        client = FakeClient({"records": {}, "refs": {}})  # 0x0BADF00D resolves nowhere
+        client = FakeGateway({"records": {}, "refs": {}})  # 0x0BADF00D resolves nowhere
         ctx = self.ctx_for(make_comp([rec]), client=client)
         lints = rl.RULES["dangling_ref"](ctx)
         self.assertEqual(len(lints), 1)
@@ -333,7 +333,7 @@ class TestDanglingRef(TestRunLintsBase):
             refs_out=[{"formid": "0x00AA0001", "path": "Data / Ammo"}],
         )
         ref_names = {"0x00AA0001": {"record_type": "AMMO", "editor_id": "Ammo1"}}
-        client = FakeClient({"records": {}, "refs": {}})
+        client = FakeGateway({"records": {}, "refs": {}})
         ctx = self.ctx_for(make_comp([rec], ref_names), client=client)
         self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
 
@@ -345,7 +345,7 @@ class TestDanglingRef(TestRunLintsBase):
             editor_id="WEAP_Test3",
             refs_out=[{"formid": "0x00AA0009", "path": "Data / Ammo"}],
         )
-        client = FakeClient({"records": {"0x00AA0009": {"record_type": "AMMO"}}, "refs": {}})
+        client = FakeGateway({"records": {"0x00AA0009": {"record_type": "AMMO"}}, "refs": {}})
         ctx = self.ctx_for(make_comp([rec]), client=client)
         self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
 
@@ -353,7 +353,7 @@ class TestDanglingRef(TestRunLintsBase):
         rec = make_record(
             "0x02000004", "WEAP", "changed", editor_id="WEAP_Test4", refs_out=[{"formid": "0x00000000", "path": "x"}]
         )
-        client = FakeClient({"records": {}, "refs": {}})
+        client = FakeGateway({"records": {}, "refs": {}})
         ctx = self.ctx_for(make_comp([rec]), client=client)
         self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
 
@@ -373,7 +373,7 @@ class TestDanglingRef(TestRunLintsBase):
                 }
             ],
         )
-        client = FakeClient({"records": {}, "refs": {}})
+        client = FakeGateway({"records": {}, "refs": {}})
         ctx = self.ctx_for(make_comp([rec]), client=client)
         lints = rl.RULES["dangling_ref"](ctx)
         self.assertEqual(len(lints), 1)
@@ -387,7 +387,7 @@ class TestDanglingRef(TestRunLintsBase):
             editor_id="WEAP_Test6",
             refs_out=[{"formid": "0x0BADF00D", "path": "x"}],
         )
-        client = FakeClient({"records": {}, "refs": {}})
+        client = FakeGateway({"records": {}, "refs": {}})
         ctx = self.ctx_for(make_comp([rec]), client=client, new_esm=None, old_esm=None)
         self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
 
@@ -401,7 +401,7 @@ class TestDanglingRef(TestRunLintsBase):
                     fid, "WEAP", "changed", editor_id=f"WEAP_{i}", refs_out=[{"formid": dangling, "path": "x"}]
                 )
             )
-        client = FakeClient({"records": {}, "refs": {}})
+        client = FakeGateway({"records": {}, "refs": {}})
         ctx = self.ctx_for(make_comp(records), client=client)
         lints = rl.RULES["dangling_ref"](ctx)
         self.assertEqual(len(lints), 50)

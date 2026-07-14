@@ -32,9 +32,9 @@ Algorithm (see module docstring sections below for each step):
 
 `build_bundles(comp, client, old_esm, new_esm, config) -> dict` is the
 library entry point; `main()` is a thin CLI wrapper. `client` is anything
-implementing `esm_daemon.DaemonClient`'s `refs()`/`record()` surface —
-normally a live warm-daemon `DaemonClient` (see `esm_daemon.ensure_daemon`),
-or `esm_daemon.FakeClient` for `--offline` / tests.
+implementing `esm_gateway.EsmGateway`'s `refs()`/`record()` surface —
+normally a live warm-daemon `EsmGateway` (see `esm_gateway.ensure_daemon`),
+or `esm_gateway.FakeGateway` for `--offline` / tests.
 
 Python 3, stdlib only.
 """
@@ -44,14 +44,12 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
-import os
-import shutil
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-import esm_daemon
+import esm_gateway
 
 # --------------------------------------------------------------------------
 # Constants / tunables (mirror patch_notes_categories.json's "settings")
@@ -259,7 +257,7 @@ def gather_reverse_edges(u, client, old_esm, new_esm, refs_depth):
             continue
         try:
             result = client.refs(esm_path, fid, depth=depth, limit=0)
-        except esm_daemon.DaemonError:
+        except esm_gateway.DaemonError:
             continue
         for row in (result or {}).get("rows") or []:
             rf = row.get("form_id")
@@ -713,7 +711,7 @@ def _anchor_keyword_edids(client, esm, anchor_fid, cache):
                     edids.append(e)
             elif isinstance(kw, str):
                 edids.append(kw)
-    except esm_daemon.DaemonError:
+    except esm_gateway.DaemonError:
         edids = []
     cache[anchor_fid] = edids
     return edids
@@ -884,37 +882,11 @@ def build_bundles(comp, client, old_esm, new_esm, config):
 # --------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-WORKSPACE_ROOT = SCRIPT_DIR.parent
 DEFAULT_CATEGORIES_PATH = SCRIPT_DIR / "patch_notes_categories.json"
 
 
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
-
-
-def find_esm_binary(explicit):
-    """Locate the `esm` CLI binary (used to trigger warm-daemon auto-spawn
-    via `esm_daemon.ensure_daemon`), mirroring make_patch_notes.py's
-    find_esm_binary(): explicit path, else the workspace release build,
-    else $PATH."""
-    if explicit:
-        p = Path(explicit)
-        if p.is_file() and os.access(p, os.X_OK):
-            return p
-        raise SystemExit(f"--esm-bin path not executable: {explicit}")
-
-    release = WORKSPACE_ROOT / "target" / "release" / "esm"
-    if release.is_file() and os.access(release, os.X_OK):
-        return release
-
-    found = shutil.which("esm")
-    if found:
-        return Path(found)
-
-    raise SystemExit(
-        "Cannot find esm binary. Build it first:\n  cargo build --release --features server\n"
-        "Or pass --esm-bin /path/to/esm"
-    )
 
 
 def build_arg_parser():
@@ -936,9 +908,9 @@ def build_arg_parser():
     ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live daemon mode only).")
     ap.add_argument(
         "--offline", action="store_true",
-        help="Use esm_daemon.FakeClient (--refs-fixture) instead of a live warm daemon.",
+        help="Use esm_gateway.FakeGateway (--refs-fixture) instead of a live warm daemon.",
     )
-    ap.add_argument("--refs-fixture", default=None, help="FakeClient fixture JSON (required with --offline).")
+    ap.add_argument("--refs-fixture", default=None, help="FakeGateway fixture JSON (required with --offline).")
     return ap
 
 
@@ -974,10 +946,14 @@ def main(argv=None):
     config = {**config, "settings": settings}
 
     if args.offline:
-        client = esm_daemon.FakeClient(args.refs_fixture)
+        client = esm_gateway.FakeGateway(args.refs_fixture)
     else:
-        esm_bin = find_esm_binary(args.esm_bin)
-        client = esm_daemon.ensure_daemon(esm_bin, args.new_esm)
+        try:
+            esm_bin = esm_gateway.find_esm_binary(args.esm_bin)
+        except esm_gateway.DaemonError as exc:
+            eprint(f"error: {exc}")
+            return 1
+        client = esm_gateway.ensure_daemon(esm_bin, args.new_esm)
 
     result = build_bundles(comp, client, args.old_esm, args.new_esm, config)
 

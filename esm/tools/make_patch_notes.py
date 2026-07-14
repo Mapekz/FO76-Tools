@@ -51,9 +51,9 @@ Options:
                           BFS depth.
     --skip-bundles        Skip bundles.json (and, necessarily, lints.json).
     --skip-lints          Skip lints.json (bundles.json is still built).
-    --offline             Use esm_daemon.FakeClient instead of a live warm daemon
+    --offline             Use esm_gateway.FakeGateway instead of a live warm daemon
                           for the bundles/lints stages (requires --refs-fixture).
-    --refs-fixture F      FakeClient fixture JSON (required with --offline).
+    --refs-fixture F      FakeGateway fixture JSON (required with --offline).
     -v, --verbose         Show full diff command + esm output.
 
 Exit codes:
@@ -84,8 +84,6 @@ import argparse
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -101,10 +99,11 @@ DEFAULT_CATEGORIES_PATH = SCRIPT_DIR / "patch_notes_categories.json"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import build_bundles as bb  # noqa: E402
-import esm_daemon as ed  # noqa: E402
+import esm_gateway as eg  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 import render_comprehensive as rc  # noqa: E402
 import run_lints as rl  # noqa: E402
+from esm_gateway import build_diff_cmd  # noqa: E402  # re-exported: TestBuildDiffCmd calls this via mpn.build_diff_cmd
 
 # Orchestrator default for --exclude-type: world-placement/positional records
 # that are noisy and not meaningfully decoded (mirrors patchnotes_lib.EXCLUDED_TYPES'
@@ -168,30 +167,6 @@ def derive_patch_date(esm_path: Path) -> str:
 
 def default_out_dir(esm_a: Path, esm_b: Path) -> Path:
     return esm_b.parent / f"patch_{esm_token(esm_a)}_to_{esm_token(esm_b)}"
-
-
-def find_esm_binary(explicit) -> Path:
-    """Locate the esm binary, preferring the release build in the workspace."""
-    if explicit:
-        p = Path(explicit)
-        if p.is_file() and os.access(p, os.X_OK):
-            return p
-        die(1, f"--esm-bin path not executable: {explicit}")
-
-    # Try workspace release build first
-    release = WORKSPACE_ROOT / "target" / "release" / "esm"
-    if release.is_file() and os.access(release, os.X_OK):
-        return release
-
-    # Fallback: $PATH
-    found = shutil.which("esm")
-    if found:
-        return Path(found)
-
-    die(1,
-        "Cannot find esm binary. Build it first:\n"
-        "  cargo build --release --features server\n"
-        "Or pass --esm-bin /path/to/esm")
 
 
 def resolve_esm(path: Path, label: str) -> Path:
@@ -320,50 +295,11 @@ def locate_strings_dirs(
 # Step 2: Run esm diff
 # --------------------------------------------------------------------------
 
-
-def build_diff_cmd(
-    esm_bin: Path,
-    esm_a: Path,
-    esm_b: Path,
-    *,
-    lang: str,
-    strings_dir_a: Path | None,
-    strings_dir_b: Path | None,
-    record_type: str | None,
-    bodies: str,
-    keep_noise: bool,
-    exclude_type: str,
-    startup_ba2: Path | None = None,
-    curves_dir: Path | None = None,
-) -> list[str]:
-    """Build the `esm --local diff ...` argv list. Pure / side-effect-free so
-    it can be unit-tested directly without spawning a subprocess."""
-    cmd = [
-        str(esm_bin), "--local", "diff", str(esm_a), str(esm_b),
-        "--lang", lang, "--json", "--bodies", bodies,
-    ]
-    if keep_noise:
-        cmd.append("--keep-noise")
-    if exclude_type:
-        cmd += ["--exclude-type", exclude_type]
-    # Pass string dirs: shared if identical, per-side if different.
-    if strings_dir_a and strings_dir_b:
-        if strings_dir_a == strings_dir_b:
-            cmd += ["--strings-dir", str(strings_dir_a)]
-        else:
-            cmd += ["--strings-dir-a", str(strings_dir_a),
-                    "--strings-dir-b", str(strings_dir_b)]
-    elif strings_dir_a:
-        cmd += ["--strings-dir-a", str(strings_dir_a)]
-    elif strings_dir_b:
-        cmd += ["--strings-dir-b", str(strings_dir_b)]
-    if record_type:
-        cmd += ["--type", record_type]
-    if startup_ba2:
-        cmd += ["--startup-ba2", str(startup_ba2)]
-    elif curves_dir:
-        cmd += ["--curves-dir", str(curves_dir)]
-    return cmd
+# `build_diff_cmd` now lives in esm_gateway.py (re-exported above via
+# `from esm_gateway import build_diff_cmd` so existing call sites/tests
+# keep working as `mpn.build_diff_cmd`) -- this stage's own transport is
+# `esm_gateway.EsmGateway.diff` (see its docstring for why it stays a
+# subprocess against `--local`, never the warm daemon's `/op Diff` route).
 
 
 def run_esm_diff(
@@ -383,13 +319,8 @@ def run_esm_diff(
     startup_ba2: Path | None = None,
     curves_dir: Path | None = None,
 ) -> dict:
-    cmd = build_diff_cmd(
-        esm_bin, esm_a, esm_b,
-        lang=lang, strings_dir_a=strings_dir_a, strings_dir_b=strings_dir_b,
-        record_type=record_type, bodies=bodies, keep_noise=keep_noise,
-        exclude_type=exclude_type, startup_ba2=startup_ba2, curves_dir=curves_dir,
-    )
-
+    """CLI-output wrapper (banner/progress/exit-code translation) around
+    `EsmGateway.diff`, which does the actual subprocess/JSON-parsing work."""
     banner("Step 2: Running esm diff")
     eprint(f"  A:           {esm_a}")
     eprint(f"  B:           {esm_b}")
@@ -406,46 +337,37 @@ def run_esm_diff(
     eprint(f"  json output: {json_out}")
     if record_type:
         eprint(f"  --type filter: {record_type}")
-    if verbose:
-        eprint(f"\n  Command: {' '.join(cmd)}")
 
     t_start = time.time()
-    # Always capture stdout (JSON output); in verbose mode also echo stderr live.
-    # stdin=DEVNULL: esm --local <cmd> enters a REPL after the subcommand — feeding
-    # it EOF immediately avoids blocking and keeps stdout clean (just the JSON + "esm> ").
-    result = subprocess.run(cmd, capture_output=True, text=True,
-                            stdin=subprocess.DEVNULL)
-    t_elapsed = time.time() - t_start
-
-    if verbose and result.stderr:
-        eprint(result.stderr)
-
-    if result.returncode != 0:
-        if result.stderr and not verbose:
-            eprint(result.stderr)
+    try:
+        result = eg.EsmGateway.diff(
+            esm_bin, esm_a, esm_b,
+            strings_dir_a=strings_dir_a, strings_dir_b=strings_dir_b,
+            lang=lang, record_type=record_type, bodies=bodies,
+            keep_noise=keep_noise, exclude_type=exclude_type,
+            startup_ba2=startup_ba2, curves_dir=curves_dir,
+        )
+    except eg.DaemonError as exc:
         die(2,
-            f"esm diff failed with exit code {result.returncode}.\n"
+            f"esm diff failed.\n{exc}\n"
             "Check the error above. Common causes:\n"
             "  - Missing / wrong --strings-dir\n"
             "  - ESM not found or unreadable\n"
             "  - Binary needs rebuild: cargo build --release --features server")
+    t_elapsed = time.time() - t_start
 
-    raw_output = result.stdout
+    if verbose:
+        eprint(f"\n  Command: {' '.join(result.cmd)}")
+        if result.stderr:
+            eprint(result.stderr)
 
-    # Parse using raw_decode so trailing REPL prompt ("esm> ") is ignored.
-    # esm --local <cmd> enters the interactive REPL after the subcommand; its
-    # "esm> " prompt goes to stdout, appearing after the JSON object.
-    try:
-        data, json_end = json.JSONDecoder().raw_decode(raw_output)
-        raw_json = raw_output[:json_end]
-    except json.JSONDecodeError as e:
-        die(2, f"esm diff produced invalid JSON: {e}\nFirst 500 chars: {raw_output[:500]}")
-
-    # Write JSON to disk
+    # Write JSON to disk -- result.raw_json is the exact text esm produced
+    # (sans the trailing --local REPL prompt), so this matches byte-for-byte.
     json_out.parent.mkdir(parents=True, exist_ok=True)
     with open(json_out, "w") as f:
-        f.write(raw_json)
+        f.write(result.raw_json)
 
+    data = result.data
     eprint(f"\n  ✓ Done in {t_elapsed:.1f}s")
     eprint(f"    added={len(data.get('added',[]))}, "
            f"removed={len(data.get('removed',[]))}, "
@@ -511,10 +433,10 @@ def build_arg_parser():
     ap.add_argument("--skip-lints", action="store_true",
                     help="Skip lints.json (bundles.json is still built)")
     ap.add_argument("--offline", action="store_true",
-                    help="Use esm_daemon.FakeClient instead of a live warm daemon for the "
+                    help="Use esm_gateway.FakeGateway instead of a live warm daemon for the "
                          "bundles/lints stages (requires --refs-fixture)")
     ap.add_argument("--refs-fixture", default=None, metavar="F",
-                    help="FakeClient fixture JSON (required with --offline)")
+                    help="FakeGateway fixture JSON (required with --offline)")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="Show full commands + esm output")
     return ap
@@ -536,7 +458,10 @@ def main(argv=None):
     eprint(f"  NEW: {esm_b}  ({esm_b.stat().st_size:,} bytes)")
     eprint(f"  patch date (hint): {derive_patch_date(esm_b)}")
 
-    esm_bin = find_esm_binary(args.esm_bin)
+    try:
+        esm_bin = eg.find_esm_binary(args.esm_bin)
+    except eg.DaemonError as exc:
+        die(1, str(exc))
     eprint(f"  esm binary: {esm_bin}")
 
     if args.offline and not args.refs_fixture:
@@ -666,9 +591,9 @@ def main(argv=None):
             t_start = time.time()
             try:
                 if args.offline:
-                    client = ed.FakeClient(args.refs_fixture)
+                    client = eg.FakeGateway(args.refs_fixture)
                 else:
-                    client = ed.ensure_daemon(esm_bin, esm_b)
+                    client = eg.ensure_daemon(esm_bin, esm_b)
                 bundles_result = bb.build_bundles(comp, client, str(esm_a), str(esm_b), config)
                 bundles_json_path = out_dir / "bundles.json"
                 with bundles_json_path.open("w", encoding="utf-8") as f:
