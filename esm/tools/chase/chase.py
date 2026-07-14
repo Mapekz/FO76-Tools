@@ -26,13 +26,14 @@ the KB describes:
        that condition (located via the `--paths` field path, not a full
        record dump).
 
-Every hop shells out to the `esm` CLI (`esm -p get ... --resolve stub --json`
-and `esm -p refs ... --paths --type <SIG> --json`) rather than re-implementing
-the daemon wire protocol — see `esm/todos.md` P5: this is a prototype meant to
-validate the walk and its output shape over the CLI before committing to a
-native `esm chase` subcommand. `-p` auto-spawns/reuses the warm daemon, so a
-typical chase (1 OMOD fetch + a handful of refs/get calls) stays fast even
-cold.
+Every hop goes through `esm_gateway.EsmGateway` (`bulk_get` for
+`Op::RecordBulk`, `refs(..., paths=True, type_filter=...)` for
+`Op::ReferencedBy`) against the warm daemon — the same transport
+`build_bundles.py`/`run_lints.py` use, auto-spawning/reusing the daemon via
+`ensure_daemon` — rather than shelling out to the `esm` CLI per hop. This is
+still a prototype ahead of a native `esm chase` subcommand (see
+`esm/todos.md` P5); only the transport is shared now, the walk/rendering
+logic below is unchanged.
 
 Usage:
     python3 tools/chase/chase.py <OMOD_FORMID_OR_EDID> [--esm PATH] [options]
@@ -76,10 +77,10 @@ Limitations (prototype scope — see esm/todos.md P5):
       hooks with no ESM-side consumer) are out of scope and will simply show
       up as an empty evidence list — see "no downstream consumer found" in
       the text output.
-    - One `esm` subprocess per CLI call (typically 2-6 per chase); relies on
-      the warm daemon (`-p`) for speed, not on batching across calls.
+    - One or two HTTP round-trips per hop (a `bulk_get` and/or a `refs` call);
+      relies on the warm daemon for speed, same as the rest of `tools/`.
 
-Python 3, stdlib only.
+Python 3, stdlib only (plus the sibling `esm_gateway` module).
 """
 
 from __future__ import annotations
@@ -88,14 +89,16 @@ import argparse
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-WORKSPACE_ROOT = SCRIPT_DIR.parent.parent  # tools/chase/ -> tools/ -> esm/
+TOOLS_DIR = SCRIPT_DIR.parent  # tools/chase/ -> tools/
+
+sys.path.insert(0, str(TOOLS_DIR))
+
+import esm_gateway as eg  # noqa: E402
 
 # Record types whose Conditions are checked for a WornHasKeyword (or similar)
 # gate on a keyword/AVIF this OMOD ADDs. Mirrors the KB's "SPEL/PERK effect
@@ -113,81 +116,32 @@ DEFAULT_REF_LIMIT = 25
 
 
 class ChaseError(Exception):
-    """Raised for an `esm` CLI failure or malformed output."""
+    """Raised for an `EsmGateway` transport failure or malformed output."""
 
 
-# ─── esm CLI subprocess wrapper ─────────────────────────────────────────────
+# ─── EsmGateway transport (bulk_get / refs) ──────────────────────────────────
 
 
-def find_esm_binary(explicit: str | None) -> Path:
-    """Locate the esm binary, preferring the release build in the workspace.
+def esm_get_bulk(gateway: eg.EsmGateway, esm_path: str, targets: list[str]) -> list[dict]:
+    """Fetch one or more records with `--resolve stub` in a single bulk
+    round-trip via `EsmGateway.bulk_get` (`Op::RecordBulk`).
 
-    Mirrors tools/make_patch_notes.py's find_esm_binary."""
-    if explicit:
-        p = Path(explicit)
-        if p.is_file() and os.access(p, os.X_OK):
-            return p
-        raise ChaseError(f"--esm-bin path not executable: {explicit}")
-
-    release = WORKSPACE_ROOT / "target" / "release" / "esm"
-    if release.is_file() and os.access(release, os.X_OK):
-        return release
-
-    found = shutil.which("esm")
-    if found:
-        return Path(found)
-
-    raise ChaseError(
-        "Cannot find esm binary. Build it first:\n"
-        "  cargo build --release --features server\n"
-        "Or pass --esm-bin /path/to/esm"
-    )
-
-
-def _run(esm_bin: Path, args: list[str]) -> str:
-    cmd = [str(esm_bin), "-p", *args]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-    except OSError as exc:
-        raise ChaseError(f"failed to execute {cmd[0]}: {exc}") from exc
-    if proc.returncode != 0:
-        msg = proc.stderr.strip() or f"exit code {proc.returncode}"
-        raise ChaseError(f"`{' '.join(cmd)}` failed: {msg}")
-    return proc.stdout
-
-
-def _run_json(esm_bin: Path, args: list[str]) -> Any:
-    out = _run(esm_bin, [*args, "--json"])
-    try:
-        return json.loads(out)
-    except json.JSONDecodeError as exc:
-        raise ChaseError(f"invalid JSON from `esm -p {' '.join(args)}`: {exc}") from exc
-
-
-def esm_get_bulk(esm_bin: Path, esm_path: str, targets: list[str]) -> list[dict]:
-    """Fetch one or more records with `--resolve stub`, normalizing both the
-    single- and multi-target CLI output shapes into a uniform list of
-    `{"sel", "header"?, "editor_id"?, "fields"?, "error"?}` dicts.
-
-    The single-target CLI path fails the whole process (non-zero exit) on an
-    unresolvable selector rather than emitting a `BulkRecordEntry`-shaped
-    error — that failure is caught here and normalized into the same
-    per-selector `{"sel", "error"}` shape the 2+-target bulk path already
-    produces, so callers never branch on selector count.
+    `Op::RecordBulk` isolates a bad selector to its own `{"sel", "error"}`
+    entry regardless of how many selectors are requested (see ipc.rs's
+    `bulk_record_entry`), so — unlike the old subprocess-based single-`get`
+    CLI path, which failed the whole process on one bad selector — no
+    single-vs-multi-target special case is needed here any more.
     """
     if not targets:
         return []
-    if len(targets) == 1:
-        try:
-            result = _run_json(esm_bin, ["get", esm_path, targets[0], "--resolve", "stub"])
-        except ChaseError as exc:
-            return [{"sel": targets[0], "error": str(exc)}]
-        return [{"sel": targets[0], **result}]
-    return _run_json(esm_bin, ["get", esm_path, *targets, "--resolve", "stub"])
+    try:
+        return gateway.bulk_get(esm_path, targets, resolve="stub")
+    except eg.DaemonError as exc:
+        raise ChaseError(f"bulk get failed for {targets}: {exc}") from exc
 
 
 def esm_refs(
-    esm_bin: Path,
+    gateway: eg.EsmGateway,
     esm_path: str,
     target_formid: str,
     *,
@@ -195,23 +149,23 @@ def esm_refs(
     depth: int,
     limit: int,
 ) -> list[dict]:
-    """`esm refs <esm> <target> --type <record_type> --paths --depth --limit --json`.
+    """`EsmGateway.refs(..., type_filter=record_type, paths=True)` -- the
+    daemon-side equivalent of `esm refs <esm> <target> --type <record_type>
+    --paths --depth --limit --json` (see cli.rs's `cmd_refs`, whose `-p`
+    path sends the exact same `Op::ReferencedBy` fields).
 
     Returns the raw list of RefRow dicts (empty list if nothing matches —
     an empty result is not an error, see cli.rs's `print_refs`)."""
-    args = [
-        "refs",
-        esm_path,
-        target_formid,
-        "--type",
-        record_type,
-        "--paths",
-        "--depth",
-        str(depth),
-        "--limit",
-        str(limit),
-    ]
-    return _run_json(esm_bin, args)
+    try:
+        result = gateway.refs(
+            esm_path, target_formid, depth=depth, limit=limit,
+            type_filter=record_type, paths=True,
+        )
+    except eg.DaemonError as exc:
+        raise ChaseError(
+            f"refs failed for {target_formid} (type={record_type}): {exc}"
+        ) from exc
+    return result.get("rows") or []
 
 
 # ─── schema helpers ──────────────────────────────────────────────────────────
@@ -407,7 +361,7 @@ def _forward_evidence(target: dict, entries_by_sel: dict) -> dict:
 
 
 def _reverse_chase(
-    esm_bin: Path, esm_path: str, target: dict, *, depth: int, limit: int
+    gateway: eg.EsmGateway, esm_path: str, target: dict, *, depth: int, limit: int
 ) -> list[dict]:
     """Reverse `refs --type SPEL` + `--type PERK` walk on `target` (a keyword
     or AVIF), then a single bulk `get` for every distinct consumer found,
@@ -417,14 +371,14 @@ def _reverse_chase(
     for record_type in CONSUMER_TYPES:
         rows.extend(
             esm_refs(
-                esm_bin, esm_path, target["formid"], record_type=record_type, depth=depth, limit=limit
+                gateway, esm_path, target["formid"], record_type=record_type, depth=depth, limit=limit
             )
         )
     if not rows:
         return []
 
     ids = sorted({row["form_id"] for row in rows})
-    fetched = esm_get_bulk(esm_bin, esm_path, ids)
+    fetched = esm_get_bulk(gateway, esm_path, ids)
     by_sel = {e.get("sel"): e for e in fetched}
 
     evidence = []
@@ -454,15 +408,20 @@ def _reverse_chase(
 
 
 def chase(
-    esm_bin: Path,
+    gateway: eg.EsmGateway,
     esm_path: str,
     omod_selector: str,
     *,
     depth: int = DEFAULT_DEPTH,
     ref_limit: int = DEFAULT_REF_LIMIT,
 ) -> dict:
-    """Run the full chase for one OMOD selector and return the evidence tree."""
-    entries = esm_get_bulk(esm_bin, esm_path, [omod_selector])
+    """Run the full chase for one OMOD selector and return the evidence tree.
+
+    `gateway` is anything implementing `EsmGateway`'s `bulk_get()`/`refs()`
+    surface -- normally a live warm-daemon `EsmGateway` (see
+    `esm_gateway.ensure_daemon`, wired up by `main()`), or a `FakeGateway`
+    for tests (see `tests/test_chase.py`)."""
+    entries = esm_get_bulk(gateway, esm_path, [omod_selector])
     entry = entries[0]
     if "error" in entry:
         raise ChaseError(f"failed to resolve {omod_selector!r}: {entry['error']}")
@@ -538,14 +497,14 @@ def chase(
 
     # ---- forward fetch (perk_grant + direct ENCH/SPEL attachments): 1 bulk call ----
     if forward_targets:
-        fetched = esm_get_bulk(esm_bin, esm_path, [t["formid"] for _, t in forward_targets])
+        fetched = esm_get_bulk(gateway, esm_path, [t["formid"] for _, t in forward_targets])
         by_sel = {e.get("sel"): e for e in fetched}
         for i, target in forward_targets:
             hops[i]["evidence"] = [_forward_evidence(target, by_sel)]
 
     # ---- reverse chase (keyword_hook + AVIF consumer lookup) ----
     for i, target in reverse_targets:
-        hops[i]["evidence"] = _reverse_chase(esm_bin, esm_path, target, depth=depth, limit=ref_limit)
+        hops[i]["evidence"] = _reverse_chase(gateway, esm_path, target, depth=depth, limit=ref_limit)
 
     return {"omod": omod_stub, "hops": hops}
 
@@ -658,11 +617,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        esm_bin = find_esm_binary(args.esm_bin)
-        tree = chase(esm_bin, args.esm, args.omod, depth=args.depth, ref_limit=args.ref_limit)
+        esm_bin = eg.find_esm_binary(args.esm_bin)
+        gateway = eg.ensure_daemon(esm_bin, args.esm)
+    except eg.DaemonError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        tree = chase(gateway, args.esm, args.omod, depth=args.depth, ref_limit=args.ref_limit)
     except ChaseError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    finally:
+        gateway.close()
 
     if args.json:
         print(json.dumps(tree, indent=2))
