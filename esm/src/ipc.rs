@@ -395,12 +395,12 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             Ok(serde_json::to_value(&info)?)
         }
         Op::Record { sel, depth } => {
+            // `RecordResult`'s `Serialize` impl produces the exact same
+            // `{header, editor_id, fields}` shape a hand-built `json!` would
+            // (no serde renames, no optional-field skipping) — this is the one
+            // authoritative shape both the CLI/daemon and N-API bindings read.
             let result = record_resolved(db, sel, *depth)?;
-            Ok(serde_json::json!({
-                "header": result.header,
-                "editor_id": result.editor_id,
-                "fields": result.fields
-            }))
+            Ok(serde_json::to_value(&result)?)
         }
         Op::RecordBulk { sels, depth } => {
             let entries: Vec<BulkRecordEntry> = sels

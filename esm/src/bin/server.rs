@@ -613,15 +613,10 @@ fn call_tool_proxy(
         "esm_get_record" => {
             use esm::ipc::RecordSel;
 
-            let depth = match args
-                .get("resolve")
-                .and_then(|v| v.as_str())
-                .unwrap_or("stub")
-            {
-                "full" => esm::ResolveDepth::Full,
-                "none" => esm::ResolveDepth::None,
-                _ => esm::ResolveDepth::Stub, // "stub" is the default
-            };
+            let depth = esm::query::resolve_depth(
+                args.get("resolve").and_then(|v| v.as_str()),
+                esm::ResolveDepth::Stub, // "stub" is the default
+            )?;
 
             // Bulk mode: a non-empty 'ids' array takes priority over the
             // single-selector 'id'/'formid'/'edid' args.
@@ -678,11 +673,11 @@ fn call_tool_proxy(
         "esm_refs" => {
             let sel = sel_from_args(args)?;
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
-            let depth = args
-                .get("depth")
-                .and_then(|v| v.as_u64())
-                .map(|d| (d as usize).clamp(1, esm::ipc::DEFAULT_MAX_DEPTH))
-                .unwrap_or(1);
+            let depth = esm::query::clamp_ref_depth(
+                args.get("depth")
+                    .and_then(|v| v.as_u64())
+                    .map(|d| d as usize),
+            );
             let type_filter = args
                 .get("type")
                 .and_then(|v| v.as_str())

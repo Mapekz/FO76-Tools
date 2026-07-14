@@ -6,8 +6,8 @@ use esm::backend::{
 };
 use esm::ipc::{Op, RecordSel};
 use esm::{
-    BodyDetail, CoverageReport, Database, DiffOptions, DiffResult, Markers, RawRecordView,
-    RecordRow, RefList, ResolveDepth, SearchField,
+    BodyDetail, CoverageReport, Database, DiffResult, Markers, RecordRow, RefList, ResolveDepth,
+    SearchField,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -891,12 +891,8 @@ fn apply_strings_override(
     }
 }
 
-fn parse_resolve(s: &str) -> ResolveDepth {
-    match s {
-        "stub" => ResolveDepth::Stub,
-        "full" => ResolveDepth::Full,
-        _ => ResolveDepth::None,
-    }
+fn parse_resolve(s: &str) -> anyhow::Result<ResolveDepth> {
+    esm::query::resolve_depth(Some(s), ResolveDepth::None)
 }
 
 fn record_sel(
@@ -948,7 +944,7 @@ fn cmd_get(
             .iter()
             .map(|t| RecordSel::from_input(t))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let depth = parse_resolve(&resolve);
+        let depth = parse_resolve(&resolve)?;
         let v = backend.run(file, Op::RecordBulk { sels, depth })?;
         print_json(&v, pretty || !json);
         return Ok(());
@@ -967,36 +963,15 @@ fn cmd_get(
                  or remove --mmap-index"
             );
         }
-        let form_id = match sel {
-            RecordSel::FormId(f) => f,
-            RecordSel::Edid(_) => unreachable!(),
+        let mut db = Database::open_lite(file)?;
+        let depth = parse_resolve(&resolve)?;
+        let op = if raw {
+            Op::RecordRaw { sel }
+        } else {
+            Op::Record { sel, depth }
         };
-        let db = Database::open_lite(file)?;
-        let depth = parse_resolve(&resolve);
-        if raw {
-            let rec = db.record_raw(form_id)?;
-            let view = RawRecordView {
-                header: rec.header,
-                subrecords: rec
-                    .subrecords
-                    .iter()
-                    .map(|sr| esm::RawSubrecordView {
-                        signature: sr.signature.to_string(),
-                        size: sr.data.len(),
-                        hex: sr.data.iter().map(|b| format!("{:02x}", b)).collect(),
-                    })
-                    .collect(),
-            };
-            print_json(&serde_json::to_value(&view)?, pretty || !json);
-            return Ok(());
-        }
-        let result = db.record_by_formid_resolved(form_id, depth)?;
-        let out = serde_json::json!({
-            "header": result.header,
-            "editor_id": result.editor_id,
-            "fields": result.fields
-        });
-        print_json(&out, pretty || !json);
+        let v = esm::ipc::dispatch_op(&mut db, &op)?;
+        print_json(&v, pretty || !json);
         return Ok(());
     }
     if has_overrides && daemon_mode {
@@ -1013,50 +988,19 @@ fn cmd_get(
             db.load_curves(&ba2_path)?;
         }
         let sel = record_sel(formid, edid, target)?;
-        let depth = parse_resolve(&resolve);
-        if raw {
-            let form_id = match &sel {
-                RecordSel::FormId(f) => *f,
-                RecordSel::Edid(e) => {
-                    db.index.ensure_edid_index(&db.esm)?;
-                    db.index
-                        .get_by_edid(e)
-                        .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", e))?
-                }
-            };
-            let rec = db.record_raw(form_id)?;
-            let view = RawRecordView {
-                header: rec.header,
-                subrecords: rec
-                    .subrecords
-                    .iter()
-                    .map(|sr| esm::RawSubrecordView {
-                        signature: sr.signature.to_string(),
-                        size: sr.data.len(),
-                        hex: sr.data.iter().map(|b| format!("{:02x}", b)).collect(),
-                    })
-                    .collect(),
-            };
-            print_json(&serde_json::to_value(&view)?, pretty || !json);
-            return Ok(());
-        }
-        let result = match (&sel, depth) {
-            (RecordSel::FormId(f), ResolveDepth::None) => db.record_by_formid(*f)?,
-            (RecordSel::Edid(e), ResolveDepth::None) => db.record_by_edid(e)?,
-            (RecordSel::FormId(f), d) => db.record_by_formid_resolved(*f, d)?,
-            (RecordSel::Edid(e), d) => db.record_by_edid_resolved(e, d)?,
+        let depth = parse_resolve(&resolve)?;
+        let op = if raw {
+            Op::RecordRaw { sel }
+        } else {
+            Op::Record { sel, depth }
         };
-        let out = serde_json::json!({
-            "header": result.header,
-            "editor_id": result.editor_id,
-            "fields": result.fields
-        });
-        print_json(&out, pretty || !json);
+        let v = esm::ipc::dispatch_op(&mut db, &op)?;
+        print_json(&v, pretty || !json);
         return Ok(());
     }
 
     let sel = record_sel(formid, edid, target)?;
-    let depth = parse_resolve(&resolve);
+    let depth = parse_resolve(&resolve)?;
     if raw {
         let v = backend.run(file, Op::RecordRaw { sel })?;
         print_json(&v, pretty || !json);
@@ -1135,15 +1079,16 @@ fn cmd_refs(
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
-        let form_id = resolve_form_id_local(&mut db, formid, edid, target)?;
-        let ref_list = esm::ipc::referenced_by_enriched(
-            &mut db,
-            form_id,
-            depth,
+        let sel = record_sel(formid, edid, target)?;
+        let op = Op::ReferencedBy {
+            sel,
             limit,
-            record_type.as_deref(),
+            depth,
+            type_filter: record_type,
             paths,
-        )?;
+        };
+        let v = esm::ipc::dispatch_op(&mut db, &op)?;
+        let ref_list: RefList = serde_json::from_value(v)?;
         print_refs(&ref_list, json, pretty);
         return Ok(());
     }
@@ -1351,23 +1296,6 @@ fn print_search_results(results: &[RecordRow], limit: usize, json: bool, pretty:
     print_record_rows(results, limit, json, pretty);
 }
 
-fn resolve_form_id_local(
-    db: &mut Database,
-    formid: Option<String>,
-    edid: Option<String>,
-    target: Option<String>,
-) -> anyhow::Result<esm::FormId> {
-    match record_sel(formid, edid, target)? {
-        RecordSel::FormId(fid) => Ok(fid),
-        RecordSel::Edid(e) => {
-            db.index.ensure_edid_index(&db.esm)?;
-            db.index
-                .get_by_edid(&e)
-                .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", e))
-        }
-    }
-}
-
 /// Resolve localization for one ESM side, or bail loudly if no string tables
 /// can be found.  Precedence:
 ///   1. Explicit BA2 via `--localization-ba2` → `Localization::from_ba2`.
@@ -1466,11 +1394,7 @@ fn cmd_diff(
     exclude_type: Vec<String>,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
-    let options = DiffOptions {
-        bodies,
-        suppress_noise: !keep_noise,
-        exclude_types: exclude_type.iter().map(|s| s.to_uppercase()).collect(),
-    };
+    let options = esm::query::diff_options(bodies, !keep_noise, &exclude_type);
 
     // Coalesce per-side over shared for each source kind.
     let lba2_a = localization_ba2_a.or_else(|| localization_ba2.clone());
@@ -1529,10 +1453,9 @@ fn cmd_diff(
             db_b.load_curves_from_dir(&dir)?;
         }
 
-        let mut result = esm::diff::diff_databases_with(&db_a, &db_b, &options)?;
-
-        // Apply optional --type filter.
-        esm::diff::apply_type_filter(&mut result, &record_type.map(str::to_string));
+        let record_type_owned = record_type.map(str::to_string);
+        let v = esm::ipc::diff_locked(&db_a, &db_b, &options, &record_type_owned)?;
+        let mut result: DiffResult = serde_json::from_value(v)?;
 
         return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
     }

@@ -61,8 +61,6 @@ export declare class EsmDatabase {
    * `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
    */
   recordById(id: string, resolve: string): Promise<any>
-  /** Return all records that reference the given FormID hex string. */
-  referencedBy(formid: string): Promise<any>
   /**
    * Return all records that reference the given FormID or EditorID (auto-detected).
    *

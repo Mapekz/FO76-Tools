@@ -1,7 +1,7 @@
 #![deny(clippy::all)]
 
 use esm::ipc::RecordSel;
-use esm::{Database, FilterOp, FormId, ResolveDepth, SearchField};
+use esm::{Database, FormId, ResolveDepth, SearchField};
 use napi_derive::napi;
 use std::sync::{Arc, Mutex};
 
@@ -26,24 +26,22 @@ impl EsmDatabase {
 
     #[napi]
     pub fn file_info(&self) -> napi::Result<serde_json::Value> {
-        let db = self
+        let mut db = self
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let info = db
-            .file_info()
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&info).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        esm::ipc::dispatch_op(&mut db, &esm::ipc::Op::FileInfo)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     #[napi]
     pub fn list_groups(&self) -> napi::Result<serde_json::Value> {
-        let db = self
+        let mut db = self
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let groups = db.list_groups();
-        serde_json::to_value(&groups).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        esm::ipc::dispatch_op(&mut db, &esm::ipc::Op::ListGroups)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Paginated record rows for the given 4-character record type signature.
@@ -58,10 +56,12 @@ impl EsmDatabase {
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let rows = db
-            .list_type_records(&sig, offset as usize, limit as usize)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&rows).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        let op = esm::ipc::Op::ListTypeRecords {
+            sig,
+            offset: offset as usize,
+            limit: limit as usize,
+        };
+        esm::ipc::dispatch_op(&mut db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Search records by EditorID and/or display name using a `*`-wildcard pattern.
@@ -77,15 +77,19 @@ impl EsmDatabase {
         field: String,
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
-        let field = parse_search_field(&field)?;
+        let field = esm::query::search_field(Some(&field), SearchField::Both)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         let mut db = self
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let rows = db
-            .search(&pattern, &types, field, limit as usize)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&rows).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        let op = esm::ipc::Op::Search {
+            pattern,
+            types,
+            field,
+            limit: limit as usize,
+        };
+        esm::ipc::dispatch_op(&mut db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Filter records of type `sig` by a predicate against their decoded
@@ -102,7 +106,8 @@ impl EsmDatabase {
         value: Option<String>,
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
-        let op = parse_filter_op(&op)?;
+        let op =
+            esm::query::filter_op(&op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         let mut db = self
             .inner
             .lock()
@@ -138,14 +143,16 @@ impl EsmDatabase {
         offset: u32,
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
-        let db = self
+        let mut db = self
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let children = db
-            .list_type_children(&sig, offset as usize, limit as usize)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&children).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        let op = esm::ipc::Op::ListTypeChildren {
+            sig,
+            offset: offset as usize,
+            limit: limit as usize,
+        };
+        esm::ipc::dispatch_op(&mut db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List direct children of an arbitrary GRUP by its own header offset — used for
@@ -185,15 +192,17 @@ impl EsmDatabase {
         let fid: FormId = formid
             .parse()
             .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-        let depth = parse_resolve_depth(&resolve)?;
-        let db = self
+        let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        let mut db = self
             .inner
             .lock()
             .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        let result = db
-            .record_by_formid_resolved(fid, depth)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
+        let op = esm::ipc::Op::Record {
+            sel: RecordSel::FormId(fid),
+            depth,
+        };
+        esm::ipc::dispatch_op(&mut db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Decode a record by EditorID string.
@@ -207,14 +216,17 @@ impl EsmDatabase {
     ) -> napi::Result<serde_json::Value> {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || {
-            let depth = parse_resolve_depth(&resolve)?;
+            let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
             let mut db = inner
                 .lock()
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let result = db
-                .record_by_edid_resolved(&edid, depth)
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
+            let op = esm::ipc::Op::Record {
+                sel: RecordSel::Edid(edid),
+                depth,
+            };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -233,36 +245,14 @@ impl EsmDatabase {
         tokio::task::spawn_blocking(move || {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let depth = parse_resolve_depth(&resolve)?;
-            let mut db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let result = match sel {
-                RecordSel::FormId(fid) => db.record_by_formid_resolved(fid, depth),
-                RecordSel::Edid(edid) => db.record_by_edid_resolved(&edid, depth),
-            }
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            serde_json::to_value(&result).map_err(|e| napi::Error::from_reason(format!("{e}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-    }
-
-    /// Return all records that reference the given FormID hex string.
-    #[napi]
-    pub async fn referenced_by(&self, formid: String) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let fid: FormId = formid
-                .parse()
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let mut db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let rows = db
-                .referenced_by(fid)
+            let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            serde_json::to_value(&rows).map_err(|e| napi::Error::from_reason(format!("{e}")))
+            let mut db = inner
+                .lock()
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let op = esm::ipc::Op::Record { sel, depth };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -283,18 +273,19 @@ impl EsmDatabase {
         tokio::task::spawn_blocking(move || {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+            let walk_depth = esm::query::clamp_ref_depth(depth.map(|d| d as usize));
             let mut db = inner
                 .lock()
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let fid = esm::ipc::resolve_sel(&mut db, &sel)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let walk_depth = depth
-                .map(|d| (d as usize).clamp(1, esm::ipc::DEFAULT_MAX_DEPTH))
-                .unwrap_or(1);
-            let list =
-                esm::ipc::referenced_by_enriched(&mut db, fid, walk_depth, usize::MAX, None, false)
-                    .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            serde_json::to_value(&list).map_err(|e| napi::Error::from_reason(format!("{e}")))
+            let op = esm::ipc::Op::ReferencedBy {
+                sel,
+                limit: usize::MAX,
+                depth: walk_depth,
+                type_filter: None,
+                paths: false,
+            };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -310,13 +301,9 @@ impl EsmDatabase {
             let mut db = inner
                 .lock()
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let fid = esm::ipc::resolve_sel(&mut db, &sel)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let rec = db
-                .record_raw(fid)
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            let view = esm::ipc::raw_record_view(&rec);
-            serde_json::to_value(&view).map_err(|e| napi::Error::from_reason(format!("{e}")))
+            let op = esm::ipc::Op::RecordRaw { sel };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -333,12 +320,15 @@ impl EsmDatabase {
     ) -> napi::Result<serde_json::Value> {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || {
-            let db = inner
+            let mut db = inner
                 .lock()
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-            let report = esm::ipc::coverage_report(&db, record_type.as_deref(), sample as usize)
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            serde_json::to_value(&report).map_err(|e| napi::Error::from_reason(format!("{e}")))
+            let op = esm::ipc::Op::Coverage {
+                record_type,
+                sample: sample as usize,
+            };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -360,15 +350,12 @@ impl EsmDatabase {
         suppress_noise: bool,
         exclude_types: Vec<String>,
     ) -> napi::Result<serde_json::Value> {
-        let bodies = parse_body_detail(&bodies)?;
+        let bodies = esm::query::body_detail(Some(&bodies), esm::diff::BodyDetail::Full)
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         let arc_a = self.inner.clone();
         let arc_b = other.inner.clone();
         tokio::task::spawn_blocking(move || {
-            let options = esm::diff::DiffOptions {
-                bodies,
-                suppress_noise,
-                exclude_types,
-            };
+            let options = esm::query::diff_options(bodies, suppress_noise, exclude_types);
             // Lock ordering doesn't have a `Registry`'s canonical keys to compare here
             // (unlike `dispatch_inner`'s `Diff` arm) — order by raw `Arc` pointer address
             // instead, which is just as deadlock-safe as long as it's used consistently.
@@ -409,52 +396,4 @@ pub fn parse_form_id(s: String) -> napi::Result<String> {
         .parse()
         .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
     Ok(fid.display())
-}
-
-fn parse_resolve_depth(s: &str) -> napi::Result<ResolveDepth> {
-    match s {
-        "none" => Ok(ResolveDepth::None),
-        "stub" => Ok(ResolveDepth::Stub),
-        "full" => Ok(ResolveDepth::Full),
-        other => Err(napi::Error::from_reason(format!(
-            "unknown resolve depth '{other}'; expected none|stub|full"
-        ))),
-    }
-}
-
-fn parse_search_field(s: &str) -> napi::Result<SearchField> {
-    match s {
-        "edid" => Ok(SearchField::Edid),
-        "name" => Ok(SearchField::Name),
-        "both" => Ok(SearchField::Both),
-        other => Err(napi::Error::from_reason(format!(
-            "unknown search field '{other}'; expected edid|name|both"
-        ))),
-    }
-}
-
-fn parse_body_detail(s: &str) -> napi::Result<esm::diff::BodyDetail> {
-    match s {
-        "none" => Ok(esm::diff::BodyDetail::None),
-        "stub" => Ok(esm::diff::BodyDetail::Stub),
-        "full" => Ok(esm::diff::BodyDetail::Full),
-        other => Err(napi::Error::from_reason(format!(
-            "unknown body detail '{other}'; expected none|stub|full"
-        ))),
-    }
-}
-
-fn parse_filter_op(s: &str) -> napi::Result<FilterOp> {
-    match s {
-        "exists" => Ok(FilterOp::Exists),
-        "eq" => Ok(FilterOp::Eq),
-        "contains" => Ok(FilterOp::Contains),
-        "gt" => Ok(FilterOp::Gt),
-        "lt" => Ok(FilterOp::Lt),
-        "gte" => Ok(FilterOp::Gte),
-        "lte" => Ok(FilterOp::Lte),
-        other => Err(napi::Error::from_reason(format!(
-            "unknown filter op '{other}'; expected exists|eq|contains|gt|lt|gte|lte"
-        ))),
-    }
 }

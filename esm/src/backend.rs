@@ -198,13 +198,14 @@ pub trait QueryBackend {
         esm_a: &Path,
         esm_b: &Path,
         record_type: Option<String>,
+        options: crate::diff::DiffOptions,
     ) -> anyhow::Result<crate::DiffResult> {
         let v = self.run(
             esm_a,
             Op::Diff {
                 b: esm_b.to_path_buf(),
                 record_type,
-                options: crate::diff::DiffOptions::default(),
+                options,
             },
         )?;
         Ok(serde_json::from_value(v)?)

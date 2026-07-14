@@ -12,6 +12,7 @@ pub mod hardcoded;
 pub mod index;
 pub mod ipc;
 pub mod mindex;
+pub mod query;
 pub mod reader;
 pub mod registry;
 pub mod schema;
