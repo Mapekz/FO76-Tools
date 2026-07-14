@@ -5362,3 +5362,56 @@ fn cobj_weapon_ranged_alien_blaster_decodes_correctly() {
         "Created Object"
     );
 }
+
+/// PCRD `DATA` decodes race eligibility, and the struct is named "Perk Card Data"
+/// (not "Unknown" — xEdit's placeholder name, carried over verbatim by the
+/// extractor before the `record_patches` override renamed it). Byte 6 is the
+/// `Race Restriction` field: 0/1/2 = None/Human/Ghoul.
+///
+/// Regression test for the reported bug where legendary perk cards
+/// (`GHL_LGN_ActionDiet_Card`, `LGN_WhatRads_Card`, `GHL_LGN_FeralRageCard`) —
+/// and ordinary cards like `NaturalResistanceCard` / `GHL_RadioactiveStrengthCard` —
+/// showed their race-restriction data under a key literally called "Unknown".
+#[test]
+fn pcrd_data_decodes_race_restriction() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx(&schema);
+
+    // 7-byte DATA payload: Value(f32=0.0) | Min Level(u8=0x32=50) |
+    // Special(u8=0x02=Endurance) | Race Restriction(u8, varies).
+    for (hex, race) in [
+        ("00000000320200", "None"),
+        ("00000000320201", "Human"),
+        ("00000000320202", "Ghoul"),
+    ] {
+        let subs = subrecords_from(&[("DATA", hex)]);
+        let result = decode_record(&ctx, "PCRD", &subs);
+
+        assert_eq!(
+            result.get("_record_type").and_then(|v| v.as_str()),
+            Some("Perk Card"),
+        );
+        assert_fully_decoded(&result);
+
+        // Rename regression guard: the old placeholder key must be gone.
+        assert!(
+            result.get("Unknown").is_none(),
+            "PCRD DATA struct must not be keyed 'Unknown'"
+        );
+        let data = result
+            .get("Perk Card Data")
+            .expect("PCRD DATA must be keyed 'Perk Card Data'");
+
+        assert_eq!(data["Min Level"].as_u64(), Some(50), "Min Level");
+        assert_eq!(
+            data["Special"]["name"].as_str(),
+            Some("Endurance"),
+            "Special"
+        );
+        assert_eq!(
+            data["Race Restriction"]["name"].as_str(),
+            Some(race),
+            "race byte {hex} should decode to Race Restriction = {race}",
+        );
+    }
+}

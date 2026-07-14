@@ -52143,7 +52143,8 @@
         },
         {
           "kind": "struct",
-          "name": "Unknown",
+          "name": "Perk Card Data",
+          "sig": "DATA",
           "fields": [
             {
               "kind": "float",
@@ -52191,8 +52192,7 @@
               "bytes": 0,
               "below_version": 208
             }
-          ],
-          "sig": "DATA"
+          ]
         },
         {
           "kind": "formid",

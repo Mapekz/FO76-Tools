@@ -1027,6 +1027,65 @@
         },
         "_comment": "wbPerkEffect is a HARD_RAW_VAR (runtime Pascal decider) \u2014 extractor cannot statically resolve the Effect element. This hand-authored rstruct has been validated against real ESM data. All other PERK members (EDID, DURL, VMAD, FULL, DESC, ICON, Conditions, Data, SNAM, PRFS, NNAM, FNAM, PRFI, PFAC) now come from native extraction \u2014 see parity-exceptions.json PERK[1:Effects][elem]."
       }
+    ],
+    "PCRD": [
+      {
+        "path": ["DATA"],
+        "node": {
+          "kind": "struct",
+          "name": "Perk Card Data",
+          "sig": "DATA",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Value"
+            },
+            {
+              "kind": "integer",
+              "name": "Min Level",
+              "width": "u8",
+              "signed": false
+            },
+            {
+              "kind": "integer",
+              "name": "Special",
+              "width": "u8",
+              "signed": false,
+              "format": {
+                "enum": [
+                  "Strength",
+                  "Perception",
+                  "Endurance",
+                  "Charisma",
+                  "Intelligence",
+                  "Agility",
+                  "Luck",
+                  "Unknown"
+                ]
+              }
+            },
+            {
+              "kind": "integer",
+              "name": "Race Restriction",
+              "width": "u8",
+              "signed": false,
+              "format": {
+                "enum": [
+                  "None",
+                  "Human",
+                  "Ghoul"
+                ]
+              }
+            },
+            {
+              "kind": "unused",
+              "bytes": 0,
+              "below_version": 208
+            }
+          ]
+        },
+        "_comment": "xEdit names this struct 'Unknown' verbatim (wbDefinitionsFO76.pas: wbStruct(DATA, 'Unknown', [...])) even though every field is fully decoded \u2014 Value/Min Level/Special/Race Restriction. Renamed here so it stops reading as an undecoded blob. Race Restriction (offset 6) is the race-eligibility byte: 0=None, 1=Human, 2=Ghoul."
+      }
     ]
   }
 }
