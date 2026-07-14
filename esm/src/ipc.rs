@@ -132,6 +132,19 @@ pub enum Op {
         /// Recursion depth for the reverse-reference walk (default 1, capped at DEFAULT_MAX_DEPTH).
         #[serde(default)]
         depth: usize,
+        /// Narrow rows to referencing records of this 4-character type
+        /// signature (e.g. `"OMOD"`); case-insensitive. Applied server-side
+        /// during the walk itself: non-matching nodes are still traversed so
+        /// deeper hops stay reachable, only excluded from the emitted
+        /// rows/limit/total. `None` (the wire default for older clients) = no
+        /// filter.
+        #[serde(default)]
+        type_filter: Option<String>,
+        /// Annotate each emitted row with the JSON field path(s) inside it
+        /// that reference its direct predecessor in the hop chain. Opt-in —
+        /// requires decoding every emitted row, unlike the default walk.
+        #[serde(default)]
+        paths: bool,
     },
     ListGroups,
     ListTypeChildren {
@@ -191,6 +204,14 @@ pub struct RefRow {
     /// Empty when depth = 1 (direct reference).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<RefPathNode>,
+    /// JSON field path(s) inside this record's decoded body where it
+    /// references its direct predecessor in the hop chain (the walk target
+    /// itself, for depth = 1 rows) — e.g.
+    /// `"Effects[2].Conditions[0].Parameter 1"`. `None` unless `--paths` was
+    /// requested: computing this requires decoding the full record, so it's
+    /// opt-in and left absent on the default fast walk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_paths: Option<Vec<String>>,
 }
 
 /// Referenced-by result with total count and optional cap flag.
@@ -382,9 +403,16 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             let results = db.search(pattern, &types, *field, *limit)?;
             Ok(serde_json::to_value(&results)?)
         }
-        Op::ReferencedBy { sel, limit, depth } => {
+        Op::ReferencedBy {
+            sel,
+            limit,
+            depth,
+            type_filter,
+            paths,
+        } => {
             let target = resolve_sel(db, sel)?;
-            let ref_list = referenced_by_enriched(db, target, *depth, *limit)?;
+            let ref_list =
+                referenced_by_enriched(db, target, *depth, *limit, type_filter.as_deref(), *paths)?;
             Ok(serde_json::to_value(&ref_list)?)
         }
         Op::ListGroups => {
@@ -474,13 +502,35 @@ pub fn diff_locked(
 /// - `depth`: hop distance from `target` (1 = direct referencer).
 /// - `path`: intermediate nodes between `target` and this row; empty for
 ///   depth-1 rows (and omitted from serialized JSON when empty).
+///
+/// `type_filter`, if set, must be a 4-character record-type signature
+/// (case-insensitive); only rows of that type are emitted. The filter is
+/// applied to *emission*, not traversal — the walk still expands through
+/// non-matching nodes so a matching node further away stays reachable, and
+/// `limit`/`total`/`capped` are computed against the filtered set.
+///
+/// `include_paths`, if true, decodes every emitted row's record body and
+/// annotates it with [`RefRow::field_paths`] (see
+/// [`Database::formid_reference_paths`]) — opt-in because it requires a full
+/// decode per row, unlike the rest of this walk.
 pub fn referenced_by_enriched(
     db: &mut Database,
     target: FormId,
     depth: usize,
     limit: usize,
+    type_filter: Option<&str>,
+    include_paths: bool,
 ) -> anyhow::Result<RefList> {
     let max_depth = depth.clamp(1, DEFAULT_MAX_DEPTH);
+    let type_filter = match type_filter {
+        Some(t) => {
+            if t.len() != 4 {
+                bail!("record type '{}' must be a 4-character signature", t);
+            }
+            Some(t.to_uppercase())
+        }
+        None => None,
+    };
 
     // `seen` is both the dedup set for emitted results and the BFS visited set.
     // Seeding with `target` prevents the target itself from appearing as its
@@ -509,15 +559,28 @@ pub fn referenced_by_enriched(
             let record_type = db.index.get_by_formid(fid).map(|m| m.signature.clone());
             let hop_depth = path_here.len() + 1;
 
-            rows.push(RefRow {
-                form_id: r.form_id.clone(),
-                record_type: record_type.clone(),
-                editor_id: r.editor_id.clone(),
-                name: r.name.clone(),
-                offset: r.offset,
-                depth: hop_depth,
-                path: path_here.clone(),
-            });
+            let type_matches = match &type_filter {
+                Some(f) => record_type.as_deref() == Some(f.as_str()),
+                None => true,
+            };
+
+            if type_matches {
+                let field_paths = if include_paths {
+                    Some(db.formid_reference_paths(fid, current))
+                } else {
+                    None
+                };
+                rows.push(RefRow {
+                    form_id: r.form_id.clone(),
+                    record_type: record_type.clone(),
+                    editor_id: r.editor_id.clone(),
+                    name: r.name.clone(),
+                    offset: r.offset,
+                    depth: hop_depth,
+                    path: path_here.clone(),
+                    field_paths,
+                });
+            }
 
             if hop_depth < max_depth {
                 let mut new_path = path_here.clone();

@@ -292,6 +292,106 @@ fn op_diff_without_options_field_deserializes() {
     }
 }
 
+/// A pre-`type_filter`/`paths` wire client (e.g. an older N-API build) sends
+/// `Op::ReferencedBy` JSON with neither field. `#[serde(default)]` on both
+/// must fill in `None`/`false` rather than failing to deserialize.
+#[test]
+fn op_referenced_by_without_new_fields_deserializes() {
+    let json = r#"{
+        "esm": "Game.esm",
+        "op": {
+            "op": "referenced_by",
+            "sel": {"kind": "form_id", "value": 4667},
+            "limit": 100,
+            "depth": 1
+        }
+    }"#;
+    let req: Request = serde_json::from_str(json).expect("deserialize");
+    match req.op {
+        Op::ReferencedBy {
+            limit,
+            depth,
+            type_filter,
+            paths,
+            ..
+        } => {
+            assert_eq!(limit, 100);
+            assert_eq!(depth, 1);
+            assert_eq!(type_filter, None);
+            assert!(!paths);
+        }
+        other => panic!("expected Op::ReferencedBy, got {other:?}"),
+    }
+}
+
+/// `Op::ReferencedBy` with `type_filter`/`paths` set must survive a full JSON
+/// round-trip, and dispatching it end-to-end must apply the filter and
+/// annotate rows with `field_paths` — exercising the daemon IPC path (not
+/// just `referenced_by_enriched` directly, which `tests/refs.rs` covers).
+#[test]
+fn dispatch_referenced_by_with_type_filter_and_paths() {
+    let buf = common::make_xref_esm();
+    let tmp = common::unique_temp_path("ipc_refs_paths");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let reg = Registry::new();
+
+    let op = Op::ReferencedBy {
+        sel: RecordSel::FormId(esm::FormId(1)),
+        limit: 0,
+        depth: 1,
+        type_filter: Some("WEAP".to_string()),
+        paths: true,
+    };
+
+    // Round-trip check.
+    let req = Request {
+        esm: tmp.clone(),
+        op: op.clone(),
+    };
+    let json = serde_json::to_string(&req).expect("serialize");
+    let back: Request = serde_json::from_str(&json).expect("deserialize");
+    let json2 = serde_json::to_string(&back).expect("re-serialize");
+    assert_eq!(json, json2, "round-trip mismatch");
+
+    // End-to-end dispatch.
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok");
+    };
+    let list: esm::RefList = serde_json::from_value(data).expect("RefList");
+    assert_eq!(list.rows.len(), 1);
+    assert_eq!(list.rows[0].record_type.as_deref(), Some("WEAP"));
+    assert_eq!(
+        list.rows[0].field_paths,
+        Some(vec![
+            "Sound - Pickup".to_string(),
+            "Sound - Putdown".to_string()
+        ])
+    );
+
+    // A non-matching type filter excludes the one referencer entirely.
+    let op_no_match = Op::ReferencedBy {
+        sel: RecordSel::FormId(esm::FormId(1)),
+        limit: 0,
+        depth: 1,
+        type_filter: Some("MISC".to_string()),
+        paths: false,
+    };
+    let req_no_match = Request {
+        esm: tmp.clone(),
+        op: op_no_match,
+    };
+    let Response::Ok { data } = dispatch(&reg, &req_no_match) else {
+        panic!("expected Ok");
+    };
+    let list: esm::RefList = serde_json::from_value(data).expect("RefList");
+    assert!(list.rows.is_empty());
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
 /// Non-default `DiffOptions` (stub bodies, noise kept, explicit type
 /// exclusions) must survive a full JSON round-trip on `Op::Diff` — both the
 /// re-serialized wire form and each individual field.

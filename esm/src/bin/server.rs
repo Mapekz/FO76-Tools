@@ -516,7 +516,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                     },
                     {
                         "name": "esm_refs",
-                        "description": "Walk the reverse-reference graph from a FormID or EditorID up to `depth` hops (default 1). depth=1 lists all records that directly reference the target (e.g. which leveled lists include an item, which NPCs carry a weapon). depth=2–6 follows referencers of referencers, useful for questions like 'where does this item ultimately drop?' or 'which quests reference X's leveled list?'. Each result includes its hop distance and the intermediate-node path. Results are deduplicated; each node appears once at its shortest path. The caller decides what counts as a 'terminal source' — filter by record_type to focus on containers, NPCs, quests, etc.",
+                        "description": "Walk the reverse-reference graph from a FormID or EditorID up to `depth` hops (default 1). depth=1 lists all records that directly reference the target (e.g. which leveled lists include an item, which NPCs carry a weapon). depth=2–6 follows referencers of referencers, useful for questions like 'where does this item ultimately drop?' or 'which quests reference X's leveled list?'. Each result includes its hop distance and the intermediate-node path. Results are deduplicated; each node appears once at its shortest path. The caller decides what counts as a 'terminal source' — pass `type` to focus on containers, NPCs, quests, etc. (applied server-side, so `limit`/`depth` interact correctly with the filter). Pass `paths: true` to annotate each row with the JSON field path(s) inside it that reference its predecessor in the hop chain — avoids a follow-up esm_get_record just to find where the reference lives; costs a full decode per row, so it's off by default.",
                         "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
@@ -534,6 +534,14 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 "depth": {
                                     "type": "integer",
                                     "description": "Reverse-reference walk depth (default 1, max 6). depth=1 is a single-level lookup. Higher values recurse through the reference graph."
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "description": "Restrict rows to referencing records of this 4-character type signature (e.g. \"OMOD\"), case-insensitive. Applied server-side during the walk."
+                                },
+                                "paths": {
+                                    "type": "boolean",
+                                    "description": "Annotate each row with the JSON field path(s) where it references its predecessor in the hop chain (default false)."
                                 }
                             }
                         }
@@ -650,7 +658,12 @@ fn call_tool_proxy(
                 .and_then(|v| v.as_u64())
                 .map(|d| (d as usize).clamp(1, esm::ipc::DEFAULT_MAX_DEPTH))
                 .unwrap_or(1);
-            let refs = backend.referenced_by(esm_path, sel, limit, depth)?;
+            let type_filter = args
+                .get("type")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let paths = args.get("paths").and_then(|v| v.as_bool()).unwrap_or(false);
+            let refs = backend.referenced_by(esm_path, sel, limit, depth, type_filter, paths)?;
             Ok(serde_json::to_string_pretty(&refs)?)
         }
         _ => anyhow::bail!("unknown tool: {}", name),

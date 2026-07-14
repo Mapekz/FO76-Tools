@@ -194,6 +194,17 @@ enum Commands {
         /// Reverse-reference walk depth (1 = direct refs only, up to 6).
         #[arg(long, default_value_t = 1)]
         depth: usize,
+        /// Narrow rows to referencing records of this 4-character type
+        /// (e.g. `OMOD`); case-insensitive. Applied server-side, so `--limit`/
+        /// `--depth` interact correctly with the filter.
+        #[arg(long = "type")]
+        record_type: Option<String>,
+        /// Annotate each row with the JSON field path(s) where it references
+        /// its predecessor in the hop chain (e.g.
+        /// `Effects[2].Conditions[0].Parameter 1`). Decodes every emitted row
+        /// — off by default.
+        #[arg(long)]
+        paths: bool,
         #[arg(long)]
         json: bool,
         #[arg(long)]
@@ -317,6 +328,14 @@ enum ReplCommand {
         /// Reverse-reference walk depth (1 = direct refs only, up to 6).
         #[arg(long, default_value_t = 1)]
         depth: usize,
+        /// Narrow rows to referencing records of this 4-character type
+        /// (e.g. `OMOD`); case-insensitive.
+        #[arg(long = "type")]
+        record_type: Option<String>,
+        /// Annotate each row with the JSON field path(s) where it references
+        /// its predecessor in the hop chain. Decodes every emitted row.
+        #[arg(long)]
+        paths: bool,
         #[arg(long)]
         json: bool,
         #[arg(long)]
@@ -588,6 +607,8 @@ fn main() -> anyhow::Result<()> {
                 edid,
                 limit,
                 depth,
+                record_type,
+                paths,
                 json,
                 pretty,
                 localization_ba2,
@@ -601,6 +622,8 @@ fn main() -> anyhow::Result<()> {
                 target,
                 limit,
                 depth,
+                record_type,
+                paths,
                 json,
                 pretty,
                 localization_ba2,
@@ -765,10 +788,26 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             edid,
             limit,
             depth,
+            record_type,
+            paths,
             json,
             pretty,
         } => cmd_refs(
-            backend, esm, formid, edid, target, limit, depth, json, pretty, None, None, "en", true,
+            backend,
+            esm,
+            formid,
+            edid,
+            target,
+            limit,
+            depth,
+            record_type,
+            paths,
+            json,
+            pretty,
+            None,
+            None,
+            "en",
+            true,
         ),
         ReplCommand::Search {
             pattern,
@@ -1042,6 +1081,8 @@ fn cmd_refs(
     target: Option<String>,
     limit: usize,
     depth: usize,
+    record_type: Option<String>,
+    paths: bool,
     json: bool,
     pretty: bool,
     localization_ba2: Option<PathBuf>,
@@ -1060,12 +1101,28 @@ fn cmd_refs(
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         let form_id = resolve_form_id_local(&mut db, formid, edid, target)?;
-        let ref_list = esm::ipc::referenced_by_enriched(&mut db, form_id, depth, limit)?;
+        let ref_list = esm::ipc::referenced_by_enriched(
+            &mut db,
+            form_id,
+            depth,
+            limit,
+            record_type.as_deref(),
+            paths,
+        )?;
         print_refs(&ref_list, json, pretty);
         return Ok(());
     }
     let sel = record_sel(formid, edid, target)?;
-    let v = backend.run(file, Op::ReferencedBy { sel, limit, depth })?;
+    let v = backend.run(
+        file,
+        Op::ReferencedBy {
+            sel,
+            limit,
+            depth,
+            type_filter: record_type,
+            paths,
+        },
+    )?;
     let ref_list: RefList = serde_json::from_value(v)?;
     print_refs(&ref_list, json, pretty);
     Ok(())
@@ -1078,41 +1135,50 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
         if ref_list.rows.is_empty() {
             eprintln!("note: no records reference {}", ref_list.target);
         } else {
-            // Include a VIA column only when at least one row has a multi-hop path.
+            // Include a VIA column only when at least one row has a multi-hop path,
+            // and a PATHS column only when --paths was requested (field_paths is
+            // Some(...) on every row in that case, even if the inner Vec is empty).
             let has_via = ref_list.rows.iter().any(|r| !r.path.is_empty());
+            let has_paths = ref_list.rows.iter().any(|r| r.field_paths.is_some());
             let table_rows: Vec<Vec<String>> = ref_list
                 .rows
                 .iter()
                 .map(|row| {
-                    let via = if !row.path.is_empty() {
-                        let chain: Vec<_> = row.path.iter().map(|n| n.form_id.as_str()).collect();
-                        chain.join(" → ")
-                    } else {
-                        String::new()
-                    };
+                    let mut cells = vec![
+                        row.form_id.clone(),
+                        row.record_type.as_deref().unwrap_or("").to_string(),
+                        row.editor_id.as_deref().unwrap_or("").to_string(),
+                        row.name.as_deref().unwrap_or("").to_string(),
+                    ];
                     if has_via {
-                        vec![
-                            row.form_id.clone(),
-                            row.record_type.as_deref().unwrap_or("").to_string(),
-                            row.editor_id.as_deref().unwrap_or("").to_string(),
-                            row.name.as_deref().unwrap_or("").to_string(),
-                            via,
-                        ]
-                    } else {
-                        vec![
-                            row.form_id.clone(),
-                            row.record_type.as_deref().unwrap_or("").to_string(),
-                            row.editor_id.as_deref().unwrap_or("").to_string(),
-                            row.name.as_deref().unwrap_or("").to_string(),
-                        ]
+                        let via = if !row.path.is_empty() {
+                            let chain: Vec<_> =
+                                row.path.iter().map(|n| n.form_id.as_str()).collect();
+                            chain.join(" → ")
+                        } else {
+                            String::new()
+                        };
+                        cells.push(via);
                     }
+                    if has_paths {
+                        let paths = row
+                            .field_paths
+                            .as_deref()
+                            .map(|p| p.join("; "))
+                            .unwrap_or_default();
+                        cells.push(paths);
+                    }
+                    cells
                 })
                 .collect();
+            let mut headers = vec!["FORMID", "TYPE", "EDID", "NAME"];
             if has_via {
-                print_record_table(&["FORMID", "TYPE", "EDID", "NAME", "VIA"], &table_rows);
-            } else {
-                print_record_table(&["FORMID", "TYPE", "EDID", "NAME"], &table_rows);
+                headers.push("VIA");
             }
+            if has_paths {
+                headers.push("PATHS");
+            }
+            print_record_table(&headers, &table_rows);
         }
     }
     if ref_list.capped {

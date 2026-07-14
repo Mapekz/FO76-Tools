@@ -167,7 +167,8 @@ fn recursive_refs_depth1_matches_direct() {
     assert_eq!(direct[0].form_id, FormId(2).display());
 
     // New BFS path at depth=1
-    let list: RefList = referenced_by_enriched(&mut db, FormId(1), 1, 0).expect("enriched");
+    let list: RefList =
+        referenced_by_enriched(&mut db, FormId(1), 1, 0, None, false).expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(list.rows[0].form_id, FormId(2).display());
     assert_eq!(list.rows[0].depth, 1);
@@ -184,7 +185,7 @@ fn recursive_refs_depth1_matches_direct() {
 fn recursive_refs_depth2_follows_one_extra_hop() {
     let (path, mut db) = open_chain_db();
 
-    let list = referenced_by_enriched(&mut db, FormId(1), 2, 0).expect("enriched");
+    let list = referenced_by_enriched(&mut db, FormId(1), 2, 0, None, false).expect("enriched");
     // Expect LVLI(2) at depth=1 and LVLI(3) at depth=2.
     assert_eq!(
         list.rows.len(),
@@ -221,7 +222,7 @@ fn recursive_refs_depth2_follows_one_extra_hop() {
 fn recursive_refs_depth6_reaches_all_hops() {
     let (path, mut db) = open_chain_db();
 
-    let list = referenced_by_enriched(&mut db, FormId(1), 6, 0).expect("enriched");
+    let list = referenced_by_enriched(&mut db, FormId(1), 6, 0, None, false).expect("enriched");
     assert_eq!(list.rows.len(), 3, "expected LVLI(2)+LVLI(3)+CONT(4)");
 
     let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
@@ -246,7 +247,7 @@ fn recursive_refs_depth6_reaches_all_hops() {
 fn recursive_refs_depth0_clamps_to_1() {
     let (path, mut db) = open_chain_db();
 
-    let list = referenced_by_enriched(&mut db, FormId(1), 0, 0).expect("enriched");
+    let list = referenced_by_enriched(&mut db, FormId(1), 0, 0, None, false).expect("enriched");
     assert_eq!(list.rows.len(), 1, "depth=0 should clamp to 1 direct ref");
     assert_eq!(list.rows[0].form_id, FormId(2).display());
 
@@ -259,7 +260,7 @@ fn recursive_refs_depth_cap_terminates() {
     let (path, mut db) = open_chain_db();
 
     // depth=2 stops before reaching CONT(4) which is 3 hops away.
-    let list = referenced_by_enriched(&mut db, FormId(1), 2, 0).expect("enriched");
+    let list = referenced_by_enriched(&mut db, FormId(1), 2, 0, None, false).expect("enriched");
     let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
     assert!(
         !ids.contains(&FormId(4).display().as_str()),
@@ -331,7 +332,7 @@ fn recursive_refs_cycle_guard() {
     }
     let mut db = Database::open(&tmp).expect("open");
 
-    let list = referenced_by_enriched(&mut db, FormId(1), 6, 0).expect("enriched");
+    let list = referenced_by_enriched(&mut db, FormId(1), 6, 0, None, false).expect("enriched");
 
     // Only WEAP(2) should appear — WEAP(1) is the target and excluded from results.
     // The cycle WEAP(1)→WEAP(2)→WEAP(1) must not cause WEAP(1) to appear as a result.
@@ -347,10 +348,179 @@ fn recursive_refs_cycle_guard() {
 fn recursive_refs_limit_caps_output() {
     let (path, mut db) = open_chain_db();
 
-    let list = referenced_by_enriched(&mut db, FormId(1), 6, 1).expect("enriched");
+    let list = referenced_by_enriched(&mut db, FormId(1), 6, 1, None, false).expect("enriched");
     assert_eq!(list.rows.len(), 1, "limit=1 should cap to 1 row");
     assert_eq!(list.total, 3, "total should reflect the full depth=6 count");
     assert!(list.capped, "capped flag should be set");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+// ── --paths tests (P2) ───────────────────────────────────────────────────────
+
+/// `include_paths = false` (the default fast walk) never populates
+/// `field_paths` — it must stay `None` so it's omitted from serialized JSON.
+#[test]
+fn field_paths_none_when_not_requested() {
+    let buf = make_xref_esm();
+    let tmp = unique_temp_path("refs_paths_off");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let mut db = Database::open(&tmp).expect("open db");
+
+    let list = referenced_by_enriched(&mut db, FormId(1), 1, 0, None, false).expect("enriched");
+    assert_eq!(list.rows.len(), 1);
+    assert!(
+        list.rows[0].field_paths.is_none(),
+        "field_paths must be None when --paths is not requested"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// `include_paths = true` decodes the referencing record and reports every
+/// JSON path where the target FormID appears. WEAP(2) in `make_xref_esm`
+/// references WEAP(1) via both YNAM ("Sound - Pickup") and ZNAM
+/// ("Sound - Putdown") — both paths must be reported, in schema member order.
+#[test]
+fn field_paths_finds_all_occurrences_in_one_record() {
+    let buf = make_xref_esm();
+    let tmp = unique_temp_path("refs_paths_multi");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let mut db = Database::open(&tmp).expect("open db");
+
+    let list = referenced_by_enriched(&mut db, FormId(1), 1, 0, None, true).expect("enriched");
+    assert_eq!(list.rows.len(), 1);
+    assert_eq!(
+        list.rows[0].field_paths,
+        Some(vec![
+            "Sound - Pickup".to_string(),
+            "Sound - Putdown".to_string()
+        ]),
+        "expected both FormID-reference fields, got: {:?}",
+        list.rows[0].field_paths
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// `Database::formid_reference_paths` is what `--paths` calls per row — verify
+/// it directly against a real decoded LVLI record from the chain fixture.
+/// LVLI(2) references MISC(1) through its single `LVLO` leveled-list entry.
+#[test]
+fn formid_reference_paths_locates_array_element_field() {
+    let (path, db) = open_chain_db();
+
+    let paths = db.formid_reference_paths(FormId(2), FormId(1));
+    assert_eq!(
+        paths,
+        vec!["Leveled List Entries[0].Leveled List Entry.Reference".to_string()],
+        "unexpected path(s): {paths:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A referencer with no `meta` (unknown FormID) returns an empty vec rather
+/// than erroring — `--paths` is best-effort enrichment.
+#[test]
+fn formid_reference_paths_unknown_referencer_returns_empty() {
+    let (path, db) = open_chain_db();
+
+    let paths = db.formid_reference_paths(FormId(0xDEAD_BEEF), FormId(1));
+    assert!(paths.is_empty());
+
+    let _ = std::fs::remove_file(&path);
+}
+
+// ── --type tests (P3) ────────────────────────────────────────────────────────
+
+/// `type_filter` narrows emitted rows to the matching type but the walk keeps
+/// traversing through non-matching nodes — CONT(4) (3 hops away, behind two
+/// LVLI hops) must still be reachable when filtering for "CONT".
+#[test]
+fn type_filter_narrows_rows_but_keeps_traversing() {
+    let (path, mut db) = open_chain_db();
+
+    let list =
+        referenced_by_enriched(&mut db, FormId(1), 6, 0, Some("CONT"), false).expect("enriched");
+    assert_eq!(
+        list.rows.len(),
+        1,
+        "only CONT(4) should survive the filter, got: {list:?}"
+    );
+    assert_eq!(list.rows[0].form_id, FormId(4).display());
+    assert_eq!(list.rows[0].record_type.as_deref(), Some("CONT"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `type_filter` is case-insensitive.
+#[test]
+fn type_filter_case_insensitive() {
+    let (path, mut db) = open_chain_db();
+
+    let list =
+        referenced_by_enriched(&mut db, FormId(1), 6, 0, Some("cont"), false).expect("enriched");
+    assert_eq!(list.rows.len(), 1);
+    assert_eq!(list.rows[0].form_id, FormId(4).display());
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `limit`/`total`/`capped` are computed against the *filtered* set, not the
+/// pre-filter walk — this is the "server-side filter so limits/depth interact
+/// correctly" requirement from the P3 backlog item.
+#[test]
+fn type_filter_limit_and_total_apply_post_filter() {
+    let (path, mut db) = open_chain_db();
+
+    // Unfiltered depth=6 walk has 3 rows (LVLI, LVLI, CONT); filtering to LVLI
+    // only should report total=2, not 3, and limit=1 should cap that to 1.
+    let list =
+        referenced_by_enriched(&mut db, FormId(1), 6, 1, Some("LVLI"), false).expect("enriched");
+    assert_eq!(list.total, 2, "total must reflect the filtered count");
+    assert_eq!(list.rows.len(), 1, "limit=1 should cap the filtered set");
+    assert!(list.capped);
+    assert_eq!(list.rows[0].record_type.as_deref(), Some("LVLI"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A type signature that isn't exactly 4 characters is rejected up front.
+#[test]
+fn type_filter_rejects_non_4char_signature() {
+    let (path, mut db) = open_chain_db();
+
+    let err = referenced_by_enriched(&mut db, FormId(1), 1, 0, Some("LV"), false)
+        .expect_err("expected validation error for non-4-char type");
+    assert!(
+        err.to_string().contains("4-character"),
+        "unexpected error message: {err}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `--type` and `--paths` compose: filtered rows still get field_paths.
+#[test]
+fn type_filter_and_paths_compose() {
+    let (path, mut db) = open_chain_db();
+
+    let list =
+        referenced_by_enriched(&mut db, FormId(1), 6, 0, Some("CONT"), true).expect("enriched");
+    assert_eq!(list.rows.len(), 1);
+    assert_eq!(
+        list.rows[0].field_paths,
+        Some(vec!["Items[0].Item.Item.Item".to_string()]),
+        "unexpected path(s): {:?}",
+        list.rows[0].field_paths
+    );
 
     let _ = std::fs::remove_file(&path);
 }

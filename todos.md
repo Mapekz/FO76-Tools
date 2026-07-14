@@ -11,16 +11,6 @@ re-verified against the code on 2026-07-14; none is partially implemented.
 
 ## `esm/`
 
-- [ ] **P2 — `refs --paths`.** Annotate each ref row with the JSON field path inside the
-      referencing record (e.g. `Effects[2].Conditions[0].Parameter 1`). Highest-leverage
-      `/patch-notes` cost cut: deep agents currently re-`get` a whole record just to find
-      *where* the reference lives. The decode machinery to produce the path already exists;
-      extend `RefRow` (`esm/src/ipc.rs:182`) and the `Refs` command
-      (`esm/src/bin/cli.rs:183`).
-
-- [ ] **P3 — `refs --type` filter.** Narrow reverse lookups to a record type. Trivial; same
-      command surface as P2 — land them together.
-
 - [ ] **P4 — Bulk `get`** (multiple FormIDs per call). Cuts round-trips out of the weekly deep
       pass. `RecordSel` (`esm/src/ipc.rs:49`) is still single-select (`FormId` | `Edid`) as of
       2026-07-14; extend it and `Op::Record`/`Op::RecordRaw`.

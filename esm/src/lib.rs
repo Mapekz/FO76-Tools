@@ -348,6 +348,36 @@ fn collect_field_paths(v: &Value, prefix: &str, out: &mut HashSet<String>, cap: 
     }
 }
 
+/// Walk a decoded record body collecting every JSON path where a leaf string
+/// value equals `target` (a FormID hex string, e.g. `"0x0004FE3D"`).
+///
+/// Unlike [`collect_field_paths`] (which collapses every array level to a
+/// literal `"[]"` segment for a type-level path union), array elements here
+/// are indexed (`Key[N]`) — the point is the exact location(s) within one
+/// specific decoded record, e.g. `Effects[2].Conditions[0].Parameter 1`. Backs
+/// [`Database::formid_reference_paths`] (`refs --paths`).
+fn collect_formid_paths(v: &Value, target: &str, prefix: String, out: &mut Vec<String>) {
+    match v {
+        Value::String(s) if s == target => out.push(prefix),
+        Value::Object(map) => {
+            for (k, vv) in map {
+                let next = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{prefix}.{k}")
+                };
+                collect_formid_paths(vv, target, next, out);
+            }
+        }
+        Value::Array(items) => {
+            for (i, item) in items.iter().enumerate() {
+                collect_formid_paths(item, target, format!("{prefix}[{i}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Result envelope for [`Database::filter_type_records`] — reports both
 /// whether the requested `limit` truncated the match list, and whether the
 /// underlying decode itself was capped (see [`FILTER_SCAN_CAP`]) for a huge
@@ -1050,6 +1080,25 @@ impl Database {
             .get_by_edid(edid)
             .with_context(|| format!("EditorID '{}' not found", edid))?;
         self.record_by_formid_resolved(form_id, depth)
+    }
+
+    /// Decode `referencer` (no FormID resolver — `ResolveDepth::None`, plain
+    /// hex output) and return every JSON path within its body where `target`
+    /// appears as a raw FormID string. Backs `refs --paths`: best-effort —
+    /// returns an empty vec if `referencer` can't be located or decoded, or if
+    /// `target` never appears as a literal field value (e.g. it's only
+    /// reachable indirectly, such as through curve-table inlining).
+    pub fn formid_reference_paths(&self, referencer: FormId, target: FormId) -> Vec<String> {
+        let Some(meta) = self.index.get_by_formid(referencer) else {
+            return Vec::new();
+        };
+        let Ok(result) = self.record_at_meta_with_depth(meta, crate::decode::ResolveDepth::None)
+        else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        collect_formid_paths(&result.fields, &target.display(), String::new(), &mut out);
+        out
     }
 
     /// Populate `self.filter_cache` for `sig` (already uppercased) on first

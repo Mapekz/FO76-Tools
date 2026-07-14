@@ -291,8 +291,9 @@ impl EsmDatabase {
             let walk_depth = depth
                 .map(|d| (d as usize).clamp(1, esm::ipc::DEFAULT_MAX_DEPTH))
                 .unwrap_or(1);
-            let list = esm::ipc::referenced_by_enriched(&mut db, fid, walk_depth, usize::MAX)
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+            let list =
+                esm::ipc::referenced_by_enriched(&mut db, fid, walk_depth, usize::MAX, None, false)
+                    .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
             serde_json::to_value(&list).map_err(|e| napi::Error::from_reason(format!("{e}")))
         })
         .await

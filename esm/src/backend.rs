@@ -154,14 +154,26 @@ pub trait QueryBackend {
         Ok(serde_json::from_value(v)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn referenced_by(
         &mut self,
         esm: &Path,
         sel: ipc::RecordSel,
         limit: usize,
         depth: usize,
+        type_filter: Option<String>,
+        paths: bool,
     ) -> anyhow::Result<ipc::RefList> {
-        let v = self.run(esm, Op::ReferencedBy { sel, limit, depth })?;
+        let v = self.run(
+            esm,
+            Op::ReferencedBy {
+                sel,
+                limit,
+                depth,
+                type_filter,
+                paths,
+            },
+        )?;
         Ok(serde_json::from_value(v)?)
     }
 
