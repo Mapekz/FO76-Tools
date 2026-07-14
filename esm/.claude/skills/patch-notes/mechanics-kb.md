@@ -84,10 +84,12 @@ A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one 
 ## Charge weapons (Gauss family)
 
 - WEAP `Data / Full Power Seconds` = time to reach full charge (Gauss Rifle base: 1.0s).
-- WEAP `Data / Min Power Per Shot` — **mislabeled in our schema; the engine renamed it
-  `MaxPowerPerShot` (~2025)** = the full-charge damage multiplier (Gauss Rifle base: 2.0).
-  The same mislabel applies to the OMOD property enum entry `MinPowerPerShot`.
-  Schema fix pending in `tools/extractor/extract.py`.
+- WEAP `Data / Max Power Per Shot` = the full-charge damage multiplier (Gauss Rifle base: 2.0).
+  The engine renamed this property from `MinPowerPerShot` to `MaxPowerPerShot` (~2025); our
+  schema emitted the stale `MinPowerPerShot` name (and the same stale name on the OMOD property
+  enum entry) until the extractor's property-name list was fixed 2026-07-14. Older
+  analyses/data captured before that date may still show `MinPowerPerShot` — treat it as the
+  same field.
 - Verified: 2026-07-13 vs 20260710.
 
 ## World Pets (NOT LIVE as of 20260710)
@@ -106,7 +108,8 @@ A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one 
 
 ## Property-name errata (schema vs engine)
 
-- `MinPowerPerShot` → actually **MaxPowerPerShot** (see Charge weapons above).
+- `MinPowerPerShot` → **MaxPowerPerShot**, fixed in the schema 2026-07-14 (see Charge weapons
+  above). Pre-fix analyses/data may still carry the old name — treat it as the same field.
 
 ## Known schema gaps (unmapped fields seen in real diffs)
 

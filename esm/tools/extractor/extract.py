@@ -298,7 +298,7 @@ _WEAPON_PROPERTIES: list[str] = [
     "EquipSlot", "SoundLevelMult", "NPCAmmoList", "ReloadSpeed", "DamageTypeValues",
     "AccuracyBonus", "AttackActionPointCost", "OverrideProjectile", "HasBoltAction",
     "StaggerValue", "SightedTransitionSeconds", "FullPowerSeconds", "HoldInputToPower",
-    "HasRepeatableSingleFire", "MinPowerPerShot", "ColorRemappingIndex", "MaterialSwaps",
+    "HasRepeatableSingleFire", "MaxPowerPerShot", "ColorRemappingIndex", "MaterialSwaps",
     "CriticalDamageMult", "FastEquipSound", "DisableShells", "HasChargingAttack",
     "ActorValues", "ReachEngagementMult", "Health", "Durability", "NPCReloadDelay",
     "ZoomDataFOVMultB", "ZoomDataFOVMultC", "UnsightedTransitionSeconds",

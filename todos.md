@@ -3,76 +3,42 @@
 The single backlog for every subproject. Add follow-ups here, grouped under the project they
 belong to — do not reintroduce per-project `todos.md` files or a `todos/` directory.
 
-Each item states what it is, and — where it matters — why it is or isn't worth doing now.
-Scope checks are dated so a stale claim is obvious on sight.
+Items are ordered by priority (P1 highest). Each states what it is and why it sits where it
+does. Scope checks are dated so a stale claim is obvious on sight. All items below were
+re-verified against the code on 2026-07-14; none is partially implemented.
 
 ---
 
 ## `esm/`
 
-### Schema & extractor
+- [ ] **P2 — `refs --paths`.** Annotate each ref row with the JSON field path inside the
+      referencing record (e.g. `Effects[2].Conditions[0].Parameter 1`). Highest-leverage
+      `/patch-notes` cost cut: deep agents currently re-`get` a whole record just to find
+      *where* the reference lives. The decode machinery to produce the path already exists;
+      extend `RefRow` (`esm/src/ipc.rs:182`) and the `Refs` command
+      (`esm/src/bin/cli.rs:183`).
 
-- [ ] **Property-name errata: `MinPowerPerShot` → `MaxPowerPerShot`.** The engine renamed this
-      property (~2025); the extractor still emits the old name from its property-name list
-      (`esm/tools/extractor/extract.py:301`), so every WEAP/OMOD consumer reads a field whose
-      name means the opposite of what it holds. Fix the name in the list, regenerate
-      `schema/fo76.json`, and re-run `just audit`. Small, but it silently misleads any analysis
-      of power-weapon stats. Already documented as errata in the patch-notes mechanics KB
-      (`esm/.claude/skills/patch-notes/mechanics-kb.md`).
+- [ ] **P3 — `refs --type` filter.** Narrow reverse lookups to a record type. Trivial; same
+      command surface as P2 — land them together.
 
-- [ ] **Compile-and-introspect schema extraction via Free Pascal** *(dormant)*. Instead of
-      source-parsing `wbDefinitionsFO76.pas` with `esm/tools/extractor/extract.py`, build a small
-      FPC program that runs `DefineFO76` (dispatch at `TES5Edit/xEdit/xeInit.pas:~1383`), walks
-      the resulting def tree in memory, and serializes it to JSON matching the `esm/src/schema.rs`
-      shape. Full def-tree fidelity, but needs an FPC toolchain and carries Windows-API
-      portability risk for the xEdit codebase.
+- [ ] **P4 — Bulk `get`** (multiple FormIDs per call). Cuts round-trips out of the weekly deep
+      pass. `RecordSel` (`esm/src/ipc.rs:49`) is still single-select (`FormId` | `Edid`) as of
+      2026-07-14; extend it and `Op::Record`/`Op::RecordRaw`.
 
-      **Why it's dormant:** the original motivation was closure deciders that regex/bracket
-      parsing can't reach — and those got solved another way, via the runtime
-      `byte_offset`/`width_bytes` branching in `ByteAtOffset` (`esm/src/schema.rs:245-273`).
-      *Scope check 2026-07-13:* the Python parser covers **181 record types, 0 failed**, the
-      schema has **zero `raw_fallback` entries**, `audit.py` reports no active parity findings,
-      and `coverage --gate` keeps it that way. Revive only if a future record type reintroduces
-      an unresolvable closure decider, or if the parser starts breaking on new TES5Edit
-      revisions.
+- [ ] **P5 — `esm chase <omod>`.** Automate the unique-effect walk (keyword ADDs → reverse-refs
+      → keyword-conditioned effects → compact evidence tree), written up under *"How
+      unique-weapon effects are implemented (the chase pattern)"* in
+      `esm/.claude/skills/patch-notes/mechanics-kb.md`. Prototype in Python over the CLI before
+      committing to a Rust subcommand. Sequenced after P2–P4: the walk composes `refs --paths`,
+      `refs --type`, and bulk `get`.
 
-### CLI — patch-notes fast-follows
+  *Conditional, not a checkbox:* **server-side subtree filter** — re-evaluate only if token
+  pressure persists after P2 and P4 land.
 
-Scoped during the 2026-07-13 patch-notes redesign; not started. Ordered by leverage — each cuts
-agent tokens or round-trips out of the weekly `/patch-notes` deep pass.
-
-- [ ] **`refs --paths`** — annotate each ref row with the JSON field path inside the referencing
-      record (e.g. `Effects[2].Conditions[0].Parameter 1`). The decode machinery to produce the
-      path already exists; this is the highest-leverage item, since deep agents currently re-`get`
-      a whole record just to find *where* the reference lives.
-- [ ] **`esm chase <omod>`** — automate the unique-effect walk (keyword ADDs → reverse-refs →
-      keyword-conditioned effects → compact evidence tree). Prototype in Python over the CLI
-      before committing to a Rust subcommand. The walk is written up under *"How unique-weapon
-      effects are implemented (the chase pattern)"* in
-      `esm/.claude/skills/patch-notes/mechanics-kb.md`.
-- [ ] **`refs --type` filter** — trivial; narrows reverse lookups to a record type.
-- [ ] **Bulk `get`** (multiple FormIDs per call) — `RecordSel` in `esm/src/ipc.rs` is close to
-      supporting this already.
-- [ ] **Server-side subtree filter** — only worth doing if token pressure persists after the
-      first two land.
-
-### Curve tables
-
-- [ ] **Optional on-disk cache for the FormID→curve index**, keyed by Startup BA2 mtime/size and
-      mirroring the `*.esm.idx` cache in `esm/src/index.rs` (own `CACHE_VERSION`). `CurveIndex`
-      (`esm/src/curves.rs`) already derives `Serialize`/`Deserialize`; nothing persists or
-      reloads it.
-
-      *Scope check 2026-07-13:* the warm daemon keeps the index resident, so this no longer helps
-      the common path. The remaining beneficiary is the cold in-process open — chiefly
-      `get --startup-ba2` / `--localization-ba2`, which bypass the daemon by design. Low priority
-      unless cold-open latency starts mattering.
-
-### Productization (post-POC)
-
-- [ ] **Chatbot front page over the HTTP/MCP server.** The static UI (`esm/static/index.html`,
-      `esm/static/compare.html`) is a record browser; the MCP server already exposes the six
-      read-only tools a chatbot would call.
+- [ ] **P6 — Chatbot front page over the HTTP/MCP server** *(post-POC productization)*. The
+      static UI (`esm/static/index.html`, `esm/static/compare.html`) is a record browser; the
+      MCP server (`esm/src/bin/server.rs`) already exposes the six read-only tools a chatbot
+      would call. No urgency — the one "someday" item.
 
 ---
 
@@ -99,3 +65,17 @@ No tracked follow-ups.
 The one cross-project seam is `esm-viewer/` → `esm/bindings/napi` (the `@fo76/esm-napi` addon,
 a local `file:` dependency). Anything that changes the `EsmDatabase` N-API surface has to land
 on both sides — run `just gen-types` in `esm/` to regenerate the shared TypeScript DTOs.
+
+---
+
+## Removed 2026-07-14
+
+Two items were dropped as no longer worth carrying (full write-ups in git history at 668ceb1):
+
+- **FPC compile-and-introspect schema extraction** — its motivating problem (unreachable
+  closure deciders) was solved by runtime `ByteAtOffset` branching; the Python parser covers
+  181 record types with 0 failures and `coverage --gate` holds the line. If the parser breaks
+  on a future TES5Edit revision, that failure is the signal to reconsider.
+- **Curve-table on-disk cache** — the warm daemon keeps `CurveIndex` resident, so only cold
+  in-process opens (`get --startup-ba2`) would benefit. Revisit only if cold-open latency
+  starts mattering.
