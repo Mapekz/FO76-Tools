@@ -6,7 +6,7 @@ pipeline (tiered edition).
 The mechanical stage (`make_patch_notes.py` + `triage_bundles.py`) writes
 `manifest.json` with an empty `stages.narrative` section. The narrative
 stage (the `/patch-notes` Claude skill — see
-`.claude/skills/patch-notes/SKILL.md`) assembles ONE `patch-summary.md` and
+`../.claude/skills/patch-notes/SKILL.md`) assembles ONE `patch-summary.md` and
 chunks it into `discord/chunk_*.md`. This script is the last step of that
 skill: it records those two outputs, plus the final `work/triage.json` tier
 counts, into `stages.narrative`, leaving everything else in the manifest

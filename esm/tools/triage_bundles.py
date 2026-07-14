@@ -13,7 +13,7 @@ is the story), `drop` (bookkeeping churn, never surfaced), or `ambiguous`
     deep-slice.json   DEEP bundles in the same {"bundles": [...], "lints":
                       [...]} shape the old per-category slices used, so
                       writer agents work unchanged (see
-                      .claude/skills/patch-notes/deep-writer-prompt.md).
+                      ../.claude/skills/patch-notes/deep-writer-prompt.md).
     ambiguous.json    A compact per-bundle field-diff digest for every
                       `ambiguous` bundle, small enough to paste into one
                       assessor-agent prompt.
@@ -495,7 +495,7 @@ def build_triage_payload(bundles, tiers_by_id, extra_stats=None):
 # --------------------------------------------------------------------------
 
 #: The exact per-bundle key set the writer contract documents (see
-#: .claude/skills/patch-notes/deep-writer-prompt.md) -- deliberately drops
+#: ../.claude/skills/patch-notes/deep-writer-prompt.md) -- deliberately drops
 #: category/category_label/category_rule, which are retired concepts for the
 #: DEEP tier (writers no longer work one category at a time).
 _DEEP_SLICE_BUNDLE_KEYS = ("id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids")

@@ -2,9 +2,9 @@
 """
 chase.py — automates the "chase pattern" for unique-weapon OMOD effects
 documented under "How unique-weapon effects are implemented (the chase
-pattern)" in `.claude/skills/patch-notes/mechanics-kb.md`. Read that section
-first — this script is a mechanical implementation of the walk it describes,
-nothing more.
+pattern)" in `../.claude/skills/patch-notes/mechanics-kb.md`. Read that
+section first — this script is a mechanical implementation of the walk it
+describes, nothing more.
 
 A `mod_Custom_*` (or similarly named) OMOD implements its unique mechanic via
 one or more `Data.Properties[]` rows. Each row is classified exactly the way
@@ -620,7 +620,7 @@ def render_text(tree: dict) -> str:
 def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description="Automate the unique-weapon OMOD chase pattern (see "
-        ".claude/skills/patch-notes/mechanics-kb.md) over the esm CLI.",
+        "../.claude/skills/patch-notes/mechanics-kb.md) over the esm CLI.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

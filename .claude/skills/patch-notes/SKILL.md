@@ -13,7 +13,8 @@ argument-hint: "[old-snapshot] [new-snapshot] [--out-dir DIR] [--official-notes 
 
 You are the orchestrator for the narrative stage of the FO76 patch-notes pipeline. The
 mechanical stage (diffing, bundling, linting, triage) is deterministic Python; your job is
-steps 1-8 below. Run every command from the `esm/` repo root.
+steps 1-8 below. Run every command from the repo root — the esm crate's tools and binaries
+live under `esm/` (`esm/target/release/esm`, `python3 esm/tools/<script>.py`).
 
 ## 1. Resolve inputs
 
@@ -64,8 +65,10 @@ full paths are not.
 
 ## 2. Run or reuse the pipeline
 
-Build the binaries first if missing: `test -x target/release/esm && test -x
-target/release/esm-server || cargo build --release --features server`.
+Build the binaries first if missing: `test -x esm/target/release/esm && test -x
+esm/target/release/esm-server || (cd esm && cargo build --release --features server)` — cargo
+needs to run inside the crate dir, but both binaries land in `esm/target/release/`, alongside
+each other (required for daemon auto-spawn) and reachable from the repo root.
 
 Reuse the existing pipeline output iff `$OUT/manifest.json` exists, its
 `inputs.old_token`/`inputs.new_token` match `$OLD_TOKEN`/`$NEW_TOKEN`, and
@@ -88,7 +91,7 @@ fi
 If `REUSE=no` or `--force-pipeline` was passed:
 
 ```sh
-python3 tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT"
+python3 esm/tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT"
 ```
 
 ## 3. Prewarm the daemon
@@ -96,13 +99,13 @@ python3 tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT"
 Before any agent work, one warm call so the index loads once, up front:
 
 ```sh
-target/release/esm -p info "$NEW_ESM"
+esm/target/release/esm -p info "$NEW_ESM"
 ```
 
 ## 4. Triage
 
 ```sh
-python3 tools/triage_bundles.py "$OUT"
+python3 esm/tools/triage_bundles.py "$OUT"
 ```
 
 This writes `$OUT/work/triage.json` (tier assignment + per-bundle reasons),
@@ -126,12 +129,12 @@ access and no other tools than Read/Write:
 Then merge:
 
 ```sh
-python3 tools/triage_bundles.py "$OUT" --merge-assessment "$OUT/work/assessment.json"
+python3 esm/tools/triage_bundles.py "$OUT" --merge-assessment "$OUT/work/assessment.json"
 ```
 
 Sanity-check the final tier stats in `triage.json` — if DEEP exceeds ~40 bundles or DROP
 swallowed a record type you'd expect to matter (WEAP/PERK/OMOD), inspect `reasons` before
-proceeding; the config (`tools/patch_notes_tiers.json`) may need a rule fix, and silent
+proceeding; the config (`esm/tools/patch_notes_tiers.json`) may need a rule fix, and silent
 mis-tiering is exactly the failure mode this step exists to catch.
 
 ## 5. Deep pass
@@ -140,8 +143,8 @@ mis-tiering is exactly the failure mode this step exists to catch.
 than `$OUT/work/triage.json`; `--force` disables the skip.
 
 Count DEEP bundles. **≤20** → one writer owns the whole `deep-slice.json`. **>20** → split
-the slice in two by bundle (keep related bundles together; `tools/triage_bundles.py` emits
-them in dependency-sorted order, so a simple contiguous split is fine) and launch two
+the slice in two by bundle (keep related bundles together; `esm/tools/triage_bundles.py`
+emits them in dependency-sorted order, so a simple contiguous split is fine) and launch two
 writers in one message.
 
 For each writer, spawn a subagent (Agent tool, `model: sonnet`) with
@@ -165,13 +168,16 @@ Read every draft + report. Then, in order:
 
 1. **Reconcile every deferral.** For each report's `deferred[]` entry, confirm the expected
    owner's draft actually covers those FormIDs (search the draft text). Anything uncovered:
-   chase it yourself now — extract the record diff, run the KB chase pattern against the
-   daemon, write the missing bullets. This step exists because deferrals DO fall through;
-   never skip it.
-2. **Chase every `unresolved[]` item** worth a story: resolve it live, soften it to
-   "Unconfirmed:", or cut it. Never pass one through silently.
-3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself via
-   `target/release/esm -p get "$NEW_ESM" <id> --resolve stub --pretty`.
+   chase it yourself now — extract the record diff, then for `mod_Custom_*`/unique-effect
+   OMODs run `python3 esm/tools/chase/chase.py <OMOD> --esm "$NEW_ESM" --json`; for anything
+   else, `esm/target/release/esm -p refs "$NEW_ESM" <id> --type <SIG> --paths --pretty` (one
+   4-char type per call) plus a bulk `get` for whatever it turns up — write the missing
+   bullets. This step exists because deferrals DO fall through; never skip it.
+2. **Chase every `unresolved[]` item** worth a story: resolve it live via chase.py / bulk
+   `get --resolve stub` / `refs --type <SIG> --paths` (never a loop of single-selector
+   `get`s), soften it to "Unconfirmed:", or cut it. Never pass one through silently.
+3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself in ONE bulk call —
+   `esm/target/release/esm -p get "$NEW_ESM" <id1> <id2> <id3> --resolve stub --pretty`.
 4. **Merge `kb_proposals[]`** into `.claude/skills/patch-notes/mechanics-kb.md` (dedupe
    against existing entries; keep the KB's format and verified-date convention). This is the
    only file outside `$OUT` this skill may write.
@@ -185,7 +191,7 @@ Read every draft + report. Then, in order:
 ## 7. Chunk for Discord
 
 ```sh
-python3 tools/discord_chunker.py "$OUT/patch-summary.md" "$OUT/discord"
+python3 esm/tools/discord_chunker.py "$OUT/patch-summary.md" "$OUT/discord"
 ```
 
 If stderr warns about hard truncation (`WARNING: N chunks exceeded 2000 chars`), fix the
@@ -194,7 +200,7 @@ summary (cut prose, never numbers) and re-run.
 ## 8. Manifest + summary
 
 ```sh
-python3 tools/update_manifest.py "$OUT"
+python3 esm/tools/update_manifest.py "$OUT"
 ```
 
 Print: tier counts (deep/brief/drop, plus how many the assessor promoted/demoted), writer
@@ -206,7 +212,8 @@ expansions in the printed summary either.
 
 - Never assert a record's liveness from an EDID prefix alone (`zzz_`/`CUT_`/`DEL_`/`POST_`).
   For PCRD-granted perks the clean signal is a PCRD listing the rank; item-granted perks
-  (OMOD/ENCH Perks property) legitimately have no PCRD — verify the grant path instead.
+  (OMOD/ENCH Perks property) legitimately have no PCRD — verify the grant path instead via
+  `esm/target/release/esm -p refs "$NEW_ESM" <perk-id> --type PCRD --paths --pretty`.
 - Every number in the final summary traces to the slice, an `--extract`, or a live `esm -p`
   call this run — never memory, never estimation, never rounding.
 - Every lint reaching the summary was re-verified live this run.

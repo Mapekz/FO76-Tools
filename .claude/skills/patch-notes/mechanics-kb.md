@@ -11,15 +11,16 @@ the backing records with one live `get` before asserting their semantics in a dr
 A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one of three ways:
 
 1. **Direct property** — an ADD/SET on a weapon stat or actor value in the OMOD's own
-   `Data/Properties`. Read the AVIF's name AND find its consumer (`refs` on the AVIF) before
-   asserting what it does.
+   `Data/Properties`. Read the AVIF's name AND find its consumer (`refs --type SPEL --paths`
+   / `--type PERK --paths` on the AVIF) before asserting what it does.
 2. **Perk grant** — Property `116`/`Perks` ADD of a PERK. Item-granted perks have **no PCRD**;
    the `unreferenced_perk_rank` lint is a false positive for them. Verify the grant path via
-   `refs` on the perk instead.
+   `refs --type PCRD --paths` on the perk instead.
 3. **Keyword hook** — the OMOD only ADDs a `CustomItemName_*` / `dn_*` KYWD; the real mechanic
    lives elsewhere in a SPEL/PERK effect conditioned on `WornHasKeyword(<that keyword>)`.
-   Chase: `refs` on the keyword → fetch the referencing SPEL/PERK → find the effect whose
-   Conditions test the keyword → read magnitude/curve/other conditions.
+   Chase: `refs --type SPEL --paths` (then `--type PERK --paths`) on the keyword → the
+   `field_paths` on each hit already points at the gating `Effects[N].Conditions[...]` entry,
+   so a bulk `get` on the hits resolves magnitude/curve/other conditions in one call.
 
 This walk is automated: `python3 tools/chase/chase.py <OMOD_FORMID_OR_EDID> --esm "$FO76_ESM_PATH"`
 runs all three patterns against a real OMOD and prints a compact evidence tree (add `--json` for

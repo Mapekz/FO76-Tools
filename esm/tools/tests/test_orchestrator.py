@@ -327,7 +327,7 @@ class TestUpdateManifest(unittest.TestCase):
     (schema_version 2): a single patch-summary.md, a flat discord/ chunk
     list, and work/triage.json tier counts -- the old per-category
     notes/<slug>.md + discord/<slug>/ + work/categories.json flow is
-    retired (see triage_bundles.py / deep-writer-prompt.md)."""
+    retired (see triage_bundles.py / ../.claude/skills/patch-notes/deep-writer-prompt.md)."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()

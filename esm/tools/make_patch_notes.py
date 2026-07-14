@@ -15,7 +15,7 @@ raw `esm diff --json` into a reviewable, bundled, linted output directory:
 This is the **mechanical** stage only — deterministic, no LLM involved. The
 narrative stage (slicing, per-category writer subagents, Discord chunking,
 `update_manifest.py`) is the `/patch-notes` Claude skill; see
-`.claude/skills/patch-notes/SKILL.md`.
+`../.claude/skills/patch-notes/SKILL.md`.
 
 Usage:
     python3 tools/make_patch_notes.py OLD.esm NEW.esm [options]
