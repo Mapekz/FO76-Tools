@@ -471,7 +471,7 @@ class EsmGateway:
         if body is not None:
             headers["Content-Type"] = "application/json"
         last_exc: Exception | None = None
-        for attempt in range(2):  # one reconnect-and-retry on a stale connection
+        for _ in range(2):  # one reconnect-and-retry on a stale connection
             conn = self._connection()
             try:
                 conn.request(method, path, body=body, headers=headers)
@@ -491,6 +491,7 @@ class EsmGateway:
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        del _exc
         self.close()
 
     # ---- op() : POST /op, envelope handling ----
@@ -797,10 +798,13 @@ class FakeGateway:
     """
 
     def __init__(self, fixture: Union[dict, str, Path]):
-        if isinstance(fixture, (str, Path)):
-            fixture = json.loads(Path(fixture).read_text())
-        self.records: dict[str, dict] = dict(fixture.get("records", {}))
-        self.refs_adj: dict[str, list[dict]] = dict(fixture.get("refs", {}))
+        data: dict = (
+            json.loads(Path(fixture).read_text())
+            if isinstance(fixture, (str, Path))
+            else fixture
+        )
+        self.records: dict[str, dict] = dict(data.get("records", {}))
+        self.refs_adj: dict[str, list[dict]] = dict(data.get("refs", {}))
 
     # ---- generic op() for interface parity with EsmGateway ----
 
@@ -826,10 +830,10 @@ class FakeGateway:
         raise DaemonError(f"FakeGateway does not support op {kind!r}")
 
     def record(self, esm: str, formid: FormIdLike, *, resolve: str = "stub") -> dict:
-        return self._record(_sel_for_formid(formid))
+        return self.op(esm, {"op": "record", "sel": _sel_for_formid(formid), "depth": resolve})
 
     def record_by_edid(self, esm: str, edid: str, *, resolve: str = "stub") -> dict:
-        return self._record(_sel_for_edid(edid))
+        return self.op(esm, {"op": "record", "sel": _sel_for_edid(edid), "depth": resolve})
 
     def bulk_get(
         self, esm: str, sels: Iterable[FormIdLike], *, resolve: str = "stub"
@@ -839,7 +843,7 @@ class FakeGateway:
         own `{"sel", "error"}` entry exactly like the real `Op::RecordBulk`
         dispatch does (see ipc.rs's `bulk_record_entry`)."""
         wire_sels = [_sel_for_input(s) for s in sels]
-        return self._bulk_record_entries(wire_sels)
+        return self.op(esm, {"op": "record_bulk", "sels": wire_sels, "depth": resolve})
 
     def refs(
         self,
@@ -851,12 +855,16 @@ class FakeGateway:
         type_filter: str | None = None,
         paths: bool = False,
     ) -> dict:
-        return self._referenced_by(
-            formid_to_int(formid),
-            depth=depth,
-            limit=limit,
-            type_filter=type_filter,
-            include_paths=paths,
+        return self.op(
+            esm,
+            {
+                "op": "referenced_by",
+                "sel": _sel_for_formid(formid),
+                "depth": depth,
+                "limit": limit,
+                "type_filter": type_filter,
+                "paths": paths,
+            },
         )
 
     def search(
@@ -869,13 +877,25 @@ class FakeGateway:
         field: str = "both",
         limit: int = 100,
     ) -> list:
-        raise DaemonError("FakeGateway does not support 'search' (fixture has no search index)")
+        raise DaemonError(
+            "FakeGateway does not support 'search' (fixture has no search index): "
+            f"esm={esm!r} pattern={pattern!r} record_type={record_type!r} "
+            f"types={types!r} field={field!r} limit={limit!r}"
+        )
 
     def file_info(self, esm: str) -> dict:
-        raise DaemonError("FakeGateway does not support 'file_info' (fixture has no header data)")
+        raise DaemonError(
+            f"FakeGateway does not support 'file_info' (fixture has no header data): esm={esm!r}"
+        )
 
     def exists(self, esm: str, formid: FormIdLike) -> bool:
-        return formid_to_hex(formid) in self.records
+        """True iff `formid` resolves to a record, via a cheap `resolve=none`
+        lookup -- mirrors `EsmGateway.exists`."""
+        try:
+            self.record(esm, formid, resolve="none")
+            return True
+        except DaemonError:
+            return False
 
     def close(self) -> None:
         pass
@@ -884,6 +904,7 @@ class FakeGateway:
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        del _exc
         self.close()
 
     # ---- internals ----
