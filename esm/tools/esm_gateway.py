@@ -322,8 +322,8 @@ def ensure_daemon(
     Mirrors `RemoteBackend::connect_or_spawn` in backend.rs: if a discovery
     file exists, points at a live daemon, AND that daemon is running the
     binary it started with (`daemon_fresh`), reuse it. Otherwise run one
-    `esm -p info <esm_path>` subprocess -- the Rust CLI itself performs the
-    spawn-lock-coordinated spawn/stale-eviction dance (see
+    `esm -p --esm <esm_path> info` subprocess -- the Rust CLI itself performs
+    the spawn-lock-coordinated spawn/stale-eviction dance (see
     `spawn_daemon_and_wait` in backend.rs) -- then poll the discovery file
     and `/health` until the (new) daemon is ready.
     """
@@ -334,7 +334,7 @@ def ensure_daemon(
     esm_bin = Path(esm_bin)
     esm_path = Path(esm_path)
     subprocess.run(
-        [str(esm_bin), "-p", "info", str(esm_path)],
+        [str(esm_bin), "-p", "--esm", str(esm_path), "info"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,

@@ -22,8 +22,9 @@ A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one 
    `field_paths` on each hit already points at the gating `Effects[N].Conditions[...]` entry,
    so a bulk `get` on the hits resolves magnitude/curve/other conditions in one call.
 
-This walk is automated: `esm/target/release/esm -p chase "$FO76_ESM_PATH" <OMOD_FORMID_OR_EDID>`
-runs all three patterns against a real OMOD and prints a compact evidence tree (add `--json` for
+This walk is automated: `esm/target/release/esm -p chase <OMOD_FORMID_OR_EDID>` (ESM path from
+`FO76_ESM_PATH`, or pass `--esm <PATH>`) runs all three patterns against a real OMOD and prints a
+compact evidence tree (add `--json` for
 agent consumption). Prefer it over chasing by hand; fall back to manual `refs`/`get` only for
 patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations).
 

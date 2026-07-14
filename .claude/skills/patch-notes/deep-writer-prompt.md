@@ -13,18 +13,19 @@ every one to ground truth. Run all commands from the repo root.
 - **Per-record structured diff** (batch FormIDs in one call):
   `python3 esm/tools/slice_bundles.py --extract {OUT} <FORMID> [<FORMID>...]`
 - **Live verification via warm daemon (NEVER `--local`):**
-  - `esm/target/release/esm -p get "{NEW_ESM}" <id-or-edid> [<id2-or-edid> ...] --resolve stub --pretty`
+  - `esm/target/release/esm -p --esm "{NEW_ESM}" get <id-or-edid> [<id2-or-edid> ...] --resolve stub --pretty`
     — batch every FormID/EditorID you need into ONE call. 2+ selectors return a JSON array
     (one `{"sel": ..., ...}` entry per selector, mixed FormID/EditorID, errors isolated
     per-selector); never loop single `get`s.
-  - `esm/target/release/esm -p refs "{NEW_ESM}" <id> --type <SIG> --paths [--depth N] [--limit N] --pretty`
+  - `esm/target/release/esm -p --esm "{NEW_ESM}" refs <id> --type <SIG> --paths [--depth N] [--limit N] --pretty`
     — `--type` takes ONE 4-char record-type signature per call (run it once per referencing
     type, e.g. once for `SPEL`, once for `PERK` — not comma-joined); `--paths` annotates each
     row with the exact field path (e.g. `Effects[2].Conditions[0]`) that references your
     target, so you can jump straight to the gating field instead of dumping the whole record.
-  - `esm/target/release/esm -p search "{NEW_ESM}" "<pattern>" [--type T] --pretty`
-  - Old-side (pre-patch values): same commands against `{OLD_ESM}`. Batch all changed anchors
-    for a bundle into one bulk `get` against `{OLD_ESM}` rather than querying value-by-value.
+  - `esm/target/release/esm -p --esm "{NEW_ESM}" search "<pattern>" [--type T] --pretty`
+  - Old-side (pre-patch values): same commands with `--esm "{OLD_ESM}"`. Batch all changed
+    anchors for a bundle into one bulk `get` against `{OLD_ESM}` rather than querying
+    value-by-value.
 - **Style guide:** `{STYLE_GUIDE_PATH}` — voice and Discord formatting constraints.
 {OFFICIAL_NOTES_BLOCK}
 
@@ -32,7 +33,7 @@ every one to ground truth. Run all commands from the repo root.
 
 1. **Chase the mechanic to ground truth** (KB "chase pattern" section). For
    `mod_Custom_*`/unique-effect OMODs, run
-   `esm/target/release/esm -p chase "{NEW_ESM}" <OMOD> --json` FIRST — it automates the
+   `esm/target/release/esm -p --esm "{NEW_ESM}" chase <OMOD> --json` FIRST — it automates the
    keyword/perk-grant/direct-property walk in a handful of bulk calls and returns just the
    gating `Effects[N]` entry, not full record dumps. Hand-walk with
    `refs --type <SIG> --paths` (and a bulk `get` on whatever it turns up) only for mechanics

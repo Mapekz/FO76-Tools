@@ -53,7 +53,7 @@ Clean layering — edit at the right level:
 | `src/wildcard.rs` | Case-insensitive `*`-wildcard matcher; has rustdoc doctest |
 | `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
 | `src/chase.rs` | Composes `Op::RecordBulk`/`Op::ReferencedBy` (via the `ChaseFetcher` seam) to classify an OMOD's `Data.Properties[]` rows into direct-property/perk-grant/keyword-hook mechanisms and emit a compact evidence tree — the "chase pattern" from the patch-notes mechanics KB, native port of the retired `tools/chase/chase.py` prototype |
-| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `chase`, `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index` |
+| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `chase`, `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index`; ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths) |
 | `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 6); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Arc<Mutex<Database>>`); async: `open_database`, `record_by_edid`, `record_by_id`, `referenced_by`, `referenced_by_id`; sync: `file_info`, `list_groups`, `list_type_records`, `record_by_formid` |
 
@@ -94,11 +94,13 @@ The app loads the addon via `esm-viewer/src/main/addon.ts`. Most of the Rust N-A
 
 ## Game Data
 
-Game data files (`*.esm`, `*.ba2`, `*.esm.idx`, `*.esm.midx`) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via CLI args or `Database::open(path)`.
+Game data files (`*.esm`, `*.ba2`, `*.esm.idx`, `*.esm.midx`) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via `--esm`/`FO76_ESM_PATH`/`Database::open(path)`.
 
 ## Bulk / sweep workflow (for agents)
 
 AI agents that scan many records must avoid cold per-record process spawns. Each cold `esm get` / `esm -p get` invocation reads and deserializes the **entire ~280 MiB `.esm.idx`** bincode cache into heap HashMaps just to perform one lookup, then exits. 1000 sweeps = 1000× (read 280 MiB + allocate ~280 MiB of HashMaps) — 5–10 s per record, heavy swap thrash.
+
+The ESM path itself comes from `--esm <PATH>` (works before or after the subcommand) or, if omitted, the `FO76_ESM_PATH` environment variable — set once (see `CLAUDE.local.md`) and every example below can drop the path entirely. `diff` is the exception: it always takes two explicit positional paths and ignores `--esm`/`FO76_ESM_PATH`.
 
 ### Recommended: warm daemon (fastest, no extra flags)
 
@@ -109,8 +111,8 @@ Build `esm-server` once, then use `-p` for every single-record lookup:
 cargo build --release --features server
 
 # Every -p call auto-spawns the daemon on first use; subsequent calls are fast HTTP round-trips
-esm -p get path/to/data 0x463F --pretty
-esm -p get path/to/data AssaultRifle --pretty
+esm -p get 0x463F --pretty
+esm -p get AssaultRifle --pretty
 ```
 
 The daemon warms the index once on first load and serves all subsequent lookups in memory. It self-manages:
@@ -128,13 +130,13 @@ Any record containing FormID references (COBJ, NPC_, WEAP, …) returns raw hex 
 
 ```sh
 # Without --resolve: components are raw FormIDs → requires N follow-up gets
-esm -p get path/to/data 0x008B33D7 --pretty
+esm -p get 0x008B33D7 --pretty
 
 # With --resolve stub: all references annotated inline in one call
-esm -p get path/to/data 0x008B33D7 --resolve stub --pretty
+esm -p get 0x008B33D7 --resolve stub --pretty
 
 # --resolve full recursively expands references to their complete decoded record
-esm -p get path/to/data 0x008B33D7 --resolve full --pretty
+esm -p get 0x008B33D7 --resolve full --pretty
 ```
 
 Default to `--resolve stub` when the record you're reading is reference-heavy (recipes, NPCs, leveled lists, quests). Use `--resolve full` only when you need the complete sub-record data. Bare `get` is fine only when you specifically want raw FormID values.
@@ -144,11 +146,11 @@ Default to `--resolve stub` when the record you're reading is reference-heavy (r
 Every round-trip has overhead. When you need many records of the same type, use bulk ops:
 
 ```sh
-esm -p list path/to/data --type WEAP --limit 500 --pretty       # all weapons in one call
-esm -p search path/to/data "*Rifle*" --type WEAP --pretty       # search by name/EditorID
-esm -p refs path/to/data 0x463F --limit 100 --pretty            # direct reverse lookup (depth=1)
-esm -p refs path/to/data 0x463F --depth 6 --pretty              # recursive walk to depth 6
-esm -p coverage path/to/data --type WEAP                        # schema decode audit
+esm -p list --type WEAP --limit 500 --pretty       # all weapons in one call
+esm -p search "*Rifle*" --type WEAP --pretty       # search by name/EditorID
+esm -p refs 0x463F --limit 100 --pretty            # direct reverse lookup (depth=1)
+esm -p refs 0x463F --depth 6 --pretty              # recursive walk to depth 6
+esm -p coverage --type WEAP                        # schema decode audit
 ```
 
 ### Gotcha: `--localization-ba2` / `--startup-ba2` bypass the daemon
@@ -161,9 +163,9 @@ For cold FormID lookups without a background process, use the zero-copy mmap ind
 
 ```sh
 # Loads a ~24 MiB .esm.midx table instead of the 280 MiB bincode cache
-esm --local --mmap-index get path/to/data 0x463F --pretty
+esm --local --mmap-index get 0x463F --pretty
 # Or set the env var so every --local call uses it
-ESM_MMAP_INDEX=1 esm --local get path/to/data 0x463F --pretty
+ESM_MMAP_INDEX=1 esm --local get 0x463F --pretty
 ```
 
 Limitations: FormID lookups only. EditorID (`--edid`), `list`, `search`, `refs`, and `tree` require the full index — use the daemon for those.

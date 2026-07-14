@@ -35,15 +35,30 @@ cargo test                     # run all tests (~100 run; 2 env-gated ignored)
 ## CLI — `esm`
 
 ```sh
-esm <subcommand> [options] <ESM-or-folder> [...]
+esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 ```
 
+Every subcommand takes its ESM path from `--esm` (a global flag — it works
+before or after the subcommand name) or, if `--esm` is omitted, from the
+`FO76_ESM_PATH` environment variable:
+
+```sh
+esm --esm path/to/data get AssaultRifle --pretty
+# equivalently, set it once for the session:
+export FO76_ESM_PATH=path/to/data
+esm get AssaultRifle --pretty
+```
+
+`diff` is the one exception — it always takes two explicit positional paths (`esm diff <old> <new>`) and ignores `--esm`/`FO76_ESM_PATH`.
+
 Pass either a `.esm` file or a data folder. When given a folder, the tool auto-discovers the single `.esm` inside it, then looks for localization strings (`strings/<stem>_<locale>.strings` or any `*localization*.ba2`) and curve tables (`misc/curvetables/json/` or any `*startup*.ba2`). Override with `--localization-ba2`/`--strings-dir`/`--startup-ba2`/`--curves-dir` when the auto-detected sources aren't what you want.
+
+The examples below assume `FO76_ESM_PATH` is set and omit `--esm`.
 
 ### `info` — TES4 header summary
 
 ```sh
-esm info path/to/data      # data folder or explicit .esm file
+esm info
 ```
 
 Prints version, record count, next object ID, ESM/Localization flags, author, description, and master dependencies.
@@ -52,23 +67,23 @@ Prints version, record count, next object ID, ESM/Localization flags, author, de
 
 ```sh
 # Auto-detected positional: FormID (0x-prefixed / hex / decimal) vs EditorID
-esm get path/to/data AssaultRifle --pretty
-esm get path/to/data 0x463F --pretty
+esm get AssaultRifle --pretty
+esm get 0x463F --pretty
 
 # Explicit flags still work and override the positional
-esm get path/to/data --edid AssaultRifle --pretty
-esm get path/to/data --formid 0x463F --pretty
+esm get --edid AssaultRifle --pretty
+esm get --formid 0x463F --pretty
 
 # Raw subrecords (no schema decoding)
-esm get path/to/data 0x463F --raw --pretty
+esm get 0x463F --raw --pretty
 
 # With localized strings resolved (override auto-discovery)
-esm get path/to/data --edid AssaultRifle --localization-ba2 path/to/localization.ba2
+esm get --edid AssaultRifle --localization-ba2 path/to/localization.ba2
 
 # Control FormID cross-reference depth
-esm get path/to/data --edid AssaultRifle --resolve full   # inline referenced records
-esm get path/to/data --edid AssaultRifle --resolve stub   # referenced records as stubs
-esm get path/to/data --edid AssaultRifle --resolve none   # leave FormIDs as hex (default)
+esm get --edid AssaultRifle --resolve full   # inline referenced records
+esm get --edid AssaultRifle --resolve stub   # referenced records as stubs
+esm get --edid AssaultRifle --resolve none   # leave FormIDs as hex (default)
 ```
 
 | Flag | Default | Description |
@@ -90,8 +105,8 @@ esm get path/to/data --edid AssaultRifle --resolve none   # leave FormIDs as hex
 ### `list` — List records of a type
 
 ```sh
-esm list path/to/data --type WEAP --limit 20
-esm list path/to/data --type GLOB --localization-ba2 path/to/localization.ba2 --pretty
+esm list --type WEAP --limit 20
+esm list --type GLOB --localization-ba2 path/to/localization.ba2 --pretty
 ```
 
 | Flag | Default | Description |
@@ -105,8 +120,8 @@ esm list path/to/data --type GLOB --localization-ba2 path/to/localization.ba2 --
 ### `search` — Wildcard search over EditorIDs and names
 
 ```sh
-esm search path/to/data "*Rifle*" --type WEAP --in both --pretty
-esm search path/to/data "Assault*" --in edid
+esm search "*Rifle*" --type WEAP --in both --pretty
+esm search "Assault*" --in edid
 ```
 
 | Flag | Default | Description |
@@ -122,12 +137,12 @@ esm search path/to/data "Assault*" --in edid
 
 ```sh
 # Auto-detected positional (FormID or EditorID), same rules as `get`
-esm refs path/to/data AssaultRifle --limit 50
-esm refs path/to/data 0x463F --json --pretty
+esm refs AssaultRifle --limit 50
+esm refs 0x463F --json --pretty
 
 # Explicit flags still work and override the positional
-esm refs path/to/data --edid AssaultRifle --limit 50
-esm refs path/to/data --formid 0x463F --json --pretty
+esm refs --edid AssaultRifle --limit 50
+esm refs --formid 0x463F --json --pretty
 ```
 
 Find all records that reference a given FormID. Builds and caches an xref index on first run.
@@ -135,8 +150,8 @@ Find all records that reference a given FormID. Builds and caches an xref index 
 ### `tree` — Browse the GRUP hierarchy
 
 ```sh
-esm tree path/to/data --type WEAP --limit 50 --pretty
-esm tree path/to/data --offset 0 --limit 20
+esm tree --type WEAP --limit 50 --pretty
+esm tree --offset 0 --limit 20
 ```
 
 ### `diff` — Compare two ESM versions
@@ -146,13 +161,13 @@ esm diff path/to/old path/to/new --type GLOB --json --pretty
 esm diff path/to/old path/to/new
 ```
 
-Aligns records by FormID, uses byte-equality fast-path, decodes only changed records, and emits a sparse `{from, to}` diff per changed field. Prints a per-type summary and timing to stderr.
+`diff` always takes two explicit positional paths and ignores `--esm`/`FO76_ESM_PATH`. Aligns records by FormID, uses byte-equality fast-path, decodes only changed records, and emits a sparse `{from, to}` diff per changed field. Prints a per-type summary and timing to stderr.
 
 ### `coverage` — Schema audit
 
 ```sh
-esm coverage path/to/data --type WEAP
-esm coverage path/to/data --gate   # exits non-zero on any raw_fallback
+esm coverage --type WEAP
+esm coverage --gate   # exits non-zero on any raw_fallback
 ```
 
 Counts `_raw`, `_unmapped`, `_unknown_record`, and `_unresolved` markers across decoded records. Use `--gate` in CI to enforce full decode coverage.
@@ -456,8 +471,9 @@ AI agents scanning many records must avoid cold per-record process spawns. Each 
 cargo build --release --features server
 
 # The first -p call auto-spawns and warms the daemon; all subsequent calls are fast
-esm -p get path/to/data 0x463F --pretty
-esm -p get path/to/data AssaultRifle --pretty
+# (assumes FO76_ESM_PATH is set — or pass --esm path/to/data on each call)
+esm -p get 0x463F --pretty
+esm -p get AssaultRifle --pretty
 ```
 
 The daemon keeps the index in memory, self-shuts-down after 10 min idle, stale-evicts if the ESM changes, and is safe for concurrent agents (advisory spawn-lock prevents double-spawn).
@@ -465,9 +481,9 @@ The daemon keeps the index in memory, self-shuts-down after 10 min idle, stale-e
 **Prefer bulk ops** over N single `get`s — each round-trip has overhead:
 
 ```sh
-esm -p list path/to/data --type WEAP --limit 500 --pretty   # all weapons in one call
-esm -p search path/to/data "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
-esm -p refs path/to/data 0x463F --limit 100 --pretty        # reverse FormID lookup
+esm -p list --type WEAP --limit 500 --pretty   # all weapons in one call
+esm -p search "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
+esm -p refs 0x463F --limit 100 --pretty        # reverse FormID lookup
 ```
 
 **Gotcha:** `--localization-ba2`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open (the daemon doesn't accept per-call source overrides). Pass a data folder or place the Localization/Startup BA2 files (or `strings/`/`misc/curvetables/` directories) next to the ESM so the daemon auto-loads them on open, and drop per-call flags in sweeps.
@@ -477,9 +493,9 @@ esm -p refs path/to/data 0x463F --limit 100 --pretty        # reverse FormID loo
 For cold FormID lookups without a background process:
 
 ```sh
-esm --local --mmap-index get path/to/data 0x463F --pretty
+esm --local --mmap-index get 0x463F --pretty
 # or via env var
-ESM_MMAP_INDEX=1 esm --local get path/to/data 0x463F --pretty
+ESM_MMAP_INDEX=1 esm --local get 0x463F --pretty
 ```
 
 Loads a compact ~24 MiB `.esm.midx` table (binary-sorted, O(log n) lookup) instead of the 280 MiB bincode cache. FormID lookups only — EditorID / list / search / refs / tree require the full index; use the daemon for those.

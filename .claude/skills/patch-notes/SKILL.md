@@ -99,7 +99,7 @@ python3 esm/tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT"
 Before any agent work, one warm call so the index loads once, up front:
 
 ```sh
-esm/target/release/esm -p info "$NEW_ESM"
+esm/target/release/esm -p --esm "$NEW_ESM" info
 ```
 
 ## 4. Triage
@@ -169,15 +169,15 @@ Read every draft + report. Then, in order:
 1. **Reconcile every deferral.** For each report's `deferred[]` entry, confirm the expected
    owner's draft actually covers those FormIDs (search the draft text). Anything uncovered:
    chase it yourself now — extract the record diff, then for `mod_Custom_*`/unique-effect
-   OMODs run `esm/target/release/esm -p chase "$NEW_ESM" <OMOD> --json`; for anything
-   else, `esm/target/release/esm -p refs "$NEW_ESM" <id> --type <SIG> --paths --pretty` (one
+   OMODs run `esm/target/release/esm -p --esm "$NEW_ESM" chase <OMOD> --json`; for anything
+   else, `esm/target/release/esm -p --esm "$NEW_ESM" refs <id> --type <SIG> --paths --pretty` (one
    4-char type per call) plus a bulk `get` for whatever it turns up — write the missing
    bullets. This step exists because deferrals DO fall through; never skip it.
 2. **Chase every `unresolved[]` item** worth a story: resolve it live via `esm -p chase` / bulk
    `get --resolve stub` / `refs --type <SIG> --paths` (never a loop of single-selector
    `get`s), soften it to "Unconfirmed:", or cut it. Never pass one through silently.
 3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself in ONE bulk call —
-   `esm/target/release/esm -p get "$NEW_ESM" <id1> <id2> <id3> --resolve stub --pretty`.
+   `esm/target/release/esm -p --esm "$NEW_ESM" get <id1> <id2> <id3> --resolve stub --pretty`.
 4. **Merge `kb_proposals[]`** into `.claude/skills/patch-notes/mechanics-kb.md` (dedupe
    against existing entries; keep the KB's format and verified-date convention). This is the
    only file outside `$OUT` this skill may write.
@@ -213,7 +213,7 @@ expansions in the printed summary either.
 - Never assert a record's liveness from an EDID prefix alone (`zzz_`/`CUT_`/`DEL_`/`POST_`).
   For PCRD-granted perks the clean signal is a PCRD listing the rank; item-granted perks
   (OMOD/ENCH Perks property) legitimately have no PCRD — verify the grant path instead via
-  `esm/target/release/esm -p refs "$NEW_ESM" <perk-id> --type PCRD --paths --pretty`.
+  `esm/target/release/esm -p --esm "$NEW_ESM" refs <perk-id> --type PCRD --paths --pretty`.
 - Every number in the final summary traces to the slice, an `--extract`, or a live `esm -p`
   call this run — never memory, never estimation, never rounding.
 - Every lint reaching the summary was re-verified live this run.

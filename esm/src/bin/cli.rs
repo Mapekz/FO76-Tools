@@ -37,9 +37,79 @@ struct Cli {
     /// Env: ESM_MMAP_INDEX=1.
     #[arg(long, env = "ESM_MMAP_INDEX")]
     mmap_index: bool,
+    /// Path to the ESM file or its data folder. If omitted, falls back to the
+    /// FO76_ESM_PATH environment variable. Applies to every subcommand except
+    /// `diff` (which takes two explicit positionals) and `daemon`.
+    #[arg(long, global = true, env = "FO76_ESM_PATH")]
     esm: Option<PathBuf>,
     #[command(subcommand)]
     command: Option<Commands>,
+}
+
+#[derive(clap::Args)]
+struct DiffArgs {
+    file_a: PathBuf,
+    file_b: PathBuf,
+    #[arg(long = "type")]
+    record_type: Option<String>,
+    #[arg(long)]
+    json: bool,
+    #[arg(long)]
+    pretty: bool,
+    /// Detail level for decoded fields attached to added/removed record stubs.
+    #[arg(long, value_enum, default_value = "full")]
+    bodies: BodiesArg,
+    /// Keep noisy fields (placement transforms, CELL precombine bookkeeping,
+    /// Object Bounds) instead of suppressing them from `changed` records.
+    #[arg(long)]
+    keep_noise: bool,
+    /// Record-type signature(s) to omit entirely from added/removed/changed
+    /// (repeatable and/or comma-delimited, e.g. `--exclude-type LAND,NAVM`).
+    #[arg(long = "exclude-type", value_delimiter = ',')]
+    exclude_type: Vec<String>,
+    /// Localization BA2 for both ESMs.
+    /// Mutually exclusive with --strings-dir / --strings-dir-a/b / --localization-ba2-a/b.
+    #[arg(long = "localization-ba2", conflicts_with_all = ["strings_dir", "strings_dir_a", "strings_dir_b", "localization_ba2_a", "localization_ba2_b"])]
+    localization_ba2: Option<PathBuf>,
+    /// Localization BA2 for ESM A only (old side).
+    #[arg(long = "localization-ba2-a", conflicts_with_all = ["localization_ba2", "strings_dir", "strings_dir_a"])]
+    localization_ba2_a: Option<PathBuf>,
+    /// Localization BA2 for ESM B only (new side).
+    #[arg(long = "localization-ba2-b", conflicts_with_all = ["localization_ba2", "strings_dir", "strings_dir_b"])]
+    localization_ba2_b: Option<PathBuf>,
+    /// Directory with loose string files for BOTH ESMs.
+    /// Mutually exclusive with --localization-ba2 / --strings-dir-a/b / --localization-ba2-a/b.
+    #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir_a", "strings_dir_b", "localization_ba2_a", "localization_ba2_b"])]
+    strings_dir: Option<PathBuf>,
+    /// Strings directory for ESM A only (old side).
+    #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir", "localization_ba2_a"])]
+    strings_dir_a: Option<PathBuf>,
+    /// Strings directory for ESM B only (new side).
+    #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir", "localization_ba2_b"])]
+    strings_dir_b: Option<PathBuf>,
+    /// Language code for string table lookup.
+    #[arg(long, default_value = "en")]
+    lang: String,
+    /// Startup BA2 for curve tables (both ESMs).
+    /// Mutually exclusive with --curves-dir / --startup-ba2-a/b / --curves-dir-a/b.
+    #[arg(long, conflicts_with_all = ["curves_dir", "startup_ba2_a", "startup_ba2_b", "curves_dir_a", "curves_dir_b"])]
+    startup_ba2: Option<PathBuf>,
+    /// Startup BA2 for ESM A only (old side).
+    #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "curves_dir_a"])]
+    startup_ba2_a: Option<PathBuf>,
+    /// Startup BA2 for ESM B only (new side).
+    #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "curves_dir_b"])]
+    startup_ba2_b: Option<PathBuf>,
+    /// Loose misc/ directory for curve tables (both ESMs).
+    /// Mutually exclusive with --startup-ba2 / --startup-ba2-a/b / --curves-dir-a/b.
+    #[arg(long, conflicts_with_all = ["startup_ba2", "startup_ba2_a", "startup_ba2_b", "curves_dir_a", "curves_dir_b"])]
+    curves_dir: Option<PathBuf>,
+    /// Loose misc/ directory for ESM A only (old side).
+    #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "startup_ba2_a"])]
+    curves_dir_a: Option<PathBuf>,
+    /// Loose misc/ directory for ESM B only (new side).
+    #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "startup_ba2_b"])]
+    curves_dir_b: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -48,11 +118,8 @@ enum Commands {
         #[command(subcommand)]
         action: DaemonAction,
     },
-    Info {
-        file: PathBuf,
-    },
+    Info,
     Get {
-        file: PathBuf,
         /// FormID(s) and/or EditorID(s) (auto-detected per token); mix
         /// freely, e.g. `0x0000463F 0x000228AB co_Weapon_...`. A single
         /// target preserves the classic single-record output; two or more
@@ -83,7 +150,6 @@ enum Commands {
         resolve: String,
     },
     List {
-        file: PathBuf,
         #[arg(long)]
         r#type: String,
         #[arg(long, default_value_t = 50)]
@@ -99,72 +165,11 @@ enum Commands {
         #[arg(long, default_value = "en")]
         lang: String,
     },
-    Diff {
-        file_a: PathBuf,
-        file_b: PathBuf,
-        #[arg(long = "type")]
-        record_type: Option<String>,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
-        /// Detail level for decoded fields attached to added/removed record stubs.
-        #[arg(long, value_enum, default_value = "full")]
-        bodies: BodiesArg,
-        /// Keep noisy fields (placement transforms, CELL precombine bookkeeping,
-        /// Object Bounds) instead of suppressing them from `changed` records.
-        #[arg(long)]
-        keep_noise: bool,
-        /// Record-type signature(s) to omit entirely from added/removed/changed
-        /// (repeatable and/or comma-delimited, e.g. `--exclude-type LAND,NAVM`).
-        #[arg(long = "exclude-type", value_delimiter = ',')]
-        exclude_type: Vec<String>,
-        /// Localization BA2 for both ESMs.
-        /// Mutually exclusive with --strings-dir / --strings-dir-a/b / --localization-ba2-a/b.
-        #[arg(long = "localization-ba2", conflicts_with_all = ["strings_dir", "strings_dir_a", "strings_dir_b", "localization_ba2_a", "localization_ba2_b"])]
-        localization_ba2: Option<PathBuf>,
-        /// Localization BA2 for ESM A only (old side).
-        #[arg(long = "localization-ba2-a", conflicts_with_all = ["localization_ba2", "strings_dir", "strings_dir_a"])]
-        localization_ba2_a: Option<PathBuf>,
-        /// Localization BA2 for ESM B only (new side).
-        #[arg(long = "localization-ba2-b", conflicts_with_all = ["localization_ba2", "strings_dir", "strings_dir_b"])]
-        localization_ba2_b: Option<PathBuf>,
-        /// Directory with loose string files for BOTH ESMs.
-        /// Mutually exclusive with --localization-ba2 / --strings-dir-a/b / --localization-ba2-a/b.
-        #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir_a", "strings_dir_b", "localization_ba2_a", "localization_ba2_b"])]
-        strings_dir: Option<PathBuf>,
-        /// Strings directory for ESM A only (old side).
-        #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir", "localization_ba2_a"])]
-        strings_dir_a: Option<PathBuf>,
-        /// Strings directory for ESM B only (new side).
-        #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir", "localization_ba2_b"])]
-        strings_dir_b: Option<PathBuf>,
-        /// Language code for string table lookup.
-        #[arg(long, default_value = "en")]
-        lang: String,
-        /// Startup BA2 for curve tables (both ESMs).
-        /// Mutually exclusive with --curves-dir / --startup-ba2-a/b / --curves-dir-a/b.
-        #[arg(long, conflicts_with_all = ["curves_dir", "startup_ba2_a", "startup_ba2_b", "curves_dir_a", "curves_dir_b"])]
-        startup_ba2: Option<PathBuf>,
-        /// Startup BA2 for ESM A only (old side).
-        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "curves_dir_a"])]
-        startup_ba2_a: Option<PathBuf>,
-        /// Startup BA2 for ESM B only (new side).
-        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "curves_dir_b"])]
-        startup_ba2_b: Option<PathBuf>,
-        /// Loose misc/ directory for curve tables (both ESMs).
-        /// Mutually exclusive with --startup-ba2 / --startup-ba2-a/b / --curves-dir-a/b.
-        #[arg(long, conflicts_with_all = ["startup_ba2", "startup_ba2_a", "startup_ba2_b", "curves_dir_a", "curves_dir_b"])]
-        curves_dir: Option<PathBuf>,
-        /// Loose misc/ directory for ESM A only (old side).
-        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "startup_ba2_a"])]
-        curves_dir_a: Option<PathBuf>,
-        /// Loose misc/ directory for ESM B only (new side).
-        #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "startup_ba2_b"])]
-        curves_dir_b: Option<PathBuf>,
-    },
+    /// Boxed to keep `Commands` from ballooning in size (`diff` carries far
+    /// more fields — per-side BA2/strings/curves overrides — than every
+    /// other variant combined).
+    Diff(Box<DiffArgs>),
     Tree {
-        file: PathBuf,
         #[arg(long = "type")]
         record_type: Option<String>,
         #[arg(long, default_value_t = 0)]
@@ -175,7 +180,6 @@ enum Commands {
         pretty: bool,
     },
     Coverage {
-        file: PathBuf,
         #[arg(long = "type")]
         record_type: Option<String>,
         #[arg(long, default_value_t = 0)]
@@ -186,7 +190,6 @@ enum Commands {
         gate: bool,
     },
     Refs {
-        file: PathBuf,
         /// FormID or EditorID (auto-detected); overridden by --formid/--edid
         #[arg(conflicts_with_all = ["formid", "edid"])]
         target: Option<String>,
@@ -222,7 +225,6 @@ enum Commands {
         lang: String,
     },
     Search {
-        file: PathBuf,
         pattern: String,
         #[arg(long = "type", value_delimiter = ',')]
         types: Vec<String>,
@@ -246,7 +248,6 @@ enum Commands {
     /// Data.Properties[] rows into direct-property/perk-grant/keyword-hook
     /// mechanisms and emit a compact evidence tree.
     Chase {
-        file: PathBuf,
         /// OMOD FormID or EditorID (auto-detected).
         omod: String,
         /// Reverse-ref walk depth for keyword/AVIF consumer lookups.
@@ -434,8 +435,16 @@ fn make_backend(local: bool, addr: Option<&str>, port: Option<u16>) -> anyhow::R
     }
 }
 
+/// Resolves the ESM path from `--esm` (clap already applies the
+/// `FO76_ESM_PATH` env fallback), erroring with a clear message if neither
+/// was set.
+fn resolve_esm(esm: Option<PathBuf>) -> anyhow::Result<PathBuf> {
+    esm.ok_or_else(|| anyhow::anyhow!("no ESM path — pass --esm <PATH> or set FO76_ESM_PATH"))
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let esm_opt = cli.esm.clone();
 
     if let Some(Commands::Daemon { action }) = cli.command {
         return match action {
@@ -487,21 +496,13 @@ fn main() -> anyhow::Result<()> {
 
     if let Some(cmd) = cli.command {
         let esm_for_repl = match &cmd {
-            Commands::Info { file } => file.clone(),
-            Commands::Get { file, .. } => file.clone(),
-            Commands::List { file, .. } => file.clone(),
-            Commands::Diff { file_a, .. } => file_a.clone(),
-            Commands::Tree { file, .. } => file.clone(),
-            Commands::Coverage { file, .. } => file.clone(),
-            Commands::Refs { file, .. } => file.clone(),
-            Commands::Search { file, .. } => file.clone(),
-            Commands::Chase { file, .. } => file.clone(),
+            Commands::Diff(args) => args.file_a.clone(),
             Commands::Daemon { .. } => unreachable!(),
+            _ => resolve_esm(esm_opt.clone())?,
         };
         match cmd {
-            Commands::Info { file } => cmd_info(&mut backend, &file)?,
+            Commands::Info => cmd_info(&mut backend, &esm_for_repl)?,
             Commands::Get {
-                file,
                 targets,
                 formid,
                 edid,
@@ -515,7 +516,7 @@ fn main() -> anyhow::Result<()> {
                 resolve,
             } => cmd_get(
                 &mut backend,
-                &file,
+                &esm_for_repl,
                 formid,
                 edid,
                 targets,
@@ -531,7 +532,6 @@ fn main() -> anyhow::Result<()> {
                 cli.mmap_index,
             )?,
             Commands::List {
-                file,
                 r#type,
                 limit,
                 json,
@@ -541,7 +541,7 @@ fn main() -> anyhow::Result<()> {
                 lang,
             } => cmd_list(
                 &mut backend,
-                &file,
+                &esm_for_repl,
                 &r#type,
                 limit,
                 json,
@@ -551,83 +551,83 @@ fn main() -> anyhow::Result<()> {
                 &lang,
                 daemon_mode,
             )?,
-            Commands::Diff {
-                file_a,
-                file_b,
-                record_type,
-                json,
-                pretty,
-                bodies,
-                keep_noise,
-                exclude_type,
-                localization_ba2,
-                localization_ba2_a,
-                localization_ba2_b,
-                strings_dir,
-                strings_dir_a,
-                strings_dir_b,
-                lang,
-                startup_ba2,
-                startup_ba2_a,
-                startup_ba2_b,
-                curves_dir,
-                curves_dir_a,
-                curves_dir_b,
-            } => cmd_diff(
-                &mut backend,
-                &file_a,
-                &file_b,
-                record_type.as_deref(),
-                json,
-                pretty,
-                localization_ba2,
-                localization_ba2_a,
-                localization_ba2_b,
-                strings_dir,
-                strings_dir_a,
-                strings_dir_b,
-                &lang,
-                startup_ba2,
-                startup_ba2_a,
-                startup_ba2_b,
-                curves_dir,
-                curves_dir_a,
-                curves_dir_b,
-                bodies.into(),
-                keep_noise,
-                exclude_type,
-                daemon_mode,
-            )?,
+            Commands::Diff(args) => {
+                let DiffArgs {
+                    file_a,
+                    file_b,
+                    record_type,
+                    json,
+                    pretty,
+                    bodies,
+                    keep_noise,
+                    exclude_type,
+                    localization_ba2,
+                    localization_ba2_a,
+                    localization_ba2_b,
+                    strings_dir,
+                    strings_dir_a,
+                    strings_dir_b,
+                    lang,
+                    startup_ba2,
+                    startup_ba2_a,
+                    startup_ba2_b,
+                    curves_dir,
+                    curves_dir_a,
+                    curves_dir_b,
+                } = *args;
+                cmd_diff(
+                    &mut backend,
+                    &file_a,
+                    &file_b,
+                    record_type.as_deref(),
+                    json,
+                    pretty,
+                    localization_ba2,
+                    localization_ba2_a,
+                    localization_ba2_b,
+                    strings_dir,
+                    strings_dir_a,
+                    strings_dir_b,
+                    &lang,
+                    startup_ba2,
+                    startup_ba2_a,
+                    startup_ba2_b,
+                    curves_dir,
+                    curves_dir_a,
+                    curves_dir_b,
+                    bodies.into(),
+                    keep_noise,
+                    exclude_type,
+                    daemon_mode,
+                )?
+            }
             Commands::Tree {
-                file,
                 record_type,
                 offset,
                 limit,
                 pretty,
             } => cmd_tree(
                 &mut backend,
-                &file,
+                &esm_for_repl,
                 record_type.as_deref(),
                 offset,
                 limit,
                 pretty,
             )?,
             Commands::Coverage {
-                file,
                 record_type,
                 sample,
                 json,
                 gate,
             } => cmd_coverage(
                 &mut backend,
-                &file,
+                &esm_for_repl,
                 record_type.as_deref(),
                 sample,
                 json,
                 gate,
             )?,
             Commands::Refs {
-                file,
                 target,
                 formid,
                 edid,
@@ -642,7 +642,7 @@ fn main() -> anyhow::Result<()> {
                 lang,
             } => cmd_refs(
                 &mut backend,
-                &file,
+                &esm_for_repl,
                 formid,
                 edid,
                 target,
@@ -658,7 +658,6 @@ fn main() -> anyhow::Result<()> {
                 daemon_mode,
             )?,
             Commands::Search {
-                file,
                 pattern,
                 types,
                 search_in,
@@ -670,7 +669,7 @@ fn main() -> anyhow::Result<()> {
                 lang,
             } => cmd_search(
                 &mut backend,
-                &file,
+                &esm_for_repl,
                 &pattern,
                 types,
                 search_in,
@@ -683,12 +682,11 @@ fn main() -> anyhow::Result<()> {
                 daemon_mode,
             )?,
             Commands::Chase {
-                file,
                 omod,
                 depth,
                 ref_limit,
                 json,
-            } => cmd_chase(&mut backend, &file, &omod, depth, ref_limit, json)?,
+            } => cmd_chase(&mut backend, &esm_for_repl, &omod, depth, ref_limit, json)?,
             Commands::Daemon { .. } => unreachable!(),
         }
         if !cli.print {
@@ -698,9 +696,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // No subcommand: pure REPL
-    let esm = cli
-        .esm
-        .ok_or_else(|| anyhow::anyhow!("ESM path required for REPL session"))?;
+    let esm = resolve_esm(esm_opt)?;
     run_repl(&esm, &mut backend)
 }
 
