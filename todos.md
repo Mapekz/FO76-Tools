@@ -11,10 +11,6 @@ re-verified against the code on 2026-07-14; none is partially implemented.
 
 ## `esm/`
 
-- [ ] **P4 — Bulk `get`** (multiple FormIDs per call). Cuts round-trips out of the weekly deep
-      pass. `RecordSel` (`esm/src/ipc.rs:49`) is still single-select (`FormId` | `Edid`) as of
-      2026-07-14; extend it and `Op::Record`/`Op::RecordRaw`.
-
 - [ ] **P5 — `esm chase <omod>`.** Automate the unique-effect walk (keyword ADDs → reverse-refs
       → keyword-conditioned effects → compact evidence tree), written up under *"How
       unique-weapon effects are implemented (the chase pattern)"* in

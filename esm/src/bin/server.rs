@@ -463,28 +463,33 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                     },
                     {
                         "name": "esm_get_record",
-                        "description": "Fetch and decode a single record by FormID or EditorID. Use this to inspect the full field layout of a record after identifying it with esm_search. The 'resolve' parameter controls how nested FormID references are rendered: 'stub' (default) annotates each reference inline with its EditorID and display name — saving round-trips; 'full' inlines the complete referenced records (richer but larger payloads); 'none' leaves raw hex FormIDs unchanged. Supply exactly one of 'id', 'formid', or 'edid'.",
+                        "description": "Fetch and decode one or more records by FormID or EditorID. Use this to inspect the full field layout of a record after identifying it with esm_search. The 'resolve' parameter controls how nested FormID references are rendered: 'stub' (default) annotates each reference inline with its EditorID and display name — saving round-trips; 'full' inlines the complete referenced records (richer but larger payloads); 'none' leaves raw hex FormIDs unchanged. Supply exactly one of 'id'/'formid'/'edid' for a single record, or 'ids' (a list mixing FormIDs and EditorIDs freely) to fetch several in one call — much cheaper than N separate calls when scanning many records. Bulk results are isolated per-selector: one bad FormID/EditorID in 'ids' returns an 'error' entry for that selector only, the rest still decode normally.",
                         "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format. Ignored if 'ids' is supplied."
                                 },
                                 "formid": {
                                     "type": "string",
-                                    "description": "FormID as a hex string (e.g. \"0x00463F\") or decimal integer."
+                                    "description": "FormID as a hex string (e.g. \"0x00463F\") or decimal integer. Ignored if 'ids' is supplied."
                                 },
                                 "edid": {
                                     "type": "string",
-                                    "description": "EditorID string (exact match)."
+                                    "description": "EditorID string (exact match). Ignored if 'ids' is supplied."
+                                },
+                                "ids": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Bulk mode: a list of FormIDs and/or EditorIDs (auto-detected per entry, mix freely). Returns a JSON array, one entry per selector in order, each tagged with the selector it was resolved from. Takes priority over 'id'/'formid'/'edid' when non-empty."
                                 },
                                 "resolve": {
                                     "type": "string",
                                     "enum": ["none", "stub", "full"],
                                     "default": "stub",
-                                    "description": "How to render nested FormID references. 'stub' (default): annotate each reference with its EditorID + name — avoids extra round-trips. 'full': inline entire referenced records up to 2 levels. 'none': leave raw hex FormIDs unchanged."
+                                    "description": "How to render nested FormID references. 'stub' (default): annotate each reference with its EditorID + name — avoids extra round-trips. 'full': inline entire referenced records up to 2 levels. 'none': leave raw hex FormIDs unchanged. Applies to every record in bulk mode too."
                                 }
                             }
                         }
@@ -606,7 +611,8 @@ fn call_tool_proxy(
             Ok(serde_json::to_string_pretty(&info)?)
         }
         "esm_get_record" => {
-            let sel = sel_from_args(args)?;
+            use esm::ipc::RecordSel;
+
             let depth = match args
                 .get("resolve")
                 .and_then(|v| v.as_str())
@@ -616,6 +622,25 @@ fn call_tool_proxy(
                 "none" => esm::ResolveDepth::None,
                 _ => esm::ResolveDepth::Stub, // "stub" is the default
             };
+
+            // Bulk mode: a non-empty 'ids' array takes priority over the
+            // single-selector 'id'/'formid'/'edid' args.
+            let ids = args.get("ids").and_then(|v| v.as_array());
+            if let Some(ids) = ids.filter(|a| !a.is_empty()) {
+                let sels: Vec<RecordSel> = ids
+                    .iter()
+                    .map(|v| {
+                        let s = v
+                            .as_str()
+                            .ok_or_else(|| anyhow::anyhow!("'ids' entries must be strings"))?;
+                        RecordSel::from_input(s)
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()?;
+                let v = backend.run(esm_path, Op::RecordBulk { sels, depth })?;
+                return Ok(serde_json::to_string_pretty(&v)?);
+            }
+
+            let sel = sel_from_args(args)?;
             let v = backend.run(esm_path, Op::Record { sel, depth })?;
             Ok(serde_json::to_string_pretty(&v)?)
         }

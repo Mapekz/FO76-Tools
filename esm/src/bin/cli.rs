@@ -53,9 +53,14 @@ enum Commands {
     },
     Get {
         file: PathBuf,
-        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        /// FormID(s) and/or EditorID(s) (auto-detected per token); mix
+        /// freely, e.g. `0x0000463F 0x000228AB co_Weapon_...`. A single
+        /// target preserves the classic single-record output; two or more
+        /// emit a JSON array (one entry per selector, in the order given,
+        /// each tagged with its own `sel`). Overridden by --formid/--edid
+        /// for the classic single-selector form.
         #[arg(conflicts_with_all = ["formid", "edid"])]
-        target: Option<String>,
+        targets: Vec<String>,
         #[arg(long, conflicts_with = "edid")]
         formid: Option<String>,
         #[arg(long, conflicts_with = "formid")]
@@ -249,9 +254,12 @@ enum DaemonAction {
 enum ReplCommand {
     Info,
     Get {
-        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
+        /// FormID(s) and/or EditorID(s) (auto-detected per token); mix
+        /// freely. A single target preserves the classic single-record
+        /// output; two or more emit a JSON array. Overridden by
+        /// --formid/--edid for the classic single-selector form.
         #[arg(conflicts_with_all = ["formid", "edid"])]
-        target: Option<String>,
+        targets: Vec<String>,
         #[arg(long, conflicts_with = "edid")]
         formid: Option<String>,
         #[arg(long, conflicts_with = "formid")]
@@ -476,7 +484,7 @@ fn main() -> anyhow::Result<()> {
             Commands::Info { file } => cmd_info(&mut backend, &file)?,
             Commands::Get {
                 file,
-                target,
+                targets,
                 formid,
                 edid,
                 json,
@@ -492,7 +500,7 @@ fn main() -> anyhow::Result<()> {
                 &file,
                 formid,
                 edid,
-                target,
+                targets,
                 json,
                 pretty,
                 raw,
@@ -717,7 +725,7 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
     match cmd {
         ReplCommand::Info => cmd_info(backend, esm),
         ReplCommand::Get {
-            target,
+            targets,
             formid,
             edid,
             json,
@@ -725,8 +733,8 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             raw,
             resolve,
         } => cmd_get(
-            backend, esm, formid, edid, target, json, pretty, raw, None, None, "en", None, resolve,
-            true,  // daemon_mode (REPL is always daemon-backed)
+            backend, esm, formid, edid, targets, json, pretty, raw, None, None, "en", None,
+            resolve, true,  // daemon_mode (REPL is always daemon-backed)
             false, // mmap_index (not applicable in REPL)
         ),
         ReplCommand::List {
@@ -905,7 +913,7 @@ fn cmd_get(
     file: &Path,
     formid: Option<String>,
     edid: Option<String>,
-    target: Option<String>,
+    targets: Vec<String>,
     json: bool,
     pretty: bool,
     raw: bool,
@@ -919,6 +927,33 @@ fn cmd_get(
 ) -> anyhow::Result<()> {
     let has_overrides =
         localization_ba2.is_some() || strings_dir.is_some() || startup_ba2.is_some();
+
+    // ── Bulk path (2+ positional targets) ─────────────────────────────────
+    // clap's `conflicts_with_all` on `targets` guarantees --formid/--edid are
+    // never set here. Single-target and zero-target calls fall through
+    // untouched below, so that output stays byte-for-byte identical to the
+    // pre-bulk CLI.
+    if targets.len() > 1 {
+        if raw {
+            anyhow::bail!("--raw does not support multiple selectors; run one target at a time");
+        }
+        if has_overrides {
+            anyhow::bail!(
+                "--localization-ba2/--strings-dir/--startup-ba2 are not supported with \
+                 multiple selectors; run one target at a time, or place the strings/curves \
+                 next to the ESM so the warm daemon auto-loads them (see esm/CLAUDE.md)"
+            );
+        }
+        let sels: Vec<RecordSel> = targets
+            .iter()
+            .map(|t| RecordSel::from_input(t))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let depth = parse_resolve(&resolve);
+        let v = backend.run(file, Op::RecordBulk { sels, depth })?;
+        print_json(&v, pretty || !json);
+        return Ok(());
+    }
+    let target = targets.into_iter().next();
 
     // ── mmap-index fast path (--local --mmap-index, FormID only) ─────────────
     // Loads the compact ~24 MiB .esm.midx instead of the full .esm.idx.

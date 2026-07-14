@@ -1,9 +1,14 @@
 mod common;
 
-use common::{append_record, make_minimal_esm, tes4_header, unique_temp_path, wrap_grup};
+use common::{
+    append_record, append_subrecord, cstr, make_minimal_esm, tes4_header, unique_temp_path,
+    wrap_grup,
+};
 use esm::ipc::{dispatch, Op, RecordSel, Request, Response};
 use esm::registry::Registry;
-use esm::{BodyDetail, Database, DiffOptions, DiffResult, ResolveDepth, SearchField};
+use esm::{
+    BodyDetail, BulkRecordEntry, Database, DiffOptions, DiffResult, ResolveDepth, SearchField,
+};
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -497,4 +502,248 @@ fn dispatch_diff_two_esms_with_options() {
 
     let _ = std::fs::remove_file(&path_a);
     let _ = std::fs::remove_file(&path_b);
+}
+
+// ─── Op::RecordBulk ─────────────────────────────────────────────────────────
+
+/// A pre-bulk wire client only ever sends `Op::Record`'s shape (no `sels` /
+/// `RecordBulk` tag at all). Adding the new `RecordBulk` variant to `Op` must
+/// not disturb decoding that old shape — `#[serde(tag = "op")]` dispatches
+/// purely on the `"op"` discriminant string, but this locks the invariant in
+/// with a literal hand-written wire payload rather than relying on that
+/// reasoning alone.
+#[test]
+fn op_record_old_wire_shape_still_deserializes() {
+    let json = r#"{
+        "esm": "Game.esm",
+        "op": {
+            "op": "record",
+            "sel": {"kind": "form_id", "value": 4667},
+            "depth": "none"
+        }
+    }"#;
+    let req: Request = serde_json::from_str(json).expect("deserialize");
+    match req.op {
+        Op::Record { sel, depth } => {
+            match sel {
+                RecordSel::FormId(f) => assert_eq!(f, esm::FormId(4667)),
+                other => panic!("expected FormId, got {other:?}"),
+            }
+            assert_eq!(depth, ResolveDepth::None);
+        }
+        other => panic!("expected Op::Record, got {other:?}"),
+    }
+}
+
+/// Build a small ESM with two WEAP records, each carrying a distinct EDID —
+/// used by the `Op::RecordBulk` tests below to exercise a mix of FormID and
+/// EditorID selectors (and, with a bogus FormID thrown in, per-selector
+/// failure isolation).
+fn make_bulk_test_esm() -> Vec<u8> {
+    let mut rec1_subs = Vec::new();
+    append_subrecord(&mut rec1_subs, b"EDID", &cstr("AssaultRifle"));
+    let mut rec2_subs = Vec::new();
+    append_subrecord(&mut rec2_subs, b"EDID", &cstr("PipePistol"));
+
+    let mut recs = Vec::new();
+    append_record(&mut recs, b"WEAP", 1, &rec1_subs);
+    append_record(&mut recs, b"WEAP", 2, &rec2_subs);
+
+    let mut buf = tes4_header();
+    buf.extend(wrap_grup(b"WEAP", &recs));
+    buf
+}
+
+/// `Op::RecordBulk` resolves a mix of FormID and EditorID selectors in one
+/// call, preserving the requested order, and its JSON wire form round-trips —
+/// the bulk counterpart to `record_sel_json_round_trip` / `dispatch_record_by_formid`
+/// above.
+#[test]
+fn dispatch_record_bulk_mixed_selectors_round_trip() {
+    let buf = make_bulk_test_esm();
+    let tmp = unique_temp_path("ipc_bulk_mixed");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let reg = Registry::new();
+
+    let op = Op::RecordBulk {
+        sels: vec![
+            RecordSel::FormId(esm::FormId(1)),
+            RecordSel::Edid("PipePistol".to_string()),
+        ],
+        depth: ResolveDepth::None,
+    };
+    let req = Request {
+        esm: tmp.clone(),
+        op: op.clone(),
+    };
+
+    // Wire round-trip.
+    let json = serde_json::to_string(&req).expect("serialize");
+    let back: Request = serde_json::from_str(&json).expect("deserialize");
+    let json2 = serde_json::to_string(&back).expect("re-serialize");
+    assert_eq!(json, json2, "round-trip mismatch");
+
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok");
+    };
+    let entries: Vec<BulkRecordEntry> = serde_json::from_value(data).expect("entries");
+    assert_eq!(entries.len(), 2);
+
+    assert_eq!(entries[0].sel, "0x00000001");
+    assert!(entries[0].error.is_none());
+    assert_eq!(entries[0].editor_id.as_deref(), Some("AssaultRifle"));
+    assert!(entries[0].header.is_some());
+    assert!(entries[0].fields.is_some());
+
+    assert_eq!(entries[1].sel, "PipePistol");
+    assert!(entries[1].error.is_none());
+    assert_eq!(entries[1].editor_id.as_deref(), Some("PipePistol"));
+    assert!(entries[1].header.is_some());
+    assert!(entries[1].fields.is_some());
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// One bad selector in a bulk request must not fail the whole call: the good
+/// selectors on either side of it still decode normally, and the bad one gets
+/// an isolated `error` entry in its place (same position in the output).
+#[test]
+fn dispatch_record_bulk_isolates_per_selector_failure() {
+    let buf = make_bulk_test_esm();
+    let tmp = unique_temp_path("ipc_bulk_failure");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let reg = Registry::new();
+
+    let req = Request {
+        esm: tmp.clone(),
+        op: Op::RecordBulk {
+            sels: vec![
+                RecordSel::FormId(esm::FormId(1)),          // valid
+                RecordSel::FormId(esm::FormId(0x00999999)), // bogus — not present
+                RecordSel::Edid("PipePistol".to_string()),  // valid
+                RecordSel::Edid("NoSuchEdid".to_string()),  // bogus — not present
+            ],
+            depth: ResolveDepth::None,
+        },
+    };
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok");
+    };
+    let entries: Vec<BulkRecordEntry> = serde_json::from_value(data).expect("entries");
+    assert_eq!(entries.len(), 4, "one entry per selector, order preserved");
+
+    assert_eq!(entries[0].sel, "0x00000001");
+    assert!(entries[0].error.is_none(), "valid FormID must succeed");
+    assert!(entries[0].fields.is_some());
+
+    assert_eq!(entries[1].sel, "0x00999999");
+    assert!(
+        entries[1].error.is_some(),
+        "bogus FormID must produce an isolated error, not fail the whole call"
+    );
+    assert!(entries[1].fields.is_none());
+    assert!(entries[1].header.is_none());
+
+    assert_eq!(entries[2].sel, "PipePistol");
+    assert!(entries[2].error.is_none(), "valid EditorID must succeed");
+    assert!(entries[2].fields.is_some());
+
+    assert_eq!(entries[3].sel, "NoSuchEdid");
+    assert!(
+        entries[3].error.is_some(),
+        "bogus EditorID must produce an isolated error"
+    );
+    assert!(entries[3].fields.is_none());
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Build an ESM with a target WEAP(1) carrying an EDID, and a referencer
+/// WEAP(2) whose `YNAM`/`ZNAM` (Sound - Pickup / Sound - Putdown) both point
+/// at FormId(1) — the same field layout
+/// `dispatch_referenced_by_with_type_filter_and_paths` above exercises. Used
+/// to confirm `Op::RecordBulk` honors `ResolveDepth::Stub` the same way a
+/// plain `Op::Record` lookup does.
+fn make_bulk_stub_test_esm() -> Vec<u8> {
+    let mut target_subs = Vec::new();
+    append_subrecord(&mut target_subs, b"EDID", &cstr("TargetWeap"));
+
+    let mut ref_subs = Vec::new();
+    append_subrecord(&mut ref_subs, b"YNAM", &1u32.to_le_bytes());
+    append_subrecord(&mut ref_subs, b"ZNAM", &1u32.to_le_bytes());
+
+    let mut recs = Vec::new();
+    append_record(&mut recs, b"WEAP", 1, &target_subs);
+    append_record(&mut recs, b"WEAP", 2, &ref_subs);
+
+    let mut buf = tes4_header();
+    buf.extend(wrap_grup(b"WEAP", &recs));
+    buf
+}
+
+/// `Op::RecordBulk` with `depth: ResolveDepth::Stub` must annotate FormID
+/// references inline for every record in the batch, exactly like `--resolve
+/// stub` does for a single `esm get` — the mode the `/patch-notes` deep
+/// agents rely on to avoid follow-up lookups.
+#[test]
+fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
+    let buf = make_bulk_stub_test_esm();
+    let tmp = unique_temp_path("ipc_bulk_stub");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let reg = Registry::new();
+
+    let req = Request {
+        esm: tmp.clone(),
+        op: Op::RecordBulk {
+            sels: vec![
+                RecordSel::FormId(esm::FormId(2)),
+                RecordSel::FormId(esm::FormId(1)),
+            ],
+            depth: ResolveDepth::Stub,
+        },
+    };
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok");
+    };
+    let entries: Vec<BulkRecordEntry> = serde_json::from_value(data).expect("entries");
+    assert_eq!(entries.len(), 2);
+
+    let referencer = &entries[0];
+    assert_eq!(referencer.sel, "0x00000002");
+    assert!(referencer.error.is_none());
+    let fields = referencer.fields.as_ref().expect("fields present");
+    for field in ["Sound - Pickup", "Sound - Putdown"] {
+        let stub = fields
+            .get(field)
+            .unwrap_or_else(|| panic!("missing '{field}'"));
+        assert_eq!(
+            stub.get("editor_id").and_then(|v| v.as_str()),
+            Some("TargetWeap"),
+            "'{field}' must resolve to the target's EditorID under --resolve stub"
+        );
+        assert_eq!(
+            stub.get("record_type").and_then(|v| v.as_str()),
+            Some("WEAP")
+        );
+        assert_eq!(
+            stub.get("formid").and_then(|v| v.as_str()),
+            Some("0x00000001")
+        );
+    }
+
+    // Second entry is the plain target record itself.
+    assert_eq!(entries[1].sel, "0x00000001");
+    assert!(entries[1].error.is_none());
+    assert_eq!(entries[1].editor_id.as_deref(), Some("TargetWeap"));
+
+    let _ = std::fs::remove_file(&tmp);
 }

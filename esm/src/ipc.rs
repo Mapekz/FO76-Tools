@@ -81,6 +81,17 @@ impl RecordSel {
             bail!("specify a FormID/EditorID, or --formid/--edid")
         }
     }
+
+    /// Render the selector for display/correlation purposes: a FormID hex
+    /// string (`0x0000463F`) or the literal EditorID text. Used to tag each
+    /// entry of a [`Op::RecordBulk`] result so callers can match a result back
+    /// to the selector they requested, even on failure.
+    pub fn display(&self) -> String {
+        match self {
+            RecordSel::FormId(fid) => fid.display(),
+            RecordSel::Edid(edid) => edid.clone(),
+        }
+    }
 }
 
 /// All operations routable through `dispatch`.
@@ -90,6 +101,19 @@ pub enum Op {
     FileInfo,
     Record {
         sel: RecordSel,
+        depth: ResolveDepth,
+    },
+    /// Fetch and resolve multiple records in one round-trip — the bulk
+    /// counterpart to `Record`. Each selector is resolved and decoded
+    /// independently (see [`BulkRecordEntry`]): one bad FormID/EditorID
+    /// produces an error entry for that selector only, it does not fail the
+    /// whole call. A new variant rather than a `Vec<RecordSel>` on `Record`
+    /// itself, so the existing single-record wire shape (and its
+    /// byte-for-byte CLI output) is untouched — older clients that only know
+    /// about `Record`/`RecordRaw` keep working unmodified, and newer clients
+    /// opt into batching by sending this variant instead.
+    RecordBulk {
+        sels: Vec<RecordSel>,
         depth: ResolveDepth,
     },
     RecordRaw {
@@ -225,6 +249,32 @@ pub struct RefList {
     pub capped: bool,
 }
 
+/// One entry of a [`Op::RecordBulk`] result: the resolved record on success,
+/// or an isolated per-selector error message on failure. Mirrors the plain
+/// `Op::Record` JSON shape (`header`/`editor_id`/`fields`) with a `sel` field
+/// prepended so callers can correlate each entry back to the selector they
+/// requested — necessary because one bad FormID/EditorID must not fail the
+/// whole bulk call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct BulkRecordEntry {
+    /// The selector as supplied, rendered for display — a FormID hex string
+    /// (`0x0000463F`) or the literal EditorID text (see [`RecordSel::display`]).
+    pub sel: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<crate::reader::RecordHeaderInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editor_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "Record<string, unknown> | null"))]
+    pub fields: Option<Value>,
+    /// Set instead of `header`/`editor_id`/`fields` when this selector could
+    /// not be resolved or decoded — the failure is isolated to this entry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Hex dump view of a raw record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -352,6 +402,13 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                 "fields": result.fields
             }))
         }
+        Op::RecordBulk { sels, depth } => {
+            let entries: Vec<BulkRecordEntry> = sels
+                .iter()
+                .map(|sel| bulk_record_entry(db, sel, *depth))
+                .collect();
+            Ok(serde_json::to_value(&entries)?)
+        }
         Op::RecordRaw { sel } => {
             let form_id = resolve_sel(db, sel)?;
             let rec = db.record_raw(form_id)?;
@@ -470,6 +527,30 @@ fn record_resolved(
     match sel {
         RecordSel::FormId(fid) => db.record_by_formid_resolved(*fid, depth),
         RecordSel::Edid(edid) => db.record_by_edid_resolved(edid, depth),
+    }
+}
+
+/// Resolve one selector of an `Op::RecordBulk` request, converting a lookup
+/// failure into an `error`-carrying [`BulkRecordEntry`] instead of aborting
+/// the whole batch — the per-record failure isolation that distinguishes bulk
+/// `get` from N sequential single `get`s.
+fn bulk_record_entry(db: &mut Database, sel: &RecordSel, depth: ResolveDepth) -> BulkRecordEntry {
+    let display = sel.display();
+    match record_resolved(db, sel, depth) {
+        Ok(result) => BulkRecordEntry {
+            sel: display,
+            header: Some(result.header),
+            editor_id: result.editor_id,
+            fields: Some(result.fields),
+            error: None,
+        },
+        Err(e) => BulkRecordEntry {
+            sel: display,
+            header: None,
+            editor_id: None,
+            fields: None,
+            error: Some(format!("{:#}", e)),
+        },
     }
 }
 

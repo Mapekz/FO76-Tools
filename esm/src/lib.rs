@@ -35,8 +35,8 @@ pub use diff::{
 pub use formid::FormId;
 pub use index::SearchMeta;
 pub use ipc::{
-    CoverageReport, Markers, Op, RawRecordView, RawSubrecordView, RefList, RefPathNode, RefRow,
-    Request, Response,
+    BulkRecordEntry, CoverageReport, Markers, Op, RawRecordView, RawSubrecordView, RefList,
+    RefPathNode, RefRow, Request, Response,
 };
 pub use reader::RecordMeta;
 use serde::{Deserialize, Serialize};
