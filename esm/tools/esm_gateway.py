@@ -3,18 +3,17 @@
 `EsmGateway` -- the one seam every `tools/*.py` pipeline stage uses to reach
 the `esm` CLI/daemon (see ../CLAUDE.md, "Bulk / sweep workflow"). Talks the
 same wire protocol the Rust CLI/N-API/MCP clients use so external tooling
-(patch-notes generators, clustering scripts, the `chase` prototype, ...) can
-reuse the resident daemon instead of paying the ~280 MiB cold-index cost per
-call.
+(patch-notes generators, clustering scripts, ...) can reuse the resident
+daemon instead of paying the ~280 MiB cold-index cost per call.
 
 Historically this module (`esm_daemon.py`, `class DaemonClient`) only covered
 single-record `get`/`refs`/`search`. It has since been promoted to a full
 gateway: `bulk_get` (`Op::RecordBulk`, one round-trip for N selectors),
 `refs(..., paths=True, type_filter=...)` (the `--paths`/`--type` refs
 capabilities), `diff` (the two-ESM `esm --local diff` subprocess), and the one
-canonical `find_esm_binary` (previously copy-pasted in `make_patch_notes.py`,
-`build_bundles.py`, and `chase/chase.py`) all live here now, so nothing else
-in `tools/` needs to shell out to `esm` directly.
+canonical `find_esm_binary` (previously copy-pasted in `make_patch_notes.py`
+and `build_bundles.py`) all live here now, so nothing else in `tools/` needs
+to shell out to `esm` directly.
 
 Wire format mirrors, exactly, the following Rust sources (re-verify there if
 this file and the Rust side ever drift):
@@ -122,8 +121,9 @@ def _sel_for_input(value: FormIdLike) -> dict:
     """Build a `RecordSel` wire value from one ambiguous token, auto-detecting
     FormID vs EditorID via `_looks_like_formid` -- mirrors `RecordSel::from_input`
     in src/ipc.rs. Used by `bulk_get`, whose selectors may be a mix of both
-    (e.g. chase's OMOD argument can be a FormID or an EditorID, while the
-    hop targets it discovers are always FormIDs)."""
+    (e.g. a caller's initial lookup token can be a FormID or an EditorID,
+    while FormIDs discovered by a subsequent reverse-ref walk are always
+    FormIDs)."""
     if isinstance(value, int):
         return _sel_for_formid(value)
     return _sel_for_formid(value) if _looks_like_formid(value) else _sel_for_edid(value)
@@ -152,10 +152,9 @@ def find_esm_binary(explicit: str | Path | None = None) -> Path:
     Raises `DaemonError` (never calls `sys.exit`/prints to stderr) -- this is
     a library function shared by every CLI entry point in `tools/`, each of
     which translates the error into its own exit-code convention (see
-    `make_patch_notes.py::find_esm_binary`'s former `die(1, ...)`,
-    `build_bundles.py::find_esm_binary`'s former `raise SystemExit(...)`, and
-    `chase/chase.py::main`'s `except ChaseError` -- all three now catch
-    `DaemonError` instead and keep their own exit code).
+    `make_patch_notes.py::find_esm_binary`'s former `die(1, ...)` and
+    `build_bundles.py::find_esm_binary`'s former `raise SystemExit(...)` --
+    both now catch `DaemonError` instead and keep their own exit code).
     """
     if explicit:
         p = Path(explicit)
@@ -554,10 +553,10 @@ class EsmGateway:
         `{"sel": <selector display string>, "header"?, "editor_id"?,
         "fields"?, "error"?}` -- one bad selector produces an `error` entry
         for itself only, it never fails the whole call (see ipc.rs's
-        `RecordBulk` docs). This is what let `chase/chase.py` drop its old
-        single-vs-multi-target special case entirely: even a length-1 `sels`
-        list gets the same per-selector error isolation a subprocess `esm get`
-        with one bad target did not have.
+        `RecordBulk` docs). This lets a caller drop any single-vs-multi-target
+        special case entirely: even a length-1 `sels` list gets the same
+        per-selector error isolation a subprocess `esm get` with one bad
+        target did not have.
         """
         wire_sels = [_sel_for_input(s) for s in sels]
         return self.op(esm, {"op": "record_bulk", "sels": wire_sels, "depth": resolve})
@@ -614,9 +613,7 @@ class EsmGateway:
         path(s) inside that row's decoded body referencing its predecessor in
         the hop chain -- opt-in because it requires a full decode per row.
         Both mirror `esm refs --type SIG --paths` (see ipc.rs's
-        `Op::ReferencedBy` and cli.rs's `cmd_refs`); `chase/chase.py` uses
-        both to slice out the exact `Effects[N]` a keyword/AVIF gates,
-        instead of a subprocess `esm refs --paths --type ...` call per hop.
+        `Op::ReferencedBy` and cli.rs's `cmd_refs`).
 
         `type_filter`/`paths` are omitted from the wire request entirely
         when left at their defaults, keeping the request body byte-identical
@@ -768,7 +765,6 @@ class FakeGateway:
               "fields": {...}                 # optional; needed only by
                                                # bulk_get() consumers that
                                                # inspect decoded fields
-                                               # (e.g. chase/chase.py)
             },
             ...
           },

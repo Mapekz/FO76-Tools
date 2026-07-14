@@ -169,11 +169,11 @@ Read every draft + report. Then, in order:
 1. **Reconcile every deferral.** For each report's `deferred[]` entry, confirm the expected
    owner's draft actually covers those FormIDs (search the draft text). Anything uncovered:
    chase it yourself now — extract the record diff, then for `mod_Custom_*`/unique-effect
-   OMODs run `python3 esm/tools/chase/chase.py <OMOD> --esm "$NEW_ESM" --json`; for anything
+   OMODs run `esm/target/release/esm -p chase "$NEW_ESM" <OMOD> --json`; for anything
    else, `esm/target/release/esm -p refs "$NEW_ESM" <id> --type <SIG> --paths --pretty` (one
    4-char type per call) plus a bulk `get` for whatever it turns up — write the missing
    bullets. This step exists because deferrals DO fall through; never skip it.
-2. **Chase every `unresolved[]` item** worth a story: resolve it live via chase.py / bulk
+2. **Chase every `unresolved[]` item** worth a story: resolve it live via `esm -p chase` / bulk
    `get --resolve stub` / `refs --type <SIG> --paths` (never a loop of single-selector
    `get`s), soften it to "Unconfirmed:", or cut it. Never pass one through silently.
 3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself in ONE bulk call —

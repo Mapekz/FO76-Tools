@@ -241,6 +241,23 @@ enum Commands {
         #[arg(long, default_value = "en")]
         lang: String,
     },
+    /// Automate the unique-weapon OMOD "chase pattern" (see
+    /// .claude/skills/patch-notes/mechanics-kb.md): classify an OMOD's
+    /// Data.Properties[] rows into direct-property/perk-grant/keyword-hook
+    /// mechanisms and emit a compact evidence tree.
+    Chase {
+        file: PathBuf,
+        /// OMOD FormID or EditorID (auto-detected).
+        omod: String,
+        /// Reverse-ref walk depth for keyword/AVIF consumer lookups.
+        #[arg(long, default_value_t = esm::chase::DEFAULT_DEPTH)]
+        depth: usize,
+        /// Cap on refs rows fetched per record-type filter.
+        #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
+        ref_limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -478,6 +495,7 @@ fn main() -> anyhow::Result<()> {
             Commands::Coverage { file, .. } => file.clone(),
             Commands::Refs { file, .. } => file.clone(),
             Commands::Search { file, .. } => file.clone(),
+            Commands::Chase { file, .. } => file.clone(),
             Commands::Daemon { .. } => unreachable!(),
         };
         match cmd {
@@ -664,6 +682,13 @@ fn main() -> anyhow::Result<()> {
                 &lang,
                 daemon_mode,
             )?,
+            Commands::Chase {
+                file,
+                omod,
+                depth,
+                ref_limit,
+                json,
+            } => cmd_chase(&mut backend, &file, &omod, depth, ref_limit, json)?,
             Commands::Daemon { .. } => unreachable!(),
         }
         if !cli.print {
@@ -1168,6 +1193,74 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
             ref_list.total
         );
     }
+}
+
+/// [`esm::chase::ChaseFetcher`] implementation that composes `chase`'s two
+/// primitive ops (`Op::RecordBulk`, `Op::ReferencedBy`) over an existing
+/// `Backend` — the warm daemon for free when `-p`/REPL mode is in play, a
+/// cold in-process open under `--local`. Holds the `&Path` to the ESM being
+/// queried so `esm::chase::chase` itself only deals in selectors/FormIDs.
+struct BackendFetcher<'a> {
+    backend: &'a mut Backend,
+    file: &'a Path,
+}
+
+impl esm::chase::ChaseFetcher for BackendFetcher<'_> {
+    fn bulk_get(
+        &mut self,
+        sels: &[RecordSel],
+        depth: ResolveDepth,
+    ) -> anyhow::Result<Vec<esm::BulkRecordEntry>> {
+        let v = self.backend.run(
+            self.file,
+            Op::RecordBulk {
+                sels: sels.to_vec(),
+                depth,
+            },
+        )?;
+        Ok(serde_json::from_value(v)?)
+    }
+
+    fn refs(
+        &mut self,
+        target: esm::FormId,
+        depth: usize,
+        limit: usize,
+        type_filter: &str,
+        paths: bool,
+    ) -> anyhow::Result<RefList> {
+        let v = self.backend.run(
+            self.file,
+            Op::ReferencedBy {
+                sel: RecordSel::FormId(target),
+                limit,
+                depth,
+                type_filter: Some(type_filter.to_string()),
+                paths,
+            },
+        )?;
+        Ok(serde_json::from_value(v)?)
+    }
+}
+
+fn cmd_chase(
+    backend: &mut Backend,
+    file: &Path,
+    omod: &str,
+    depth: usize,
+    ref_limit: usize,
+    json: bool,
+) -> anyhow::Result<()> {
+    let sel = RecordSel::from_input(omod)?;
+    let opts = esm::chase::ChaseOptions { depth, ref_limit };
+    let mut fetcher = BackendFetcher { backend, file };
+    let tree = esm::chase::chase(&mut fetcher, sel, &opts)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&tree)?);
+    } else {
+        println!("{}", esm::chase::render_text(&tree));
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]

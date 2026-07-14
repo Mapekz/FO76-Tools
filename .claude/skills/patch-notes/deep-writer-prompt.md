@@ -32,11 +32,11 @@ every one to ground truth. Run all commands from the repo root.
 
 1. **Chase the mechanic to ground truth** (KB "chase pattern" section). For
    `mod_Custom_*`/unique-effect OMODs, run
-   `python3 esm/tools/chase/chase.py <OMOD> --esm "{NEW_ESM}" --json` FIRST — it automates the
+   `esm/target/release/esm -p chase "{NEW_ESM}" <OMOD> --json` FIRST — it automates the
    keyword/perk-grant/direct-property walk in a handful of bulk calls and returns just the
    gating `Effects[N]` entry, not full record dumps. Hand-walk with
    `refs --type <SIG> --paths` (and a bulk `get` on whatever it turns up) only for mechanics
-   chase.py doesn't cover: resolve every PERK/ENCH/SPEL/AVIF/KYWD a changed property touches
+   chase doesn't cover: resolve every PERK/ENCH/SPEL/AVIF/KYWD a changed property touches
    until you can state what the change does in player terms. An AVIF's name is not its
    semantics — find its consumer.
 2. **Plain language first, exact delta second**: "reload speed 5s → 3.75s (−25%)". Old → new

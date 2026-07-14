@@ -1,5 +1,6 @@
 pub mod ba2;
 pub mod backend;
+pub mod chase;
 pub mod compress;
 pub mod ctda;
 pub mod curves;
