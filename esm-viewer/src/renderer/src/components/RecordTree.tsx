@@ -4,6 +4,7 @@ import { useStore } from '../store'
 import type { RecordRow, GroupChild, GroupLabel } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
 import { sortRows, type SortColumn, type SortState } from '../lib/recordSort'
+import { loadAllTypeRecords, loadGroupChildrenPage, loadTypeChildrenPage } from '../lib/recordLoad'
 
 const PAGE_SIZE = 100
 
@@ -86,7 +87,7 @@ function GroupChildNode({
     if (children) return
     setLoading(true)
     try {
-      const result = await window.api.listGroupChildren(dbId, child.offset, 0, PAGE_SIZE)
+      const result = await loadGroupChildrenPage(window.api, dbId, child.offset, [], PAGE_SIZE)
       setChildren(result)
     } finally {
       setLoading(false)
@@ -95,8 +96,8 @@ function GroupChildNode({
 
   async function loadMore() {
     const current = children ?? []
-    const next = await window.api.listGroupChildren(dbId, child.offset, current.length, PAGE_SIZE)
-    setChildren([...current, ...next])
+    const next = await loadGroupChildrenPage(window.api, dbId, child.offset, current, PAGE_SIZE)
+    setChildren(next)
   }
 
   return (
@@ -177,7 +178,7 @@ export function RecordTree({ onNavigate }: Props) {
       if (groupChildren[sig]) return
       setLoading((s) => new Set([...s, sig]))
       try {
-        const children = await window.api.listTypeChildren(activeDbId, sig, 0, PAGE_SIZE)
+        const children = await loadTypeChildrenPage(window.api, activeDbId, sig, [], PAGE_SIZE)
         setGroupChildren((c) => ({ ...c, [sig]: children }))
       } finally {
         setLoading((s) => {
@@ -203,15 +204,9 @@ export function RecordTree({ onNavigate }: Props) {
     setRows((r) => ({ ...r, [sig]: [] })) // arm "already loading" guard; shows "0 / total" immediately
     setLoading((s) => new Set([...s, sig]))
     try {
-      let offset = 0
-      let acc: RecordRow[] = []
-      while (offset < total) {
-        const chunk = await window.api.listTypeRecords(activeDbId, sig, offset, CHUNK_SIZE)
-        if (chunk.length === 0) break // defensive: avoid an infinite loop on a short backend response
-        acc = acc.concat(chunk)
-        offset += chunk.length
+      await loadAllTypeRecords(window.api, activeDbId, sig, total, CHUNK_SIZE, (acc) => {
         setRows((r) => ({ ...r, [sig]: acc }))
-      }
+      })
     } catch (err) {
       console.error(err)
     } finally {
@@ -226,8 +221,8 @@ export function RecordTree({ onNavigate }: Props) {
   async function loadMore(sig: string) {
     if (!activeDbId) return
     const current = groupChildren[sig] ?? []
-    const next = await window.api.listTypeChildren(activeDbId, sig, current.length, PAGE_SIZE)
-    setGroupChildren((c) => ({ ...c, [sig]: [...current, ...next] }))
+    const next = await loadTypeChildrenPage(window.api, activeDbId, sig, current, PAGE_SIZE)
+    setGroupChildren((c) => ({ ...c, [sig]: next }))
   }
 
   function handleSortClick(sig: string, column: SortColumn) {
