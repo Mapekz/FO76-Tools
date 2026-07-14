@@ -21,6 +21,11 @@ A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one 
    Chase: `refs` on the keyword → fetch the referencing SPEL/PERK → find the effect whose
    Conditions test the keyword → read magnitude/curve/other conditions.
 
+This walk is automated: `python3 tools/chase/chase.py <OMOD_FORMID_OR_EDID> --esm "$FO76_ESM_PATH"`
+runs all three patterns against a real OMOD and prints a compact evidence tree (add `--json` for
+agent consumption). Prefer it over chasing by hand; fall back to manual `refs`/`get` only for
+patterns it doesn't cover (see the script's module docstring for limitations).
+
 ## Bullet Storm (Heavy Gunner perk mechanic)
 
 - Stacks are earned by **spending ammo** — GMST `uAmmoSpenderAmmoUsePerStack` sets the

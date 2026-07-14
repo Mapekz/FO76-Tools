@@ -11,15 +11,8 @@ re-verified against the code on 2026-07-14; none is partially implemented.
 
 ## `esm/`
 
-- [ ] **P5 — `esm chase <omod>`.** Automate the unique-effect walk (keyword ADDs → reverse-refs
-      → keyword-conditioned effects → compact evidence tree), written up under *"How
-      unique-weapon effects are implemented (the chase pattern)"* in
-      `esm/.claude/skills/patch-notes/mechanics-kb.md`. Prototype in Python over the CLI before
-      committing to a Rust subcommand. Sequenced after P2–P4: the walk composes `refs --paths`,
-      `refs --type`, and bulk `get`.
-
-  *Conditional, not a checkbox:* **server-side subtree filter** — re-evaluate only if token
-  pressure persists after P2 and P4 land.
+*Conditional, not a checkbox:* **server-side subtree filter** — P2 (`refs --paths`) and P4
+(bulk `get`) have landed; add this only if `/patch-notes` token pressure persists in practice.
 
 - [ ] **P6 — Chatbot front page over the HTTP/MCP server** *(post-POC productization)*. The
       static UI (`esm/static/index.html`, `esm/static/compare.html`) is a record browser; the
