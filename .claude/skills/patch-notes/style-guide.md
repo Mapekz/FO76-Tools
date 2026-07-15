@@ -3,6 +3,26 @@
 Read this before writing a single line. It applies to the deep writers and the orchestrator's
 assembled summary alike.
 
+## Audience & scope (standing decisions, 2026-07-14)
+
+- **Primary audience: build-crafters.** Theorycrafters who need exact old → new numbers,
+  mechanic semantics, and undocumented changes — and who must be able to act without
+  follow-up questions.
+- **All categories stay in the Discord post** — combat/balance leads, then events/quests
+  (trimmed to loot-relevant bullets: drops, XP, new obtainables, boss changes — not flavor
+  text or audio tweaks), then datamined systems, then a dense cosmetics/shop/misc tail.
+- **Full detail on every rework**, including "same numbers, new plumbing" rebuilds —
+  the rebuild itself is signal; exceptions (mechanic swaps disguised as re-plumbs) get ⚠️.
+- **Acquisition is a standard field**: every new/changed obtainable gets a "How:" line
+  (recipe ingredients + currency costs, drop table, vendor, event gate). Chase it in the
+  data when the slice doesn't carry it. Enemy-only items say "Not player-obtainable."
+- **Unconfirmed lines appear in Discord only when actionable** — keep when a wrong
+  assumption could burn a reader (tooltip behavior, damage-zone changes); drop pure schema
+  curiosities (they stay in the local summary/reports).
+- **⚠️ flags stay inline** in their item's section; echo the top 2-3 in the TL;DR.
+- **Delivery is manual**: the run ends with numbered chunk files for the user to review and
+  paste — never post anywhere automatically.
+
 ## Voice
 
 - Player-facing, non-technical. Assume the reader has never opened the Creation Kit and does
