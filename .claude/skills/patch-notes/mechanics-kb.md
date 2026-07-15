@@ -141,10 +141,12 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   1-49/50-99/100-149/150-199/200.
 - Not live because: the `IsWorldPet` KYWD gating the follow package is applied to nothing;
   the World Pet faction has zero refs; a kill-switch spell ("Pet buffs are disabled")
-  exists; the four command emotes are on the Atomic Shop hide list.
+  exists; the four command emotes are on the Atomic Shop hide list — added to FLST
+  `ATX_HideFromStoreList` (0x004875A1) specifically in the 20260710 patch (emotes
+  0x00916200–0x00916203, absent from the list on 20260702).
 - Distinct from the older `PETS_`-prefixed adoptable-companion quest system (relationship
   unconfirmed).
-- Verified: 2026-07-13 vs 20260710.
+- Verified: 2026-07-13 vs 20260710 (hide-list dating 2026-07-14).
 
 ## Property-name errata (schema vs engine)
 
