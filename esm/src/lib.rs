@@ -614,7 +614,11 @@ impl Database {
         }
         let records = self.index.records_by_type(sig);
         let mut out = Vec::new();
-        for (form_id, meta) in records.into_iter().take(limit) {
+        // `limit == 0` means "no limit" (matches `search`/`filter_type_records`).
+        for (form_id, meta) in records
+            .into_iter()
+            .take(if limit == 0 { usize::MAX } else { limit })
+        {
             let rec = self.esm.parse_record_at(meta.offset)?;
             let editor_id = edid_from_subrecords(&rec.subrecords);
             let full_lstring_id =
@@ -790,12 +794,13 @@ impl Database {
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
+        // `limit == 0` means "no limit" (matches `search`/`filter_type_records`).
         let records: Vec<(FormId, u64, String)> = self
             .index
             .records_by_type(sig)
             .into_iter()
             .skip(offset)
-            .take(limit)
+            .take(if limit == 0 { usize::MAX } else { limit })
             .map(|(fid, meta)| (fid, meta.offset, meta.signature.clone()))
             .collect();
         let mut out = Vec::new();

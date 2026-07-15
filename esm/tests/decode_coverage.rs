@@ -106,7 +106,8 @@ fn decode_all_clean_types_fully() {
     let mut failed_types: Vec<(String, u64, Vec<String>)> = Vec::new();
 
     for &sig in CLEAN_TYPES {
-        // list_by_type uses .take(limit) internally; usize::MAX means no cap.
+        // `list_by_type`'s limit=0 means "no cap" (same as `search`); usize::MAX
+        // works identically and is kept here just to make the intent explicit.
         let entries = db
             .list_by_type(sig, usize::MAX)
             .unwrap_or_else(|e| panic!("list_by_type({sig}) failed: {e}"));

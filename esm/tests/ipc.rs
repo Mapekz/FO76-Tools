@@ -65,6 +65,59 @@ fn dispatch_list_by_type() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// `limit: 0` must mean "no limit" for `list_by_type`, matching `search`'s and
+/// `filter_type_records`' existing limit=0-means-unlimited contract (and the
+/// CLI's own `--limit 0` help text) — regression test for a bug where
+/// `.take(limit)` was called unconditionally, so `limit: 0` silently returned
+/// zero records instead of all of them.
+#[test]
+fn dispatch_list_by_type_limit_zero_is_unlimited() {
+    let (path, reg) = open_test_db();
+
+    let req = Request {
+        esm: path.clone(),
+        op: Op::ListByType {
+            sig: "WEAP".to_string(),
+            limit: 0,
+        },
+    };
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok");
+    };
+    let entries: Vec<esm::ListEntry> = serde_json::from_value(data).unwrap();
+    assert_eq!(
+        entries.len(),
+        2,
+        "limit=0 must return all records, not none"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Same bug/fix as `dispatch_list_by_type_limit_zero_is_unlimited`, but for
+/// `list_type_records` (`Op::ListTypeRecords`), which had the identical
+/// unconditional `.take(limit)` bug at a separate call site.
+#[test]
+fn dispatch_list_type_records_limit_zero_is_unlimited() {
+    let (path, reg) = open_test_db();
+
+    let req = Request {
+        esm: path.clone(),
+        op: Op::ListTypeRecords {
+            sig: "WEAP".to_string(),
+            offset: 0,
+            limit: 0,
+        },
+    };
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok");
+    };
+    let rows: Vec<esm::RecordRow> = serde_json::from_value(data).unwrap();
+    assert_eq!(rows.len(), 2, "limit=0 must return all records, not none");
+
+    let _ = std::fs::remove_file(&path);
+}
+
 #[test]
 fn dispatch_search_wildcard() {
     let (path, reg) = open_test_db();
