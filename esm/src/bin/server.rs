@@ -379,6 +379,22 @@ async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
 
 // ── MCP stdio (proxy to daemon) ──────────────────────────────────────────────
 
+/// Condensed gotcha summary returned as `instructions` in the `initialize`
+/// response — ambient context every MCP client sees once, up front, instead
+/// of re-discovering it via failed calls. Keep this terse; the full doc is
+/// `esm/skills/esm-cli/SKILL.md`, retrievable with `esm skill`.
+const MCP_INSTRUCTIONS: &str = "\
+esm-server gotchas (run `esm skill` for the full usage-knowledge doc):
+- ESM path: --esm <PATH> or FO76_ESM_PATH env var; the .esm file or its data folder.
+- CLI callers: pass -p for one-shot output (uses this warm daemon); no -p drops into a REPL.
+- --limit 0 means unlimited for list/search/refs — the default limits truncate silently otherwise.
+- Bulk esm_get_record (ids: [...]) returns one entry per selector tagged with its 'sel'; a bad \
+selector yields a per-entry error instead of failing the whole call.
+- esm_refs's \"output capped\" note goes to the CLI's stderr only — stdout/tool results stay valid JSON.
+- `esm skill` prints this crate's full usage-knowledge doc; `esm skill --install` writes it into a \
+consumer repo's .claude/skills/esm-cli/.
+";
+
 async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
     use esm::backend::QueryBackend;
     use esm::ipc::Op;
@@ -426,7 +442,8 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
             "initialize" => serde_json::json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "esm-server", "version": "0.1.0"}
+                "serverInfo": {"name": "esm-server", "version": "0.1.0"},
+                "instructions": MCP_INSTRUCTIONS
             }),
             "ping" => serde_json::json!({}),
             "tools/list" => serde_json::json!({

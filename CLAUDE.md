@@ -17,6 +17,10 @@ This repository contains three Fallout 76 tools. Most share no code, no workspac
 - `esm/` uses `cargo` (Rust workspace). See [`esm/CLAUDE.md`](esm/CLAUDE.md).
 - `esm-viewer/` uses `npm` + `just`. See [`esm-viewer/CLAUDE.md`](esm-viewer/CLAUDE.md).
 
+## Scope
+
+`esm/` and `esm-viewer/` are read-only by design — they inspect, diff, and serve `.esm` files, never write them. ESM write/serialize support (mod authoring: editing records and saving them back to a `.esm`) is **permanently out of scope**, not deferred — don't add it to `todos.md` or design toward it.
+
 ## Backlog
 
 Deferred work for **all** subprojects lives in one place: [`todos.md`](todos.md) at the repo root, grouped by project. Add follow-ups there — do not create per-project `todos.md` files or a `todos/` directory.

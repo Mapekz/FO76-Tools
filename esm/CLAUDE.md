@@ -54,8 +54,9 @@ Clean layering — edit at the right level:
 | `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
 | `src/chase.rs` | Composes `Op::RecordBulk`/`Op::ReferencedBy` (via the `ChaseFetcher` seam) to classify an OMOD's `Data.Properties[]` rows into direct-property/perk-grant/keyword-hook mechanisms and emit a compact evidence tree — the "chase pattern" from the patch-notes mechanics KB, native port of the retired `tools/chase/chase.py` prototype |
 | `src/walk.rs` | Native port of `dps-76/scripts/esm-walk.ts`: BFS over `ChaseFetcher` (same seam as `chase.rs`) printing one compact indented per-record-type digest (GLOB/AVIF/KYWD/MGEF/SPEL·ENCH·ALCH/PERK/WEAP/OMOD, generic fallback) instead of a series of raw `get` dumps; `build_refs_digest` groups a `--refs` reverse-reference summary by record type |
-| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `chase`, `walk` (`--refs`/`--depth N`/`--json`), `tree`, `diff`, `coverage`, `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index`; ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths) |
-| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 6); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) |
+| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk), `chase`, `walk` (`--refs`/`--depth N`/`--json`), `tree`, `diff`, `coverage`, `skill` (`--install`/`--dir`/`--force`), `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index`; ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths, and `skill`/`daemon`, which take none) |
+| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 6); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`); the MCP-stdio `initialize` response carries a condensed `instructions` string (`MCP_INSTRUCTIONS`) as ambient gotcha context for every client |
+| `skills/esm-cli/SKILL.md` | Hard-won `esm`-CLI usage-knowledge doc, embedded at compile time into `cli.rs` (`include_str!`, same pattern as `schema/fo76.json`); `esm skill` prints it, `esm skill --install [--dir <repo>] [--force]` writes it into a consumer repo's `.claude/skills/esm-cli/`; this repo's own `.claude/skills/esm-cli` is a symlink to this directory |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Arc<Mutex<Database>>`); async: `open_database`, `record_by_edid`, `record_by_id`, `referenced_by`, `referenced_by_id`; sync: `file_info`, `list_groups`, `list_type_records`, `record_by_formid` |
 
 The Electron GUI ("FO76 ESM Viewer") that consumes this addon lives in the sibling `../esm-viewer/` directory, not in this crate — see [`../esm-viewer/CLAUDE.md`](../esm-viewer/CLAUDE.md).
@@ -153,6 +154,14 @@ esm -p refs 0x463F --limit 100 --pretty            # direct reverse lookup (dept
 esm -p refs 0x463F --depth 6 --pretty              # recursive walk to depth 6
 esm -p coverage --type WEAP                        # schema decode audit
 ```
+
+### Selectors: FormID vs EditorID vs Auto
+
+A bare positional selector with no `0x` prefix that still *looks* like a FormID (e.g. `18000`) resolves as `RecordSel::Auto`: the FormID interpretation is tried first, with an EditorID lookup as fallback. An explicit `0x`-prefixed token, or an explicit `--formid`/`--edid` flag, skips the ambiguity entirely and never becomes `Auto`. `--mmap-index` lite mode only understands `FormId` selectors — both `Edid` and `Auto` are rejected (even though `Auto`'s FormID half alone would work) — use the daemon for ambiguous or EditorID lookups.
+
+### Gotcha: capped-output notes print to stderr, not stdout
+
+`list`, `search`, and `refs` print a `note: output capped at N of M results; use --limit 0 to show all` line when the result count hits `--limit` — always to **stderr**, never stdout, so `--json` output stays valid, parseable JSON even when the result was capped. Pass `--limit 0` when you need the uncapped result instead of relying on stderr to notice truncation.
 
 ### Gotcha: `--localization-ba2` / `--startup-ba2` bypass the daemon
 
