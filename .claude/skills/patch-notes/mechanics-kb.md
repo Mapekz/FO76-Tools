@@ -164,6 +164,21 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   on the OLD snapshot before asserting what it "used to do" for players.
 - Verified: 2026-07-14 vs snapshots 20260702/20260710.
 
+## Script→native archetype consolidation (unique-mod enchantments)
+
+- `ench_QuickFix` (0x0091995B, Switchblade "The Quick Fix") used to carry two effects: the
+  generic shared MGEF `AbPerkFortifyMeleeSpeedEffect` (0x003E9567, native "Peak Value
+  Modifier" targeting AVIF `weaponSpeedMult` 0x00000312) plus its own
+  `AbQucikFix_Description` (0x0091995C, Script archetype, tooltip-curve only). As of
+  20260710 the bespoke MGEF is itself converted to the native archetype targeting
+  `weaponSpeedMult` (same flags 0x8A02), making the shared effect redundant — dropped
+  (2 effects → 1). Same curve both sides: `UniqueMods\Bonus_QuickFix.json`, AVIF
+  AddictionCount → swing-speed bonus (0=+0%, 1=+5%, 10=+50% cap).
+- General pattern: when a unique-mod ENCH drops from N effects to N−1 and one survivor is a
+  generic/shared MGEF also used elsewhere (check refs), suspect a Script→native archetype
+  consolidation rather than a nerf.
+- Verified: 2026-07-14 vs snapshots 20260702/20260710.
+
 ## Property-name errata (schema vs engine)
 
 - `MinPowerPerShot` → **MaxPowerPerShot**, fixed in the schema 2026-07-14 (see Charge weapons
