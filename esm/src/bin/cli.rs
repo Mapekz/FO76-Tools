@@ -39,7 +39,8 @@ struct Cli {
     mmap_index: bool,
     /// Path to the ESM file or its data folder. If omitted, falls back to the
     /// FO76_ESM_PATH environment variable. Applies to every subcommand except
-    /// `diff` (which takes two explicit positionals) and `daemon`.
+    /// `diff` (which takes two explicit positionals), `daemon`, and `skill`
+    /// (neither needs an ESM at all).
     #[arg(long, global = true, env = "FO76_ESM_PATH")]
     esm: Option<PathBuf>,
     #[command(subcommand)]
@@ -281,6 +282,22 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Print the embedded `esm-cli` usage-knowledge doc, or install it into a
+    /// consumer repo's `.claude/skills/esm-cli/` for Claude Code to
+    /// auto-discover. Takes no ESM path — like `daemon`, it is exempt from
+    /// `--esm`/`FO76_ESM_PATH`.
+    Skill {
+        /// Write the doc to `<dir or cwd>/.claude/skills/esm-cli/SKILL.md`
+        /// instead of printing it to stdout.
+        #[arg(long)]
+        install: bool,
+        /// Target repo root for `--install` (defaults to the current directory).
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Overwrite an existing installed copy.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -464,6 +481,49 @@ fn resolve_esm(esm: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     esm.ok_or_else(|| anyhow::anyhow!("no ESM path — pass --esm <PATH> or set FO76_ESM_PATH"))
 }
 
+/// The `esm-cli` usage-knowledge skill doc, embedded at compile time (same
+/// `include_str!` pattern as `schema/fo76.json` in `src/schema.rs`). `esm
+/// skill` prints it verbatim; `esm skill --install` writes it into a
+/// consumer repo's `.claude/skills/esm-cli/` for Claude Code to auto-discover.
+const SKILL_MD: &str = include_str!("../../skills/esm-cli/SKILL.md");
+
+/// Where `esm skill --install [--dir <DIR>]` writes the doc, relative to
+/// `dir` (or the current directory when `dir` is `None` upstream).
+fn skill_dest_path(dir: &Path) -> PathBuf {
+    dir.join(".claude/skills/esm-cli/SKILL.md")
+}
+
+/// Pure overwrite-guard decision for `esm skill --install`: refuses to
+/// clobber an existing install unless `--force` was passed. Split out from
+/// `cmd_skill` so the decision is unit-testable without touching the
+/// filesystem (precedent: `mmap_index_supports` above).
+fn skill_install_allowed(dest_exists: bool, force: bool) -> Result<(), &'static str> {
+    if dest_exists && !force {
+        Err("destination already exists; pass --force to overwrite")
+    } else {
+        Ok(())
+    }
+}
+
+fn cmd_skill(install: bool, dir: Option<PathBuf>, force: bool) -> anyhow::Result<()> {
+    if !install {
+        print!("{SKILL_MD}");
+        return Ok(());
+    }
+    let base = dir.unwrap_or_else(|| PathBuf::from("."));
+    let dest = skill_dest_path(&base);
+    if let Err(msg) = skill_install_allowed(dest.exists(), force) {
+        anyhow::bail!("{}: {msg}", dest.display());
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
+    std::fs::write(&dest, SKILL_MD).with_context(|| format!("writing {}", dest.display()))?;
+    println!("wrote {}", dest.display());
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let esm_opt = cli.esm.clone();
@@ -502,6 +562,17 @@ fn main() -> anyhow::Result<()> {
         };
     }
 
+    // `skill` needs no ESM and no backend/daemon at all — handled up front,
+    // same as `daemon` above, so it works with no --esm/FO76_ESM_PATH set.
+    if let Some(Commands::Skill {
+        install,
+        dir,
+        force,
+    }) = cli.command
+    {
+        return cmd_skill(install, dir, force);
+    }
+
     // -p  → one-shot print; auto-spawns a warm daemon if none is running
     //        (same as no-p REPL mode, but exits after the single command).
     // no -p → REPL mode; always daemon-backed (spawns one if not running).
@@ -520,6 +591,7 @@ fn main() -> anyhow::Result<()> {
         let esm_for_repl = match &cmd {
             Commands::Diff(args) => args.file_a.clone(),
             Commands::Daemon { .. } => unreachable!(),
+            Commands::Skill { .. } => unreachable!(),
             _ => resolve_esm(esm_opt.clone())?,
         };
         match cmd {
@@ -723,6 +795,7 @@ fn main() -> anyhow::Result<()> {
                 json,
             } => cmd_walk(&mut backend, &esm_for_repl, &selector, depth, refs, json)?,
             Commands::Daemon { .. } => unreachable!(),
+            Commands::Skill { .. } => unreachable!(),
         }
         if !cli.print {
             return run_repl(&esm_for_repl, &mut backend);
@@ -2024,5 +2097,34 @@ mod tests {
         assert!(mmap_index_supports(&RecordSel::FormId(esm::FormId(1))));
         assert!(!mmap_index_supports(&RecordSel::Edid("Foo".to_string())));
         assert!(!mmap_index_supports(&RecordSel::Auto("18000".to_string())));
+    }
+
+    /// `esm skill --install` writes to `<dir>/.claude/skills/esm-cli/SKILL.md`.
+    #[test]
+    fn skill_dest_path_is_under_dot_claude_skills() {
+        assert_eq!(
+            skill_dest_path(Path::new("/repo")),
+            PathBuf::from("/repo/.claude/skills/esm-cli/SKILL.md")
+        );
+        assert_eq!(
+            skill_dest_path(Path::new(".")),
+            PathBuf::from("./.claude/skills/esm-cli/SKILL.md")
+        );
+    }
+
+    /// The overwrite guard only blocks an existing destination without `--force`.
+    #[test]
+    fn skill_install_allowed_guards_existing_without_force() {
+        assert!(skill_install_allowed(false, false).is_ok());
+        assert!(skill_install_allowed(false, true).is_ok());
+        assert!(skill_install_allowed(true, true).is_ok());
+        assert!(skill_install_allowed(true, false).is_err());
+    }
+
+    /// The embedded doc is non-empty and starts with the expected frontmatter,
+    /// so `esm skill`/`esm skill --install` never ship a stale/empty file.
+    #[test]
+    fn skill_md_has_frontmatter() {
+        assert!(SKILL_MD.starts_with("---\nname: esm-cli"));
     }
 }
