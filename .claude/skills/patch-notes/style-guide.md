@@ -34,6 +34,19 @@ assembled summary alike.
 - EditorIDs in backticks only when they add real value (e.g. disambiguating two
   similarly-named items). FormIDs never appear in narrative prose — only in Evidence lines.
 - No filler. "Various improvements," "general polish," "quality of life updates" are banned.
+- Never write a bare "+X% damage" — name the mechanism, using this standard terminology
+  (mechanics-kb "Damage-bonus mechanisms" has the data-side signatures):
+  - **"additive damage bonus" (DBM)** — damage-bonus-multiplier pool contributions
+    (`STAT_DmgMult*` / conditional `STAT_DmgVs*` AVs, OMOD `DamageBonusMult`, "Mod Weapon
+    DMG Bonus Mult" perk entries); stacks additively with other damage bonuses.
+  - **"base damage increase"** — `AttackDamage` / `DamageTypeValues` changes on the weapon
+    itself; multiplies through everything downstream.
+  - **"damage multiplier"** — effects multiplying total damage (power attack, body-part /
+    weakpoint mults, Taking One for the Team, Follow Through, …).
+- Enemy-only items: say "the boss attacks with it." Write "drops" / "can roll legendary
+  mods" only if the item is actually in the death-item/reward LVLI chain — combat inventory
+  is not loot. Quote enemy-weapon damage at the wielder's actual level(s) (fixed level and
+  Renorm max GLOB), never a curve's first point.
 - Flag conventions (these carry the post's value — use them consistently):
   - `⚠️ Undocumented:` — a real change the item's own description (or the official notes,
     when provided) doesn't mention.
@@ -85,9 +98,12 @@ splits it into ≤1900-char posts. Concretely, it:
 
 ## Length discipline
 
-- Whole summary: aim for ~5 Discord chunks (≤~9,000 chars); hard ceiling ~12,000 chars
-  (7 chunks). When the ~5-chunk target conflicts with category completeness or exact
-  numbers, the numbers and categories win — go to 6 rather than cut data.
+- Chunks are section-aligned (the chunker packs whole sections and never lets a heading end
+  a chunk) so each Discord post is self-contained and forwardable. Organization beats chunk
+  count: a clean 7-8 section-aligned chunks is better than 6 with sections straddling
+  boundaries. Chunk count is an outcome, not a target — control length at the summary level.
+- Whole summary: aim for ≤~9,000 chars; hard ceiling ~12,000 chars. When the length target
+  conflicts with category completeness or exact numbers, the numbers and categories win.
 - Flagship item section: ≤~1,200 chars. Ordinary item section: ≤~600 chars.
 - When over budget, **cut prose, never numbers.** A shorter story sentence is fine; a dropped
   stat bullet or a rounded number is not.

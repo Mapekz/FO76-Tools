@@ -83,8 +83,10 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
 - `STAT_DmgVsBleeding` / `STAT_DmgVsBurning` / `STAT_DmgVsPoisoned` / `STAT_DmgVsFreezing`:
   "+X% damage vs targets currently under that status." Used by 4★ legendary weapon effects
   (Severing's, Pyromaniac's, Viper's, Icemen's since 20260710).
-- `STAT_DmgMultCryo` / `STAT_DmgMultFire` / `STAT_DmgMultPoison`: flat elemental damage
-  bonus. Cryo/Fire are also fortified by the Science! INT perk family ranks named
+- `STAT_DmgMultCryo` / `STAT_DmgMultFire` / `STAT_DmgMultPoison`: unconditional elemental
+  **additive damage bonus** (DBM family — see "Damage-bonus mechanisms" above; stacks
+  additively with other damage bonuses, does not touch base damage). Cryo/Fire are also
+  fortified by the Science! INT perk family ranks named
   "Cryologist" (`ScienceMaster01`) and "Pyro-Technician" (`ScienceExpert01`); no live perk
   consumes the Poison variant as of 20260710.
 - Since 20260710 these stats replace bespoke enchantment→perk script chains on several
@@ -98,14 +100,60 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   `GetNumActiveEffectsWithKeyword(DamageTypeBleed)>=1`. New side ADDs `STAT_DmgVsBleeding`
   (0x00837DFC) Value2=50.0 directly; the old enchantment is `zzz`-vaulted. Same magnitude.
 - **Exception — Icemen's is a mechanic swap, not a re-plumb.** Its pre-20260710
-  implementation was a direct OMOD ADD on `DamageTypeValues` targeting `dtCryo` (Value2 0.2 —
-  an unconditional +20% to the wielder's own Cryo damage), not an enchantment chain. The
-  20260710 version ADDs +50 `STAT_DmgVsFreezing` (0x0085A2F1) — conditional on the target
-  already being in Freezing status. Self-buff became target-status buff; the 20→50 magnitude
-  change is on a different axis, so pre/post numbers are not comparable. Don't describe the
+  implementation was a direct OMOD MUL+ADD on `DamageTypeValues` targeting `dtCryo`
+  (Value2 0.2), not an enchantment chain — a **base damage increase**: +20% to the weapon's
+  own base Cryo damage, or (on weapons with no Cryo damage) new base Cryo damage scaled off
+  the weapon's existing base damage; always on. The 20260710 version ADDs +50
+  `STAT_DmgVsFreezing` (0x0085A2F1) — a conditional **additive damage bonus**, only vs
+  targets already in Freezing status. Base-damage self-buff became a conditional DBM
+  contribution; the 20→50 magnitude change is on a different axis, so pre/post numbers are
+  not comparable. Don't describe the
   STAT_* migration as semantics-preserving without checking the OLD implementation per mod.
 - Verified: 2026-07-13 vs 20260710 (Severing's chase + Icemen's exception 2026-07-14 vs
   20260702/20260710).
+
+## Damage-bonus mechanisms (reporting taxonomy)
+
+A "+X% damage" in the data is one of three distinct mechanisms. Always identify which one
+before writing a number — and name it in prose using this standard terminology:
+
+1. **Additive damage bonus (DBM)** — a contribution to the damage-bonus-multiplier pool;
+   stacks additively with all other damage bonuses (so its real value is diluted by the rest
+   of the build). Implementations: ADD to a `STAT_DmgMult*` AV (unconditional — e.g. the
+   20260710 2★ mods, +0.2 `STAT_DmgMultCryo/Fire/Poison`); ADD to a `STAT_DmgVs*` AV
+   (conditional on target status — the 4★ family); the OMOD weapon property
+   `DamageBonusMult` (e.g. BoomStick 0x00680832 Property 106, 1.5 → 0.75 = +150% → +75%);
+   PERK Entry Point "Mod Weapon DMG Bonus Mult". Report property/AV values ×100 as
+   percentages.
+2. **Base damage increase** — changes to the weapon's own `AttackDamage` or
+   `DamageTypeValues` (directly or via OMOD MUL+ADD on Property 77). Multiplies through
+   everything downstream. A MUL+ADD on a damage type the weapon *lacks* ADDs new base damage
+   of that type scaled off the weapon's existing base damage — so old Icemen's (+0.2 dtCryo)
+   both boosted cryo weapons and added cryo damage to non-cryo weapons.
+3. **Damage multiplier** — multiplies total outgoing damage after bonuses: power attack
+   mult, body-part/weakpoint mults, Taking One for the Team, Follow Through, etc. Rare in
+   legendary mods; strongest per point.
+
+Never write a bare "+X% damage" in a draft — the mechanism determines how the number stacks
+and is exactly the kind of distinction build-crafter readers need.
+Verified: 2026-07-15 vs snapshots 20260702/20260710.
+
+## Creature weapons & damage curves (enemy-only items)
+
+- An enemy WEAP's `Damage Curve` (e.g. `CT_Creatures_Damage_Universal_TierNN`) has
+  **x = wielder level**. Never quote the curve's first point as "the damage" — evaluate at
+  the wielding NPC's actual level(s): the NPC_ record's fixed level plus its
+  `Renorm_MinLVL_TierNN` / `Renorm_MaxLVL_TierNN` GLOB bounds (get the GLOBs — e.g. Tier06
+  min = 25, Tier07 max = 175 as of 20260710). Interpolate linearly between curve points
+  (that's what the engine's `Curve::eval` does). Worked example: Slasher Knife/Throwing
+  Knife (0x00927375/76) share `CT_Creatures_Damage_Universal_Tier30` → 104 dmg at boss
+  default level 100, ≈245 at its Tier07 max level 175.
+- **Combat inventory ≠ loot.** An NPC_'s inventory/Object Template lists what it *fights
+  with*; only the death-item/reward LVLI chain (e.g. `*_LL_BountyDrop_*`) is
+  player-obtainable. Check both before writing "drops" — an inventory-only weapon is
+  described as "the boss attacks with it", never as a drop, and never as "can roll
+  legendary mods" (template wiring on an enemy instance is irrelevant to players).
+- Verified: 2026-07-15 vs snapshots 20260702/20260710.
 
 ## OMOD property semantics
 
