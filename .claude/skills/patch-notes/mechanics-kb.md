@@ -179,6 +179,28 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   consolidation rather than a nerf.
 - Verified: 2026-07-14 vs snapshots 20260702/20260710.
 
+## Slasher Season (seasonal event) — Year 2 structure
+
+- Quest chain: `SDOW_MQ01_Bodies` "(Seasonal) Masked Truth" (0x008F15C1) → `SDOW_MQ02_Graves`
+  "(Seasonal) Secrets to the Grave" (0x008F15A1) → MQ04 "Out of the Shadows" (0x008F15C2) →
+  MQ05 "Blood Will Have Blood" (0x008F15C3), tracked by radio quest `SDOW_SQ_DebunkerRadio`
+  "The Debunker News" (0x008EDF32) via VMAD script properties and GLOB toggles named
+  `LCP_SDOW_Slasher` / `LCP_SDOW_LTC_<Activity>Toggle` (GraveDigging/HeadHunts/DailyOps/
+  MischiefNight).
+- Repeatable side activity: `SDOW_SQ01_Graves_Repeatable`, renamed in 20260710 from
+  "(Seasonal) Laid to Unrest" to "(Repeatable) Disturbed Grave" (0x008F1665) — a seasonal
+  one-off converted into a permanent repeatable; its QTFS unknown field flipped "no limit"
+  → 50 (this is the concrete example behind the QTFS schema-gap entry below).
+- Bosses: `SDOW_LvlSlasherFanBossPowerArmorHeavyAuto` "Pint-Sized Phantom Destroyer" (Daily
+  Ops, 0x008E06B3) and `SDOW_Burn_BountyTarget_BIG_Slasher` "The Reborn Pint-Sized Slasher"
+  (bounty target, 0x008E06C5) — both got stat-tier and combat-style additions in 20260710;
+  both reference the "SlasherBoss"-tagged unique weapons (Slasher Knife 0x00927375,
+  Throwing Knife 0x00927376).
+- Reward loot tables `SDOW_LL_Rewards_Activities_SlasherMaps` (0x008F2B68) and
+  `SDOW_LL_Rewards_PublicEvents_SlasherMaps` (0x00904724) both gate the "Pint-Sized
+  Phantoms' Map" drop (BOOK `SDOW_MQ02_SlasherMap`, 0x008F15E4).
+- Verified: 2026-07-14 vs snapshots 20260702/20260710.
+
 ## Property-name errata (schema vs engine)
 
 - `MinPowerPerShot` → **MaxPowerPerShot**, fixed in the schema 2026-07-14 (see Charge weapons
