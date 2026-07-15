@@ -161,6 +161,88 @@ fn dispatch_record_by_formid() {
     let _ = std::fs::remove_file(&path);
 }
 
+// ─── RecordSel::Auto ────────────────────────────────────────────────────────
+
+/// An ambiguous bare token (`"cafe"`, formid-shaped but no `0x` prefix) whose
+/// FormID interpretation (`0x0000CAFE`) has no record must fall back to an
+/// EditorID lookup and find the record whose literal EditorID is `"cafe"`.
+#[test]
+fn dispatch_record_auto_sel_resolves_as_editorid_when_formid_absent() {
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &cstr("cafe"));
+    let mut recs = Vec::new();
+    append_record(&mut recs, b"WEAP", 1, &subs); // FormId(1) != 0x0000CAFE
+
+    let mut buf = tes4_header();
+    buf.extend(wrap_grup(b"WEAP", &recs));
+    let tmp = unique_temp_path("ipc_auto_edid_fallback");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let reg = Registry::new();
+
+    let req = Request {
+        esm: tmp.clone(),
+        op: Op::Record {
+            sel: RecordSel::Auto("cafe".to_string()),
+            depth: ResolveDepth::None,
+        },
+    };
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok — Auto must fall back to EditorID 'cafe'");
+    };
+    assert_eq!(data.get("editor_id").and_then(|v| v.as_str()), Some("cafe"));
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Regression guard: an ambiguous token that IS a valid, present FormID must
+/// resolve exactly like today's plain `FormId` selector — unchanged behavior.
+#[test]
+fn dispatch_record_auto_sel_resolves_as_formid_when_present() {
+    let (path, reg) = open_test_db(); // WEAP FormId(1), FormId(2), no EDID
+
+    let req = Request {
+        esm: path.clone(),
+        op: Op::Record {
+            sel: RecordSel::Auto("1".to_string()), // looks_like_formid("1") == true
+            depth: ResolveDepth::None,
+        },
+    };
+    let Response::Ok { data } = dispatch(&reg, &req) else {
+        panic!("expected Ok — FormId(1) exists in the fixture");
+    };
+    assert!(data.get("header").is_some());
+    assert!(data.get("fields").is_some());
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// An ambiguous token resolving as neither a present FormID nor a known
+/// EditorID must error, naming both attempts.
+#[test]
+fn dispatch_record_auto_sel_errors_naming_both_attempts_when_neither_resolves() {
+    let (path, reg) = open_test_db(); // WEAP FormId(1), FormId(2), no EDID; no 0xEEEE either
+
+    let req = Request {
+        esm: path.clone(),
+        op: Op::Record {
+            sel: RecordSel::Auto("eeee".to_string()),
+            depth: ResolveDepth::None,
+        },
+    };
+    let Response::Err { error } = dispatch(&reg, &req) else {
+        panic!("expected Err — neither FormID nor EditorID 'eeee' should resolve");
+    };
+    assert!(
+        error.contains("eeee") && error.contains("FormID") && error.contains("EditorID"),
+        "error must name both the FormID and EditorID attempts: {error}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
 #[test]
 fn dispatch_list_groups() {
     let (path, reg) = open_test_db();
@@ -243,13 +325,17 @@ fn looks_like_formid_heuristic() {
 
 #[test]
 fn record_sel_from_input_auto_detects() {
+    // An explicit `0x` prefix is unambiguous — stays FormId directly.
     match RecordSel::from_input("0x463F").unwrap() {
         RecordSel::FormId(f) => assert_eq!(f, esm::FormId(0x463F)),
         other => panic!("expected FormId, got {other:?}"),
     }
+    // A bare formid-looking token (no `0x` prefix) is ambiguous — it could be
+    // a real FormID or a numeric-looking EditorID — so it becomes `Auto`
+    // rather than eagerly committing to `FormId`.
     match RecordSel::from_input("18000").unwrap() {
-        RecordSel::FormId(f) => assert_eq!(f, esm::FormId(18000)),
-        other => panic!("expected FormId, got {other:?}"),
+        RecordSel::Auto(s) => assert_eq!(s, "18000"),
+        other => panic!("expected Auto, got {other:?}"),
     }
     match RecordSel::from_input("AssaultRifle").unwrap() {
         RecordSel::Edid(e) => assert_eq!(e, "AssaultRifle"),
@@ -267,8 +353,9 @@ fn record_sel_from_input_auto_detects() {
 fn record_sel_json_round_trip() {
     let formid_sel = RecordSel::FormId(esm::FormId(0x0010_ABCD));
     let edid_sel = RecordSel::Edid("AssaultRifle".to_string());
+    let auto_sel = RecordSel::Auto("18000".to_string());
 
-    for sel in [formid_sel, edid_sel] {
+    for sel in [formid_sel, edid_sel, auto_sel] {
         let op = Op::Record {
             sel: sel.clone(),
             depth: ResolveDepth::None,

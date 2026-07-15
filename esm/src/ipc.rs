@@ -40,7 +40,8 @@ impl Response {
     }
 }
 
-/// Record selector: FormID or EditorID.
+/// Record selector: FormID, EditorID, or an ambiguous bare token that could be
+/// either (see [`RecordSel::Auto`]).
 ///
 /// Adjacently tagged so primitive-newtype variants (FormId wraps u32, Edid wraps String)
 /// survive JSON round-trips. Internally-tagged enums cannot serialize non-map payloads.
@@ -49,14 +50,37 @@ impl Response {
 pub enum RecordSel {
     FormId(FormId),
     Edid(String),
+    /// A bare token with no explicit `0x` prefix that nonetheless *looks*
+    /// like a FormID per [`crate::looks_like_formid`] (e.g. `"18000"`,
+    /// `"cafe"`) — resolution tries the FormID interpretation first, then
+    /// falls back to an EditorID lookup (see [`resolve_sel`]). This exists
+    /// because `looks_like_formid` is a syntactic heuristic that also
+    /// matches plenty of real, numeric-looking EditorIDs; an explicit `0x`
+    /// prefix (or an explicit `--formid`/`--edid` flag) is unambiguous and
+    /// stays `FormId`/`Edid` directly, never `Auto`.
+    Auto(String),
 }
 
 impl RecordSel {
     /// Build a selector from a single user-supplied token, auto-detecting whether
     /// it denotes a FormID (numeric/hex) or an EditorID via [`crate::looks_like_formid`].
+    ///
+    /// A bare (no `0x`/`0X` prefix) formid-looking token is ambiguous — it
+    /// could be a real FormID or a numeric-looking EditorID — so it becomes
+    /// [`RecordSel::Auto`] rather than eagerly committing to `FormId`; an
+    /// explicit `0x`-prefixed token is unambiguous and stays `FormId`.
     pub fn from_input(s: &str) -> anyhow::Result<RecordSel> {
+        let trimmed = s.trim();
+        let has_hex_prefix = trimmed
+            .strip_prefix("0x")
+            .or_else(|| trimmed.strip_prefix("0X"))
+            .is_some();
         if crate::looks_like_formid(s) {
-            Ok(RecordSel::FormId(crate::parse_form_id_input(s)?))
+            if has_hex_prefix {
+                Ok(RecordSel::FormId(crate::parse_form_id_input(s)?))
+            } else {
+                Ok(RecordSel::Auto(s.to_string()))
+            }
         } else {
             Ok(RecordSel::Edid(s.to_string()))
         }
@@ -90,6 +114,7 @@ impl RecordSel {
         match self {
             RecordSel::FormId(fid) => fid.display(),
             RecordSel::Edid(edid) => edid.clone(),
+            RecordSel::Auto(token) => token.clone(),
         }
     }
 }
@@ -513,6 +538,37 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
                 .get_by_edid(edid)
                 .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", edid))
         }
+        RecordSel::Auto(token) => {
+            // Try the FormID interpretation first — byte-identical to today's
+            // behavior when it actually resolves to a present record. Only
+            // fall back to an EditorID lookup when that fails, so a real
+            // FormID never gets silently redirected to an unrelated
+            // same-named EditorID.
+            let formid_attempt = crate::parse_form_id_input(token).ok();
+            if let Some(fid) = formid_attempt {
+                if db.get_formid_meta(fid).is_ok() {
+                    return Ok(fid);
+                }
+            }
+            // Defense-in-depth: lite mode (`--mmap-index`) has no EditorID
+            // index. The CLI already refuses `Auto` selectors in that mode
+            // (see `mmap_index_supports` in `src/bin/cli.rs`), so this
+            // shouldn't be reachable in practice, but bail with the same
+            // message `record_by_edid_resolved` uses rather than panicking
+            // or producing a confusing miss if it ever is.
+            db.check_not_lite("EditorID lookup")?;
+            db.index.ensure_edid_index(&db.esm)?;
+            if let Some(fid) = db.index.get_by_edid(token) {
+                return Ok(fid);
+            }
+            match formid_attempt {
+                Some(fid) => bail!(
+                    "'{token}' did not resolve as FormID {} (not found) or as EditorID '{token}' (not found)",
+                    fid.display()
+                ),
+                None => bail!("EditorID '{token}' not found"),
+            }
+        }
     }
 }
 
@@ -527,6 +583,12 @@ fn record_resolved(
     match sel {
         RecordSel::FormId(fid) => db.record_by_formid_resolved(*fid, depth),
         RecordSel::Edid(edid) => db.record_by_edid_resolved(edid, depth),
+        RecordSel::Auto(_) => {
+            // Delegate to `resolve_sel` for the FormID-then-EditorID fallback
+            // logic rather than duplicating it here.
+            let fid = resolve_sel(db, sel)?;
+            db.record_by_formid_resolved(fid, depth)
+        }
     }
 }
 
