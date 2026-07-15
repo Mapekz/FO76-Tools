@@ -1772,6 +1772,98 @@ fn perk_raging_armor_epf2_decodes_to_int() {
     );
 }
 
+/// Synthetic PERK with an `Ability` effect immediately followed by an `Entry
+/// Point` effect — regression test for the PERK-shaped case of the
+/// cross-effect trailer-stealing bug fixed generically by the
+/// `DecodeContext::with_scope`/`take_first_in_scope` scoping in
+/// `MemberDef::RArray` (`src/decode.rs`). That fix's own regression test only
+/// covered ALCH's (much simpler) `Effects[]` shape
+/// (`alch_two_effects_do_not_cross_contaminate_optional_trailers`); this
+/// locks the same fix for PERK's considerably more involved per-effect
+/// layout — a nested `Perk Conditions` rarray of its own, plus a `Function
+/// Data` union whose chosen variant is itself sig-bearing (`EPFD`).
+///
+/// Effect 0 (`Ability`, `PRKE` Effect Type=1) carries only its mandatory
+/// `PRKE`/`DATA`/`PRKF` — no `PRKC` (Perk Conditions) or `EPFT`/`EPFD`
+/// (Function Type/Data) of its own. Effect 1 (`Entry Point`, `PRKE` Effect
+/// Type=2) carries its own `PRKC`+`CTDA` (one Perk Condition) and
+/// `EPFT`("Float")/`EPFB`/`EPFD` (a Function Data float). Before the generic
+/// RArray-scoping fix, Effect 0's unscoped `PRKC`/`EPFT` lookups would steal
+/// Effect 1's — Effect 0 would wrongly gain a `Perk Conditions` array and a
+/// `Float` value, and Effect 1 would decode with neither.
+#[test]
+fn perk_ability_then_entry_point_effects_do_not_cross_contaminate_optional_trailers() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    let subs = subrecords_from(&[
+        ("EDID", "5065726b4162696c6974795468656e456e7472795465737400"), // "PerkAbilityThenEntryTest\0"
+        // Top-level Perk "Data" struct (Trait,Level,NumRanks,Playable,Hidden,Unknown).
+        ("DATA", "0001010001"),
+        // Effect 0: Ability (Effect Type=1), rank 0. Effect Data = Ability
+        // FormID 0x00112233 (4 bytes, little-endian). No PRKC/EPFT/EPFD/EPFB
+        // of its own — only the mandatory PRKE/DATA/PRKF.
+        ("PRKE", "0100"),
+        ("DATA", "33221100"),
+        ("PRKF", ""),
+        // Effect 1: Entry Point (Effect Type=2), rank 0. Effect Data = Entry
+        // Point struct (Entry Point=0, Function=1, Perk Condition Tab
+        // Count=1, unused=0). Carries its own Perk Conditions (PRKC+CTDA)
+        // and a Function Type=1 ("Float") Function Data (EPFT/EPFB/EPFD).
+        ("PRKE", "0200"),
+        ("DATA", "00010100"),
+        ("PRKC", "01"),
+        (
+            "CTDA",
+            "000000000000803f30020000b5f36700000000000000000000000000ffffffff",
+        ),
+        ("EPFT", "01"),
+        ("EPFB", "0000"),
+        ("EPFD", "00002040"), // f32 2.5
+        ("PRKF", ""),
+    ]);
+
+    let result = decode_record(&ctx, "PERK", &subs);
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Perk"),
+    );
+    assert_fully_decoded(&result);
+
+    let effects = result
+        .get("Effects")
+        .and_then(|v| v.as_array())
+        .expect("Effects array must decode");
+    assert_eq!(effects.len(), 2, "expected exactly 2 effects");
+
+    let ability = &effects[0]["Effect"];
+    assert!(
+        ability.get("Float").is_none(),
+        "Ability effect must not steal the Entry Point effect's Float: {:?}",
+        ability.get("Float")
+    );
+    assert!(
+        ability.get("Perk Conditions").is_none(),
+        "Ability effect must not steal the Entry Point effect's Perk Conditions: {:?}",
+        ability.get("Perk Conditions")
+    );
+
+    let entry = &effects[1]["Effect"];
+    let float_val = entry
+        .get("Float")
+        .and_then(|v| v.as_f64())
+        .expect("Entry Point effect must have its own Float");
+    assert!(
+        (float_val - 2.5).abs() < 1e-6,
+        "expected Float ~= 2.5, got {float_val}"
+    );
+    let conditions = entry
+        .get("Perk Conditions")
+        .and_then(|v| v.as_array())
+        .expect("Entry Point effect must have its own Perk Conditions");
+    assert_eq!(conditions.len(), 1, "expected exactly 1 Perk Condition");
+}
+
 /// PERK 0x003DE597 — `Suppressor_TargetDebuff` — regression test for a bug
 /// where an `EPFT`=8 ("Actor Value and Value") entry-point effect with an
 /// 8-byte `EPFD` payload (FormID + float) was decoded as a single bare
