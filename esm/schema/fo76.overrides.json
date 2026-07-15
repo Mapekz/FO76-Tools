@@ -1092,10 +1092,10 @@
         "path": ["Data", "Min Power Per Shot"],
         "node": {
           "kind": "float",
-          "name": "Max Power Per Shot",
+          "name": "Full Power Damage Mult",
           "from_version": 105
         },
-        "_comment": "xEdit still names this DNAM field 'Min Power Per Shot' (wbDefinitionsFO76.pas: wbFromVersion(105, wbFloat('Min Power Per Shot'))), but the engine repurposed it to the charge-weapon full-power-shot bonus (~2025) \u2014 same field, opposite name. Renamed here to match the fix already applied to the OMOD property-name list (see _WEAPON_PROPERTIES in extract.py and the mechanics-kb 'Property-name errata' note)."
+        "_comment": "xEdit still names this DNAM field 'Min Power Per Shot' (wbDefinitionsFO76.pas: wbFromVersion(105, wbFloat('Min Power Per Shot'))), but the engine repurposed it to the charge-weapon full-power-shot bonus (~2025) \u2014 same field, opposite name. Renamed 2026-07-14 to 'Max Power Per Shot' to fix the min/max direction, then renamed again 2026-07-15 to 'Full Power Damage Mult': 'Max' still implied a variable stat with an unstated minimum, when this is really a fixed bonus applied only at full charge. The new name pairs with the sibling field 'Full Power Seconds' (time to reach full charge) and matches the '...DamageMult' suffix used by real sibling OMOD properties (OutOfRangeDamageMult, CriticalDamageMult) \u2014 see _WEAPON_PROPERTIES in extract.py and the mechanics-kb 'Property-name errata' note."
       }
     ],
     "QUST": [

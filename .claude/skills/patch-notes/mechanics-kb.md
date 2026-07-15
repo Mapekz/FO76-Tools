@@ -168,15 +168,20 @@ Verified: 2026-07-15 vs snapshots 20260702/20260710.
 ## Charge weapons (Gauss family)
 
 - WEAP `Data / Full Power Seconds` = time to reach full charge (Gauss Rifle base: 1.0s).
-- WEAP `Data / Max Power Per Shot` = the full-charge damage multiplier (Gauss Rifle base: 2.0).
-  The engine renamed this property from `MinPowerPerShot` to `MaxPowerPerShot` (~2025); our
-  schema emitted the stale `MinPowerPerShot` name (and the same stale name on the OMOD property
-  enum entry) until the extractor's property-name list was fixed 2026-07-14. Older
-  analyses/data captured before that date may still show `MinPowerPerShot` — treat it as the
-  same field.
+- WEAP `Data / Full Power Damage Mult` = the full-charge damage multiplier (Gauss Rifle
+  base: 2.0). The engine renamed this property from `MinPowerPerShot` to `MaxPowerPerShot`
+  (~2025); our schema emitted the stale `MinPowerPerShot` name (and the same stale name on
+  the OMOD property enum entry) until the extractor's property-name list was fixed
+  2026-07-14. That fix landed the name as `MaxPowerPerShot`, which was itself a misnomer
+  ("Max" implied a variable stat with an unstated minimum, when this is a fixed bonus
+  applied only at full charge) — renamed again 2026-07-15 to `FullPowerDamageMult` to pair
+  with the sibling `FullPowerSeconds` field and match the `...DamageMult` suffix used by
+  real sibling OMOD properties (`OutOfRangeDamageMult`, `CriticalDamageMult`). Older
+  analyses/data captured before 2026-07-15 may show `MaxPowerPerShot` or `MinPowerPerShot`
+  — treat all three as the same field.
 - Worked example: Flatliner (`RD01_Mod_Custom_StrikeBreaker_CustomName`, 0x00793512) as of
-  20260710 ADDs +1.0 Max Power Per Shot (2.0→3.0, full-charge bonus +100%→+200%) and +0.5
-  Full Power Seconds (1.0s→1.5s to full charge), replacing an ADD Perks 116 grant of
+  20260710 ADDs +1.0 Full Power Damage Mult (2.0→3.0, full-charge bonus +100%→+200%) and
+  +0.5 Full Power Seconds (1.0s→1.5s to full charge), replacing an ADD Perks 116 grant of
   `mod_weapon_penetrating` ("Projectiles penetrate up to three targets").
 - Verified: 2026-07-13 vs 20260710 (base values live-confirmed 2026-07-14).
 
@@ -252,14 +257,17 @@ Verified: 2026-07-15 vs snapshots 20260702/20260710.
 
 ## Property-name errata (schema vs engine)
 
-- `MinPowerPerShot` → **MaxPowerPerShot**, fixed in the schema 2026-07-14 (see Charge weapons
-  above). Pre-fix analyses/data may still carry the old name — treat it as the same field.
+- `MinPowerPerShot` → `MaxPowerPerShot` (2026-07-14, fixed the min/max direction) →
+  **FullPowerDamageMult** (2026-07-15, fixed the remaining ambiguity — "Max" implied a
+  variable stat with an unstated minimum, when this is a fixed full-charge bonus). See
+  Charge weapons above. Pre-fix analyses/data may still carry either old name — treat all
+  three as the same field.
 - The same errata also applied to the raw WEAP `Data` (DNAM) struct field itself — xEdit's
   Pascal source still emits `Min Power Per Shot` verbatim, so full-record decodes (`esm get`
-  on a WEAP FormID) kept showing the stale name even after the OMOD property-list fix above.
-  Patched via a `record_patches` override in `schema/fo76.overrides.json` (WEAP → `Data` →
-  `Min Power Per Shot`), fixed 2026-07-14. Same field, same semantics as the property-list
-  entry — both now read `Max Power Per Shot`.
+  on a WEAP FormID) kept showing the stale name even after each OMOD property-list fix
+  above. Patched via a `record_patches` override in `schema/fo76.overrides.json` (WEAP →
+  `Data` → `Min Power Per Shot`). Same field, same semantics as the property-list entry —
+  both now read `Full Power Damage Mult`.
 
 ## Known schema gaps (unmapped fields seen in real diffs)
 
