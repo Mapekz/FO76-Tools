@@ -61565,10 +61565,11 @@
           }
         },
         {
-          "kind": "bytes",
-          "name": "QTFS - Unknown 2 bytes",
+          "kind": "integer",
+          "name": "QTFS (Repeat Limit?)",
           "sig": "QTFS",
-          "len": 2
+          "width": "u16",
+          "signed": false
         },
         {
           "kind": "array",

@@ -5082,6 +5082,10 @@ fn qust_gq_horde_alias_fill_decodes_correctly() {
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("GQ_Horde")
     );
+    assert_eq!(
+        result.get("QTFS (Repeat Limit?)").and_then(|v| v.as_u64()),
+        Some(65535),
+    );
 }
 
 /// NPC_ 0x0061E065 — `zzzSCORE_S5_COMP_SuperMutant_Maul` — VMAD with type-0 (None) and

@@ -189,8 +189,9 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   MischiefNight).
 - Repeatable side activity: `SDOW_SQ01_Graves_Repeatable`, renamed in 20260710 from
   "(Seasonal) Laid to Unrest" to "(Repeatable) Disturbed Grave" (0x008F1665) — a seasonal
-  one-off converted into a permanent repeatable; its QTFS unknown field flipped "no limit"
-  → 50 (this is the concrete example behind the QTFS schema-gap entry below).
+  one-off converted into a permanent repeatable; its `QTFS (Repeat Limit?)` field flipped
+  "no limit" (65535) → 50 (this is the concrete example behind the QTFS schema-gap closure
+  below).
 - Bosses: `SDOW_LvlSlasherFanBossPowerArmorHeavyAuto` "Pint-Sized Phantom Destroyer" (Daily
   Ops, 0x008E06B3) and `SDOW_Burn_BountyTarget_BIG_Slasher` "The Reborn Pint-Sized Slasher"
   (bounty target, 0x008E06C5) — both got stat-tier and combat-style additions in 20260710;
@@ -215,6 +216,17 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
 ## Known schema gaps (unmapped fields seen in real diffs)
 
 - HAZD: an unknown flag bit (cleared on 6 hazard clouds in 20260710) — gameplay meaning
-  unmapped.
-- QUST `QTFS`: undecoded field (changed "no limit" → 50 on a repeatable-quest conversion in
-  20260710) — likely repeat-limit/cooldown, unconfirmed.
+  unmapped. Not schema-fixable: xEdit's own Pascal source (`wbDefinitionsFO76.pas`) names
+  only bits 0–6 of `Data / Flags`, and bit 6 is itself `"Unknown 6"` — there is no
+  authoritative name to adopt, upstream or otherwise. Renaming the bit also wouldn't change
+  patch-notes triage: `is_numeric_change_entry` routes on the raw hex `Data / Flags / value`
+  string, not the bit label, so a flag-only HAZD change stays `ambiguous` either way (see
+  `test_hazd_flag_bit_only_change_is_not_auto_deep` in `tools/tests/test_triage_bundles.py`).
+- QUST `QTFS`: **closed 2026-07-15.** Was an undecoded 2-byte blob; the "no limit" → 50 flip
+  on the repeatable-quest conversion below reads cleanly as a little-endian u16, so it's now
+  mapped via a `record_patches` override in `schema/fo76.overrides.json` (allowlisted in
+  `tools/extractor/parity-exceptions.json` since xEdit's Pascal still calls it a byte array).
+  Decodes as **`QTFS (Repeat Limit?)`** — the `?` flags that "repeat limit" is inferred from
+  this one data point, not confirmed from engine source. `0xffff` (65535) reads as "no limit".
+  This also fixed a triage gap: a QTFS-only change is now a real numeric delta on a major
+  record type (QUST) and auto-DEEPs instead of falling to ambiguous.

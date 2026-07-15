@@ -1097,6 +1097,19 @@
         },
         "_comment": "xEdit still names this DNAM field 'Min Power Per Shot' (wbDefinitionsFO76.pas: wbFromVersion(105, wbFloat('Min Power Per Shot'))), but the engine repurposed it to the charge-weapon full-power-shot bonus (~2025) \u2014 same field, opposite name. Renamed here to match the fix already applied to the OMOD property-name list (see _WEAPON_PROPERTIES in extract.py and the mechanics-kb 'Property-name errata' note)."
       }
+    ],
+    "QUST": [
+      {
+        "path": ["QTFS"],
+        "node": {
+          "kind": "integer",
+          "name": "QTFS (Repeat Limit?)",
+          "sig": "QTFS",
+          "width": "u16",
+          "signed": false
+        },
+        "_comment": "xEdit leaves this as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) \u2014 undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Decoding the 2 bytes as one u16 is the natural low-level mapping; name hedged with '?' since the repeat-limit semantic is inferred, not confirmed. See mechanics-kb.md 'Known schema gaps'."
+      }
     ]
   }
 }

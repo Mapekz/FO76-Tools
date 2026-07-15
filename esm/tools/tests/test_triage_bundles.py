@@ -1120,6 +1120,23 @@ class TestRealConfig(unittest.TestCase):
         tier, reason, _ = tb.assign_tier(bundle, records, self.config)
         self.assertEqual((tier, reason), ("deep", "deep:substantive_change_major_record_type"))
 
+    def test_qust_qtfs_numeric_change_is_deep(self):
+        # Schema-gap follow-up: QTFS used to decode as an opaque hex blob
+        # (never numeric, so a QTFS-only change fell to ambiguous like the
+        # HAZD flag-bit case above). Now that it's mapped to a u16 ("QTFS
+        # (Repeat Limit?)"), a real value change (e.g. 65535 "no limit" ->
+        # 50, the shape seen on SDOW_SQ01_Graves_Repeatable) is a genuine
+        # numeric delta on a major record type and must auto-DEEP.
+        records = {
+            "0x01": make_record(
+                "0x01", "QUST", "SomeRepeatableQuest",
+                changes=[make_change("QTFS (Repeat Limit?)", 65535, 50)],
+            )
+        }
+        bundle = make_bundle("B0001", [make_member("0x01", "QUST", "SomeRepeatableQuest")])
+        tier, reason, _ = tb.assign_tier(bundle, records, self.config)
+        self.assertEqual((tier, reason), ("deep", "deep:substantive_change_major_record_type"))
+
     def test_book_holotape_text_only_change_is_not_auto_deep(self):
         # Coordinator-flagged regression: BOOK isn't even in the major-type
         # list, so a holotape text edit was already excluded at the type

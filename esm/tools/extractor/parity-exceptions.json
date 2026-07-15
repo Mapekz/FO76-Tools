@@ -6,6 +6,12 @@
       "class_": "kind-mismatch",
       "path": "PERK[1:Effects][elem]",
       "reason": "wbPerkEffect is a HARD_RAW_VAR (runtime Pascal decider that cannot be statically resolved). The schema uses a hand-written rstruct override that is more useful than raw_fallback and has been validated against real ESM data. Divergence is intentional."
+    },
+    {
+      "record": "QUST",
+      "class_": "kind-mismatch",
+      "path": "QUST/QTFS",
+      "reason": "xEdit leaves QTFS as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) — undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Overridden in fo76.overrides.json (record_patches.QUST) to decode as an integer instead of raw bytes. Divergence is intentional."
     }
   ]
 }
