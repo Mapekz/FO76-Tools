@@ -126,7 +126,11 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   enum entry) until the extractor's property-name list was fixed 2026-07-14. Older
   analyses/data captured before that date may still show `MinPowerPerShot` — treat it as the
   same field.
-- Verified: 2026-07-13 vs 20260710.
+- Worked example: Flatliner (`RD01_Mod_Custom_StrikeBreaker_CustomName`, 0x00793512) as of
+  20260710 ADDs +1.0 Max Power Per Shot (2.0→3.0, full-charge bonus +100%→+200%) and +0.5
+  Full Power Seconds (1.0s→1.5s to full charge), replacing an ADD Perks 116 grant of
+  `mod_weapon_penetrating` ("Projectiles penetrate up to three targets").
+- Verified: 2026-07-13 vs 20260710 (base values live-confirmed 2026-07-14).
 
 ## World Pets (NOT LIVE as of 20260710)
 
