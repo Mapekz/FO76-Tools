@@ -85,7 +85,9 @@ splits it into ≤1900-char posts. Concretely, it:
 
 ## Length discipline
 
-- Whole summary: ≤~12,000 chars (roughly 7 Discord chunks after conversion).
+- Whole summary: aim for ~5 Discord chunks (≤~9,000 chars); hard ceiling ~12,000 chars
+  (7 chunks). When the ~5-chunk target conflicts with category completeness or exact
+  numbers, the numbers and categories win — go to 6 rather than cut data.
 - Flagship item section: ≤~1,200 chars. Ordinary item section: ≤~600 chars.
 - When over budget, **cut prose, never numbers.** A shorter story sentence is fine; a dropped
   stat bullet or a rounded number is not.
