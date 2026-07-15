@@ -205,6 +205,12 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
 
 - `MinPowerPerShot` → **MaxPowerPerShot**, fixed in the schema 2026-07-14 (see Charge weapons
   above). Pre-fix analyses/data may still carry the old name — treat it as the same field.
+- The same errata also applied to the raw WEAP `Data` (DNAM) struct field itself — xEdit's
+  Pascal source still emits `Min Power Per Shot` verbatim, so full-record decodes (`esm get`
+  on a WEAP FormID) kept showing the stale name even after the OMOD property-list fix above.
+  Patched via a `record_patches` override in `schema/fo76.overrides.json` (WEAP → `Data` →
+  `Min Power Per Shot`), fixed 2026-07-14. Same field, same semantics as the property-list
+  entry — both now read `Max Power Per Shot`.
 
 ## Known schema gaps (unmapped fields seen in real diffs)
 
