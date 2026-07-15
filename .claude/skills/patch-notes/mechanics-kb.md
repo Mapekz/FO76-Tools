@@ -51,7 +51,12 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   authoritative text.
 - Damage scaling: curves `Perks\HeavyDamageBonus{,2,3}.json` on the same SPEL map stacks →
   damage bonus.
-- Verified: 2026-07-13 vs snapshot 20260710.
+- Foundation's Vengeance conditional cap bonus (since 20260710): SPEL `AbPerkHeavyGunner`
+  gained an Effect (Perk Entry ID 8, MGEF `abAmmoSpenderFortifyStacks`, Magnitude 5.0)
+  conditioned on `WornHasKeyword(CustomItemName_FoundationsVengeance, 0x0064781E)` AND
+  `GetHealthPercentage <= 0.25` — the E08B unique mod (0x0064781F) grants +5 max Bullet
+  Storm stacks under 25% HP; its description matches the data exactly.
+- Verified: 2026-07-13 vs snapshot 20260710 (Foundation's Vengeance addendum 2026-07-14).
 
 ## Kill Streak
 
