@@ -8,7 +8,7 @@ the backing records with one live `get` before asserting their semantics in a dr
 
 ## How unique-weapon effects are implemented (the chase pattern)
 
-A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one of three ways:
+A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one of four ways:
 
 1. **Direct property** — an ADD/SET on a weapon stat or actor value in the OMOD's own
    `Data/Properties`. Read the AVIF's name AND find its consumer (`refs --type SPEL --paths`
@@ -21,6 +21,15 @@ A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one 
    Chase: `refs --type SPEL --paths` (then `--type PERK --paths`) on the keyword → the
    `field_paths` on each hit already points at the gating `Effects[N].Conditions[...]` entry,
    so a bulk `get` on the hits resolves magnitude/curve/other conditions in one call.
+4. **Projectile/explosion override chain** — the OMOD SETs Property `80`
+   (`OverrideProjectile`) to a dedicated PROJ FormID; the real magnitude lives on that PROJ's
+   linked EXPL record's `Data / Damage Curve Table`, not in the OMOD's own Properties. Chase:
+   find the `OverrideProjectile` SET, `get` the PROJ, follow its Explosion field to the EXPL,
+   read the damage curve there. Curve tables in this pattern are swapped wholesale by
+   CurveTable FormID+name (e.g. `CT_Player_Damage_Universal_Tier28` → `..._Tier40`), so a
+   bulk get across the old/new curve FormIDs quantifies the delta without touching the
+   OMOD's Properties. Example: `RD01_Mod_Custom_ResolveBreaker_CustomName` (0x007934FE) →
+   PROJ 0x007CA02E → EXPL 0x007CA02D. Verified: 2026-07-14 vs 20260710.
 
 This walk is automated: `esm/target/release/esm -p chase <OMOD_FORMID_OR_EDID>` (ESM path from
 `FO76_ESM_PATH`, or pass `--esm <PATH>`) runs all three patterns against a real OMOD and prints a
