@@ -1086,6 +1086,17 @@
         },
         "_comment": "xEdit names this struct 'Unknown' verbatim (wbDefinitionsFO76.pas: wbStruct(DATA, 'Unknown', [...])) even though every field is fully decoded \u2014 Value/Min Level/Special/Race Restriction. Renamed here so it stops reading as an undecoded blob. Race Restriction (offset 6) is the race-eligibility byte: 0=None, 1=Human, 2=Ghoul."
       }
+    ],
+    "WEAP": [
+      {
+        "path": ["Data", "Min Power Per Shot"],
+        "node": {
+          "kind": "float",
+          "name": "Max Power Per Shot",
+          "from_version": 105
+        },
+        "_comment": "xEdit still names this DNAM field 'Min Power Per Shot' (wbDefinitionsFO76.pas: wbFromVersion(105, wbFloat('Min Power Per Shot'))), but the engine repurposed it to the charge-weapon full-power-shot bonus (~2025) \u2014 same field, opposite name. Renamed here to match the fix already applied to the OMOD property-name list (see _WEAPON_PROPERTIES in extract.py and the mechanics-kb 'Property-name errata' note)."
+      }
     ]
   }
 }

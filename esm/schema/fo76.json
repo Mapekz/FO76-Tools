@@ -86983,7 +86983,7 @@
             },
             {
               "kind": "float",
-              "name": "Min Power Per Shot",
+              "name": "Max Power Per Shot",
               "from_version": 105
             },
             {
