@@ -35,11 +35,14 @@ every one to ground truth. Run all commands from the repo root.
    `mod_Custom_*`/unique-effect OMODs, run
    `esm/target/release/esm -p --esm "{NEW_ESM}" chase <OMOD> --json` FIRST — it automates the
    keyword/perk-grant/direct-property walk in a handful of bulk calls and returns just the
-   gating `Effects[N]` entry, not full record dumps. Hand-walk with
-   `refs --type <SIG> --paths` (and a bulk `get` on whatever it turns up) only for mechanics
-   chase doesn't cover: resolve every PERK/ENCH/SPEL/AVIF/KYWD a changed property touches
-   until you can state what the change does in player terms. An AVIF's name is not its
-   semantics — find its consumer.
+   gating `Effects[N]` entry, not full record dumps. `chase` also accepts a **PERK, SPEL, ALCH,
+   or ENCH selector directly** — run it on whatever the OMOD forward-fetches (or on the record
+   itself, if that's your starting point) to get its own `Effects[]` walked the same way,
+   including one automatic extra hop through an MGEF's `Perk to Apply`/`Equip Ability` when
+   present. Hand-walk with `refs --type <SIG> --paths` (and a bulk `get` on whatever it turns
+   up) only for mechanics chase doesn't cover: resolve every PERK/ENCH/SPEL/AVIF/KYWD a changed
+   property touches until you can state what the change does in player terms. An AVIF's name is
+   not its semantics — find its consumer.
 2. **Plain language first, exact delta second**: "reload speed 5s → 3.75s (−25%)". Old → new
    wherever the diff alone is ambiguous — batch every changed anchor's before-value into one
    bulk `get` against the OLD esm rather than querying them one at a time. Never round, never

@@ -31,11 +31,21 @@ A `mod_Custom_*` / `*_mod_Custom_*` OMOD usually implements its mechanic in one 
    OMOD's Properties. Example: `RD01_Mod_Custom_ResolveBreaker_CustomName` (0x007934FE) →
    PROJ 0x007CA02E → EXPL 0x007CA02D. Verified: 2026-07-14 vs 20260710.
 
-This walk is automated: `esm/target/release/esm -p chase <OMOD_FORMID_OR_EDID>` (ESM path from
-`FO76_ESM_PATH`, or pass `--esm <PATH>`) runs all three patterns against a real OMOD and prints a
-compact evidence tree (add `--json` for
-agent consumption). Prefer it over chasing by hand; fall back to manual `refs`/`get` only for
-patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations).
+This walk is automated: `esm/target/release/esm -p chase <FORMID_OR_EDID>` (ESM path from
+`FO76_ESM_PATH`, or pass `--esm <PATH>`) runs all three OMOD patterns against a real OMOD and
+prints a compact evidence tree (add `--json` for agent consumption). Prefer it over chasing by
+hand; fall back to manual `refs`/`get` only for patterns it doesn't cover (see `src/chase.rs`'s
+module docstring for limitations).
+
+`chase` also accepts a **PERK, SPEL, ALCH, or ENCH selector directly** — useful when the OMOD
+forward-fetches one of these (pattern 1/2 above) and you want its own mechanic without a second
+manual lookup, or when you're starting from the record itself (e.g. a PERK found via `refs --type
+PCRD`). It walks the selector's own `Effects[]` array instead of `Data/Properties`, forward-
+fetching whatever each entry points at (a PERK's granted Ability/Quest/Item, or a SPEL/ALCH/ENCH's
+Base Effect). Either way, if a `Base Effect` resolves to an MGEF carrying `"Perk to Apply"` or
+`"Equip Ability"`, that one extra hop is now followed automatically too — the "Severing's confirmed
+chase" derivation below (`ENCH -> MGEF (Perk to Apply) -> PERK`) no longer needs a manual walk;
+`esm -p chase <ENCH_FORMID> --json` surfaces it directly.
 
 ## Bullet Storm (Heavy Gunner perk mechanic)
 
@@ -99,6 +109,9 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   `HasKeyword(SDOW_HasLegendary_Weapon_Severing)` AND
   `GetNumActiveEffectsWithKeyword(DamageTypeBleed)>=1`. New side ADDs `STAT_DmgVsBleeding`
   (0x00837DFC) Value2=50.0 directly; the old enchantment is `zzz`-vaulted. Same magnitude.
+  This derivation was originally chased by hand; the ENCH → MGEF (Perk to Apply) → PERK hop is
+  now automated by `chase` (see the "chase pattern" section above) — `esm -p chase 0x008E0681
+  --json` reproduces it in one call.
 - **Exception — Icemen's is a mechanic swap, not a re-plumb.** Its pre-20260710
   implementation was a direct OMOD MUL+ADD on `DamageTypeValues` targeting `dtCryo`
   (Value2 0.2), not an enchantment chain — a **base damage increase**: +20% to the weapon's

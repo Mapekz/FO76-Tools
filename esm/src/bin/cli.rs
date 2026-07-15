@@ -243,17 +243,22 @@ enum Commands {
         #[arg(long, default_value = "en")]
         lang: String,
     },
-    /// Automate the unique-weapon OMOD "chase pattern" (see
-    /// .claude/skills/patch-notes/mechanics-kb.md): classify an OMOD's
-    /// Data.Properties[] rows into direct-property/perk-grant/keyword-hook
-    /// mechanisms and emit a compact evidence tree.
+    /// Automate the "chase pattern" (see .claude/skills/patch-notes/mechanics-kb.md):
+    /// for an OMOD, classify its Data.Properties[] rows into
+    /// direct-property/perk-grant/keyword-hook mechanisms; for a PERK/SPEL/
+    /// ALCH/ENCH, walk its own Effects[] array directly. Either way, forward-
+    /// or reverse-fetches whatever record carries the mechanic (including one
+    /// extra hop through an MGEF's "Perk to Apply"/"Equip Ability") and emits
+    /// a compact evidence tree.
     Chase {
-        /// OMOD FormID or EditorID (auto-detected).
-        omod: String,
-        /// Reverse-ref walk depth for keyword/AVIF consumer lookups.
+        /// OMOD/PERK/SPEL/ALCH/ENCH FormID or EditorID (auto-detected).
+        selector: String,
+        /// Reverse-ref walk depth for keyword/AVIF consumer lookups
+        /// (OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH).
         #[arg(long, default_value_t = esm::chase::DEFAULT_DEPTH)]
         depth: usize,
-        /// Cap on refs rows fetched per record-type filter.
+        /// Cap on refs rows fetched per record-type filter
+        /// (OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH).
         #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
         ref_limit: usize,
         #[arg(long)]
@@ -682,11 +687,18 @@ fn main() -> anyhow::Result<()> {
                 daemon_mode,
             )?,
             Commands::Chase {
-                omod,
+                selector,
                 depth,
                 ref_limit,
                 json,
-            } => cmd_chase(&mut backend, &esm_for_repl, &omod, depth, ref_limit, json)?,
+            } => cmd_chase(
+                &mut backend,
+                &esm_for_repl,
+                &selector,
+                depth,
+                ref_limit,
+                json,
+            )?,
             Commands::Daemon { .. } => unreachable!(),
         }
         if !cli.print {
@@ -1242,12 +1254,12 @@ impl esm::chase::ChaseFetcher for BackendFetcher<'_> {
 fn cmd_chase(
     backend: &mut Backend,
     file: &Path,
-    omod: &str,
+    selector: &str,
     depth: usize,
     ref_limit: usize,
     json: bool,
 ) -> anyhow::Result<()> {
-    let sel = RecordSel::from_input(omod)?;
+    let sel = RecordSel::from_input(selector)?;
     let opts = esm::chase::ChaseOptions { depth, ref_limit };
     let mut fetcher = BackendFetcher { backend, file };
     let tree = esm::chase::chase(&mut fetcher, sel, &opts)?;
