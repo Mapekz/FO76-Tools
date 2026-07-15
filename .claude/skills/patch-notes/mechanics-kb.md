@@ -148,6 +148,22 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
   unconfirmed).
 - Verified: 2026-07-13 vs 20260710 (hide-list dating 2026-07-14).
 
+## Legendary mod FormID recycling (retired "Bounty" event slots)
+
+- Bethesda reuses FormIDs from long-dead, already `zzz_BOUNTY_`-prefixed legendary weapon
+  mods/COBJ recipes (retired Bounty event) for brand-new legendary content instead of
+  allocating fresh FormIDs — these show up in diffs as "changed" EditorID/Name renames, not
+  "added" records.
+- 20260710 examples: `zzz_BOUNTY_mod_Legendary_Weapon2_Insane` (0x0083DA6D) → Cryologist's
+  (+20% Cryo via `STAT_DmgMultCryo`); `zzz_BOUNTY_mod_Legendary_Weapon2_Melee_Pulsating`
+  (0x00849316) → Pyro-Technician's (+20% Fire via `STAT_DmgMultFire`);
+  `zzz_BOUNTY_mod_Legendary_Weapon2_Guns_Rebate` (0x00849317) → Poisoner's (+20% Poison via
+  `STAT_DmgMultPoison`). All three retarget to `ma_legendarycrafting_weapon` (any weapon).
+- When chasing a "changed" legendary OMOD/COBJ with a `zzz_BOUNTY_` prev_editor_id, don't
+  assume the old effect was ever live/obtainable — check the description and property list
+  on the OLD snapshot before asserting what it "used to do" for players.
+- Verified: 2026-07-14 vs snapshots 20260702/20260710.
+
 ## Property-name errata (schema vs engine)
 
 - `MinPowerPerShot` → **MaxPowerPerShot**, fixed in the schema 2026-07-14 (see Charge weapons
