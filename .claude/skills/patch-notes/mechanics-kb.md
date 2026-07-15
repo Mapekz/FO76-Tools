@@ -90,7 +90,22 @@ patterns it doesn't cover (see `src/chase.rs`'s module docstring for limitations
 - Since 20260710 these stats replace bespoke enchantment→perk script chains on several
   legendary mods (tech migration — same numbers, new plumbing). A blank OMOD Description
   alongside a STAT_* ADD usually means the tooltip auto-generates from the stat's own text.
-- Verified: 2026-07-13 vs 20260710.
+- Severing's confirmed chase (worked example of the migration): old side (20260702) was
+  OMOD ADD Enchantments → ENCH `SDOW_ench_LegendaryWeapon_Severing` (0x008E0681) → MGEF
+  (Script archetype, Perk to Apply) → PERK `SDOW_Legendary_Weapon_SeveringPerk` (0x008E0723),
+  Entry Point "Mod Weapon DMG Bonus Mult" ADD 0.5, gated on
+  `HasKeyword(SDOW_HasLegendary_Weapon_Severing)` AND
+  `GetNumActiveEffectsWithKeyword(DamageTypeBleed)>=1`. New side ADDs `STAT_DmgVsBleeding`
+  (0x00837DFC) Value2=50.0 directly; the old enchantment is `zzz`-vaulted. Same magnitude.
+- **Exception — Icemen's is a mechanic swap, not a re-plumb.** Its pre-20260710
+  implementation was a direct OMOD ADD on `DamageTypeValues` targeting `dtCryo` (Value2 0.2 —
+  an unconditional +20% to the wielder's own Cryo damage), not an enchantment chain. The
+  20260710 version ADDs +50 `STAT_DmgVsFreezing` (0x0085A2F1) — conditional on the target
+  already being in Freezing status. Self-buff became target-status buff; the 20→50 magnitude
+  change is on a different axis, so pre/post numbers are not comparable. Don't describe the
+  STAT_* migration as semantics-preserving without checking the OLD implementation per mod.
+- Verified: 2026-07-13 vs 20260710 (Severing's chase + Icemen's exception 2026-07-14 vs
+  20260702/20260710).
 
 ## OMOD property semantics
 
