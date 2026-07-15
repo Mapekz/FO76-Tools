@@ -14,6 +14,12 @@ re-verified against the code on 2026-07-14; none is partially implemented.
 *Conditional, not a checkbox:* **server-side subtree filter** — P2 (`refs --paths`) and P4
 (bulk `get`) have landed; add this only if `/patch-notes` token pressure persists in practice.
 
+*Conditional, not a checkbox:* **`chase`/`walk` exposure via N-API/HTTP/MCP** — both are
+possible (they're already pure functions over the `ChaseFetcher` seam) but deferred; today
+they're CLI-only (`esm chase`, `esm walk`). Add only if an agent-facing surface other than the
+CLI (esm-viewer, the HTTP/MCP server, a chatbot front end) actually needs one-shot chase/walk
+digests instead of composing `get`/`refs` itself.
+
 - [ ] **P6 — Chatbot front page over the HTTP/MCP server** *(post-POC productization)*. The
       static UI (`esm/static/index.html`, `esm/static/compare.html`) is a record browser; the
       MCP server (`esm/src/bin/server.rs`) already exposes the six read-only tools a chatbot

@@ -264,6 +264,23 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Print one compact indented digest of a record and the chain it
+    /// references, instead of a series of raw `get` dumps (native port of
+    /// dps-76/scripts/esm-walk.ts). BFS out to `--depth` hops, annotating
+    /// GLOB/keyword/AVIF/MGEF/PERK chains as it goes.
+    Walk {
+        /// FormID or EditorID (auto-detected).
+        selector: String,
+        /// BFS depth cap (0 = just the root, no chain-following).
+        #[arg(long, default_value_t = esm::walk::DEFAULT_DEPTH)]
+        depth: usize,
+        /// Print the root record's grouped reverse-reference summary
+        /// (obtainability signal) after the chain digest.
+        #[arg(long)]
+        refs: bool,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -699,6 +716,12 @@ fn main() -> anyhow::Result<()> {
                 ref_limit,
                 json,
             )?,
+            Commands::Walk {
+                selector,
+                depth,
+                refs,
+                json,
+            } => cmd_walk(&mut backend, &esm_for_repl, &selector, depth, refs, json)?,
             Commands::Daemon { .. } => unreachable!(),
         }
         if !cli.print {
@@ -1277,6 +1300,63 @@ fn cmd_chase(
         println!("{}", serde_json::to_string_pretty(&tree)?);
     } else {
         println!("{}", esm::chase::render_text(&tree));
+    }
+    Ok(())
+}
+
+/// Beyond `esm::walk::walk`'s two `ChaseFetcher` primitives (bulk_get/refs
+/// with a mandatory type filter), this driver makes two more raw `Backend`
+/// calls neither fits through that seam — see `esm::walk`'s module docs:
+/// - not-found → `Op::Search` (fills in `WalkResult::not_found.matches`).
+/// - `--refs` → one *unfiltered* `Op::ReferencedBy` (every referencing record
+///   type, not just SPEL/PERK), reduced client-side by
+///   `esm::walk::build_refs_digest`.
+fn cmd_walk(
+    backend: &mut Backend,
+    file: &Path,
+    selector: &str,
+    depth: usize,
+    want_refs: bool,
+    json: bool,
+) -> anyhow::Result<()> {
+    let sel = RecordSel::from_input(selector)?;
+    let opts = esm::walk::WalkOptions { depth };
+    let mut fetcher = BackendFetcher { backend, file };
+    let mut result = esm::walk::walk(&mut fetcher, sel, &opts)?;
+
+    if let Some(nf) = result.not_found.as_mut() {
+        let v = fetcher.backend.run(
+            fetcher.file,
+            Op::Search {
+                pattern: nf.target.clone(),
+                types: Vec::new(),
+                field: SearchField::Both,
+                limit: 10,
+            },
+        )?;
+        nf.matches = serde_json::from_value(v)?;
+    } else if want_refs {
+        if let Some(root) = result.nodes.first() {
+            let root_fid = esm::parse_form_id_input(&root.formid)?;
+            let v = fetcher.backend.run(
+                fetcher.file,
+                Op::ReferencedBy {
+                    sel: RecordSel::FormId(root_fid),
+                    limit: 0,
+                    depth: 1,
+                    type_filter: None,
+                    paths: false,
+                },
+            )?;
+            let ref_list: RefList = serde_json::from_value(v)?;
+            result.refs = Some(esm::walk::build_refs_digest(&ref_list.rows));
+        }
+    }
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+    } else {
+        println!("{}", esm::walk::render_text(&result));
     }
     Ok(())
 }

@@ -19,6 +19,7 @@ pub mod registry;
 pub mod schema;
 pub mod strings;
 pub mod tree;
+pub mod walk;
 pub mod wildcard;
 
 use crate::decode::{decode_record, DecodeContext};

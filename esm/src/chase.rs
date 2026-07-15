@@ -710,6 +710,26 @@ fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) ->
     }
 }
 
+/// One reverse-`refs` call per [`CONSUMER_TYPES`] entry (SPEL, PERK) against a
+/// keyword/AVIF `target_fid` — the "who reads this?" half of the chase
+/// pattern. Shared verbatim by [`reverse_chase`] (which flattens every type's
+/// rows into one evidence list) and `walk`'s KYWD/AVIF digest (which keeps
+/// SPEL/PERK grouped under separate headers) — factored here so the `refs`
+/// call sequence isn't duplicated between the two callers.
+pub(crate) fn consumer_refs_by_type(
+    f: &mut impl ChaseFetcher,
+    target_fid: FormId,
+    depth: usize,
+    limit: usize,
+) -> anyhow::Result<Vec<(&'static str, RefList)>> {
+    let mut out = Vec::with_capacity(CONSUMER_TYPES.len());
+    for record_type in CONSUMER_TYPES {
+        let ref_list = f.refs(target_fid, depth, limit, record_type, true)?;
+        out.push((record_type, ref_list));
+    }
+    Ok(out)
+}
+
 /// Reverse `refs --type SPEL` + `--type PERK` walk on `target` (a keyword or
 /// AVIF), then a single bulk fetch for every distinct consumer found, slicing
 /// out just the `Effects[N]` entry each `--paths` field path points at (see
@@ -724,11 +744,10 @@ fn reverse_chase(
     let target_fid = crate::parse_form_id_input(formid_str)
         .with_context(|| format!("invalid target FormID {formid_str:?} on reverse-chase target"))?;
 
-    let mut rows: Vec<RefRow> = Vec::new();
-    for record_type in CONSUMER_TYPES {
-        let ref_list = f.refs(target_fid, depth, limit, record_type, true)?;
-        rows.extend(ref_list.rows);
-    }
+    let rows: Vec<RefRow> = consumer_refs_by_type(f, target_fid, depth, limit)?
+        .into_iter()
+        .flat_map(|(_, ref_list)| ref_list.rows)
+        .collect();
     if rows.is_empty() {
         return Ok(Vec::new());
     }
