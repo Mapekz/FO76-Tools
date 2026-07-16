@@ -5,7 +5,7 @@ use esm::decode::decode_record;
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
 use esm::schema::Schema;
-use serde_json::json;
+use serde_json::{json, Value};
 
 /// MGEF DATA decodes to the expected structure with all fields correctly aligned.
 ///
@@ -1570,6 +1570,64 @@ fn weap_super_sledge_decodes_correctly() {
     assert_eq!(
         mo4t.pointer("/Textures").and_then(|v| v.as_array()),
         Some(&Vec::new())
+    );
+}
+
+/// Regression guard: `apply_weapon_bash_curve` is a record-level post-pass that
+/// must see top-level `Damage Curve` and `Data.Secondary Damage` together.
+/// SuperSledge is melee without `WeaponTypeAutomaticMelee`, so with curves
+/// loaded it must emit `source: "ineligible"` rather than staying silent.
+#[test]
+fn weap_bash_damage_post_pass_sees_record_level_fields() {
+    use esm::curves::CurveIndex;
+
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let curves: CurveIndex = serde_json::from_value(json!({
+        "by_formid": {
+            "8450583": {
+                "edid": "CT_Test_Bash",
+                "path": "Test.json",
+                "points": [
+                    {"x": 1.0, "y": 10.0},
+                    {"x": 50.0, "y": 50.0}
+                ]
+            }
+        }
+    }))
+    .expect("test curve index must deserialize");
+
+    let mut ctx = bare_ctx_fv(&schema, 209);
+    ctx.curves = Some(&curves);
+
+    // Minimal SuperSledge slice: EDID + DNAM (secondary bash damage) + CVT0.
+    let subs = subrecords_from(&[
+        ("EDID", "5375706572536c6564676500"),
+        (
+            "DNAM",
+            "000000000000803f0000803f00000000cdcc4c3f0000803f0000000000002041000000000000000000000000000080bf000000000000000000000000000100000000010005000070410000a041460000002800000000002f5c2400000000000000000000000000eb5c4000ae982400ac2615000000000000bb66e63f000000005042000000000000000002000000ffff7f7f640000000000000000000000cdcccc3dcdcccc3d00000000",
+        ),
+        ("CVT0", "17f28000"),
+    ]);
+
+    let result = decode_record(&ctx, "WEAP", &subs);
+
+    assert!(
+        result
+            .pointer("/Data/Secondary Damage")
+            .and_then(Value::as_f64)
+            .is_some_and(|v| v > 0.0),
+        "fixture must carry non-zero Secondary Damage"
+    );
+    assert!(
+        result.pointer("/Damage Curve/curve").is_some(),
+        "Damage Curve must be inlined when curves are loaded"
+    );
+    assert_eq!(
+        result
+            .pointer("/Bash Damage/source")
+            .and_then(|v| v.as_str()),
+        Some("ineligible"),
+        "melee without WeaponTypeAutomaticMelee must be explicitly ineligible"
     );
 }
 

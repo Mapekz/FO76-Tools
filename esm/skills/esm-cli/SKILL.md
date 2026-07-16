@@ -124,6 +124,25 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   and curve-driven values vanish. If a fresh dump lacks the dir, copy it from
   the previous dump (tier tables rarely change), then `esm daemon stop`
   before re-querying.
+- WEAP records may include a derived `"Bash Damage"` object (top-level sibling
+  of `Data` and `Damage Curve`, not inside `Data`). It is computed automatically
+  during decode — no CLI flag — from `Data.Secondary Damage` and the primary
+  `Damage Curve`:
+  `bash_damage(level) = Secondary Damage × [primary_curve(level) ÷ primary_curve(1)]`.
+  The `source` field is one of:
+  - `"curve"` — table present under `curve` as `[{level, damage}, …]`, following
+    each weapon's own curve domain (uncapped; creature/NPC tiers run past 50).
+  - `"ineligible"` — secondary damage and a resolved curve exist, but the weapon
+    is not eligible (not `Weapon Type` = Gun and lacks the
+    `WeaponTypeAutomaticMelee` keyword, `0x006D5081`). Ground-truthed via the
+    "Stable Tools" perk's `HasKeyword` condition — power tools: Auto Axe,
+    Chainsaw, Drill, Ripper, Buzz Blade.
+  - `"unresolved_curve"` — `Damage Curve` is a bare FormID (curves not loaded).
+  - `"curve_zero_reference"` — level-1 primary curve evaluates to zero; no
+    damage table is emitted (avoids non-finite/null values).
+  Records with zero/absent secondary damage, or no damage curve at all, stay
+  silent (no `"Bash Damage"` key). Distinct from `"Bash Condition Loss Scale"`,
+  which is a durability wear-rate curve, not bash damage.
 
 ## Field-name churn
 

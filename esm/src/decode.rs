@@ -307,6 +307,10 @@ pub fn decode_record(
         out.insert(markers::UNMAPPED.into(), Value::Object(raw_remaining));
     }
 
+    if signature == "WEAP" {
+        apply_weapon_bash_curve(&mut out);
+    }
+
     Value::Object(out)
 }
 
@@ -1316,6 +1320,113 @@ fn apply_crafting_quantity(struct_out: &mut Map<String, Value>) {
     };
     struct_out.insert("Quantity".to_string(), quantity);
     struct_out.insert("Quantity Source".to_string(), serde_json::json!(source));
+}
+
+/// FormID for `WeaponTypeAutomaticMelee` (KYWD `0x006D5081`), referenced by the
+/// "Stable Tools" perk's `HasKeyword` condition — the game-authoritative gate for
+/// power-tool bash damage scaling (Auto Axe, Chainsaw, Drill, Ripper, Buzz Blade).
+const AUTOMATIC_MELEE_KEYWORD: &str = "0x006D5081";
+
+fn automatic_melee_keyword_present(out: &Map<String, Value>) -> bool {
+    let Some(keywords) = out
+        .get("Keywords")
+        .and_then(|v| v.get("Keywords"))
+        .and_then(Value::as_array)
+    else {
+        return false;
+    };
+    keywords.iter().any(|kw| match kw {
+        Value::String(s) => s == AUTOMATIC_MELEE_KEYWORD,
+        Value::Object(o) => o
+            .get("formid")
+            .and_then(Value::as_str)
+            .is_some_and(|s| s == AUTOMATIC_MELEE_KEYWORD),
+        _ => false,
+    })
+}
+
+fn weapon_bash_eligible(out: &Map<String, Value>, data: &Map<String, Value>) -> bool {
+    match data
+        .get("Weapon Type")
+        .and_then(|v| v.get("name"))
+        .and_then(Value::as_str)
+    {
+        Some("Gun") => true,
+        _ => automatic_melee_keyword_present(out),
+    }
+}
+
+/// Record-level post-decode pass for WEAP bash damage curve tables.
+///
+/// Synthesises `"Bash Damage"` from top-level `"Damage Curve"` and
+/// `Data.Secondary Damage`. Ranged weapons (`Weapon Type` = Gun) and records
+/// carrying the `WeaponTypeAutomaticMelee` keyword are eligible; others emit an
+/// explicit `"ineligible"` marker when a curve is present but the weapon does not
+/// qualify.
+fn apply_weapon_bash_curve(out: &mut Map<String, Value>) {
+    let Some(data) = out.get("Data").and_then(Value::as_object) else {
+        return;
+    };
+    let secondary = data
+        .get("Secondary Damage")
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    if secondary == 0.0 {
+        return;
+    }
+    let Some(damage_curve) = out.get("Damage Curve") else {
+        return;
+    };
+
+    match damage_curve {
+        Value::Object(o) => match o.get("curve").and_then(|c| c.as_array()) {
+            Some(pts) if !pts.is_empty() => {
+                let points: Vec<crate::curves::CurvePoint> = pts
+                    .iter()
+                    .filter_map(|p| {
+                        Some(crate::curves::CurvePoint {
+                            x: p.get("x").and_then(Value::as_f64)? as f32,
+                            y: p.get("y").and_then(Value::as_f64)? as f32,
+                        })
+                    })
+                    .collect();
+                let reference = crate::curves::eval(&points, 1.0);
+                if reference.is_none_or(|r| r <= 0.0) {
+                    out.insert(
+                        "Bash Damage".to_string(),
+                        json!({"source": "curve_zero_reference"}),
+                    );
+                    return;
+                }
+                let reference = reference.unwrap();
+                if !weapon_bash_eligible(out, data) {
+                    out.insert("Bash Damage".to_string(), json!({"source": "ineligible"}));
+                    return;
+                }
+                let curve: Vec<Value> = points
+                    .iter()
+                    .map(|p| {
+                        json!({
+                            "level": json_f32(p.x),
+                            "damage": json_f32(secondary as f32 * p.y / reference),
+                        })
+                    })
+                    .collect();
+                out.insert(
+                    "Bash Damage".to_string(),
+                    json!({"source": "curve", "curve": curve}),
+                );
+            }
+            _ => {}
+        },
+        Value::String(_) => {
+            out.insert(
+                "Bash Damage".to_string(),
+                json!({"source": "unresolved_curve"}),
+            );
+        }
+        _ => {}
+    }
 }
 
 /// Returns the fixed byte size of a field when it can be determined statically.
@@ -3776,5 +3887,165 @@ mod tests {
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
+    }
+
+    fn sample_bash_damage_curve() -> Value {
+        json!({
+            "formid": "0xDEADBEEF",
+            "editor_id": "CT_Test",
+            "curve_path": "test.json",
+            "curve": [
+                {"x": 1.0, "y": 10.0},
+                {"x": 50.0, "y": 50.0}
+            ]
+        })
+    }
+
+    fn weap_bash_fixture(
+        weapon_type: &str,
+        secondary: f64,
+        damage_curve: Value,
+        keywords: Option<Value>,
+    ) -> Map<String, Value> {
+        let mut out = Map::new();
+        let mut data = Map::new();
+        data.insert(
+            "Weapon Type".to_string(),
+            json!({"value": 0, "name": weapon_type}),
+        );
+        if secondary != 0.0 {
+            data.insert("Secondary Damage".to_string(), json!(secondary));
+        }
+        out.insert("Data".to_string(), Value::Object(data));
+        out.insert("Damage Curve".to_string(), damage_curve);
+        if let Some(kw) = keywords {
+            out.insert("Keywords".to_string(), json!({"Keywords": kw}));
+        }
+        out
+    }
+
+    fn bash_damage_source(out: &Map<String, Value>) -> Option<&str> {
+        out.get("Bash Damage")
+            .and_then(|v| v.get("source"))
+            .and_then(Value::as_str)
+    }
+
+    #[test]
+    fn weapon_bash_curve_gun_computes_table() {
+        let mut out = weap_bash_fixture("Gun", 5.0, sample_bash_damage_curve(), None);
+        apply_weapon_bash_curve(&mut out);
+        assert_eq!(bash_damage_source(&out), Some("curve"));
+        let curve = out
+            .get("Bash Damage")
+            .and_then(|v| v.get("curve"))
+            .and_then(Value::as_array)
+            .expect("curve table");
+        assert_eq!(curve.len(), 2);
+        assert_eq!(curve[0].get("level").and_then(Value::as_f64), Some(1.0));
+        assert_eq!(curve[0].get("damage").and_then(Value::as_f64), Some(5.0));
+        assert_eq!(curve[1].get("level").and_then(Value::as_f64), Some(50.0));
+        assert_eq!(curve[1].get("damage").and_then(Value::as_f64), Some(25.0));
+    }
+
+    #[test]
+    fn weapon_bash_curve_automatic_melee_keyword_computes_table() {
+        let mut out = weap_bash_fixture(
+            "HandToHandMelee",
+            8.0,
+            sample_bash_damage_curve(),
+            Some(json!(["0x006D5081"])),
+        );
+        apply_weapon_bash_curve(&mut out);
+        assert_eq!(bash_damage_source(&out), Some("curve"));
+        let damage = out
+            .get("Bash Damage")
+            .and_then(|v| v.get("curve"))
+            .and_then(|c| c.get(1))
+            .and_then(|p| p.get("damage"))
+            .and_then(Value::as_f64);
+        assert_eq!(damage, Some(40.0));
+    }
+
+    #[test]
+    fn weapon_bash_curve_melee_without_keyword_is_ineligible() {
+        let mut out = weap_bash_fixture("TwoHandAxe", 5.0, sample_bash_damage_curve(), None);
+        apply_weapon_bash_curve(&mut out);
+        assert_eq!(bash_damage_source(&out), Some("ineligible"));
+    }
+
+    #[test]
+    fn weapon_bash_curve_grenade_is_ineligible() {
+        let mut out = weap_bash_fixture("Grenade", 3.0, sample_bash_damage_curve(), None);
+        apply_weapon_bash_curve(&mut out);
+        assert_eq!(bash_damage_source(&out), Some("ineligible"));
+    }
+
+    #[test]
+    fn weapon_bash_curve_zero_secondary_stays_silent() {
+        let mut absent = weap_bash_fixture("Gun", 0.0, sample_bash_damage_curve(), None);
+        absent
+            .get_mut("Data")
+            .and_then(Value::as_object_mut)
+            .expect("Data")
+            .remove("Secondary Damage");
+        apply_weapon_bash_curve(&mut absent);
+        assert!(!absent.contains_key("Bash Damage"));
+
+        let mut zero = weap_bash_fixture("Gun", 0.0, sample_bash_damage_curve(), None);
+        apply_weapon_bash_curve(&mut zero);
+        assert!(!zero.contains_key("Bash Damage"));
+    }
+
+    #[test]
+    fn weapon_bash_curve_zero_reference_emits_marker_not_null_damage() {
+        let curve = json!({
+            "formid": "0x1",
+            "curve": [
+                {"x": 1.0, "y": 0.0},
+                {"x": 50.0, "y": 20.0}
+            ]
+        });
+        let mut out = weap_bash_fixture("Gun", 5.0, curve, None);
+        apply_weapon_bash_curve(&mut out);
+        assert_eq!(bash_damage_source(&out), Some("curve_zero_reference"));
+        assert!(out
+            .get("Bash Damage")
+            .and_then(|v| v.get("curve"))
+            .is_none());
+    }
+
+    #[test]
+    fn weapon_bash_curve_unresolved_curve_marker() {
+        let mut out = weap_bash_fixture("Gun", 5.0, json!("0x0080F217"), None);
+        apply_weapon_bash_curve(&mut out);
+        assert_eq!(bash_damage_source(&out), Some("unresolved_curve"));
+    }
+
+    #[test]
+    fn weapon_bash_curve_not_truncated_at_player_cap() {
+        let curve = json!({
+            "formid": "0x1",
+            "curve": [
+                {"x": 1.0, "y": 10.0},
+                {"x": 50.0, "y": 50.0},
+                {"x": 540.0, "y": 540.0}
+            ]
+        });
+        let mut out = weap_bash_fixture("Gun", 2.0, curve, None);
+        apply_weapon_bash_curve(&mut out);
+        let curve = out
+            .get("Bash Damage")
+            .and_then(|v| v.get("curve"))
+            .and_then(Value::as_array)
+            .expect("curve table");
+        assert_eq!(curve.len(), 3);
+        assert_eq!(curve[2].get("level").and_then(Value::as_f64), Some(540.0));
+        assert_eq!(curve[2].get("damage").and_then(Value::as_f64), Some(108.0));
+        for point in curve {
+            assert!(
+                point.get("damage").map(Value::is_null) != Some(true),
+                "damage must never be null"
+            );
+        }
     }
 }
