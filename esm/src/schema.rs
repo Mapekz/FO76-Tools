@@ -163,6 +163,15 @@ pub enum MemberDef {
     #[serde(rename = "unused")]
     Unused {
         bytes: usize,
+        /// Present only for a sig-bearing, subrecord-level `wbUnused(SIG, 0)`
+        /// (Pascal: an entire subrecord whose payload is intentionally
+        /// ignored) — as opposed to the far more common payload-context
+        /// `Unused` used to skip padding bytes *within* an already-consumed
+        /// struct payload, which has no `sig` of its own. `None` (the
+        /// default, so existing schema JSON keeps parsing without a schema
+        /// regen) preserves the payload byte-skip behavior.
+        #[serde(default)]
+        sig: Option<String>,
         #[serde(default)]
         from_version: Option<u16>,
         #[serde(default)]

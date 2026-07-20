@@ -332,7 +332,7 @@ fn decode_member(
             if let Some(payload) = payload {
                 decode_struct_fields(ctx, name, fields, payload, out);
             } else if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     let child_ctx = if fields.iter().any(contains_field_value_union) {
                         Some(ctx.with_outer_struct(out.clone()))
                     } else {
@@ -403,7 +403,7 @@ fn decode_member(
         }
         MemberDef::LString { sig, name, table } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if ctx.is_localized {
                         // Localized ESM: field is a 4-byte ID into string tables.
                         if sr.data.len() >= 4 {
@@ -490,7 +490,7 @@ fn decode_member(
         }
         MemberDef::ByteRgba { sig, name } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if sr.data.len() >= 4 {
                         out.insert(
                             name.clone(),
@@ -522,7 +522,7 @@ fn decode_member(
                     );
                 }
             } else if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if sr.data.len() >= 12 {
                         out.insert(
                             name.clone(),
@@ -560,6 +560,34 @@ fn decode_member(
             let mut items = Vec::new();
             let target_count = rarray_count(count.as_ref(), out, ctx);
             let anchor = anchor_sig(element);
+            // Elements whose RStruct ends in a sig-bearing `Empty` terminator
+            // (e.g. GMRW Reward's trailing `ITME` "Reward End Marker") can
+            // fall back to partitioning by that terminator's doc_index
+            // instead of by the element's *leading* anchor, for the
+            // iterations where the anchor-based scope below comes up empty.
+            // This matters when the leading anchor is optional and can be
+            // absent on every element in a given record (GMRW Reward's
+            // `CTRG` is one such case): an anchor-based scope degrades to
+            // "unscoped" the moment the anchor sig is missing, letting every
+            // member's own `by_sig` pop bleed across element boundaries
+            // (column-wise mixing).
+            //
+            // This is deliberately a per-*iteration* fallback, not a
+            // whole-array strategy switch: a trailing sig-bearing `Empty` is
+            // not always a true one-per-element terminator — e.g. MESG Menu
+            // Button's trailing `MBNR` ("No Response") has the same shape
+            // but is itself an optional per-element flag, present on only
+            // some buttons in a given record. Using it as an array-wide
+            // terminator would misattribute its (sparse) doc_index as the
+            // bound for buttons that never carried it. Reaching for it only
+            // when the *anchor* (normally reliable — `ITXT`/"Button Text" is
+            // mandatory) fails to produce a scope keeps well-behaved arrays
+            // like Menu Buttons on their existing anchor-based path
+            // untouched, while rescuing GMRW's Reward array, whose anchor
+            // (`CTRG`) is unconditionally absent so anchor-based scoping
+            // fails on every single iteration.
+            let terminator = element_terminator_sig(element);
+            let mut next_element_start: usize = 0;
             while target_count.is_none_or(|n| items.len() < n) {
                 // If stop_before is set, halt when a boundary sig precedes
                 // the element's anchor in document order.
@@ -592,14 +620,57 @@ fn decode_member(
                         })
                     })
                 });
+
                 let scoped_ctx;
-                let element_ctx: &DecodeContext<'_> = match element_scope {
+                let element_ctx: &DecodeContext<'_>;
+                match element_scope {
                     Some((current_idx, next_idx)) => {
                         scoped_ctx = ctx.with_scope(Some(current_idx), next_idx);
-                        &scoped_ctx
+                        // Track a floor for a *future* iteration's terminator
+                        // fallback, in case a later element in this same
+                        // array lacks the anchor (mixed presence).
+                        if let Some(next_idx) = next_idx {
+                            next_element_start = next_idx;
+                        }
+                        element_ctx = &scoped_ctx;
                     }
-                    None => ctx,
-                };
+                    None => {
+                        // Anchor-based scoping produced nothing (no anchor,
+                        // or the anchor sig's queue is exhausted/absent for
+                        // this element) — fall back to terminator-based
+                        // scoping: [next_element_start, terminator_doc_index
+                        // + 1). The `+ 1` includes the terminator subrecord
+                        // itself so the element's own trailing Empty member
+                        // can still consume it.
+                        let term_idx = terminator.and_then(|term_sig| {
+                            by_sig
+                                .get(term_sig)
+                                .and_then(|q| q.front())
+                                .map(|sr| sr.doc_index)
+                        });
+                        match term_idx {
+                            Some(term_idx) => {
+                                scoped_ctx =
+                                    ctx.with_scope(Some(next_element_start), Some(term_idx + 1));
+                                // Advance past this terminator for the next
+                                // iteration. Since this element's own decode
+                                // below consumes the terminator (its trailing
+                                // Empty member pops the front of the
+                                // terminator's queue), the queue's front
+                                // necessarily moves forward each iteration —
+                                // this loop cannot spin forever on the same
+                                // terminator.
+                                next_element_start = term_idx + 1;
+                                element_ctx = &scoped_ctx;
+                            }
+                            // No anchor and no terminator left either —
+                            // decode fully unscoped, same as before this fix.
+                            None => {
+                                element_ctx = ctx;
+                            }
+                        }
+                    }
+                }
 
                 let mut item = Map::new();
                 decode_member(element_ctx, element, &mut item, by_sig, None);
@@ -721,7 +792,9 @@ fn decode_member(
             variants,
         } => {
             // If the union has a sig, consume the subrecord and use its bytes as payload.
-            let taken = sig.as_deref().and_then(|s| take_first(by_sig, s));
+            let taken = sig
+                .as_deref()
+                .and_then(|s| take_first_in_scope(by_sig, s, ctx));
             let taken_data: Option<&[u8]> = taken.as_ref().map(|sr| sr.data.as_slice());
             let effective_payload = taken_data.or(payload);
 
@@ -863,20 +936,42 @@ fn decode_member(
         }
         MemberDef::Empty { sig, name, .. } => {
             if let Some(sig) = sig {
+                // Deliberately unscoped (`take_first`, not `take_first_in_scope`):
+                // QUST alias bodies close with an `Empty{sig:"ALED"}` ("Alias
+                // End") member, and `rstruct_present_signature_scope` defines
+                // an alias's own scope_max as "up to but NOT including the
+                // next ALED" (see its doc comment) — i.e. exclusive of the
+                // alias's own closing ALED subrecord. Scoping this arm made
+                // an alias unable to consume its own terminator (doc_index ==
+                // scope_max is out of range), regressing
+                // qust_gq_horde_alias_fill_decodes_correctly /
+                // qust_gq_workshop_reclaim_decodes_correctly with a leftover
+                // `_unmapped 'ALED'`. No concrete real-ESM case currently
+                // needs Empty scoped (GMRW's ITME terminator is bounded by
+                // the RArray's own inclusive `term_idx + 1` upper bound in
+                // the RArray arm above, not by this take), so it stays
+                // unscoped rather than special-casing ALED here.
+                //
                 // Only emit the marker when the empty subrecord is actually present.
                 if take_first(by_sig, sig).is_some() {
                     out.insert(name.clone(), json!(null));
                 }
             }
         }
-        MemberDef::Unused { bytes, .. } => {
+        MemberDef::Unused { bytes, sig, .. } => {
             if let Some(data) = payload {
+                // Payload-context skip: bytes already consumed as part of an
+                // enclosing struct/subrecord, nothing left to look up in `by_sig`.
                 let _ = data.get(..*bytes);
+            } else if let Some(sig) = sig {
+                // Subrecord-level `wbUnused(SIG, 0)`: consume and discard the
+                // whole subrecord so it doesn't linger as `_unmapped`.
+                let _ = take_first_in_scope(by_sig, sig, ctx);
             }
         }
         MemberDef::Unknown { sig, name } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     out.insert(
                         name.clone(),
                         json!({
@@ -889,7 +984,7 @@ fn decode_member(
         }
         MemberDef::RawFallback { sig, name, reason } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     out.insert(
                         name.clone(),
                         json!({
@@ -911,7 +1006,7 @@ fn decode_member(
         }
         MemberDef::Vmad { sig, name } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     let decoded = match ctx.record_signature {
                         Some("QUST") => decode_vmad_qust(ctx, &sr.data),
                         Some("INFO") => decode_vmad_info(ctx, &sr.data),
@@ -926,7 +1021,7 @@ fn decode_member(
         }
         MemberDef::Ctda { sig, name } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     out.insert(name.clone(), crate::ctda::decode_ctda(&sr.data, ctx));
                 }
             } else if let Some(data) = payload {
@@ -935,7 +1030,7 @@ fn decode_member(
         }
         MemberDef::ModelInfo { sig, name } => {
             if let Some(sig) = sig {
-                if let Some(sr) = take_first(by_sig, sig) {
+                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     out.insert(name.clone(), decode_model_info(&sr.data));
                 }
             } else if let Some(data) = payload {
@@ -1892,26 +1987,55 @@ fn first_anchor_doc_index(
         | MemberDef::Vmad { sig: Some(sig), .. }
         | MemberDef::Ctda { sig: Some(sig), .. }
         | MemberDef::ModelInfo { sig: Some(sig), .. }
-        | MemberDef::RawFallback { sig: Some(sig), .. } => by_sig
+        | MemberDef::RawFallback { sig: Some(sig), .. }
+        | MemberDef::Unused { sig: Some(sig), .. } => by_sig
             .get(sig.as_str())
             .and_then(|v| v.front())
             .map(|sr| sr.doc_index),
+        // Recurse into every sub-member and take the MINIMUM doc_index, not
+        // just the first schema-order hit — mirrors the fix in
+        // `rstruct_present_signature_scope` below and for the same reason:
+        // a nested rstruct's schema-first sig-bearing member (e.g. ARMA
+        // Male's `XFLG`, which is declared before `ENLT`/`ENLS`/`AUUV` in
+        // the schema but shares its sig queue with a sibling group) is not
+        // reliably the one with the lowest doc_index. Using `find_map` here
+        // let a later sibling's anchor leak in as this rstruct's reported
+        // "first" anchor, which then propagated outward as an artificially
+        // high floor when a parent rstruct intersected its own scope with
+        // this one's (see ARMA's Biped Model → Male/Female nesting).
         MemberDef::RStruct { members, .. } => members
             .iter()
-            .find_map(|m| first_anchor_doc_index(by_sig, m)),
+            .filter_map(|m| first_anchor_doc_index(by_sig, m))
+            .min(),
+        // An RArray's own earliest anchor is its element's earliest anchor —
+        // e.g. SCEN's "Start Scene" rstruct's `Scenes` rarray of
+        // `[LCEP, INTT, SSPN, CITC, Conditions]` elements is anchored by
+        // `LCEP`. Without this arm, an RArray member contributed no anchor
+        // at all, so a later sibling member's anchor (or none) could win.
+        MemberDef::RArray { element, .. } => first_anchor_doc_index(by_sig, element),
         _ => None,
     }
 }
 
 /// Bounds for `PresentSignature` inside repeated QUST alias bodies: from the
 /// struct's opening anchor subrecord up to (but not including) the next `ALED`.
+///
+/// `scope_min` is the MINIMUM doc_index across *all* of `members`' own first
+/// anchors, not just the first one hit in schema declaration order. Schema
+/// order and document order are unrelated — e.g. ARMA's "Biped Model" rstruct
+/// declares its `Male` sub-rstruct before `Female`, but a record can easily
+/// have `Female`'s anchor (e.g. `MOD3`) appear earlier in the file than
+/// anything in `Male`'s own group. Taking the first schema-order hit as
+/// `scope_min` could exclude `Male`'s own genuinely-earlier subrecords from
+/// its own scope.
 fn rstruct_present_signature_scope(
     by_sig: &HashMap<String, VecDeque<&OwnedSubrecord>>,
     members: &[MemberDef],
 ) -> (Option<usize>, Option<usize>) {
     let scope_min = members
         .iter()
-        .find_map(|member| first_anchor_doc_index(by_sig, member));
+        .filter_map(|member| first_anchor_doc_index(by_sig, member))
+        .min();
     let scope_max = scope_min.and_then(|min| {
         by_sig.get("ALED").and_then(|subs| {
             subs.iter()
@@ -1943,8 +2067,74 @@ fn anchor_sig(member: &MemberDef) -> Option<&str> {
         | MemberDef::Vmad { sig, .. }
         | MemberDef::Ctda { sig, .. }
         | MemberDef::ModelInfo { sig, .. }
-        | MemberDef::RawFallback { sig, .. } => sig.as_deref(),
+        | MemberDef::RawFallback { sig, .. }
+        | MemberDef::Unused { sig, .. } => sig.as_deref(),
         _ => None,
+    }
+}
+
+/// Returns the terminator signature when `element` is an `RStruct` whose
+/// *last* member is a sig-bearing `Empty` — e.g. GMRW Reward's trailing
+/// `ITME` "Reward End Marker". Used by `MemberDef::RArray` to partition
+/// elements by terminator doc_index instead of by leading anchor, for
+/// element shapes whose leading anchor is optional and can be absent on
+/// every element in a given record.
+///
+/// Rejects a candidate whose sig is *also* used by an earlier member of the
+/// same element: SCEN's "Action" rstruct, for instance, reuses `ANAM` for
+/// both its leading "Type" field and its trailing "End Marker" — a single
+/// global FIFO queue serves both roles, so by the time the trailing member's
+/// turn comes around, the queue's *front* has already moved on to some other
+/// action's leading "Type" popped in between, and treating it as this
+/// element's own terminator massively over-restricts every other member's
+/// scope. GMRW's `ITME`, by contrast, is unique to the terminator, so the
+/// front of its queue always really is this element's own end.
+fn element_terminator_sig(element: &MemberDef) -> Option<&str> {
+    let MemberDef::RStruct { members, .. } = element else {
+        return None;
+    };
+    let (last, rest) = members.split_last()?;
+    let MemberDef::Empty { sig: Some(sig), .. } = last else {
+        return None;
+    };
+    if rest.iter().any(|m| member_contains_sig(m, sig)) {
+        return None;
+    }
+    Some(sig.as_str())
+}
+
+/// Returns `true` if `member` — or anything nested inside it (struct fields,
+/// union variants, rstruct/rarray members) — is sig-bearing with signature
+/// `sig`. Used by `element_terminator_sig` to reject a trailing-`Empty`
+/// candidate whose sig is reused by another member of the same element.
+fn member_contains_sig(member: &MemberDef, sig: &str) -> bool {
+    match member {
+        MemberDef::RStruct { members, .. } => members.iter().any(|m| member_contains_sig(m, sig)),
+        MemberDef::RArray { element, .. } => member_contains_sig(element, sig),
+        MemberDef::Union {
+            sig: s, variants, ..
+        } => s.as_deref() == Some(sig) || variants.iter().any(|v| member_contains_sig(v, sig)),
+        MemberDef::Struct { sig: s, fields, .. } => {
+            s.as_deref() == Some(sig) || fields.iter().any(|f| member_contains_sig(f, sig))
+        }
+        MemberDef::Array {
+            sig: s, element, ..
+        } => s.as_deref() == Some(sig) || member_contains_sig(element, sig),
+        MemberDef::Integer { sig: s, .. }
+        | MemberDef::Float { sig: s, .. }
+        | MemberDef::String { sig: s, .. }
+        | MemberDef::LString { sig: s, .. }
+        | MemberDef::FormId { sig: s, .. }
+        | MemberDef::Bytes { sig: s, .. }
+        | MemberDef::ByteRgba { sig: s, .. }
+        | MemberDef::Vec3 { sig: s, .. }
+        | MemberDef::Empty { sig: s, .. }
+        | MemberDef::Unknown { sig: s, .. }
+        | MemberDef::Vmad { sig: s, .. }
+        | MemberDef::Ctda { sig: s, .. }
+        | MemberDef::ModelInfo { sig: s, .. }
+        | MemberDef::RawFallback { sig: s, .. }
+        | MemberDef::Unused { sig: s, .. } => s.as_deref() == Some(sig),
     }
 }
 
@@ -3631,6 +3821,7 @@ mod tests {
                 variants: vec![
                     MemberDef::Unused {
                         bytes: 4,
+                        sig: None,
                         from_version: None,
                         below_version: None,
                     },
@@ -4075,5 +4266,78 @@ mod tests {
                 "damage must never be null"
             );
         }
+    }
+
+    /// Fix E regression: a sig-bearing `Unused` member (Pascal
+    /// `wbUnused(INDX, 0)` — an entire subrecord whose payload is
+    /// intentionally ignored) must consume its subrecord from `by_sig` and
+    /// emit nothing, instead of leaving it queued to show up as `_unmapped`.
+    /// Before this fix `MemberDef::Unused`'s decode arm only ever looked at
+    /// `payload` (the struct-payload-context byte-skip path) and never
+    /// touched `by_sig` at all, so a schema entry giving it a `sig` would
+    /// have been silently inert.
+    #[test]
+    fn unused_with_sig_consumes_subrecord_and_emits_nothing() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let member = MemberDef::Unused {
+            bytes: 0,
+            sig: Some("INDX".into()),
+            from_version: None,
+            below_version: None,
+        };
+        let subrecords = [subrecord("INDX", vec![0x01, 0x02, 0x03, 0x04], 0)];
+        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
+        for sr in &subrecords {
+            by_sig
+                .entry(sr.signature.as_str().to_string())
+                .or_default()
+                .push_back(sr);
+        }
+
+        let mut out = Map::new();
+        decode_member(&ctx, &member, &mut out, &mut by_sig, None);
+
+        assert!(
+            out.is_empty(),
+            "sig-bearing Unused must emit no output key, got {out:?}"
+        );
+        assert!(
+            by_sig.get("INDX").is_none_or(|q| q.is_empty()),
+            "sig-bearing Unused must consume its subrecord from by_sig, \
+             leaving nothing behind to show up as _unmapped"
+        );
+    }
+
+    /// Payload-context `Unused` (no `sig`, the pre-existing/common case: byte
+    /// padding skipped *within* an already-consumed struct payload) must keep
+    /// working unchanged — this is a guard against Fix E's `sig` addition
+    /// regressing the far more common path.
+    #[test]
+    fn unused_without_sig_still_skips_payload_bytes_only() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let fields = vec![
+            MemberDef::Unused {
+                bytes: 3,
+                sig: None,
+                from_version: None,
+                below_version: None,
+            },
+            int_field("Sentinel", IntegerWidth::U8),
+        ];
+        let data: Vec<u8> = vec![0xAA, 0xBB, 0xCC, 0x2A];
+        let mut out = Map::new();
+        decode_struct_fields(&ctx, "Test", &fields, &data, &mut out);
+        let inner = out
+            .get("Test")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            inner.get("Sentinel").and_then(|v| v.as_u64()),
+            Some(42),
+            "Sentinel should be 42 (3 padding bytes skipped correctly)"
+        );
     }
 }

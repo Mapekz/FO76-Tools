@@ -5569,3 +5569,233 @@ fn pcrd_data_decodes_race_restriction() {
         );
     }
 }
+
+/// ARMA-shaped regression test for the min-doc-index rstruct scoping fix
+/// (`rstruct_present_signature_scope` in `src/decode.rs`, "Fix A").
+///
+/// Mirrors the diagnosed shape of ARMA `0x00156CB9`
+/// (`AAClothesPreWarHouseDress`): a "Biped Model" rstruct whose `Male` and
+/// `Female` sub-rstructs share the `ENLT`/`ENLS`/`AUUV`/`XFLG` sigs. The Male
+/// group has no model of its own (`MOD2`/`MO2T`/`MO2C`/`MO2S` all absent), so
+/// in *schema declaration order* its own first present member is `XFLG` —
+/// but `XFLG` here belongs (in document order) to the Female group's own
+/// instance, which sits *after* Female's `MOD3`. Before the fix,
+/// `rstruct_present_signature_scope` used `find_map` (first schema-order
+/// hit) to compute the whole "Biped Model" rstruct's `scope_min`, landing on
+/// `XFLG`'s doc_index and stranding Male's own earlier `ENLT`/`ENLS`/`AUUV`
+/// and Female's own earlier `MOD3` outside that scope forever (`_unmapped`
+/// `ENLS` and `MOD3`). Taking the MINIMUM doc_index across all members fixes
+/// both.
+#[test]
+fn arma_biped_model_male_missing_model_does_not_strand_scoped_members() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    let subs = subrecords_from(&[
+        ("EDID", "4d696e53636f706500"), // "MinScope\0"
+        // Male biped group: no MOD2/MO2T/MO2C/MO2S — no model at all, only
+        // the Enlighten trio. Its own ENLS = 1.0.
+        ("ENLT", "aabbccdd"),
+        ("ENLS", "0000803f"), // 1.0
+        ("AUUV", &"00".repeat(28)),
+        // Female biped group: has its own model (MOD3) *and* the only XFLG
+        // in the record, both appearing before its own Enlighten trio. Its
+        // own ENLS = 2.0 (deliberately different from Male's, to catch
+        // cross-group contamination).
+        ("MOD3", "46656d616c652e6e696600"), // "Female.nif\0"
+        ("MO3T", "0100000000000000"),       // model_info: 1 counter, 0 textures
+        ("XFLG", "02"),
+        ("ENLT", "11223344"),
+        ("ENLS", "00000040"), // 2.0
+        ("AUUV", &"00".repeat(28)),
+        ("MO3F", "00"),
+    ]);
+
+    let result = decode_record(&ctx, "ARMA", &subs);
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Armor Addon"),
+    );
+    assert_fully_decoded(&result);
+
+    let biped = result
+        .get("Biped Model")
+        .and_then(|v| v.as_object())
+        .expect("Biped Model must decode");
+
+    let male_enls = biped
+        .get("Male")
+        .and_then(|v| v.get("Enlighten Simplified Shape Scale"))
+        .and_then(|v| v.as_f64());
+    assert_eq!(male_enls, Some(1.0), "Male's own ENLS must not be stranded");
+
+    let female = biped.get("Female").expect("Female group must decode");
+    assert_eq!(
+        female.get("Model Filename").and_then(|v| v.as_str()),
+        Some("Female.nif"),
+        "Female's own MOD3 must not be stranded"
+    );
+    assert_eq!(
+        female
+            .get("Enlighten Simplified Shape Scale")
+            .and_then(|v| v.as_f64()),
+        Some(2.0),
+        "Female's own ENLS must be its own value, not Male's"
+    );
+}
+
+/// SCEN-shaped regression test for the `RArray` recursion arm added to
+/// `first_anchor_doc_index` (`src/decode.rs`, "Fix B").
+///
+/// Mirrors the diagnosed shape of SCEN `0x001D1410`
+/// (`SFM04_Organic_TrackerRadioScene`): a "Start Scene" action variant
+/// rstruct `[STSC (absent), Scenes rarray of [LCEP, INTT, SSPN, CITC,
+/// Conditions], HTID]`. Before the fix, `first_anchor_doc_index` had no arm
+/// for `MemberDef::RArray`, so the `Scenes` member contributed no candidate
+/// to the enclosing rstruct's `scope_min` computation — with `STSC` absent,
+/// the only remaining candidate was `HTID`, which sits *after* every
+/// `LCEP`/`INTT`/`SSPN`/`CITC` subrecord in document order. That excluded the
+/// entire `Scenes` array from the "Start Scene" rstruct's scope, leaving all
+/// four sigs `_unmapped`. Recursing into the array's element (combined with
+/// Fix A's min-based `scope_min`) fixes it: the effective `scope_min` becomes
+/// `LCEP`'s own doc_index.
+#[test]
+fn scen_start_scene_action_scenes_array_not_stranded_by_trailing_htid() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 180);
+
+    let subs = subrecords_from(&[
+        ("EDID", "5363656e5465737400"), // "ScenTest\0"
+        // Action 0: Type = 4 ("Start Scene"). ANAM's *two* occurrences here
+        // (leading Type, trailing End Marker) bound this single Action via
+        // the RArray's own anchor-pair scoping.
+        ("ANAM", "0400"), // Type = Start Scene
+        ("NAM0", ""),     // Name (empty)
+        ("ALID", "feffffff"),
+        ("ALSO", "ffffffff"),
+        ("INAM", "00000000"),
+        ("FNAM", "00000000"),
+        ("SNAM", "00000000"),
+        ("ENAM", "00000000"),
+        // Start Scene variant: STSC deliberately absent (matches the
+        // diagnosed record). Scenes[0] = one nested Start Scene entry.
+        ("LCEP", "10141d00"),     // Scene FormID = 0x001D1410
+        ("INTT", "0000"),         // Phase Index = 0
+        ("SSPN", "537461727400"), // "Start\0"
+        ("CITC", "00000000"),     // Condition Count = 0
+        // HTID sits *after* the whole Scenes cluster — this is what made the
+        // old find_map-based scope_min land on HTID instead of LCEP.
+        ("HTID", ""),
+        ("ANAM", ""), // Action's own End Marker
+    ]);
+
+    let result = decode_record(&ctx, "SCEN", &subs);
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Scene"),
+    );
+    assert_fully_decoded(&result);
+
+    let action = &result["Actions"][0]["Action"];
+    assert_eq!(
+        action.pointer("/Type/name").and_then(|v| v.as_str()),
+        Some("Start Scene"),
+    );
+    let scene = &action["Start Scene"]["Scenes"][0]["Start Scene"];
+    assert_eq!(
+        scene.get("Scene").and_then(|v| v.as_str()),
+        Some("0x001D1410"),
+        "Scenes[0].Scene (LCEP) must not be stranded"
+    );
+    assert_eq!(
+        scene.get("Phase Index").and_then(|v| v.as_u64()),
+        Some(0),
+        "Scenes[0].Phase Index (INTT) must not be stranded"
+    );
+    assert_eq!(
+        scene.get("Start Phase for Scene").and_then(|v| v.as_str()),
+        Some("Start"),
+        "Scenes[0].Start Phase for Scene (SSPN) must not be stranded"
+    );
+}
+
+/// GMRW-shaped regression test for terminator-based `RArray` element
+/// partitioning (`src/decode.rs`, "Fix C").
+///
+/// Mirrors the diagnosed shape of GMRW `0x006311D8`: a "Rewards List" rarray
+/// of "Reward" rstructs whose optional leading anchor (`CTRG`) is absent on
+/// every element, but whose *last* member is a sig-unique `Empty` terminator
+/// (`ITME`, "Reward End Marker") present exactly once per reward. Before the
+/// fix, with the leading anchor absent, each element decoded fully unscoped —
+/// every member popped the global front of its own sig queue regardless of
+/// which reward it belonged to, so this record's condition parameter strings
+/// (`CIS2`) ended up misattributed or left over as `_unmapped`. Bounding each
+/// element to `[start, terminator_doc_index + 1)` fixes it.
+///
+/// Two sparse rewards here: each carries only `NAM7` (to tell them apart) and
+/// one condition (`CTDA` + `CIS2`), then its own `ITME`.
+#[test]
+fn gmrw_sparse_rewards_partitioned_by_shared_end_marker_terminator() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    // Verbatim CTDA bytes reused from other tests in this file (a real,
+    // already-known-good 34-byte CTDA payload) — its exact condition
+    // function/values are irrelevant here, only that it decodes without a
+    // raw fallback.
+    let ctda = "000000000000803f30020000b5f36700000000000000000000000000ffffffff";
+
+    let subs = subrecords_from(&[
+        ("EDID", "476d72774d696e5465737400"), // "GmrwMinTest\0"
+        ("RWDS", "02000000"),                 // Rewards Count = 2
+        // Reward 0: no CTRG. NAM7 distinguishes it from Reward 1.
+        ("NAM7", "34120000"), // GLOB FormID = 0x00001234
+        ("CITC", "01000000"), // Condition Count = 1
+        ("CTDA", ctda),
+        ("CIS2", "6361707352657761726452616e6b00"), // "capsRewardRank\0"
+        ("ITME", ""),                               // Reward End Marker
+        // Reward 1: no CTRG. NAM7 differs; CIS2 differs.
+        ("NAM7", "78560000"), // GLOB FormID = 0x00005678
+        ("CITC", "01000000"),
+        ("CTDA", ctda),
+        ("CIS2", "746f6b656e7352657761726452616e6b00"), // "tokensRewardRank\0"
+        ("ITME", ""),
+    ]);
+
+    let result = decode_record(&ctx, "GMRW", &subs);
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Gameplay Reward"),
+    );
+    assert_fully_decoded(&result);
+
+    let rewards = result
+        .get("Rewards List")
+        .and_then(|v| v.as_array())
+        .expect("Rewards List must decode");
+    assert_eq!(
+        rewards.len(),
+        2,
+        "expected exactly 2 rewards, no fragmentation"
+    );
+
+    for (idx, expected_param) in [(0, "capsRewardRank"), (1, "tokensRewardRank")] {
+        let reward = &rewards[idx]["Reward"];
+        let conditions = reward
+            .pointer("/Conditions/Conditions")
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("reward {idx} must have its own Conditions"));
+        assert_eq!(
+            conditions.len(),
+            1,
+            "reward {idx} must have exactly 1 condition"
+        );
+        assert_eq!(
+            conditions[0]
+                .pointer("/Condition/Parameter #2")
+                .and_then(|v| v.as_str()),
+            Some(expected_param),
+            "reward {idx}'s CIS2 must stay with its own reward, not bleed into the other"
+        );
+    }
+}
