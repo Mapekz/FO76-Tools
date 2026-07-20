@@ -143,22 +143,31 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   Records with zero/absent secondary damage, or no damage curve at all, stay
   silent (no `"Bash Damage"` key). Distinct from `"Bash Condition Loss Scale"`,
   which is a durability wear-rate curve, not bash damage.
-- **`Data.Base Damage` is a dual-purpose scalar, not physical-only**
-  (informant-provided, not independently re-derived here — flag before
-  trusting for a new mechanic): it's the fallback/base value for BOTH the
-  physical component (used directly when no top-level `Damage Curve` exists;
-  overridden by that curve when it does) AND every non-physical `Damage
-  Types[]` (DTVL) entry (used as that entry's fallback/scalar; overridden by
-  the entry's own `Curve Table` when present). Consistent with observed
-  records: every sampled `Damage Types[]` entry that carries a `Curve Table`
-  shows `Amount: 0` (Cremator's fire, Gamma Gun's radiation+energy) — the
-  curve fully replaces the entry's own scalar rather than combining with it.
-  The reverse case (a `Damage Types[]` entry with a non-zero `Amount` and NO
-  `Curve Table` of its own) is rare in the live roster — `CUT_NeedleSMG`
-  (cut content) is the one sampled example (`Base Damage` 7, poison `Amount`
-  1) — so whether that `Amount` is absolute or a ratio against `Base Damage`
-  is untested here; verify in-game or against a non-cut example before a
-  consumer relies on it.
+- **`Data.Base Damage` is the weapon's physical-damage value**, overridden by
+  a top-level `Damage Curve` (sibling of `Data`) when that curve resolves to
+  real points; if curvetables are missing the curve stays a raw FormID and
+  `Base Damage` is the effective value (see the missing-curvetable note
+  above). Verified via a full 1549-record WEAP sweep.
+- **`Damage Types[]` (DTVL) is a separate top-level array**, also a sibling
+  of `Data`, adding non-physical components (energy/fire/poison/cryo/
+  radiation/electrical). It commonly *stacks* with physical `Base Damage`
+  rather than replacing it: `PlasmaGun` (24 physical + `dtEnergy` curve),
+  `Shishkebab` (13 physical + `dtFire` 13), `RadiumRifle` (27 physical +
+  `dtRadiationExposure` curve) all deal both at once — don't assume
+  either/or. Each entry has `Type`, a scalar `Amount` fallback, and an
+  optional `Curve Table` override, but the curve does NOT reliably zero the
+  `Amount`: 43% of resolved-curve DTVL entries in the sweep also carry a
+  nonzero `Amount`, so don't assume curve-replaces-scalar without checking
+  the specific record. `Type` is normally elemental but CAN be `dtPhysical`
+  — one live case, `crSuperMutantBoss_AssaultRifle_DailyOps_Boss`
+  (`Base Damage: 0`, damage entirely via a `dtPhysical` DTVL curve) — rare,
+  not purely theoretical.
+- **A WEAP record can carry no damage fields at all and still deal damage**
+  — e.g. `GammaGun`: `Base Damage: 0`, no `Damage Curve`, no `Damage Types`
+  field. Its real damage lives on the downstream `EXPL` record reached via
+  `Data.Ammo` → AMMO `Projectile` → PROJ `Explosion` → EXPL, which carries
+  its *own* top-level `Damage Types[]`. Chase the ammo/projectile/explosion
+  chain (not an Enchantment/MGEF) when a WEAP record itself is a dead end.
 
 ## Field-name churn
 
