@@ -143,6 +143,22 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   Records with zero/absent secondary damage, or no damage curve at all, stay
   silent (no `"Bash Damage"` key). Distinct from `"Bash Condition Loss Scale"`,
   which is a durability wear-rate curve, not bash damage.
+- **`Data.Base Damage` is a dual-purpose scalar, not physical-only**
+  (informant-provided, not independently re-derived here — flag before
+  trusting for a new mechanic): it's the fallback/base value for BOTH the
+  physical component (used directly when no top-level `Damage Curve` exists;
+  overridden by that curve when it does) AND every non-physical `Damage
+  Types[]` (DTVL) entry (used as that entry's fallback/scalar; overridden by
+  the entry's own `Curve Table` when present). Consistent with observed
+  records: every sampled `Damage Types[]` entry that carries a `Curve Table`
+  shows `Amount: 0` (Cremator's fire, Gamma Gun's radiation+energy) — the
+  curve fully replaces the entry's own scalar rather than combining with it.
+  The reverse case (a `Damage Types[]` entry with a non-zero `Amount` and NO
+  `Curve Table` of its own) is rare in the live roster — `CUT_NeedleSMG`
+  (cut content) is the one sampled example (`Base Damage` 7, poison `Amount`
+  1) — so whether that `Amount` is absolute or a ratio against `Base Damage`
+  is untested here; verify in-game or against a non-cut example before a
+  consumer relies on it.
 
 ## Field-name churn
 
