@@ -229,7 +229,7 @@ Key re-exports: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`
 
 ## Schema
 
-`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers 173 FO76 record types derived from xEdit Pascal definitions. An `fo76.overrides.json` is merged on top for manual corrections.
+`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers 181 FO76 record types derived from xEdit Pascal definitions. An `fo76.overrides.json` is merged on top for manual corrections.
 
 To regenerate or extend coverage:
 
@@ -252,9 +252,9 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 |-----|------|:------:|:-----:|
 | `AACT` | Action | full | none |
 | `AAMD` | Aim Assist Model Data | full | none |
-| `AAPD` | Aim Assist Pose Data | partial | none |
-| `ACHR` | Placed NPC | partial | none |
-| `ACTI` | Activator | partial | none |
+| `AAPD` | Aim Assist Pose Data | full | none |
+| `ACHR` | Placed NPC | full | none |
+| `ACTI` | Activator | full | none |
 | `ADDN` | Addon Node | full | none |
 | `AECH` | Audio Effect Chain | full | none |
 | `ALCH` | Ingestible | full | basic |
@@ -262,7 +262,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `AMMO` | Ammunition | full | basic |
 | `ANIO` | Animated Object | full | none |
 | `AORU` | Attraction Rule | full | none |
-| `ARMA` | Armor Addon | full | none |
+| `ARMA` | Armor Addon | partial | none |
 | `ARMO` | Armor | full | basic |
 | `ARTO` | Art Object | full | none |
 | `ASPC` | Acoustic Space | full | none |
@@ -276,7 +276,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `BOOK` | Book | full | basic |
 | `BPTD` | Body Part Data | full | basic |
 | `CAMS` | Camera Shot | full | none |
-| `CELL` | Cell | none | none |
+| `CELL` | Cell | full | none |
 | `CHAL` | Challenge | full | basic |
 | `CLAS` | Class | full | none |
 | `CLFM` | Color | full | none |
@@ -287,7 +287,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `CNDF` | Condition Form | full | none |
 | `COBJ` | Constructible Object | full | basic |
 | `COEN` | Consumable Entitlement | full | basic |
-| `COLL` | Collision Layer | partial | none |
+| `COLL` | Collision Layer | full | none |
 | `CONT` | Container | full | basic |
 | `CPRD` | Challenge Pass Reward Data | full | none |
 | `CPTH` | Camera Path | full | none |
@@ -299,11 +299,11 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `DFOB` | Default Object | full | basic |
 | `DIAL` | Dialog Topic | full | none |
 | `DIST` | District | full | none |
-| `DLBR` | Dialog Branch | none | none |
+| `DLBR` | Dialog Branch | full | none |
 | `DLVW` | Dialog View | full | none |
 | `DMGT` | Damage Type Resist | full | basic |
 | `DOBJ` | Default Object Manager | full | none |
-| `DOOR` | Door | partial | none |
+| `DOOR` | Door | full | none |
 | `ECAT` | Emote Category | full | none |
 | `EFSH` | Effect Shader | full | none |
 | `EMOT` | Emote | full | none |
@@ -335,7 +335,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `INNR` | Instance Naming Rules | full | basic |
 | `IPCT` | Impact | full | none |
 | `IPDS` | Impact Data Set | full | none |
-| `KEYM` | Key | partial | none |
+| `KEYM` | Key | full | none |
 | `KSSM` | Sound Keyword Mapping | full | none |
 | `KYWD` | Keyword | full | basic |
 | `LAYR` | Layer | full | none |
@@ -343,15 +343,15 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `LCTN` | Location | full | none |
 | `LENS` | Lens Flare | full | none |
 | `LGDI` | Legendary Item | full | basic |
-| `LGTM` | Lighting Template | partial | none |
-| `LIGH` | Light | partial | none |
+| `LGTM` | Lighting Template | full | none |
+| `LIGH` | Light | full | none |
 | `LOUT` | Loadout | full | none |
 | `LSCR` | Load Screen | full | none |
 | `LTEX` | Landscape Texture | full | none |
-| `LVLI` | Leveled Item | partial | basic |
-| `LVLN` | Leveled NPC | partial† | basic |
-| `LVLP` | Leveled Pack In | partial† | basic |
-| `LVPC` | Leveled Perk Card | partial† | basic |
+| `LVLI` | Leveled Item | full | basic |
+| `LVLN` | Leveled NPC | full | basic |
+| `LVLP` | Leveled Pack In | full | basic |
+| `LVPC` | Leveled Perk Card | full | basic |
 | `MATO` | Material Object | full | none |
 | `MATT` | Material Type | full | none |
 | `MDSP` | Model Swap | full | basic |
@@ -359,15 +359,15 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `MGEF` | Magic Effect | full | basic |
 | `MISC` | Misc. Item | full | basic |
 | `MOVT` | Movement Type | full | none |
-| `MSTT` | Moveable Static | partial | none |
+| `MSTT` | Moveable Static | full | none |
 | `MSWP` | Material Swap | full | basic |
 | `MUSC` | Music Type | full | none |
 | `MUST` | Music Track | full | none |
 | `NAVI` | Navmesh Info Map | full | none |
-| `NAVM` | Navigation Mesh | none | none |
+| `NAVM` | Navigation Mesh | full | none |
 | `NOCM` | Navmesh Obstacle Manager | full | none |
 | `NOTE` | Note | full | basic |
-| `NPC_` | Non-Player Character | partial | basic |
+| `NPC_` | Non-Player Character | full | robust |
 | `OMOD` | Object Modification | full | basic |
 | `OTFT` | Outfit | full | basic |
 | `OVIS` | Object Visibility Manager | full | none |
@@ -376,27 +376,27 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `PCRD` | Perk Card | full | basic |
 | `PEPF` | Event Playlist | full | basic |
 | `PERK` | Perk | full | robust |
-| `PGRE` | Placed Grenade | none | none |
-| `PHZD` | Placed Hazard | none | none |
+| `PGRE` | Placed Grenade | full | none |
+| `PHZD` | Placed Hazard | full | none |
 | `PKIN` | Pack-In | full | none |
-| `PLYR` | Player Reference | none | none |
+| `PLYR` | Player Reference | full | none |
 | `PLYT` | Player Title | full | basic |
 | `PMFT` | Photo Mode Feature | full | none |
-| `PMIS` | Placed Missile | none | none |
+| `PMIS` | Placed Missile | full | none |
 | `PPAK` | Perk Card Pack | full | none |
 | `PROJ` | Projectile | full | basic |
 | `QMDL` | Quest Module | full | basic |
-| `QUST` | Quest | partial† | basic |
-| `RACE` | Race | full | basic |
+| `QUST` | Quest | full | basic |
+| `RACE` | Race | partial | basic |
 | `REFR` | Placed Object | partial | none |
 | `REGN` | Region | full | none |
 | `RELA` | Relationship | full | none |
-| `RESO` | Resource | partial† | basic |
+| `RESO` | Resource | full | basic |
 | `REVB` | Reverb Parameters | full | none |
 | `RFCT` | Visual Effect | full | none |
 | `RFGP` | Reference Group | full | none |
-| `SCCO` | Scene Collection | partial | none |
-| `SCEN` | Scene | full | none |
+| `SCCO` | Scene Collection | full | none |
+| `SCEN` | Scene | partial | none |
 | `SCOL` | Static Collection | full | none |
 | `SCSN` | Sound Category Snapshot | full | none |
 | `SECH` | Sound Echo Marker | full | none |
@@ -410,11 +410,11 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `SPEL` | Spell | full | basic |
 | `SPGD` | Shader Particle Geometry | full | none |
 | `STAG` | Animation Sound Tag Set | full | none |
-| `STAT` | Static | partial | none |
+| `STAT` | Static | full | none |
 | `STHD` | Spell Threshold Data | full | none |
 | `STMP` | Snap Template | full | none |
 | `STND` | Snap Template Node | full | none |
-| `TACT` | Talking Activator | partial | none |
+| `TACT` | Talking Activator | full | none |
 | `TEPF` | Infestation Event Playlist | full | basic |
 | `TERM` | Terminal | full | basic |
 | `TRAP` | Trap | full | basic |
@@ -427,7 +427,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `WATR` | Water | full | none |
 | `WAVE` | Wave Encounter | full | basic |
 | `WEAP` | Weapon | full | robust |
-| `WRLD` | Worldspace | none | none |
+| `WRLD` | Worldspace | full | none |
 | `WSPR` | Workshop Permissions | full | none |
 | `WTHR` | Weather | full | basic |
 | `ZOOM` | Zoom | full | none |
@@ -453,8 +453,8 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test
 | `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs two ESM versions) |
 | `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
 | `tests/ipc.rs` | IPC dispatch: `Op` routing, `RecordSel` auto-detection, `Registry`, `LocalBackend` parity, `looks_like_formid` |
-| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE, GMRW/LVLI/NPC_ (drift-locked), TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN/LVPC/LVLP/RESO (drift-locked), QUST (alias fill) using verbatim record bytes |
-| `tests/decode_coverage.rs` | Exhaustive full-decode sweep over all 51 clean types (ignored, needs game data) |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE, GMRW, LVLI, NPC_, SPEL, EXPL, COBJ, CONT, PCRD, TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN, LVPC, LVLP, RESO, QUST (alias fill) using verbatim record bytes |
+| `tests/decode_coverage.rs` | Exhaustive full-decode sweep over `CLEAN_TYPES` (178 types; needs game data, skips if unset) |
 | `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
 | `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width; VMAD object decoding (both object formats, FormID offset); VMAD array property types 11–15 and struct types 6/17 (count + elements); COED `FormIdTargetType` owner-decider with and without resolver; `RArray` `CountPath` boundary |
 
