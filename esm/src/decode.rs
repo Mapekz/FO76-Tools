@@ -408,19 +408,26 @@ fn decode_member(
                         // Localized ESM: field is a 4-byte ID into string tables.
                         if sr.data.len() >= 4 {
                             let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                            let kind = lstring_table_to_kind(table);
-                            if let Some(text) =
-                                ctx.localization.and_then(|loc| loc.lookup(kind, id))
-                            {
-                                out.insert(name.clone(), json!(text));
+                            if id == 0 {
+                                // 0 is the engine's "no string" sentinel, not a
+                                // missing table entry — mirrors resolve_formid's
+                                // null-FormID special case.
+                                out.insert(name.clone(), Value::Null);
                             } else {
-                                out.insert(
-                                    name.clone(),
-                                    json!({
-                                        "lstring_id": format!("0x{:08X}", id),
-                                        (markers::UNRESOLVED): true
-                                    }),
-                                );
+                                let kind = lstring_table_to_kind(table, ctx.record_signature, sig);
+                                if let Some(text) =
+                                    ctx.localization.and_then(|loc| loc.lookup(kind, id))
+                                {
+                                    out.insert(name.clone(), json!(text));
+                                } else {
+                                    out.insert(
+                                        name.clone(),
+                                        json!({
+                                            "lstring_id": format!("0x{:08X}", id),
+                                            (markers::UNRESOLVED): true
+                                        }),
+                                    );
+                                }
                             }
                         }
                     } else {
@@ -2871,11 +2878,32 @@ fn decode_vmad_property(
 }
 
 /// Map a schema [`LStringTable`] selector to the runtime [`StringKind`].
-fn lstring_table_to_kind(table: &LStringTable) -> StringKind {
-    match table {
-        LStringTable::Strings => StringKind::Strings,
-        LStringTable::Dlstrings => StringKind::DlStrings,
-        LStringTable::Ilstrings => StringKind::IlStrings,
+///
+/// The extractor never populates a field's `table` (every `lstring` member in
+/// `schema/fo76.json` defaults to `Strings`), because table assignment isn't a
+/// static per-field property in the first place — it's a small dynamic
+/// function of (record signature, subrecord signature). This replicates
+/// xEdit's `TwbLocalizationHandler.LocalizedValueDecider`
+/// (`TES5Edit/Core/wbLocalization.pas`) exactly. An explicit non-default
+/// `table` in the schema (e.g. a future override) still wins.
+fn lstring_table_to_kind(
+    table: &LStringTable,
+    record_sig: Option<&str>,
+    subrecord_sig: &str,
+) -> StringKind {
+    if !matches!(table, LStringTable::Strings) {
+        return match table {
+            LStringTable::Strings => StringKind::Strings,
+            LStringTable::Dlstrings => StringKind::DlStrings,
+            LStringTable::Ilstrings => StringKind::IlStrings,
+        };
+    }
+    match (record_sig, subrecord_sig) {
+        (Some(rec), "DESC") if rec != "LSCR" => StringKind::DlStrings, // DESC always dlstrings except LSCR
+        (Some("QUST"), "CNAM") => StringKind::DlStrings,               // quest log entry
+        (Some("BOOK"), "CNAM") => StringKind::DlStrings,               // book description
+        (Some("INFO"), sub) if sub != "RNAM" => StringKind::IlStrings, // dialog; RNAM stays lsString
+        _ => StringKind::Strings,
     }
 }
 
