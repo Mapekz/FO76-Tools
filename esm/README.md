@@ -262,7 +262,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `AMMO` | Ammunition | full | basic |
 | `ANIO` | Animated Object | full | none |
 | `AORU` | Attraction Rule | full | none |
-| `ARMA` | Armor Addon | partial | none |
+| `ARMA` | Armor Addon | full | basic |
 | `ARMO` | Armor | full | basic |
 | `ARTO` | Art Object | full | none |
 | `ASPC` | Acoustic Space | full | none |
@@ -321,7 +321,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `GCVR` | Ground Cover | full | none |
 | `GDRY` | God Rays | full | none |
 | `GLOB` | Global | full | basic |
-| `GMRW` | Gameplay Reward | partial | basic |
+| `GMRW` | Gameplay Reward | full | basic |
 | `GMST` | Game Setting | full | basic |
 | `GRAS` | Grass | full | none |
 | `HAZD` | Hazard | full | basic |
@@ -387,8 +387,8 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `PROJ` | Projectile | full | basic |
 | `QMDL` | Quest Module | full | basic |
 | `QUST` | Quest | full | basic |
-| `RACE` | Race | partial | basic |
-| `REFR` | Placed Object | partial | none |
+| `RACE` | Race | full | basic |
+| `REFR` | Placed Object | full | none |
 | `REGN` | Region | full | none |
 | `RELA` | Relationship | full | none |
 | `RESO` | Resource | full | basic |
@@ -396,7 +396,7 @@ Decode status is measured against a reference ESM via `esm coverage`. Run the ex
 | `RFCT` | Visual Effect | full | none |
 | `RFGP` | Reference Group | full | none |
 | `SCCO` | Scene Collection | full | none |
-| `SCEN` | Scene | partial | none |
+| `SCEN` | Scene | full | basic |
 | `SCOL` | Static Collection | full | none |
 | `SCSN` | Sound Category Snapshot | full | none |
 | `SECH` | Sound Echo Marker | full | none |
@@ -453,7 +453,7 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test
 | `tests/diff.rs` | JSON diff logic; `diff_databases` (ignored, needs two ESM versions) |
 | `tests/reader.rs` | ESM walk: group/record event sequence from a synthetic file |
 | `tests/ipc.rs` | IPC dispatch: `Op` routing, `RecordSel` auto-detection, `Registry`, `LocalBackend` parity, `looks_like_formid` |
-| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, AVIF, ENCH, BOOK, WEAP, PERK, RACE, GMRW, LVLI, NPC_, SPEL, EXPL, COBJ, CONT, PCRD, TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN, LVPC, LVLP, RESO, QUST (alias fill) using verbatim record bytes |
+| `tests/decode_records.rs` | Schema-driven decode of MGEF, OMOD, GLOB, KYWD, FLST, AMMO, ALCH, PROJ, ARMO, ARMA, AVIF, ENCH, BOOK, WEAP, PERK, RACE, GMRW, LVLI, NPC_, SPEL, EXPL, COBJ, CONT, PCRD, TERM, FLOR, FURN, INFO, MISC, QMDL, NOTE, LVLN, LVPC, LVLP, RESO, SCEN, QUST (alias fill) using verbatim record bytes |
 | `tests/decode_coverage.rs` | Exhaustive full-decode sweep over `CLEAN_TYPES` (178 types; needs game data, skips if unset) |
 | `src/tree.rs` (inline) | `decode_label` dispatch (`pub(crate)`, not accessible from `tests/`) |
 | `src/decode.rs` (inline) | `decode_struct_fields` count-prefix width; VMAD object decoding (both object formats, FormID offset); VMAD array property types 11–15 and struct types 6/17 (count + elements); COED `FormIdTargetType` owner-decider with and without resolver; `RArray` `CountPath` boundary |

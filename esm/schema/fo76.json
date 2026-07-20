@@ -62662,7 +62662,8 @@
                     "members": [
                       {
                         "kind": "unused",
-                        "bytes": 0
+                        "bytes": 0,
+                        "sig": "INDX"
                       },
                       {
                         "kind": "rstruct",
@@ -62838,7 +62839,11 @@
                         ]
                       }
                     ]
-                  }
+                  },
+                  "stop_before": [
+                    "FNAM",
+                    "GNAM"
+                  ]
                 }
               ]
             },
@@ -62860,7 +62865,8 @@
                     "members": [
                       {
                         "kind": "unused",
-                        "bytes": 0
+                        "bytes": 0,
+                        "sig": "INDX"
                       },
                       {
                         "kind": "rstruct",
@@ -63036,7 +63042,10 @@
                         ]
                       }
                     ]
-                  }
+                  },
+                  "stop_before": [
+                    "GNAM"
+                  ]
                 }
               ]
             }
@@ -67913,7 +67922,15 @@
                         "sig": "HEAD"
                       }
                     ]
-                  }
+                  },
+                  "stop_before": [
+                    "RPRM",
+                    "AHCM",
+                    "FTSM",
+                    "DFTM",
+                    "TTGP",
+                    "NAM0"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -68418,7 +68435,14 @@
                         "sig": "HEAD"
                       }
                     ]
-                  }
+                  },
+                  "stop_before": [
+                    "RPRF",
+                    "AHCF",
+                    "FTSF",
+                    "DFTF",
+                    "TTGP"
+                  ]
                 },
                 {
                   "kind": "rarray",
@@ -71658,6 +71682,16 @@
           "name": "Comments",
           "keep_case": false,
           "sig": "MNAM"
+        },
+        {
+          "_comment": "MCND \u2014 live-game drift; absent from TES5Edit REFR in FO76, FO4, and SF1 (checked all three wbDefinitions*.pas). Seen only on the map-marker REFR HighwayTownMapMarker (0x007E808C), which carries 2 occurrences of 4 zero bytes. Kept as unknown/hex, wrapped in an rarray (matching NOCM's wbRArray('Unknown Datas', wbUnknown(DATA)) precedent, wbDefinitionsFO76.pas:15884) since a plain (non-array) 'unknown' member only consumes one of the 2 instances from the shared by_sig queue, leaving the second as _unmapped.",
+          "kind": "rarray",
+          "name": "Unknown MCND",
+          "element": {
+            "kind": "unknown",
+            "sig": "MCND",
+            "name": "Unknown"
+          }
         }
       ]
     },

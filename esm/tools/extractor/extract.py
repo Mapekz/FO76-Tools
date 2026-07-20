@@ -2324,8 +2324,7 @@ class Extractor:
         if expr.startswith("wbByteRGBA"):
             return self._parse_byte_rgba(expr)
         if expr.startswith("wbUnused"):
-            m = re.search(r"wbUnused\((\d+)\)", expr)
-            return {"kind": "unused", "bytes": int(m.group(1)) if m else 0}
+            return self._parse_unused(expr)
         if expr.startswith("wbEmpty"):
             return self._parse_empty(expr)
         if expr.startswith("wbUnknown"):
@@ -2875,6 +2874,40 @@ class Extractor:
             out["name"] = unquote(parts[1]) if len(parts) > 1 else out["sig"]
         else:
             out["name"] = unquote(parts[0])
+        return out
+
+    def _parse_unused(self, expr: str) -> dict:
+        """wbUnused(N) → payload-context byte skip (no sig): padding bytes
+        skipped *within* an already-consumed struct payload.
+        wbUnused(SIG, N) → subrecord-level: an entire subrecord whose
+        payload is intentionally ignored (e.g. RACE Body Data's
+        `wbUnused(INDX, 0)`, wbDefinitionsFO76.pas:14151). Must be consumed
+        and discarded from the by-sig pool like any other sig-bearing
+        member, or it lingers as `_unmapped`."""
+        m = re.match(r"wbUnused\((.*)\)", expr, re.DOTALL)
+        out: dict = {"kind": "unused", "bytes": 0}
+        if not m:
+            return out
+        args_str = m.group(1).strip()
+        if not args_str:
+            return out
+        parts = split_top_level(args_str)
+        first = parts[0].strip() if parts else ""
+        if sig_id(first):
+            out["sig"] = first
+            if len(parts) > 1:
+                bm = re.match(r"\d+", parts[1].strip())
+                if bm:
+                    out["bytes"] = int(bm.group(0))
+        else:
+            # Single-arg (or first-arg-not-a-sig) form: the arg is the byte
+            # count. Only accept a bare non-negative literal — matches the
+            # previous regex's `\d+`-only behavior (e.g. `wbNull :=
+            # wbUnused(-255)` intentionally stays bytes=0, a zero-width
+            # struct-field placeholder, not a literal -255-byte skip).
+            bm = re.match(r"\d+", first)
+            if bm:
+                out["bytes"] = int(bm.group(0))
         return out
 
     def _parse_unknown(self, expr: str) -> dict:

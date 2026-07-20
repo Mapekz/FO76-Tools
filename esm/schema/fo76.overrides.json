@@ -298,6 +298,18 @@
         "sig": "@0TX",
         "name": "Layer #16"
       }
+    ],
+    "REFR": [
+      {
+        "_comment": "MCND — live-game drift; absent from TES5Edit REFR in FO76, FO4, and SF1 (checked all three wbDefinitions*.pas). Seen only on the map-marker REFR HighwayTownMapMarker (0x007E808C), which carries 2 occurrences of 4 zero bytes. Kept as unknown/hex, wrapped in an rarray (matching NOCM's wbRArray('Unknown Datas', wbUnknown(DATA)) precedent, wbDefinitionsFO76.pas:15884) since a plain (non-array) 'unknown' member only consumes one of the 2 instances from the shared by_sig queue, leaving the second as _unmapped.",
+        "kind": "rarray",
+        "name": "Unknown MCND",
+        "element": {
+          "kind": "unknown",
+          "sig": "MCND",
+          "name": "Unknown"
+        }
+      }
     ]
   },
   "record_patches": {
@@ -1109,6 +1121,474 @@
           "signed": false
         },
         "_comment": "xEdit leaves this as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) \u2014 undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Decoding the 2 bytes as one u16 is the natural low-level mapping; name hedged with '?' since the repeat-limit semantic is inferred, not confirmed. See mechanics-kb.md 'Known schema gaps'."
+      }
+    ],
+    "RACE": [
+      {
+        "path": ["Body Data", "Male Body Data", "Parts"],
+        "node": {
+          "kind": "rarray",
+          "name": "Parts",
+          "element": {
+            "kind": "rstruct",
+            "name": "Part",
+            "members": [
+              {
+                "kind": "unused",
+                "bytes": 0,
+                "sig": "INDX"
+              },
+              {
+                "kind": "rstruct",
+                "name": "Model",
+                "members": [
+                  {
+                    "kind": "string",
+                    "name": "Model FileName",
+                    "keep_case": false,
+                    "sig": "MODL"
+                  },
+                  {
+                    "kind": "model_info",
+                    "name": "Model Information",
+                    "sig": "MODT"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Model Color",
+                    "sig": "MODC"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Model Data",
+                    "sig": "MODS"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Model Flags",
+                    "sig": "MODF"
+                  },
+                  {
+                    "kind": "union",
+                    "name": "Enlighten Mode",
+                    "decider": {
+                      "form_version": {
+                        "min": 156,
+                        "max": null
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "integer",
+                        "name": "Mode",
+                        "width": "u8",
+                        "signed": false,
+                        "format": {
+                          "enum": [
+                            "Default",
+                            "Light Map",
+                            "Light Map UV",
+                            "Albedo",
+                            "Indirect Specular (Cubemaps)",
+                            "Unknown 5",
+                            "Unknown 6"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Mode",
+                        "width": "u32",
+                        "signed": false,
+                        "format": {
+                          "enum": {
+                            "2147483649": "Light Map?",
+                            "2147483651": "Albedo?",
+                            "2147483653": "Unknown 5?",
+                            "2147483654": "Unknown 6?"
+                          }
+                        }
+                      }
+                    ],
+                    "sig": "ENLM"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Flags",
+                    "width": "u8",
+                    "signed": false,
+                    "sig": "XFLG",
+                    "format": {
+                      "flags": [
+                        "Has Facebones Data",
+                        "Has Upper Body Skin",
+                        "Has Right Hand Skin",
+                        "Has Left Hand Skin",
+                        "Has Hand Tagged Enlighten Mode",
+                        "Has Enlighten Transparency",
+                        "Has Enlighten Simplified Geom",
+                        "Has Enlighten Unique Geom"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "byte_rgba",
+                    "sig": "ENLT",
+                    "name": "Enlighten Transparency Color"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Enlighten Simplified Shape Scale",
+                    "sig": "ENLS"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Enlighten Auto UV",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Padding?",
+                        "len": 3
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Max DIstance"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Max Initial Normal Deviation"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Max General Normal Deviation"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Expansion Factor"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Significant Area Ratio"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Unknown 2",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Padding? 2",
+                        "len": 3
+                      }
+                    ],
+                    "sig": "AUUV"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Flags 2",
+                    "width": "u8",
+                    "signed": false,
+                    "sig": "MODD",
+                    "format": {
+                      "flags": [
+                        "Has Facebones Data",
+                        "Has Upper Body Skin",
+                        "Has Right Hand Skin",
+                        "Has Left Hand Skin",
+                        "Has Hand Tagged Enlighten Mode",
+                        "Has Enlighten Transparency",
+                        "Has Enlighten Simplified Geom",
+                        "Has Enlighten Unique Geom"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "stop_before": [
+            "FNAM",
+            "GNAM"
+          ]
+        },
+        "_comment": "Body Data Male Parts \u2014 stop_before bounds the array to Male's own single real 'Part' (anchored on INDX, a signature shared globally with Body Data Female's Parts and Head Datas' Male/Female Head Parts \u2014 by_sig is one FIFO queue per signature for the whole record, not per-array). Without a boundary, this unbounded-count rarray keeps popping INDX/MODL/MODT off the shared queue past Male's own part and swallows Female Body Data's part too. FNAM (Female Data Marker, opens the next section) is the sig that immediately follows in document order; GNAM (RACE's own 'Body Part Data', the next record-level member after Body Data closes) is a second boundary for the case where Female Body Data has zero parts. Needs record_patches rather than the extractor's automatic stop_before pass because that pass explicitly excludes rstruct-element rarrays (an optional leading anchor risks a false halt) \u2014 see _annotate_stop_before in extract.py."
+      },
+      {
+        "path": ["Body Data", "Female Body Data", "Parts"],
+        "node": {
+          "kind": "rarray",
+          "name": "Parts",
+          "element": {
+            "kind": "rstruct",
+            "name": "Part",
+            "members": [
+              {
+                "kind": "unused",
+                "bytes": 0,
+                "sig": "INDX"
+              },
+              {
+                "kind": "rstruct",
+                "name": "Model",
+                "members": [
+                  {
+                    "kind": "string",
+                    "name": "Model FileName",
+                    "keep_case": false,
+                    "sig": "MODL"
+                  },
+                  {
+                    "kind": "model_info",
+                    "name": "Model Information",
+                    "sig": "MODT"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Model Color",
+                    "sig": "MODC"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Model Data",
+                    "sig": "MODS"
+                  },
+                  {
+                    "kind": "bytes",
+                    "name": "Model Flags",
+                    "sig": "MODF"
+                  },
+                  {
+                    "kind": "union",
+                    "name": "Enlighten Mode",
+                    "decider": {
+                      "form_version": {
+                        "min": 156,
+                        "max": null
+                      }
+                    },
+                    "variants": [
+                      {
+                        "kind": "integer",
+                        "name": "Mode",
+                        "width": "u8",
+                        "signed": false,
+                        "format": {
+                          "enum": [
+                            "Default",
+                            "Light Map",
+                            "Light Map UV",
+                            "Albedo",
+                            "Indirect Specular (Cubemaps)",
+                            "Unknown 5",
+                            "Unknown 6"
+                          ]
+                        }
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Mode",
+                        "width": "u32",
+                        "signed": false,
+                        "format": {
+                          "enum": {
+                            "2147483649": "Light Map?",
+                            "2147483651": "Albedo?",
+                            "2147483653": "Unknown 5?",
+                            "2147483654": "Unknown 6?"
+                          }
+                        }
+                      }
+                    ],
+                    "sig": "ENLM"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Flags",
+                    "width": "u8",
+                    "signed": false,
+                    "sig": "XFLG",
+                    "format": {
+                      "flags": [
+                        "Has Facebones Data",
+                        "Has Upper Body Skin",
+                        "Has Right Hand Skin",
+                        "Has Left Hand Skin",
+                        "Has Hand Tagged Enlighten Mode",
+                        "Has Enlighten Transparency",
+                        "Has Enlighten Simplified Geom",
+                        "Has Enlighten Unique Geom"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "byte_rgba",
+                    "sig": "ENLT",
+                    "name": "Enlighten Transparency Color"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Enlighten Simplified Shape Scale",
+                    "sig": "ENLS"
+                  },
+                  {
+                    "kind": "struct",
+                    "name": "Enlighten Auto UV",
+                    "fields": [
+                      {
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Padding?",
+                        "len": 3
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Max DIstance"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Max Initial Normal Deviation"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Max General Normal Deviation"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Expansion Factor"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Significant Area Ratio"
+                      },
+                      {
+                        "kind": "integer",
+                        "name": "Unknown 2",
+                        "width": "u8",
+                        "signed": false
+                      },
+                      {
+                        "kind": "bytes",
+                        "name": "Padding? 2",
+                        "len": 3
+                      }
+                    ],
+                    "sig": "AUUV"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Flags 2",
+                    "width": "u8",
+                    "signed": false,
+                    "sig": "MODD",
+                    "format": {
+                      "flags": [
+                        "Has Facebones Data",
+                        "Has Upper Body Skin",
+                        "Has Right Hand Skin",
+                        "Has Left Hand Skin",
+                        "Has Hand Tagged Enlighten Mode",
+                        "Has Enlighten Transparency",
+                        "Has Enlighten Simplified Geom",
+                        "Has Enlighten Unique Geom"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "stop_before": [
+            "GNAM"
+          ]
+        },
+        "_comment": "Body Data Female Parts \u2014 same INDX FIFO-sharing hazard as Male's Parts above, mirrored: bounds Female's array to stop at GNAM (the next record-level member after Body Data closes) so it can't run on past Body Data's own end."
+      },
+      {
+        "path": ["Head Datas", "Male Head Data", "Male Head Parts"],
+        "node": {
+          "kind": "rarray",
+          "name": "Male Head Parts",
+          "element": {
+            "kind": "rstruct",
+            "name": "Head Part",
+            "members": [
+              {
+                "kind": "integer",
+                "name": "Head Part Number",
+                "width": "u32",
+                "signed": false,
+                "sig": "INDX"
+              },
+              {
+                "kind": "formid",
+                "name": "Head",
+                "valid_refs": [
+                  "HDPT",
+                  "NULL"
+                ],
+                "sig": "HEAD"
+              }
+            ]
+          },
+          "stop_before": [
+            "RPRM",
+            "AHCM",
+            "FTSM",
+            "DFTM",
+            "TTGP",
+            "NAM0"
+          ]
+        },
+        "_comment": "Head Datas Male Head Parts \u2014 same INDX FIFO-sharing hazard: 'Male Head Parts' has no upper bound, so without a boundary it swallows Female Head Data's (INDX HEAD) pairs too (and, pre-Task-2-extractor-fix, Body Data's INDX subrecords as well, since a sigless wbUnused(INDX, 0) never consumed its subrecord from by_sig). RPRM (Male Race Presets) immediately follows the array in document order; AHCM/FTSM/DFTM/TTGP/NAM0 (the remainder of Male Head Data, and the second NAM0 'Head Data Marker' that opens Female Head Data) are further defense for RACE records whose Male section has fewer than the usual 6 entries."
+      },
+      {
+        "path": ["Head Datas", "Female Head Data", "Female Head Parts"],
+        "node": {
+          "kind": "rarray",
+          "name": "Female Head Parts",
+          "element": {
+            "kind": "rstruct",
+            "name": "Head Part",
+            "members": [
+              {
+                "kind": "integer",
+                "name": "Head Part Number",
+                "width": "u32",
+                "signed": false,
+                "sig": "INDX"
+              },
+              {
+                "kind": "formid",
+                "name": "Head",
+                "valid_refs": [
+                  "HDPT",
+                  "NULL"
+                ],
+                "sig": "HEAD"
+              }
+            ]
+          },
+          "stop_before": [
+            "RPRF",
+            "AHCF",
+            "FTSF",
+            "DFTF",
+            "TTGP"
+          ]
+        },
+        "_comment": "Head Datas Female Head Parts \u2014 mirrors Male Head Parts above. RPRF (Female Race Presets) immediately follows in document order; AHCF/FTSF/DFTF/TTGP are the remainder of Female Head Data \u2014 the last repeated section in RACE's document order, so no further NAM0-style boundary is needed after it."
       }
     ]
   }
