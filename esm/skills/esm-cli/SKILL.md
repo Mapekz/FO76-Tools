@@ -104,13 +104,31 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 
 - Player-facing referrer types: COBJ, GMRW, LGDI, QUST, CONT, MISC, FLST.
   LVLI counts only through player-facing chains (NPC-loadout-only lists
-  don't); referrers with NONPLAYABLE in the editor id are flagged.
+  don't); modcol OMOD chains and obtainable-WEAP inheritance count too;
+  referrers with NONPLAYABLE in the editor id are flagged.
 - **No reverse refs at all is normal** for script/VMAD quest rewards,
   vendor/gold-bullion grants, and account-side (ATX) items — absence of refs
-  is not evidence of junk.
+  is not evidence of junk. Same goes for keyword-attached stock mods (a mod
+  gated purely by a `WornHasKeyword`/`HasKeyword` condition has no direct
+  record-level referrer to the item it modifies).
 - **The record graph cannot distinguish shipped from unshipped content** —
   cut or unreleased items can look perfectly obtainable on-record. Confirm
   release status externally before treating an unfamiliar record as real.
+- **COBJ eligibility is a trap: a recipe existing does not mean a weapon is
+  eligible for it.** COBJ records carry no CTDA/BNAM naming the target
+  weapon — the join has to come from the target's own keywords/eligibility,
+  not from "a COBJ referencing this exists." `Learn Recipe From` is
+  polymorphic by `Learn Method`: `4` → the recipe is learned from a plan
+  BOOK, `1` → learned from a scrap source (the WEAP/item itself, i.e.
+  self-scrapping teaches it). A `Learn Recipe From` pointing at the dummy
+  MISC `recipe_Dummy_Uncraftable_Item_NOCRAFT` is a field-based "this is
+  NOCRAFT" signal — don't treat it as a real learn source. `Repair Method 5`
+  is NOT a nocraft signal (common false-positive read). `CUT_`-prefixed
+  EditorIDs are a junk-referencer convention — a record referenced only by
+  `CUT_*` stand-ins is not evidence of a live path. For a mod that's gated by
+  a "mod-box" MISC (a physical unlock item), the mod is slottable exactly
+  when a matching mod-box MISC is present in inventory — the OMOD/COBJ graph
+  alone won't show that gate.
 
 ## Curve tables
 

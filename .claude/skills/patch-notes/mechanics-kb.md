@@ -77,7 +77,46 @@ chase" derivation below (`ENCH -> MGEF (Perk to Apply) -> PERK`) no longer needs
   extra stacks per kill on top of the base +1. Consumer is native engine (DFOB dead-end).
 - Readers of the counter include Adrenaline (+10% damage per stack) and several unique-item
   perks (Unstoppable Monster, etc. — verify per case).
-- Verified: 2026-07-13 vs 20260710.
+- **The counter itself is AV `0x00000399`**, with no queryable AVIF record — `esm get 0x399`
+  404s even though `refs` displays it via a synthesized "KillStreak" stub. Same
+  hardcoded-engine-slot pattern as Onslaught's `0x395` (see below) and Bullet Storm's `0x39B`.
+- **Don't conflate two unrelated on-kill mechanisms.** Perks that *read the Kill Streak
+  counter* (via `curve.input:"killStreak"` or a condition on AV `0x399`, e.g. Adrenaline,
+  Adrenal Reaction) are a different system from the **generic on-kill hook**: PERK Entry
+  Point 187 "Apply On Kill Spell" is stateless — it fires a one-shot spell every kill, with
+  no counter/timer/cap and no shared AV/keyword with Kill Streak at all. Exactly 32 PERKs use
+  EP187 (confirmed by scanning all 1991 PERK records). Example: Inertial
+  (`mod_Legendary_Weapon2_APViaKill` 0x00606B72 → keyword → `LegendaryAPViaKillPerk`
+  0x00606B75 → +15 AP/kill).
+- **Psychopath is NOT an EP187 perk** despite the "on a kill" framing some players use for
+  it — all 3 ranks (0x0027A86F/72, 0x003701AD) hook EP119 "Mod VATS Critical Charge" gated on
+  `GetIsInVATS=0`: +10%/15% crit-meter charge on any non-VATS **hit**, not a kill at all.
+- **Grim Reaper's Sprint is a third, unrelated case** — its 3 live ranks use Entry Point 107
+  "Mod VATS Player AP On Kill Chance", confirmed unique to that perk family (rescanned all
+  1991 PERKs, 0 other hits): rank 1 is a LCK-scaled curve, ranks 2/3 are flat chances to
+  restore all AP on a VATS kill. (An orphaned SPEL with the same display name, reading the
+  Kill Streak curve instead, has zero reverse refs and isn't live content.)
+- Verified: 2026-07-13 vs 20260710 (AV `0x399` / EP187 / EP119 / EP107 disambiguation
+  promoted from dps-76 memory 2026-07-20, ESM-walked against 20260710 scanning all 1991
+  PERK records).
+
+## Onslaught (consecutive-hits counter)
+
+- A separate shared counter from Kill Streak, native-engine, reading AV `0x00000395` (same
+  hardcoded-engine-slot pattern as Kill Streak's `0x399` above). Base max is 0 — every source
+  ADDs to the max via PERK Entry Point 190 "Mod Max Consecutive Hits Allowed" (single shared
+  pool across all sources); per-stack bonuses come from EP189 "Mod Damage on Consecutive
+  Hits" or curves reading the shared AV directly. Build/decay (+1/hit, −1/sec) is
+  engine-side and unmodeled by any record — a data consumer only sees the steady-state
+  inputs (max stacks, per-stack bonus), not the ramp.
+- Known contributors (max stacks / per-stack bonus): Furious (+9 max, +1% dbm/stack),
+  Pounder's (+10, +1% dbm/stack), Gunslinger Master (+10, no per-stack bonus), Gunslinger
+  Expert (+3, +1% weakpoint-damage/stack), Guerrilla Expert (+3, +1% reload-speed/stack),
+  Guerrilla Master (+5, +5% dbm/stack at close range), Whacker Smacker (+0 max, +5%
+  power-attack-bonus/stack).
+- **Combo-Breaker's is NOT Onslaught** despite similar flavor — it's EP79/EP27, a
+  chance-to-not-consume-AP mechanic, unrelated to AV `0x395` or EP189/190.
+- Verified: 2026-07-15 vs 20260710 (promoted from dps-76 memory 2026-07-20).
 
 ## "Cheat Death" revive-effect family
 
@@ -90,6 +129,18 @@ chase" derivation below (`ENCH -> MGEF (Perk to Apply) -> PERK`) no longer needs
 
 ## STAT_* damage-stat family (native actor values)
 
+- **General mechanism, not per-stat magic**: `STAT_*` AVs aren't read ad hoc —
+  each routes through one of three hidden "plumbing" perks (`STAT_DamagePerk`,
+  `STAT_CritDamagePerk`, `STAT_DamageVsPerk`) whose own entry-point effect
+  rows translate a `STAT_*` AVIF into damage-engine behavior: an `Add`-typed
+  row is an additive damage-bonus contribution at Float 0.01/point of the AV;
+  weakpoint/limb-scoped rows are "Multiply 1+AV" instead. `STAT_DmgVsTorso` is
+  the one exception — no plumbing-perk row consumes it; it's instead read by
+  the `DamageVsNonWeakpoint_DO` default object (a hand-authored fallback
+  route). `STAT_DmgMult<Type>` variants (e.g. the Demolition Expert perk) are
+  additive dbm scoped to the matching damage type, including its DoT. Check
+  a new `STAT_*` AV against these three plumbing perks before assuming its
+  effect from the name alone.
 - `STAT_DmgVsBleeding` / `STAT_DmgVsBurning` / `STAT_DmgVsPoisoned` / `STAT_DmgVsFreezing`:
   "+X% damage vs targets currently under that status." Used by 4★ legendary weapon effects
   (Severing's, Pyromaniac's, Viper's, Icemen's since 20260710).
@@ -123,7 +174,7 @@ chase" derivation below (`ENCH -> MGEF (Perk to Apply) -> PERK`) no longer needs
   not comparable. Don't describe the
   STAT_* migration as semantics-preserving without checking the OLD implementation per mod.
 - Verified: 2026-07-13 vs 20260710 (Severing's chase + Icemen's exception 2026-07-14 vs
-  20260702/20260710).
+  20260702/20260710; plumbing-perk mechanism promoted from dps-76 memory 2026-07-20).
 
 ## Damage-bonus mechanisms (reporting taxonomy)
 
@@ -143,13 +194,27 @@ before writing a number — and name it in prose using this standard terminology
    everything downstream. A MUL+ADD on a damage type the weapon *lacks* ADDs new base damage
    of that type scaled off the weapon's existing base damage — so old Icemen's (+0.2 dtCryo)
    both boosted cryo weapons and added cryo damage to non-cryo weapons.
+   **Exact per-type fold**: for damage type X, `final(X) = max(0, (lastSET ?? base(X)) +
+   Σ(MUL × ORIGINAL base(X)) + ΣADD)` — MULs always scale off the type's *original* base, not
+   a running total, and a SET on a type discards its base entirely. `dtPhysical` in
+   `DamageTypeValues` is equivalent to the weapon's own `AttackDamage`. This matters most for
+   a type the weapon **lacks** (`base(X) = 0`): a positive MUL there is what materializes a
+   new nonzero component (scaled off a fallback base — ballistic if the weapon has any
+   physical damage, else its primary elemental type, never an explosion component — and
+   level-scaled by the fallback's own curve). A **negative** MUL on a missing type instead
+   multiplies zero and vanishes, evaluated **per-modifier, not netted** against other
+   modifiers on the same type first — this is the case to get right when auditing a batch of
+   "−X% on all damage types" mods: each one individually multiplies a 0 base to 0, it does
+   not cancel out a sibling mod's positive MUL on the same type. SET/ADD are flat with no
+   level scaling regardless of type.
 3. **Damage multiplier** — multiplies total outgoing damage after bonuses: power attack
    mult, body-part/weakpoint mults, Taking One for the Team, Follow Through, etc. Rare in
    legendary mods; strongest per point.
 
 Never write a bare "+X% damage" in a draft — the mechanism determines how the number stacks
 and is exactly the kind of distinction build-crafter readers need.
-Verified: 2026-07-15 vs snapshots 20260702/20260710.
+Verified: 2026-07-15 vs snapshots 20260702/20260710 (exact DamageTypeValues fold promoted
+from dps-76 memory 2026-07-20).
 
 ## Creature weapons & damage curves (enemy-only items)
 
@@ -167,6 +232,32 @@ Verified: 2026-07-15 vs snapshots 20260702/20260710.
   described as "the boss attacks with it", never as a drop, and never as "can roll
   legendary mods" (template wiring on an enemy instance is irrelevant to players).
 - Verified: 2026-07-15 vs snapshots 20260702/20260710.
+
+## Epic creatures & epic rank
+
+- `EpicRankData` on the NPC_/creature record carries `HealthMult` 2.0–4.8 across ranks 1–5,
+  gated by the `EpicCreatureDisallowedKeywords` FLST (creatures carrying one of those
+  keywords can't be epic-scaled regardless of rank data present).
+- **Two distinct, both-provable VMAD shapes assign a boss's epic rank** — check for either
+  before asserting a creature's rank from reputation alone:
+  1. QUST `EncounterWaves[].BossEpicLevel`, only meaningful when that wave's
+     `BossEpicChance == 100` (a nonzero-but-not-100 chance means the rank is conditional,
+     not fixed).
+  2. A boss-alias `defaultforcelegendaryalias.minRank` field on the alias VMAD.
+  Some well-known bosses carry **neither** shape in the data (verify twice before asserting
+  a rank is unprovable — an earlier probe misread one as rank 3 from a stale reference).
+- **Loot-list rank ≠ epic-creature rank.** A creature's community "★-rank" reputation is
+  often actually read off its *loot* LVLI/LGDI naming (e.g. a legendary-item list scoped to
+  "…3Star…" or "…Rank4…" in its EditorID), not off either VMAD shape above. Citing a loot
+  list as proof of epic rank is a common false-positive — the two are unrelated data paths.
+- **The old "~32k HP" community figure for high-tier bosses is the game's OLD signed-int HP
+  cap (32767), lifted circa 2023** — a historical artifact, not a current mechanic.
+  Per-nearby-player boss-HP scaling ("more HP with more players nearby") is a **myth**;
+  nothing in the data scales HP off present-player count. ESM-derived HP (base curve × the
+  epic rank's `HealthMult`) is authoritative and can be well over 1M for a high-rank boss at
+  high level — don't reintroduce the old cap or a player-count model when it looks
+  surprisingly large.
+- Verified: 2026-07-19 vs 20260710 (promoted from dps-76 memory 2026-07-20).
 
 ## OMOD property semantics
 
@@ -281,6 +372,31 @@ Verified: 2026-07-15 vs snapshots 20260702/20260710.
   above. Patched via a `record_patches` override in `schema/fo76.overrides.json` (WEAP →
   `Data` → `Min Power Per Shot`). Same field, same semantics as the property-list entry —
   both now read `Full Power Damage Mult`.
+- PCRD card data moved from `fields['Unknown']` to `fields['Perk Card Data']` (2026-07-14
+  decode rename). A consumer still reading the old field name will silently extract every
+  card's Special as "Unknown" and minLevel as 0 instead of erroring — that symptom is the
+  tell that a reader needs the new name (with the old kept as a fallback for
+  already-migrated consumers reading an older schema build).
+
+## PCRD (perk-card records)
+
+- PCRD is the perk-card source of truth, not the EditorID-numbered rank-chain PERK records.
+  Each card carries a `Special` enum, per-rank `Card Rank Cost`, a `Race Restriction`, and a
+  `Perks[]` array of rank → PERK FormIDs.
+- **`Perks[]` reflects the LIVE, rebalanced card shape.** A card's effective max rank clamps
+  DOWN to its `Perks[]` entry count — some cards have had ranks compressed (fewer live ranks
+  than the PERK-record rank chain would suggest) without a corresponding update to the
+  EditorID numbering, so counting PERK records is not a reliable way to get a card's rank
+  count.
+- **Rank chains and ability spells linger as cut content after a rank compression** — a
+  PERK family can still have 3 numbered rank records (and even an "engine-attached-looking"
+  orphaned ability SPEL) in the ESM while the live PCRD card lists only 1 rank. Always
+  cross-check a rank or an orphaned spell against the PCRD `Perks[]` array (and `refs` the
+  spell to see whether it's referenced by a live rank or only by a cut one) before treating
+  a record-graph tier as live.
+- Verified: 2026-07-15/2026-07-16 vs 20260710 (promoted from dps-76 memory 2026-07-20, origin
+  case: the "Lock and Load" perk family, whose PCRD lists 1 rank against a 3-rank record
+  chain plus a cut orphaned spell).
 
 ## Known schema gaps (unmapped fields seen in real diffs)
 
