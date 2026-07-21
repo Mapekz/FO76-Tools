@@ -20,20 +20,6 @@ they're CLI-only (`esm chase`, `esm walk`). Add only if an agent-facing surface 
 CLI (esm-viewer, the HTTP/MCP server, a chatbot front end) actually needs one-shot chase/walk
 digests instead of composing `get`/`refs` itself.
 
-- [ ] **P3 — CNDF condition decoding: verify against a non-stub record** *(suspected
-      misparse, 2026-07-19)*. `RA_SCORE_ContextualSeasonCollectAll_Condition` (CNDF
-      0x0086A8A5, 20260710 dump) decodes as 64 byte-identical rows — `GetDead == 1.0`,
-      OR-flagged, Run On Subject, ALL param/reference slots zeroed, trailing `0xFFFFFFFF`.
-      Raw evidence: every CTDA subrecord is exactly
-      `010000000000803f2e00000000000000000000000000000000000000ffffffff` (32 bytes), so the
-      decoder is at least faithful to the bytes at the offsets it reads — but a
-      "collect all" condition made of 64 identical no-param stubs is semantically absurd,
-      so either (a) the record is a server-populated live-service placeholder (SCORE
-      seasons), or (b) CNDF-context CTDA uses a different layout / function-index table
-      than standard CTDA and the decoder maps it wrong. To settle it: decode several OTHER
-      CNDF records and check whether non-SCORE CNDFs produce varied, parameterized,
-      sensible conditions — if CNDFs read as stubs across the board, suspect (b) and
-      re-derive the layout from a record with known-good semantics.
 - [ ] **P4 — `--json` stdout hygiene in daemon mode** *(confirmed bug, 2026-07-19)*.
       `esm get <id> --json` via the warm daemon appends a trailing `esm> ` REPL prompt
       after the JSON document on stdout, which breaks strict parsers (`json.load` →
@@ -86,6 +72,31 @@ a local `file:` dependency). Anything that changes the `EsmDatabase` N-API surfa
 on both sides — run `just gen-types` in `esm/` to regenerate the shared TypeScript DTOs.
 
 ---
+
+## Resolved 2026-07-20
+
+- **P3 — CNDF condition decoding (RA_SCORE stub suspicion)** — resolved as hypothesis (a):
+  the records are genuine live-service placeholders; decoder and TES5Edit definitions are
+  both correct. Evidence: (1) surveyed the 1,051 CNDF records in 20260717 — non-SCORE CNDFs
+  decode into varied, parameterized, sensible conditions (GetValue, HasKeyword,
+  HasLearnedRecipe, WornHasKeyword, nested `IsTrueForConditionForm`, …), which validates the
+  32-byte CTDA layout and the FO76 function-index table in CNDF context; (2) raw dump of
+  0x0086A8A5 shows exactly EDID + 64 CTDA subrecords (no CIS1/CIS2, no CITC; subrecord sizes
+  sum precisely to the record's data_size of 2484), all 64 byte-identical — identical bytes
+  cannot encode varied semantics under *any* layout, so no alternative decoding exists;
+  (3) the stub family is exactly the three adjacent records 0x0086A8A5/A6/A7
+  (`RA_SCORE_ContextualSeason{CollectAll,ConsumableSafe,ItemJunkSafe}_Condition`, 64/14/28
+  rows), referenced only from `LLE_Safe_*` leveled-list entry filters via
+  `IsTrueForConditionForm` — season-contextual safe loot, whose real conditions live in
+  Bethesda's server-side data (FO76 loot rolls are server-authoritative). The
+  `GetDead == 1.0, OR` rows even share the healthy-row idiom (Param3 = -1 sentinel), i.e.
+  tool-authored slot padding, always-false client-side. Follow-up cross-check (same day):
+  31 MGEFs use function index 0x2E in semantically-known death contexts — the recon scope
+  highlights living targets (`GetDead == 0`), stun effects guard `Run On Target, GetDead == 0`,
+  and `EN07_ApplyVaporizeVisualEffectEffect` gates its goo-pile visual on
+  `GetDead == 1.0 OR GetDying == 1.0` with a CTDA row **byte-identical** to the challenge
+  stub — so index 46 = GetDead is confirmed at the raw-byte level and the stub rows are
+  literal copies of a standard death-check condition. No code or schema change needed.
 
 ## Removed 2026-07-14
 
