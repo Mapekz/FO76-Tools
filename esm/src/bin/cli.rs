@@ -1696,13 +1696,35 @@ fn cmd_diff(
         let mut db_b = Database::open(&esm_b)?;
 
         // Load localization per side — each side is independently optional.
+        //
+        // A side whose TES4 header lacks the Localized flag stores FULL/DESC
+        // inline and never consults a string table, so requiring one there
+        // would fail a diff that needs none. The two sides can genuinely
+        // differ: a PTS build may ship localized while the release build it is
+        // diffed against does not.
         if lba2_a.is_some() || sd_a.is_some() {
-            let loc_a = resolve_localization_or_bail(&esm_a, lba2_a, sd_a, lang)?;
-            db_a.set_localization(loc_a);
+            if db_a.is_localized {
+                let loc_a = resolve_localization_or_bail(&esm_a, lba2_a, sd_a, lang)?;
+                db_a.set_localization(loc_a);
+            } else {
+                eprintln!(
+                    "note: {} is not localized (TES4 Localized flag unset); \
+                     ignoring the string tables supplied for it",
+                    esm_a.display()
+                );
+            }
         }
         if lba2_b.is_some() || sd_b.is_some() {
-            let loc_b = resolve_localization_or_bail(&esm_b, lba2_b, sd_b, lang)?;
-            db_b.set_localization(loc_b);
+            if db_b.is_localized {
+                let loc_b = resolve_localization_or_bail(&esm_b, lba2_b, sd_b, lang)?;
+                db_b.set_localization(loc_b);
+            } else {
+                eprintln!(
+                    "note: {} is not localized (TES4 Localized flag unset); \
+                     ignoring the string tables supplied for it",
+                    esm_b.display()
+                );
+            }
         }
 
         // Load curves per side.

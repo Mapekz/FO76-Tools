@@ -40,6 +40,30 @@ fn json_diff_removed_key() {
 }
 
 #[test]
+fn json_diff_absent_key_vs_explicit_null_is_not_a_change() {
+    // A key that is absent on one side and explicitly null on the other means
+    // "no value" on both sides. Emitting it produced `null -> null` rows —
+    // 11,860 of them in the 20260710 -> 20260717 snapshot pair, where one ESM
+    // is localized and the other is not.
+    assert_eq!(
+        json_diff(&json!({"Description": null}), &json!({})),
+        json!({})
+    );
+    assert_eq!(
+        json_diff(&json!({}), &json!({"Description": null})),
+        json!({})
+    );
+}
+
+#[test]
+fn json_diff_absent_vs_non_null_still_reported() {
+    // The null-pairing exemption must not swallow a real appearance/removal.
+    let d = json_diff(&json!({}), &json!({"Description": "Vote Counter"}));
+    assert_eq!(d["Description"]["from"], json!(null));
+    assert_eq!(d["Description"]["to"], json!("Vote Counter"));
+}
+
+#[test]
 fn json_diff_nested_object_recurses() {
     let a = json!({"Data": {"x": 1, "y": 2}});
     let b = json!({"Data": {"x": 1, "y": 99}});

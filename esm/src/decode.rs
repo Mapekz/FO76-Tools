@@ -404,29 +404,32 @@ fn decode_member(
         MemberDef::LString { sig, name, table } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if ctx.is_localized {
+                    // "No string present" must decode to the same JSON in both
+                    // modes (`Value::Null`). The two representations are not
+                    // interchangeable on the wire — localized files store a
+                    // 4-byte ID, non-localized files store inline text — so a
+                    // mode-dependent encoding of "empty" makes every nameless
+                    // record look changed when a localized snapshot is diffed
+                    // against a non-localized one.
+                    let value = if ctx.is_localized {
                         // Localized ESM: field is a 4-byte ID into string tables.
-                        if sr.data.len() >= 4 {
+                        if sr.data.len() < 4 {
+                            Value::Null
+                        } else {
                             let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
                             if id == 0 {
                                 // 0 is the engine's "no string" sentinel, not a
                                 // missing table entry — mirrors resolve_formid's
                                 // null-FormID special case.
-                                out.insert(name.clone(), Value::Null);
+                                Value::Null
                             } else {
                                 let kind = lstring_table_to_kind(table, ctx.record_signature, sig);
-                                if let Some(text) =
-                                    ctx.localization.and_then(|loc| loc.lookup(kind, id))
-                                {
-                                    out.insert(name.clone(), json!(text));
-                                } else {
-                                    out.insert(
-                                        name.clone(),
-                                        json!({
-                                            "lstring_id": format!("0x{:08X}", id),
-                                            (markers::UNRESOLVED): true
-                                        }),
-                                    );
+                                match ctx.localization.and_then(|loc| loc.lookup(kind, id)) {
+                                    Some(text) => json!(text),
+                                    None => json!({
+                                        "lstring_id": format!("0x{:08X}", id),
+                                        (markers::UNRESOLVED): true
+                                    }),
                                 }
                             }
                         }
@@ -446,8 +449,13 @@ fn decode_member(
                         } else {
                             s.into_owned()
                         };
-                        out.insert(name.clone(), json!(text));
-                    }
+                        if text.is_empty() {
+                            Value::Null
+                        } else {
+                            json!(text)
+                        }
+                    };
+                    out.insert(name.clone(), value);
                 }
             }
         }
@@ -4266,6 +4274,85 @@ mod tests {
                 "damage must never be null"
             );
         }
+    }
+
+    /// Decode an `lstring` member against a one-subrecord `by_sig` map.
+    fn decode_lstring(ctx: &DecodeContext<'_>, sr: &OwnedSubrecord) -> Map<String, Value> {
+        let member = MemberDef::LString {
+            sig: Some("DESC".into()),
+            name: "Description".into(),
+            table: LStringTable::Dlstrings,
+        };
+        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
+        by_sig
+            .entry(sr.signature.as_str().to_string())
+            .or_default()
+            .push_back(sr);
+        let mut out = Map::new();
+        decode_member(ctx, &member, &mut out, &mut by_sig, None);
+        out
+    }
+
+    /// "No string present" must decode to `Value::Null` in BOTH localization
+    /// modes, and the key must always be emitted when the subrecord exists.
+    ///
+    /// The two modes encode the field differently on disk (4-byte table ID vs
+    /// inline NUL-terminated text), so a mode-dependent encoding of "empty"
+    /// makes every nameless record look changed when a localized snapshot is
+    /// diffed against a non-localized one. The 20260710 -> 20260717 pair is
+    /// exactly that case (`flags` 0x01 vs 0x81) and produced 50,720 bogus
+    /// `"" -> null` rows plus 11,860 `null -> null` rows from the omitted key.
+    #[test]
+    fn empty_lstring_decodes_to_null_in_both_localization_modes() {
+        let schema = empty_schema();
+
+        // Non-localized: inline empty string (bare NUL terminator).
+        let non_loc = bare_ctx(&schema);
+        let out = decode_lstring(&non_loc, &subrecord("DESC", vec![0x00], 0));
+        assert_eq!(
+            out.get("Description"),
+            Some(&Value::Null),
+            "empty inline lstring must decode to null, not \"\""
+        );
+
+        // Localized: the id==0 "no string" sentinel.
+        let mut loc = bare_ctx(&schema);
+        loc.is_localized = true;
+        let out = decode_lstring(&loc, &subrecord("DESC", vec![0, 0, 0, 0], 0));
+        assert_eq!(out.get("Description"), Some(&Value::Null));
+
+        // Localized: truncated payload (<4 bytes) must still emit the key,
+        // rather than omitting it and pairing with the other side as a change.
+        let out = decode_lstring(&loc, &subrecord("DESC", vec![0x01], 0));
+        assert_eq!(
+            out.get("Description"),
+            Some(&Value::Null),
+            "short localized lstring payload must emit an explicit null key"
+        );
+    }
+
+    /// The empty-is-null normalization must not swallow real text.
+    #[test]
+    fn non_empty_inline_lstring_still_decodes_to_text() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+
+        let mut data = b"Vote Counter".to_vec();
+        data.push(0);
+        let out = decode_lstring(&ctx, &subrecord("DESC", data, 0));
+        assert_eq!(out.get("Description"), Some(&json!("Vote Counter")));
+
+        // `<ID=...>`-prefixed form: prefix stripped, remainder preserved.
+        let mut data = b"<ID=0001A2B3>Vote Counter".to_vec();
+        data.push(0);
+        let out = decode_lstring(&ctx, &subrecord("DESC", data, 0));
+        assert_eq!(out.get("Description"), Some(&json!("Vote Counter")));
+
+        // A prefix with nothing after it is still "no string".
+        let mut data = b"<ID=0001A2B3>".to_vec();
+        data.push(0);
+        let out = decode_lstring(&ctx, &subrecord("DESC", data, 0));
+        assert_eq!(out.get("Description"), Some(&Value::Null));
     }
 
     /// Fix E regression: a sig-bearing `Unused` member (Pascal

@@ -571,11 +571,18 @@ pub fn json_diff(a: &Value, b: &Value) -> Value {
                             }
                         }
                     }
+                    // An absent key and a present-but-null key both mean "no
+                    // value", so pairing them is not a change. Emitting one
+                    // produced `null -> null` rows, which no consumer can act on.
                     (Some(av), None) => {
-                        out.insert(key.clone(), serde_json::json!({"from": av, "to": null}));
+                        if !av.is_null() {
+                            out.insert(key.clone(), serde_json::json!({"from": av, "to": null}));
+                        }
                     }
                     (None, Some(bv)) => {
-                        out.insert(key.clone(), serde_json::json!({"from": null, "to": bv}));
+                        if !bv.is_null() {
+                            out.insert(key.clone(), serde_json::json!({"from": null, "to": bv}));
+                        }
                     }
                     (None, None) => unreachable!(),
                 }
