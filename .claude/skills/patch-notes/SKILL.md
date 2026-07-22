@@ -22,11 +22,18 @@ live under `esm/` (`esm/target/release/esm`, `python3 esm/tools/<script>.py`).
 Parse positional args (ignore `--out-dir`, `--official-notes`, `--force-pipeline`, `--force`,
 handled below).
 
-- **0 positional args** → `NEW_TOKEN`/`OLD_TOKEN` = the last two entries of
-  `ls "$FO76_DATA_DIR" | sort`.
+The snapshot listing is **only the 8-digit date directories** — `$FO76_DATA_DIR` also holds
+`notes/` (this pipeline's own output), which sorts last and would otherwise be picked as the
+newest snapshot:
+
+```sh
+snapshots() { ls "$FO76_DATA_DIR" | grep -E '^[0-9]{8}$' | sort; }
+```
+
+- **0 positional args** → `NEW_TOKEN`/`OLD_TOKEN` = the last two entries of `snapshots`.
 - **1 positional arg** (call it `A`) → `NEW_TOKEN=A`; `OLD_TOKEN` = the snapshot immediately
-  before it in `ls "$FO76_DATA_DIR" | sort`. Fail if `A` isn't in that listing or is the first
-  entry (no older snapshot to diff against).
+  before it in `snapshots`. Fail if `A` isn't in that listing or is the first entry (no older
+  snapshot to diff against).
 - **2 positional args** (`A B`) → `OLD_TOKEN_OR_PATH=A`, `NEW_TOKEN_OR_PATH=B`.
 
 Resolve each token/path to a `(TOKEN, DIR)` pair — absolute paths (`/*`) are accepted verbatim
@@ -94,6 +101,15 @@ If `REUSE=no` or `--force-pipeline` was passed:
 ```sh
 python3 esm/tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT"
 ```
+
+**Check the strings banner it prints.** Two snapshots means two string tables, so the header
+must show `strings-dir-a:` and `strings-dir-b:` pointing at *different* dirs. A single
+`strings-dir:` line — or a `WARNING: --strings-dir ... BOTH sides` — means every localized
+FULL/DESC on the new side is being resolved against the other snapshot's table: renames and
+description rewrites silently vanish and stale text is reported as current. Stop and re-run
+with `--strings-dir-a`/`--strings-dir-b` rather than writing up that diff. (Corroborating tell,
+after the pipeline finishes: an `_unresolved` count in the hundreds instead of low double
+digits.)
 
 ## 3. Prewarm the daemon
 

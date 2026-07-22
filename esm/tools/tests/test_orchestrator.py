@@ -101,6 +101,98 @@ class TestEsmTokenAndOutDir(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Unit: strings-dir resolution
+# ---------------------------------------------------------------------------
+
+
+class TestLocateStringsDirs(unittest.TestCase):
+    """Regression cover for the per-side string-table resolution.
+
+    The production snapshot layout dates the *parent directory* and leaves both
+    ESM stems identical (`<token>/SeventySix.esm`), with plain, undated string
+    tables (`strings/SeventySix_en.strings`). `has_any_strings()` then answers
+    the same for both sides, so the shared-dir shortcut used to accept the OLD
+    snapshot's strings/ for BOTH -- resolving new lstring ids against the old
+    table and hiding every localized rename. `make_snapshot()` above uses dated
+    stems, so only these tests exercise that shape.
+    """
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def _snapshot(self, token: str, *, dated_stem: bool = False,
+                  strings: bool = True) -> Path:
+        snap = self.tmp / token
+        snap.mkdir(parents=True, exist_ok=True)
+        esm = snap / (f"SeventySix_{token}.esm" if dated_stem else "SeventySix.esm")
+        esm.write_bytes(b"FAKE")
+        if strings:
+            sd = snap / "strings"
+            sd.mkdir(exist_ok=True)
+            stem = f"SeventySix_{token}_en" if dated_stem else "SeventySix_en"
+            (sd / f"{stem}.strings").write_bytes(b"")
+        return esm
+
+    def _locate(self, a: Path, b: Path, **kw):
+        kwargs = dict(explicit=None, explicit_a=None, explicit_b=None, lang="en")
+        kwargs.update(kw)
+        return mpn.locate_strings_dirs(a, b, **kwargs)
+
+    def test_undated_stems_in_separate_dirs_resolve_per_side(self):
+        a = self._snapshot("20260710")
+        b = self._snapshot("20260717")
+        da, db = self._locate(a, b)
+        self.assertEqual(da, (self.tmp / "20260710" / "strings").resolve())
+        self.assertEqual(db, (self.tmp / "20260717" / "strings").resolve())
+        self.assertNotEqual(da, db)
+
+    def test_dated_stems_still_allow_a_shared_dir(self):
+        # Both ESMs in one dir, dated stems, one strings/ holding both tables.
+        snap = self.tmp / "both"
+        snap.mkdir()
+        sd = snap / "strings"
+        sd.mkdir()
+        esms = []
+        for token in ("20260710", "20260717"):
+            p = snap / f"SeventySix_{token}.esm"
+            p.write_bytes(b"FAKE")
+            esms.append(p)
+            (sd / f"SeventySix_{token}_en.strings").write_bytes(b"")
+        da, db = self._locate(*esms)
+        self.assertEqual(da, sd.resolve())
+        self.assertEqual(db, sd.resolve())
+
+    def test_undated_stems_missing_one_side_fails_loudly(self):
+        # The old shared-dir shortcut would have papered over this by handing
+        # the present side's dir to both. It must die instead.
+        a = self._snapshot("20260710")
+        b = self._snapshot("20260717", strings=False)
+        with self.assertRaises(SystemExit) as cm:
+            self._locate(a, b)
+        self.assertEqual(cm.exception.code, 1)
+
+    def test_explicit_shared_dir_is_still_honoured(self):
+        a = self._snapshot("20260710")
+        b = self._snapshot("20260717")
+        shared = self.tmp / "20260710" / "strings"
+        da, db = self._locate(a, b, explicit=str(shared))
+        self.assertEqual(da, shared.resolve())
+        self.assertEqual(db, shared.resolve())
+
+    def test_explicit_per_side_flags_take_precedence(self):
+        a = self._snapshot("20260710")
+        b = self._snapshot("20260717")
+        da, db = self._locate(
+            a, b,
+            explicit_a=str(self.tmp / "20260717" / "strings"),
+            explicit_b=str(self.tmp / "20260710" / "strings"),
+        )
+        self.assertEqual(da, (self.tmp / "20260717" / "strings").resolve())
+        self.assertEqual(db, (self.tmp / "20260710" / "strings").resolve())
+
+
+# ---------------------------------------------------------------------------
 # Unit: esm-diff command construction (--exclude-type default/disable, etc.)
 # ---------------------------------------------------------------------------
 

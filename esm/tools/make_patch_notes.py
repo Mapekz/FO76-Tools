@@ -210,6 +210,21 @@ def locate_strings_dirs(
     """
     tok_a = version_token(esm_a)
     tok_b = version_token(esm_b)
+    same_parent = esm_a.parent.resolve() == esm_b.parent.resolve()
+
+    # `has_any_strings(d, tok)` is the only evidence that dir `d` serves a given
+    # side -- and when `tok_a == tok_b` it returns the *identical* answer for
+    # both sides, so a shared dir passing the conjunction proves nothing.  That
+    # is exactly the snapshot layout this pipeline runs on: the parent directory
+    # carries the date (`<token>/SeventySix.esm`) while both stems are the same
+    # `SeventySix`, and both string tables are the plain `SeventySix_en.*`.  The
+    # old code accepted the FIRST candidate -- the OLD snapshot's strings/ dir --
+    # for both sides, silently resolving the NEW snapshot's lstring ids against
+    # the OLD string table: every localized rename/description rewrite vanished
+    # from the diff, and stale text was reported as current.  Only trust a
+    # shared dir when the tokens genuinely distinguish the two sides, or when
+    # both ESMs sit in one directory and no per-side alternative can exist.
+    shared_dir_trustworthy = (tok_a != tok_b) or same_parent
 
     def has_any_strings(d: Path, tok: str) -> bool:
         """True if d contains at least one *_{lang}.{strings,dlstrings,ilstrings} for tok."""
@@ -241,6 +256,14 @@ def locate_strings_dirs(
         if not d.is_dir():
             die(1, f"--strings-dir not a directory: {d}")
         if has_any_strings(d, tok_a) and has_any_strings(d, tok_b):
+            if not shared_dir_trustworthy:
+                eprint(
+                    f"  WARNING: --strings-dir {d} is being used for BOTH sides, but the two "
+                    f"ESMs live in different directories and share the stem '{tok_a}', so the "
+                    f"per-side check cannot tell them apart. Localized text will be resolved "
+                    f"against ONE table -- pass --strings-dir-a/--strings-dir-b instead unless "
+                    f"you know this dir really serves both snapshots."
+                )
             return d, d
         missing = []
         if not has_any_strings(d, tok_a):
@@ -250,7 +273,7 @@ def locate_strings_dirs(
         die(1, f"--strings-dir {d} missing string files for: {', '.join(missing)}")
 
     # --- Auto-detect: shared dir first (works when both ESMs are in the same parent) ---
-    if explicit_a is None and explicit_b is None:
+    if explicit_a is None and explicit_b is None and shared_dir_trustworthy:
         shared_candidates: list[Path] = []
         seen: set[Path] = set()
         for esm in (esm_a, esm_b):
@@ -284,9 +307,13 @@ def locate_strings_dirs(
         missing_sides.append(f"ESM B ({esm_b.name})")
     searched = [esm_a.parent / "strings", esm_a.parent, esm_b.parent / "strings", esm_b.parent]
     tried_str = "\n  ".join(str(d) for d in searched)
+    shared_note = "" if shared_dir_trustworthy else (
+        f"\nA shared strings dir was NOT auto-detected: both ESMs share the stem '{tok_a}' and "
+        f"live in different directories, so one dir cannot be proven to serve both sides.\n")
     die(1,
         f"Cannot find string files for: {', '.join(missing_sides)}\n"
-        f"Searched (auto-detect):\n  {tried_str}\n\n"
+        f"Searched (auto-detect):\n  {tried_str}\n"
+        f"{shared_note}\n"
         f"Supply --strings-dir (shared) or --strings-dir-a/--strings-dir-b (per side).\n"
         f"Refusing to diff without strings — output would be noise.")
 
