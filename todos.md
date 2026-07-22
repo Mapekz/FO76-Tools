@@ -21,6 +21,24 @@ No tracked follow-ups. Outstanding items as of 2026-07-22 were migrated to GitHu
 [#6](https://github.com/Mapekz/FO76-Tools/issues/6) (chase/walk N-API/HTTP/MCP exposure,
 conditional).
 
+The 2026-07-22 architecture review left eight further findings unimplemented, all filed rather
+than tracked here: [#7](https://github.com/Mapekz/FO76-Tools/issues/7) (delete `slice_bundles.py`
+Mode 1), [#8](https://github.com/Mapekz/FO76-Tools/issues/8) (daemon-lifecycle seam),
+[#9](https://github.com/Mapekz/FO76-Tools/issues/9) (N-API envelope typing),
+[#10](https://github.com/Mapekz/FO76-Tools/issues/10) (point N-API diff at `diff_pair`),
+[#11](https://github.com/Mapekz/FO76-Tools/issues/11) (`run_lints` silent per-record swallows),
+[#12](https://github.com/Mapekz/FO76-Tools/issues/12) (`extract.py` has no tests),
+[#13](https://github.com/Mapekz/FO76-Tools/issues/13) (scalar decode duplication),
+[#14](https://github.com/Mapekz/FO76-Tools/issues/14) (`hardcoded.py` duplicates `reader.rs`),
+[#15](https://github.com/Mapekz/FO76-Tools/issues/15) (clustering knobs split JSON/Python),
+[#16](https://github.com/Mapekz/FO76-Tools/issues/16) (vitest excludes `.tsx`),
+[#17](https://github.com/Mapekz/FO76-Tools/issues/17) (`expand_call` branches vs a data table).
+
+One review finding was deliberately **not** filed: the seven IPC methods carved out of
+`esm-viewer`'s `CONTRACT` table and hand-written in three places. The carve-out is documented
+and intentional (those methods have non-uniform shapes — `diff` needs two registry lookups), so
+it reads as a considered partial refactor rather than an oversight.
+
 ---
 
 ## `ba2/`
@@ -55,8 +73,8 @@ method returns `serde_json::Value`, which NAPI-RS renders as `any` in
 `bindings/napi/index.d.ts` — so `npm run typecheck` cannot actually check `Fo76Api`'s
 hand-written assertions against reality. Typing the *envelopes* (`FileInfo`, `RecordResult`,
 `DiffResult`, `RefList`) at that boundary would close the gap; record *bodies* are
-schema-driven and legitimately stay `Record<string, unknown>`. Not currently tracked as a
-work item — noted so the gap isn't rediscovered from scratch.
+schema-driven and legitimately stay `Record<string, unknown>`. Tracked as
+[#9](https://github.com/Mapekz/FO76-Tools/issues/9).
 
 ---
 
