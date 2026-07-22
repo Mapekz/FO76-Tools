@@ -16,8 +16,8 @@ use esm::backend::{
     exe_sig, generate_token, remove_daemon_info, shared_registry, write_daemon_info, DaemonInfo,
     QueryBackend, RemoteBackend, SharedRegistry,
 };
-use esm::ipc::{dispatch, Request, Response as OpResponse};
-use esm::Database;
+use esm::ipc::{dispatch, dispatch_op, Op, RecordSel, Request, Response as OpResponse};
+use esm::ResolveDepth;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -182,22 +182,26 @@ async fn op_handler(
     Ok(Json(response))
 }
 
-async fn db_for_legacy(state: &AppState) -> Result<Arc<StdMutex<Database>>, ApiError> {
+async fn legacy_op(state: &AppState, op: Op) -> Result<serde_json::Value, ApiError> {
     let path = state.default_esm.as_ref().ok_or_else(|| {
         ApiError::bad_request("no default ESM; use POST /op or start with an ESM path")
     })?;
-    state.registry.get_or_open(path).map_err(ApiError::from)
+    let registry = state.registry.clone();
+    let path = path.clone();
+    tokio::task::spawn_blocking(move || {
+        let arc = registry.get_or_open(&path)?;
+        let mut db = arc.lock().unwrap();
+        dispatch_op(&mut db, &op)
+    })
+    .await
+    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(ApiError::from)
 }
 
 async fn info(State(state): State<AppState>) -> impl IntoResponse {
-    let db_arc = match db_for_legacy(&state).await {
-        Ok(a) => a,
-        Err(e) => return e.into_response(),
-    };
-    let db = db_arc.lock().unwrap();
-    match db.file_info() {
-        Ok(info) => Json(serde_json::to_value(info).unwrap_or_default()).into_response(),
-        Err(e) => ApiError::from(e).into_response(),
+    match legacy_op(&state, Op::FileInfo).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 
@@ -205,45 +209,21 @@ async fn record_by_formid(
     State(state): State<AppState>,
     Path(formid): Path<String>,
 ) -> impl IntoResponse {
-    let db_arc = match db_for_legacy(&state).await {
-        Ok(a) => a,
-        Err(e) => return e.into_response(),
-    };
-    let mut db = db_arc.lock().unwrap();
-
-    // The path segment is auto-detected: a FormID-looking token is resolved as a
-    // FormID, otherwise it falls back to an EditorID lookup.
-    if !esm::looks_like_formid(&formid) {
-        return match db.record_by_edid(&formid) {
-            Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
-            Err(e) => {
-                let msg = e.to_string();
-                if msg.contains("not found")
-                    || msg.contains("Not found")
-                    || msg.contains("Not Found")
-                {
-                    ApiError::not_found(format!("EditorID {} not found", formid)).into_response()
-                } else {
-                    ApiError::from(e).into_response()
-                }
-            }
-        };
-    }
-
-    let fid = match esm::parse_form_id_input(&formid) {
-        Ok(f) => f,
+    let sel = match RecordSel::from_input(&formid) {
+        Ok(s) => s,
         Err(e) => return ApiError::bad_request(e).into_response(),
     };
-    match db.record_by_formid(fid) {
-        Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
-        Err(e) => {
-            let msg = e.to_string();
-            if msg.contains("not found") || msg.contains("Not found") || msg.contains("Not Found") {
-                ApiError::not_found(format!("FormID {} not found", formid)).into_response()
-            } else {
-                ApiError::from(e).into_response()
-            }
-        }
+    match legacy_op(
+        &state,
+        Op::Record {
+            sel,
+            depth: ResolveDepth::None,
+        },
+    )
+    .await
+    {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 
@@ -259,51 +239,39 @@ async fn records_query(
     State(state): State<AppState>,
     Query(params): Query<RecordsQuery>,
 ) -> impl IntoResponse {
-    let db_arc = match db_for_legacy(&state).await {
-        Ok(a) => a,
-        Err(e) => return e.into_response(),
-    };
-    let mut db = db_arc.lock().unwrap();
-    if let Some(id) = params.id {
-        if esm::looks_like_formid(&id) {
-            let fid = match esm::parse_form_id_input(&id) {
-                Ok(f) => f,
-                Err(e) => return ApiError::bad_request(e).into_response(),
-            };
-            return match db.record_by_formid(fid) {
-                Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
-                Err(e) => ApiError::from(e).into_response(),
-            };
+    let op = if let Some(id) = params.id {
+        match RecordSel::from_input(&id) {
+            Ok(sel) => Op::Record {
+                sel,
+                depth: ResolveDepth::None,
+            },
+            Err(e) => return ApiError::bad_request(e).into_response(),
         }
-        return match db.record_by_edid(&id) {
-            Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
-            Err(e) => ApiError::from(e).into_response(),
-        };
+    } else if let Some(edid) = params.edid {
+        Op::Record {
+            sel: RecordSel::Edid(edid),
+            depth: ResolveDepth::None,
+        }
+    } else if let Some(sig) = params.r#type {
+        Op::ListByType {
+            sig,
+            limit: params.limit.unwrap_or(50).min(1000),
+        }
+    } else {
+        return ApiError::bad_request("specify ?id=, ?edid=, ?type=, or use /records/:formid")
+            .into_response();
+    };
+    match legacy_op(&state, op).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => e.into_response(),
     }
-    if let Some(edid) = params.edid {
-        return match db.record_by_edid(&edid) {
-            Ok(rec) => Json(serde_json::to_value(&rec).unwrap_or_default()).into_response(),
-            Err(e) => ApiError::from(e).into_response(),
-        };
-    }
-    if let Some(sig) = params.r#type {
-        let limit = params.limit.unwrap_or(50).min(1000);
-        return match db.list_by_type(&sig, limit) {
-            Ok(entries) => Json(serde_json::to_value(&entries).unwrap_or_default()).into_response(),
-            Err(e) => ApiError::from(e).into_response(),
-        };
-    }
-    ApiError::bad_request("specify ?id=, ?edid=, ?type=, or use /records/:formid").into_response()
 }
 
 async fn list_groups(State(state): State<AppState>) -> impl IntoResponse {
-    let db_arc = match db_for_legacy(&state).await {
-        Ok(a) => a,
-        Err(e) => return e.into_response(),
-    };
-    let db = db_arc.lock().unwrap();
-    let groups = db.list_groups();
-    Json(serde_json::to_value(&groups).unwrap_or_default()).into_response()
+    match legacy_op(&state, Op::ListGroups).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => e.into_response(),
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -317,16 +285,14 @@ async fn group_children(
     Path(sig): Path<String>,
     Query(params): Query<ChildrenQuery>,
 ) -> impl IntoResponse {
-    let db_arc = match db_for_legacy(&state).await {
-        Ok(a) => a,
-        Err(e) => return e.into_response(),
+    let op = Op::ListTypeChildren {
+        sig,
+        offset: params.offset.unwrap_or(0),
+        limit: params.limit.unwrap_or(100).min(500),
     };
-    let offset = params.offset.unwrap_or(0);
-    let limit = params.limit.unwrap_or(100).min(500);
-    let db = db_arc.lock().unwrap();
-    match db.list_type_children(&sig, offset, limit) {
-        Ok(children) => Json(serde_json::to_value(&children).unwrap_or_default()).into_response(),
-        Err(e) => ApiError::from(e).into_response(),
+    match legacy_op(&state, op).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 
@@ -334,14 +300,9 @@ async fn record_stub_at_offset(
     State(state): State<AppState>,
     Path(offset): Path<u64>,
 ) -> impl IntoResponse {
-    let db_arc = match db_for_legacy(&state).await {
-        Ok(a) => a,
-        Err(e) => return e.into_response(),
-    };
-    let db = db_arc.lock().unwrap();
-    match db.record_stub_at(offset) {
-        Ok(stub) => Json(serde_json::to_value(&stub).unwrap_or_default()).into_response(),
-        Err(e) => ApiError::from(e).into_response(),
+    match legacy_op(&state, Op::RecordStubAt { offset }).await {
+        Ok(v) => Json(v).into_response(),
+        Err(e) => e.into_response(),
     }
 }
 
@@ -358,20 +319,21 @@ async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
         None => return ApiError::bad_request("no default ESM loaded").into_response(),
     };
     let registry = state.registry.clone();
-    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<esm::diff::DiffResult> {
-        let arc_a = registry.get_or_open(&default)?;
-        let arc_b = registry.get_or_open(&cmp_path)?;
-        let diff = {
-            let db_a = arc_a.lock().unwrap();
-            let db_b = arc_b.lock().unwrap();
-            esm::diff::diff_databases(&db_a, &db_b)?
-        };
-        Ok(diff)
+    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<serde_json::Value> {
+        let (key_a, arc_a) = registry.get_or_open_with_key(&default)?;
+        let (key_b, arc_b) = registry.get_or_open_with_key(&cmp_path)?;
+        esm::ipc::diff_pair(
+            &arc_a,
+            &arc_b,
+            Some((&key_a, &key_b)),
+            &esm::diff::DiffOptions::default(),
+            &None,
+        )
     })
     .await;
 
     match result {
-        Ok(Ok(diff)) => Json(serde_json::to_value(&diff).unwrap_or_default()).into_response(),
+        Ok(Ok(diff)) => Json(diff).into_response(),
         Ok(Err(e)) => ApiError::from(e).into_response(),
         Err(e) => ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }

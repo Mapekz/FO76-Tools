@@ -13,7 +13,8 @@
 mod common;
 
 use common::{make_xref_esm, unique_temp_path};
-use esm::ipc::{dispatch, dispatch_op, Op, RecordSel, Request, Response};
+use esm::diff::DiffOptions;
+use esm::ipc::{diff_locked, diff_pair, dispatch, dispatch_op, Op, RecordSel, Request, Response};
 use esm::registry::Registry;
 use esm::{Database, FormId, ResolveDepth, SearchField};
 use std::io::Write;
@@ -56,6 +57,67 @@ fn assert_parity(path: &Path, reg: &Registry, op: Op) {
     assert_eq!(
         via_registry, via_direct,
         "dispatch vs dispatch_op produced different JSON for {op:?}"
+    );
+}
+
+/// `Op::Diff` is rejected by `dispatch_op`, so diff parity is checked between
+/// the registry-backed `dispatch` path and a direct two-`Arc` lock plus
+/// [`diff_locked`] (the post-lock half shared with N-API).
+fn assert_diff_parity(
+    path_a: &Path,
+    path_b: &Path,
+    reg: &Registry,
+    options: &DiffOptions,
+    record_type: &Option<String>,
+) {
+    let req = Request {
+        esm: path_a.to_path_buf(),
+        op: Op::Diff {
+            b: path_b.to_path_buf(),
+            record_type: record_type.clone(),
+            options: options.clone(),
+        },
+    };
+    let via_dispatch = match dispatch(reg, &req) {
+        Response::Ok { data } => data,
+        Response::Err { error } => panic!("dispatch (registry path) failed: {error}"),
+    };
+
+    let (key_a, arc_a) = reg
+        .get_or_open_with_key(path_a)
+        .expect("open path_a for diff_pair path");
+    let (key_b, arc_b) = reg
+        .get_or_open_with_key(path_b)
+        .expect("open path_b for diff_pair path");
+    let via_pair = diff_pair(&arc_a, &arc_b, Some((&key_a, &key_b)), options, record_type)
+        .unwrap_or_else(|e| panic!("diff_pair failed: {e:#}"));
+
+    assert_eq!(
+        via_dispatch, via_pair,
+        "dispatch vs diff_pair produced different JSON for {:?} vs {:?}",
+        path_a, path_b
+    );
+
+    // Also pin the manual two-lock + diff_locked path (N-API style).
+    let same_db = key_a == key_b || std::sync::Arc::ptr_eq(&arc_a, &arc_b);
+    let via_locked = if same_db {
+        let db = arc_a.lock().unwrap();
+        diff_locked(&db, &db, options, record_type)
+    } else if key_a < key_b {
+        let db_a = arc_a.lock().unwrap();
+        let db_b = arc_b.lock().unwrap();
+        diff_locked(&db_a, &db_b, options, record_type)
+    } else {
+        let db_b = arc_b.lock().unwrap();
+        let db_a = arc_a.lock().unwrap();
+        diff_locked(&db_a, &db_b, options, record_type)
+    }
+    .unwrap_or_else(|e| panic!("diff_locked failed: {e:#}"));
+
+    assert_eq!(
+        via_dispatch, via_locked,
+        "dispatch vs diff_locked produced different JSON for {:?} vs {:?}",
+        path_a, path_b
     );
 }
 
@@ -134,5 +196,26 @@ fn referenced_by_parity() {
             paths: false,
         },
     );
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn diff_parity_distinct_paths() {
+    let (path_a, reg) = setup();
+    let buf = make_xref_esm();
+    let path_b = unique_temp_path("parity-diff-b");
+    let mut f = std::fs::File::create(&path_b).expect("create second temp esm");
+    f.write_all(&buf).expect("write second temp esm");
+    assert_diff_parity(&path_a, &path_b, &reg, &DiffOptions::default(), &None);
+    let _ = std::fs::remove_file(&path_a);
+    let _ = std::fs::remove_file(&path_b);
+}
+
+#[test]
+fn diff_parity_same_database() {
+    // Both diff operands resolve to the same registry entry — the deadlock
+    // scenario the HTTP `/diff` route used to hit when default == compare.
+    let (path, reg) = setup();
+    assert_diff_parity(&path, &path, &reg, &DiffOptions::default(), &None);
     let _ = std::fs::remove_file(&path);
 }

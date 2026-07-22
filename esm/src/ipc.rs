@@ -7,7 +7,8 @@ use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 /// Default maximum recursion depth for the reverse-reference walk.
 pub const DEFAULT_MAX_DEPTH: usize = 6;
@@ -208,6 +209,10 @@ pub enum Op {
         offset: usize,
         limit: usize,
     },
+    /// Lightweight record header at a file offset — see [`crate::Database::record_stub_at`].
+    RecordStubAt {
+        offset: u64,
+    },
     Coverage {
         record_type: Option<String>,
         sample: usize,
@@ -386,22 +391,7 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
         } => {
             let (key_a, arc_a) = reg.get_or_open_with_key(&req.esm)?;
             let (key_b, arc_b) = reg.get_or_open_with_key(b)?;
-            let same_db = key_a == key_b || std::sync::Arc::ptr_eq(&arc_a, &arc_b);
-            if same_db {
-                let db = arc_a.lock().unwrap();
-                // same_db means no added records — enrich_added_sources is a no-op.
-                return diff_locked(&db, &db, options, record_type);
-            }
-            // Lock in key order (deadlock-safe).
-            if key_a < key_b {
-                let db_a = arc_a.lock().unwrap();
-                let db_b = arc_b.lock().unwrap();
-                diff_locked(&db_a, &db_b, options, record_type)
-            } else {
-                let db_b = arc_b.lock().unwrap();
-                let db_a = arc_a.lock().unwrap();
-                diff_locked(&db_a, &db_b, options, record_type)
-            }
+            diff_pair(&arc_a, &arc_b, Some((&key_a, &key_b)), options, record_type)
         }
         _ => {
             let arc = reg.get_or_open(&req.esm)?;
@@ -513,6 +503,10 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             let children = db.list_group_children(*group_offset, *offset, *limit)?;
             Ok(serde_json::to_value(&children)?)
         }
+        Op::RecordStubAt { offset } => {
+            let stub = db.record_stub_at(*offset)?;
+            Ok(serde_json::to_value(&stub)?)
+        }
         Op::Coverage {
             record_type,
             sample,
@@ -616,13 +610,55 @@ fn bulk_record_entry(db: &mut Database, sel: &RecordSel, depth: ResolveDepth) ->
     }
 }
 
+/// Acquire locks on two `Database` handles in a deadlock-safe order, then run
+/// [`diff_locked`]. When `canonical_keys` is `Some`, ordering follows the
+/// registry's normalized path keys (`dispatch_inner`'s `Diff` arm and the HTTP
+/// `/diff` route). When `None`, ordering falls back to raw `Arc` pointer
+/// address — the scheme the N-API `diff` method can adopt later.
+pub fn diff_pair(
+    arc_a: &Arc<Mutex<Database>>,
+    arc_b: &Arc<Mutex<Database>>,
+    canonical_keys: Option<(&Path, &Path)>,
+    options: &DiffOptions,
+    record_type: &Option<String>,
+) -> anyhow::Result<Value> {
+    let same_db =
+        canonical_keys.map(|(ka, kb)| ka == kb).unwrap_or(false) || Arc::ptr_eq(arc_a, arc_b);
+    if same_db {
+        let db = arc_a.lock().unwrap();
+        // same_db means no added records — enrich_added_sources is a no-op.
+        return diff_locked(&db, &db, options, record_type);
+    }
+    match canonical_keys {
+        Some((ka, kb)) if ka < kb => {
+            let db_a = arc_a.lock().unwrap();
+            let db_b = arc_b.lock().unwrap();
+            diff_locked(&db_a, &db_b, options, record_type)
+        }
+        Some(_) => {
+            let db_b = arc_b.lock().unwrap();
+            let db_a = arc_a.lock().unwrap();
+            diff_locked(&db_a, &db_b, options, record_type)
+        }
+        None => {
+            if Arc::as_ptr(arc_a) < Arc::as_ptr(arc_b) {
+                let db_a = arc_a.lock().unwrap();
+                let db_b = arc_b.lock().unwrap();
+                diff_locked(&db_a, &db_b, options, record_type)
+            } else {
+                let db_b = arc_b.lock().unwrap();
+                let db_a = arc_a.lock().unwrap();
+                diff_locked(&db_a, &db_b, options, record_type)
+            }
+        }
+    }
+}
+
 /// Post-lock part of a database diff: run [`diff_databases_with`] and apply
 /// the optional record-type filter, once both `Database` locks are already
-/// held. Shared by `dispatch_inner`'s `Diff` arm (which locks two handles via
-/// a [`Registry`]'s key ordering) and the N-API binding's `diff` method
-/// (which locks two separate `Arc<Mutex<Database>>` handles ordered by raw
-/// pointer address) — each keeps its own lock-acquisition code, since only
-/// the registry path has a `Registry` to source canonical keys from.
+/// held. Shared by [`diff_pair`] (registry-backed and HTTP `/diff` routes) and
+/// the N-API binding's `diff` method (which keeps its own lock-acquisition
+/// code until it adopts [`diff_pair`]).
 pub fn diff_locked(
     db_a: &Database,
     db_b: &Database,
