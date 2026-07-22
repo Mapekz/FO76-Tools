@@ -20,16 +20,6 @@ they're CLI-only (`esm chase`, `esm walk`). Add only if an agent-facing surface 
 CLI (esm-viewer, the HTTP/MCP server, a chatbot front end) actually needs one-shot chase/walk
 digests instead of composing `get`/`refs` itself.
 
-- [ ] **P4 — `rollout_shapes` rides on a dict subclass** *(design smell, not a live bug,
-      2026-07-22)*. `compute_bundle_tiers` returns a `TierAssignments(dict)` carrying
-      `rollout_shapes` as an attribute, and `build_triage_payload` reads it via
-      `getattr(tiers_by_id, "rollout_shapes", [])`. The carrier exists because
-      `merge_assessment` mutates the mapping in place, so the attribute has to survive that.
-      Both production paths go through `compute_bundle_tiers`, so it works today — but any
-      caller that hands over a plain dict (or copies one) silently gets an **empty
-      rollouts.md** rather than an error, which would hide the entire aggregated bulk-change
-      story from the summary. Thread `rollout_shapes` explicitly instead of via `getattr`.
-
 - [ ] **P4 — Investigate elevated diff Changed count post-LString fix** *(2026-07-20)*.
       `diff_two_esm_versions_glob` (20260710→20260717) reports `Changed: 129323` after the
       LString id-0 and table-kind fixes landed (down from 156009 before — the fixes accounted
@@ -127,6 +117,22 @@ checks) both individually and after merge.
   `tests/decode_coverage.rs`, it signals a missing localization BA2, not a decode bug. Note
   this gate still cannot run in CI (it needs a real ESM, and game data is gitignored), so it
   remains a local-only check.
+- **P4 — `rollout_shapes` rides on a dict subclass** — resolved, along with the wider problem
+  it was a symptom of. The pipeline had no declared shape for anything crossing its ten stages
+  (no `TypedDict`, `dataclass`, or schema anywhere), so a renamed key degraded to `None` rather
+  than raising. `RecordEntry`/`Bundle`/`Member`/`Edge`/`TierInfo`/`LintFinding` are now declared
+  in `patchnotes_lib.py`, and — because the stages that matter cross a *process* boundary
+  (`triage_bundles.py` is a separate process, `slice_bundles.py --extract` a subprocess, and the
+  `/patch-notes` skill an LLM reading files) — validation runs where JSON re-enters a process,
+  which is the part a `TypedDict` structurally cannot cover. `compute_bundle_tiers` now returns
+  `(tiers, rollout_shapes)` explicitly and the `getattr` default is gone.
+  `tools/tests/fixtures/comprehensive_mini.json` was deliberately **not** regenerated — it is
+  hand-engineered to hit hub-exemption, oversized-split and orphan-singleton paths a real diff
+  fixture wouldn't reproduce; a conformance test against the real producer was added instead.
+- **Python lint/typecheck** — `ruff` and `ty` now run in CI and via `just patch-tools-lint`,
+  both pinned (`ruff@0.15.22`, `ty@0.0.62` — the latter is a 0.0.x preview). They run through
+  `uvx` and are never imported, so `esm/tools/` keeps its zero-runtime-dependency property: no
+  `requirements.txt`, no lockfile, and the suite still runs on bare `python3`.
 - **CI enforced what `just` already ran** — `cargo test --features server`, the generated-types
   drift guard, the Python tooling suite (529 tests), and the esm-viewer typecheck + vitest
   (77 tests) are now CI jobs. Previously ~19k lines of Python and ~4.3k of TypeScript had zero
