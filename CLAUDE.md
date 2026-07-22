@@ -25,6 +25,20 @@ This repository contains three Fallout 76 tools. Most share no code, no workspac
 
 Deferred work for **all** subprojects lives in one place: [`todos.md`](todos.md) at the repo root, grouped by project. Add follow-ups there — do not create per-project `todos.md` files or a `todos/` directory.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues ([`Mapekz/FO76-Tools`](https://github.com/Mapekz/FO76-Tools)), managed via the `gh` CLI. `todos.md` remains the separate hand-maintained backlog. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical role names are used as-is (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context: `CONTEXT-MAP.md` at the root points to a `CONTEXT.md` + `docs/adr/` per subproject (`ba2/`, `esm/`, `esm-viewer/`). See `docs/agents/domain.md`.
+
 ## Before committing
 
 Before committing in any subproject, run that subproject's full check suite and only commit when everything passes — formatting, lint with `-D warnings`, and tests:
