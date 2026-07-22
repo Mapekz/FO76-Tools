@@ -279,6 +279,12 @@ pub fn diff_databases_with(
 
         if opts.suppress_noise {
             strip_noise_fields(&mut field_changes, &meta_b.signature);
+            // A record re-saved at a newer form_version switches on schema
+            // members gated by `from_version`; those surface as `null -> X`
+            // appearances rather than as authored edits.
+            if meta_a.form_version != meta_b.form_version {
+                strip_version_gated_appearances(&mut field_changes);
+            }
             if is_empty_diff(&field_changes) {
                 *suppressed_counts
                     .entry(meta_b.signature.clone())
@@ -542,6 +548,62 @@ pub fn strip_noise_fields(field_changes: &mut Value, sig: &str) {
             map.remove(*key);
         }
     }
+}
+
+/// True when every leaf under `v` is a `null -> <something>` transition — a
+/// field that merely *appeared* rather than one whose value was authored.
+///
+/// An `_array_diff` carrying added or removed elements is a real structural
+/// change and never counts as an appearance.
+fn is_pure_appearance(v: &Value) -> bool {
+    let Some(map) = v.as_object() else {
+        return false;
+    };
+    if map.len() == 2 && map.contains_key("from") && map.contains_key("to") {
+        return map.get("from").is_some_and(Value::is_null);
+    }
+    if let Some(ad) = map.get("_array_diff").and_then(Value::as_object) {
+        if ad.contains_key("added") || ad.contains_key("removed") {
+            return false;
+        }
+        return ad
+            .get("changed")
+            .and_then(Value::as_array)
+            .is_some_and(|cs| {
+                cs.iter()
+                    .all(|c| c.get("changes").is_some_and(is_pure_appearance))
+            });
+    }
+    let mut saw = false;
+    for (k, x) in map.iter() {
+        if k.starts_with('_') {
+            continue;
+        }
+        saw = true;
+        if !is_pure_appearance(x) {
+            return false;
+        }
+    }
+    saw
+}
+
+/// Drop top-level field changes that are purely fields appearing (`null -> X`).
+///
+/// Only applied when the two records' `form_version`s differ. `decode.rs` gates
+/// each schema member on the record's own form version (`member_version_ok`),
+/// so a record re-saved at a newer version switches on every member whose
+/// `from_version` falls in between — each of which reads as an appearance.
+/// Bethesda re-stamped ~126k records from 163-202 to 209 between the 20260710
+/// and 20260717 snapshots, which accounted for ~80% of all reported changes.
+///
+/// The bytes genuinely did change, so this is a signal-to-noise judgement for
+/// patch notes rather than a correctness fix — hence it is gated behind
+/// `DiffOptions::suppress_noise` and disabled by `--keep-noise`.
+fn strip_version_gated_appearances(field_changes: &mut Value) {
+    let Some(map) = field_changes.as_object_mut() else {
+        return;
+    };
+    map.retain(|_, v| !is_pure_appearance(v));
 }
 
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.
@@ -1054,5 +1116,79 @@ fn array_diff(a: &[Value], b: &[Value]) -> Value {
         Some(spec) => keyed_diff(a, b, &spec),
         None if a.len() == b.len() => positional_diff(a, b),
         None => opaque_array_diff(a, b),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // `is_pure_appearance` / `strip_version_gated_appearances` are private, so
+    // these live here per the crate convention. The risk being covered is
+    // OVER-suppression: dropping an authored edit as if it were a field that
+    // merely switched on with a newer form_version.
+
+    #[test]
+    fn appearance_detects_null_to_value() {
+        assert!(is_pure_appearance(
+            &json!({"from": null, "to": "0x0000000F"})
+        ));
+        assert!(is_pure_appearance(&json!({
+            "Enlighten Auto UV": {"from": null, "to": {"Unknown": 1}},
+            "Unknown CTRN": {"from": null, "to": {"hex": "00"}},
+        })));
+    }
+
+    #[test]
+    fn appearance_rejects_authored_edits() {
+        // A real value change, even to null, is not an appearance.
+        assert!(!is_pure_appearance(&json!({"from": 5.0, "to": 20.0})));
+        assert!(!is_pure_appearance(&json!({"from": "0x0F", "to": null})));
+        // One authored edit anywhere disqualifies the whole subtree.
+        assert!(!is_pure_appearance(&json!({
+            "Unknown CTRN":  {"from": null, "to": {"hex": "00"}},
+            "Attack Damage": {"from": 30, "to": 45},
+        })));
+    }
+
+    #[test]
+    fn appearance_rejects_structural_array_changes() {
+        // Added/removed elements are structural, never an appearance.
+        assert!(!is_pure_appearance(&json!({
+            "_array_diff": {"strategy": "keyed", "added": [{"x": 1}]}
+        })));
+        assert!(!is_pure_appearance(&json!({
+            "_array_diff": {"strategy": "keyed", "removed": [{"x": 1}]}
+        })));
+        // A changed element counts only if its own changes are appearances.
+        assert!(is_pure_appearance(&json!({
+            "_array_diff": {"strategy": "keyed", "changed": [
+                {"key": {"name": "a"}, "changes": {"Unknown": {"from": null, "to": 1}}}
+            ]}
+        })));
+        assert!(!is_pure_appearance(&json!({
+            "_array_diff": {"strategy": "keyed", "changed": [
+                {"key": {"name": "a"}, "changes": {"Magnitude": {"from": 10, "to": 20}}}
+            ]}
+        })));
+    }
+
+    #[test]
+    fn strip_keeps_authored_edits_and_drops_appearances() {
+        let mut fc = json!({
+            "Enlighten Auto UV": {"from": null, "to": {"Unknown": 1}},
+            "Previous INFO":     {"from": null, "to": "0x0031E5CD"},
+            "Attack Damage":     {"from": 30, "to": 45},
+        });
+        strip_version_gated_appearances(&mut fc);
+        assert_eq!(fc, json!({"Attack Damage": {"from": 30, "to": 45}}));
+    }
+
+    #[test]
+    fn strip_is_a_no_op_on_non_objects() {
+        let mut v = json!("not an object");
+        strip_version_gated_appearances(&mut v);
+        assert_eq!(v, json!("not an object"));
     }
 }
