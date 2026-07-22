@@ -599,6 +599,18 @@ def build_context_incidence(edges, u):
     return inc
 
 
+def build_context_member_incidence(context_incidence):
+    """u_fid -> [(context_fid, position, u_fid, edge), ...] reverse index over
+    `build_context_incidence` output. `position` is the pair's index within
+    `context_incidence[context_fid]` so bundle-local candidate gathering can
+    preserve the original per-context list order."""
+    member_inc = defaultdict(list)
+    for c, pairs in context_incidence.items():
+        for position, (u_fid, e) in enumerate(pairs):
+            member_inc[u_fid].append((c, position, u_fid, e))
+    return member_inc
+
+
 def _context_rank(stub, incident_pairs, unique_keyword_patterns):
     """Rank 0 (highest): connected to a bundle member via a
     CONTEXT_TOP_TIER_RELATIONS edge (e.g. an OMOD's own mod target, or a
@@ -618,18 +630,39 @@ def _context_rank(stub, incident_pairs, unique_keyword_patterns):
     return (3, 0)
 
 
-def attach_context(members, context_incidence, context_stubs, cap, unique_keyword_patterns):
+def attach_context(
+    members,
+    context_incidence,
+    context_stubs,
+    cap,
+    unique_keyword_patterns,
+    context_member_incidence=None,
+):
     """Step 7a. Candidate context nodes = anything incident to a member of
     this bundle. Sorted by preference (a mod_for/crafts-linked node --
     e.g. an OMOD's own weapon/armor -- first, then NPC_/CONT/QUST/COBJ, then
     a unique-keyword-pattern KYWD, then anything else; form_id as a
     deterministic final tie-break), capped at `cap`. Returns (member dicts
-    with role="context"/status="unchanged", their connecting edges)."""
-    candidates = {
-        c: [(u_fid, e) for (u_fid, e) in pairs if u_fid in members]
-        for c, pairs in context_incidence.items()
-    }
-    candidates = {c: pairs for c, pairs in candidates.items() if pairs}
+    with role="context"/status="unchanged", their connecting edges).
+
+    `context_member_incidence` is the reverse index from
+    `build_context_member_incidence(context_incidence)`; when omitted, the
+    full `context_incidence` scan is used (fine for small unit tests)."""
+    if context_member_incidence is not None:
+        by_context = defaultdict(list)
+        for u_fid in members:
+            for c, position, u_fid2, e in context_member_incidence.get(u_fid, ()):
+                by_context[c].append((position, u_fid2, e))
+        candidates = {}
+        for c, pairs in by_context.items():
+            pairs.sort(key=lambda item: item[0])
+            candidates[c] = [(u_fid, e) for _position, u_fid, e in pairs]
+    else:
+        candidates = {
+            c: [(u_fid, e) for (u_fid, e) in pairs if u_fid in members]
+            for c, pairs in context_incidence.items()
+        }
+        candidates = {c: pairs for c, pairs in candidates.items() if pairs}
 
     ordered = sorted(
         candidates.keys(),
@@ -790,6 +823,13 @@ def build_bundles(comp, client, old_esm, new_esm, config):
     merged_groups = merge_by_overlap(merged_groups, OVERLAP_MERGE_THRESHOLD)
 
     context_incidence = build_context_incidence(edges, u)
+    context_member_incidence = build_context_member_incidence(context_incidence)
+
+    incident = defaultdict(list)
+    for i, e in enumerate(edges):
+        incident[e["from"]].append(i)
+        incident[e["to"]].append(i)
+
     keyword_cache = {}
 
     raw_bundles = []
@@ -814,9 +854,17 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         context_members, context_edges = attach_context(
             member_fids, context_incidence, context_stubs,
             settings["context_cap"], settings["unique_keyword_patterns"],
+            context_member_incidence,
         )
 
-        internal_edges = [e for e in edges if e["from"] in member_fids and e["to"] in member_fids]
+        candidate_indices = set()
+        for fid in member_fids:
+            candidate_indices.update(incident.get(fid, ()))
+        internal_edge_indices = sorted(
+            i for i in candidate_indices
+            if edges[i]["from"] in member_fids and edges[i]["to"] in member_fids
+        )
+        internal_edges = [edges[i] for i in internal_edge_indices]
         bundle_edges = dedupe_edges(internal_edges + context_edges)
 
         all_members = member_dicts + context_members
