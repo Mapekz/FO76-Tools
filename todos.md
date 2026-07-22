@@ -30,11 +30,6 @@ digests instead of composing `get`/`refs` itself.
       rollouts.md** rather than an error, which would hide the entire aggregated bulk-change
       story from the summary. Thread `rollout_shapes` explicitly instead of via `getattr`.
 
-- [ ] **P4 — `--json` stdout hygiene in daemon mode** *(confirmed bug, 2026-07-19)*.
-      `esm get <id> --json` via the warm daemon appends a trailing `esm> ` REPL prompt
-      after the JSON document on stdout, which breaks strict parsers (`json.load` →
-      "Extra data"). Prompt belongs on stderr (or suppressed entirely for one-shot `-p`
-      calls).
 - [ ] **P4 — Investigate elevated diff Changed count post-LString fix** *(2026-07-20)*.
       `diff_two_esm_versions_glob` (20260710→20260717) reports `Changed: 129323` after the
       LString id-0 and table-kind fixes landed (down from 156009 before — the fixes accounted
@@ -42,14 +37,25 @@ digests instead of composing `get`/`refs` itself.
       20260717). The remaining ~129K is presumed normal per-patch content churn but hasn't been
       confirmed — spot-check a sample of "changed" records before the next `/patch-notes` run
       to rule out a further decode-shape artifact from the localized-string transition.
-- [ ] **P5 — INFO `Comment?` (RNAM) LString mislabeling** *(2026-07-20)*. After the LString
-      table-kind fix, 12 residual `_unresolved` markers remain in the 20260717 coverage sweep,
-      all in INFO's `Comment?` field (RNAM — the one INFO subrecord xEdit's
-      `LocalizedValueDecider` keeps in `.strings` rather than `.ilstrings`). In every case the
-      `lstring_id` exactly equals the record's own FormID, a strong signal RNAM isn't really an
-      lstring field at all (the schema's own `?` suffix on the name already flags it as a
-      low-confidence extractor guess). Verify against `../TES5Edit/Core/wbDefinitionsFO76.pas`'s
-      actual INFO RNAM definition and fix the schema/extractor if it's misclassified.
+- [ ] **P5 — INFO `Comment?` (BNAM) LString mislabeling** *(2026-07-20; diagnosis corrected
+      2026-07-22)*. After the LString table-kind fix, 12 residual `_unresolved` markers remain in
+      the 20260717 coverage sweep, all in INFO's `Comment?` field. In every case the `lstring_id`
+      exactly equals the record's own FormID — a strong signal the field isn't really an lstring
+      at all. That observation still stands; the original entry's *attribution* did not:
+
+      - **It is `BNAM`, not `RNAM`.** `wbDefinitionsFO76.pas:12120` has
+        `wbLStringKC(BNAM, 'Comment?')`; `RNAM` is `'Prompt'` at line 12138. Any fix targets BNAM.
+      - **The `?` is not an extractor confidence marker.** It is TES5Edit's own authorial doubt,
+        copied verbatim out of the Pascal string literal. `extract.py` has no confidence or
+        guess-marking logic anywhere — `_parse_lstring` maps every `wbLStringKC(...)` call to
+        `{"kind": "lstring"}` unconditionally, regardless of context. Do not read a `?` in any
+        schema `name` as a low-confidence signal; the schema has no provenance channel at all.
+
+      The dynamic table-selection rule this depends on (xEdit's `LocalizedValueDecider`,
+      `wbLocalization.pas:558-575`) is deliberately reimplemented on the Rust side in
+      `lstring_table_to_kind` (now `esm/src/decode/mod.rs` after the module split) rather than
+      baked into the schema — that part is correct and should not be "fixed". The open question
+      is narrowly whether BNAM should carry `kind: lstring` at all.
 - [ ] **P6 — Chatbot front page over the HTTP/MCP server** *(post-POC productization)*. The
       static UI (`esm/static/index.html`, `esm/static/compare.html`) is a record browser; the
       MCP server (`esm/src/bin/server.rs`) already exposes the six read-only tools a chatbot
@@ -79,9 +85,55 @@ No tracked follow-ups.
 
 The one cross-project seam is `esm-viewer/` → `esm/bindings/napi` (the `@fo76/esm-napi` addon,
 a local `file:` dependency). Anything that changes the `EsmDatabase` N-API surface has to land
-on both sides — run `just gen-types` in `esm/` to regenerate the shared TypeScript DTOs.
+on both sides — run `just gen-types` in `esm/` to regenerate the shared TypeScript DTOs. As of
+2026-07-22 the drift guard runs in CI too, so forgetting the regen now fails the build rather
+than passing silently.
+
+Worth knowing about that seam: `dispatch_op` serializes typed Rust structs, and `ts-rs` derives
+the generated `.ts` DTOs from those same structs, so the shapes are honest. But every N-API
+method returns `serde_json::Value`, which NAPI-RS renders as `any` in
+`bindings/napi/index.d.ts` — so `npm run typecheck` cannot actually check `Fo76Api`'s
+hand-written assertions against reality. Typing the *envelopes* (`FileInfo`, `RecordResult`,
+`DiffResult`, `RefList`) at that boundary would close the gap; record *bodies* are
+schema-driven and legitimately stay `Record<string, unknown>`. Not currently tracked as a
+work item — noted so the gap isn't rediscovered from scratch.
 
 ---
+
+## Resolved 2026-07-22 — architecture deepening pass
+
+An architecture review surfaced eight deepening opportunities; five landed together. All were
+verified against the full check suite (`just check`, the Python suite, and the esm-viewer
+checks) both individually and after merge.
+
+- **P4 — `--json` stdout hygiene in daemon mode** — resolved. Root cause was not the daemon at
+  all: `main()` ran the requested subcommand and then *fell into* `run_repl` whenever `-p` was
+  absent, and `run_repl` wrote its `esm> ` prompt to the same stdout handle the JSON had just
+  gone to. Fixed by exiting after a subcommand regardless of `-p`, and moving the prompt to
+  stderr (matching the existing precedent that capped-output notices go to stderr so `--json`
+  stays parseable). Landed with the CLI enum unification.
+- **CLI/REPL dual command enums** — `ReplCommand` deleted; one enum and one dispatch path now
+  serve both one-shot and REPL invocation. `chase` and `walk` are reachable from the REPL for
+  the first time (they had no `ReplCommand` variant, so the *default* mode couldn't reach them).
+- **`decode.rs` split** — 4465 lines separated into `decode/{mod,scope,vmad,rules}.rs`. The
+  generic engine no longer carries FO76 business rules inline; `MemberDef` gained
+  `sig()`/`contains_sig()`, collapsing three duplicated variant matches. No behaviour change.
+- **Legacy HTTP routes bypassing `ipc::dispatch_op`** — routed through the canonical surface.
+  This also fixed a latent **self-deadlock**: `diff_route` took two registry handles with no
+  same-database check, so comparing a file against itself locked the same non-reentrant
+  `Mutex` twice. Pre-lock policy now lives in one shared `diff_pair` helper.
+- **`esm coverage --gate` gated on only one of four markers** — now also fails on `unmapped`
+  and `unknown_record`. `_unresolved` is deliberately still excluded: per
+  `tests/decode_coverage.rs`, it signals a missing localization BA2, not a decode bug. Note
+  this gate still cannot run in CI (it needs a real ESM, and game data is gitignored), so it
+  remains a local-only check.
+- **CI enforced what `just` already ran** — `cargo test --features server`, the generated-types
+  drift guard, the Python tooling suite (529 tests), and the esm-viewer typecheck + vitest
+  (77 tests) are now CI jobs. Previously ~19k lines of Python and ~4.3k of TypeScript had zero
+  CI enforcement, and the one guard keeping the N-API seam honest fired only if a human
+  remembered to run `just` in `esm/`. Two false comments were corrected at the same time:
+  `ci.yml` claimed a single `#[ignore]`-gated game-data test (there are two, and the repo has
+  no `#[ignore]` attributes at all), and `esm/justfile` claimed to mirror CI exactly.
 
 ## Resolved 2026-07-20
 
