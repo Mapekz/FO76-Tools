@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import sys
-import copy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]

@@ -70,6 +70,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import patchnotes_lib as pl  # noqa: E402
 import slice_bundles as sb  # noqa: E402
 
 DEFAULT_TIERS_PATH = SCRIPT_DIR / "patch_notes_tiers.json"
@@ -106,11 +107,11 @@ def load_json(path):
 
 
 def load_bundles(out_dir):
-    return load_json(Path(out_dir) / "bundles.json")
+    return pl.validate_bundles_payload(load_json(Path(out_dir) / "bundles.json"))
 
 
 def load_comprehensive(out_dir):
-    return load_json(Path(out_dir) / "comprehensive.json")
+    return pl.validate_comprehensive_payload(load_json(Path(out_dir) / "comprehensive.json"))
 
 
 def load_tiers_config(path):
@@ -144,7 +145,7 @@ def record_change_shape(record):
     return record.get("record_type"), tuple(sorted(paths))
 
 
-def compute_rollout_shapes(records, threshold):
+def compute_rollout_shapes(records, threshold) -> list[pl.RolloutShape]:
     """Return deterministic metadata for changed-record shapes at threshold."""
     form_ids_by_shape = defaultdict(list)
     for form_id in sorted(records):
@@ -152,7 +153,7 @@ def compute_rollout_shapes(records, threshold):
         if record.get("status") == "changed":
             form_ids_by_shape[record_change_shape(record)].append(form_id)
 
-    rollout_shapes = []
+    rollout_shapes: list[pl.RolloutShape] = []
     for (record_type, paths), form_ids in form_ids_by_shape.items():
         if len(form_ids) < threshold:
             continue
@@ -505,16 +506,8 @@ def assign_tier(bundle, records, config, bulk_shapes=None):
     return "ambiguous", None, None
 
 
-class TierAssignments(dict):
-    """Bundle tier mapping carrying its once-computed rollout metadata."""
-
-    def __init__(self, rollout_shapes):
-        super().__init__()
-        self.rollout_shapes = rollout_shapes
-
-
-def compute_bundle_tiers(bundles, records, config):
-    """`{bundle_id: {"tier", "reason", "bucket"}}` for every bundle."""
+def compute_bundle_tiers(bundles, records, config) -> tuple[dict[str, pl.TierInfo], list[pl.RolloutShape]]:
+    """Return (`{bundle_id: TierInfo}`, rollout_shapes) for every bundle."""
     settings = config.get("settings") or {}
     threshold = settings.get("rollout_min_records", DEFAULT_ROLLOUT_MIN_RECORDS)
     rollout_shapes = compute_rollout_shapes(records, threshold)
@@ -522,11 +515,11 @@ def compute_bundle_tiers(bundles, records, config):
         (item["record_type"], tuple(item["paths"]))
         for item in rollout_shapes
     }
-    result = TierAssignments(rollout_shapes)
+    tiers_by_id: dict[str, pl.TierInfo] = {}
     for b in bundles:
         tier, reason, bucket = assign_tier(b, records, config, bulk_shapes)
-        result[b["id"]] = {"tier": tier, "reason": reason, "bucket": bucket}
-    return result
+        tiers_by_id[b["id"]] = {"tier": tier, "reason": reason, "bucket": bucket}
+    return tiers_by_id, rollout_shapes
 
 
 # --------------------------------------------------------------------------
@@ -534,7 +527,7 @@ def compute_bundle_tiers(bundles, records, config):
 # --------------------------------------------------------------------------
 
 
-def build_triage_payload(bundles, tiers_by_id, extra_stats=None):
+def build_triage_payload(bundles, tiers_by_id, rollout_shapes, extra_stats=None):
     buckets_by_tier = {"rollout": [], "deep": [], "brief": [], "drop": [], "ambiguous": []}
     for b in bundles:  # bundles.json order is already deterministic (B0001, B0002, ...)
         bid = b["id"]
@@ -572,7 +565,7 @@ def build_triage_payload(bundles, tiers_by_id, extra_stats=None):
         "ambiguous": ambiguous,
         "stats": stats,
         "reasons": reasons,
-        "rollout_shapes": list(getattr(tiers_by_id, "rollout_shapes", [])),
+        "rollout_shapes": list(rollout_shapes),
     }
 
 
@@ -841,11 +834,11 @@ def render_rollouts(rollout_shapes, rollout_ids, bundles_by_id, records):
 # --------------------------------------------------------------------------
 
 
-def assemble_outputs(bundles, records, lints_by_id, tiers_by_id, config, extra_stats=None):
+def assemble_outputs(bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config, extra_stats=None):
     """Build all five outputs from a fully-resolved `tiers_by_id` map."""
     bundles_by_id = {b["id"]: b for b in bundles}
 
-    triage_payload = build_triage_payload(bundles, tiers_by_id, extra_stats)
+    triage_payload = build_triage_payload(bundles, tiers_by_id, rollout_shapes, extra_stats)
 
     deep_bundles = [bundles_by_id[bid] for bid in triage_payload["deep"]]
     deep_slice_payload = build_deep_slice_payload(deep_bundles, lints_by_id)
@@ -902,8 +895,8 @@ def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):
     records = comp_data.get("records") or {}
     lints_by_id = sb._lints_index(bundles_data.get("lints") or [])
 
-    tiers_by_id = compute_bundle_tiers(bundles, records, config)
-    result = assemble_outputs(bundles, records, lints_by_id, tiers_by_id, config)
+    tiers_by_id, rollout_shapes = compute_bundle_tiers(bundles, records, config)
+    result = assemble_outputs(bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config)
     write_outputs(out_dir, result)
     return result
 
@@ -947,11 +940,11 @@ def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH
     records = comp_data.get("records") or {}
     lints_by_id = sb._lints_index(bundles_data.get("lints") or [])
 
-    tiers_by_id = compute_bundle_tiers(bundles, records, config)
+    tiers_by_id, rollout_shapes = compute_bundle_tiers(bundles, records, config)
     resolved = merge_assessment(tiers_by_id, assessment)
 
     result = assemble_outputs(
-        bundles, records, lints_by_id, tiers_by_id, config,
+        bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config,
         extra_stats={"resolved_by_assessor": resolved},
     )
     write_outputs(out_dir, result)

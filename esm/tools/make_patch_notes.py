@@ -103,7 +103,8 @@ import esm_gateway as eg  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 import render_comprehensive as rc  # noqa: E402
 import run_lints as rl  # noqa: E402
-from esm_gateway import build_diff_cmd  # noqa: E402  # re-exported: TestBuildDiffCmd calls this via mpn.build_diff_cmd
+
+build_diff_cmd = eg.build_diff_cmd
 
 # Orchestrator default for --exclude-type: world-placement/positional records
 # that are noisy and not meaningfully decoded (mirrors patchnotes_lib.EXCLUDED_TYPES'

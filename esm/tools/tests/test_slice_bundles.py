@@ -16,6 +16,38 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "slice_bundles.py"
 
 
+def minimal_comprehensive_record(**overrides):
+    record = {
+        "form_id": "0x00000001",
+        "record_type": "MISC",
+        "editor_id": "Foo",
+        "name": None,
+        "description": None,
+        "status": "changed",
+        "prev_editor_id": None,
+        "cut": None,
+        "fields": None,
+        "refs_out": [],
+        "changes": [],
+    }
+    record.update(overrides)
+    if "form_id" in overrides:
+        record["form_id"] = overrides["form_id"]
+    return record
+
+
+def minimal_comprehensive_doc(records, **overrides):
+    doc = {
+        "schema_version": 1,
+        "meta": {},
+        "records": records,
+        "common_changes": [],
+        "ref_names": {},
+    }
+    doc.update(overrides)
+    return doc
+
+
 def load_fixture(name):
     with open(FIXTURES_DIR / name, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -45,7 +77,8 @@ class TempOutDir:
         return out_dir
 
     def __exit__(self, *exc):
-        self._tmp.cleanup()
+        if self._tmp is not None:
+            self._tmp.cleanup()
 
 
 def make_padded_bundle(bundle_id, category, category_label, pad_size):
@@ -113,7 +146,7 @@ class TestGrouping(unittest.TestCase):
         lints_by_id = {"L9": {"id": "L9", "bundle_id": "B0001", "rule": "x"}}
         bundle = {"id": "B0001", "lint_ids": []}
         result = sb.lints_for_bundles([bundle], lints_by_id)
-        self.assertEqual([l["id"] for l in result], ["L9"])
+        self.assertEqual([lint["id"] for lint in result], ["L9"])
 
 
 # --------------------------------------------------------------------------
@@ -291,20 +324,38 @@ class TestSplitting(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 class TestExtract(unittest.TestCase):
+    @staticmethod
+    def _record(**overrides):
+        entry = {
+            "form_id": "0x00123456",
+            "record_type": "WEAP",
+            "editor_id": "EnclavePlasmaGun",
+            "name": None,
+            "description": None,
+            "status": "changed",
+            "prev_editor_id": None,
+            "cut": None,
+            "fields": None,
+            "refs_out": [],
+            "changes": [],
+        }
+        entry.update(overrides)
+        return entry
+
     def setUp(self):
         self.comprehensive = {
             "schema_version": 1,
             "meta": {},
             "records": {
-                "0x00123456": {
-                    "editor_id": "EnclavePlasmaGun",
-                    "record_type": "WEAP",
-                    "refs": {"formid": "0x00ABCDEF", "editor_id": "SomeKeyword"},
-                },
-                "0x00ABCDEF": {
-                    "editor_id": "SomeKeyword",
-                    "record_type": "KYWD",
-                },
+                "0x00123456": self._record(
+                    form_id="0x00123456",
+                    refs_out=[{"formid": "0x00ABCDEF", "path": "refs"}],
+                ),
+                "0x00ABCDEF": self._record(
+                    form_id="0x00ABCDEF",
+                    record_type="KYWD",
+                    editor_id="SomeKeyword",
+                ),
             },
             "common_changes": [],
             "ref_names": {
@@ -351,8 +402,8 @@ class TestExtract(unittest.TestCase):
 
     def test_run_extract_success(self):
         with TempOutDir(comprehensive_data=self.comprehensive) as out_dir:
-            import io
             import contextlib
+            import io
 
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
@@ -392,13 +443,12 @@ class TestCli(unittest.TestCase):
             self.assertEqual(code, 1)
 
     def test_main_extract_mode(self):
-        comp = {
-            "records": {"0x00000001": {"editor_id": "Foo"}},
-            "ref_names": {},
-        }
+        comp = minimal_comprehensive_doc({
+            "0x00000001": minimal_comprehensive_record(form_id="0x00000001", editor_id="Foo"),
+        })
         with TempOutDir(comprehensive_data=comp) as out_dir:
-            import io
             import contextlib
+            import io
 
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
@@ -432,7 +482,9 @@ class TestSubprocessSmoke(unittest.TestCase):
             self.assertIn("bundles", result.stderr)
 
     def test_script_runs_as_subprocess_in_extract_mode(self):
-        comp = {"records": {"0x00000001": {"editor_id": "Foo"}}, "ref_names": {}}
+        comp = minimal_comprehensive_doc({
+            "0x00000001": minimal_comprehensive_record(form_id="0x00000001", editor_id="Foo"),
+        })
         with TempOutDir(comprehensive_data=comp) as out_dir:
             result = subprocess.run(
                 [sys.executable, str(SCRIPT_PATH), "--extract", str(out_dir), "0x00000001"],

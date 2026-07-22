@@ -707,5 +707,42 @@ class TestManifest(unittest.TestCase):
             self.assertTrue((nested / "manifest.json").exists())
 
 
+class TestWireShapeValidation(unittest.TestCase):
+    def test_validate_record_entry_rejects_missing_key(self):
+        with self.assertRaises(KeyError) as ctx:
+            pl.validate_record_entry({"form_id": "0x01", "record_type": "MISC"})
+        self.assertIn("status", str(ctx.exception))
+
+    def test_validate_bundle_rejects_bad_member_role(self):
+        bundle = {
+            "category": "x",
+            "category_label": "x",
+            "category_rule": None,
+            "title": "t",
+            "anchor": {
+                "form_id": "0x01",
+                "record_type": "MISC",
+                "editor_id": "e",
+                "name": None,
+                "status": "changed",
+            },
+            "members": [{
+                "form_id": "0x01",
+                "record_type": "MISC",
+                "editor_id": "e",
+                "name": None,
+                "status": "changed",
+                "role": "not_a_role",
+            }],
+            "edges": [],
+            "bug_watch": False,
+            "lint_ids": [],
+            "id": "B0001",
+        }
+        with self.assertRaises(ValueError) as ctx:
+            pl.validate_bundle(bundle)
+        self.assertIn("role", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

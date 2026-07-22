@@ -27,11 +27,11 @@ sys.path.insert(0, str(_DIR))
 
 from extract import (  # noqa: E402
     COMMON_PAS,
-    Extractor,
     FO76_PAS,
     INT_MAP,
     OUT,
     WHITELIST,
+    Extractor,
     find_matching_paren,
     read_text,
     sig_id,

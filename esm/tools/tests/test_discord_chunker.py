@@ -31,7 +31,7 @@ def heading_lines(chunk):
     """Every line in `chunk` that looks like the bold heading line the
     converter emits for a source header (used only to sanity-check fixtures,
     not as the mechanism under test -- the real signal is heading_indices)."""
-    return [l for l in chunk.splitlines() if l.strip().startswith('**') and l.strip().endswith('**')]
+    return [line for line in chunk.splitlines() if line.strip().startswith('**') and line.strip().endswith('**')]
 
 
 def last_non_blank_line(chunk):
@@ -273,9 +273,9 @@ class TestSizeCapAndContentPreservation(unittest.TestCase):
         joined_chunk_lines = []
         for c in chunks:
             joined_chunk_lines.extend(c.splitlines())
-        non_blank_chunk_lines = [l for l in joined_chunk_lines if l.strip()]
+        non_blank_chunk_lines = [line for line in joined_chunk_lines if line.strip()]
 
-        source_non_blank = [l for l in rng_bodies]
+        source_non_blank = [line for line in rng_bodies]
         # All source body lines appear, in order, somewhere across the
         # concatenated chunks (headings interleave but relative order of the
         # body lines themselves is preserved).

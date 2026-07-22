@@ -133,6 +133,16 @@ class TestRefsOutPopulation(unittest.TestCase):
         self.assertEqual(refs, [])
 
 
+class TestBuildComprehensiveConformance(unittest.TestCase):
+    def test_build_comprehensive_records_satisfy_wire_contract(self):
+        diff = load_fixture("diff_small.json")
+        comp = rc.build_comprehensive(diff, generated_at="X")
+        pl.validate_comprehensive_payload(comp)
+        for fid, record in comp["records"].items():
+            with self.subTest(form_id=fid):
+                pl.validate_record_entry(record, path=f"records[{fid!r}]")
+
+
 # ---------------------------------------------------------------------------
 # render_fields: nesting / depth-cap / list rendering
 # ---------------------------------------------------------------------------

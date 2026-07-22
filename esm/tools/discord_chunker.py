@@ -19,9 +19,9 @@ blank-line-bounded slice. See split_into_chunks() for the packing rules.
 Usage: python3 tools/discord_chunker.py <input.md> [output_dir]
 """
 
-import sys
 import os
 import re
+import sys
 
 MAX_CHARS = 1900
 
@@ -244,7 +244,7 @@ def _split_large_section(flagged_lines, max_chars):
 
     def flush(reopen_fence=False):
         nonlocal current, current_len
-        chunk = '\n'.join(l for l, _h in current).strip()
+        chunk = '\n'.join(line for line, _h in current).strip()
         if chunk:
             chunks.append(chunk)
         if reopen_fence:
@@ -255,8 +255,8 @@ def _split_large_section(flagged_lines, max_chars):
             current_len = 0
 
     def ends_on_heading(prefix):
-        for l, is_heading in reversed(prefix):
-            if l.strip() == '':
+        for line, is_heading in reversed(prefix):
+            if line.strip() == '':
                 continue
             return is_heading
         return False  # all-blank (or empty) prefix -- nothing to protect
@@ -284,7 +284,7 @@ def _split_large_section(flagged_lines, max_chars):
                     current = current[:split_at]
                     flush()
                     current = kept
-                    current_len = sum(len(l) + 1 for l, _h in current)
+                    current_len = sum(len(line) + 1 for line, _h in current)
                 else:
                     flush()
 
@@ -335,7 +335,7 @@ def split_into_chunks(lines, heading_indices, max_chars=MAX_CHARS):
 
     for s, e in ranges:
         section_lines = lines[s:e]
-        section_len = sum(len(l) + 1 for l in section_lines)
+        section_len = sum(len(line) + 1 for line in section_lines)
 
         if section_len <= max_chars:
             if current_lines and current_len + section_len > max_chars:

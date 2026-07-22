@@ -226,7 +226,7 @@ class TestLvliBlockedEntry(TestRunLintsBase):
 
         # 2 per-entry lints + 1 all-blocked summary lint.
         self.assertEqual(len(lints), 3)
-        all_blocked = [l for l in lints if l["data"].get("all_blocked")]
+        all_blocked = [lint for lint in lints if lint["data"].get("all_blocked")]
         self.assertEqual(len(all_blocked), 1)
         self.assertEqual(all_blocked[0]["rule"], "lvli_blocked_entry")
         self.assertEqual(all_blocked[0]["severity"], "error")
@@ -828,7 +828,7 @@ class TestDeterminism(unittest.TestCase):
 
         lints = lints_payload["lints"]
         self.assertTrue(lints, "expected at least one lint from the mixed fixture")
-        keys = [(l["rule"], l["form_id"]) for l in lints]
+        keys = [(lint["rule"], lint["form_id"]) for lint in lints]
         self.assertEqual(keys, sorted(keys))
         # Ids assigned in that same sorted order, 1-indexed.
         for i, lint in enumerate(lints, start=1):
@@ -839,8 +839,8 @@ class TestDeterminism(unittest.TestCase):
         bundles = make_bundles()
         run1, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", "old.esm", {})
         run2, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", "old.esm", {})
-        ids1 = [(l["rule"], l["form_id"], l["id"]) for l in run1["lints"]]
-        ids2 = [(l["rule"], l["form_id"], l["id"]) for l in run2["lints"]]
+        ids1 = [(lint["rule"], lint["form_id"], lint["id"]) for lint in run1["lints"]]
+        ids2 = [(lint["rule"], lint["form_id"], lint["id"]) for lint in run2["lints"]]
         self.assertEqual(ids1, ids2)
 
 
@@ -866,7 +866,8 @@ class TempOutDir:
         return out_dir
 
     def __exit__(self, *exc):
-        self._tmp.cleanup()
+        if self._tmp is not None:
+            self._tmp.cleanup()
 
 
 class TestEndToEndCli(unittest.TestCase):

@@ -32,6 +32,11 @@ import re
 import sys
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import patchnotes_lib as pl  # noqa: E402
+
 # --------------------------------------------------------------------------
 # Tunables
 # --------------------------------------------------------------------------
@@ -378,7 +383,7 @@ def run_extract(out_dir, formids):
                 file=sys.stderr,
             )
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            data = pl.validate_comprehensive_payload(json.load(f), label=str(path))
     except (OSError, json.JSONDecodeError) as e:
         print(f"error: failed to load {path}: {e}", file=sys.stderr)
         return 1

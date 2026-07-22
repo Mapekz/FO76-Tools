@@ -19,6 +19,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Callable, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -682,8 +683,8 @@ class TestBuildTriagePayload(unittest.TestCase):
         }
 
     def test_stats_and_bucketing(self):
-        tiers = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
-        payload = tb.build_triage_payload(self.bundles, tiers)
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
+        payload = tb.build_triage_payload(self.bundles, tiers_by_id, rollout_shapes)
         self.assertEqual(payload["deep"], ["B0001"])
         self.assertEqual(payload["brief"], ["B0002"])
         self.assertEqual(payload["drop"], ["B0003"])
@@ -694,8 +695,8 @@ class TestBuildTriagePayload(unittest.TestCase):
         )
 
     def test_reasons_only_include_bundles_with_a_reason(self):
-        tiers = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
-        payload = tb.build_triage_payload(self.bundles, tiers)
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
+        payload = tb.build_triage_payload(self.bundles, tiers_by_id, rollout_shapes)
         self.assertEqual(
             payload["reasons"],
             {"B0001": "deep:custom_edid", "B0002": "brief:all_added", "B0003": "drop:refr_only"},
@@ -704,14 +705,22 @@ class TestBuildTriagePayload(unittest.TestCase):
 
     def test_lists_are_sorted(self):
         bundles = [make_bundle(f"B{i:04d}", [make_member(f"0x{i:02X}", "REFR")]) for i in (3, 1, 2)]
-        tiers = tb.compute_bundle_tiers(bundles, {}, MINI_CONFIG)
-        payload = tb.build_triage_payload(bundles, tiers)
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(bundles, {}, MINI_CONFIG)
+        payload = tb.build_triage_payload(bundles, tiers_by_id, rollout_shapes)
         self.assertEqual(payload["drop"], ["B0001", "B0002", "B0003"])
 
     def test_extra_stats_merged(self):
-        tiers = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
-        payload = tb.build_triage_payload(self.bundles, tiers, extra_stats={"resolved_by_assessor": 2})
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
+        payload = tb.build_triage_payload(
+            self.bundles, tiers_by_id, rollout_shapes, extra_stats={"resolved_by_assessor": 2},
+        )
         self.assertEqual(payload["stats"]["resolved_by_assessor"], 2)
+
+    def test_build_triage_payload_requires_rollout_shapes(self):
+        tiers_by_id, _rollout_shapes = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
+        bad_call = cast(Callable[..., dict], tb.build_triage_payload)
+        with self.assertRaises(TypeError):
+            bad_call(self.bundles, tiers_by_id)
 
 
 # --------------------------------------------------------------------------
@@ -722,7 +731,9 @@ class TestBuildTriagePayload(unittest.TestCase):
 class TestRolloutTier(unittest.TestCase):
     @staticmethod
     def config(threshold):
-        config = dict(MINI_CONFIG)
+        from typing import Any
+
+        config: dict[str, Any] = dict(MINI_CONFIG)
         config["settings"] = {"rollout_min_records": threshold}
         return config
 
@@ -735,19 +746,19 @@ class TestRolloutTier(unittest.TestCase):
             make_bundle("B0001", [make_member("0x01", "MISC")]),
             make_bundle("B0002", [make_member("0x02", "MISC")]),
         ]
-        tiers = tb.compute_bundle_tiers(bundles, records, self.config(2))
-        self.assertEqual(tiers["B0001"], {
+        tiers_by_id, _rollout_shapes = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        self.assertEqual(tiers_by_id["B0001"], {
             "tier": "rollout", "reason": "rollout:MISC/Object Bounds", "bucket": None,
         })
-        self.assertEqual(tiers["B0002"]["tier"], "rollout")
+        self.assertEqual(tiers_by_id["B0002"]["tier"], "rollout")
 
     def test_shape_below_threshold_keeps_old_tier(self):
         records = {
             "0x01": make_record("0x01", "MISC", changes=[make_change("Data / Custom", 1, 2)]),
         }
         bundle = make_bundle("B0001", [make_member("0x01", "MISC")])
-        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
-        self.assertEqual(tiers["B0001"]["tier"], "ambiguous")
+        tiers_by_id, _rollout_shapes = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertEqual(tiers_by_id["B0001"]["tier"], "ambiguous")
 
     def test_bulk_changed_record_mixed_with_added_record_is_not_rollout(self):
         records = {
@@ -759,8 +770,8 @@ class TestRolloutTier(unittest.TestCase):
             make_member("0x01", "MISC"),
             make_member("0x03", "ARTO", status="added", role="satellite"),
         ])
-        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
-        self.assertNotEqual(tiers["B0001"]["tier"], "rollout")
+        tiers_by_id, _rollout_shapes = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertNotEqual(tiers_by_id["B0001"]["tier"], "rollout")
 
     def test_different_member_shapes_must_each_be_bulk(self):
         records = {
@@ -772,13 +783,13 @@ class TestRolloutTier(unittest.TestCase):
             make_member("0x01", "MISC"),
             make_member("0x03", "MISC", role="satellite"),
         ])
-        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
-        self.assertNotEqual(tiers["B0001"]["tier"], "rollout")
+        tiers_by_id, _rollout_shapes = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertNotEqual(tiers_by_id["B0001"]["tier"], "rollout")
 
         records["0x04"] = make_record("0x04", "MISC", changes=[make_change("Full Name", "c", "d")])
-        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
-        self.assertEqual(tiers["B0001"]["tier"], "rollout")
-        self.assertEqual(tiers["B0001"]["reason"], "rollout:MISC/Data")
+        tiers_by_id, _rollout_shapes = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertEqual(tiers_by_id["B0001"]["tier"], "rollout")
+        self.assertEqual(tiers_by_id["B0001"]["reason"], "rollout:MISC/Data")
 
     def test_rollout_shapes_and_ids_are_deterministically_ordered(self):
         records = {
@@ -792,8 +803,8 @@ class TestRolloutTier(unittest.TestCase):
             make_bundle(f"B000{i}", [make_member(f"0x0{i}", records[f"0x0{i}"]["record_type"])])
             for i in (5, 3, 1, 4, 2)
         ]
-        tiers = tb.compute_bundle_tiers(bundles, records, self.config(2))
-        payload = tb.build_triage_payload(bundles, tiers)
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        payload = tb.build_triage_payload(bundles, tiers_by_id, rollout_shapes)
         self.assertEqual(payload["rollout"], ["B0001", "B0002", "B0003", "B0004", "B0005"])
         self.assertEqual(
             [(shape["record_count"], shape["record_type"], shape["paths"])
@@ -809,7 +820,7 @@ class TestRolloutTier(unittest.TestCase):
             bundle["id"]: tb.assign_tier(bundle, fixture.records, MINI_CONFIG)[0]
             for bundle in fixture.bundles
         }
-        actual = tb.compute_bundle_tiers(fixture.bundles, fixture.records, MINI_CONFIG)
+        actual, _rollout_shapes = tb.compute_bundle_tiers(fixture.bundles, fixture.records, MINI_CONFIG)
         self.assertEqual(
             {bundle_id: info["tier"] for bundle_id, info in actual.items()},
             expected,
@@ -845,7 +856,7 @@ class TestDeepSlicePayload(unittest.TestCase):
             "L0002": {"id": "L0002", "bundle_id": "B0002", "rule": "y", "severity": "info", "message": "m"},
         }
         payload = tb.build_deep_slice_payload([bundle], lints_by_id)
-        self.assertEqual([l["id"] for l in payload["lints"]], ["L0001"])
+        self.assertEqual([lint["id"] for lint in payload["lints"]], ["L0001"])
 
 
 # --------------------------------------------------------------------------
@@ -1020,7 +1031,9 @@ class TestMergeAssessment(unittest.TestCase):
         tiers = {"B0001": {"tier": "ambiguous", "reason": None, "bucket": None}}
         assessment = {"tiers": {"B0001": {"tier": "drop"}}}
         tb.merge_assessment(tiers, assessment)
-        self.assertTrue(tiers["B0001"]["reason"].startswith("assessor:"))
+        reason = tiers["B0001"]["reason"]
+        assert reason is not None
+        self.assertTrue(reason.startswith("assessor:"))
 
 
 # --------------------------------------------------------------------------

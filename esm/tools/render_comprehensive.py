@@ -230,7 +230,7 @@ def _refs_out_for_changes(changes):
 
 
 def _record_entry(form_id, record_type, editor_id, name, description, status,
-                   prev_editor_id, cut, fields, refs_out, changes):
+                   prev_editor_id, cut, fields, refs_out, changes) -> pl.RecordEntry:
     return {
         "form_id": form_id,
         "record_type": record_type,

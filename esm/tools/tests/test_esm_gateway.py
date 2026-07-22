@@ -33,6 +33,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from typing import Any, cast
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -70,7 +71,7 @@ class _StubHandler(http.server.BaseHTTPRequestHandler):
     requests_seen: list = []
     close_after_n: int | None = None  # force-close connection after N requests
 
-    def log_message(self, fmt, *args):  # silence default stderr logging
+    def log_message(self, format: str, *args):  # silence default stderr logging
         pass
 
     def _check_auth(self) -> bool:
@@ -136,7 +137,7 @@ class _StubServer:
         handler = type(
             "ScopedHandler",
             (_StubHandler,),
-            {"op_responses": list(op_responses), "requests_seen": [], "token": token, "close_after_n": None},
+            {"op_responses": list(op_responses), "requests_seen": [], "token": token},
         )
         self.handler = handler
         self.httpd = http.server.HTTPServer(("127.0.0.1", 0), handler)
@@ -174,12 +175,16 @@ class WireFormatTests(unittest.TestCase):
         self.client = EsmGateway(self.server.port, token)
         return self.client
 
+    def _require_server(self) -> _StubServer:
+        assert self.server is not None
+        return self.server
+
     def test_refs_request_shape(self):
         client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
         result = client.refs("/data/SeventySix.esm", 0x00100001, depth=2, limit=0)
         self.assertEqual(result["target"], "0x00100001")
 
-        req = self.server.requests_seen[0]
+        req = self._require_server().requests_seen[0]
         self.assertEqual(req["path"], "/op")
         self.assertEqual(req["authorization"], "Bearer test-token-abc123")
         self.assertEqual(req["content_type"], "application/json")
@@ -199,7 +204,7 @@ class WireFormatTests(unittest.TestCase):
     def test_refs_accepts_hex_string_formid(self):
         client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
         client.refs("/data/x.esm", "0x00100001", depth=1)
-        body = self.server.requests_seen[0]["body"]
+        body = self._require_server().requests_seen[0]["body"]
         self.assertEqual(body["op"]["sel"], {"kind": "form_id", "value": 0x00100001})
 
     def test_refs_request_shape_omits_type_filter_and_paths_by_default(self):
@@ -208,14 +213,14 @@ class WireFormatTests(unittest.TestCase):
         # type_filter/paths get the exact pre-existing wire shape.
         client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
         client.refs("/data/x.esm", 0x00100001, depth=2, limit=0)
-        body = self.server.requests_seen[0]["body"]["op"]
+        body = self._require_server().requests_seen[0]["body"]["op"]
         self.assertNotIn("type_filter", body)
         self.assertNotIn("paths", body)
 
     def test_refs_request_shape_with_type_filter_and_paths(self):
         client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
         client.refs("/data/x.esm", 0x00100001, depth=1, limit=25, type_filter="SPEL", paths=True)
-        body = self.server.requests_seen[0]["body"]["op"]
+        body = self._require_server().requests_seen[0]["body"]["op"]
         self.assertEqual(
             body,
             {
@@ -231,7 +236,7 @@ class WireFormatTests(unittest.TestCase):
     def test_bulk_get_request_shape_mixed_formid_and_edid(self):
         client = self._client([(200, {"status": "ok", "data": []})])
         client.bulk_get("/data/x.esm", [0x463F, "0x00100010", "AssaultRifle"], resolve="stub")
-        body = self.server.requests_seen[0]["body"]["op"]
+        body = self._require_server().requests_seen[0]["body"]["op"]
         self.assertEqual(
             body,
             {
@@ -257,7 +262,7 @@ class WireFormatTests(unittest.TestCase):
     def test_record_request_shape(self):
         client = self._client([(200, {"status": "ok", "data": {"header": {}, "editor_id": "WEAP_TestRifle", "fields": {}}})])
         client.record("/data/x.esm", 0x463F, resolve="full")
-        body = self.server.requests_seen[0]["body"]
+        body = self._require_server().requests_seen[0]["body"]
         self.assertEqual(
             body["op"],
             {"op": "record", "sel": {"kind": "form_id", "value": 0x463F}, "depth": "full"},
@@ -266,7 +271,7 @@ class WireFormatTests(unittest.TestCase):
     def test_record_by_edid_request_shape(self):
         client = self._client([(200, {"status": "ok", "data": {"header": {}, "editor_id": "Foo", "fields": {}}})])
         client.record_by_edid("/data/x.esm", "AssaultRifle")
-        body = self.server.requests_seen[0]["body"]
+        body = self._require_server().requests_seen[0]["body"]
         self.assertEqual(
             body["op"],
             {"op": "record", "sel": {"kind": "edid", "value": "AssaultRifle"}, "depth": "stub"},
@@ -275,7 +280,7 @@ class WireFormatTests(unittest.TestCase):
     def test_search_request_shape(self):
         client = self._client([(200, {"status": "ok", "data": []})])
         client.search("/data/x.esm", "*Rifle*", record_type="WEAP", limit=50, field="name")
-        body = self.server.requests_seen[0]["body"]
+        body = self._require_server().requests_seen[0]["body"]
         self.assertEqual(
             body["op"],
             {"op": "search", "pattern": "*Rifle*", "types": ["WEAP"], "field": "name", "limit": 50},
@@ -322,7 +327,7 @@ class WireFormatTests(unittest.TestCase):
         conn_after_first = client._conn
         client.file_info("/data/x.esm")
         self.assertIs(client._conn, conn_after_first, "connection object should be reused across calls")
-        self.assertEqual(len(self.server.requests_seen), 2)
+        self.assertEqual(len(self._require_server().requests_seen), 2)
 
     def test_reconnect_after_server_closes_connection(self):
         client = self._client(
@@ -333,12 +338,12 @@ class WireFormatTests(unittest.TestCase):
         )
         # Force the stub to close the TCP connection after the first response,
         # simulating an idle/stale keep-alive connection the daemon dropped.
-        self.server.handler.close_after_n = 1
+        self._require_server().handler.close_after_n = 1
 
         client.file_info("/data/x.esm")
         result = client.file_info("/data/x.esm")  # must transparently reconnect
         self.assertEqual(result, {"b": 2})
-        self.assertEqual(len(self.server.requests_seen), 2)
+        self.assertEqual(len(self._require_server().requests_seen), 2)
 
 
 # ─── Discovery-path tests ────────────────────────────────────────────────────
@@ -414,6 +419,7 @@ class DiscoveryPathTests(unittest.TestCase):
         os.environ["XDG_RUNTIME_DIR"] = self._tmp.name
         daemon_info_path().write_text(json.dumps({"port": 1, "token": "x", "pid": 2}))
         info = read_daemon_info()
+        assert info is not None
         self.assertEqual(info["port"], 1)
         self.assertEqual(info["exe_path"], "")
         self.assertFalse(daemon_fresh(info))
@@ -718,13 +724,15 @@ class FindEsmBinaryTests(unittest.TestCase):
 
 
 class BuildDiffCmdTests(unittest.TestCase):
-    def _cmd(self, **overrides):
-        kwargs = dict(
+    def _cmd(self, **overrides: Any):
+        kwargs: dict[str, Any] = dict(
             lang="en", strings_dir_a=None, strings_dir_b=None, record_type=None,
             bodies="full", keep_noise=False, exclude_type="LAND,NAVM",
         )
         kwargs.update(overrides)
-        return esm_gateway.build_diff_cmd(Path("esm"), Path("a.esm"), Path("b.esm"), **kwargs)
+        return esm_gateway.build_diff_cmd(
+            Path("esm"), Path("a.esm"), Path("b.esm"), **cast(Any, kwargs)
+        )
 
     def test_shared_strings_dir_uses_single_flag(self):
         d = Path("/strings")
@@ -824,13 +832,18 @@ class RealEsmIntegrationTests(unittest.TestCase):
     no strings and are exercised below.
     """
 
+    esm_path: str
+    esm_bin: Path
+    gateway: EsmGateway
+
     @classmethod
     def setUpClass(cls):
-        cls.esm_path = os.environ.get("FO76_ESM_PATH")
-        if not cls.esm_path or not Path(cls.esm_path).is_file():
+        esm_path = os.environ.get("FO76_ESM_PATH")
+        if not esm_path or not Path(esm_path).is_file():
             raise unittest.SkipTest(
                 "FO76_ESM_PATH not set (or not a file) -- skipping real-ESM integration test"
             )
+        cls.esm_path = esm_path
         try:
             cls.esm_bin = esm_gateway.find_esm_binary(None)
         except DaemonError as exc:

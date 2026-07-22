@@ -48,8 +48,10 @@ import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 import esm_gateway
+import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
 # Constants / tunables (mirror patch_notes_categories.json's "settings")
@@ -314,7 +316,7 @@ def build_edges(u, ref_names, client, old_esm, new_esm, refs_depth):
     context_stubs.update(rev_context)
     context_stubs.update(fwd_context)  # forward wins if both discovered the same node
 
-    edges = []
+    edges: list[pl.Edge] = []
     for e in fwd_edges + rev_edges:
         src_type = _record_type_of(e["from"], u, fwd_context, rev_context)
         dst_type = _record_type_of(e["to"], u, fwd_context, rev_context)
@@ -621,7 +623,7 @@ def _context_rank(stub, incident_pairs, unique_keyword_patterns):
     editor_id = (stub or {}).get("editor_id") or ""
     if any(e.get("relation") in CONTEXT_TOP_TIER_RELATIONS for _u_fid, e in incident_pairs):
         return (0, 0)
-    if record_type in CONTEXT_PREFERRED_TYPES:
+    if isinstance(record_type, str) and record_type in CONTEXT_PREFERRED_TYPES:
         return (1, CONTEXT_PREFERRED_TYPES.index(record_type))
     if record_type == "KYWD" and any(
         fnmatch.fnmatch(editor_id.lower(), pat.lower()) for pat in unique_keyword_patterns
@@ -837,17 +839,19 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         anchor_fid = select_anchor(member_fids, u, full_degree)
         anchor_rec = u[anchor_fid] or {}
 
-        member_dicts = [
-            {
-                "form_id": fid,
-                "record_type": (u[fid] or {}).get("record_type"),
-                "editor_id": (u[fid] or {}).get("editor_id"),
-                "name": (u[fid] or {}).get("name"),
-                "status": (u[fid] or {}).get("status"),
-                "role": "anchor" if fid == anchor_fid else "satellite",
-            }
-            for fid in member_fids
-        ]
+        member_dicts: list[pl.Member] = []
+        for fid in member_fids:
+            rec = u[fid] or {}
+            member_dicts.append(
+                {
+                    "form_id": fid,
+                    "record_type": rec.get("record_type"),
+                    "editor_id": rec.get("editor_id"),
+                    "name": rec.get("name"),
+                    "status": rec.get("status") or "changed",
+                    "role": "anchor" if fid == anchor_fid else "satellite",
+                }
+            )
         member_dicts.sort(key=lambda m: (0 if m["role"] == "anchor" else 1, _int_fid(m["form_id"])))
         anchor_member = member_dicts[0]
 
@@ -904,7 +908,14 @@ def build_bundles(comp, client, old_esm, new_esm, config):
 
     n_bundles = len(raw_bundles)
     n_singletons = sum(
-        1 for b in raw_bundles if sum(1 for m in b["members"] if m["role"] != "context") == 1
+        1
+        for b in raw_bundles
+        if sum(
+            1
+            for m in cast(list[pl.Member], b.get("members", ()))
+            if m.get("role") != "context"
+        )
+        == 1
     )
     n_uncategorized = sum(1 for b in raw_bundles if b["category"] == "uncategorized")
 

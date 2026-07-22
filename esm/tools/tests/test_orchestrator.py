@@ -21,6 +21,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -134,10 +135,10 @@ class TestLocateStringsDirs(unittest.TestCase):
             (sd / f"{stem}.strings").write_bytes(b"")
         return esm
 
-    def _locate(self, a: Path, b: Path, **kw):
-        kwargs = dict(explicit=None, explicit_a=None, explicit_b=None, lang="en")
+    def _locate(self, a: Path, b: Path, **kw: Any):
+        kwargs: dict[str, Any] = dict(explicit=None, explicit_a=None, explicit_b=None, lang="en")
         kwargs.update(kw)
-        return mpn.locate_strings_dirs(a, b, **kwargs)
+        return mpn.locate_strings_dirs(a, b, **cast(Any, kwargs))
 
     def test_undated_stems_in_separate_dirs_resolve_per_side(self):
         a = self._snapshot("20260710")
@@ -198,8 +199,8 @@ class TestLocateStringsDirs(unittest.TestCase):
 
 
 class TestBuildDiffCmd(unittest.TestCase):
-    def _cmd(self, **overrides):
-        kwargs = dict(
+    def _cmd(self, **overrides: Any):
+        kwargs: dict[str, Any] = dict(
             lang="en",
             strings_dir_a=None,
             strings_dir_b=None,
@@ -209,7 +210,9 @@ class TestBuildDiffCmd(unittest.TestCase):
             exclude_type="LAND,NAVM",
         )
         kwargs.update(overrides)
-        return mpn.build_diff_cmd(Path("esm"), Path("a.esm"), Path("b.esm"), **kwargs)
+        return mpn.build_diff_cmd(
+            Path("esm"), Path("a.esm"), Path("b.esm"), **cast(Any, kwargs)
+        )
 
     def test_default_exclude_type_passed_through(self):
         cmd = self._cmd()

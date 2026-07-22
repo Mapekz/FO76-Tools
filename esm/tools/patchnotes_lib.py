@@ -34,6 +34,95 @@ import re
 import struct
 from collections import defaultdict
 from pathlib import Path
+from typing import Any, Literal, NotRequired, TypedDict, cast
+
+# --------------------------------------------------------------------------
+# Pipeline wire shapes (comprehensive.json / bundles.json / triage / lints)
+# --------------------------------------------------------------------------
+
+RecordStatus = Literal["added", "removed", "changed"]
+MemberRole = Literal["anchor", "satellite", "context"]
+TierName = Literal["rollout", "deep", "brief", "drop", "ambiguous"]
+
+
+class RecordEntry(TypedDict):
+    form_id: str
+    record_type: str
+    editor_id: str | None
+    name: str | None
+    description: str | None
+    status: RecordStatus
+    prev_editor_id: str | None
+    cut: dict[str, Any] | None
+    fields: Any
+    refs_out: list[dict[str, str]]
+    changes: list[dict[str, Any]]
+
+
+class Member(TypedDict):
+    form_id: str
+    record_type: str | None
+    editor_id: str | None
+    name: str | None
+    status: str
+    role: MemberRole
+
+
+Edge = TypedDict(
+    "Edge",
+    {
+        "from": str,
+        "to": str,
+        "relation": str,
+        "label": str,
+        "via": list[str],
+        "source": str,
+    },
+)
+
+
+class BundleAnchor(TypedDict):
+    form_id: str
+    record_type: str | None
+    editor_id: str | None
+    name: str | None
+    status: str
+
+
+class Bundle(TypedDict):
+    category: str
+    category_label: str
+    category_rule: str | None
+    title: str
+    anchor: BundleAnchor
+    members: list[Member]
+    edges: list[Edge]
+    bug_watch: bool
+    lint_ids: list[str]
+    id: str
+
+
+class TierInfo(TypedDict):
+    tier: TierName
+    reason: str | None
+    bucket: str | None
+
+
+class LintFinding(TypedDict):
+    rule: str
+    severity: str
+    form_id: str
+    message: str
+    data: dict[str, Any]
+    id: NotRequired[str]
+    bundle_id: NotRequired[str]
+
+
+class RolloutShape(TypedDict):
+    record_type: str | None
+    paths: list[str]
+    record_count: int
+    example_form_ids: list[str]
 
 # --------------------------------------------------------------------------
 # Constants
@@ -230,7 +319,7 @@ def format_scalar(v, ref_names=None):
         name = v.get("name") or v.get("Name")
         if name:
             return f"`{name}`"
-        return f"`(struct: {', '.join(list(v.keys())[:4])})`"
+        return f"`(struct: {', '.join(str(k) for k in list(v.keys())[:4])})`"
     return f"`{repr(v)[:60]}`"
 
 
@@ -1328,6 +1417,167 @@ def collect_refs_out(fields_or_changes):
     out = []
     _walk_refs(fields_or_changes, "", seen, out)
     return out
+
+
+# --------------------------------------------------------------------------
+# Runtime validation (JSON process seams)
+# --------------------------------------------------------------------------
+
+
+def _validation_type_name(value: object) -> str:
+    return type(value).__name__
+
+
+def _require_mapping(value: object, path: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise TypeError(f"{path}: expected dict, got {_validation_type_name(value)}")
+    return cast(dict[str, Any], value)
+
+
+def _require_list(value: object, path: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise TypeError(f"{path}: expected list, got {_validation_type_name(value)}")
+    return cast(list[Any], value)
+
+
+def _require_str(value: object, path: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{path}: expected str, got {_validation_type_name(value)}")
+    return value
+
+
+def _require_optional_str(value: object, path: str) -> str | None:
+    if value is None:
+        return None
+    return _require_str(value, path)
+
+
+def _require_bool(value: object, path: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{path}: expected bool, got {_validation_type_name(value)}")
+    return value
+
+
+def _require_key(mapping: dict[str, Any], key: str, path: str) -> Any:
+    if key not in mapping:
+        raise KeyError(f"{path}: missing required key {key!r}")
+    return mapping[key]
+
+
+def _require_literal_str(value: object, path: str, allowed: set[str]) -> str:
+    s = _require_str(value, path)
+    if s not in allowed:
+        raise ValueError(f"{path}: expected one of {sorted(allowed)!r}, got {s!r}")
+    return s
+
+
+def _require_record_status(value: object, path: str) -> RecordStatus:
+    s = _require_literal_str(value, path, {"added", "removed", "changed"})
+    return cast(RecordStatus, s)
+
+
+def _require_member_role(value: object, path: str) -> MemberRole:
+    s = _require_literal_str(value, path, {"anchor", "satellite", "context"})
+    return cast(MemberRole, s)
+
+
+def validate_record_entry(value: object, *, path: str = "record") -> RecordEntry:
+    rec = _require_mapping(value, path)
+    entry: RecordEntry = {
+        "form_id": _require_str(_require_key(rec, "form_id", path), f"{path}.form_id"),
+        "record_type": _require_str(_require_key(rec, "record_type", path), f"{path}.record_type"),
+        "editor_id": _require_optional_str(rec.get("editor_id"), f"{path}.editor_id"),
+        "name": _require_optional_str(rec.get("name"), f"{path}.name"),
+        "description": _require_optional_str(rec.get("description"), f"{path}.description"),
+        "status": _require_record_status(_require_key(rec, "status", path), f"{path}.status"),
+        "prev_editor_id": _require_optional_str(rec.get("prev_editor_id"), f"{path}.prev_editor_id"),
+        "cut": rec.get("cut") if rec.get("cut") is None else _require_mapping(rec["cut"], f"{path}.cut"),
+        "fields": _require_key(rec, "fields", path),
+        "refs_out": _require_list(_require_key(rec, "refs_out", path), f"{path}.refs_out"),
+        "changes": _require_list(_require_key(rec, "changes", path), f"{path}.changes"),
+    }
+    return entry
+
+
+def validate_member(value: object, *, path: str = "member") -> Member:
+    member = _require_mapping(value, path)
+    validated: Member = {
+        "form_id": _require_str(_require_key(member, "form_id", path), f"{path}.form_id"),
+        "record_type": _require_optional_str(member.get("record_type"), f"{path}.record_type"),
+        "editor_id": _require_optional_str(member.get("editor_id"), f"{path}.editor_id"),
+        "name": _require_optional_str(member.get("name"), f"{path}.name"),
+        "status": _require_str(_require_key(member, "status", path), f"{path}.status"),
+        "role": _require_member_role(_require_key(member, "role", path), f"{path}.role"),
+    }
+    return validated
+
+
+def validate_edge(value: object, *, path: str = "edge") -> Edge:
+    edge = _require_mapping(value, path)
+    via = _require_list(_require_key(edge, "via", path), f"{path}.via")
+    for i, item in enumerate(via):
+        _require_str(item, f"{path}.via[{i}]")
+    return {
+        "from": _require_str(_require_key(edge, "from", path), f"{path}.from"),
+        "to": _require_str(_require_key(edge, "to", path), f"{path}.to"),
+        "relation": _require_str(_require_key(edge, "relation", path), f"{path}.relation"),
+        "label": _require_str(_require_key(edge, "label", path), f"{path}.label"),
+        "via": via,
+        "source": _require_str(_require_key(edge, "source", path), f"{path}.source"),
+    }
+
+
+def validate_bundle_anchor(value: object, *, path: str = "anchor") -> BundleAnchor:
+    anchor = _require_mapping(value, path)
+    return {
+        "form_id": _require_str(_require_key(anchor, "form_id", path), f"{path}.form_id"),
+        "record_type": _require_optional_str(anchor.get("record_type"), f"{path}.record_type"),
+        "editor_id": _require_optional_str(anchor.get("editor_id"), f"{path}.editor_id"),
+        "name": _require_optional_str(anchor.get("name"), f"{path}.name"),
+        "status": _require_str(_require_key(anchor, "status", path), f"{path}.status"),
+    }
+
+
+def validate_bundle(value: object, *, path: str = "bundle") -> Bundle:
+    bundle = _require_mapping(value, path)
+    members_raw = _require_list(_require_key(bundle, "members", path), f"{path}.members")
+    members = [validate_member(m, path=f"{path}.members[{i}]") for i, m in enumerate(members_raw)]
+    edges_raw = _require_list(_require_key(bundle, "edges", path), f"{path}.edges")
+    edges = [validate_edge(e, path=f"{path}.edges[{i}]") for i, e in enumerate(edges_raw)]
+    lint_ids_raw = _require_list(_require_key(bundle, "lint_ids", path), f"{path}.lint_ids")
+    for i, lid in enumerate(lint_ids_raw):
+        _require_str(lid, f"{path}.lint_ids[{i}]")
+    return {
+        "category": _require_str(_require_key(bundle, "category", path), f"{path}.category"),
+        "category_label": _require_str(_require_key(bundle, "category_label", path), f"{path}.category_label"),
+        "category_rule": _require_optional_str(
+            _require_key(bundle, "category_rule", path),
+            f"{path}.category_rule",
+        ),
+        "title": _require_str(_require_key(bundle, "title", path), f"{path}.title"),
+        "anchor": validate_bundle_anchor(_require_key(bundle, "anchor", path), path=f"{path}.anchor"),
+        "members": members,
+        "edges": edges,
+        "bug_watch": _require_bool(_require_key(bundle, "bug_watch", path), f"{path}.bug_watch"),
+        "lint_ids": lint_ids_raw,
+        "id": _require_str(_require_key(bundle, "id", path), f"{path}.id"),
+    }
+
+
+def validate_bundles_payload(value: object, *, label: str = "bundles.json") -> dict[str, Any]:
+    root = _require_mapping(value, label)
+    bundles = _require_list(_require_key(root, "bundles", label), f"{label}.bundles")
+    for i, item in enumerate(bundles):
+        validate_bundle(item, path=f"{label}.bundles[{i}]")
+    return root
+
+
+def validate_comprehensive_payload(value: object, *, label: str = "comprehensive.json") -> dict[str, Any]:
+    root = _require_mapping(value, label)
+    records = _require_mapping(_require_key(root, "records", label), f"{label}.records")
+    for fid, rec in records.items():
+        validate_record_entry(rec, path=f"{label}.records[{fid!r}]")
+    return root
 
 
 # --------------------------------------------------------------------------

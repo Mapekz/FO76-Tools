@@ -968,7 +968,7 @@ def run_lints(comp, bundles, client, new_esm=None, old_esm=None, settings=None, 
             r.setdefault("rule", name)
         all_lints.extend(results)
 
-    all_lints.sort(key=lambda l: (l.get("rule", ""), l.get("form_id", "")))
+    all_lints.sort(key=lambda lint: (lint.get("rule", ""), lint.get("form_id", "")))
     for i, lint in enumerate(all_lints, start=1):
         lint["id"] = f"L{i:04d}"
         lint["bundle_id"] = assign_bundle_id(lint.get("form_id"), ctx["bundles"])
@@ -1023,7 +1023,7 @@ def load_settings(categories_path):
 
 def print_summary(lints_payload, rule_names, stream=sys.stderr):
     lints = lints_payload.get("lints", [])
-    counts_by_rule = Counter(l.get("rule") for l in lints)
+    counts_by_rule = Counter(lint.get("rule") for lint in lints)
     header = f"{'rule':<28}{'count':>8}"
     print(header, file=stream)
     print("-" * len(header), file=stream)
