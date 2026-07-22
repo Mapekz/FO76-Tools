@@ -5,7 +5,7 @@
 #
 # CI also runs (not covered by `just check`):
 #   - schema parity audit (`just audit`, separate recipe; needs ../TES5Edit)
-#   - Python tooling tests (`just patch-tools-test`)
+#   - Python tooling tests (`just patch-tools-test`) + lint/typecheck (`just patch-tools-lint`)
 #   - esm-viewer typecheck + unit tests (cd ../esm-viewer && npm run typecheck && npm run test)
 #   - napi native-addon build + smoke (continue-on-error in CI)
 #
@@ -14,6 +14,7 @@
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
 #   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
 #   just patch-tools-test -> Python tooling test suite (also enforced in CI)
+#   just patch-tools-lint -> ruff + ty over tools/ (also enforced in CI)
 #   just test-esm /path/a.esm /path/b.esm  -> env-gated diff integration test
 
 default: check
@@ -63,6 +64,16 @@ test-esm a b:
 # Run the Python patch-notes tooling test suite.
 patch-tools-test:
     python3 -m unittest discover -s tools/tests
+
+# Lint + typecheck the Python tooling, matching the CI `python` job.
+#
+# ruff and ty run through uvx and are never imported by the pipeline, so
+# tools/ stays stdlib-only at runtime. Versions are pinned to match CI exactly
+# (ty is a 0.0.x preview — an unpinned upgrade could disagree with CI).
+# Config lives in pyproject.toml ([tool.ruff] / [tool.ty] only).
+patch-tools-lint:
+    uvx ruff@0.15.22 check tools/
+    uvx ty@0.0.62 check tools/
 
 # Mechanical patch-notes stage: diff.json + comprehensive.{md,json} + bundles.json
 # + lints.json + manifest.json into the output dir. The narrative stage (per-category

@@ -66,10 +66,16 @@ jobs:
 
   # ── Python tooling tests ──────────────────────────────────────────────────
   #
-  # Hermetic unittest suite (tools/tests/); no pip install or game data required.
-  # Structured for follow-up lint/typecheck steps (ruff, ty) in the same job.
+  # Hermetic unittest suite (tools/tests/) plus lint and typecheck.  The suite
+  # itself needs no pip install and no game data.
+  #
+  # ruff and ty are dev-only tools invoked through uvx and are never imported by
+  # the pipeline, so esm/tools/ stays stdlib-only at runtime (no requirements.txt,
+  # no lockfile) and the tests still run on a bare python3.  Both are pinned by
+  # exact version: ty is a 0.0.x preview, so an unpinned upgrade could turn CI red
+  # on its own.  Config lives in esm/pyproject.toml ([tool.ruff] / [tool.ty] only).
   python:
-    name: python (tools/tests)
+    name: python (tests / ruff / ty)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -85,6 +91,17 @@ jobs:
 
       - name: test
         run: python3 -m unittest discover -s tools/tests
+
+      # Installed via pip rather than a setup-uv action so this depends only on
+      # the Python toolchain already provisioned above.
+      - name: install uv
+        run: pip install uv
+
+      - name: ruff
+        run: uvx ruff@0.15.22 check tools/
+
+      - name: ty
+        run: uvx ty@0.0.62 check tools/
 
   # ── esm-viewer: typecheck + unit tests ───────────────────────────────────
   #
