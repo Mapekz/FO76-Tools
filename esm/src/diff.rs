@@ -9,6 +9,7 @@ use crate::formid::{parse_formid, FormId};
 use crate::reader::{
     edid_from_subrecords, inline_string_from_subrecords, lstring_id_from_subrecords, OwnedSubrecord,
 };
+use crate::schema::{MemberDef, Schema};
 use crate::strings::StringKind;
 use crate::Database;
 use anyhow::Context;
@@ -279,11 +280,18 @@ pub fn diff_databases_with(
 
         if opts.suppress_noise {
             strip_noise_fields(&mut field_changes, &meta_b.signature);
-            // A record re-saved at a newer form_version switches on schema
-            // members gated by `from_version`; those surface as `null -> X`
-            // appearances rather than as authored edits.
+            // Suppress only pure appearances/disappearances whose schema
+            // activation actually changes between these form versions. The
+            // old blanket appearance rule discarded genuine new subrecords
+            // and could show only the removal half of a field swap.
             if meta_a.form_version != meta_b.form_version {
-                strip_version_gated_appearances(&mut field_changes);
+                strip_version_gated_transitions(
+                    &mut field_changes,
+                    &b.schema,
+                    &meta_b.signature,
+                    meta_a.form_version,
+                    meta_b.form_version,
+                );
             }
             if is_empty_diff(&field_changes) {
                 *suppressed_counts
@@ -550,17 +558,16 @@ pub fn strip_noise_fields(field_changes: &mut Value, sig: &str) {
     }
 }
 
-/// True when every leaf under `v` is a `null -> <something>` transition — a
-/// field that merely *appeared* rather than one whose value was authored.
+/// True when every leaf under `v` has a null value on `null_side`.
 ///
 /// An `_array_diff` carrying added or removed elements is a real structural
-/// change and never counts as an appearance.
-fn is_pure_appearance(v: &Value) -> bool {
+/// change and never counts as a pure transition.
+fn is_pure_transition(v: &Value, null_side: &str) -> bool {
     let Some(map) = v.as_object() else {
         return false;
     };
     if map.len() == 2 && map.contains_key("from") && map.contains_key("to") {
-        return map.get("from").is_some_and(Value::is_null);
+        return map.get(null_side).is_some_and(Value::is_null);
     }
     if let Some(ad) = map.get("_array_diff").and_then(Value::as_object) {
         if ad.contains_key("added") || ad.contains_key("removed") {
@@ -570,8 +577,10 @@ fn is_pure_appearance(v: &Value) -> bool {
             .get("changed")
             .and_then(Value::as_array)
             .is_some_and(|cs| {
-                cs.iter()
-                    .all(|c| c.get("changes").is_some_and(is_pure_appearance))
+                cs.iter().all(|c| {
+                    c.get("changes")
+                        .is_some_and(|changes| is_pure_transition(changes, null_side))
+                })
             });
     }
     let mut saw = false;
@@ -580,30 +589,164 @@ fn is_pure_appearance(v: &Value) -> bool {
             continue;
         }
         saw = true;
-        if !is_pure_appearance(x) {
+        if !is_pure_transition(x, null_side) {
             return false;
         }
     }
     saw
 }
 
-/// Drop top-level field changes that are purely fields appearing (`null -> X`).
+/// True when every leaf under `v` is a `null -> <something>` transition.
+fn is_pure_appearance(v: &Value) -> bool {
+    is_pure_transition(v, "from")
+}
+
+/// True when every leaf under `v` is a `<something> -> null` transition.
+fn is_pure_disappearance(v: &Value) -> bool {
+    is_pure_transition(v, "to")
+}
+
+/// Return the form-version activation bounds used by `decode::member_version_ok`.
+fn member_version_bounds(member: &MemberDef) -> (Option<u16>, Option<u16>) {
+    match member {
+        MemberDef::Struct {
+            from_version,
+            below_version,
+            ..
+        }
+        | MemberDef::Integer {
+            from_version,
+            below_version,
+            ..
+        }
+        | MemberDef::Float {
+            from_version,
+            below_version,
+            ..
+        }
+        | MemberDef::Unused {
+            from_version,
+            below_version,
+            ..
+        }
+        | MemberDef::Empty {
+            from_version,
+            below_version,
+            ..
+        }
+        | MemberDef::Bytes {
+            from_version,
+            below_version,
+            ..
+        }
+        | MemberDef::FormId {
+            from_version,
+            below_version,
+            ..
+        } => (*from_version, *below_version),
+        _ => (None, None),
+    }
+}
+
+/// Mirror `decode::member_version_ok`, including the strict below-version bound.
+fn member_version_active(member: &MemberDef, form_version: u16) -> bool {
+    let (from_version, below_version) = member_version_bounds(member);
+    from_version.is_none_or(|v| form_version >= v) && below_version.is_none_or(|v| form_version < v)
+}
+
+fn member_name(member: &MemberDef) -> Option<&str> {
+    match member {
+        MemberDef::Struct { name, .. }
+        | MemberDef::RStruct { name, .. }
+        | MemberDef::RArray { name, .. }
+        | MemberDef::Array { name, .. }
+        | MemberDef::Union { name, .. }
+        | MemberDef::Integer { name, .. }
+        | MemberDef::Float { name, .. }
+        | MemberDef::String { name, .. }
+        | MemberDef::LString { name, .. }
+        | MemberDef::FormId { name, .. }
+        | MemberDef::Bytes { name, .. }
+        | MemberDef::ByteRgba { name, .. }
+        | MemberDef::Vec3 { name, .. }
+        | MemberDef::Empty { name, .. }
+        | MemberDef::Unknown { name, .. }
+        | MemberDef::RawFallback { name, .. }
+        | MemberDef::Vmad { name, .. }
+        | MemberDef::Ctda { name, .. }
+        | MemberDef::ModelInfo { name, .. } => Some(name),
+        MemberDef::Unused { .. } => None,
+    }
+}
+
+/// Whether this member or any descendant crosses the requested activation state.
+fn member_subtree_crosses_gate(
+    member: &MemberDef,
+    fv_a: u16,
+    fv_b: u16,
+    active_a: bool,
+    active_b: bool,
+) -> bool {
+    if member_version_active(member, fv_a) == active_a
+        && member_version_active(member, fv_b) == active_b
+    {
+        return true;
+    }
+
+    match member {
+        MemberDef::Struct { fields, .. } => fields
+            .iter()
+            .any(|m| member_subtree_crosses_gate(m, fv_a, fv_b, active_a, active_b)),
+        MemberDef::RStruct { members, .. } => members
+            .iter()
+            .any(|m| member_subtree_crosses_gate(m, fv_a, fv_b, active_a, active_b)),
+        MemberDef::RArray { element, .. } | MemberDef::Array { element, .. } => {
+            member_subtree_crosses_gate(element, fv_a, fv_b, active_a, active_b)
+        }
+        MemberDef::Union { variants, .. } => variants
+            .iter()
+            .any(|m| member_subtree_crosses_gate(m, fv_a, fv_b, active_a, active_b)),
+        _ => false,
+    }
+}
+
+/// Drop only pure top-level transitions explained by schema activation changes.
 ///
-/// Only applied when the two records' `form_version`s differ. `decode.rs` gates
-/// each schema member on the record's own form version (`member_version_ok`),
-/// so a record re-saved at a newer version switches on every member whose
-/// `from_version` falls in between — each of which reads as an appearance.
-/// Bethesda re-stamped ~126k records from 163-202 to 209 between the 20260710
-/// and 20260717 snapshots, which accounted for ~80% of all reported changes.
-///
-/// The bytes genuinely did change, so this is a signal-to-noise judgement for
-/// patch notes rather than a correctness fix — hence it is gated behind
-/// `DiffOptions::suppress_noise` and disabled by `--keep-noise`.
-fn strip_version_gated_appearances(field_changes: &mut Value) {
+/// A pure appearance is removed only when the corresponding top-level schema
+/// member or one of its descendants changes from inactive to active. A pure
+/// disappearance is handled symmetrically for active-to-inactive transitions.
+/// The former blanket `null -> X` rule was incorrect: it discarded genuine new
+/// ungated subrecords and hid the addition half of field swaps.
+fn strip_version_gated_transitions(
+    field_changes: &mut Value,
+    schema: &Schema,
+    sig: &str,
+    fv_a: u16,
+    fv_b: u16,
+) {
     let Some(map) = field_changes.as_object_mut() else {
         return;
     };
-    map.retain(|_, v| !is_pure_appearance(v));
+    let Some(record) = schema.record(sig) else {
+        return;
+    };
+
+    map.retain(|key, value| {
+        let mut matching_members = record
+            .members
+            .iter()
+            .filter(|member| member_name(member) == Some(key.as_str()));
+        if is_pure_appearance(value) {
+            !matching_members
+                .clone()
+                .any(|member| member_subtree_crosses_gate(member, fv_a, fv_b, false, true))
+        } else if is_pure_disappearance(value) {
+            !matching_members
+                .any(|member| member_subtree_crosses_gate(member, fv_a, fv_b, true, false))
+        } else {
+            true
+        }
+    });
 }
 
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.
@@ -1124,10 +1267,25 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    // `is_pure_appearance` / `strip_version_gated_appearances` are private, so
+    // `is_pure_appearance` / `strip_version_gated_transitions` are private, so
     // these live here per the crate convention. The risk being covered is
     // OVER-suppression: dropping an authored edit as if it were a field that
     // merely switched on with a newer form_version.
+
+    fn test_schema(members: Value) -> Schema {
+        Schema::from_json(
+            &json!({
+                "records": {
+                    "TEST": {
+                        "name": "Test",
+                        "members": members,
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap()
+    }
 
     #[test]
     fn appearance_detects_null_to_value() {
@@ -1176,19 +1334,114 @@ mod tests {
 
     #[test]
     fn strip_keeps_authored_edits_and_drops_appearances() {
+        let schema = test_schema(json!([
+            {
+                "kind": "integer",
+                "name": "Enlighten Auto UV",
+                "width": "u8",
+                "from_version": 200
+            },
+            {
+                "kind": "formid",
+                "name": "Previous INFO",
+                "from_version": 200
+            },
+            {"kind": "integer", "name": "Attack Damage", "width": "u16"}
+        ]));
         let mut fc = json!({
             "Enlighten Auto UV": {"from": null, "to": {"Unknown": 1}},
             "Previous INFO":     {"from": null, "to": "0x0031E5CD"},
             "Attack Damage":     {"from": 30, "to": 45},
         });
-        strip_version_gated_appearances(&mut fc);
+        strip_version_gated_transitions(&mut fc, &schema, "TEST", 199, 200);
         assert_eq!(fc, json!({"Attack Damage": {"from": 30, "to": 45}}));
     }
 
     #[test]
     fn strip_is_a_no_op_on_non_objects() {
+        let schema = test_schema(json!([]));
         let mut v = json!("not an object");
-        strip_version_gated_appearances(&mut v);
+        strip_version_gated_transitions(&mut v, &schema, "TEST", 199, 200);
         assert_eq!(v, json!("not an object"));
+    }
+
+    #[test]
+    fn strip_keeps_ungated_appearance() {
+        let schema = test_schema(json!([
+            {"kind": "float", "name": "Sneak Attack Multiplier"}
+        ]));
+        let mut fc = json!({
+            "Sneak Attack Multiplier": {"from": null, "to": 2.0}
+        });
+
+        strip_version_gated_transitions(&mut fc, &schema, "TEST", 201, 209);
+
+        assert_eq!(
+            fc,
+            json!({"Sneak Attack Multiplier": {"from": null, "to": 2.0}})
+        );
+    }
+
+    #[test]
+    fn strip_drops_appearance_when_from_version_is_crossed() {
+        let schema = test_schema(json!([{
+            "kind": "struct",
+            "name": "Data",
+            "fields": [{
+                "kind": "bytes",
+                "name": "New Bytes",
+                "from_version": 205
+            }]
+        }]));
+        let mut fc = json!({"Data": {"New Bytes": {"from": null, "to": {"hex": "00"}}}});
+
+        strip_version_gated_transitions(&mut fc, &schema, "TEST", 201, 209);
+
+        assert_eq!(fc, json!({}));
+    }
+
+    #[test]
+    fn strip_keeps_appearance_when_gate_is_active_at_both_versions() {
+        let schema = test_schema(json!([{
+            "kind": "integer",
+            "name": "Already Active",
+            "width": "u8",
+            "from_version": 200
+        }]));
+        let mut fc = json!({"Already Active": {"from": null, "to": 1}});
+
+        strip_version_gated_transitions(&mut fc, &schema, "TEST", 201, 209);
+
+        assert_eq!(fc, json!({"Already Active": {"from": null, "to": 1}}));
+    }
+
+    #[test]
+    fn strip_drops_disappearance_when_below_version_is_crossed() {
+        let schema = test_schema(json!([{
+            "kind": "formid",
+            "name": "Value Currency",
+            "below_version": 205
+        }]));
+        let mut fc = json!({"Value Currency": {"from": "0x0000000F", "to": null}});
+
+        strip_version_gated_transitions(&mut fc, &schema, "TEST", 201, 209);
+
+        assert_eq!(fc, json!({}));
+    }
+
+    #[test]
+    fn strip_keeps_ungated_disappearance() {
+        let schema = test_schema(json!([{
+            "kind": "formid",
+            "name": "Value Currency"
+        }]));
+        let mut fc = json!({"Value Currency": {"from": "0x0000000F", "to": null}});
+
+        strip_version_gated_transitions(&mut fc, &schema, "TEST", 201, 209);
+
+        assert_eq!(
+            fc,
+            json!({"Value Currency": {"from": "0x0000000F", "to": null}})
+        );
     }
 }
