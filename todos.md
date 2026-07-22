@@ -20,6 +20,16 @@ they're CLI-only (`esm chase`, `esm walk`). Add only if an agent-facing surface 
 CLI (esm-viewer, the HTTP/MCP server, a chatbot front end) actually needs one-shot chase/walk
 digests instead of composing `get`/`refs` itself.
 
+- [ ] **P4 — `rollout_shapes` rides on a dict subclass** *(design smell, not a live bug,
+      2026-07-22)*. `compute_bundle_tiers` returns a `TierAssignments(dict)` carrying
+      `rollout_shapes` as an attribute, and `build_triage_payload` reads it via
+      `getattr(tiers_by_id, "rollout_shapes", [])`. The carrier exists because
+      `merge_assessment` mutates the mapping in place, so the attribute has to survive that.
+      Both production paths go through `compute_bundle_tiers`, so it works today — but any
+      caller that hands over a plain dict (or copies one) silently gets an **empty
+      rollouts.md** rather than an error, which would hide the entire aggregated bulk-change
+      story from the summary. Thread `rollout_shapes` explicitly instead of via `getattr`.
+
 - [ ] **P4 — `--json` stdout hygiene in daemon mode** *(confirmed bug, 2026-07-19)*.
       `esm get <id> --json` via the warm daemon appends a trailing `esm> ` REPL prompt
       after the JSON document on stdout, which breaks strict parsers (`json.load` →
