@@ -1,16 +1,25 @@
-# Run from esm/.  Mirrors the CI checks exactly.
+# Run from esm/.  Local check suite for the esm Rust crate; closely matches the CI
+# rust job (fmt / clippy / test / generated-TypeScript drift guard) but is not
+# identical — see below.
 # Install `just` once: cargo install just
 #
+# CI also runs (not covered by `just check`):
+#   - schema parity audit (`just audit`, separate recipe; needs ../TES5Edit)
+#   - Python tooling tests (`just patch-tools-test`)
+#   - esm-viewer typecheck + unit tests (cd ../esm-viewer && npm run typecheck && npm run test)
+#   - napi native-addon build + smoke (continue-on-error in CI)
+#
 # Usage:
-#   just          -> fmt + clippy + test + gen-types + drift check (the full local CI pass)
+#   just          -> fmt + clippy + test + gen-types + drift check (full local esm pass)
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
 #   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
+#   just patch-tools-test -> Python tooling test suite (also enforced in CI)
 #   just test-esm /path/a.esm /path/b.esm  -> env-gated diff integration test
 
 default: check
 
-# Run the full check suite (same as CI rust matrix), plus the generated-types
-# drift guard: `gen-types` must produce no uncommitted diff.
+# Full local esm check (matches the CI rust matrix for esm, including server-feature
+# tests and the generated-types drift guard: `gen-types` must produce no diff).
 check: fmt clippy test gen-types
     git diff --exit-code -- ../esm-viewer/src/shared/generated/
 
