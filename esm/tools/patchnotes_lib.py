@@ -117,11 +117,14 @@ EXCLUDED_TYPES = {"WRLD", "CELL"}
 # _-delimited).
 CUT_MARKERS = ["ZZZ", "CUT", "POST", "DEPRECATED", "DELETE"]
 
-# Top-level field_changes keys that are purely positional/technical noise —
-# always suppressed (kept in the ChangeEntry list, flagged, never rendered).
-NOISE_TOP_KEYS = {"Object Bounds"}
+# Top-level diff noise (GLOBAL_NOISE_FIELDS, PLACEMENT_NOISE_FIELDS,
+# CELL_NOISE_FIELDS in esm/src/diff.rs) is stripped before this tooling
+# runs.  --keep-noise surfaces those fields; this layer does not re-suppress.
 
 # The full set of values `ChangeEntry["suppressed"]` may take (besides None).
+# "noise" is retained for wire-schema compatibility (run_lints skips it;
+# fixtures/historical JSON may still carry it) but extract_changes no longer
+# assigns it.
 SUPPRESSED_REASONS = {"redundant_count", "noise", "raw"}
 
 # Minimum number of "changed" records of the same record_type sharing an
@@ -897,7 +900,6 @@ def _normalize_new_array_diff(ad, ref_names):
 
 
 def _blank_entry(path, kind="scalar"):
-    top_key = path.split(" / ", 1)[0]
     return {
         "path": path,
         "kind": kind,
@@ -905,7 +907,7 @@ def _blank_entry(path, kind="scalar"):
         "to": None,
         "from_display": None,
         "to_display": None,
-        "suppressed": "noise" if top_key in NOISE_TOP_KEYS else None,
+        "suppressed": None,
         "common_group": None,
         "array": None,
         "vmad": None,

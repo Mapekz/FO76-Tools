@@ -246,7 +246,7 @@
           "to": -12,
           "from_display": "`-10`",
           "to_display": "`-12`",
-          "suppressed": "noise",
+          "suppressed": null,
           "common_group": null,
           "array": null,
           "vmad": null
@@ -258,7 +258,7 @@
           "to": -12,
           "from_display": "`-10`",
           "to_display": "`-12`",
-          "suppressed": "noise",
+          "suppressed": null,
           "common_group": null,
           "array": null,
           "vmad": null

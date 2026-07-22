@@ -213,24 +213,30 @@ class TestRenderFields(unittest.TestCase):
 
 
 def _drop_vs_keep_diff():
+    # Use raw (_unmapped) blobs for the "fully covered" cases — top-level diff
+    # noise is stripped in esm/src/diff.rs, not re-suppressed here.
+    raw_only = {
+        "from": {"_raw": True, "hex": "aa"},
+        "to": {"_raw": True, "hex": "bb"},
+    }
     changed = [
-        {  # (a) dropped: no cut, no rename, only a noise-suppressed change.
+        {  # (a) dropped: no cut, no rename, only a suppressed raw change.
             "stub": {"form_id": "0x02000001", "editor_id": "PlainRecord", "record_type": "STAT", "offset": 1},
-            "field_changes": {"Object Bounds": {"X1": {"from": 0, "to": 1}}},
+            "field_changes": {"Unknown Blob": raw_only},
         },
         {  # (b) kept: cut-marked, but otherwise no renderable changes.
             "stub": {"form_id": "0x02000002", "editor_id": "zzz_CutRecord", "record_type": "STAT", "offset": 2},
-            "field_changes": {"Object Bounds": {"X1": {"from": 0, "to": 1}}},
+            "field_changes": {"Unknown Blob": raw_only},
         },
         {  # (c) kept: renamed this patch, but otherwise no renderable changes.
             "stub": {"form_id": "0x02000003", "editor_id": "RenamedRecord", "record_type": "STAT", "offset": 3},
-            "field_changes": {"Object Bounds": {"X1": {"from": 0, "to": 1}}},
+            "field_changes": {"Unknown Blob": raw_only},
             "prev_editor_id": "OldRenamedRecord",
         },
-        {  # (d) kept: has a genuinely renderable change alongside noise.
+        {  # (d) kept: has a genuinely renderable change alongside a suppressed raw blob.
             "stub": {"form_id": "0x02000004", "editor_id": "RenderableRecord", "record_type": "STAT", "offset": 4},
             "field_changes": {
-                "Object Bounds": {"X1": {"from": 0, "to": 1}},
+                "Unknown Blob": raw_only,
                 "Data": {"Value": {"from": 1, "to": 2}},
             },
         },
@@ -335,8 +341,9 @@ class TestCutSectionAndRenderingStructure(unittest.TestCase):
         self.assertIn("**−**", self.md)
         self.assertIn("**~**", self.md)
 
-    def test_object_bounds_noise_not_rendered(self):
-        self.assertNotIn("Object Bounds", self.md)
+    def test_object_bounds_rendered_when_present(self):
+        # diff_small.json includes Object Bounds (as --keep-noise would surface them).
+        self.assertIn("Object Bounds / X1", self.md)
 
 
 # ---------------------------------------------------------------------------

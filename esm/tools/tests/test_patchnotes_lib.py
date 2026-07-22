@@ -222,11 +222,13 @@ class TestExtractChangesKinds(unittest.TestCase):
         # Dangling: absent from ref_names, so display is just the bare hex.
         self.assertEqual(e["to_display"], "`0x00099999`")
 
-    def test_noise_suppression_object_bounds(self):
+    def test_object_bounds_not_suppressed_in_python(self):
+        # Object Bounds noise is stripped in esm/src/diff.rs; when --keep-noise
+        # surfaces them, this layer leaves them renderable.
         entries = self._entries("0x01001001")
         for path in ("Object Bounds / X1", "Object Bounds / Y1"):
             e = find_entry(entries, path)
-            self.assertEqual(e["suppressed"], "noise")
+            self.assertIsNone(e["suppressed"])
 
     def test_array_kind_new_shape(self):
         entries = self._entries("0x01002001")
@@ -261,8 +263,11 @@ class TestExtractChangesKinds(unittest.TestCase):
         entries = self._entries("0x01001001")
         paths = {e["path"] for e in entries}
         self.assertIn("Object Bounds / X1", paths)
-        suppressed_paths = {e["path"] for e in entries if e["suppressed"]}
-        self.assertTrue(suppressed_paths)
+        raw_entries = pl.extract_changes(
+            {"Unknown Blob": {"from": {"_raw": True, "hex": "aa"}, "to": {"_raw": True, "hex": "bb"}}},
+            {},
+        )
+        self.assertTrue(any(e["suppressed"] for e in raw_entries))
 
 
 # ---------------------------------------------------------------------------

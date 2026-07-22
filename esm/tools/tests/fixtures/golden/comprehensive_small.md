@@ -118,6 +118,8 @@
 - **Data / Ammo:** `0x00123456` (AMMO: `Ammo556Old` *".556 Round (Old)"*) → `0x00654321` (AMMO: `Ammo762New` *"7.62 Round"*)
 - **Data / Scope Attachment:** *(null)* → `0x00099999`
 - **Model / Model Path:** `meshes/weapons/rifle_old.nif` → `meshes/weapons/rifle_new.nif`
+- **Object Bounds / X1:** `-10` → `-12`
+- **Object Bounds / Y1:** `-10` → `-12`
 
 ## Removed (1)
 
