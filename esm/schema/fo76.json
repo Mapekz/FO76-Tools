@@ -592,7 +592,8 @@
                   "PBEA",
                   "PCON",
                   "PFLA"
-                ]
+                ],
+                "from_size": 8
               }
             ],
             "sig": "XLKR"
@@ -1922,7 +1923,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -4309,7 +4311,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -5479,7 +5482,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -7527,7 +7531,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -10315,7 +10320,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -16171,7 +16177,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -18496,7 +18503,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -22491,7 +22499,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -23851,7 +23860,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -29158,13 +29168,15 @@
               "kind": "integer",
               "name": "Vignette Radius",
               "width": "u32",
-              "signed": false
+              "signed": false,
+              "from_size": 248
             },
             {
               "kind": "integer",
               "name": "Vignette Strength",
               "width": "u32",
-              "signed": false
+              "signed": false,
+              "from_size": 252
             }
           ],
           "sig": "DNAM"
@@ -31688,7 +31700,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -33468,7 +33481,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -36831,7 +36845,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -42314,7 +42329,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -44204,7 +44220,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -47003,7 +47020,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -52458,19 +52476,22 @@
                   "False",
                   "True"
                 ]
-              }
+              },
+              "from_size": 5
             },
             {
               "kind": "integer",
               "name": "Level",
               "width": "u8",
-              "signed": false
+              "signed": false,
+              "from_size": 5
             },
             {
               "kind": "integer",
               "name": "Num Ranks",
               "width": "u8",
-              "signed": false
+              "signed": false,
+              "from_size": 5
             },
             {
               "kind": "integer",
@@ -53338,7 +53359,8 @@
                   "PBEA",
                   "PCON",
                   "PFLA"
-                ]
+                ],
+                "from_size": 8
               }
             ],
             "sig": "XLKR"
@@ -54340,7 +54362,8 @@
                   "PBEA",
                   "PCON",
                   "PFLA"
-                ]
+                ],
+                "from_size": 8
               }
             ],
             "sig": "XLKR"
@@ -56089,7 +56112,8 @@
                   "PBEA",
                   "PCON",
                   "PFLA"
-                ]
+                ],
+                "from_size": 8
               }
             ],
             "sig": "XLKR"
@@ -57746,7 +57770,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -70512,7 +70537,8 @@
             {
               "kind": "byte_rgba",
               "sig": "'Color'",
-              "name": "Color"
+              "name": "Color",
+              "from_size": 12
             }
           ],
           "sig": "XPDD"
@@ -71192,7 +71218,8 @@
               {
                 "kind": "bytes",
                 "name": "Link Type",
-                "len": 4
+                "len": 4,
+                "from_size": 5
               }
             ],
             "sig": "XPLK"
@@ -74312,7 +74339,8 @@
                       "MSWP",
                       "REFR",
                       "NULL"
-                    ]
+                    ],
+                    "from_size": 8
                   }
                 ],
                 "sig": "ONAM"
@@ -77041,7 +77069,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -78882,7 +78911,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -80061,7 +80091,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -81585,7 +81616,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"
@@ -85461,7 +85493,8 @@
                 },
                 {
                   "kind": "float",
-                  "name": "DPS Limit"
+                  "name": "DPS Limit",
+                  "from_size": 16
                 }
               ],
               "sig": "DEST"

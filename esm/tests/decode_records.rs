@@ -2107,6 +2107,58 @@ fn perk_player_team_perk_decodes_correctly() {
     );
 }
 
+/// Synthetic PERK — 3-byte top-level `DATA` (fv 209) — `from_size`-gated Trait/
+/// Level/`Num Ranks` must be absent; Playable/Hidden/Unknown decode from the
+/// short layout.
+#[test]
+fn perk_data_short_form_decodes_playable_hidden_unknown_not_trait_level_num_ranks() {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, 209);
+
+    let subs = subrecords_from(&[
+        ("EDID", "5065726b4461746153686f7274466f726d5465737400"),
+        ("DATA", "0100ab"),
+    ]);
+
+    let result = decode_record(&ctx, "PERK", &subs);
+    assert_eq!(
+        result.get("_record_type").and_then(|v| v.as_str()),
+        Some("Perk"),
+    );
+    assert_fully_decoded(&result);
+
+    let data = result.get("Data").expect("Data struct must decode");
+
+    assert!(
+        data.get("Trait").is_none(),
+        "Trait must be absent for 3-byte PERK DATA"
+    );
+    assert!(
+        data.get("Level").is_none(),
+        "Level must be absent for 3-byte PERK DATA"
+    );
+    assert!(
+        data.get("Num Ranks").is_none(),
+        "'Num Ranks' must be absent for 3-byte PERK DATA"
+    );
+
+    assert_eq!(
+        data.pointer("/Playable/name").and_then(|v| v.as_str()),
+        Some("True"),
+        "Playable"
+    );
+    assert_eq!(
+        data.pointer("/Hidden/name").and_then(|v| v.as_str()),
+        Some("False"),
+        "Hidden"
+    );
+    assert_eq!(
+        data.pointer("/Unknown/hex").and_then(|v| v.as_str()),
+        Some("ab"),
+        "Unknown"
+    );
+}
+
 /// PERK 0x00056DD7 — `PlayerPerk` (fv 209, 115 subs) — fully decoded.
 #[test]
 fn perk_player_perk_decodes_correctly() {
@@ -2264,6 +2316,11 @@ fn perk_player_perk_decodes_correctly() {
     ]);
     let result = decode_record(&ctx, "PERK", &subs);
     assert_fully_decoded(&result);
+    // Post-from_size 3-byte PERK DATA layout: Playable lives in Data, not Trait/Level/Num Ranks.
+    assert!(
+        result.get("Data").and_then(|d| d.get("Playable")).is_some(),
+        "Data.Playable must be present"
+    );
     assert_eq!(
         result.get("Editor ID").and_then(|v| v.as_str()),
         Some("PlayerPerk"),

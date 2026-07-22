@@ -496,7 +496,7 @@ fn decode_member(
                 }
             }
         }
-        MemberDef::ByteRgba { sig, name } => {
+        MemberDef::ByteRgba { sig, name, .. } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     if sr.data.len() >= 4 {
@@ -1098,6 +1098,9 @@ fn decode_struct_fields(
         if !member_version_ok(ctx.form_version, field) {
             continue;
         }
+        if !member_from_size_ok(data.len(), field) {
+            continue;
+        }
         match field {
             MemberDef::Unused { bytes, .. } => {
                 pos = pos.saturating_add(*bytes).min(data.len());
@@ -1671,6 +1674,27 @@ fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
         }
     }
     true
+}
+
+/// `wbFromSize(N, value)` gate. `data_len` must be the length of the `data`
+/// slice for the *current* `decode_struct_fields` invocation — every known
+/// FO76 `wbFromSize` site is a direct field of the struct that IS the
+/// subrecord's own payload (never nested inside a further `Struct` member),
+/// so `data_len` at that call depth already equals the subrecord's DataSize,
+/// matching Pascal's `SubRecord.DataSize` check exactly. A `from_size` field
+/// nested one more `Struct` level down would need the original subrecord
+/// length threaded separately — not needed by any current schema site; if
+/// one appears, this comment is the tripwire.
+fn member_from_size_ok(data_len: usize, member: &MemberDef) -> bool {
+    let from_size = match member {
+        MemberDef::Integer { from_size, .. }
+        | MemberDef::Float { from_size, .. }
+        | MemberDef::FormId { from_size, .. }
+        | MemberDef::Bytes { from_size, .. }
+        | MemberDef::ByteRgba { from_size, .. } => *from_size,
+        _ => None,
+    };
+    from_size.is_none_or(|n| data_len >= n)
 }
 
 fn choose_union_variant(
@@ -3272,6 +3296,7 @@ mod tests {
             format: None,
             from_version: None,
             below_version: None,
+            from_size: None,
             stop_before: vec![],
         }
     }
@@ -3294,6 +3319,7 @@ mod tests {
             format: None,
             from_version: None,
             below_version: None,
+            from_size: None,
             stop_before: vec![],
         }
     }
@@ -3817,6 +3843,7 @@ mod tests {
                 valid_refs: vec!["NPC_".into(), "FACT".into(), "NULL".into()],
                 from_version: None,
                 below_version: None,
+                from_size: None,
             },
             MemberDef::Union {
                 sig: None,
@@ -3839,6 +3866,7 @@ mod tests {
                         valid_refs: vec!["GLOB".into(), "NULL".into()],
                         from_version: None,
                         below_version: None,
+                        from_size: None,
                     },
                     MemberDef::Integer {
                         sig: None,
@@ -3848,6 +3876,7 @@ mod tests {
                         format: None,
                         from_version: None,
                         below_version: None,
+                        from_size: None,
                         stop_before: vec![],
                     },
                 ],
@@ -3899,6 +3928,7 @@ mod tests {
                 format: None,
                 from_version: Some(166),
                 below_version: None,
+                from_size: None,
                 stop_before: vec![],
             },
             MemberDef::Float {
@@ -3906,6 +3936,7 @@ mod tests {
                 name: "Magnitude".into(),
                 from_version: None,
                 below_version: None,
+                from_size: None,
             },
             MemberDef::Integer {
                 sig: None,
@@ -3915,6 +3946,7 @@ mod tests {
                 format: None,
                 from_version: None,
                 below_version: None,
+                from_size: None,
                 stop_before: vec![],
             },
             MemberDef::Integer {
@@ -3925,6 +3957,7 @@ mod tests {
                 format: None,
                 from_version: None,
                 below_version: None,
+                from_size: None,
                 stop_before: vec![],
             },
             MemberDef::Bytes {
@@ -3933,6 +3966,7 @@ mod tests {
                 len: Some(12),
                 from_version: Some(154),
                 below_version: Some(166),
+                from_size: None,
             },
             MemberDef::Bytes {
                 sig: None,
@@ -3940,6 +3974,7 @@ mod tests {
                 len: Some(8),
                 from_version: Some(166),
                 below_version: Some(183),
+                from_size: None,
             },
         ]
     }

@@ -77,6 +77,11 @@ pub enum MemberDef {
         from_version: Option<u16>,
         #[serde(default)]
         below_version: Option<u16>,
+        /// `wbFromSize(N, ...)` gate (xEdit wbRecordSizeDecider): present
+        /// only when the enclosing subrecord's DataSize >= N; see
+        /// `member_from_size_ok` in decode.rs.
+        #[serde(default)]
+        from_size: Option<usize>,
         /// Halt consumption when any listed sig has a lower `doc_index` than
         /// this integer's `sig` in the subrecord stream.  Mirrors the same
         /// field on `RArray` — used for condition-count integers (CITC) that
@@ -93,6 +98,8 @@ pub enum MemberDef {
         from_version: Option<u16>,
         #[serde(default)]
         below_version: Option<u16>,
+        #[serde(default)]
+        from_size: Option<usize>,
     },
     #[serde(rename = "string")]
     String {
@@ -125,6 +132,8 @@ pub enum MemberDef {
         from_version: Option<u16>,
         #[serde(default)]
         below_version: Option<u16>,
+        #[serde(default)]
+        from_size: Option<usize>,
     },
     #[serde(rename = "bytes")]
     Bytes {
@@ -137,12 +146,16 @@ pub enum MemberDef {
         from_version: Option<u16>,
         #[serde(default)]
         below_version: Option<u16>,
+        #[serde(default)]
+        from_size: Option<usize>,
     },
     #[serde(rename = "byte_rgba")]
     ByteRgba {
         #[serde(default)]
         sig: Option<String>,
         name: String,
+        #[serde(default)]
+        from_size: Option<usize>,
     },
     #[serde(rename = "vec3")]
     Vec3 {

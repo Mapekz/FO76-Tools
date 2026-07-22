@@ -952,7 +952,7 @@ class Extractor:
             "'Unknown 9','Unknown 10','Unknown 11','Limit DPS Taken',"
             "'Has Conditions','Unknown 14','Unknown 15','Unknown 16'"
             "])),"
-            "wbFloat('DPS Limit')"
+            "wbFromSize(16,wbFloat('DPS Limit'))"
             "]),"
             "wbConditions,"
             "wbEmpty(DSCF,'End Condition Marker'),"
@@ -1840,10 +1840,11 @@ class Extractor:
                 if v.startswith("("):
                     return "wbPLACEHOLDER" + v
                 return v
-        # wbFromVersion / wbBelowVersion
+        # wbFromVersion / wbBelowVersion / wbFromSize
         for gate, key in (
             (r"wbFromVersion\s*\(\s*(\d+)\s*,\s*", "from_version"),
             (r"wbBelowVersion\s*\(\s*(\d+)\s*,\s*", "below_version"),
+            (r"wbFromSize\s*\(\s*(\d+)\s*,\s*", "from_size"),
         ):
             m = re.match(gate, expr)
             if m:
@@ -2073,43 +2074,6 @@ class Extractor:
                 tt_parts = split_top_level(args)
                 tt_name = unquote(tt_parts[0]) if tt_parts else "Tint Layers"
                 return f"wbRArray('{tt_name}',wbTintTemplateGroupElement)"
-            # wbFromSize(size, value) or wbFromSize(size, sig, value) —
-            # conditionally decoded based on total record data length.
-            # For FO76 (always the latest game version) the record is always
-            # large enough, so we emit the inner value directly and skip
-            # the size-guard union.
-            # wbDefinitionsCommon.pas:5981-6010.
-            if fn == "wbFromSize":
-                fs_parts = split_top_level(args)
-                if not fs_parts:
-                    return expr
-                # fs_parts[0] is the size threshold (integer literal)
-                # If fs_parts[1] is a sig-id, the form is (size, sig, value).
-                # Otherwise it is (size, value).
-                if len(fs_parts) >= 3 and sig_id(fs_parts[1].strip()):
-                    sig2 = fs_parts[1].strip()
-                    value_expr = self.expand_call(fs_parts[2].strip())
-                    # Inject the sig into the value if the value is a plain
-                    # wb* call (strip any existing leading sig first).
-                    # Simplest: wrap the value in a struct-member call with sig.
-                    # Because this is a subrecord-level member, just return
-                    # the inner value expression — the sig already identifies it.
-                    # We rewrite wbSomething('name', ...) → wbSomething(SIG, 'name', ...)
-                    m2 = re.match(r"^(wb[A-Za-z0-9_]+)\s*\(", value_expr)
-                    if m2:
-                        inner_fn = m2.group(1)
-                        inner_args_start = value_expr.index("(")
-                        inner_rparen = find_matching_paren(value_expr, inner_args_start)
-                        inner_args = value_expr[inner_args_start + 1 : inner_rparen]
-                        inner_parts = split_top_level(inner_args)
-                        # Only inject sig if the first inner arg is NOT already a sig.
-                        if inner_parts and not sig_id(inner_parts[0].strip()):
-                            return f"{inner_fn}({sig2}, {inner_args})"
-                    return value_expr
-                elif len(fs_parts) >= 2:
-                    # (size, value) — return the value expression directly
-                    return self.expand_call(fs_parts[-1].strip())
-                return expr
             # wbIMADMultAddCount(name) → wbStruct with Mult Count + Add Count u32 fields.
             # wbDefinitionsCommon.pas:7768-7789.
             if fn == "wbIMADMultAddCount":
@@ -2274,6 +2238,17 @@ class Extractor:
                 child = self.parse_member(inner_expr)
                 if child:
                     child["below_version"] = ver
+                    if injected_sig and "sig" not in child:
+                        child["sig"] = injected_sig
+                return child
+        if expr.startswith("__from_size__"):
+            m = re.match(r"__from_size__\((\d+),\s*(.+)\)\s*$", expr, re.DOTALL)
+            if m:
+                size = int(m.group(1))
+                inner_expr, injected_sig = self._strip_version_sig(m.group(2))
+                child = self.parse_member(inner_expr)
+                if child:
+                    child["from_size"] = size
                     if injected_sig and "sig" not in child:
                         child["sig"] = injected_sig
                 return child
