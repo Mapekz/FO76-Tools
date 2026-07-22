@@ -1,55 +1,25 @@
 # FO76-Tools — Backlog
 
-The single backlog for every subproject. Add follow-ups here, grouped under the project they
-belong to — do not reintroduce per-project `todos.md` files or a `todos/` directory.
+Tracked, actionable work lives in [GitHub Issues](https://github.com/Mapekz/FO76-Tools/issues)
+(`gh`, see `docs/agents/issue-tracker.md`) — that's the live, priority-triaged queue as of
+2026-07-22. This file is the complement: informal dated notes not yet promoted to an issue,
+scope decisions deliberately *not* tracked as work items, and a historical record of resolved
+or removed items, grouped under the project they belong to. Do not reintroduce per-project
+`todos.md` files or a `todos/` directory — this stays the one file.
 
-Items are ordered by priority (P1 highest). Each states what it is and why it sits where it
-does. Scope checks are dated so a stale claim is obvious on sight. All items below were
-re-verified against the code on 2026-07-14; none is partially implemented.
+Scope checks are dated so a stale claim is obvious on sight.
 
 ---
 
 ## `esm/`
 
-*Conditional, not a checkbox:* **server-side subtree filter** — P2 (`refs --paths`) and P4
-(bulk `get`) have landed; add this only if `/patch-notes` token pressure persists in practice.
-
-*Conditional, not a checkbox:* **`chase`/`walk` exposure via N-API/HTTP/MCP** — both are
-possible (they're already pure functions over the `ChaseFetcher` seam) but deferred; today
-they're CLI-only (`esm chase`, `esm walk`). Add only if an agent-facing surface other than the
-CLI (esm-viewer, the HTTP/MCP server, a chatbot front end) actually needs one-shot chase/walk
-digests instead of composing `get`/`refs` itself.
-
-- [ ] **P4 — Investigate elevated diff Changed count post-LString fix** *(2026-07-20)*.
-      `diff_two_esm_versions_glob` (20260710→20260717) reports `Changed: 129323` after the
-      LString id-0 and table-kind fixes landed (down from 156009 before — the fixes accounted
-      for ~26,686 records of spurious diff noise from SeventySix.esm's Localized-flag flip in
-      20260717). The remaining ~129K is presumed normal per-patch content churn but hasn't been
-      confirmed — spot-check a sample of "changed" records before the next `/patch-notes` run
-      to rule out a further decode-shape artifact from the localized-string transition.
-- [ ] **P5 — INFO `Comment?` (BNAM) LString mislabeling** *(2026-07-20; diagnosis corrected
-      2026-07-22)*. After the LString table-kind fix, 12 residual `_unresolved` markers remain in
-      the 20260717 coverage sweep, all in INFO's `Comment?` field. In every case the `lstring_id`
-      exactly equals the record's own FormID — a strong signal the field isn't really an lstring
-      at all. That observation still stands; the original entry's *attribution* did not:
-
-      - **It is `BNAM`, not `RNAM`.** `wbDefinitionsFO76.pas:12120` has
-        `wbLStringKC(BNAM, 'Comment?')`; `RNAM` is `'Prompt'` at line 12138. Any fix targets BNAM.
-      - **The `?` is not an extractor confidence marker.** It is TES5Edit's own authorial doubt,
-        copied verbatim out of the Pascal string literal. `extract.py` has no confidence or
-        guess-marking logic anywhere — `_parse_lstring` maps every `wbLStringKC(...)` call to
-        `{"kind": "lstring"}` unconditionally, regardless of context. Do not read a `?` in any
-        schema `name` as a low-confidence signal; the schema has no provenance channel at all.
-
-      The dynamic table-selection rule this depends on (xEdit's `LocalizedValueDecider`,
-      `wbLocalization.pas:558-575`) is deliberately reimplemented on the Rust side in
-      `lstring_table_to_kind` (now `esm/src/decode/mod.rs` after the module split) rather than
-      baked into the schema — that part is correct and should not be "fixed". The open question
-      is narrowly whether BNAM should carry `kind: lstring` at all.
-- [ ] **P6 — Chatbot front page over the HTTP/MCP server** *(post-POC productization)*. The
-      static UI (`esm/static/index.html`, `esm/static/compare.html`) is a record browser; the
-      MCP server (`esm/src/bin/server.rs`) already exposes the six read-only tools a chatbot
-      would call. No urgency — the one "someday" item.
+No tracked follow-ups. Outstanding items as of 2026-07-22 were migrated to GitHub Issues:
+[#2](https://github.com/Mapekz/FO76-Tools/issues/2) (diff Changed-count investigation, P4),
+[#3](https://github.com/Mapekz/FO76-Tools/issues/3) (INFO BNAM LString mislabeling, P5),
+[#4](https://github.com/Mapekz/FO76-Tools/issues/4) (chatbot front page, P6),
+[#5](https://github.com/Mapekz/FO76-Tools/issues/5) (server-side subtree filter, conditional),
+[#6](https://github.com/Mapekz/FO76-Tools/issues/6) (chase/walk N-API/HTTP/MCP exposure,
+conditional).
 
 ---
 
