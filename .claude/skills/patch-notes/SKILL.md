@@ -3,8 +3,9 @@ name: patch-notes
 description: >
   Weekly Fallout 76 patch-notes narrative stage, tiered edition. Resolves the latest two
   snapshots from $FO76_DATA_DIR, runs (or reuses) the deterministic diff pipeline, triages
-  bundles into DEEP / BRIEF / DROP (rules + one cheap assessor agent for the ambiguous
-  middle), fans out 1-2 Sonnet deep writers armed with the mechanics KB over the DEEP tier
+  bundles into DEEP / BRIEF / DROP / ROLLOUT (rules + one cheap assessor agent for the
+  ambiguous middle; ROLLOUT aggregates bulk form_version field churn into one line per
+  change shape), fans out 1-2 Sonnet deep writers armed with the mechanics KB over the DEEP tier
   only, reconciles deferrals and unresolved chases in the orchestrator, assembles a single
   patch-summary.md, and chunks it for Discord. Use when asked to write, refresh, or re-run
   weekly patch notes.
@@ -110,8 +111,21 @@ python3 esm/tools/triage_bundles.py "$OUT"
 
 This writes `$OUT/work/triage.json` (tier assignment + per-bundle reasons),
 `$OUT/work/deep-slice.json` (DEEP bundles in writer-slice shape),
-`$OUT/work/ambiguous.json` (compact field-diff digests for the middle tier), and
-`$OUT/work/brief-lines.md` (templated one-liners for the BRIEF tier).
+`$OUT/work/ambiguous.json` (compact field-diff digests for the middle tier),
+`$OUT/work/brief-lines.md` (templated one-liners for the BRIEF tier), and
+`$OUT/work/rollouts.md` (one row per bulk data change — see below).
+
+**The ROLLOUT tier.** When Bethesda bumps a record's `form_version` they add or drop
+fields across tens of thousands of records at once. That is one story, not tens of
+thousands. Triage groups every changed record by its *change shape* — `(record_type,
+set of top-level changed field paths)` — and any shape recurring at least
+`settings.rollout_min_records` times (default 20) tiers its bundles ROLLOUT, keeping
+them out of DEEP/BRIEF/AMBIGUOUS entirely. A bundle containing any added or removed
+record is never ROLLOUT: a genuinely new record is always a real story.
+
+This is load-bearing, not cosmetic. On the 20260710→20260717 pair it took AMBIGUOUS
+from 34,327 bundles to 546 — the difference between "one assessor agent" and
+"impossible".
 
 If `ambiguous.json` has entries, spawn **one assessor subagent** (Agent tool,
 `model: haiku`) with this prompt shape — paste the digests inline, give it NO daemon
@@ -136,6 +150,14 @@ Sanity-check the final tier stats in `triage.json` — if DEEP exceeds ~40 bundl
 swallowed a record type you'd expect to matter (WEAP/PERK/OMOD), inspect `reasons` before
 proceeding; the config (`esm/tools/patch_notes_tiers.json`) may need a rule fix, and silent
 mis-tiering is exactly the failure mode this step exists to catch.
+
+Sanity-check ROLLOUT the same way, in the opposite direction: skim `rollouts.md` and
+confirm each row really is uniform bulk churn. A shape that recurs often can still
+matter — "1,056 weapons gained a sneak-attack multiplier" is a headline, not noise.
+Anything that reads like a gameplay change gets a line in the summary (Step 6), and if
+a rollout row hides something a player would feel, pull those bundles back by raising
+`rollout_min_records` and re-running this step. The tier exists to aggregate the story,
+never to discard it.
 
 ## 5. Deep pass
 
@@ -188,7 +210,12 @@ Read every draft + report. Then, in order:
    balance / events & quests / new items / `## Datamined: <feature> (not live)` (standing
    disclaimer first) / `## Cut / Vaulted` / then append the BRIEF one-liners from
    `work/brief-lines.md` under `## Also this patch` (prune any line a deep section already
-   covers). Style guide applies throughout; cut prose over numbers when over budget.
+   covers) / and finally `## Under the hood` distilled from `work/rollouts.md` — at most a
+   handful of lines, each naming the record type, the field, and the record count
+   ("1,056 weapons gained a per-weapon sneak-attack multiplier"). Promote a rollout row
+   into a real section above if it has gameplay meaning; drop rows that are purely
+   structural (padding, model relinks, editor bookkeeping). Never paste the table
+   wholesale. Style guide applies throughout; cut prose over numbers when over budget.
 
 ## 7. Chunk for Discord
 
@@ -205,7 +232,8 @@ summary (cut prose, never numbers) and re-run.
 python3 esm/tools/update_manifest.py "$OUT"
 ```
 
-Print: tier counts (deep/brief/drop, plus how many the assessor promoted/demoted), writer
+Print: tier counts (deep/brief/drop/rollout, plus how many the assessor promoted/demoted),
+the rollout-shape count and how many records they cover, writer
 count, chunk count, unresolved-chased count, KB entries added, and the output paths
 (`$OUT/patch-summary.md`, `$OUT/discord/`) — no game-data paths or `$FO76_DATA_DIR`
 expansions in the printed summary either.
@@ -221,6 +249,10 @@ expansions in the printed summary either.
 - Every lint reaching the summary was re-verified live this run.
 - DROP-tier bundles are dropped *with logged reasons* (`triage.json`); the printed summary
   states the drop count so the user can audit `work/triage.json` when something seems missing.
+- ROLLOUT-tier bundles are *aggregated, never discarded*: every one is reachable from
+  `triage.json`'s `rollout` list and summarised in `work/rollouts.md` with its record count
+  and example FormIDs. A rollout that carries gameplay meaning must reach the summary as a
+  line of its own — collapsing the row count is the point, silence is not.
 - No absolute filesystem paths, ESM filenames, or `$FO76_DATA_DIR` expansions in any file
   under `$OUT`.
 - This skill writes only inside `$OUT`, plus exactly one repo file:

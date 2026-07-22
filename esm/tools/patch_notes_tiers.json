@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "settings": {
+    "rollout_min_records": 20,
     "ambiguous_digest_max_chars": 1200,
     "ambiguous_change_truncate_chars": 200
   },

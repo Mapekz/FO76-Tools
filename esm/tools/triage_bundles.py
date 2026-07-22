@@ -4,9 +4,10 @@ triage_bundles.py — mechanical-triage stage for the FO76 patch-notes pipeline.
 
 Reads `<out_dir>/bundles.json` + `<out_dir>/comprehensive.json` and a rule
 config (`tools/patch_notes_tiers.json` by default) and assigns each bundle a
-tier -- `deep` (a real writeup), `brief` (a templated one-liner -- existence
-is the story), `drop` (bookkeeping churn, never surfaced), or `ambiguous`
-(punted to a runtime assessor agent) -- then writes four files under
+tier -- `rollout` (one bulk data-shape change across many records), `deep` (a
+real writeup), `brief` (a templated one-liner -- existence is the story),
+`drop` (bookkeeping churn, never surfaced), or `ambiguous` (punted to a
+runtime assessor agent) -- then writes five files under
 `<out_dir>/work/`:
 
     triage.json       Tier assignment + per-bundle reasons + summary stats.
@@ -20,12 +21,16 @@ is the story), `drop` (bookkeeping churn, never surfaced), or `ambiguous`
     brief-lines.md    Templated one-liners for `brief` bundles, grouped
                       under `### Added` / `### Removed` / `### Renamed / Cut`
                       / `### Other`.
+    rollouts.md       One compact aggregate row per recurring bulk change
+                      shape; never one line per affected bundle.
 
 Rules are ordered lists of small declarative dicts (see
 tools/patch_notes_tiers.json), evaluated top-down, first-match-wins, within
-a fixed priority: deep_rules > drop_rules > brief_rules > (ambiguous
-fallback). A bundle's tier is decided by the highest-priority rule set that
-has any match -- e.g. a bundle that would satisfy both a deep_rules and a
+a fixed priority: rollout > deep_rules > drop_rules > brief_rules >
+(ambiguous fallback). Rollout is data-driven: every changed, non-context
+member must have a change shape recurring at least `settings.
+rollout_min_records` times. For every non-rollout bundle, the existing rule
+priority is unchanged: a bundle that would satisfy both a deep_rules and a
 drop_rules condition is DEEP, never DROP; and a bundle satisfying both
 drop_rules and brief_rules (e.g. an all-REFR bundle that happens to be
 all-"removed" status, which would otherwise look like brief_rules/
@@ -34,13 +39,13 @@ all_removed) is DROP, never BRIEF -- drop_rules and deep_rules are the two
 softer bucketing for whatever's left.
 
     python3 tools/triage_bundles.py <out_dir>
-        Tier every bundle in <out_dir>/bundles.json, writing the four files
+        Tier every bundle in <out_dir>/bundles.json, writing the five files
         above.
 
     python3 tools/triage_bundles.py <out_dir> --merge-assessment ASSESSMENT.json
         Re-tiers using an assessor's `{"tiers": {bundle_id: {"tier":
         "deep"|"brief"|"drop", "reason": "..."}}}` output to resolve every
-        bundle rule-tiering left `ambiguous`, then re-emits all four files
+        bundle rule-tiering left `ambiguous`, then re-emits all five files
         (ambiguous bundles the assessor didn't resolve, or resolved with an
         unrecognized tier, remain `ambiguous`). Assessor-sourced reasons are
         recorded in triage.json's `reasons` prefixed `assessor:`.
@@ -73,6 +78,7 @@ DEFAULT_TIERS_PATH = SCRIPT_DIR / "patch_notes_tiers.json"
 #: (~1200 chars per bundle digest, ~200 chars per summarized change).
 DEFAULT_AMBIGUOUS_DIGEST_MAX_CHARS = 1200
 DEFAULT_AMBIGUOUS_CHANGE_TRUNCATE_CHARS = 200
+DEFAULT_ROLLOUT_MIN_RECORDS = 20
 
 #: brief-lines.md section order; a rule's `bucket` picks which one it renders
 #: under (falls back to "Other" if a rule/assessor override omits it).
@@ -125,6 +131,47 @@ def _fnmatch_any(value, patterns):
 
 def _non_context_members(bundle):
     return [m for m in bundle.get("members") or [] if m.get("role") != "context"]
+
+
+def record_change_shape(record):
+    """Return (record_type, sorted distinct top-level unsuppressed paths)."""
+    paths = set()
+    for entry in record.get("changes") or []:
+        if not isinstance(entry, dict) or entry.get("suppressed"):
+            continue
+        path = entry.get("path") or ""
+        paths.add(path.split(" / ", 1)[0])
+    return record.get("record_type"), tuple(sorted(paths))
+
+
+def compute_rollout_shapes(records, threshold):
+    """Return deterministic metadata for changed-record shapes at threshold."""
+    form_ids_by_shape = defaultdict(list)
+    for form_id in sorted(records):
+        record = records[form_id]
+        if record.get("status") == "changed":
+            form_ids_by_shape[record_change_shape(record)].append(form_id)
+
+    rollout_shapes = []
+    for (record_type, paths), form_ids in form_ids_by_shape.items():
+        if len(form_ids) < threshold:
+            continue
+        rollout_shapes.append(
+            {
+                "record_type": record_type,
+                "paths": list(paths),
+                "record_count": len(form_ids),
+                "example_form_ids": form_ids[:3],
+            }
+        )
+    rollout_shapes.sort(
+        key=lambda item: (
+            -item["record_count"],
+            item["record_type"] or "",
+            tuple(item["paths"]),
+        )
+    )
+    return rollout_shapes
 
 
 def _scope_members(scope, bundle):
@@ -414,12 +461,32 @@ def rule_matches(rule, bundle, records, drop_patterns, narrative_patterns):
 # --------------------------------------------------------------------------
 
 
-def assign_tier(bundle, records, config):
+def assign_tier(bundle, records, config, bulk_shapes=None):
     """Return (tier, reason, bucket) for one bundle: `tier` is one of
-    "deep"/"brief"/"drop"/"ambiguous"; `reason` is "<tier>:<rule id>" or None
-    (ambiguous); `bucket` is the brief_rules bucket or None (non-brief).
-    Priority: deep_rules > drop_rules > brief_rules -- see module
-    docstring."""
+    "rollout"/"deep"/"brief"/"drop"/"ambiguous"; `reason` is
+    "rollout:<type>/<paths>", "<tier>:<rule id>", or None (ambiguous);
+    `bucket` is the brief_rules bucket or None (non-brief). Priority:
+    rollout > deep_rules > drop_rules > brief_rules -- see module docstring.
+
+    `bulk_shapes` is precomputed by compute_bundle_tiers. It defaults empty
+    so matcher-level callers can exercise only the declarative rule tiers.
+    """
+    bulk_shapes = bulk_shapes or set()
+    members = _non_context_members(bundle)
+    member_records = []
+    if members:
+        for member in members:
+            form_id = member.get("form_id")
+            if form_id not in records or records[form_id].get("status") != "changed":
+                break
+            record = records[form_id]
+            if record_change_shape(record) not in bulk_shapes:
+                break
+            member_records.append(record)
+        else:
+            record_type, paths = record_change_shape(member_records[0])
+            return "rollout", f"rollout:{record_type}/{'+'.join(paths)}", None
+
     drop_patterns = config.get("field_path_drop_patterns") or []
     narrative_patterns = config.get("narrative_signal_patterns") or []
 
@@ -438,11 +505,26 @@ def assign_tier(bundle, records, config):
     return "ambiguous", None, None
 
 
+class TierAssignments(dict):
+    """Bundle tier mapping carrying its once-computed rollout metadata."""
+
+    def __init__(self, rollout_shapes):
+        super().__init__()
+        self.rollout_shapes = rollout_shapes
+
+
 def compute_bundle_tiers(bundles, records, config):
     """`{bundle_id: {"tier", "reason", "bucket"}}` for every bundle."""
-    result = {}
+    settings = config.get("settings") or {}
+    threshold = settings.get("rollout_min_records", DEFAULT_ROLLOUT_MIN_RECORDS)
+    rollout_shapes = compute_rollout_shapes(records, threshold)
+    bulk_shapes = {
+        (item["record_type"], tuple(item["paths"]))
+        for item in rollout_shapes
+    }
+    result = TierAssignments(rollout_shapes)
     for b in bundles:
-        tier, reason, bucket = assign_tier(b, records, config)
+        tier, reason, bucket = assign_tier(b, records, config, bulk_shapes)
         result[b["id"]] = {"tier": tier, "reason": reason, "bucket": bucket}
     return result
 
@@ -453,11 +535,12 @@ def compute_bundle_tiers(bundles, records, config):
 
 
 def build_triage_payload(bundles, tiers_by_id, extra_stats=None):
-    buckets_by_tier = {"deep": [], "brief": [], "drop": [], "ambiguous": []}
+    buckets_by_tier = {"rollout": [], "deep": [], "brief": [], "drop": [], "ambiguous": []}
     for b in bundles:  # bundles.json order is already deterministic (B0001, B0002, ...)
         bid = b["id"]
         buckets_by_tier[tiers_by_id[bid]["tier"]].append(bid)
 
+    rollout = sorted(buckets_by_tier["rollout"])
     deep = sorted(buckets_by_tier["deep"])
     brief = sorted(buckets_by_tier["brief"])
     drop = sorted(buckets_by_tier["drop"])
@@ -471,6 +554,7 @@ def build_triage_payload(bundles, tiers_by_id, extra_stats=None):
 
     stats = {
         "total_bundles": len(bundles),
+        "rollout": len(rollout),
         "deep": len(deep),
         "brief": len(brief),
         "drop": len(drop),
@@ -481,12 +565,14 @@ def build_triage_payload(bundles, tiers_by_id, extra_stats=None):
 
     return {
         "schema_version": 1,
+        "rollout": rollout,
         "deep": deep,
         "brief": brief,
         "drop": drop,
         "ambiguous": ambiguous,
         "stats": stats,
         "reasons": reasons,
+        "rollout_shapes": list(getattr(tiers_by_id, "rollout_shapes", [])),
     }
 
 
@@ -703,13 +789,60 @@ def render_brief_lines(brief_ids, bundles_by_id, tiers_by_id, records):
 
 
 # --------------------------------------------------------------------------
+# rollouts.md
+# --------------------------------------------------------------------------
+
+
+def _markdown_cell(value):
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def render_rollouts(rollout_shapes, rollout_ids, bundles_by_id, records):
+    """Compact aggregate Markdown table for bulk rollout change shapes."""
+    bundle_counts = defaultdict(int)
+    for bundle_id in sorted(rollout_ids):
+        shapes = {
+            record_change_shape(records[member["form_id"]])
+            for member in _non_context_members(bundles_by_id[bundle_id])
+        }
+        for shape in sorted(shapes, key=lambda item: (item[0] or "", item[1])):
+            bundle_counts[shape] += 1
+
+    lines = [
+        "Each row is a single bulk data change affecting many records at once, "
+        "and is normally worth at most one line in the patch notes.",
+        "",
+        "| Records | Bundles | Type | Fields |",
+        "| ---: | ---: | --- | --- |",
+    ]
+    for item in sorted(
+        rollout_shapes,
+        key=lambda value: (
+            -value["record_count"],
+            value["record_type"] or "",
+            tuple(value["paths"]),
+        ),
+    ):
+        shape = item["record_type"], tuple(item["paths"])
+        # An empty path set means every ChangeEntry on those records was
+        # suppressed (raw hex blobs and the like) -- the record changed, but
+        # nothing decoded into a nameable field. Say so rather than "(none)",
+        # which reads like a bug.
+        fields = ", ".join(item["paths"]) or "*(suppressed changes only)*"
+        lines.append(
+            f"| {item['record_count']} | {bundle_counts.get(shape, 0)} | "
+            f"{_markdown_cell(item['record_type'] or '?')} | {_markdown_cell(fields)} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+# --------------------------------------------------------------------------
 # Orchestration
 # --------------------------------------------------------------------------
 
 
 def assemble_outputs(bundles, records, lints_by_id, tiers_by_id, config, extra_stats=None):
-    """Build all four output payloads from a fully-resolved `tiers_by_id`
-    map. Returns {"triage", "deep_slice", "ambiguous", "brief_lines_md"}."""
+    """Build all five outputs from a fully-resolved `tiers_by_id` map."""
     bundles_by_id = {b["id"]: b for b in bundles}
 
     triage_payload = build_triage_payload(bundles, tiers_by_id, extra_stats)
@@ -726,12 +859,19 @@ def assemble_outputs(bundles, records, lints_by_id, tiers_by_id, config, extra_s
     ambiguous_payload = build_ambiguous_payload(ambiguous_bundles, records, max_bundle_chars, max_change_chars)
 
     brief_lines_md = render_brief_lines(triage_payload["brief"], bundles_by_id, tiers_by_id, records)
+    rollouts_md = render_rollouts(
+        triage_payload["rollout_shapes"],
+        triage_payload["rollout"],
+        bundles_by_id,
+        records,
+    )
 
     return {
         "triage": triage_payload,
         "deep_slice": deep_slice_payload,
         "ambiguous": ambiguous_payload,
         "brief_lines_md": brief_lines_md,
+        "rollouts_md": rollouts_md,
     }
 
 
@@ -748,11 +888,12 @@ def write_outputs(out_dir, result):
     _write_json(work_dir / "deep-slice.json", result["deep_slice"])
     _write_json(work_dir / "ambiguous.json", result["ambiguous"])
     (work_dir / "brief-lines.md").write_text(result["brief_lines_md"], encoding="utf-8")
+    (work_dir / "rollouts.md").write_text(result["rollouts_md"], encoding="utf-8")
 
 
 def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):
     """Fresh rule-only tiering. Returns the same dict `assemble_outputs`
-    does; also writes the four `work/` files."""
+    does; also writes the five `work/` files."""
     bundles_data = load_bundles(out_dir)
     comp_data = load_comprehensive(out_dir)
     config = load_tiers_config(tiers_path)
@@ -796,7 +937,7 @@ def merge_assessment(tiers_by_id, assessment):
 
 def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH):
     """Recompute rule-based tiers, overlay the assessor's resolution for the
-    ambiguous set, and re-emit all four `work/` files."""
+    ambiguous set, and re-emit all five `work/` files."""
     bundles_data = load_bundles(out_dir)
     comp_data = load_comprehensive(out_dir)
     config = load_tiers_config(tiers_path)
@@ -827,7 +968,7 @@ def print_summary(triage_payload, stream=sys.stderr):
     header = f"{'tier':<12}{'count':>8}"
     print(header, file=stream)
     print("-" * len(header), file=stream)
-    for tier in ("deep", "brief", "drop", "ambiguous"):
+    for tier in ("rollout", "deep", "brief", "drop", "ambiguous"):
         print(f"{tier:<12}{stats.get(tier, 0):>8}", file=stream)
     print("-" * len(header), file=stream)
     print(f"{'total':<12}{stats.get('total_bundles', 0):>8}", file=stream)
@@ -839,8 +980,9 @@ def build_arg_parser():
     ap = argparse.ArgumentParser(
         prog="triage_bundles.py",
         description="Mechanical-triage stage: assign every bundles.json bundle a tier "
-                     "(deep/brief/drop/ambiguous) via tools/patch_notes_tiers.json, and "
-                     "write OUT/work/{triage.json,deep-slice.json,ambiguous.json,brief-lines.md}.",
+                     "(rollout/deep/brief/drop/ambiguous) via tools/patch_notes_tiers.json, and "
+                     "write OUT/work/{triage.json,deep-slice.json,ambiguous.json,"
+                     "brief-lines.md,rollouts.md}.",
     )
     ap.add_argument("out_dir", help="Pipeline output directory (must contain bundles.json + comprehensive.json).")
     ap.add_argument(
@@ -850,7 +992,7 @@ def build_arg_parser():
     ap.add_argument(
         "--merge-assessment", default=None, metavar="ASSESSMENT_JSON",
         help='Merge an assessor\'s {"tiers": {bundle_id: {"tier","reason"}}} JSON file, '
-             "resolving the ambiguous set, then re-emit all four work/ files.",
+             "resolving the ambiguous set, then re-emit all five work/ files.",
     )
     return ap
 

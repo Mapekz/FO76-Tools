@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Tests for tools/triage_bundles.py.
 
-Covers rule matching for each tier (deep/brief/drop/ambiguous), first-match-
-wins ordering (both within one rule list and across the deep > brief > drop
-> ambiguous priority), ambiguous-digest truncation, the merge-assessment
+Covers rule matching for each tier (rollout/deep/brief/drop/ambiguous),
+first-match-wins ordering (both within one rule list and across the rollout
+> deep > drop > brief > ambiguous priority), ambiguous-digest truncation, the merge-assessment
 round-trip, brief-line templating, and rerun determinism. Small synthetic
 bundle/comprehensive dicts throughout -- no game data. A handful of tests
 also exercise the real shipped tools/patch_notes_tiers.json to confirm it
@@ -690,7 +690,7 @@ class TestBuildTriagePayload(unittest.TestCase):
         self.assertEqual(payload["ambiguous"], ["B0004"])
         self.assertEqual(
             payload["stats"],
-            {"total_bundles": 4, "deep": 1, "brief": 1, "drop": 1, "ambiguous": 1},
+            {"total_bundles": 4, "rollout": 0, "deep": 1, "brief": 1, "drop": 1, "ambiguous": 1},
         )
 
     def test_reasons_only_include_bundles_with_a_reason(self):
@@ -712,6 +712,108 @@ class TestBuildTriagePayload(unittest.TestCase):
         tiers = tb.compute_bundle_tiers(self.bundles, self.records, MINI_CONFIG)
         payload = tb.build_triage_payload(self.bundles, tiers, extra_stats={"resolved_by_assessor": 2})
         self.assertEqual(payload["stats"]["resolved_by_assessor"], 2)
+
+
+# --------------------------------------------------------------------------
+# Bulk rollout shape detection and tiering
+# --------------------------------------------------------------------------
+
+
+class TestRolloutTier(unittest.TestCase):
+    @staticmethod
+    def config(threshold):
+        config = dict(MINI_CONFIG)
+        config["settings"] = {"rollout_min_records": threshold}
+        return config
+
+    def test_shape_at_threshold_tiers_its_bundles_rollout(self):
+        records = {
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Object Bounds / X1", 1, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Object Bounds / Y1", 1, 2)]),
+        }
+        bundles = [
+            make_bundle("B0001", [make_member("0x01", "MISC")]),
+            make_bundle("B0002", [make_member("0x02", "MISC")]),
+        ]
+        tiers = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        self.assertEqual(tiers["B0001"], {
+            "tier": "rollout", "reason": "rollout:MISC/Object Bounds", "bucket": None,
+        })
+        self.assertEqual(tiers["B0002"]["tier"], "rollout")
+
+    def test_shape_below_threshold_keeps_old_tier(self):
+        records = {
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Data / Custom", 1, 2)]),
+        }
+        bundle = make_bundle("B0001", [make_member("0x01", "MISC")])
+        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertEqual(tiers["B0001"]["tier"], "ambiguous")
+
+    def test_bulk_changed_record_mixed_with_added_record_is_not_rollout(self):
+        records = {
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Data / Custom", 1, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Data / Custom", 2, 3)]),
+            "0x03": make_record("0x03", "ARTO", status="added"),
+        }
+        bundle = make_bundle("B0001", [
+            make_member("0x01", "MISC"),
+            make_member("0x03", "ARTO", status="added", role="satellite"),
+        ])
+        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertNotEqual(tiers["B0001"]["tier"], "rollout")
+
+    def test_different_member_shapes_must_each_be_bulk(self):
+        records = {
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Data / X", 1, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Data / Y", 1, 2)]),
+            "0x03": make_record("0x03", "MISC", changes=[make_change("Full Name", "a", "b")]),
+        }
+        bundle = make_bundle("B0001", [
+            make_member("0x01", "MISC"),
+            make_member("0x03", "MISC", role="satellite"),
+        ])
+        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertNotEqual(tiers["B0001"]["tier"], "rollout")
+
+        records["0x04"] = make_record("0x04", "MISC", changes=[make_change("Full Name", "c", "d")])
+        tiers = tb.compute_bundle_tiers([bundle], records, self.config(2))
+        self.assertEqual(tiers["B0001"]["tier"], "rollout")
+        self.assertEqual(tiers["B0001"]["reason"], "rollout:MISC/Data")
+
+    def test_rollout_shapes_and_ids_are_deterministically_ordered(self):
+        records = {
+            "0x05": make_record("0x05", "WEAP", changes=[make_change("Zulu / X", 1, 2)]),
+            "0x04": make_record("0x04", "MISC", changes=[make_change("Alpha / Y", 1, 2)]),
+            "0x03": make_record("0x03", "WEAP", changes=[make_change("Zulu / Y", 1, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Alpha / X", 1, 2)]),
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Alpha / Z", 1, 2)]),
+        }
+        bundles = [
+            make_bundle(f"B000{i}", [make_member(f"0x0{i}", records[f"0x0{i}"]["record_type"])])
+            for i in (5, 3, 1, 4, 2)
+        ]
+        tiers = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        payload = tb.build_triage_payload(bundles, tiers)
+        self.assertEqual(payload["rollout"], ["B0001", "B0002", "B0003", "B0004", "B0005"])
+        self.assertEqual(
+            [(shape["record_count"], shape["record_type"], shape["paths"])
+             for shape in payload["rollout_shapes"]],
+            [(3, "MISC", ["Alpha"]), (2, "WEAP", ["Zulu"])],
+        )
+        self.assertEqual(payload["rollout_shapes"][0]["example_form_ids"], ["0x01", "0x02", "0x04"])
+
+    def test_non_rollout_existing_fixture_tiers_are_unchanged(self):
+        fixture = TestBuildTriagePayload()
+        fixture.setUp()
+        expected = {
+            bundle["id"]: tb.assign_tier(bundle, fixture.records, MINI_CONFIG)[0]
+            for bundle in fixture.bundles
+        }
+        actual = tb.compute_bundle_tiers(fixture.bundles, fixture.records, MINI_CONFIG)
+        self.assertEqual(
+            {bundle_id: info["tier"] for bundle_id, info in actual.items()},
+            expected,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -881,11 +983,19 @@ class TestMergeAssessment(unittest.TestCase):
         self.assertEqual(tiers["B0001"]["reason"], "assessor:pure bookkeeping")
 
     def test_does_not_touch_already_resolved_bundles(self):
-        tiers = {"B0001": {"tier": "deep", "reason": "deep:x", "bucket": None}}
-        assessment = {"tiers": {"B0001": {"tier": "drop", "reason": "should be ignored"}}}
+        tiers = {
+            "B0001": {"tier": "deep", "reason": "deep:x", "bucket": None},
+            "B0002": {"tier": "rollout", "reason": "rollout:INFO/Previous INFO", "bucket": None},
+        }
+        assessment = {"tiers": {
+            "B0001": {"tier": "drop", "reason": "should be ignored"},
+            "B0002": {"tier": "deep", "reason": "should also be ignored"},
+        }}
         tb.merge_assessment(tiers, assessment)
         self.assertEqual(tiers["B0001"]["tier"], "deep")
         self.assertEqual(tiers["B0001"]["reason"], "deep:x")
+        self.assertEqual(tiers["B0002"]["tier"], "rollout")
+        self.assertEqual(tiers["B0002"]["reason"], "rollout:INFO/Previous INFO")
 
     def test_unmentioned_ambiguous_bundle_stays_ambiguous(self):
         tiers = {"B0001": {"tier": "ambiguous", "reason": None, "bucket": None}}
@@ -959,7 +1069,7 @@ def _write_mini_tiers_config(tmp_path):
 
 
 class TestRunTriage(unittest.TestCase):
-    def test_writes_all_four_files(self):
+    def test_writes_all_five_files(self):
         bundles_data, comprehensive_data = _sample_pipeline_output()
         with TempOutDir(bundles_data, comprehensive_data) as out_dir:
             tiers_path = _write_mini_tiers_config(out_dir)
@@ -970,6 +1080,7 @@ class TestRunTriage(unittest.TestCase):
             self.assertTrue((out_dir / "work" / "deep-slice.json").is_file())
             self.assertTrue((out_dir / "work" / "ambiguous.json").is_file())
             self.assertTrue((out_dir / "work" / "brief-lines.md").is_file())
+            self.assertTrue((out_dir / "work" / "rollouts.md").is_file())
 
             on_disk_triage = load_json(out_dir / "work" / "triage.json")
             self.assertEqual(on_disk_triage, result["triage"])
@@ -987,13 +1098,13 @@ class TestRunTriage(unittest.TestCase):
             first = {
                 p.name: p.read_bytes()
                 for p in (out_dir / "work").glob("*")
-                if p.name in ("triage.json", "deep-slice.json", "ambiguous.json", "brief-lines.md")
+                if p.name in ("triage.json", "deep-slice.json", "ambiguous.json", "brief-lines.md", "rollouts.md")
             }
             tb.run_triage(out_dir, tiers_path)
             second = {
                 p.name: p.read_bytes()
                 for p in (out_dir / "work").glob("*")
-                if p.name in ("triage.json", "deep-slice.json", "ambiguous.json", "brief-lines.md")
+                if p.name in ("triage.json", "deep-slice.json", "ambiguous.json", "brief-lines.md", "rollouts.md")
             }
             self.assertEqual(first, second)
 
@@ -1023,6 +1134,7 @@ class TestRunMergeAssessment(unittest.TestCase):
 
             brief_md = (out_dir / "work" / "brief-lines.md").read_text(encoding="utf-8")
             self.assertIn("Mystery", brief_md)
+            self.assertTrue((out_dir / "work" / "rollouts.md").is_file())
 
     def test_still_ambiguous_bundles_remain_after_merge(self):
         bundles_data, comprehensive_data = _sample_pipeline_output()
@@ -1053,6 +1165,7 @@ class TestRealConfig(unittest.TestCase):
         for rule_list in ("deep_rules", "brief_rules", "drop_rules"):
             ids = [r["id"] for r in self.config[rule_list]]
             self.assertEqual(len(ids), len(set(ids)), f"duplicate rule id in {rule_list}")
+        self.assertEqual(self.config["settings"]["rollout_min_records"], 20)
 
     def test_omod_custom_edid_is_deep(self):
         bundle = make_bundle("B0001", [make_member("0x01", "OMOD", "mod_Custom_MechanicsBestFriend")])
