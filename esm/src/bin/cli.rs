@@ -2098,11 +2098,23 @@ fn cmd_coverage(
         }
     }
 
-    if gate && report.totals.raw_fallback > 0 {
-        anyhow::bail!(
-            "gate check failed: {} raw_fallback marker(s) found",
-            report.totals.raw_fallback
-        );
+    // Gate on decode/schema coverage only — not `unresolved`, which indicates
+    // missing localization BA2 strings rather than a decode failure.
+    if gate {
+        let totals = &report.totals;
+        let mut failures = Vec::new();
+        if totals.raw_fallback > 0 {
+            failures.push(format!("{} raw_fallback", totals.raw_fallback));
+        }
+        if totals.unmapped > 0 {
+            failures.push(format!("{} unmapped", totals.unmapped));
+        }
+        if totals.unknown_record > 0 {
+            failures.push(format!("{} unknown_record", totals.unknown_record));
+        }
+        if !failures.is_empty() {
+            anyhow::bail!("gate check failed: {}", failures.join(", "));
+        }
     }
     Ok(())
 }
