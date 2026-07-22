@@ -460,3 +460,67 @@ When that happens the newer snapshot's `FULL`/`DESC` lstring IDs get resolved ag
 absent from the diff, and the diff's `_unresolved` count is much higher than an
 auto-detected-per-ESM run (192 vs 12 on 20260710→20260717). Always pass
 `--strings-dir-a`/`--strings-dir-b` per side, or let the daemon auto-detect per ESM.
+
+## OMOD `Attribute Descriptor Keywords` (NAM3) = the mod menu's stat blurb
+
+An OMOD's `Attribute Descriptor Keywords` array holds `MAD_*` (Modification **A**ttribute
+**D**escriptor — e.g. `MAD_Superior`, `MAD_Inferior`) and `MAN_*` (Modification **A**ttribute
+**N**ame — e.g. `MAN_CriticalHitDamage` "Critical Shot Damage", `MAN_SecondaryDMG` "Bash
+Damage", `MAN_Range` "Range") keywords. They compose the descriptive line the crafting/mod
+menu shows for that mod ("Superior Critical Shot Damage"); they carry no stat of their own.
+The schema member is `NAM3` and has **no** `from_version`/`below_version` gate, so an
+appearance/disappearance here is real data, not version-gate churn. A mod dropping to `0
+items` therefore loses its menu blurb while keeping its actual effect. Verified 2026-07-22 on
+the 20260710→20260717 diff, where 353 weapon-mod OMODs across 46 weapon families went to zero
+and none gained any.
+
+## Pipeline gotcha: ROLLOUT shapes are blind to values (found 2026-07-22)
+
+A change shape is `(record_type, set of changed field paths)` — it never looks at the
+before/after **values**. So a genuine `3.4028235e+38 → 100.0` edit has the same shape as the
+`null → 3.4028235e+38` schema churn around it, and a real balance change can be tiered ROLLOUT
+purely because ≥20 other records touched the same field. The mandated ROLLOUT sanity check is
+therefore a *value-level* scan, not a skim of `rollouts.md`: for every rollout record, flag any
+ChangeEntry where neither side is null/empty and the two sides still differ after Unicode-NFC
+and whitespace normalization. On 20260710→20260717 that reduced 100,705 entries to ~6,900
+candidates, nearly all `Model / Enlighten Auto UV / Padding?` garbage-to-zeros — but it is what
+surfaced the 353 OMODs that silently lost their descriptor keywords, which a shape skim called
+"editor bookkeeping".
+
+## Localized-flag flips make every text field look changed (found 2026-07-22)
+
+`SeventySix.esm` flipped `Localized` false → true between 20260710 and 20260717 (TES4 flags
+`0x01` → `0x81`). The old side stores `FULL`/`DESC` inline; the new side stores 4-byte lstring
+IDs. Even with per-side string tables wired up correctly, the round-trip normalizes text, so
+one patch produces tens of thousands of text "changes" that are really: mojibake repairs
+(`Mj?lnir` → `Mjölnir`; `????` → `¬¬¬¬`, the legendary star-rating prefix), leading/trailing
+whitespace and newline churn on `Description`/`Header Text`/`Body Text`, and centering
+whitespace on terminal headers. Only treat a text diff as a story when the **wording** changed.
+
+## 'Glowing Creature' leveling migration is not Scorched-exclusive (verified 2026-07-22)
+
+The `crGlowingCreatureLevelAdjust` perk (Entry Point 'Mod NPC Normalized Level', ADD +10) plus a swap onto dedicated `Renorm_MaxLVL_GlowingCreature`/`Renorm_MinLVL_GlowingCreature` GLOBs (min 1 / max 100) and a generic `CT_Creatures_Health_Universal_TierNN` health curve isn't confined to Scorched-family creatures. In the 20260710->20260717 diff it also lands on Prime Cave Cricket and Prime Gulper (Mire encounter creatures) AND on Grahm, the friendly Super Mutant merchant NPC — a non-combat vendor with no epic/combat role at all. Grahm getting it rules out a 'Glowing enemy reskin' theory as the sole driver; read this as a broader leveling-system migration (old Actor-Scaling-Info + Renorm-offset-GLOB model -> perk-based normalized-level adjustment) that's rolling out record-by-record across unrelated NPC categories, not a themed creature rework. The old `zzz`-prefixed duplicate records for at least the Cave Cricket/Gulper Prime tiers were left on the legacy system untouched, confirming the live records are the ones being migrated.
+
+## Unique-mod OMOD can carry zero gameplay effect for patches at a time (worked example: Minty Breather, verified 2026-07-22)
+
+Don't assume a named unique weapon mod already has a live mechanic just because its cosmetic keyword-tagging (`CustomItem_SpeciallyNamed` + a `CustomItemName_*` keyword ADD) and reward leveled-list entry are already wired up and it already has a flavorful `Name`. `mod_Custom_MintyBreather` existed with exactly that shape since at least 20260710 with only those 2 cosmetic keyword-ADD properties and zero functional properties; 20260717 added its first-ever gameplay property (a Perks ADD granting a heal-on-friendly-hit perk, repurposing an old unused PERK record via an EditorID/Description rename plus flipping its `Hidden` flag to true). Always diff an OMOD's actual `Data/Properties` count/contents against the prior snapshot before describing a 'X now does Y' patch note as a magnitude tweak — it may be the mod's first functional effect ever.
+
+## Paint/cosmetic OMODs losing `ma_Melee_Appearance` (or an equivalent shared appearance keyword via REM) signals pool-scoping, not a stat change (worked example: 2026-07-22)
+
+Blue Ridge Branding Iron Paint, Cultist Piercer Paint, and Head Hunter Paint (all unique/quest-reward melee paint OMODs) each lost the `ma_Melee_Appearance` (0x005117B1) tag between 20260710 and 20260717 — two via a direct 'Target OMOD Keywords' removal, one via a new `REM Keywords` property plus a `ModelSwap` addition. This keyword is the generic 'any melee weapon cosmetic' pool tag; losing it likely scopes a paint down to its own dedicated source rather than the shared random-cosmetic pool. Treat this shape (keyword REM/removal with no other property change, on a unique-named paint) as a pool-scoping signal worth flagging, not a numeric change — but note the downstream obtainability isn't automatically provable from the diff alone (see this run's `unresolved`).
+
+## WEAP 'Animation Attack Seconds' / 'Animation Reload Seconds' / 'Bolt Draw Speed' are cosmetic, not gameplay speed (verified 2026-07-22)
+
+A large batch of starter/basic WEAP records (10mm SMG, Hunting Rifle, Combat Knife, Machete, Power Fist, Pump Action Shotgun, Shishkebab, Spear, Switchblade, Tire Iron, Bomb, Dynamite, Meat Hook, plus Cryolator/Plasma Grenade 'Animation Fire Seconds') show 'Data / Animation Attack Seconds', 'RGW3 / Animation Reload Seconds', and 'Bolt Draw Speed' changing between 20260710 and 20260717, often converging on shared values (e.g. many melee weapons landing on exactly 1.1388938). Live-checked Combat Knife and Hunting Rifle on both sides: the real gameplay stats 'Speed', 'Reload Speed', and 'Melee Speed' (Fast/Normal/Slow enum) are byte-for-byte unchanged. This 'Animation *' family is animation-asset timing metadata, decoupled from the actual DPS-affecting fields - treat this whole class as non-gameplay churn (likely an animation-pipeline recalculation), the same trap shape as the WSAM/Sneak-Attack-Multiplier default-pickup case already in this KB. Also seen: WEAP 'RGW2'/'FNAM' struct renamed to 'RGW3' in lockstep with this churn on several utility/creature weapons - a schema/struct-naming shuffle, not new data.
+
+## OMOD/ARMO 'Properties' / 'Object Template Combinations' Step->null + Value2 1->3 churn is serialization noise (verified 2026-07-22)
+
+Across dozens of unrelated ARMO records (Color1/Color7 palette swaps, Letterman's Jacket, Dirty Postman Uniform, Brotherhood Scribe Outfit, Laundered Dresses, Grafton Monsters Jacket, Keep Out Backpack, Vault 118 Jumpsuit, etc.) and at least one OMOD (Bowling Ball Launcher), every 'Material Swaps' (and some other) OMOD-Properties/Object-Mod-Template-Item entry shows the identical pair of changes: 'Step: 0.0 -> null' and, where present, 'Value 2: 1 -> 3'. Identical across totally unrelated records with no other content change is the signature of a global schema/serialization-format change (form_version bump), not a gameplay edit - do not read a 1->3 Value2 as a real multiplier change on these specific properties without an independent live cross-check.
+
+## QUST 'Public Event Data' / 'QTFS' / 'QQSD' / 'Quest Start Data' / 'Actor Reserve Type' schema-population bundle (verified 2026-07-22)
+
+Dozens of unrelated 'public event'-style QUST records (activities, world events, misc/dialogue quests) show an identical cluster of fields appearing from null to an all-default value in the same diff: 'Actor Reserve Flags' (none), 'Actor Reserve Type' (None), 'Public Event Data' (Very Easy / 0 / 0.0), 'QQSD - Unknown 4 bytes' (00000000), 'QTFS (Repeat Limit?)' (65535 = no limit), 'Quest Modules' (one empty struct entry), 'Quest Start Data' (all-zero hex), and 'General / Flags / flags' gaining exactly one named bit ('Has Dialogue Data') with the raw 'General / Flags / value' moving by a constant +0x8000. Every value is a schema default/zero, and it co-occurs with the already-documented 'Aliases'/'Virtual Machine Adapter / script_fragments' positional reindex churn on the same records - treat the whole cluster as schema population from the same form_version bump, not gameplay content, unless a field in the cluster carries a non-default value.
+
+## WEAP/ARMO/MISC 'Value Currency' null->Caps001 is schema population (verified 2026-07-22)
+
+A 'Value Currency' field appearing from null to '0x0000000F (CNCY: Caps001 "Cap")' shows up on a huge range of unrelated purchasable items (weapons, armor pieces, MISC display items) between 20260710 and 20260717, always resolving to the standard Cap currency and never anything else observed. This is a newly-decoded/populated field defaulting to the universal currency, not an economy change - don't read it as a pricing story.
