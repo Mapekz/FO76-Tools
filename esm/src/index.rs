@@ -21,7 +21,15 @@ use std::time::SystemTime;
 // script properties (e.g. a MGEF's "apply effect" script pointing at its
 // SPEL) were silently dropped. Bump forces a rebuild so `refs` picks up the
 // now-correct FormIDs.
-const CACHE_VERSION: u32 = 10;
+//
+// Bumped 10 -> 11: TERM's VMAD (wbVMADFragmentedPERK per xEdit) was decoded
+// with the generic `decode_vmad`, which stops after the base scripts array
+// and never parses the fragment tail — so a terminal's prize `Form_*` script
+// properties (e.g. a prize terminal's shirt/weapon grants) were invisible to
+// `harvest_formids` and dropped from `refs`. Now dispatched to
+// `decode_vmad_perk`. Bump forces a rebuild so `refs` picks up the newly
+// decoded TERM tail FormIDs.
+const CACHE_VERSION: u32 = 11;
 
 /// Per-record data stored in the lazy search index.
 ///

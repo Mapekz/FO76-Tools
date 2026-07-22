@@ -1034,6 +1034,13 @@ pub(crate) fn decode_member(
                         Some("PACK") => decode_vmad_pack(ctx, &sr.data),
                         Some("PERK") => decode_vmad_perk(ctx, &sr.data),
                         Some("SCEN") => decode_vmad_scen(ctx, &sr.data),
+                        // TERM wires wbVMADFragmentedPERK in xEdit's FO76 definitions
+                        // ("same fragments format as in PERK") — reuse that decoder so
+                        // the fragment tail's script-entry properties (e.g. a prize
+                        // terminal's `Form_*` item grants) are decoded and harvested
+                        // into the xref index instead of being silently dropped by the
+                        // generic `decode_vmad`, which stops after the base scripts.
+                        Some("TERM") => decode_vmad_perk(ctx, &sr.data),
                         _ => decode_vmad(ctx, &sr.data),
                     };
                     out.insert(name.clone(), decoded);
@@ -2848,6 +2855,74 @@ mod tests {
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
+    }
+
+    /// Regression test: TERM's VMAD is `wbVMADFragmentedPERK` in xEdit's FO76
+    /// definitions ("same fragments format as in PERK"), but the
+    /// record-signature dispatch in `MemberDef::Vmad`'s decode arm had no
+    /// `"TERM"` case, so it fell through to the generic `decode_vmad`, which
+    /// stops after the base scripts array and never parses the fragment
+    /// tail. A prize terminal (e.g. `Arcade_PrizeTerminal_Tier02`) stores its
+    /// item-grant properties (`Form_NWOTShirt`, ...) as Object-type
+    /// properties of that tail's script entry — they were silently dropped
+    /// from the decoded record and therefore from the xref index (`refs`).
+    /// Pin that TERM now dispatches through `decode_vmad_perk` and the
+    /// tail's Object-property FormID surfaces intact.
+    #[test]
+    fn vmad_term_dispatches_to_perk_fragment_decoder_and_decodes_tail_formid() {
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        ctx.record_signature = Some("TERM");
+
+        // Header: version=2, obj_format=2, script_count=0 — the prize
+        // property lives in the fragment tail's script_entry, not the base
+        // scripts array.
+        let mut data = vmad_header(2, 0);
+        data.push(4); // extra_bind_data_version (s8)
+                      // script_entry: name + status + prop_count=1 + one Object property
+        data.extend(vmad_wstring("Arcade_PrizeTerminal_Tier02"));
+        data.push(0); // status
+        data.extend_from_slice(&1u16.to_le_bytes()); // prop_count
+        data.extend(vmad_wstring("Form_NWOTShirt"));
+        data.push(1); // type = object
+        data.push(1); // status
+                      // Object format 2: Unused(u16) + Alias(s16) + FormID(u32) =
+                      // 0x006677E5 (little-endian, matching the real ESM bytes).
+        data.extend_from_slice(&[0x00, 0x00, 0xff, 0xff, 0xe5, 0x77, 0x66, 0x00]);
+        data.extend_from_slice(&0u16.to_le_bytes()); // frag_count = 0
+
+        let subrecords = [subrecord("VMAD", data, 0)];
+        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
+        for sr in &subrecords {
+            by_sig
+                .entry(sr.signature.as_str().to_string())
+                .or_default()
+                .push_back(sr);
+        }
+
+        let member = MemberDef::Vmad {
+            sig: Some("VMAD".into()),
+            name: "Virtual Machine Adapter".into(),
+        };
+        let mut out = Map::new();
+        decode_member(&ctx, &member, &mut out, &mut by_sig, None);
+
+        let decoded = out
+            .get("Virtual Machine Adapter")
+            .expect("VMAD member must be decoded");
+        assert!(
+            decoded.get("_raw").is_none(),
+            "must not truncate: {decoded}"
+        );
+        let value = decoded
+            .pointer("/script_fragments/script_entry/properties/0/value")
+            .and_then(|v| v.as_str());
+        assert_eq!(
+            value,
+            Some("0x006677E5"),
+            "TERM's fragment-tail Object property must decode via the PERK \
+             dispatch, not vanish through the generic decode_vmad fallback"
+        );
     }
 
     fn sample_bash_damage_curve() -> Value {
