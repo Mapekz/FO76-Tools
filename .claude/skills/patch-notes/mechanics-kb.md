@@ -415,3 +415,48 @@ from dps-76 memory 2026-07-20).
   this one data point, not confirmed from engine source. `0xffff` (65535) reads as "no limit".
   This also fixed a triage gap: a QTFS-only change is now a real numeric delta on a major
   record type (QUST) and auto-DEEPs instead of falling to ambiguous.
+
+## Leveled-list `Chance None` is inverse (verified 2026-07-22)
+
+A LVLI entry's `Chance None Value` / `Chance None Global` is the percent chance of getting
+**nothing** from that slot; the referenced item's own odds are `100 - Chance None`. A GLOB
+feeding `Chance None Global` going **up** is therefore a **nerf** to the referenced item, not
+a buff. Confirmed via `UniqueWeaponSkinDropChance` (0x008FF251) moving 80.0 → 90.0 between
+20260710 and 20260717 — a unique weapon-skin recipe's real odds fell 20% → 10%.
+
+## Positional array reindex churn (verified 2026-07-22)
+
+A diff showing many `_array_diff` `changed` entries whose from/to field sets are identical but
+permuted to new indices is a reserialization artifact, not new content. Confirm the same value
+multiset exists on both sides before reporting. Seen in VMAD `script_fragments`, VMAD
+alias/property name-casing slots, RACE `Attacks[]` / `Bone Scale Data[]`, and LCTN
+`Master Reference` / `Master Unique NPCs` arrays. Tell-tale: mirrored pairs, e.g. a
+`Damage Mult` 1.0 → 1.5 at one index paired with the exact reverse 1.5 → 1.0 elsewhere.
+
+## SPECIAL AVIF `Maximum Value` caps (verified 2026-07-22)
+
+Perception (0x000002C3), Charisma (0x000002C5) and Intelligence (0x000002C6) were already
+capped at 100.0. Strength (0x000002C2), Endurance (0x000002C4), Agility (0x000002C7) and
+Luck (0x000002C8) carried `3.4028235e+38` (float-max, effectively uncapped) until 20260717,
+when all four were set to 100.0 — so all seven SPECIALs now share one ceiling. A SPECIAL AVIF
+`Maximum Value` of float-max means "uncapped", not "no data".
+
+## Description text can lag the effect chain — verify magnitude, don't trust the string
+
+An OMOD/ENCH description changing its stated magnitude does **not** imply the effect changed.
+Chase the actual magnitude before calling it a buff or nerf. Worked example (20260717): the
+Head Hunts `Raging` armor mod (`HTO_mod_Legendary_Armor4_Raging`, 0x0085B997) rewrote its
+description from "Upon being hit, deal +3% Damage for 10 seconds" to "Gain 5% Damage for 10
+Seconds When Hit", but its PERK → SPEL → MGEF chain was untouched and carries magnitude 5.0
+with no 3.0 anywhere — i.e. the **old text was wrong** and this is a correction, not a buff.
+
+## Pipeline gotcha: per-snapshot string tables must be matched per side (found 2026-07-22)
+
+Both FO76 snapshots name their ESM `SeventySix.esm`, so a strings directory belonging to
+snapshot A satisfies a "does this dir have string files for token X" check for **both** sides.
+When that happens the newer snapshot's `FULL`/`DESC` lstring IDs get resolved against the
+**older** snapshot's string table, which silently (a) hides every localized text change and
+(b) reports stale values. Symptom: a rename you can see live via two `esm -p get` calls is
+absent from the diff, and the diff's `_unresolved` count is much higher than an
+auto-detected-per-ESM run (192 vs 12 on 20260710→20260717). Always pass
+`--strings-dir-a`/`--strings-dir-b` per side, or let the daemon auto-detect per ESM.
