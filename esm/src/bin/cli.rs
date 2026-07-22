@@ -11,6 +11,7 @@ use esm::{
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
@@ -46,6 +47,8 @@ struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
 }
+
+const DEFAULT_LANG: &str = "en";
 
 #[derive(clap::Args)]
 struct DiffArgs {
@@ -89,7 +92,7 @@ struct DiffArgs {
     #[arg(long, conflicts_with_all = ["localization_ba2", "strings_dir", "localization_ba2_b"])]
     strings_dir_b: Option<PathBuf>,
     /// Language code for string table lookup.
-    #[arg(long, default_value = "en")]
+    #[arg(long, default_value = DEFAULT_LANG)]
     lang: String,
     /// Startup BA2 for curve tables (both ESMs).
     /// Mutually exclusive with --curves-dir / --startup-ba2-a/b / --curves-dir-a/b.
@@ -111,6 +114,54 @@ struct DiffArgs {
     /// Loose misc/ directory for ESM B only (new side).
     #[arg(long, conflicts_with_all = ["startup_ba2", "curves_dir", "startup_ba2_b"])]
     curves_dir_b: Option<PathBuf>,
+}
+
+impl DiffArgs {
+    fn has_source_overrides(&self) -> bool {
+        self.localization_ba2.is_some()
+            || self.localization_ba2_a.is_some()
+            || self.localization_ba2_b.is_some()
+            || self.strings_dir.is_some()
+            || self.strings_dir_a.is_some()
+            || self.strings_dir_b.is_some()
+            || self.lang != DEFAULT_LANG
+            || self.startup_ba2.is_some()
+            || self.startup_ba2_a.is_some()
+            || self.startup_ba2_b.is_some()
+            || self.curves_dir.is_some()
+            || self.curves_dir_a.is_some()
+            || self.curves_dir_b.is_some()
+    }
+}
+
+#[derive(clap::Args)]
+struct LocalizationArgs {
+    #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
+    localization_ba2: Option<PathBuf>,
+    #[arg(long, conflicts_with = "localization_ba2")]
+    strings_dir: Option<PathBuf>,
+    #[arg(long, default_value = DEFAULT_LANG)]
+    lang: String,
+}
+
+impl LocalizationArgs {
+    fn has_overrides(&self) -> bool {
+        self.localization_ba2.is_some() || self.strings_dir.is_some() || self.lang != DEFAULT_LANG
+    }
+}
+
+#[derive(clap::Args)]
+struct GetSourceArgs {
+    #[command(flatten)]
+    localization: LocalizationArgs,
+    #[arg(long)]
+    startup_ba2: Option<PathBuf>,
+}
+
+impl GetSourceArgs {
+    fn has_overrides(&self) -> bool {
+        self.localization.has_overrides() || self.startup_ba2.is_some()
+    }
 }
 
 #[derive(Subcommand)]
@@ -139,14 +190,8 @@ enum Commands {
         pretty: bool,
         #[arg(long)]
         raw: bool,
-        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
-        localization_ba2: Option<PathBuf>,
-        #[arg(long, conflicts_with = "localization_ba2")]
-        strings_dir: Option<PathBuf>,
-        #[arg(long, default_value = "en")]
-        lang: String,
-        #[arg(long)]
-        startup_ba2: Option<PathBuf>,
+        #[command(flatten)]
+        sources: GetSourceArgs,
         #[arg(long, default_value = "none")]
         resolve: String,
     },
@@ -159,12 +204,8 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
-        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
-        localization_ba2: Option<PathBuf>,
-        #[arg(long, conflicts_with = "localization_ba2")]
-        strings_dir: Option<PathBuf>,
-        #[arg(long, default_value = "en")]
-        lang: String,
+        #[command(flatten)]
+        sources: LocalizationArgs,
     },
     /// Boxed to keep `Commands` from ballooning in size (`diff` carries far
     /// more fields — per-side BA2/strings/curves overrides — than every
@@ -218,12 +259,8 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
-        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
-        localization_ba2: Option<PathBuf>,
-        #[arg(long, conflicts_with = "localization_ba2")]
-        strings_dir: Option<PathBuf>,
-        #[arg(long, default_value = "en")]
-        lang: String,
+        #[command(flatten)]
+        sources: LocalizationArgs,
     },
     Search {
         pattern: String,
@@ -237,12 +274,8 @@ enum Commands {
         json: bool,
         #[arg(long)]
         pretty: bool,
-        #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
-        localization_ba2: Option<PathBuf>,
-        #[arg(long, conflicts_with = "localization_ba2")]
-        strings_dir: Option<PathBuf>,
-        #[arg(long, default_value = "en")]
-        lang: String,
+        #[command(flatten)]
+        sources: LocalizationArgs,
     },
     /// Automate the "chase pattern" (see .claude/skills/patch-notes/mechanics-kb.md):
     /// for an OMOD, classify its Data.Properties[] rows into
@@ -308,117 +341,9 @@ enum DaemonAction {
 }
 
 #[derive(Parser)]
-enum ReplCommand {
-    Info,
-    Get {
-        /// FormID(s) and/or EditorID(s) (auto-detected per token); mix
-        /// freely. A single target preserves the classic single-record
-        /// output; two or more emit a JSON array. Overridden by
-        /// --formid/--edid for the classic single-selector form.
-        #[arg(conflicts_with_all = ["formid", "edid"])]
-        targets: Vec<String>,
-        #[arg(long, conflicts_with = "edid")]
-        formid: Option<String>,
-        #[arg(long, conflicts_with = "formid")]
-        edid: Option<String>,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
-        #[arg(long)]
-        raw: bool,
-        #[arg(long, default_value = "none")]
-        resolve: String,
-    },
-    List {
-        #[arg(long)]
-        r#type: String,
-        #[arg(long, default_value_t = 50)]
-        limit: usize,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
-    },
-    Diff {
-        file_b: PathBuf,
-        #[arg(long = "type")]
-        record_type: Option<String>,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
-        /// Detail level for decoded fields attached to added/removed record stubs.
-        #[arg(long, value_enum, default_value = "full")]
-        bodies: BodiesArg,
-        /// Keep noisy fields (placement transforms, CELL precombine bookkeeping,
-        /// Object Bounds) instead of suppressing them from `changed` records.
-        #[arg(long)]
-        keep_noise: bool,
-        /// Record-type signature(s) to omit entirely from added/removed/changed
-        /// (repeatable and/or comma-delimited, e.g. `--exclude-type LAND,NAVM`).
-        #[arg(long = "exclude-type", value_delimiter = ',')]
-        exclude_type: Vec<String>,
-    },
-    Tree {
-        #[arg(long = "type")]
-        record_type: Option<String>,
-        #[arg(long, default_value_t = 0)]
-        offset: usize,
-        #[arg(long, default_value_t = 50)]
-        limit: usize,
-        #[arg(long)]
-        pretty: bool,
-    },
-    Coverage {
-        #[arg(long = "type")]
-        record_type: Option<String>,
-        #[arg(long, default_value_t = 0)]
-        sample: usize,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        gate: bool,
-    },
-    Refs {
-        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
-        #[arg(conflicts_with_all = ["formid", "edid"])]
-        target: Option<String>,
-        #[arg(long, conflicts_with = "edid")]
-        formid: Option<String>,
-        #[arg(long, conflicts_with = "formid")]
-        edid: Option<String>,
-        #[arg(long, default_value_t = 100)]
-        limit: usize,
-        /// Reverse-reference walk depth (1 = direct refs only, up to 6).
-        #[arg(long, default_value_t = 1)]
-        depth: usize,
-        /// Narrow rows to referencing records of this 4-character type
-        /// (e.g. `OMOD`); case-insensitive.
-        #[arg(long = "type")]
-        record_type: Option<String>,
-        /// Annotate each row with the JSON field path(s) where it references
-        /// its predecessor in the hop chain. Decodes every emitted row.
-        #[arg(long)]
-        paths: bool,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
-    },
-    Search {
-        pattern: String,
-        #[arg(long = "type", value_delimiter = ',')]
-        types: Vec<String>,
-        #[arg(long = "in", value_enum, default_value = "both")]
-        search_in: SearchInArg,
-        #[arg(long, default_value_t = 100)]
-        limit: usize,
-        #[arg(long)]
-        json: bool,
-        #[arg(long)]
-        pretty: bool,
-    },
+struct ReplInput {
+    #[command(subcommand)]
+    command: Commands,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -524,6 +449,13 @@ fn cmd_skill(install: bool, dir: Option<PathBuf>, force: bool) -> anyhow::Result
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct DispatchOptions {
+    daemon_mode: bool,
+    mmap_index: bool,
+    session: bool,
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let esm_opt = cli.esm.clone();
@@ -573,9 +505,9 @@ fn main() -> anyhow::Result<()> {
         return cmd_skill(install, dir, force);
     }
 
-    // -p  → one-shot print; auto-spawns a warm daemon if none is running
-    //        (same as no-p REPL mode, but exits after the single command).
-    // no -p → REPL mode; always daemon-backed (spawns one if not running).
+    // A supplied subcommand always runs once and exits. With no subcommand,
+    // the CLI enters the REPL.
+    // -p → explicitly request one-shot print mode and a warm daemon.
     // --local → bypass daemon entirely for both modes (cold in-process open).
     let mut backend = if cli.print && !cli.local {
         Backend::Remote(RemoteBackend::connect_with_override(
@@ -588,236 +520,39 @@ fn main() -> anyhow::Result<()> {
     let daemon_mode = matches!(backend, Backend::Remote(_));
 
     if let Some(cmd) = cli.command {
-        let esm_for_repl = match &cmd {
+        let esm = match &cmd {
             Commands::Diff(args) => args.file_a.clone(),
             Commands::Daemon { .. } => unreachable!(),
             Commands::Skill { .. } => unreachable!(),
             _ => resolve_esm(esm_opt.clone())?,
         };
-        match cmd {
-            Commands::Info => cmd_info(&mut backend, &esm_for_repl)?,
-            Commands::Get {
-                targets,
-                formid,
-                edid,
-                json,
-                pretty,
-                raw,
-                localization_ba2,
-                strings_dir,
-                lang,
-                startup_ba2,
-                resolve,
-            } => cmd_get(
-                &mut backend,
-                &esm_for_repl,
-                formid,
-                edid,
-                targets,
-                json,
-                pretty,
-                raw,
-                localization_ba2,
-                strings_dir,
-                &lang,
-                startup_ba2,
-                resolve,
+        return dispatch_command(
+            &esm,
+            &mut backend,
+            cmd,
+            DispatchOptions {
                 daemon_mode,
-                cli.mmap_index,
-            )?,
-            Commands::List {
-                r#type,
-                limit,
-                json,
-                pretty,
-                localization_ba2,
-                strings_dir,
-                lang,
-            } => cmd_list(
-                &mut backend,
-                &esm_for_repl,
-                &r#type,
-                limit,
-                json,
-                pretty,
-                localization_ba2,
-                strings_dir,
-                &lang,
-                daemon_mode,
-            )?,
-            Commands::Diff(args) => {
-                let DiffArgs {
-                    file_a,
-                    file_b,
-                    record_type,
-                    json,
-                    pretty,
-                    bodies,
-                    keep_noise,
-                    exclude_type,
-                    localization_ba2,
-                    localization_ba2_a,
-                    localization_ba2_b,
-                    strings_dir,
-                    strings_dir_a,
-                    strings_dir_b,
-                    lang,
-                    startup_ba2,
-                    startup_ba2_a,
-                    startup_ba2_b,
-                    curves_dir,
-                    curves_dir_a,
-                    curves_dir_b,
-                } = *args;
-                cmd_diff(
-                    &mut backend,
-                    &file_a,
-                    &file_b,
-                    record_type.as_deref(),
-                    json,
-                    pretty,
-                    localization_ba2,
-                    localization_ba2_a,
-                    localization_ba2_b,
-                    strings_dir,
-                    strings_dir_a,
-                    strings_dir_b,
-                    &lang,
-                    startup_ba2,
-                    startup_ba2_a,
-                    startup_ba2_b,
-                    curves_dir,
-                    curves_dir_a,
-                    curves_dir_b,
-                    bodies.into(),
-                    keep_noise,
-                    exclude_type,
-                    daemon_mode,
-                )?
-            }
-            Commands::Tree {
-                record_type,
-                offset,
-                limit,
-                pretty,
-            } => cmd_tree(
-                &mut backend,
-                &esm_for_repl,
-                record_type.as_deref(),
-                offset,
-                limit,
-                pretty,
-            )?,
-            Commands::Coverage {
-                record_type,
-                sample,
-                json,
-                gate,
-            } => cmd_coverage(
-                &mut backend,
-                &esm_for_repl,
-                record_type.as_deref(),
-                sample,
-                json,
-                gate,
-            )?,
-            Commands::Refs {
-                target,
-                formid,
-                edid,
-                limit,
-                depth,
-                record_type,
-                paths,
-                json,
-                pretty,
-                localization_ba2,
-                strings_dir,
-                lang,
-            } => cmd_refs(
-                &mut backend,
-                &esm_for_repl,
-                formid,
-                edid,
-                target,
-                limit,
-                depth,
-                record_type,
-                paths,
-                json,
-                pretty,
-                localization_ba2,
-                strings_dir,
-                &lang,
-                daemon_mode,
-            )?,
-            Commands::Search {
-                pattern,
-                types,
-                search_in,
-                limit,
-                json,
-                pretty,
-                localization_ba2,
-                strings_dir,
-                lang,
-            } => cmd_search(
-                &mut backend,
-                &esm_for_repl,
-                &pattern,
-                types,
-                search_in,
-                limit,
-                json,
-                pretty,
-                localization_ba2,
-                strings_dir,
-                &lang,
-                daemon_mode,
-            )?,
-            Commands::Chase {
-                selector,
-                depth,
-                ref_limit,
-                json,
-            } => cmd_chase(
-                &mut backend,
-                &esm_for_repl,
-                &selector,
-                depth,
-                ref_limit,
-                json,
-            )?,
-            Commands::Walk {
-                selector,
-                depth,
-                refs,
-                json,
-            } => cmd_walk(&mut backend, &esm_for_repl, &selector, depth, refs, json)?,
-            Commands::Daemon { .. } => unreachable!(),
-            Commands::Skill { .. } => unreachable!(),
-        }
-        if !cli.print {
-            return run_repl(&esm_for_repl, &mut backend);
-        }
-        return Ok(());
+                mmap_index: cli.mmap_index,
+                session: false,
+            },
+        );
     }
 
     // No subcommand: pure REPL
     let esm = resolve_esm(esm_opt)?;
-    run_repl(&esm, &mut backend)
+    run_repl(&esm, &mut backend, daemon_mode)
 }
 
-fn run_repl(esm: &Path, backend: &mut Backend) -> anyhow::Result<()> {
+fn run_repl(esm: &Path, backend: &mut Backend, daemon_mode: bool) -> anyhow::Result<()> {
     eprintln!(
         "esm REPL — session: {} (type 'help' for commands)",
         esm.display()
     );
     let stdin = io::stdin();
-    let mut stdout = io::stdout();
+    let mut stderr = io::stderr();
     loop {
-        write!(stdout, "esm> ")?;
-        stdout.flush()?;
+        write!(stderr, "esm> ")?;
+        stderr.flush()?;
         let mut line = String::new();
         if stdin.lock().read_line(&mut line)? == 0 {
             break;
@@ -829,97 +564,193 @@ fn run_repl(esm: &Path, backend: &mut Backend) -> anyhow::Result<()> {
         if line == "quit" || line == "exit" {
             break;
         }
-        if line == "help" {
-            eprintln!("Commands: info, get, list, search, refs, tree, diff, coverage, quit");
-            continue;
-        }
-        let tokens: Vec<String> = shlex::split(line)
+        let mut tokens: Vec<String> = shlex::split(line)
             .unwrap_or_else(|| line.split_whitespace().map(String::from).collect());
-        let args: Vec<String> = std::iter::once("esm".to_string()).chain(tokens).collect();
-        let cmd = match ReplCommand::try_parse_from(&args) {
-            Ok(c) => c,
+        if line == "help" {
+            tokens = vec!["--help".to_string()];
+        }
+        let mut args: Vec<OsString> = std::iter::once(OsString::from("esm"))
+            .chain(tokens.into_iter().map(OsString::from))
+            .collect();
+        if args.get(1).is_some_and(|token| token == "diff") {
+            // `Commands::Diff` always has the same two positional paths. In a
+            // session, inject the already-open ESM as side A before handing
+            // the tokens to the same clap parser used by one-shot mode.
+            args.insert(2, esm.as_os_str().to_owned());
+        }
+        let cmd = match ReplInput::try_parse_from(args) {
+            Ok(parsed) => parsed.command,
             Err(e) => {
                 eprintln!("{e}");
                 continue;
             }
         };
-        if let Err(e) = dispatch_repl(esm, backend, cmd) {
+        // These lifecycle commands deliberately remain early-return-only in
+        // `main`, before any ESM or backend is constructed.
+        if matches!(&cmd, Commands::Daemon { .. } | Commands::Skill { .. }) {
+            eprintln!("error: daemon and skill commands are only available outside the REPL");
+            continue;
+        }
+        if let Err(e) = dispatch_command(
+            esm,
+            backend,
+            cmd,
+            DispatchOptions {
+                daemon_mode,
+                mmap_index: false,
+                session: true,
+            },
+        ) {
             eprintln!("error: {:#}", e);
         }
     }
     Ok(())
 }
 
-fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow::Result<()> {
+fn dispatch_command(
+    esm: &Path,
+    backend: &mut Backend,
+    cmd: Commands,
+    options: DispatchOptions,
+) -> anyhow::Result<()> {
+    let has_session_overrides = match &cmd {
+        Commands::Get { sources, .. } => sources.has_overrides(),
+        Commands::List { sources, .. }
+        | Commands::Refs { sources, .. }
+        | Commands::Search { sources, .. } => sources.has_overrides(),
+        Commands::Diff(args) => args.has_source_overrides(),
+        _ => false,
+    };
+    if options.session && has_session_overrides {
+        anyhow::bail!(
+            "per-call BA2/strings/curves/language overrides are unavailable in the REPL; \
+             configure them when opening the session"
+        );
+    }
+
     match cmd {
-        ReplCommand::Info => cmd_info(backend, esm),
-        ReplCommand::Get {
+        Commands::Info => cmd_info(backend, esm),
+        Commands::Get {
             targets,
             formid,
             edid,
             json,
             pretty,
             raw,
+            sources:
+                GetSourceArgs {
+                    localization:
+                        LocalizationArgs {
+                            localization_ba2,
+                            strings_dir,
+                            lang,
+                        },
+                    startup_ba2,
+                },
             resolve,
         } => cmd_get(
-            backend, esm, formid, edid, targets, json, pretty, raw, None, None, "en", None,
-            resolve, true,  // daemon_mode (REPL is always daemon-backed)
-            false, // mmap_index (not applicable in REPL)
+            backend,
+            esm,
+            formid,
+            edid,
+            targets,
+            json,
+            pretty,
+            raw,
+            localization_ba2,
+            strings_dir,
+            &lang,
+            startup_ba2,
+            resolve,
+            options.daemon_mode,
+            options.mmap_index,
         ),
-        ReplCommand::List {
+        Commands::List {
             r#type,
             limit,
             json,
             pretty,
+            sources:
+                LocalizationArgs {
+                    localization_ba2,
+                    strings_dir,
+                    lang,
+                },
         } => cmd_list(
-            backend, esm, &r#type, limit, json, pretty, None, None, "en", true,
-        ),
-        ReplCommand::Diff {
-            file_b,
-            record_type,
-            json,
-            pretty,
-            bodies,
-            keep_noise,
-            exclude_type,
-        } => cmd_diff(
             backend,
             esm,
-            &file_b,
-            record_type.as_deref(),
+            &r#type,
+            limit,
             json,
             pretty,
-            None, // localization_ba2
-            None, // localization_ba2_a
-            None, // localization_ba2_b
-            None, // strings_dir
-            None, // strings_dir_a
-            None, // strings_dir_b
-            "en",
-            None, // startup_ba2
-            None, // startup_ba2_a
-            None, // startup_ba2_b
-            None, // curves_dir
-            None, // curves_dir_a
-            None, // curves_dir_b
-            bodies.into(),
-            keep_noise,
-            exclude_type,
-            true, // daemon_mode
+            localization_ba2,
+            strings_dir,
+            &lang,
+            options.daemon_mode,
         ),
-        ReplCommand::Tree {
+        Commands::Diff(args) => {
+            let DiffArgs {
+                file_a,
+                file_b,
+                record_type,
+                json,
+                pretty,
+                bodies,
+                keep_noise,
+                exclude_type,
+                localization_ba2,
+                localization_ba2_a,
+                localization_ba2_b,
+                strings_dir,
+                strings_dir_a,
+                strings_dir_b,
+                lang,
+                startup_ba2,
+                startup_ba2_a,
+                startup_ba2_b,
+                curves_dir,
+                curves_dir_a,
+                curves_dir_b,
+            } = *args;
+            cmd_diff(
+                backend,
+                &file_a,
+                &file_b,
+                record_type.as_deref(),
+                json,
+                pretty,
+                localization_ba2,
+                localization_ba2_a,
+                localization_ba2_b,
+                strings_dir,
+                strings_dir_a,
+                strings_dir_b,
+                &lang,
+                startup_ba2,
+                startup_ba2_a,
+                startup_ba2_b,
+                curves_dir,
+                curves_dir_a,
+                curves_dir_b,
+                bodies.into(),
+                keep_noise,
+                exclude_type,
+                options.daemon_mode,
+            )
+        }
+        Commands::Tree {
             record_type,
             offset,
             limit,
             pretty,
         } => cmd_tree(backend, esm, record_type.as_deref(), offset, limit, pretty),
-        ReplCommand::Coverage {
+        Commands::Coverage {
             record_type,
             sample,
             json,
             gate,
         } => cmd_coverage(backend, esm, record_type.as_deref(), sample, json, gate),
-        ReplCommand::Refs {
+        Commands::Refs {
             target,
             formid,
             edid,
@@ -929,6 +760,12 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             paths,
             json,
             pretty,
+            sources:
+                LocalizationArgs {
+                    localization_ba2,
+                    strings_dir,
+                    lang,
+                },
         } => cmd_refs(
             backend,
             esm,
@@ -941,21 +778,52 @@ fn dispatch_repl(esm: &Path, backend: &mut Backend, cmd: ReplCommand) -> anyhow:
             paths,
             json,
             pretty,
-            None,
-            None,
-            "en",
-            true,
+            localization_ba2,
+            strings_dir,
+            &lang,
+            options.daemon_mode,
         ),
-        ReplCommand::Search {
+        Commands::Search {
             pattern,
             types,
             search_in,
             limit,
             json,
             pretty,
+            sources:
+                LocalizationArgs {
+                    localization_ba2,
+                    strings_dir,
+                    lang,
+                },
         } => cmd_search(
-            backend, esm, &pattern, types, search_in, limit, json, pretty, None, None, "en", true,
+            backend,
+            esm,
+            &pattern,
+            types,
+            search_in,
+            limit,
+            json,
+            pretty,
+            localization_ba2,
+            strings_dir,
+            &lang,
+            options.daemon_mode,
         ),
+        Commands::Chase {
+            selector,
+            depth,
+            ref_limit,
+            json,
+        } => cmd_chase(backend, esm, &selector, depth, ref_limit, json),
+        Commands::Walk {
+            selector,
+            depth,
+            refs,
+            json,
+        } => cmd_walk(backend, esm, &selector, depth, refs, json),
+        Commands::Daemon { .. } => unreachable!(),
+        Commands::Skill { .. } => unreachable!(),
     }
 }
 
@@ -2160,5 +2028,62 @@ mod tests {
     #[test]
     fn skill_md_has_frontmatter() {
         assert!(SKILL_MD.starts_with("---\nname: esm-cli"));
+    }
+
+    #[test]
+    fn repl_parser_exposes_chase_and_walk() {
+        let chase = ReplInput::try_parse_from(["esm", "chase", "0x463F"])
+            .expect("REPL should parse chase through the shared command enum");
+        assert!(matches!(chase.command, Commands::Chase { .. }));
+
+        let walk = ReplInput::try_parse_from(["esm", "walk", "0x463F"])
+            .expect("REPL should parse walk through the shared command enum");
+        assert!(matches!(walk.command, Commands::Walk { .. }));
+    }
+
+    #[test]
+    fn one_shot_json_has_no_trailing_repl_prompt() {
+        let Ok(esm_path) = std::env::var("RUST_TEST_ESM") else {
+            return;
+        };
+
+        let binary = std::env::var_os("CARGO_BIN_EXE_esm")
+            .map(PathBuf::from)
+            .or_else(|| {
+                let test_exe = std::env::current_exe().ok()?;
+                let debug_dir = test_exe.parent()?.parent()?;
+                let candidate = debug_dir.join(format!("esm{}", std::env::consts::EXE_SUFFIX));
+                candidate.is_file().then_some(candidate)
+            });
+        let mut command = if let Some(binary) = binary {
+            std::process::Command::new(binary)
+        } else {
+            let mut cargo = std::process::Command::new(env!("CARGO"));
+            cargo
+                .current_dir(env!("CARGO_MANIFEST_DIR"))
+                .args(["run", "--quiet", "--bin", "esm", "--"]);
+            cargo
+        };
+
+        let output = command
+            .arg("--local")
+            .arg("--esm")
+            .arg(esm_path)
+            .args(["get", "0x463F", "--json"])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .expect("run one-shot esm get");
+
+        assert!(
+            output.status.success(),
+            "esm get failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice::<Value>(&output.stdout).unwrap_or_else(|error| {
+            panic!(
+                "stdout was not one strict JSON value ({error}):\n{}",
+                String::from_utf8_lossy(&output.stdout)
+            )
+        });
     }
 }
