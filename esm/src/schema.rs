@@ -223,6 +223,53 @@ pub enum MemberDef {
     },
 }
 
+impl MemberDef {
+    /// Returns this member's directly declared subrecord signature, if any.
+    pub fn sig(&self) -> Option<&str> {
+        match self {
+            MemberDef::Struct { sig, .. }
+            | MemberDef::Array { sig, .. }
+            | MemberDef::Union { sig, .. }
+            | MemberDef::Integer { sig, .. }
+            | MemberDef::Float { sig, .. }
+            | MemberDef::String { sig, .. }
+            | MemberDef::LString { sig, .. }
+            | MemberDef::FormId { sig, .. }
+            | MemberDef::Bytes { sig, .. }
+            | MemberDef::ByteRgba { sig, .. }
+            | MemberDef::Vec3 { sig, .. }
+            | MemberDef::Empty { sig, .. }
+            | MemberDef::Unused { sig, .. }
+            | MemberDef::Unknown { sig, .. }
+            | MemberDef::RawFallback { sig, .. }
+            | MemberDef::Vmad { sig, .. }
+            | MemberDef::Ctda { sig, .. }
+            | MemberDef::ModelInfo { sig, .. } => sig.as_deref(),
+            MemberDef::RStruct { .. } | MemberDef::RArray { .. } => None,
+        }
+    }
+
+    /// Returns whether this member or any nested member declares `sig`.
+    pub fn contains_sig(&self, sig: &str) -> bool {
+        if self.sig() == Some(sig) {
+            return true;
+        }
+        match self {
+            MemberDef::Struct { fields, .. } => fields.iter().any(|field| field.contains_sig(sig)),
+            MemberDef::RStruct { members, .. } => {
+                members.iter().any(|member| member.contains_sig(sig))
+            }
+            MemberDef::RArray { element, .. } | MemberDef::Array { element, .. } => {
+                element.contains_sig(sig)
+            }
+            MemberDef::Union { variants, .. } => {
+                variants.iter().any(|variant| variant.contains_sig(sig))
+            }
+            _ => false,
+        }
+    }
+}
+
 pub type FieldDef = MemberDef;
 
 /// Selects which of the three string-table files an LString lives in.
