@@ -729,7 +729,17 @@ fn element_key_spec(sample: &serde_json::Map<String, Value>) -> Option<KeySpec> 
     if let Some(name) = index_members.into_iter().next() {
         return Some(vec![vec![name.clone()]]);
     }
-    // 9. Exactly one FormID-shaped member.
+    // 9. VMAD script properties: a Papyrus property is identified by its name.
+    //    This must precede the FormID-shaped fallback below — a property's
+    //    `value` is often FormID-shaped and is NOT an identity: several
+    //    properties on one script routinely share a value (e.g. three quest
+    //    aliases all pointing at the owning quest), so keying on it cannot
+    //    tell them apart and a reordered property list reads as every
+    //    property mutating.
+    if body.contains_key("name") && body.contains_key("type") && body.contains_key("value") {
+        return Some(vec![vec!["name".to_string()]]);
+    }
+    // 10. Exactly one FormID-shaped member.
     let formid_members: Vec<&String> = body
         .iter()
         .filter(|(_, v)| is_formid_shaped(v))
@@ -1017,9 +1027,20 @@ fn array_diff(a: &[Value], b: &[Value]) -> Value {
         return set_diff(a, b);
     }
 
+    // Arrays of arrays (Papyrus struct-array properties are the common case:
+    // a VMAD property whose value is a list of structs, each a list of
+    // name/type/value members). Pair them positionally so each inner array
+    // gets its own classification — without this the whole nest collapses to
+    // one opaque from/to blob, and a reorder *inside* any struct reprints
+    // every struct on both sides.
+    if a.len() == b.len() && a.iter().chain(b.iter()).all(Value::is_array) {
+        return positional_diff(a, b);
+    }
+
     if !a.iter().chain(b.iter()).all(Value::is_object) {
         // Heterogeneous element shapes (mixed primitive/object, nested
-        // arrays, …) aren't classifiable — keep the legacy opaque form.
+        // arrays of differing length, …) aren't classifiable — keep the
+        // legacy opaque form.
         return opaque_array_diff(a, b);
     }
 

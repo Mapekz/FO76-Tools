@@ -63,6 +63,109 @@ fn json_diff_absent_vs_non_null_still_reported() {
     assert_eq!(d["Description"]["to"], json!("Vote Counter"));
 }
 
+// ---------------------------------------------------------------------------
+// VMAD script properties are keyed by name, not by value
+// ---------------------------------------------------------------------------
+
+/// Real case: QUST `GQ_WorkshopReclaim` (0x000011F0). Three quest-alias
+/// properties all carry the SAME value (the owning quest's FormID); between
+/// snapshots 20260710 and 20260717 the list was reordered, indices 1 and 2
+/// swapping. Keying on `value` cannot tell the three apart, so the reorder
+/// was reported as two properties mutating.
+#[test]
+fn vmad_property_reorder_is_not_a_change() {
+    let props = |names: [&str; 3]| {
+        json!({"properties": names.iter()
+            .map(|n| json!({"name": n, "type": 1, "value": "0x000011F0"}))
+            .collect::<Vec<_>>()})
+    };
+    let a = props(["Alias_WorkshopLocation", "Alias_Workshop", "Alias_Owner"]);
+    let b = props(["Alias_WorkshopLocation", "Alias_Owner", "Alias_Workshop"]);
+    assert_eq!(
+        json_diff(&a, &b),
+        json!({}),
+        "a pure property reorder must produce no diff"
+    );
+}
+
+/// The name-keying must still report a genuine edit to a property's value,
+/// and must not be fooled into pairing by position.
+#[test]
+fn vmad_property_value_change_is_reported() {
+    let a = json!({"properties": [
+        {"name": "AllowVisitors", "type": 5, "value": true},
+        {"name": "OpenTeam", "type": 5, "value": true},
+    ]});
+    let b = json!({"properties": [
+        {"name": "OpenTeam", "type": 5, "value": true},
+        {"name": "AllowVisitors", "type": 5, "value": false},
+    ]});
+    let ad = &json_diff(&a, &b)["properties"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("keyed"));
+    assert_eq!(ad["key_fields"], json!(["name"]));
+    let changed = ad["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1, "only AllowVisitors actually changed");
+    assert_eq!(changed[0]["key"]["name"], json!("AllowVisitors"));
+    assert_eq!(changed[0]["changes"]["value"]["from"], json!(true));
+    assert_eq!(changed[0]["changes"]["value"]["to"], json!(false));
+}
+
+/// Real case: QUST `GQ_Horde` (0x0000123F). The `EncounterWaves` property's
+/// value is a Papyrus struct array — an array of arrays of name/type/value
+/// members. Only the member order *inside* each struct changed, but an
+/// array-of-arrays had no object sample to classify, so the whole nest was
+/// emitted as one opaque from/to blob reprinting every struct on both sides.
+#[test]
+fn vmad_struct_array_inner_reorder_is_not_a_change() {
+    let wave = |order: [&str; 3]| {
+        json!(order
+            .iter()
+            .map(|n| match *n {
+                "IDString" => json!({"name": "IDString", "type": 2, "value": "Entourage"}),
+                "Difficulty" => json!({"name": "Difficulty", "type": 3, "value": 2}),
+                _ => json!({"name": "SpawnArea", "type": 1, "value": "0x0000123F"}),
+            })
+            .collect::<Vec<_>>())
+    };
+    let a = json!({"value": [wave(["IDString", "Difficulty", "SpawnArea"])]});
+    let b = json!({"value": [wave(["SpawnArea", "IDString", "Difficulty"])]});
+    assert_eq!(
+        json_diff(&a, &b),
+        json!({}),
+        "reordering members inside a struct-array element must produce no diff"
+    );
+}
+
+/// The struct-array recursion must still surface a real edit inside a struct.
+#[test]
+fn vmad_struct_array_inner_value_change_is_reported() {
+    let wave = |diff: i64| {
+        json!([[
+            {"name": "IDString", "type": 2, "value": "Entourage"},
+            {"name": "Difficulty", "type": 3, "value": diff},
+        ]])
+    };
+    let d = json_diff(&json!({"value": wave(2)}), &json!({"value": wave(4)}));
+    let inner = &d["value"]["_array_diff"]["changed"][0]["changes"]["_array_diff"]["changed"][0];
+    assert_eq!(inner["key"]["name"], json!("Difficulty"));
+    assert_eq!(inner["changes"]["value"]["from"], json!(2));
+    assert_eq!(inner["changes"]["value"]["to"], json!(4));
+}
+
+/// A property being added or removed is structural, not a reorder.
+#[test]
+fn vmad_property_added_is_reported() {
+    let a = json!({"properties": [{"name": "OpenTeam", "type": 5, "value": true}]});
+    let b = json!({"properties": [
+        {"name": "OpenTeam", "type": 5, "value": true},
+        {"name": "UseEventRespawnSystem", "type": 5, "value": false},
+    ]});
+    let ad = &json_diff(&a, &b)["properties"]["_array_diff"];
+    let added = ad["added"].as_array().unwrap();
+    assert_eq!(added.len(), 1);
+    assert_eq!(added[0]["name"], json!("UseEventRespawnSystem"));
+}
+
 #[test]
 fn json_diff_nested_object_recurses() {
     let a = json!({"Data": {"x": 1, "y": 2}});
