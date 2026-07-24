@@ -321,14 +321,45 @@ def _bundle_matching_keyword(bundle, records, ref_names, patterns):
     return None
 
 
-def _has_live_referencer(client, esm, fid, *, depth):
+class _RuleRecordTally:
+    """Per-rule counter for per-record processing errors swallowed inside a
+    rule loop. One summary note is appended to ``ctx['_notes']`` after the
+    loop when ``failures > 0``."""
+
+    def __init__(self, rule_name):
+        self.rule_name = rule_name
+        self.total = 0
+        self.failures = 0
+        self._first_exc = None
+
+    def examined(self):
+        self.total += 1
+
+    def record_failure(self, exc):
+        self.failures += 1
+        if self._first_exc is None:
+            self._first_exc = exc
+
+    def append_note(self, ctx):
+        if not self.failures:
+            return
+        exc = self._first_exc
+        ctx.setdefault("_notes", []).append(
+            f"{self.rule_name}: skipped {self.failures}/{self.total} records due to errors "
+            f"(first: {type(exc).__name__}: {exc})"
+        )
+
+
+def _has_live_referencer(client, esm, fid, *, depth, tally=None):
     """True/False if the reverse-reference walk succeeded and did/didn't
     surface a "can actually reach a player" record type; None if the walk
     itself failed (client error) — callers should treat None as "unknown,
     don't emit"."""
     try:
         result = client.refs(esm, fid, depth=depth)
-    except Exception:
+    except Exception as exc:
+        if tally is not None:
+            tally.record_failure(exc)
         return None
     rows = result.get("rows") if isinstance(result, dict) else None
     if not isinstance(rows, list):
@@ -345,6 +376,7 @@ def rule_lvli_blocked_entry(ctx):
     records = ctx["records"]
     ref_names = ctx["ref_names"]
     lints = []
+    tally = _RuleRecordTally("lvli_blocked_entry")
 
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict) or rec.get("record_type") != "LVLI":
@@ -353,6 +385,7 @@ def rule_lvli_blocked_entry(ctx):
         if status not in ("added", "changed"):
             continue
         edid = rec.get("editor_id") or fid
+        tally.examined()
 
         try:
             if status == "added":
@@ -479,9 +512,11 @@ def rule_lvli_blocked_entry(ctx):
                                 },
                             }
                         )
-        except Exception:
+        except Exception as exc:
+            tally.record_failure(exc)
             continue
 
+    tally.append_note(ctx)
     return lints
 
 
@@ -496,6 +531,7 @@ def rule_dangling_ref(ctx):
     client = ctx["client"]
     new_esm = ctx.get("new_esm")
     old_esm = ctx.get("old_esm")
+    tally = _RuleRecordTally("dangling_ref")
 
     exists_cache = {}
 
@@ -507,7 +543,8 @@ def rule_dangling_ref(ctx):
         if key not in exists_cache:
             try:
                 exists_cache[key] = bool(client.exists(esm, cand))
-            except Exception:
+            except Exception as exc:
+                tally.record_failure(exc)
                 exists_cache[key] = True
         return exists_cache[key]
 
@@ -518,6 +555,7 @@ def rule_dangling_ref(ctx):
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict):
             continue
+        tally.examined()
         if capped:
             break
 
@@ -568,6 +606,7 @@ def rule_dangling_ref(ctx):
             "references may exist but were not reported"
         )
 
+    tally.append_note(ctx)
     return lints
 
 
@@ -585,19 +624,23 @@ def rule_orphaned_unique(ctx):
     bundles = ctx.get("bundles") or []
 
     lints = []
+    tally = _RuleRecordTally("orphaned_unique")
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict):
             continue
         if rec.get("status") not in ("added", "changed"):
             continue
         rtype = rec.get("record_type")
+        tally.examined()
 
         try:
             if rtype == "KYWD":
                 edid = rec.get("editor_id")
                 if not _matches_any(edid, patterns):
                     continue
-                has_live = _has_live_referencer(client, new_esm, fid, depth=ORPHANED_UNIQUE_DEPTH)
+                has_live = _has_live_referencer(
+                    client, new_esm, fid, depth=ORPHANED_UNIQUE_DEPTH, tally=tally
+                )
                 if has_live is None or has_live:
                     continue
                 lints.append(
@@ -621,7 +664,9 @@ def rule_orphaned_unique(ctx):
                 kywd_fid = _bundle_matching_keyword(bundle, records, ref_names, patterns)
                 if kywd_fid is None:
                     continue
-                has_live = _has_live_referencer(client, new_esm, fid, depth=ORPHANED_UNIQUE_DEPTH)
+                has_live = _has_live_referencer(
+                    client, new_esm, fid, depth=ORPHANED_UNIQUE_DEPTH, tally=tally
+                )
                 if has_live is None or has_live:
                     continue
                 edid = rec.get("editor_id") or fid
@@ -642,9 +687,11 @@ def rule_orphaned_unique(ctx):
                         },
                     }
                 )
-        except Exception:
+        except Exception as exc:
+            tally.record_failure(exc)
             continue
 
+    tally.append_note(ctx)
     return lints
 
 
@@ -659,6 +706,7 @@ def rule_unreferenced_perk_rank(ctx):
     new_esm = ctx.get("new_esm")
 
     lints = []
+    tally = _RuleRecordTally("unreferenced_perk_rank")
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict) or rec.get("record_type") != "PERK":
             continue
@@ -666,10 +714,12 @@ def rule_unreferenced_perk_rank(ctx):
             continue
         if rec.get("cut"):
             continue
+        tally.examined()
 
         try:
             result = client.refs(new_esm, fid, depth=1)
-        except Exception:
+        except Exception as exc:
+            tally.record_failure(exc)
             continue
         rows = result.get("rows") if isinstance(result, dict) else None
         if not isinstance(rows, list):
@@ -691,6 +741,7 @@ def rule_unreferenced_perk_rank(ctx):
             }
         )
 
+    tally.append_note(ctx)
     return lints
 
 
@@ -702,10 +753,12 @@ def rule_unreferenced_perk_rank(ctx):
 def rule_desc_changed_stats_same(ctx):
     records = ctx["records"]
     lints = []
+    tally = _RuleRecordTally("desc_changed_stats_same")
 
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict) or rec.get("status") != "changed":
             continue
+        tally.examined()
 
         try:
             desc_entries = []
@@ -738,9 +791,11 @@ def rule_desc_changed_stats_same(ctx):
                     "data": {"paths": [ce.get("path") for ce in desc_entries]},
                 }
             )
-        except Exception:
+        except Exception as exc:
+            tally.record_failure(exc)
             continue
 
+    tally.append_note(ctx)
     return lints
 
 
@@ -752,12 +807,14 @@ def rule_desc_changed_stats_same(ctx):
 def rule_stats_changed_desc_same(ctx):
     records = ctx["records"]
     lints = []
+    tally = _RuleRecordTally("stats_changed_desc_same")
 
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict) or rec.get("record_type") not in STATS_DESC_RECORD_TYPES:
             continue
         if rec.get("status") != "changed":
             continue
+        tally.examined()
 
         try:
             desc = rec.get("description")
@@ -797,9 +854,11 @@ def rule_stats_changed_desc_same(ctx):
                         "data": {"matched_number": fv, "path": ce.get("path")},
                     }
                 )
-        except Exception:
+        except Exception as exc:
+            tally.record_failure(exc)
             continue
 
+    tally.append_note(ctx)
     return lints
 
 

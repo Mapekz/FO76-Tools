@@ -975,5 +975,127 @@ class TestEndToEndCli(unittest.TestCase):
             self.assertEqual(lints_payload["lints"][0]["rule"], "cut_newly_deprecated")
 
 
+# ---------------------------------------------------------------------------
+# Per-record error surfacing (issue #11)
+# ---------------------------------------------------------------------------
+
+
+class _BadFields:
+    """Poison pill: ``dict.get('Entries')`` raises so a rule's per-record loop
+    hits its ``except`` without aborting sibling records."""
+
+    def get(self, key, default=None):
+        raise KeyError("foo")
+
+
+class RefsFailGateway(FakeGateway):
+    """Raises on ``refs()`` for one FormID; otherwise delegates to the fixture."""
+
+    def __init__(self, fixture, fail_formid):
+        super().__init__(fixture)
+        self.fail_formid = fail_formid
+
+    def refs(self, esm, formid, **kwargs):
+        from esm_gateway import formid_to_hex
+
+        if formid_to_hex(formid) == self.fail_formid:
+            raise RuntimeError("refs exploded")
+        return super().refs(esm, formid, **kwargs)
+
+
+class ExistsFailGateway(FakeGateway):
+    """Raises on ``exists()`` for one FormID; otherwise delegates."""
+
+    def __init__(self, fixture, fail_formid):
+        super().__init__(fixture)
+        self.fail_formid = fail_formid
+
+    def exists(self, esm, formid):
+        from esm_gateway import formid_to_hex
+
+        if formid_to_hex(formid) == self.fail_formid:
+            raise RuntimeError("exists exploded")
+        return super().exists(esm, formid)
+
+
+class TestPerRecordErrorNotes(TestRunLintsBase):
+    def test_lvli_rule_loop_failure_surfaces_note_and_keeps_processing(self):
+        good = make_record(
+            "0x01000001",
+            "LVLI",
+            "added",
+            editor_id="LVLI_Good",
+            fields={"Entries": [{"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 1, "Quantity": 0}}]},
+        )
+        bad = make_record("0x01000002", "LVLI", "added", editor_id="LVLI_Bad")
+        bad["fields"] = _BadFields()
+        ctx = self.ctx_for(make_comp([good, bad]))
+
+        lints = rl.RULES["lvli_blocked_entry"](ctx)
+
+        self.assertGreaterEqual(len(lints), 1)
+        self.assertTrue(all(lint["form_id"] == "0x01000001" for lint in lints))
+        self.assertEqual(len(ctx["_notes"]), 1)
+        note = ctx["_notes"][0]
+        self.assertTrue(note.startswith("lvli_blocked_entry: skipped 1/2 records due to errors"))
+        self.assertIn("KeyError: 'foo'", note)
+
+    def test_run_lints_propagates_rule_note_into_meta(self):
+        bad = make_record("0x01000003", "LVLI", "added", editor_id="LVLI_Bad")
+        bad["fields"] = _BadFields()
+        comp = make_comp([bad])
+        bundles = make_bundles()
+
+        lints_payload, _ = rl.run_lints(
+            comp,
+            bundles,
+            no_op_client(),
+            "new.esm",
+            "old.esm",
+            {},
+            rules=["lvli_blocked_entry"],
+        )
+
+        self.assertEqual(lints_payload["lints"], [])
+        self.assertIn("notes", lints_payload["meta"])
+        self.assertEqual(len(lints_payload["meta"]["notes"]), 1)
+        self.assertIn("lvli_blocked_entry: skipped 1/1 records due to errors", lints_payload["meta"]["notes"][0])
+
+    def test_orphaned_unique_refs_helper_failure_surfaces_note_without_crash(self):
+        rec = make_record("0x00100080", "KYWD", "added", editor_id="OrphanKeyword")
+        ctx = self.ctx_for(
+            make_comp([rec]),
+            client=RefsFailGateway(REFS_GRAPH_FIXTURE, "0x00100080"),
+            settings={"unique_keyword_patterns": ["*Keyword"]},
+        )
+
+        lints = rl.RULES["orphaned_unique"](ctx)
+
+        self.assertEqual(lints, [])
+        self.assertEqual(len(ctx["_notes"]), 1)
+        note = ctx["_notes"][0]
+        self.assertTrue(note.startswith("orphaned_unique: skipped 1/1 records due to errors"))
+        self.assertIn("RuntimeError: refs exploded", note)
+
+    def test_dangling_ref_exists_helper_failure_is_fail_open_and_surfaces_note(self):
+        rec = make_record(
+            "0x02000001",
+            "WEAP",
+            "changed",
+            editor_id="WEAP_Test",
+            refs_out=[{"formid": "0x0BADF00D", "path": "Data / Ammo"}],
+        )
+        client = ExistsFailGateway({"records": {}, "refs": {}}, "0x0BADF00D")
+        ctx = self.ctx_for(make_comp([rec]), client=client)
+
+        lints = rl.RULES["dangling_ref"](ctx)
+
+        self.assertEqual(lints, [])
+        self.assertEqual(len(ctx["_notes"]), 1)
+        note = ctx["_notes"][0]
+        self.assertTrue(note.startswith("dangling_ref: skipped 1/1 records due to errors"))
+        self.assertIn("RuntimeError: exists exploded", note)
+
+
 if __name__ == "__main__":
     unittest.main()
