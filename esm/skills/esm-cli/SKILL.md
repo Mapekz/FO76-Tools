@@ -162,6 +162,20 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   instantaneous on-target proc like a bleed DoT, which applies once with no
   persistent buff.
 
+## Perk rank verification (PCRD)
+
+**PCRD is the perk-card source of truth, not the PERK rank chain.** Each card carries a `Special`
+enum, per-rank `Card Rank Cost`, a `Race Restriction`, and a `Perks[]` array of rank → PERK
+FormIDs. `Perks[]` reflects the live, rebalanced card shape — a card's effective max rank clamps
+DOWN to its entry count. Ranks have been compressed without the PERK EditorID numbering being
+updated, so counting PERK records is not a reliable rank count.
+
+Rank chains and ability SPELs linger as cut content after a compression, including
+engine-attached-looking orphaned spells. Cross-check any rank or orphaned spell against `Perks[]`
+(and `refs` the spell to see whether a live rank references it) before treating a record-graph tier
+as live. Confirmed via the "Lock and Load" family: PCRD lists 1 rank against a 3-rank record chain
+plus a cut orphaned spell.
+
 ## Obtainability verdicts (`walk --refs`)
 
 - Player-facing referrer types: COBJ, GMRW, LGDI, QUST, CONT, MISC, FLST.

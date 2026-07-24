@@ -284,22 +284,6 @@ either: QUST `EncounterWaves[].BossEpicLevel` (only meaningful when that wave's 
   rank and level; don't reintroduce the cap or a player-count model when a number looks large.
 *verified 2026-07-19 vs 20260710*
 
-## PCRD is the perk-card source of truth, not the PERK rank chain
-
-Each card carries a `Special` enum, per-rank `Card Rank Cost`, a `Race Restriction`, and a
-`Perks[]` array of rank → PERK FormIDs. **`Perks[]` reflects the live, rebalanced card shape** — a
-card's effective max rank clamps DOWN to its entry count. Ranks have been compressed without the
-PERK EditorID numbering being updated, so counting PERK records is not a reliable rank count.
-
-Rank chains and ability SPELs linger as cut content after a compression, including
-engine-attached-looking orphaned spells. Cross-check any rank or orphaned spell against `Perks[]`
-(and `refs` the spell to see whether a live rank references it) before treating a record-graph tier
-as live.
-
-**Example:** the "Lock and Load" family — PCRD lists 1 rank against a 3-rank record chain plus a
-cut orphaned spell.
-*verified 2026-07-16 vs 20260710*
-
 ## COBJ `Constructible Instantiation Filter Keyword` picks the crafted item's template
 
 The keyword is matched against the created object's
