@@ -2,7 +2,8 @@
 
 Tracked, actionable work lives in [GitHub Issues](https://github.com/Mapekz/FO76-Tools/issues)
 (`gh`, see `docs/agents/issue-tracker.md`) — that's the live, priority-triaged queue as of
-2026-07-22. This file is the complement: informal dated notes not yet promoted to an issue and
+2026-07-24, ranked with `P1`/`P2`/`P3` labels (see `docs/agents/triage-labels.md`). This file
+is the complement: informal dated notes not yet promoted to an issue and
 scope decisions deliberately *not* tracked as work items, grouped under the project they belong
 to. Do not reintroduce per-project `todos.md` files or a `todos/` directory — this stays the
 one file.
@@ -35,6 +36,11 @@ code path, so it is not a backlog item.
 ## `esm-viewer/`
 
 No tracked follow-ups.
+
+Scope note (2026-07-24): the vitest include glob deliberately excludes `.tsx`, so component
+tests are structurally absent — a considered choice, not a gap. Enabling them is tracked at
+low priority in [#16](https://github.com/Mapekz/FO76-Tools/issues/16) (`P3`,
+`ready-for-human`), kept open in case component testing becomes desirable later.
 
 ---
 
