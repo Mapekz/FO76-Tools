@@ -7,9 +7,15 @@ every one to ground truth. Run all commands from the repo root.
 - **Your work queue:** `{SLICE_PATH}` — DEEP-tier bundles (same shape as before:
   `{"bundles": [{"id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids"}],
   "lints": [...]}`). Edges (`dropped via`/`mod for`/`crafts`) are your story connective tissue.
-- **Mechanics KB (read FIRST):** `{KB_PATH}` — known mechanic derivations, the OMOD chase
-  pattern, property semantics, schema errata. Consult before chasing; only chase mechanics
-  it doesn't cover. Entries are dated — re-verify stale-looking ones with one live call.
+- **Knowledge base (read BOTH, FIRST):**
+  - `{MECHANICS_KB}` — game mechanics: the OMOD chase pattern, damage-bonus taxonomy, OMOD
+    property semantics, engine counters, curve semantics. Consult before chasing; only chase
+    mechanics it doesn't cover.
+  - `{TRAPS_KB}` — changes that look real but aren't: serialization/schema-population churn,
+    text churn, semantics traps, and our own lints' known false positives. Check a diff row
+    against this **before** writing it up; most matches should produce no bullet at all.
+
+  Entries are dated — re-verify stale-looking ones with one live call.
 - **Per-record structured diff** (batch FormIDs in one call):
   `python3 esm/tools/slice_bundles.py --extract {OUT} <FORMID> [<FORMID>...]`
 - **Live verification via warm daemon (NEVER `--local`):**
@@ -31,7 +37,7 @@ every one to ground truth. Run all commands from the repo root.
 
 ## FOR EACH BUNDLE
 
-1. **Chase the mechanic to ground truth** (KB "chase pattern" section). For
+1. **Chase the mechanic to ground truth** (`{MECHANICS_KB}`, "Chasing a unique-weapon effect"). For
    `mod_Custom_*`/unique-effect OMODs, run
    `esm/target/release/esm -p --esm "{NEW_ESM}" chase <OMOD> --json` FIRST — it automates the
    keyword/perk-grant/direct-property walk in a handful of bulk calls and returns just the
@@ -55,10 +61,11 @@ every one to ground truth. Run all commands from the repo root.
 4. **Verify before asserting**: reproduce every lint on your bundles with live `get`s — batch
    all the affected FormIDs for a lint into one bulk call rather than looping — before writing
    it up (irreproducible lints go in the report's `lints_not_reproduced`, never the draft).
-   Item-granted perks have no PCRD (see KB) — don't call them orphaned; verify the grant path
-   via `refs "{NEW_ESM}" <perk-id> --type PCRD --paths --pretty` instead. Never assert
-   liveness from an EDID prefix alone (`zzz_`/`CUT_`/`DEL_`/`POST_` are heuristics); POST_
-   content goes only under the datamined section with the standing disclaimer.
+   Check it against `{TRAPS_KB}`'s "Lint false positives" section first: item-granted perks have
+   no PCRD, so don't call them orphaned — verify the grant path via `refs "{NEW_ESM}" <perk-id>
+   --type PCRD --paths --pretty` instead. Never assert liveness from an EDID prefix alone
+   (`zzz_`/`CUT_`/`DEL_`/`POST_` are heuristics); POST_ content goes only under the datamined
+   section with the standing disclaimer.
 
 ## DEFERRALS — do not silently skip
 
@@ -79,10 +86,29 @@ orchestrator reconciles every deferral — an unlisted skip is a dropped story.
      "lints_confirmed": ["..."], "lints_not_reproduced": ["..."],
      "unresolved": [{"what": "...", "tried": "..."}],
      "deferred": [{"form_ids": ["..."], "expected_owner": "...", "note": "..."}],
-     "kb_proposals": ["<new mechanics-kb entry in the KB's own format, as a string>", ...]
+     "kb_proposals": [{"kind": "mechanic|trap", "entry": "<markdown, exact format below>"}]
    }
    ```
    `unresolved` = anything you could not fully derive (the orchestrator chases these
-   interactively). `kb_proposals` = mechanics you derived that the KB doesn't cover yet.
+   interactively). `kb_proposals` = things you derived that the KB doesn't cover yet —
+   `mechanic` for how the game works (→ `{MECHANICS_KB}`), `trap` for a change that looks real
+   but isn't, or a lint false positive (→ `{TRAPS_KB}`).
+
+### `kb_proposals` entry format — follow exactly
+
+The KB is read whole by every writer each run, so an entry that sprawls costs every future run.
+Match this shape or the orchestrator will rewrite it:
+
+```
+## <The rule, stated as a claim — not a topic or a record name>
+<2-4 sentences: how it works and what to do with it. Present tense, no history.>
+**Example:** <ONE worked case, FormIDs inline, ≤4 lines>
+*verified <YYYY-MM-DD> vs <snapshot token>*
+```
+
+Hard limits: **≤10 lines total**, **exactly one** `**Example:**`. Do not write how you found it,
+what you first believed, when a tool or schema was fixed, or which prior run it came from — none
+of that changes what a future writer does. If your entry refines something already in the KB, say
+so in the `entry` text (`refines: <existing heading>`) instead of writing a near-duplicate.
 
 Your final text reply: ≤10 lines — headline findings, unresolved count, deferred count.

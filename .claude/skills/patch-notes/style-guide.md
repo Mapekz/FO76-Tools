@@ -35,7 +35,8 @@ assembled summary alike.
   similarly-named items). FormIDs never appear in narrative prose — only in Evidence lines.
 - No filler. "Various improvements," "general polish," "quality of life updates" are banned.
 - Never write a bare "+X% damage" — name the mechanism, using this standard terminology
-  (mechanics-kb "Damage-bonus mechanisms" has the data-side signatures):
+  (`kb/mechanics.md`, "A '+X% damage' is one of three distinct mechanisms", has the data-side
+  signatures):
   - **"additive damage bonus" (DBM)** — damage-bonus-multiplier pool contributions
     (`STAT_DmgMult*` / conditional `STAT_DmgVs*` AVs, OMOD `DamageBonusMult`, "Mod Weapon
     DMG Bonus Mult" perk entries); stacks additively with other damage bonuses.

@@ -17,6 +17,11 @@ mechanical stage (diffing, bundling, linting, triage) is deterministic Python; y
 steps 1-8 below. Run every command from the repo root — the esm crate's tools and binaries
 live under `esm/` (`esm/target/release/esm`, `python3 esm/tools/<script>.py`).
 
+**Read `.claude/skills/patch-notes/kb/pipeline-gotchas.md` before Step 2.** It catalogues the
+ways this pipeline silently reports the wrong thing (string-table resolution, ROLLOUT value
+blindness, diff blind spots) and the recovery step for each. It is orchestrator-only — the deep
+writers get `kb/mechanics.md` and `kb/diff-traps.md` instead.
+
 ## 1. Resolve inputs
 
 Parse positional args (ignore `--out-dir`, `--official-notes`, `--force-pipeline`, `--force`,
@@ -192,7 +197,8 @@ For each writer, spawn a subagent (Agent tool, `model: sonnet`) with
 |---|---|
 | `{OLD_TOKEN}` / `{NEW_TOKEN}` | snapshot tokens |
 | `{SLICE_PATH}` | `$OUT/work/deep-slice.json` (or its part file) |
-| `{KB_PATH}` | `.claude/skills/patch-notes/mechanics-kb.md` |
+| `{MECHANICS_KB}` | `.claude/skills/patch-notes/kb/mechanics.md` |
+| `{TRAPS_KB}` | `.claude/skills/patch-notes/kb/diff-traps.md` |
 | `{OUT}` | `$OUT` |
 | `{NEW_ESM}` / `{OLD_ESM}` | resolved ESM paths |
 | `{STYLE_GUIDE_PATH}` | `.claude/skills/patch-notes/style-guide.md` |
@@ -218,9 +224,21 @@ Read every draft + report. Then, in order:
    `get`s), soften it to "Unconfirmed:", or cut it. Never pass one through silently.
 3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself in ONE bulk call —
    `esm/target/release/esm -p --esm "$NEW_ESM" get <id1> <id2> <id3> --resolve stub --pretty`.
-4. **Merge `kb_proposals[]`** into `.claude/skills/patch-notes/mechanics-kb.md` (dedupe
-   against existing entries; keep the KB's format and verified-date convention). This is the
-   only file outside `$OUT` this skill may write.
+4. **Merge `kb_proposals[]`** into the KB, routing by each proposal's `kind`: `mechanic` →
+   `.claude/skills/patch-notes/kb/mechanics.md`, `trap` →
+   `.claude/skills/patch-notes/kb/diff-traps.md`. These are the only files outside `$OUT` this
+   skill may write. Before appending, enforce the format (specified in `deep-writer-prompt.md`)
+   yourself — writers drift and the KB is re-read whole by every future run:
+   - **Rewrite, don't paste.** Cut it to ≤10 lines: a claim as the `##` heading, 2-4 sentences of
+     present-tense mechanics, exactly one `**Example:**`, one `*verified <date> vs <snapshot>*`.
+   - **Strip all history** — how it was found, what was believed first, when a tool or schema was
+     fixed, which run it came from. None of it changes what a future writer does.
+   - **Merge into the existing entry** when one already covers the topic (the writer may flag
+     this as `refines: <heading>`). Never append a near-duplicate; a KB with two entries on one
+     mechanic is worse than one stale entry.
+   - Anything about the *pipeline itself* failing (diff blind spots, tiering artifacts, string
+     resolution) belongs in `kb/pipeline-gotchas.md` — write it there yourself, not into the
+     writer-facing files.
 5. **Assemble `$OUT/patch-summary.md`** — ONE document, sections ordered by signal:
    `# FO76 Datamine — Patch <date>` / `## TL;DR` (≤6 bullets) / unique & legendary changes /
    balance / events & quests / new items / `## Datamined: <feature> (not live)` (standing
@@ -271,6 +289,6 @@ expansions in the printed summary either.
   line of its own — collapsing the row count is the point, silence is not.
 - No absolute filesystem paths, ESM filenames, or `$FO76_DATA_DIR` expansions in any file
   under `$OUT`.
-- This skill writes only inside `$OUT`, plus exactly one repo file:
-  `.claude/skills/patch-notes/mechanics-kb.md` (KB merges in Step 6). It never modifies game
-  data or anything else in the repo.
+- This skill writes only inside `$OUT`, plus the KB files under
+  `.claude/skills/patch-notes/kb/` (merges in Step 6). It never modifies game data or anything
+  else in the repo.
