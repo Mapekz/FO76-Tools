@@ -31043,9 +31043,12 @@
                 "sig": "TRAE"
               },
               {
-                "kind": "lstring",
+                "kind": "formid",
                 "sig": "BNAM",
-                "name": "Comment?"
+                "name": "Comment?",
+                "valid_refs": [
+                  "INFO"
+                ]
               },
               {
                 "kind": "lstring",

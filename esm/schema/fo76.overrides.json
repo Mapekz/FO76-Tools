@@ -1123,6 +1123,20 @@
         "_comment": "xEdit leaves this as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) \u2014 undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Decoding the 2 bytes as one u16 is the natural low-level mapping; name hedged with '?' since the repeat-limit semantic is inferred, not confirmed. See mechanics-kb.md 'Known schema gaps'."
       }
     ],
+    "INFO": [
+      {
+        "path": ["Responses", "element", "BNAM"],
+        "node": {
+          "kind": "formid",
+          "sig": "BNAM",
+          "name": "Comment?",
+          "valid_refs": [
+            "INFO"
+          ]
+        },
+        "_comment": "BNAM \u2014 xEdit mislabels as wbLStringKC(BNAM, 'Comment?') (wbDefinitionsFO76.pas:12120); the '?' was authorial doubt. Verified on SeventySix.esm: the 4-byte payload always equals the owning INFO record's own FormID (self-reference), not an lstring ID."
+      }
+    ],
     "RACE": [
       {
         "path": ["Body Data", "Male Body Data", "Parts"],
