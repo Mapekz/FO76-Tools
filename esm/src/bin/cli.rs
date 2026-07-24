@@ -277,7 +277,7 @@ enum Commands {
         #[command(flatten)]
         sources: LocalizationArgs,
     },
-    /// Automate the "chase pattern" (see .claude/skills/patch-notes/mechanics-kb.md):
+    /// Automate the "chase pattern" (see .claude/skills/patch-notes/kb/mechanics.md):
     /// for an OMOD, classify its Data.Properties[] rows into
     /// direct-property/perk-grant/keyword-hook mechanisms; for a PERK/SPEL/
     /// ALCH/ENCH, walk its own Effects[] array directly. Either way, forward-

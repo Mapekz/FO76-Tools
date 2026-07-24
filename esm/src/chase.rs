@@ -1,6 +1,6 @@
 //! Native port of `tools/chase/chase.py` — automates the "chase pattern" for
-//! unique-weapon OMOD effects documented under "How unique-weapon effects are
-//! implemented (the chase pattern)" in `.claude/skills/patch-notes/mechanics-kb.md`,
+//! unique-weapon OMOD effects documented under "Chasing a unique-weapon effect"
+//! in `.claude/skills/patch-notes/kb/mechanics.md`,
 //! and (since the OMOD-only original) generalized to also accept PERK, SPEL,
 //! ALCH, and ENCH selectors directly — the record types an OMOD's own
 //! forward-fetch hops resolve into. Read the KB section first — this module
