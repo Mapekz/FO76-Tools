@@ -100,6 +100,68 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 - **PERK with NO effects**: the bonus is engine/script-side; only the
   description states it.
 
+## Damage-scope traps: character-wide vs weapon-scoped bonuses
+
+- **PERK entry points that read like "weapon damage" are actually
+  character-wide.** Entry point 167 (`Mod Weapon DMG Bonus Mult`) and
+  siblings (`Mod Incoming Weapon Damage`, `Mod Target Damage Resistance`,
+  `Mod My Critical Hit Damage Mult`, `Mod Percent Blocked`, `Mod Power Attack
+  Damage`, `Mod Max Consecutive Hits Allowed`, `Mod Projectile Bounce Count`,
+  `Apply Friendly/Combat Melee Hit Spell`) modify whatever damage instance is
+  happening on the actor right now, not "this weapon's damage." A PERK
+  granted via an OMOD's `Property 116` (chase's "PERK grant") stays active
+  while the granting item is equipped and applies to every simultaneous
+  damage source — thrown grenades/mines, Pain Train, VATS crits, blocking.
+  Example: `MedicalMalpractice_Perk` (0x0050D7FD) is an entry-point-167
+  effect whose only conditions are on the actor's own AV — nothing ties it
+  to the granting weapon.
+- **The fix, when the devs bother, is a self-referential `WornHasKeyword`/
+  `HasKeyword` condition** naming a keyword unique to that item/roll — either
+  its own `CustomItemName_X` naming keyword or a legendary-effect keyword
+  like `HasLegendary_Weapon_APViaKill`. Example: `RD01_Weapon_LicketySplit`
+  gates `Mod Projectile Bounce Count` on
+  `HasKeyword(RD01_CustomItemName_LicketySplit)`. A condition on a *shared*
+  category keyword (`WeaponTypeRanged`, `HasSilencer`) or an unrelated AV
+  (`KillStreak`) is NOT a self-scope — the bonus still leaks, just narrower.
+- **OMOD `Property 106` (`DamageBonusMult`) is the same character-wide hook
+  as entry point 167 — not a per-weapon stat**, despite living on the
+  weapon's own OMOD. Its `Value Type` is bare `Float` (no AV/FormID pointer),
+  consistent with a hardcoded engine target rather than a WEAP field.
+  Example: `mod_Legendary_Weapon1_Guns_TwoShot` sets `DamageBonusMult
+  +0.75` — ordinary "Two Shot" rolls carry this leak, not just one weapon.
+- **`Property 28` (`AttackDamage`) and `Property 77` (`DamageTypeValues`) DO
+  write into the WEAP record's own fields** (`Data.Base Damage` / top-level
+  `Damage Types[]` — see Curve tables below) and are genuinely weapon-scoped.
+  `Property 94` (`ActorValues`) sits in between: a while-equipped character
+  AV bonus (e.g. `mod_Custom_CivilUnrest` → +50 Action Points) — same
+  equip-gated scope as the PERK path, but usually not a damage stat, so it
+  doesn't compound like `DamageBonusMult`/entry-point-167.
+- **A `Property 65` (`Enchantments`) attach can go either way — check the
+  target MGEF's `Casting Type`/`Delivery`/`Archetype`, not just that an
+  enchantment exists.** `Archetype: Damage`, `Casting Type: Fire and Forget`,
+  `Delivery: Contact` is a genuine on-hit proc fired by that weapon's own
+  attack — safe by construction (e.g. `TheKabloom`'s poison DoT). `Casting
+  Type: Constant Effect`, `Delivery: Self` is a standing character buff —
+  same leak risk as entry point 167 unless gated by a condition true only
+  while wielding that weapon (e.g. `GetInIronSights`, since you can't ADS
+  with a grenade). No condition at all is a confirmed leak — e.g.
+  `ench_ThePeacemaker` (`STAT_DmgExplosive`, Constant Effect/Self, zero
+  conditions).
+- **Cross-check a suspiciously broad AV against sibling AVs before assuming
+  it's "the everything" stat** — some are narrower than they look. FO76 has
+  both `STAT_DmgExplosive` (every explosion: Fat Man, launchers, mines,
+  grenades) and a separate, narrower `STAT_DmgGrenade` (thrown grenades
+  only). Chase the actual `Actor Value` FormID on the MGEF; don't infer
+  scope from the AV editor-id prefix alone.
+- **A timed buff can outlive the weapon that triggered it.** An unconditioned
+  entry point that selects a Spell (`Apply Friendly Hit Spell`, `Apply
+  Combat Melee Spell`) is bad enough on its own, but if the Spell's effect
+  carries a duration (the perk's Description often states it — "for 30
+  Seconds" — even when the record's own `Duration` field reads empty),
+  swapping weapons *after* the proc doesn't end the buff. Contrast an
+  instantaneous on-target proc like a bleed DoT, which applies once with no
+  persistent buff.
+
 ## Obtainability verdicts (`walk --refs`)
 
 - Player-facing referrer types: COBJ, GMRW, LGDI, QUST, CONT, MISC, FLST.
@@ -132,6 +194,27 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 
 ## Curve tables
 
+- **A `Curve Table` sibling means the flat scalar next to it is NOT the
+  effective value — the curve is.** This holds wherever the pair appears:
+  `Effects[].Effect.Effect Item Data.Magnitude` on ENCH/SPEL, `Value 2` on an
+  OMOD property, `Amount` on a `Damage Types[]` entry. Read the inlined
+  `curve` points, not the scalar.
+  - **`Magnitude: 0.0` with a `Curve Table` present does not mean "grants
+    nothing."** It reads as an inert or cut effect and isn't — never call an
+    effect dead or unaffected by a balance change on a zero magnitude without
+    checking for a sibling `Curve Table`. Example: `MoM_ench_GarbofMysteries`
+    (0x0052192E) `Effects[1]` has `Magnitude: 0.0` but curve
+    `CT_Armor_MoM_GarbofMysteriesSneak` resolves to **5 → 20**.
+  - **The curve's input axis is the sibling `Actor Value`, and it is often not
+    a level.** Creature-damage and armor-mod curves key on wielder/item level,
+    but some key on a gameplay AV with a tiny domain — the Garb curve above
+    keys on `MoM_EyeOfRa` over `{0, 1}`, a set-bonus toggle rather than a
+    level ramp. Resolve the `Actor Value` before describing what moves the
+    number; an AV nothing in the ESM writes is engine-side — say so rather
+    than guessing a trigger.
+  - `get --resolve stub --pretty` already inlines the `curve` points,
+    `curve_path`, and keying `Actor Value` on the same effect — one call
+    gives you everything above; don't quote a bare magnitude.
 - Out-of-domain inputs clamp to the curve's own first/last point — no
   extrapolation, no implied zero. A zero floor is an authoring choice encoded
   as an explicit `{x:0, y:0}` point; some legitimate curves deliberately omit
