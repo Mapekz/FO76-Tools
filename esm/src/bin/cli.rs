@@ -1171,13 +1171,8 @@ fn cmd_refs(
         // attached to the finished RefList (as `capped`/`depth_capped` are)
         // would only print after the wait is already over.
         eprintln!(
-            "warning: --depth 0 requests an unbounded reverse-reference walk (no fixed \
-             hop cap). Measured on the live ESM: ~620K rows by hop 9, growing ~5-8x per \
-             level on hub-heavy graphs (CELL/REFR) — this can take minutes. Neither \
-             --type nor --limit reduce this cost: the walk traverses (and decodes) every \
-             referencer regardless, only filtering/truncating what gets printed \
-             afterward. The only way to bound the cost is a finite --depth; Ctrl-C now \
-             if that's what you want instead."
+            "warning: --depth 0 is unbounded and can take minutes on hub-heavy graphs \
+             (--type/--limit don't reduce the cost); Ctrl-C to abort."
         );
     }
     // `--entry-point`/`--ep` bypasses `record_sel`'s FormID/EditorID parsing
