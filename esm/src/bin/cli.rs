@@ -251,6 +251,25 @@ enum Commands {
         /// its entry point(s); `VIA` starts at depth 1 naming the carrier.
         #[arg(long = "entry-point", visible_alias = "ep", conflicts_with_all = ["formid", "edid"])]
         entry_point: Option<String>,
+        /// FormID or EditorID of a second record — instead of walking the
+        /// full reverse-reference graph, find one connecting chain of
+        /// reverse-reference hops from the primary target to this one via a
+        /// bidirectional search (meets in the middle, so it never
+        /// materializes the full closure). Directional, matching `esm refs
+        /// <target>` itself: this looks for a chain showing that --to
+        /// transitively references the primary target, not the reverse — if
+        /// no path is found, the two records may still be connected the
+        /// other way (swap which one is the positional target vs --to).
+        /// Incompatible with the closure-walk options
+        /// (--depth/--limit/--type/--sort/--entry-point) since there's no
+        /// "everything found" set to narrow or truncate — only the one
+        /// chain (if any).
+        #[arg(long, conflicts_with_all = ["entry_point", "limit", "depth", "record_type", "sort"])]
+        to: Option<String>,
+        /// Combined hop-count ceiling for --to's bidirectional search
+        /// (default 12). Only meaningful with --to.
+        #[arg(long, default_value_t = 0, requires = "to")]
+        max_hops: usize,
         #[arg(long, default_value_t = 100)]
         limit: usize,
         /// Reverse-reference walk depth (1 = direct refs only, up to 8;
@@ -809,6 +828,8 @@ fn dispatch_command(
             formid,
             edid,
             entry_point,
+            to,
+            max_hops,
             limit,
             depth,
             record_type,
@@ -822,25 +843,33 @@ fn dispatch_command(
                     strings_dir,
                     lang,
                 },
-        } => cmd_refs(
-            backend,
-            esm,
-            formid,
-            edid,
-            target,
-            entry_point,
-            limit,
-            depth,
-            record_type,
-            paths,
-            sort.into(),
-            json,
-            pretty,
-            localization_ba2,
-            strings_dir,
-            &lang,
-            options.daemon_mode,
-        ),
+        } => {
+            if let Some(to) = to {
+                cmd_ref_path(
+                    backend, esm, formid, edid, target, to, max_hops, paths, json, pretty,
+                )
+            } else {
+                cmd_refs(
+                    backend,
+                    esm,
+                    formid,
+                    edid,
+                    target,
+                    entry_point,
+                    limit,
+                    depth,
+                    record_type,
+                    paths,
+                    sort.into(),
+                    json,
+                    pretty,
+                    localization_ba2,
+                    strings_dir,
+                    &lang,
+                    options.daemon_mode,
+                )
+            }
+        }
         Commands::Search {
             pattern,
             types,
@@ -1357,6 +1386,88 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
         }
         note.push_str("; use --limit 0 to show all, or --sort depth for a breadth-first prefix");
         eprintln!("{note}");
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_ref_path(
+    backend: &mut Backend,
+    file: &Path,
+    formid: Option<String>,
+    edid: Option<String>,
+    target: Option<String>,
+    to: String,
+    max_hops: usize,
+    paths: bool,
+    json: bool,
+    pretty: bool,
+) -> anyhow::Result<()> {
+    let from = record_sel(formid, edid, target)?;
+    let to = RecordSel::from_input(&to)?;
+    let v = backend.run(
+        file,
+        Op::RefPath {
+            from,
+            to,
+            max_hops,
+            paths,
+        },
+    )?;
+    let result: esm::ipc::RefPathResult = serde_json::from_value(v)?;
+    print_ref_path(&result, json, pretty);
+    Ok(())
+}
+
+fn print_ref_path(result: &esm::ipc::RefPathResult, json: bool, pretty: bool) {
+    if json {
+        print_json(&serde_json::to_value(result).unwrap(), pretty);
+        return;
+    }
+    let Some(chain) = &result.chain else {
+        if result.budget_exhausted {
+            eprintln!(
+                "no path found between {} and {}, but the search budget was exhausted first \
+                 — this is inconclusive, not a confirmed absence of any connection; try a \
+                 smaller --max-hops or a --type-narrowed manual refs walk from one side",
+                result.from, result.to
+            );
+        } else {
+            eprintln!(
+                "no path found between {} and {} within the hop budget (raise --max-hops, \
+                 default {}). This search is directional — it looks for a chain of \
+                 referencers connecting FROM's transitive referencer chain to TO (the same \
+                 direction `esm refs FROM` walks); if you're not sure which side is the \
+                 \"referenced\" one, also try swapping them: refs {} --to {}",
+                result.from,
+                result.to,
+                esm::ipc::DEFAULT_MAX_PATH_HOPS,
+                result.to,
+                result.from
+            );
+        }
+        return;
+    };
+    let hops = result.hops.unwrap_or(chain.len().saturating_sub(1));
+    println!("path found, {hops} hop(s) (reverse-reference direction):");
+    println!();
+    for (i, hop) in chain.iter().enumerate() {
+        let label = format!(
+            "{}  {}  {}",
+            hop.form_id,
+            hop.record_type.as_deref().unwrap_or(""),
+            hop.editor_id.as_deref().unwrap_or(""),
+        );
+        let name = hop.name.as_deref().unwrap_or("");
+        if i == 0 {
+            println!("  {label}  {name}");
+        } else {
+            println!("   <-{i} {label}  {name}");
+        }
+        if let Some(fp) = &hop.field_paths {
+            if !fp.is_empty() {
+                println!("        via: {}", fp.join("; "));
+            }
+        }
     }
 }
 

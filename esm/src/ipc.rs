@@ -2,7 +2,9 @@
 
 use crate::diff::{diff_databases_with, DiffOptions};
 use crate::registry::Registry;
-use crate::{Database, EntryPointRef, EntryPointSpec, FilterOp, FormId, ResolveDepth, SearchField};
+use crate::{
+    Database, EntryPointRef, EntryPointSpec, FilterOp, FormId, RecordRow, ResolveDepth, SearchField,
+};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -209,6 +211,24 @@ pub enum Op {
         /// a FormID-lexical slice.
         #[serde(default)]
         sort: RefSort,
+    },
+    /// Find one connecting chain of reverse-reference hops between two
+    /// records — see [`find_ref_path`]. Distinct from `ReferencedBy`: that
+    /// enumerates the *entire* reverse-reference graph out to a depth;
+    /// this answers "how (if at all) is A connected to B" directly, via a
+    /// bidirectional search that never materializes the full closure.
+    RefPath {
+        from: RecordSel,
+        to: RecordSel,
+        /// Combined hop-count ceiling across both search directions
+        /// (0 = [`DEFAULT_MAX_PATH_HOPS`]).
+        #[serde(default)]
+        max_hops: usize,
+        /// Annotate each hop with the JSON field path(s) inside it that
+        /// reference the previous hop. Opt-in — requires decoding every
+        /// hop on the chain, unlike the default search.
+        #[serde(default)]
+        paths: bool,
     },
     ListGroups,
     ListTypeChildren {
@@ -581,6 +601,17 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                 )?,
             };
             Ok(serde_json::to_value(&ref_list)?)
+        }
+        Op::RefPath {
+            from,
+            to,
+            max_hops,
+            paths,
+        } => {
+            let from = resolve_sel(db, from)?;
+            let to = resolve_sel(db, to)?;
+            let result = find_ref_path(db, from, to, *max_hops, *paths)?;
+            Ok(serde_json::to_value(&result)?)
         }
         Op::ListGroups => {
             let groups = db.list_groups();
@@ -1138,6 +1169,286 @@ fn merge_entry_points(dst: &mut Vec<EntryPointRef>, incoming: &[EntryPointRef]) 
     dst.extend(incoming.iter().cloned());
     dst.sort();
     dst.dedup_by(|a, b| a.id == b.id);
+}
+
+/// Default `--max-hops` for [`find_ref_path`] when the caller passes 0.
+pub const DEFAULT_MAX_PATH_HOPS: usize = 12;
+
+/// Node-visit ceiling for [`find_ref_path`]'s bidirectional search, combined
+/// across both frontiers — a backstop against a disconnected/near-total
+/// closure search still trying to enumerate hundreds of thousands of nodes
+/// one at a time. When hit, the answer is genuinely "don't know" (see
+/// [`RefPathResult::budget_exhausted`]), not "definitely no path".
+const REF_PATH_NODE_BUDGET: usize = 200_000;
+
+/// One node on a [`RefPathResult`] chain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct RefPathHop {
+    pub form_id: String,
+    pub record_type: Option<String>,
+    pub editor_id: Option<String>,
+    pub name: Option<String>,
+    /// JSON field path(s) inside *this* hop's own decoded body where it
+    /// references the previous hop in the chain (the one closer to
+    /// `RefPathResult::from`). `None` unless `paths` was requested; always
+    /// absent on the first hop (`from` itself has no predecessor to point at).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_paths: Option<Vec<String>>,
+}
+
+/// Outcome of [`find_ref_path`] — a chain of reverse-reference hops
+/// connecting `from` to `to` (`from` first, `to` last), or a report of why
+/// none was found.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct RefPathResult {
+    pub from: String,
+    pub to: String,
+    /// `Some(chain)` when a path was found within `max_hops`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain: Option<Vec<RefPathHop>>,
+    /// `chain.len() - 1` (0 when `from == to`). `None` alongside `chain: None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hops: Option<usize>,
+    /// True when [`REF_PATH_NODE_BUDGET`] was exhausted before a path was
+    /// found or definitively ruled out within `max_hops` — the search result
+    /// is inconclusive, not a confirmed "no path exists".
+    pub budget_exhausted: bool,
+}
+
+/// Bidirectional BFS connecting `from` to `to` via the reverse-reference
+/// relation — the same relation [`referenced_by_walk`] follows one-directionally
+/// (`n` is connected to `m` when `m` is in `referenced_by(n)`, i.e. `m`'s body
+/// contains `n`'s FormID).
+///
+/// A plain one-directional walk from `from` must expand *every* referencer at
+/// every hop, which balloons on hub-heavy graphs (CELL/REFR nodes routinely
+/// have thousands of referencers) long before it reaches a `to` with a small
+/// number of hops between them. This function instead grows two frontiers at
+/// once and expands whichever is smaller each round:
+/// - **back** (from `from`): expands via [`Database::referenced_by`] — who
+///   references this node. Exactly [`referenced_by_walk`]'s own direction.
+/// - **fwd** (from `to`): expands via [`Database::outgoing_formids`] — what
+///   this node's own body references. This discovers the *predecessor* of a
+///   node in the same reverse-reference chain (if `X`'s body contains `Y`'s
+///   FormID, then `X` is a referencer of `Y`, i.e. `X` is one hop closer to
+///   `from` than `Y` is) — cheap because it's bounded by each node's own
+///   field count, not by how many other records happen to reference it.
+///
+/// The two frontiers meet at a node `M` such that `from` reaches `M` via some
+/// number of back-hops and `to` reaches `M` via some number of fwd-hops;
+/// splicing those two partial chains at `M` yields a complete `from..=to`
+/// chain in the same hop-by-hop shape [`referenced_by_walk`]'s `path`/`VIA`
+/// already uses.
+///
+/// `max_hops` is the combined hop-count ceiling (0 = [`DEFAULT_MAX_PATH_HOPS`]).
+pub fn find_ref_path(
+    db: &mut Database,
+    from: FormId,
+    to: FormId,
+    max_hops: usize,
+    include_paths: bool,
+) -> anyhow::Result<RefPathResult> {
+    let max_hops = if max_hops == 0 {
+        DEFAULT_MAX_PATH_HOPS
+    } else {
+        max_hops
+    };
+
+    if from == to {
+        let hop = ref_path_hop(db, from, None)?;
+        return Ok(RefPathResult {
+            from: from.display(),
+            to: to.display(),
+            chain: Some(vec![hop]),
+            hops: Some(0),
+            budget_exhausted: false,
+        });
+    }
+
+    // parent maps: back_parent[n] = the node one hop closer to `from` that
+    // discovered `n` (n is a referencer of back_parent[n]); fwd_parent[n] =
+    // the node one hop closer to `to` that discovered `n` (fwd_parent[n]'s
+    // body references n, i.e. fwd_parent[n] is a referencer of n).
+    let mut back_parent: HashMap<FormId, FormId> = HashMap::new();
+    let mut fwd_parent: HashMap<FormId, FormId> = HashMap::new();
+    back_parent.insert(from, from);
+    fwd_parent.insert(to, to);
+    let mut back_frontier = vec![from];
+    let mut fwd_frontier = vec![to];
+    let mut back_depth = 0;
+    let mut fwd_depth = 0;
+    // +2 for the two seeds themselves.
+    let mut visited = 2;
+
+    loop {
+        if back_depth + fwd_depth >= max_hops {
+            return Ok(RefPathResult {
+                from: from.display(),
+                to: to.display(),
+                chain: None,
+                hops: None,
+                budget_exhausted: false,
+            });
+        }
+        if back_frontier.is_empty() && fwd_frontier.is_empty() {
+            return Ok(RefPathResult {
+                from: from.display(),
+                to: to.display(),
+                chain: None,
+                hops: None,
+                budget_exhausted: false,
+            });
+        }
+
+        // Expand whichever frontier is smaller (an empty frontier — the
+        // other side ran dry — never gets picked over a non-empty one).
+        let expand_back = !back_frontier.is_empty()
+            && (fwd_frontier.is_empty() || back_frontier.len() <= fwd_frontier.len());
+
+        let mut next_frontier = Vec::new();
+        if expand_back {
+            for &node in &back_frontier {
+                for r in db.referenced_by(node)? {
+                    let Ok(fid) = crate::parse_form_id_input(&r.form_id) else {
+                        continue;
+                    };
+                    if back_parent.contains_key(&fid) {
+                        continue;
+                    }
+                    back_parent.insert(fid, node);
+                    visited += 1;
+                    if fwd_parent.contains_key(&fid) {
+                        return build_ref_path_result(
+                            db,
+                            from,
+                            to,
+                            fid,
+                            &back_parent,
+                            &fwd_parent,
+                            include_paths,
+                        );
+                    }
+                    if visited >= REF_PATH_NODE_BUDGET {
+                        return Ok(RefPathResult {
+                            from: from.display(),
+                            to: to.display(),
+                            chain: None,
+                            hops: None,
+                            budget_exhausted: true,
+                        });
+                    }
+                    next_frontier.push(fid);
+                }
+            }
+            back_frontier = next_frontier;
+            back_depth += 1;
+        } else {
+            for &node in &fwd_frontier {
+                for fid in db.outgoing_formids(node) {
+                    if fwd_parent.contains_key(&fid) {
+                        continue;
+                    }
+                    fwd_parent.insert(fid, node);
+                    visited += 1;
+                    if back_parent.contains_key(&fid) {
+                        return build_ref_path_result(
+                            db,
+                            from,
+                            to,
+                            fid,
+                            &back_parent,
+                            &fwd_parent,
+                            include_paths,
+                        );
+                    }
+                    if visited >= REF_PATH_NODE_BUDGET {
+                        return Ok(RefPathResult {
+                            from: from.display(),
+                            to: to.display(),
+                            chain: None,
+                            hops: None,
+                            budget_exhausted: true,
+                        });
+                    }
+                    next_frontier.push(fid);
+                }
+            }
+            fwd_frontier = next_frontier;
+            fwd_depth += 1;
+        }
+    }
+}
+
+/// Splice the two partial chains at meeting node `meet` into one complete
+/// `from..=to` chain and decode each hop. See [`find_ref_path`] for the
+/// direction convention `back_parent`/`fwd_parent` follow.
+fn build_ref_path_result(
+    db: &mut Database,
+    from: FormId,
+    to: FormId,
+    meet: FormId,
+    back_parent: &HashMap<FormId, FormId>,
+    fwd_parent: &HashMap<FormId, FormId>,
+    include_paths: bool,
+) -> anyhow::Result<RefPathResult> {
+    let mut nodes = vec![meet];
+    let mut cur = meet;
+    while cur != from {
+        cur = back_parent[&cur];
+        nodes.push(cur);
+    }
+    nodes.reverse(); // [from, ..., meet]
+
+    let mut cur = meet;
+    while cur != to {
+        cur = fwd_parent[&cur];
+        nodes.push(cur);
+    }
+    // nodes is now [from, ..., meet, ..., to].
+
+    let hops = nodes.len() - 1;
+    let mut chain = Vec::with_capacity(nodes.len());
+    for (i, &n) in nodes.iter().enumerate() {
+        let predecessor = if i > 0 { Some(nodes[i - 1]) } else { None };
+        chain.push(ref_path_hop(db, n, predecessor.filter(|_| include_paths))?);
+    }
+
+    Ok(RefPathResult {
+        from: from.display(),
+        to: to.display(),
+        chain: Some(chain),
+        hops: Some(hops),
+        budget_exhausted: false,
+    })
+}
+
+/// Decode one chain node into a [`RefPathHop`], annotating `field_paths`
+/// (this node's own reference to `predecessor`, its immediate neighbor
+/// closer to `from`) when `predecessor` is `Some`.
+fn ref_path_hop(
+    db: &mut Database,
+    node: FormId,
+    predecessor: Option<FormId>,
+) -> anyhow::Result<RefPathHop> {
+    let row = db.record_row_for(node)?.unwrap_or_else(|| RecordRow {
+        form_id: node.display(),
+        record_type: None,
+        editor_id: None,
+        name: None,
+        offset: 0,
+    });
+    let field_paths = predecessor.map(|p| db.formid_reference_paths(node, p));
+    Ok(RefPathHop {
+        form_id: row.form_id,
+        record_type: row.record_type,
+        editor_id: row.editor_id,
+        name: row.name,
+        field_paths,
+    })
 }
 
 /// Seeds resolved from a [`RecordSel`] for [`Op::ReferencedBy`] — either a

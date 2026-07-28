@@ -381,6 +381,35 @@ fn collect_formid_paths(v: &Value, target: &str, prefix: String, out: &mut Vec<S
     }
 }
 
+/// A raw decoded FormID field renders as exactly `"0x"` + 8 hex digits (see
+/// `FormId::display`) — strict enough that no other decoded string field
+/// (names, EditorIDs, enum labels) can collide with it, so no target
+/// comparison is needed the way [`collect_formid_paths`] needs one.
+fn looks_like_decoded_formid(s: &str) -> bool {
+    s.len() == 10 && s.starts_with("0x") && s[2..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Collect every string value in `v` that looks like a raw decoded FormID
+/// (see [`looks_like_decoded_formid`]), in traversal order with duplicates
+/// kept — callers that need a deduplicated set should dedupe on the parsed
+/// [`FormId`], not this raw string list. Backs [`Database::outgoing_formids`].
+fn collect_all_formid_values(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::String(s) if looks_like_decoded_formid(s) => out.push(s.clone()),
+        Value::Object(map) => {
+            for vv in map.values() {
+                collect_all_formid_values(vv, out);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_all_formid_values(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Result envelope for [`Database::filter_type_records`] — reports both
 /// whether the requested `limit` truncated the match list, and whether the
 /// underlying decode itself was capped (see [`FILTER_SCAN_CAP`]) for a huge
@@ -1207,6 +1236,31 @@ impl Database {
         let mut out = Vec::new();
         collect_formid_paths(&result.fields, &target.display(), String::new(), &mut out);
         out
+    }
+
+    /// Decode `node` (no FormID resolver — plain hex output) and return every
+    /// distinct FormID its body references, deduplicated and excluding
+    /// `node` itself. Backs [`ipc::find_ref_path`]'s forward-search
+    /// direction: unlike [`Database::referenced_by`] (which asks the reverse
+    /// index "who points at `node`"), this walks `node`'s *own* outgoing
+    /// references — cheap and bounded by `node`'s own field count, useful
+    /// when searching from an endpoint with unknown-but-possibly-huge
+    /// incoming fan-out.
+    pub fn outgoing_formids(&self, node: FormId) -> Vec<FormId> {
+        let Some(meta) = self.index.get_by_formid(node) else {
+            return Vec::new();
+        };
+        let Ok(result) = self.record_at_meta_with_depth(meta, crate::decode::ResolveDepth::None)
+        else {
+            return Vec::new();
+        };
+        let mut raw = Vec::new();
+        collect_all_formid_values(&result.fields, &mut raw);
+        let mut seen = std::collections::HashSet::new();
+        raw.into_iter()
+            .filter_map(|s| crate::parse_form_id_input(&s).ok())
+            .filter(|&f| f != node && seen.insert(f))
+            .collect()
     }
 
     /// Populate `self.filter_cache` for `sig` (already uppercased) on first

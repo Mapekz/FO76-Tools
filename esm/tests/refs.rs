@@ -2,8 +2,8 @@ mod common;
 
 use common::{make_xref_esm, unique_temp_path};
 use esm::ipc::{
-    dispatch_op, referenced_by_enriched, referenced_by_enriched_multi, resolve_sel, Op, RecordSel,
-    RefList,
+    dispatch_op, find_ref_path, referenced_by_enriched, referenced_by_enriched_multi, resolve_sel,
+    Op, RecordSel, RefList,
 };
 use esm::{Database, EntryPointRef, EntryPointSpec, FormId};
 use std::io::Write;
@@ -462,6 +462,113 @@ fn recursive_refs_sort_depth_reorders_relative_to_formid() {
     assert_eq!(by_depth.rows[1].depth, 2);
 
     let _ = std::fs::remove_file(&tmp);
+}
+
+// ── find_ref_path (bidirectional search) tests ──────────────────────────────
+
+/// The chain MISC(1) ← LVLI(2) ← LVLI(3) ← CONT(4) is exactly the shape
+/// `find_ref_path` should discover: from=1 (the "referenced" endpoint),
+/// to=4 (a transitive referencer), 3 hops.
+#[test]
+fn find_ref_path_discovers_known_chain() {
+    let (path, mut db) = open_chain_db();
+
+    let result = find_ref_path(&mut db, FormId(1), FormId(4), 0, false).expect("find_ref_path");
+    assert_eq!(result.from, FormId(1).display());
+    assert_eq!(result.to, FormId(4).display());
+    assert_eq!(result.hops, Some(3));
+    assert!(!result.budget_exhausted);
+    let chain = result.chain.expect("path should be found");
+    let ids: Vec<_> = chain.iter().map(|h| h.form_id.clone()).collect();
+    assert_eq!(
+        ids,
+        vec![
+            FormId(1).display(),
+            FormId(2).display(),
+            FormId(3).display(),
+            FormId(4).display(),
+        ]
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `from == to` is a trivial 0-hop chain containing just that one node.
+#[test]
+fn find_ref_path_trivial_when_from_equals_to() {
+    let (path, mut db) = open_chain_db();
+
+    let result = find_ref_path(&mut db, FormId(1), FormId(1), 0, false).expect("find_ref_path");
+    assert_eq!(result.hops, Some(0));
+    let chain = result.chain.expect("trivial path should be found");
+    assert_eq!(chain.len(), 1);
+    assert_eq!(chain[0].form_id, FormId(1).display());
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The chain relation is directional: CONT(4) does not transitively
+/// reference MISC(1) (only the reverse holds), so asking for a path from
+/// CONT to MISC must report "not found", not silently succeed by walking
+/// the edges backwards.
+#[test]
+fn find_ref_path_is_directional_not_found_in_reverse() {
+    let (path, mut db) = open_chain_db();
+
+    let result = find_ref_path(&mut db, FormId(4), FormId(1), 0, false).expect("find_ref_path");
+    assert_eq!(result.chain, None);
+    assert_eq!(result.hops, None);
+    assert!(
+        !result.budget_exhausted,
+        "the search space is tiny and fully exhausted, not budget-limited"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A `max_hops` ceiling smaller than the actual chain length reports "not
+/// found" rather than a partial/incorrect chain.
+#[test]
+fn find_ref_path_respects_max_hops_ceiling() {
+    let (path, mut db) = open_chain_db();
+
+    // The real chain from 1 to 4 is 3 hops; a ceiling of 2 must not find it.
+    let result = find_ref_path(&mut db, FormId(1), FormId(4), 2, false).expect("find_ref_path");
+    assert_eq!(result.chain, None);
+    assert!(!result.budget_exhausted);
+
+    // Raising the ceiling to the exact chain length finds it again.
+    let result = find_ref_path(&mut db, FormId(1), FormId(4), 3, false).expect("find_ref_path");
+    assert_eq!(result.hops, Some(3));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `include_paths` annotates every hop but the first with the JSON field
+/// path where it references its predecessor — the same convention
+/// `referenced_by_walk`'s `--paths` uses.
+#[test]
+fn find_ref_path_paths_annotate_every_hop_but_the_first() {
+    let (path, mut db) = open_chain_db();
+
+    let result = find_ref_path(&mut db, FormId(1), FormId(4), 0, true).expect("find_ref_path");
+    let chain = result.chain.expect("path should be found");
+    assert_eq!(
+        chain[0].field_paths, None,
+        "the first hop has no predecessor"
+    );
+    for hop in &chain[1..] {
+        let fp = hop
+            .field_paths
+            .as_ref()
+            .expect("later hops get field_paths");
+        assert!(
+            !fp.is_empty(),
+            "each LVLI's LVLO entry should be a locatable field path"
+        );
+    }
+
+    let _ = std::fs::remove_file(&path);
 }
 
 /// Cycle guard: a→b→a does not loop and each node appears exactly once.
