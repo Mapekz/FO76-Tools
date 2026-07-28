@@ -61,7 +61,7 @@ Clean layering — edit at the right level:
 
 The Electron GUI ("FO76 ESM Viewer") that consumes this addon lives in the sibling `../esm-viewer/` directory, not in this crate — see [`../esm-viewer/CLAUDE.md`](../esm-viewer/CLAUDE.md).
 
-Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`, `RefList`, `RefRow`, `RefPathNode`, `EntryPointSpec`.
+Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`, `RefList`, `RefRow`, `RefPathNode`, `EntryPointSpec`, `EntryPointRef`.
 
 ## Conventions to Follow
 

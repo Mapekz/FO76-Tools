@@ -246,7 +246,9 @@ enum Commands {
         /// carrying it (e.g. `39`, `'Mod Percent Blocked'`), each emitted as
         /// a depth-0 carrier row, then walks refs from all of them. Matching
         /// is case-insensitive exact unless the value contains `*`, which
-        /// globs (e.g. `'Mod VATS*'`).
+        /// globs (e.g. `'Mod VATS*'`). Multi-match globs print a legend of
+        /// every matched id+name and an `EP` column attributing each row to
+        /// its entry point(s); `VIA` starts at depth 1 naming the carrier.
         #[arg(long = "entry-point", visible_alias = "ep", conflicts_with_all = ["formid", "edid"])]
         entry_point: Option<String>,
         #[arg(long, default_value_t = 100)]
@@ -1136,16 +1138,27 @@ fn cmd_refs(
 fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
     // Depth-0 rows only exist on the entry-point path (see
     // `referenced_by_enriched_multi`) — never on a plain FormID/EditorID
-    // `refs` lookup, so this is a precise signal for "this was an
-    // entry-point query", not string-sniffing `ref_list.target`.
+    // `refs` lookup. `has_carriers` gates the `D` column; `has_entry_points`
+    // gates the target-label print so a type filter that suppresses every
+    // carrier row still shows the legend (BFS rows inherit `entry_points`).
     let has_carriers = ref_list.rows.iter().any(|r| r.depth == 0);
+    let has_entry_points = ref_list.rows.iter().any(|r| !r.entry_points.is_empty());
+    // Show an EP column only when more than one distinct id appears in the
+    // rows actually being printed — a single-id match is already named by
+    // the legend, so a constant column would add noise.
+    let distinct_ep_ids: std::collections::BTreeSet<u16> = ref_list
+        .rows
+        .iter()
+        .flat_map(|r| r.entry_points.iter().map(|ep| ep.id))
+        .collect();
+    let has_ep_column = distinct_ep_ids.len() > 1;
     if json {
         print_json(&serde_json::to_value(&ref_list.rows).unwrap(), pretty);
     } else {
         if ref_list.rows.is_empty() {
             eprintln!("note: no records reference {}", ref_list.target);
         } else {
-            if has_carriers {
+            if has_entry_points {
                 eprintln!("{}", ref_list.target);
             }
             // Include a VIA column only when at least one row has a multi-hop path,
@@ -1169,6 +1182,14 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
                         // reference, so 0 is free as a "this is the walk's
                         // starting point, not something it found" sentinel.
                         cells.push(row.depth.to_string());
+                    }
+                    if has_ep_column {
+                        let eps: Vec<String> = row
+                            .entry_points
+                            .iter()
+                            .map(|ep| ep.id.to_string())
+                            .collect();
+                        cells.push(eps.join(","));
                     }
                     if has_via {
                         let via = if !row.path.is_empty() {
@@ -1195,6 +1216,9 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
             if has_carriers {
                 headers.push("D");
             }
+            if has_ep_column {
+                headers.push("EP");
+            }
             if has_via {
                 headers.push("VIA");
             }
@@ -1205,11 +1229,22 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
         }
     }
     if ref_list.capped {
-        eprintln!(
-            "note: output capped at {} of {} results; use --limit 0 to show all",
+        let mut note = format!(
+            "note: output capped at {} of {} results",
             ref_list.rows.len(),
             ref_list.total
         );
+        if let (Some(carrier_total), Some(ep_total)) =
+            (ref_list.carrier_total, ref_list.entry_point_total)
+        {
+            let carriers_shown = ref_list.rows.iter().filter(|r| r.depth == 0).count();
+            let eps_shown = distinct_ep_ids.len();
+            note.push_str(&format!(
+                " ({carriers_shown} of {carrier_total} carriers, {eps_shown} of {ep_total} entry points shown)"
+            ));
+        }
+        note.push_str("; use --limit 0 to show all");
+        eprintln!("{note}");
     }
 }
 

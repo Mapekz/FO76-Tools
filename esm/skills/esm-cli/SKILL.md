@@ -73,6 +73,20 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   *names* are wrong (see below), and a few ids have no name in the schema at
   all — `--ep 212` still finds its (unnamed) carrier, `--ep 0x...` is
   rejected (that's a FormID, not an entry point).
+- **EP attribution (glob-aware):** a multi-match glob's stderr legend lists
+  every matched entry point as `id name` (e.g. `entry point 'Mod Weapon*'
+  (2 matched: 44 Mod Weapon Reload Speed, 45 Mod Weapon Spread)`). When more
+  than one distinct id appears in the printed rows, an `EP` column shows
+  comma-joined numeric ids per row (carriers grouped by primary EP; BFS rows
+  inherit the originating carrier's tag). `VIA` is populated from depth 1 in
+  EP mode and starts with the originating carrier FormID. Attribution is
+  first-reach at minimum depth; equal-depth ties **union** EP tags (so a
+  record referenced by two carriers shows both ids) rather than picking one
+  arbitrarily — but an overlap first discovered at depth ≥ 2 that was already
+  reached shallower by a different carrier stays attributed only to the
+  shallower carrier. Caveat: carriers are emitted before referencers, so a
+  broad glob at the default `--limit 100` may show only carrier rows — use
+  `--limit 0` (or a larger limit) for EP walks when you need the referencers.
 
 ## Mechanics digests: `walk` and `chase`
 

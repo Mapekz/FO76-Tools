@@ -4,4 +4,14 @@ import type { RefRow } from "./RefRow";
 /**
  * Referenced-by result with total count and optional cap flag.
  */
-export type RefList = { target: string, rows: Array<RefRow>, total: number, capped: boolean, };
+export type RefList = { target: string, rows: Array<RefRow>, total: number, capped: boolean, 
+/**
+ * Total depth-0 carrier rows before `--limit` truncation. Set only for
+ * entry-point (multi-seed) walks; used by the CLI capped-output note.
+ */
+carrier_total?: number | null, 
+/**
+ * Total distinct entry-point ids across all seeds. Set only for
+ * entry-point walks; used by the CLI capped-output note.
+ */
+entry_point_total?: number | null, };

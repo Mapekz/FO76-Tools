@@ -87,6 +87,7 @@ impl ChaseFetcher for FakeFetcher {
                 rows: Vec::new(),
                 total: 0,
                 capped: false,
+                ..Default::default()
             }))
     }
 }
@@ -324,9 +325,11 @@ fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
                 field_paths: Some(vec![
                     "Effects[0].Conditions.Conditions[0].Parameter 1".to_string()
                 ]),
+                ..Default::default()
             }],
             total: 1,
             capped: false,
+            ..Default::default()
         },
     );
     // No fixture entry for (KYWD_FID, "PERK") -> FakeFetcher defaults to empty.
@@ -423,6 +426,7 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
             depth: 1,
             path: Vec::new(),
             field_paths: None,
+            ..Default::default()
         },
         RefRow {
             form_id: "0x2".to_string(),
@@ -433,6 +437,7 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
             depth: 1,
             path: Vec::new(),
             field_paths: None,
+            ..Default::default()
         },
         RefRow {
             form_id: "0x3".to_string(),
@@ -443,6 +448,7 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
             depth: 1,
             path: Vec::new(),
             field_paths: None,
+            ..Default::default()
         },
         RefRow {
             form_id: "0x4".to_string(),
@@ -453,6 +459,7 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
             depth: 1,
             path: Vec::new(),
             field_paths: None,
+            ..Default::default()
         },
         RefRow {
             form_id: "0x5".to_string(),
@@ -463,6 +470,7 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
             depth: 1,
             path: Vec::new(),
             field_paths: None,
+            ..Default::default()
         },
     ];
     let digest = build_refs_digest(&rows);
@@ -523,6 +531,7 @@ fn render_text_refs_summary_ends_with_reminder_when_nonempty() {
         depth: 1,
         path: Vec::new(),
         field_paths: None,
+        ..Default::default()
     }];
     let result = WalkResult {
         not_found: None,

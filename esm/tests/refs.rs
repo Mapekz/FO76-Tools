@@ -5,7 +5,7 @@ use esm::ipc::{
     dispatch_op, referenced_by_enriched, referenced_by_enriched_multi, resolve_sel, Op, RecordSel,
     RefList,
 };
-use esm::{Database, EntryPointSpec, FormId};
+use esm::{Database, EntryPointRef, EntryPointSpec, FormId};
 use std::io::Write;
 
 /// Verify that `Database::referenced_by` returns each referencing record
@@ -83,10 +83,16 @@ fn build_misc(form_id: u32, edid: &str) -> Vec<u8> {
 }
 
 fn build_lvli(form_id: u32, edid: &str, item_ref: u32) -> Vec<u8> {
+    build_lvli_multi(form_id, edid, &[item_ref])
+}
+
+fn build_lvli_multi(form_id: u32, edid: &str, item_refs: &[u32]) -> Vec<u8> {
     let mut subs = Vec::new();
     append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
-    append_subrecord(&mut subs, b"LLCT", &[1u8]);
-    append_subrecord(&mut subs, b"LVLO", &item_ref.to_le_bytes());
+    append_subrecord(&mut subs, b"LLCT", &[item_refs.len() as u8]);
+    for &item_ref in item_refs {
+        append_subrecord(&mut subs, b"LVLO", &item_ref.to_le_bytes());
+    }
     let mut rec = Vec::new();
     append_record(&mut rec, b"LVLI", form_id, &subs);
     rec
@@ -565,9 +571,15 @@ fn build_perk_entry_points(form_id: u32, edid: &str, entry_points: &[u8]) -> Vec
 ///   14 MultiEffectPerk   — entry point 39 on *two* separate effects
 ///   15 GlobA             — entry point 41 (Mod Incoming Spell Magnitude)
 ///   16 GlobB             — entry point 42 (Mod Incoming Spell Duration)
-/// Referencers (both point only at CarrierA/10, not CarrierB/11):
-///   30 CONT RefCont
-///   31 LVLI RefList
+///   17 GlobBoth          — entry points 41 *and* 42 (multi-EP carrier)
+/// Referencers:
+///   30 CONT RefCont      — → CarrierA/10
+///   31 LVLI RefList      — → CarrierA/10
+///   32 CONT RefContB     — → CarrierB/11
+///   33 LVLI SharedDeep   — → RefCont/30 and RefContB/32 (depth 2 from both
+///                          CarrierA and CarrierB — equal-depth union case)
+///   34 LVLI SharedGlob   — → GlobA/15 and GlobB/16 (depth 1 from both;
+///                          equal-depth union of distinct EPs 41+42)
 fn make_entry_point_esm() -> Vec<u8> {
     let mut buf = tes4_header();
     let mut perk_group = build_perk_entry_points(10, "CarrierA", &[39]);
@@ -577,10 +589,23 @@ fn make_entry_point_esm() -> Vec<u8> {
     perk_group.extend(build_perk_entry_points(14, "MultiEffectPerk", &[39, 39]));
     perk_group.extend(build_perk_entry_points(15, "GlobA", &[41]));
     perk_group.extend(build_perk_entry_points(16, "GlobB", &[42]));
+    perk_group.extend(build_perk_entry_points(17, "GlobBoth", &[41, 42]));
     buf.extend(wrap_grup(b"PERK", &perk_group));
-    buf.extend(wrap_grup(b"CONT", &build_cont(30, "RefCont", 10)));
-    buf.extend(wrap_grup(b"LVLI", &build_lvli(31, "RefList", 10)));
+    let mut cont_group = build_cont(30, "RefCont", 10);
+    cont_group.extend(build_cont(32, "RefContB", 11));
+    buf.extend(wrap_grup(b"CONT", &cont_group));
+    let mut lvli_group = build_lvli(31, "RefList", 10);
+    lvli_group.extend(build_lvli_multi(33, "SharedDeep", &[30, 32]));
+    lvli_group.extend(build_lvli_multi(34, "SharedGlob", &[15, 16]));
+    buf.extend(wrap_grup(b"LVLI", &lvli_group));
     buf
+}
+
+/// Helper: wrap bare FormIDs as tagged seeds for [`referenced_by_enriched_multi`].
+fn seeds_with_ep(ids: &[(u32, u16)]) -> Vec<(FormId, Vec<EntryPointRef>)> {
+    ids.iter()
+        .map(|&(fid, ep)| (FormId(fid), vec![EntryPointRef { id: ep, name: None }]))
+        .collect()
 }
 
 fn open_entry_point_db() -> (std::path::PathBuf, Database) {
@@ -653,8 +678,9 @@ fn perks_by_entry_point_matches_by_id_and_exact_case_insensitive_name() {
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Id(39))
         .expect("perks_by_entry_point");
+    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
     assert_eq!(
-        seeds,
+        seed_ids,
         vec![FormId(10), FormId(11), FormId(14)],
         "expected CarrierA, CarrierB, and MultiEffectPerk (once, not twice)"
     );
@@ -662,6 +688,11 @@ fn perks_by_entry_point_matches_by_id_and_exact_case_insensitive_name() {
         label.contains("39") && label.contains("Mod Percent Blocked"),
         "unexpected label: {label}"
     );
+    for (_, tags) in &seeds {
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].id, 39);
+        assert_eq!(tags[0].name.as_deref(), Some("Mod Percent Blocked"));
+    }
 
     let (_, seeds_by_name) = db
         .perks_by_entry_point(&EntryPointSpec::Name("mod percent blocked".to_string()))
@@ -690,10 +721,21 @@ fn perks_by_entry_point_glob_matches_multiple_distinct_entry_points() {
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Name("Mod Incoming Spell*".to_string()))
         .expect("perks_by_entry_point glob");
-    assert_eq!(seeds, vec![FormId(15), FormId(16)]);
+    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
+    // Sorted by (primary EP id, form_id): GlobA(41,15), GlobBoth(41,17), GlobB(42,16).
+    assert_eq!(seed_ids, vec![FormId(15), FormId(17), FormId(16)]);
     assert!(
-        label.contains("2 matched"),
-        "glob label should report the match count: {label}"
+        label.contains("2 matched") && label.contains("41") && label.contains("42"),
+        "glob label should enumerate every matched entry point: {label}"
+    );
+    let both = seeds
+        .iter()
+        .find(|(f, _)| *f == FormId(17))
+        .expect("GlobBoth");
+    assert_eq!(
+        both.1.iter().map(|t| t.id).collect::<Vec<_>>(),
+        vec![41, 42],
+        "GlobBoth must carry both matched entry points"
     );
 
     let _ = std::fs::remove_file(&path);
@@ -709,7 +751,8 @@ fn perks_by_entry_point_reaches_unnamed_id_only_by_number() {
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Id(212))
         .expect("perks_by_entry_point unnamed id");
-    assert_eq!(seeds, vec![FormId(13)]);
+    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
+    assert_eq!(seed_ids, vec![FormId(13)]);
     assert!(label.contains("unnamed"), "unexpected label: {label}");
 
     let (_, seeds_by_name) = db
@@ -732,7 +775,7 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
 
     let list = referenced_by_enriched_multi(
         &mut db,
-        &[FormId(10), FormId(11)],
+        &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39 (Mod Percent Blocked)".to_string(),
         1,
         0,
@@ -742,13 +785,20 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
     .expect("referenced_by_enriched_multi");
 
     assert_eq!(list.target, "entry point 39 (Mod Percent Blocked)");
-    assert_eq!(list.total, 4, "2 carriers + CONT(30) + LVLI(31): {list:?}");
+    // 2 carriers + RefCont(30) + RefList(31) + RefContB(32); SharedDeep is
+    // depth 2 and excluded at depth=1.
+    assert_eq!(
+        list.total, 5,
+        "2 carriers + 3 depth-1 referencers: {list:?}"
+    );
     assert!(!list.capped);
 
     let carrier_a = &list.rows[0];
     assert_eq!(carrier_a.form_id, FormId(10).display());
     assert_eq!(carrier_a.depth, 0);
     assert!(carrier_a.path.is_empty());
+    assert_eq!(carrier_a.entry_points.len(), 1);
+    assert_eq!(carrier_a.entry_points[0].id, 39);
 
     let carrier_b = &list.rows[1];
     assert_eq!(carrier_b.form_id, FormId(11).display());
@@ -757,10 +807,23 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
     let referencer_ids: Vec<&str> = list.rows[2..].iter().map(|r| r.form_id.as_str()).collect();
     assert_eq!(
         referencer_ids,
-        vec![FormId(30).display(), FormId(31).display()],
+        vec![
+            FormId(30).display(),
+            FormId(31).display(),
+            FormId(32).display()
+        ],
         "referencer rows must sort by FormID after the carrier rows"
     );
     assert!(list.rows[2..].iter().all(|r| r.depth == 1));
+    // path[0] is the originating carrier in EP mode.
+    let ref_cont = list
+        .rows
+        .iter()
+        .find(|r| r.form_id == FormId(30).display())
+        .unwrap();
+    assert_eq!(ref_cont.path.len(), 1);
+    assert_eq!(ref_cont.path[0].form_id, FormId(10).display());
+    assert_eq!(ref_cont.entry_points[0].id, 39);
 
     let _ = std::fs::remove_file(&path);
 }
@@ -774,7 +837,7 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
 
     let list = referenced_by_enriched_multi(
         &mut db,
-        &[FormId(10), FormId(11)],
+        &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39 (Mod Percent Blocked)".to_string(),
         1,
         0,
@@ -785,11 +848,19 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
 
     assert_eq!(
         list.rows.len(),
-        1,
-        "both PERK carriers and the LVLI referencer must be filtered out: {list:?}"
+        2,
+        "both PERK carriers and the LVLI referencer must be filtered out; \
+         CONT RefCont + RefContB remain: {list:?}"
     );
-    assert_eq!(list.rows[0].form_id, FormId(30).display());
-    assert_eq!(list.rows[0].record_type.as_deref(), Some("CONT"));
+    let ids: Vec<&str> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
+    assert_eq!(ids, vec![FormId(30).display(), FormId(32).display()]);
+    assert!(list
+        .rows
+        .iter()
+        .all(|r| r.record_type.as_deref() == Some("CONT")));
+    // Legend still attributable via inherited entry_points even with no
+    // depth-0 carrier rows.
+    assert!(list.rows.iter().all(|r| !r.entry_points.is_empty()));
 
     let _ = std::fs::remove_file(&path);
 }
@@ -935,6 +1006,177 @@ fn dispatch_referenced_by_edid_neither_interpretation_bails() {
     let msg = format!("{err:#}");
     assert!(msg.contains("EditorID"), "message: {msg}");
     assert!(msg.contains("entry point"), "message: {msg}");
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Entry-point tags are inherited onto BFS rows, and a record reached from
+/// two carriers at the same depth gets both carriers' tags unioned.
+#[test]
+fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
+    let (path, mut db) = open_entry_point_db();
+
+    let list = referenced_by_enriched_multi(
+        &mut db,
+        &seeds_with_ep(&[(15, 41), (16, 42)]),
+        "entry point 'Mod Incoming Spell*' (2 matched)".to_string(),
+        1,
+        0,
+        None,
+        false,
+    )
+    .expect("multi EP walk");
+
+    let shared = list
+        .rows
+        .iter()
+        .find(|r| r.form_id == FormId(34).display())
+        .expect("SharedGlob must appear");
+    assert_eq!(shared.depth, 1);
+    let ids: Vec<u16> = shared.entry_points.iter().map(|e| e.id).collect();
+    assert_eq!(
+        ids,
+        vec![41, 42],
+        "equal-depth re-reach must union both carriers' entry points: {shared:?}"
+    );
+    // VIA/path keeps the first-reached carrier only.
+    assert_eq!(shared.path.len(), 1);
+    assert_eq!(
+        shared.path[0].form_id,
+        FormId(15).display(),
+        "first-seed order wins path attribution"
+    );
+
+    // Depth-2 SharedDeep from CarrierA+CarrierB (same EP 39) also unions.
+    let deep = referenced_by_enriched_multi(
+        &mut db,
+        &seeds_with_ep(&[(10, 39), (11, 39)]),
+        "entry point 39".to_string(),
+        2,
+        0,
+        None,
+        false,
+    )
+    .expect("depth-2 walk");
+    let shared_deep = deep
+        .rows
+        .iter()
+        .find(|r| r.form_id == FormId(33).display())
+        .expect("SharedDeep");
+    assert_eq!(shared_deep.depth, 2);
+    assert_eq!(shared_deep.entry_points.len(), 1);
+    assert_eq!(shared_deep.entry_points[0].id, 39);
+    assert_eq!(
+        shared_deep.path[0].form_id,
+        FormId(10).display(),
+        "path[0] is the originating carrier"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Seed input order is preserved for carrier row order and BFS attribution
+/// (no re-sort by FormID inside `referenced_by_walk`).
+#[test]
+fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
+    let (path, mut db) = open_entry_point_db();
+
+    let forward = referenced_by_enriched_multi(
+        &mut db,
+        &seeds_with_ep(&[(15, 41), (16, 42)]),
+        "forward".to_string(),
+        1,
+        0,
+        None,
+        false,
+    )
+    .expect("forward");
+    let reverse = referenced_by_enriched_multi(
+        &mut db,
+        &seeds_with_ep(&[(16, 42), (15, 41)]),
+        "reverse".to_string(),
+        1,
+        0,
+        None,
+        false,
+    )
+    .expect("reverse");
+
+    let fwd_carriers: Vec<&str> = forward
+        .rows
+        .iter()
+        .filter(|r| r.depth == 0)
+        .map(|r| r.form_id.as_str())
+        .collect();
+    let rev_carriers: Vec<&str> = reverse
+        .rows
+        .iter()
+        .filter(|r| r.depth == 0)
+        .map(|r| r.form_id.as_str())
+        .collect();
+    assert_eq!(
+        fwd_carriers,
+        vec![FormId(15).display(), FormId(16).display()]
+    );
+    assert_eq!(
+        rev_carriers,
+        vec![FormId(16).display(), FormId(15).display()]
+    );
+
+    let fwd_shared = forward
+        .rows
+        .iter()
+        .find(|r| r.form_id == FormId(34).display())
+        .unwrap();
+    let rev_shared = reverse
+        .rows
+        .iter()
+        .find(|r| r.form_id == FormId(34).display())
+        .unwrap();
+    assert_eq!(fwd_shared.path[0].form_id, FormId(15).display());
+    assert_eq!(
+        rev_shared.path[0].form_id,
+        FormId(16).display(),
+        "reversed seed order must flip first-reach attribution"
+    );
+    // Both still union to 41+42 regardless of order.
+    assert_eq!(
+        fwd_shared
+            .entry_points
+            .iter()
+            .map(|e| e.id)
+            .collect::<Vec<_>>(),
+        vec![41, 42]
+    );
+    assert_eq!(
+        rev_shared
+            .entry_points
+            .iter()
+            .map(|e| e.id)
+            .collect::<Vec<_>>(),
+        vec![41, 42]
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A Direct (single-target) walk keeps empty `entry_points` and empty
+/// depth-1 `path` — bit-compatible with pre-EP-attribution behavior.
+#[test]
+fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
+    let (path, mut db) = open_entry_point_db();
+
+    let list = referenced_by_enriched(&mut db, FormId(10), 1, 0, None, false).expect("direct walk");
+    assert!(list.rows.iter().all(|r| r.entry_points.is_empty()));
+    assert!(
+        list.rows
+            .iter()
+            .filter(|r| r.depth == 1)
+            .all(|r| r.path.is_empty()),
+        "Direct depth-1 rows must keep an empty path: {list:?}"
+    );
+    assert!(list.carrier_total.is_none());
+    assert!(list.entry_point_total.is_none());
 
     let _ = std::fs::remove_file(&path);
 }

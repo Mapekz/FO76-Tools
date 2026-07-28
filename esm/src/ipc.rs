@@ -2,11 +2,11 @@
 
 use crate::diff::{diff_databases_with, DiffOptions};
 use crate::registry::Registry;
-use crate::{Database, EntryPointSpec, FilterOp, FormId, ResolveDepth, SearchField};
+use crate::{Database, EntryPointRef, EntryPointSpec, FilterOp, FormId, ResolveDepth, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -251,7 +251,7 @@ pub struct RefPathNode {
 }
 
 /// One referencer row enriched with record type (refs command output).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 pub struct RefRow {
@@ -264,6 +264,9 @@ pub struct RefRow {
     pub depth: usize,
     /// Intermediate nodes on the path from target to this record.
     /// Empty when depth = 1 (direct reference).
+    ///
+    /// In an entry-point walk (`emit_seeds`), `path[0]` is the originating
+    /// carrier, so depth-1 rows already have a non-empty path.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<RefPathNode>,
     /// JSON field path(s) inside this record's decoded body where it
@@ -274,10 +277,16 @@ pub struct RefRow {
     /// opt-in and left absent on the default fast walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_paths: Option<Vec<String>>,
+    /// Entry points the originating carrier matched, when the walk was seeded
+    /// by an entry-point selector. On a `depth: 0` row these are the carrier's
+    /// own matches; on deeper rows they are inherited from the carrier the BFS
+    /// reached this record through (`path[0]`). Empty for a single-target walk.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entry_points: Vec<EntryPointRef>,
 }
 
 /// Referenced-by result with total count and optional cap flag.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 pub struct RefList {
@@ -285,6 +294,14 @@ pub struct RefList {
     pub rows: Vec<RefRow>,
     pub total: usize,
     pub capped: bool,
+    /// Total depth-0 carrier rows before `--limit` truncation. Set only for
+    /// entry-point (multi-seed) walks; used by the CLI capped-output note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carrier_total: Option<usize>,
+    /// Total distinct entry-point ids across all seeds. Set only for
+    /// entry-point walks; used by the CLI capped-output note.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_point_total: Option<usize>,
 }
 
 /// One entry of a [`Op::RecordBulk`] result: the resolved record on success,
@@ -732,9 +749,9 @@ pub fn referenced_by_enriched(
     type_filter: Option<&str>,
     include_paths: bool,
 ) -> anyhow::Result<RefList> {
-    let (rows, total, capped) = referenced_by_walk(
+    let (rows, total, capped, _) = referenced_by_walk(
         db,
-        &[target],
+        &[(target, Vec::new())],
         false,
         depth,
         limit,
@@ -746,6 +763,8 @@ pub fn referenced_by_enriched(
         rows,
         total,
         capped,
+        carrier_total: None,
+        entry_point_total: None,
     })
 }
 
@@ -755,42 +774,62 @@ pub fn referenced_by_enriched(
 /// then the BFS proceeds from all seeds at once, so a record referencing two
 /// different seeds is still only emitted once. Used by [`resolve_ref_seeds`]'s
 /// entry-point path (see [`crate::EntryPointSpec`]).
+///
+/// `seeds` carries per-carrier entry-point tags that are copied onto every
+/// descendant row (and unioned on equal-depth re-reaches). Caller order is
+/// preserved end-to-end — do not re-sort here; see
+/// [`Database::perks_by_entry_point`].
 pub fn referenced_by_enriched_multi(
     db: &mut Database,
-    seeds: &[FormId],
+    seeds: &[(FormId, Vec<EntryPointRef>)],
     label: String,
     depth: usize,
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
 ) -> anyhow::Result<RefList> {
-    let (rows, total, capped) =
+    let entry_point_total = seeds
+        .iter()
+        .flat_map(|(_, tags)| tags.iter().map(|ep| ep.id))
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let (rows, total, capped, carrier_total) =
         referenced_by_walk(db, seeds, true, depth, limit, type_filter, include_paths)?;
     Ok(RefList {
         target: label,
         rows,
         total,
         capped,
+        carrier_total: Some(carrier_total),
+        entry_point_total: Some(entry_point_total),
     })
 }
 
 /// Shared BFS behind [`referenced_by_enriched`] / [`referenced_by_enriched_multi`].
 ///
-/// `seeds` are the BFS roots. When `emit_seeds` is true, each seed is also
-/// emitted as its own `depth: 0` row *before* the BFS-found referencer rows
-/// (sorted separately by FormID among themselves, so this never perturbs the
-/// referencer rows' own FormID sort — the one existing callers/tests rely
-/// on). When false (the legacy single-target path), seeds are only BFS
-/// roots, exactly as `target` always was.
+/// `seeds` are the BFS roots, optionally tagged with entry points. When
+/// `emit_seeds` is true, each seed is also emitted as its own `depth: 0` row
+/// *before* the BFS-found referencer rows, and the queue is seeded with the
+/// carrier's own [`RefPathNode`] so descendants' `path`/`VIA` trace back to
+/// that carrier. When false (the legacy single-target path), seeds are only
+/// BFS roots with empty paths — exactly as `target` always was.
+///
+/// Seed order is preserved (stable-dedup by FormID only). Callers that care
+/// about display/attribution order — notably
+/// [`Database::perks_by_entry_point`] — must sort before calling.
+///
+/// Returns `(rows, total, capped, carrier_total)` where `carrier_total` is
+/// the number of depth-0 rows that survived the type filter (0 when
+/// `emit_seeds` is false).
 fn referenced_by_walk(
     db: &mut Database,
-    seeds: &[FormId],
+    seeds: &[(FormId, Vec<EntryPointRef>)],
     emit_seeds: bool,
     depth: usize,
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
-) -> anyhow::Result<(Vec<RefRow>, usize, bool)> {
+) -> anyhow::Result<(Vec<RefRow>, usize, bool, usize)> {
     let max_depth = depth.clamp(1, DEFAULT_MAX_DEPTH);
     let type_filter = match type_filter {
         Some(t) => {
@@ -806,58 +845,100 @@ fn referenced_by_walk(
         None => true,
     };
 
+    // Stable-dedup by FormID, preserving first-occurrence order. Do NOT
+    // re-sort by form_id — caller order drives carrier display grouping and
+    // BFS attribution priority.
+    let mut seen_seed = HashSet::new();
+    let seeds: Vec<(FormId, Vec<EntryPointRef>)> = seeds
+        .iter()
+        .filter(|(f, _)| seen_seed.insert(*f))
+        .cloned()
+        .collect();
+    let seed_tags: HashMap<FormId, Vec<EntryPointRef>> =
+        seeds.iter().map(|(f, tags)| (*f, tags.clone())).collect();
+    let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
+
     // `seen` is both the dedup set for emitted referencer rows and the BFS
     // visited set. Seeding with every entry in `seeds` prevents a seed from
     // appearing as another seed's own referencer and breaks self-referential
     // cycles.
-    let mut seen: HashSet<FormId> = seeds.iter().copied().collect();
+    let mut seen: HashSet<FormId> = seed_ids.iter().copied().collect();
 
-    // Queue entries: (node_to_expand, path_of_intermediate_hops_leading_to_it).
-    // The path does NOT include any seed or the node itself; it holds the
-    // nodes that were emitted at earlier depths on the way here.
-    let mut queue: VecDeque<(FormId, Vec<RefPathNode>)> = VecDeque::new();
-    for &seed in seeds {
-        queue.push_back((seed, Vec::new()));
-    }
-
+    // Queue entries: (node_to_expand, originating_carrier, path).
+    // In EP mode (`emit_seeds`), path[0] is the carrier itself; hop_depth
+    // subtracts 1 so direct referencers still report depth 1. In Direct mode
+    // the origin is None and the path starts empty (legacy behavior).
+    let mut queue: VecDeque<(FormId, Option<FormId>, Vec<RefPathNode>)> = VecDeque::new();
     let mut seed_rows: Vec<RefRow> = Vec::new();
+
     if emit_seeds {
-        let mut sorted_seeds = seeds.to_vec();
-        sorted_seeds.sort_by_key(|f| f.raw());
-        for seed in sorted_seeds {
+        for &seed in &seed_ids {
             let Some(row) = db.record_row_for(seed)? else {
                 continue;
             };
-            if !type_matches(&row.record_type) {
-                continue;
+            let seed_node = RefPathNode {
+                form_id: row.form_id.clone(),
+                record_type: row.record_type.clone(),
+                editor_id: row.editor_id.clone(),
+            };
+            if type_matches(&row.record_type) {
+                seed_rows.push(RefRow {
+                    form_id: row.form_id,
+                    record_type: row.record_type,
+                    editor_id: row.editor_id,
+                    name: row.name,
+                    offset: row.offset,
+                    depth: 0,
+                    path: Vec::new(),
+                    field_paths: None,
+                    entry_points: seed_tags.get(&seed).cloned().unwrap_or_default(),
+                });
             }
-            seed_rows.push(RefRow {
-                form_id: row.form_id,
-                record_type: row.record_type,
-                editor_id: row.editor_id,
-                name: row.name,
-                offset: row.offset,
-                depth: 0,
-                path: Vec::new(),
-                field_paths: None,
-            });
+            // Type-filtered carriers still contribute a RefPathNode so their
+            // descendants' path/VIA remain attributable.
+            queue.push_back((seed, Some(seed), vec![seed_node]));
+        }
+    } else {
+        for &seed in &seed_ids {
+            queue.push_back((seed, None, Vec::new()));
         }
     }
 
+    let carrier_total = seed_rows.len();
     let mut rows: Vec<RefRow> = Vec::new();
+    // FormId → index into `rows` for equal-depth entry-point tag unions.
+    let mut emitted: HashMap<FormId, usize> = HashMap::new();
 
-    while let Some((current, path_here)) = queue.pop_front() {
+    while let Some((current, origin, path_here)) = queue.pop_front() {
         for r in db.referenced_by(current)? {
             let fid = match crate::parse_form_id_input(&r.form_id) {
                 Ok(f) => f,
                 Err(_) => continue,
             };
+            let hop_depth = path_here.len() + 1 - usize::from(emit_seeds);
+
             if !seen.insert(fid) {
-                continue; // already emitted via a shorter or equal-length path
+                // Equal-depth re-reach: union entry_points onto the already-
+                // emitted row without changing its path/VIA (first-reach wins
+                // for the path). Deeper re-reaches and seed self-hits are
+                // ignored as before.
+                if let Some(&idx) = emitted.get(&fid) {
+                    if rows[idx].depth == hop_depth {
+                        if let Some(origin_fid) = origin {
+                            merge_entry_points(
+                                &mut rows[idx].entry_points,
+                                seed_tags
+                                    .get(&origin_fid)
+                                    .map(|v| v.as_slice())
+                                    .unwrap_or(&[]),
+                            );
+                        }
+                    }
+                }
+                continue;
             }
 
             let record_type = db.index.get_by_formid(fid).map(|m| m.signature.clone());
-            let hop_depth = path_here.len() + 1;
 
             if type_matches(&record_type) {
                 let field_paths = if include_paths {
@@ -865,6 +946,10 @@ fn referenced_by_walk(
                 } else {
                     None
                 };
+                let entry_points = origin
+                    .and_then(|o| seed_tags.get(&o).cloned())
+                    .unwrap_or_default();
+                let idx = rows.len();
                 rows.push(RefRow {
                     form_id: r.form_id.clone(),
                     record_type: record_type.clone(),
@@ -874,7 +959,9 @@ fn referenced_by_walk(
                     depth: hop_depth,
                     path: path_here.clone(),
                     field_paths,
+                    entry_points,
                 });
+                emitted.insert(fid, idx);
             }
 
             if hop_depth < max_depth {
@@ -884,7 +971,7 @@ fn referenced_by_walk(
                     record_type,
                     editor_id: r.editor_id,
                 });
-                queue.push_back((fid, new_path));
+                queue.push_back((fid, origin, new_path));
             }
         }
     }
@@ -906,7 +993,17 @@ fn referenced_by_walk(
         all_rows
     };
 
-    Ok((limited, total, capped))
+    Ok((limited, total, capped, carrier_total))
+}
+
+/// Merge `incoming` into `dst` by entry-point id, keeping sorted+deduped.
+fn merge_entry_points(dst: &mut Vec<EntryPointRef>, incoming: &[EntryPointRef]) {
+    if incoming.is_empty() {
+        return;
+    }
+    dst.extend(incoming.iter().cloned());
+    dst.sort();
+    dst.dedup_by(|a, b| a.id == b.id);
 }
 
 /// Seeds resolved from a [`RecordSel`] for [`Op::ReferencedBy`] — either a
@@ -918,7 +1015,10 @@ enum RefSeeds {
     Direct(FormId),
     /// One or more PERK entry-point carriers, each emitted as its own
     /// `depth: 0` row by [`referenced_by_enriched_multi`].
-    Carriers { label: String, seeds: Vec<FormId> },
+    Carriers {
+        label: String,
+        seeds: crate::EntryPointCarriers,
+    },
 }
 
 /// Resolve a [`RecordSel`] to BFS seeds for [`Op::ReferencedBy`] specifically

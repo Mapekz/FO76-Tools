@@ -42,6 +42,12 @@ tests are structurally absent — a considered choice, not a gap. Enabling them 
 low priority in [#16](https://github.com/Mapekz/FO76-Tools/issues/16) (`P3`,
 `ready-for-human`), kept open in case component testing becomes desirable later.
 
+Follow-up (2026-07-28): `esm refs --ep` now seeds `path[0]` with the originating carrier so
+`VIA` is populated at depth 1, but `esm-viewer/src/renderer/src/components/ReferencedByPanel.tsx`
+still renders `HopChain` as `null` for `depth <= 1` — the GUI will not show the new depth-1
+carrier link without a follow-up change there. Out of scope for the EP-attribution work that
+landed the column in the CLI/JSON.
+
 ---
 
 ## Cross-cutting

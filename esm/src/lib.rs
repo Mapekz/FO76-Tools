@@ -416,6 +416,22 @@ pub enum EntryPointSpec {
     Name(String),
 }
 
+/// One entry point a carrier PERK matched under an [`EntryPointSpec`].
+///
+/// Carried on [`ipc::RefRow::entry_points`] so every reverse-ref row in an
+/// `--entry-point`/`--ep` walk can name which hook(s) it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct EntryPointRef {
+    pub id: u16,
+    pub name: Option<String>,
+}
+
+/// Carrier PERKs from [`Database::perks_by_entry_point`], each tagged with
+/// the entry point(s) it matched.
+pub type EntryPointCarriers = Vec<(FormId, Vec<EntryPointRef>)>;
+
 impl EntryPointSpec {
     /// Parse a CLI/MCP token: an all-ASCII-digit token is a numeric id,
     /// everything else is a name pattern — except a `0x`/`0X`-prefixed
@@ -1324,8 +1340,15 @@ impl Database {
 
     /// Carrier PERKs for an entry point (see [`EntryPointSpec`]) — the
     /// reverse of `get`/`walk`'s "what entry point does this perk carry?".
-    /// FormID-sorted and deduped: a perk with several effects on the same
-    /// entry point, or matching several effects under a glob, appears once.
+    /// Deduped: a perk with several effects on the same entry point, or
+    /// matching several effects under a glob, appears once.
+    ///
+    /// Seeds are sorted by `(primary entry-point id, form_id)`, where
+    /// "primary" is the smallest matched id on that carrier. That order
+    /// drives both the per-EP carrier grouping in table output and the
+    /// BFS's first-reach attribution priority in
+    /// [`ipc::referenced_by_walk`] (earlier seeds win equal-depth ties for
+    /// `path`/`VIA`; equal-depth `entry_points` are unioned).
     ///
     /// Reuses the `ensure_filter_cache("PERK")` memoized decode (shared with
     /// [`Database::filter_type_records`]), so repeat lookups after the first
@@ -1333,12 +1356,13 @@ impl Database {
     ///
     /// Returns `(label, seeds)`: `label` is a human-readable description of
     /// what matched — e.g. `"entry point 39 (Mod Percent Blocked)"` or
-    /// `"entry point 'Mod VATS*' (14 matched)"` — meant for [`ipc::RefList::target`];
-    /// `seeds` are the carrier FormIDs.
+    /// `"entry point 'Mod VATS*' (14 matched: 43 Mod VATS Attack Damage, …)"`
+    /// — meant for [`ipc::RefList::target`]; `seeds` are `(FormId, tags)`
+    /// pairs tagging each carrier with the entry points it matched.
     pub fn perks_by_entry_point(
         &mut self,
         spec: &EntryPointSpec,
-    ) -> anyhow::Result<(String, Vec<FormId>)> {
+    ) -> anyhow::Result<(String, EntryPointCarriers)> {
         self.check_not_lite("entry-point lookup")?;
         self.ensure_filter_cache("PERK")?;
         let (_, entries) = self
@@ -1346,13 +1370,13 @@ impl Database {
             .get("PERK")
             .expect("populated by ensure_filter_cache");
 
-        let mut seeds: Vec<FormId> = Vec::new();
+        let mut seeds: EntryPointCarriers = Vec::new();
         let mut matched: std::collections::BTreeSet<(u16, Option<String>)> = Default::default();
         for entry in entries {
             let Some(effects) = entry.fields.get("Effects").and_then(Value::as_array) else {
                 continue;
             };
-            let mut carrier = false;
+            let mut tags: Vec<EntryPointRef> = Vec::new();
             for effect in effects {
                 let Some(ep) = effect.pointer("/Effect/Entry Point/Entry Point") else {
                     continue;
@@ -1367,15 +1391,18 @@ impl Database {
                     }
                 };
                 if is_match {
-                    carrier = true;
-                    matched.insert((id, name.map(str::to_string)));
+                    let name = name.map(str::to_string);
+                    matched.insert((id, name.clone()));
+                    tags.push(EntryPointRef { id, name });
                 }
             }
-            if carrier {
-                seeds.push(entry.form_id);
+            if !tags.is_empty() {
+                tags.sort();
+                tags.dedup_by(|a, b| a.id == b.id);
+                seeds.push((entry.form_id, tags));
             }
         }
-        seeds.sort_by_key(|f| f.raw());
+        seeds.sort_by_key(|(f, tags)| (tags.first().map(|t| t.id).unwrap_or(0), f.raw()));
 
         let label = match matched.len() {
             0 => format!("entry point {} (no match)", spec.display()),
@@ -1386,7 +1413,20 @@ impl Database {
                     None => format!("entry point {id} (unnamed)"),
                 }
             }
-            n => format!("entry point {} ({n} matched)", spec.display()),
+            n => {
+                let legend: Vec<String> = matched
+                    .iter()
+                    .map(|(id, name)| match name {
+                        Some(n) => format!("{id} {n}"),
+                        None => id.to_string(),
+                    })
+                    .collect();
+                format!(
+                    "entry point {} ({n} matched: {})",
+                    spec.display(),
+                    legend.join(", ")
+                )
+            }
         };
 
         Ok((label, seeds))

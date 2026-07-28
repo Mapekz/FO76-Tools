@@ -108,6 +108,7 @@ impl ChaseFetcher for FakeFetcher {
                 rows: Vec::new(),
                 total: 0,
                 capped: false,
+                ..Default::default()
             }))
     }
 }
@@ -411,9 +412,11 @@ fn fixture() -> FakeFetcher {
                 field_paths: Some(vec![
                     "Effects[0].Conditions.Conditions[0].Parameter 1".to_string()
                 ]),
+                ..Default::default()
             }],
             total: 1,
             capped: false,
+            ..Default::default()
         },
     );
     // No fixture entry for (KYWD_FID, "PERK") -> defaults to an empty RefList.
