@@ -14,7 +14,7 @@ function wrap(fn: () => unknown) {
   try {
     return fn()
   } catch (e: unknown) {
-    throw new Error(e instanceof Error ? e.message : String(e))
+    throw new Error(e instanceof Error ? e.message : String(e), { cause: e })
   }
 }
 

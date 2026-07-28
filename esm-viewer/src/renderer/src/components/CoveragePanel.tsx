@@ -35,7 +35,7 @@ export function CoveragePanel() {
           .filter((g) => g.label.kind === 'record_type' && g.child_count > 0)
           .map((g) => (g.label.kind === 'record_type' ? g.label.sig : ''))
           .filter((s) => s.length > 0)
-          .sort()
+          .toSorted()
         setSigs(list)
       })
       .catch(console.error)
@@ -59,7 +59,7 @@ export function CoveragePanel() {
   }
 
   const rows = report
-    ? Object.entries(report.by_type).sort(([sigA, a], [sigB, b]) => {
+    ? Object.entries(report.by_type).toSorted(([sigA, a], [sigB, b]) => {
         const diff = totalGaps(b) - totalGaps(a)
         return diff !== 0 ? diff : sigA.localeCompare(sigB)
       })

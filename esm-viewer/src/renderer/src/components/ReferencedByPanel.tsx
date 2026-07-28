@@ -75,7 +75,10 @@ export function ReferencedByPanel({ onNavigate }: Props) {
       </div>
       <div style={{ maxHeight: 150, overflowY: 'auto', marginTop: 4 }}>
         {referencedBy.map((row, i) => (
+          // Composite key: a multi-seed entry-point walk can reach the same
+          // form_id via different paths, so form_id alone isn't unique here.
           <div
+            // oxlint-disable-next-line react/no-array-index-key
             key={`${row.form_id}-${i}`}
             style={{ cursor: 'pointer', padding: '1px 0' }}
             onClick={() => onNavigate(activeDbId, row.form_id)}

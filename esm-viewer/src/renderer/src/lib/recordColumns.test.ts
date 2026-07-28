@@ -54,7 +54,7 @@ describe('buildRecordColumns', () => {
   it('builds a single column when only one DB is open', async () => {
     const db = makeDb('db1', '/data/SeventySix.esm')
     const rec = makeRecord('0x00012345', 'SomeEdid')
-    const api = { recordById: vi.fn(async () => rec) }
+    const api = { recordById: vi.fn<() => Promise<RecordResult>>(async () => rec) }
 
     const result = await buildRecordColumns('SomeEdid', 'db1', [db], api)
 
@@ -68,7 +68,7 @@ describe('buildRecordColumns', () => {
     const dbB = makeDb('dbB', '/data/B.esm')
     const recA = makeRecord('0x00012345', 'Foo')
     const api = {
-      recordById: vi.fn(async (id: string) => {
+      recordById: vi.fn<(id: string) => Promise<RecordResult>>(async (id: string) => {
         if (id === 'dbA') return recA
         throw new Error('FormID not found')
       }),
@@ -87,7 +87,9 @@ describe('buildRecordColumns', () => {
     const recOld = makeRecord('0x00012345', 'Foo')
     const recNew = makeRecord('0x00012345', 'Foo')
     const api = {
-      recordById: vi.fn(async (id: string) => (id === 'dbOld' ? recOld : recNew)),
+      recordById: vi.fn<(id: string) => Promise<RecordResult>>(async (id: string) =>
+        id === 'dbOld' ? recOld : recNew
+      ),
     }
 
     const result = await buildRecordColumns('Foo', 'dbOld', [dbOld, dbNew], api)

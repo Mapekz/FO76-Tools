@@ -44,6 +44,8 @@ function RawRecordSection({
         {view.header.offset}
       </div>
       {view.subrecords.map((sr, i) => (
+        // Subrecords have no unique id — a signature (e.g. repeated CTDA) can appear more than once.
+        // oxlint-disable-next-line react/no-array-index-key
         <div key={i} style={{ marginBottom: 10 }}>
           <div>
             <span style={{ color: '#82aaff', fontWeight: 'bold' }}>{sr.signature}</span>{' '}

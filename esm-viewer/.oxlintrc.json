@@ -1,0 +1,31 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "import", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn",
+    "pedantic": "off",
+    "style": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "settings": {
+    "react": { "version": "18.0" }
+  },
+  "ignorePatterns": ["out/**", "dist/**", "src/shared/generated/**"],
+  "overrides": [
+    {
+      "files": ["src/main/**/*.ts", "src/preload/**/*.ts", "electron.vite.config.ts", "vitest.config.ts"],
+      "env": { "node": true }
+    },
+    {
+      "files": ["src/renderer/**/*.{ts,tsx}"],
+      "env": { "browser": true }
+    },
+    {
+      "files": ["**/*.test.ts"],
+      "env": { "vitest": true }
+    }
+  ]
+}

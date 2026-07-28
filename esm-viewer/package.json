@@ -27,6 +27,7 @@
     "electron": "^34",
     "electron-builder": "^25",
     "electron-vite": "^2",
+    "oxlint": "1.76.0",
     "react": "^18",
     "react-dom": "^18",
     "typescript": "^7.0.2",

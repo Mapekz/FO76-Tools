@@ -28,5 +28,5 @@ export function compareRows(a: RecordRow, b: RecordRow, sort: SortState): number
 }
 
 export function sortRows(rows: RecordRow[], sort: SortState): RecordRow[] {
-  return [...rows].sort((a, b) => compareRows(a, b, sort))
+  return rows.toSorted((a, b) => compareRows(a, b, sort))
 }

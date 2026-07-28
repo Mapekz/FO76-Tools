@@ -15,12 +15,12 @@ describe('loadAllTypeRecords', () => {
     const chunk1 = [makeRow('0x01'), makeRow('0x02')]
     const chunk2 = [makeRow('0x03')]
     const listTypeRecords = vi
-      .fn()
+      .fn<(dbId: string, sig: string, offset: number, chunkSize: number) => Promise<RecordRow[]>>()
       .mockResolvedValueOnce(chunk1)
       .mockResolvedValueOnce(chunk2)
     const api = { listTypeRecords }
 
-    const onChunk = vi.fn()
+    const onChunk = vi.fn<(accumulated: RecordRow[]) => void>()
     await loadAllTypeRecords(api, 'db1', 'ARMO', 3, 2, onChunk)
 
     expect(listTypeRecords).toHaveBeenNthCalledWith(1, 'db1', 'ARMO', 0, 2)
@@ -31,10 +31,12 @@ describe('loadAllTypeRecords', () => {
 
   it('stops once the accumulated offset reaches total', async () => {
     const chunk = [makeRow('0x01'), makeRow('0x02')]
-    const listTypeRecords = vi.fn().mockResolvedValueOnce(chunk)
+    const listTypeRecords = vi
+      .fn<(dbId: string, sig: string, offset: number, chunkSize: number) => Promise<RecordRow[]>>()
+      .mockResolvedValueOnce(chunk)
     const api = { listTypeRecords }
 
-    const onChunk = vi.fn()
+    const onChunk = vi.fn<(accumulated: RecordRow[]) => void>()
     await loadAllTypeRecords(api, 'db1', 'ARMO', 2, 2000, onChunk)
 
     expect(listTypeRecords).toHaveBeenCalledTimes(1)
@@ -43,10 +45,12 @@ describe('loadAllTypeRecords', () => {
   })
 
   it('breaks defensively on an empty chunk instead of looping forever', async () => {
-    const listTypeRecords = vi.fn().mockResolvedValueOnce([])
+    const listTypeRecords = vi
+      .fn<(dbId: string, sig: string, offset: number, chunkSize: number) => Promise<RecordRow[]>>()
+      .mockResolvedValueOnce([])
     const api = { listTypeRecords }
 
-    const onChunk = vi.fn()
+    const onChunk = vi.fn<(accumulated: RecordRow[]) => void>()
     await loadAllTypeRecords(api, 'db1', 'ARMO', 100, 10, onChunk)
 
     expect(listTypeRecords).toHaveBeenCalledTimes(1)
@@ -57,7 +61,9 @@ describe('loadAllTypeRecords', () => {
 describe('loadTypeChildrenPage', () => {
   it('fetches the first page when current is empty', async () => {
     const page1 = [makeRecordChild('0x01')]
-    const listTypeChildren = vi.fn().mockResolvedValueOnce(page1)
+    const listTypeChildren = vi
+      .fn<(dbId: string, sig: string, offset: number, limit: number) => Promise<GroupChild[]>>()
+      .mockResolvedValueOnce(page1)
     const api = { listTypeChildren }
 
     const result = await loadTypeChildrenPage(api, 'db1', 'WRLD', [], 100)
@@ -69,7 +75,9 @@ describe('loadTypeChildrenPage', () => {
   it('appends the next page after the current offset', async () => {
     const current = [makeRecordChild('0x01'), makeRecordChild('0x02')]
     const page2 = [makeRecordChild('0x03')]
-    const listTypeChildren = vi.fn().mockResolvedValueOnce(page2)
+    const listTypeChildren = vi
+      .fn<(dbId: string, sig: string, offset: number, limit: number) => Promise<GroupChild[]>>()
+      .mockResolvedValueOnce(page2)
     const api = { listTypeChildren }
 
     const result = await loadTypeChildrenPage(api, 'db1', 'WRLD', current, 2)
@@ -82,7 +90,11 @@ describe('loadTypeChildrenPage', () => {
 describe('loadGroupChildrenPage', () => {
   it('fetches the first page keyed by the group offset when current is empty', async () => {
     const page1 = [makeRecordChild('0x01')]
-    const listGroupChildren = vi.fn().mockResolvedValueOnce(page1)
+    const listGroupChildren = vi
+      .fn<
+        (dbId: string, groupOffset: number, offset: number, limit: number) => Promise<GroupChild[]>
+      >()
+      .mockResolvedValueOnce(page1)
     const api = { listGroupChildren }
 
     const result = await loadGroupChildrenPage(api, 'db1', 4096, [], 100)
@@ -94,7 +106,11 @@ describe('loadGroupChildrenPage', () => {
   it('appends the next page after the current offset', async () => {
     const current = [makeRecordChild('0x01')]
     const page2 = [makeRecordChild('0x02'), makeRecordChild('0x03')]
-    const listGroupChildren = vi.fn().mockResolvedValueOnce(page2)
+    const listGroupChildren = vi
+      .fn<
+        (dbId: string, groupOffset: number, offset: number, limit: number) => Promise<GroupChild[]>
+      >()
+      .mockResolvedValueOnce(page2)
     const api = { listGroupChildren }
 
     const result = await loadGroupChildrenPage(api, 'db1', 4096, current, 1)

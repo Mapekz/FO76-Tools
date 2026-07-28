@@ -97,7 +97,9 @@ export function SearchPanel({ onNavigate }: Props) {
       </div>
       <div style={{ overflowY: 'auto', flex: 1, marginTop: 4 }}>
         {results.map((row, i) => (
+          // Composite key: index guards against duplicate form_ids across pages.
           <div
+            // oxlint-disable-next-line react/no-array-index-key
             key={`${row.form_id}-${i}`}
             style={{ cursor: 'pointer', padding: '2px 0' }}
             onClick={() => onNavigate(activeDbId, row.form_id)}

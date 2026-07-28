@@ -16,7 +16,7 @@ describe('fetchReferencedBy', () => {
       per_depth_totals: [],
       shown_max_depth: 0
     }
-    const api = { referencedById: vi.fn(async () => result) }
+    const api = { referencedById: vi.fn<() => Promise<RefListResult>>(async () => result) }
 
     const out = await fetchReferencedBy('db1', '0x00012345', 3, api)
 

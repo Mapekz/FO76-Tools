@@ -23,6 +23,9 @@ export async function loadAllTypeRecords(
   let offset = 0
   let acc: RecordRow[] = []
   while (offset < total) {
+    // Each chunk's offset depends on the previous chunk's length, so this
+    // can't be parallelized with Promise.all.
+    // oxlint-disable-next-line eslint/no-await-in-loop
     const chunk = await api.listTypeRecords(dbId, sig, offset, chunkSize)
     if (chunk.length === 0) break // defensive: avoid an infinite loop on a short backend response
     acc = acc.concat(chunk)
