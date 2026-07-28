@@ -43,7 +43,18 @@ export function OpenFilesPanel() {
     if (activeDbId === id) {
       setActiveDb(all[0]?.id ?? null)
       setActiveRecord(null)
-      setReferencedBy({ target: '', rows: [], total: 0, capped: false })
+      setReferencedBy({
+        target: '',
+        rows: [],
+        total: 0,
+        capped: false,
+        requested_depth: 0,
+        effective_depth: null,
+        depth_capped: false,
+        frontier_remaining: 0,
+        per_depth_totals: [],
+        shown_max_depth: 0
+      })
     }
   }
 
