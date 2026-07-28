@@ -103,12 +103,16 @@ jobs:
       - name: ty
         run: uvx ty@0.0.62 check tools/
 
-  # ── esm-viewer: typecheck + unit tests ───────────────────────────────────
+  # ── esm-viewer: lint + format + typecheck + unit tests ────────────────────
   #
   # No Rust toolchain or native-addon build: index.d.ts is git-tracked and the
   # file:../esm/bindings/napi dependency resolves as a plain symlink.
+  #
+  # oxlint/oxfmt are dev-only tools (see .oxlintrc.json / .oxfmtrc.json), pinned
+  # by exact version since oxfmt is still 0.x. src/shared/generated/ is excluded
+  # from both -- it's ts-rs output, drift-guarded separately in the rust job above.
   esm-viewer:
-    name: esm-viewer (typecheck + test)
+    name: esm-viewer (lint / format / typecheck / test)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -123,6 +127,12 @@ jobs:
 
       - name: install
         run: npm ci
+
+      - name: lint
+        run: npm run lint:ci
+
+      - name: format
+        run: npm run format:check
 
       - name: typecheck
         run: npm run typecheck

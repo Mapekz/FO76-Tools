@@ -14,7 +14,12 @@
     "package:dir": "electron-builder --dir",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "lint:ci": "oxlint --deny-warnings --format=github",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
   },
   "dependencies": {
     "@fo76/esm-napi": "file:../esm/bindings/napi"
