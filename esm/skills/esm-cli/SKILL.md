@@ -191,6 +191,75 @@ engine-attached-looking orphaned spells. Cross-check any rank or orphaned spell 
 as live. Confirmed via the "Lock and Load" family: PCRD lists 1 rank against a 3-rank record chain
 plus a cut orphaned spell.
 
+## Drop-chance math (LVLI chains)
+
+- **A zero `Chance None Value` does not mean "guaranteed" — check the sibling
+  `Chance None Global` on the same entry.** Each `Leveled List Entry` carries
+  both a flat `Chance None Value` and an optional `Chance None Global` FormID;
+  the flat value wins when nonzero, otherwise the GLOB is the real chance-none
+  (same flat-wins rule as MGEF magnitudes above). Reading only the flat field
+  makes gated rewards look like 100% drops: `TWZ07_LL_QuestReward_Event` reports
+  flat `0.0` but points at `RA_Rewards_Activities_UniqueWeapon_DropRate_Cnone`
+  = 85, i.e. a 15% drop. The list-level `Chance None Value` has no GLOB sibling
+  — that one really is flat.
+- **Flags decide how to combine entries, and `Use First Object That Matches All
+  Conditions` is not a 1/N pick.** `Use All` rolls every entry independently
+  (multiply the per-entry miss chances). No flag = pick one uniformly from the
+  entry count, then apply that entry's chance-none. `Use First Object That
+  Matches All Conditions` walks entries in order and takes the first whose
+  conditions pass — so an entry gated on `GetRandomPercent ≤ 10` is a flat 10%,
+  and dividing by the entry count instead is wrong. Later entries in such a list
+  are only reachable when the earlier gates fail, so their true probability is
+  the product of the preceding failures.
+- **Entry-level `Conditions` gate the roll too** — `GetRandomPercent ≤ N` (flat
+  or GLOB comparison value) and `HasLearnedRecipe(...) == 0` are the common
+  ones. The recipe check is why plan-then-weapon lists hand out the plan first:
+  `RD01_LLS_Raids_Rewards_Enc01_Weapons_Valkyrie` is `Use First Match` with the
+  BOOK at `rand ≤ 5` (while unlearned) ahead of the weapon LVLI at `rand ≤ 10`.
+- `Quantity: 0` on an entry means "use the sublist's own count", not "disabled" —
+  creature death-item lists are full of them.
+
+## OMOD `Data.Includes[]` — inherited properties
+
+- **An OMOD's own `Properties[]` is only half the story: `Data.Includes[]`
+  pulls in `_PARENT_` building blocks whose properties also apply.** Sweeping
+  `Properties[]` alone silently drops real mechanics. Confirmed: the "Black
+  Diamond" Ski Sword's `mod_Custom_BlackDiamond` carries nothing but three
+  keyword rows, yet includes `_PARENT_mod_WEAPON_GENERIC_Cryo_Split2`
+  (`AttackDamage` −40%, `DamageTypeValues dtCryo` +60%) — the entire physical→cryo
+  split lives in the parent. In a 90-weapon sweep, 60 weapons had properties
+  reachable only through `Includes[]`. Resolve the chain recursively (parents can
+  include parents) before concluding an OMOD "does nothing".
+- The `dn_UniqueEffect<Type>Damage` keyword family is a **display label**, not a
+  mechanism — when it appears with no matching damage row, the damage is in an
+  included `_PARENT_` mod, not engine-side magic. Chase `Includes[]` before
+  writing something off as cosmetic.
+- Distinguish **identity mods from stock mods**. A unique weapon's shipped roll
+  drags in ordinary receiver/barrel/magazine mods that inherit their own parents
+  (`_PARENT_mod_WEAPON_GENERIC_Damage_Tier2` = `DamageBonusMult +0.35`,
+  `ArmorPiercing_Dual` = `ArmorPenetration +25`,
+  `Receiver_Automatic_BaseProperties` = −30% across every damage type). Those are
+  properties of the *base weapon's mods*, not of the unique — don't credit them
+  as the unique's effect.
+
+## Entry-point names can be wrong (FO4 enum inherited wholesale)
+
+Entry-point 28 decodes as `Mod Power Attack Damage` but is really the **block**
+hook in FO76: both `NailerPerk` ("Blocking Attacks Inflicts Bleeding") and the
+`LGN_Retribution_Perk01` legendary armor perk ("Blocking a melee attack restores
+1 HP and 1 AP") route through it with `Select Spell`. When an entry point's name
+contradicts every consumer's own Description, trust the descriptions and treat
+the schema name as inherited-from-FO4 drift. Some entry points have no name at
+all in the current schema (e.g. the one `mod_custom_V63-BERTHA_Perk` uses) —
+report the numeric id and the value rather than guessing.
+
+`refs --ep <id>` (see above) is the tool this section presupposes: it
+enumerates every consumer of an entry point so you can actually compare their
+Descriptions instead of guessing from the schema name alone. Prefer the
+numeric id over the name when a name's trustworthiness is in doubt — `--ep 28`
+finds the same two carriers regardless of what the name claims, and `--ep 212`
+still works for an id with no name at all.
+
 ## Obtainability verdicts (`walk --refs`)
 
 - Player-facing referrer types: COBJ, GMRW, LGDI, QUST, CONT, MISC, FLST.
