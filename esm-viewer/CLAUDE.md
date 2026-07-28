@@ -14,9 +14,13 @@ npm install                # install deps; relinks the @fo76/esm-napi symlink de
 npm run build:addon        # rebuild ../esm/bindings/napi (native addon this app consumes)
 npm run dev                # electron-vite dev (runs build:addon first via "predev")
 npm run build              # electron-vite build (runs build:addon first via "prebuild")
+npm run lint                # oxlint (see .oxlintrc.json)
+npm run lint:fix            # oxlint --fix
+npm run format              # oxfmt, writes in place (see .oxfmtrc.json)
+npm run format:check        # oxfmt --check
 npm run typecheck          # tsc --noEmit against both tsconfig.json and tsconfig.node.json
 npm run test                # vitest run (unit tests for renderer/src/lib/*)
-just                        # = just check = npm run typecheck && npm run test
+just                        # = just check = lint:ci -> format:check -> typecheck -> test
 just dev / just build       # thin wrappers over the npm scripts above
 ```
 
@@ -45,9 +49,35 @@ Nothing in the electron-vite/esbuild build pipeline checks types — it strips t
 typecheck` is the actual gate, run separately (and via `just check`). There are two tsconfigs
 because main/preload and renderer target different environments:
 
-- `tsconfig.json` — renderer (DOM lib, `composite: true`).
+- `tsconfig.json` — renderer (DOM + ES2023 lib, `composite: true`). ES2023 (not ES2022) is
+  deliberate — it's what makes `Array.prototype.toSorted()`/`toReversed()` etc. available;
+  Electron's bundled V8 already supports them at runtime.
 - `tsconfig.node.json` — main + preload (Node-oriented; extends `tsconfig.json`, overrides
   `lib`/`jsx`; also picks up `src/shared/**/*` since main/preload import shared types).
+
+`typescript` is pinned to `^7.0.2` (the Go-ported compiler; same `tsc` binary, just native).
+
+## Lint & format
+
+`oxlint` (`.oxlintrc.json`) and `oxfmt` (`.oxfmtrc.json`) are both pinned to exact versions
+(`--save-exact`) since oxfmt is still pre-1.0. Both exclude `src/shared/generated/` — it's
+`ts-rs` output and CI drift-guards it (`git diff --exit-code` in the `rust` job), so a
+formatter touching it would turn that job red.
+
+`.oxlintrc.json` enables `correctness`/`suspicious`/`perf` plus the `react`/`import`/`vitest`
+plugins; `style` stays off since `oxfmt` owns formatting. Type-aware linting
+(`oxlint-tsgolint`) is intentionally not wired up — it's a separate devDependency
+regardless of the `typescript` version installed, since TS 7.0 ships no programmatic
+compiler API for it to call. `oxlint --type-check` is also intentionally not used as a
+`tsc` replacement — this app's two tsconfigs (divergent `lib`/`jsx`) are the shape oxlint's
+single-program discovery is least tested against.
+
+`.oxfmtrc.json` sets `semi: false` / `singleQuote: true` to match the pre-existing house
+style; everything else is oxfmt's defaults (`printWidth: 100`, `trailingComma: "all"`).
+`sortPackageJson` (on by default) is explicitly disabled — it reorders `package.json` keys.
+oxfmt does not respect `.gitignore` (oxlint does), so its `ignorePatterns` duplicates
+`out/`/`dist/`/`node_modules/` explicitly, plus `*.md`/`*.yml`/`*.yaml`/`*.html` since this
+app's docs/config files were never brought under formatter control.
 
 ## Architecture
 

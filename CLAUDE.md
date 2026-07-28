@@ -44,6 +44,6 @@ Multi-context: `CONTEXT-MAP.md` at the root points to a `CONTEXT.md` + `docs/adr
 Before committing in any subproject, run that subproject's full check suite and only commit when everything passes — formatting, lint with `-D warnings`, and tests:
 
 - **`esm/` and `ba2/`**: `just` (fmt + clippy + test). For `esm/`, also run `just audit` when you change the schema, the extractor, or anything affecting decode coverage.
-- **`esm-viewer/`**: `just check` (= `npm run typecheck`).
+- **`esm-viewer/`**: `just check` (= lint + format check + typecheck + test).
 
 Fix formatting and clippy warnings rather than committing around them. Never commit with failing or skipped checks.

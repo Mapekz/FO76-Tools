@@ -6,7 +6,7 @@
 # CI also runs (not covered by `just check`):
 #   - schema parity audit (`just audit`, separate recipe; needs ../TES5Edit)
 #   - Python tooling tests (`just patch-tools-test`) + lint/typecheck (`just patch-tools-lint`)
-#   - esm-viewer typecheck + unit tests (cd ../esm-viewer && npm run typecheck && npm run test)
+#   - esm-viewer lint/format/typecheck/test (cd ../esm-viewer && just check)
 #   - napi native-addon build + smoke (continue-on-error in CI)
 #
 # Usage:
