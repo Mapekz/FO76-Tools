@@ -248,22 +248,44 @@ fn recursive_refs_depth6_reaches_all_hops() {
     assert_eq!(cont.depth, 3);
     assert_eq!(cont.path.len(), 2);
 
+    // The chain terminates at 3 hops, well within depth=6 — no frontier left
+    // unexpanded, so this result is a complete closure, not a truncated one.
+    assert_eq!(list.requested_depth, 6);
+    assert_eq!(list.effective_depth, Some(6));
+    assert!(!list.depth_capped, "graph terminates before the cap");
+    assert_eq!(list.frontier_remaining, 0);
+
     let _ = std::fs::remove_file(&path);
 }
 
-/// depth=0 is clamped to 1 — behaves like depth=1.
+/// depth=0 requests an unbounded walk — it must reach exactly as deep as the
+/// full chain, not clamp to 1 (the old semantics) or to DEFAULT_MAX_DEPTH.
 #[test]
-fn recursive_refs_depth0_clamps_to_1() {
+fn recursive_refs_depth0_is_unbounded() {
     let (path, mut db) = open_chain_db();
 
     let list = referenced_by_enriched(&mut db, FormId(1), 0, 0, None, false).expect("enriched");
-    assert_eq!(list.rows.len(), 1, "depth=0 should clamp to 1 direct ref");
-    assert_eq!(list.rows[0].form_id, FormId(2).display());
+    assert_eq!(
+        list.rows.len(),
+        3,
+        "depth=0 (unbounded) must reach LVLI(2)+LVLI(3)+CONT(4), same as depth=6"
+    );
+    let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
+    assert!(ids.contains(&FormId(4).display().as_str()));
+
+    assert_eq!(list.requested_depth, 0);
+    assert_eq!(
+        list.effective_depth, None,
+        "unbounded walk has no fixed cap to report"
+    );
+    assert!(!list.depth_capped);
+    assert_eq!(list.frontier_remaining, 0);
 
     let _ = std::fs::remove_file(&path);
 }
 
-/// depth cap terminates the walk at max_depth even if more hops exist.
+/// depth cap terminates the walk at max_depth even if more hops exist, and
+/// the result reports that it did so via depth_capped/frontier_remaining.
 #[test]
 fn recursive_refs_depth_cap_terminates() {
     let (path, mut db) = open_chain_db();
@@ -276,6 +298,43 @@ fn recursive_refs_depth_cap_terminates() {
         "CONT(4) must not appear at depth=2"
     );
     assert_eq!(list.rows.len(), 2);
+
+    assert_eq!(list.requested_depth, 2);
+    assert_eq!(list.effective_depth, Some(2));
+    assert!(
+        list.depth_capped,
+        "LVLI(3) has an unexpanded referencer (CONT(4)) beyond the cap"
+    );
+    assert!(list.frontier_remaining >= 1);
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `per_depth_totals` reflects the full walk (pre-`--limit`), and
+/// `shown_max_depth` reflects only what survived truncation.
+#[test]
+fn recursive_refs_reports_per_depth_totals_and_shown_max_depth() {
+    let (path, mut db) = open_chain_db();
+
+    let full = referenced_by_enriched(&mut db, FormId(1), 6, 0, None, false).expect("enriched");
+    // index 0 = carrier rows (none on a direct-target walk), 1 = LVLI(2),
+    // 2 = LVLI(3), 3 = CONT(4).
+    assert_eq!(full.per_depth_totals, vec![0, 1, 1, 1]);
+    assert_eq!(full.shown_max_depth, 3);
+
+    // limit=1 keeps only the shallowest row (FormID-sorted), but
+    // per_depth_totals must still reflect all 3 rows found pre-truncation.
+    let limited = referenced_by_enriched(&mut db, FormId(1), 6, 1, None, false).expect("enriched");
+    assert_eq!(limited.rows.len(), 1);
+    assert_eq!(
+        limited.per_depth_totals,
+        vec![0, 1, 1, 1],
+        "per_depth_totals is computed before --limit truncation"
+    );
+    assert_eq!(
+        limited.shown_max_depth, 1,
+        "only the depth-1 row survived the limit=1 truncation"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

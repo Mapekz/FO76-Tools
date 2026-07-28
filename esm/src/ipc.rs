@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Default maximum recursion depth for the reverse-reference walk.
-pub const DEFAULT_MAX_DEPTH: usize = 6;
+pub const DEFAULT_MAX_DEPTH: usize = 8;
 
 // ─── Wire types ─────────────────────────────────────────────────────────────
 
@@ -302,6 +302,34 @@ pub struct RefList {
     /// entry-point walks; used by the CLI capped-output note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_point_total: Option<usize>,
+    /// The raw `depth` this walk was asked for, before clamping — lets a
+    /// caller detect that its request was silently adjusted. `0` means the
+    /// caller asked for an unbounded walk (see [`DEFAULT_MAX_DEPTH`]).
+    #[serde(default)]
+    pub requested_depth: usize,
+    /// The `max_depth` this walk actually used, post-clamp. `None` when
+    /// `requested_depth == 0` (unbounded — there is no fixed cap to report).
+    #[serde(default)]
+    pub effective_depth: Option<usize>,
+    /// True when the BFS discovered nodes at `effective_depth` that were
+    /// never expanded further — this result is a genuine subset of the full
+    /// reverse-reference graph, not its complete closure, regardless of
+    /// `capped`/`--limit`.
+    #[serde(default)]
+    pub depth_capped: bool,
+    /// Count of newly-discovered nodes at `effective_depth` that were not
+    /// expanded (see `depth_capped`). Zero whenever `depth_capped` is false.
+    #[serde(default)]
+    pub frontier_remaining: usize,
+    /// Row count per hop depth, index = depth, computed before `--limit`
+    /// truncation (so this reflects the full walk, not just what's shown).
+    /// Index 0 is always the carrier-row count (0 for a single-target walk).
+    #[serde(default)]
+    pub per_depth_totals: Vec<usize>,
+    /// The deepest depth present in `rows` after `--limit` truncation — lets
+    /// a truncated result state precisely "you only got hops 1..=N".
+    #[serde(default)]
+    pub shown_max_depth: usize,
 }
 
 /// One entry of a [`Op::RecordBulk`] result: the resolved record on success,
@@ -724,7 +752,8 @@ pub fn diff_locked(
 /// A `depth` of 1 (the default) returns the same set as the old single-level
 /// lookup.  Higher values follow the reverse-reference graph breadth-first,
 /// visiting each node at most once (cycle-safe).  `depth` is clamped to
-/// `[1, DEFAULT_MAX_DEPTH]`; passing 0 is treated as 1.
+/// `[1, DEFAULT_MAX_DEPTH]`; `depth == 0` requests an unbounded walk instead
+/// (no fixed hop cap — see [`RefList::effective_depth`]).
 ///
 /// Each `RefRow` carries:
 /// - `depth`: hop distance from `target` (1 = direct referencer).
@@ -749,7 +778,7 @@ pub fn referenced_by_enriched(
     type_filter: Option<&str>,
     include_paths: bool,
 ) -> anyhow::Result<RefList> {
-    let (rows, total, capped, _) = referenced_by_walk(
+    let (rows, stats) = referenced_by_walk(
         db,
         &[(target, Vec::new())],
         false,
@@ -761,10 +790,16 @@ pub fn referenced_by_enriched(
     Ok(RefList {
         target: target.display(),
         rows,
-        total,
-        capped,
+        total: stats.total,
+        capped: stats.capped,
         carrier_total: None,
         entry_point_total: None,
+        requested_depth: stats.requested_depth,
+        effective_depth: stats.effective_depth,
+        depth_capped: stats.depth_capped,
+        frontier_remaining: stats.frontier_remaining,
+        per_depth_totals: stats.per_depth_totals,
+        shown_max_depth: stats.shown_max_depth,
     })
 }
 
@@ -793,15 +828,21 @@ pub fn referenced_by_enriched_multi(
         .flat_map(|(_, tags)| tags.iter().map(|ep| ep.id))
         .collect::<std::collections::BTreeSet<_>>()
         .len();
-    let (rows, total, capped, carrier_total) =
+    let (rows, stats) =
         referenced_by_walk(db, seeds, true, depth, limit, type_filter, include_paths)?;
     Ok(RefList {
         target: label,
         rows,
-        total,
-        capped,
-        carrier_total: Some(carrier_total),
+        total: stats.total,
+        capped: stats.capped,
+        carrier_total: Some(stats.carrier_total),
         entry_point_total: Some(entry_point_total),
+        requested_depth: stats.requested_depth,
+        effective_depth: stats.effective_depth,
+        depth_capped: stats.depth_capped,
+        frontier_remaining: stats.frontier_remaining,
+        per_depth_totals: stats.per_depth_totals,
+        shown_max_depth: stats.shown_max_depth,
     })
 }
 
@@ -818,9 +859,7 @@ pub fn referenced_by_enriched_multi(
 /// about display/attribution order — notably
 /// [`Database::perks_by_entry_point`] — must sort before calling.
 ///
-/// Returns `(rows, total, capped, carrier_total)` where `carrier_total` is
-/// the number of depth-0 rows that survived the type filter (0 when
-/// `emit_seeds` is false).
+/// Returns `(rows, stats)` — see [`WalkStats`].
 fn referenced_by_walk(
     db: &mut Database,
     seeds: &[(FormId, Vec<EntryPointRef>)],
@@ -829,8 +868,16 @@ fn referenced_by_walk(
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
-) -> anyhow::Result<(Vec<RefRow>, usize, bool, usize)> {
-    let max_depth = depth.clamp(1, DEFAULT_MAX_DEPTH);
+) -> anyhow::Result<(Vec<RefRow>, WalkStats)> {
+    let requested_depth = depth;
+    // `depth == 0` requests an unbounded walk (no fixed hop cap); any other
+    // value clamps to `[1, DEFAULT_MAX_DEPTH]` as before.
+    let max_depth = if depth == 0 {
+        usize::MAX
+    } else {
+        depth.clamp(1, DEFAULT_MAX_DEPTH)
+    };
+    let effective_depth = if depth == 0 { None } else { Some(max_depth) };
     let type_filter = match type_filter {
         Some(t) => {
             if t.len() != 4 {
@@ -908,6 +955,9 @@ fn referenced_by_walk(
     let mut rows: Vec<RefRow> = Vec::new();
     // FormId → index into `rows` for equal-depth entry-point tag unions.
     let mut emitted: HashMap<FormId, usize> = HashMap::new();
+    // Newly-discovered nodes at `max_depth` that were not expanded further —
+    // the unexplored BFS frontier. See `RefList::depth_capped`.
+    let mut frontier_remaining: usize = 0;
 
     while let Some((current, origin, path_here)) = queue.pop_front() {
         for r in db.referenced_by(current)? {
@@ -972,6 +1022,8 @@ fn referenced_by_walk(
                     editor_id: r.editor_id,
                 });
                 queue.push_back((fid, origin, new_path));
+            } else {
+                frontier_remaining += 1;
             }
         }
     }
@@ -985,6 +1037,12 @@ fn referenced_by_walk(
     let mut all_rows = seed_rows;
     all_rows.append(&mut rows);
 
+    let max_depth_seen = all_rows.iter().map(|r| r.depth).max().unwrap_or(0);
+    let mut per_depth_totals = vec![0usize; max_depth_seen + 1];
+    for r in &all_rows {
+        per_depth_totals[r.depth] += 1;
+    }
+
     let total = all_rows.len();
     let capped = limit > 0 && total > limit;
     let limited: Vec<RefRow> = if limit > 0 {
@@ -992,8 +1050,40 @@ fn referenced_by_walk(
     } else {
         all_rows
     };
+    let shown_max_depth = limited.iter().map(|r| r.depth).max().unwrap_or(0);
 
-    Ok((limited, total, capped, carrier_total))
+    Ok((
+        limited,
+        WalkStats {
+            total,
+            capped,
+            carrier_total,
+            requested_depth,
+            effective_depth,
+            depth_capped: frontier_remaining > 0,
+            frontier_remaining,
+            per_depth_totals,
+            shown_max_depth,
+        },
+    ))
+}
+
+/// Non-row outcome of one [`referenced_by_walk`] call — the shared "how did
+/// this walk go" facts both [`referenced_by_enriched`] and
+/// [`referenced_by_enriched_multi`] copy into their own `RefList` (each adds
+/// its own `target`/`entry_point_total` on top).
+struct WalkStats {
+    total: usize,
+    capped: bool,
+    /// Depth-0 rows that survived the type filter. 0 when `emit_seeds` is
+    /// false.
+    carrier_total: usize,
+    requested_depth: usize,
+    effective_depth: Option<usize>,
+    depth_capped: bool,
+    frontier_remaining: usize,
+    per_depth_totals: Vec<usize>,
+    shown_max_depth: usize,
 }
 
 /// Merge `incoming` into `dst` by entry-point id, keeping sorted+deduped.

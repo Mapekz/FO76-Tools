@@ -55,7 +55,7 @@ Clean layering — edit at the right level:
 | `src/chase.rs` | Composes `Op::RecordBulk`/`Op::ReferencedBy` (via the `ChaseFetcher` seam) to classify an OMOD's `Data.Properties[]` rows into direct-property/perk-grant/keyword-hook mechanisms and emit a compact evidence tree — the "chase pattern" from the patch-notes mechanics KB, native port of the retired `tools/chase/chase.py` prototype |
 | `src/walk.rs` | Native port of `dps-76/scripts/esm-walk.ts`: BFS over `ChaseFetcher` (same seam as `chase.rs`) printing one compact indented per-record-type digest (GLOB/AVIF/KYWD/MGEF/SPEL·ENCH·ALCH/PERK/WEAP/OMOD, generic fallback) instead of a series of raw `get` dumps; `build_refs_digest` groups a `--refs` reverse-reference summary by record type |
 | `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk; `--entry-point`/`--ep <name\|id>` seeds the walk from every PERK carrying a given "Entry Point" instead of one FormID/EditorID), `chase`, `walk` (`--refs`/`--depth N`/`--json`), `tree`, `diff`, `coverage`, `skill` (`--install`/`--dir`/`--force`), `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index`; ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths, and `skill`/`daemon`, which take none) |
-| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 6); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`); the MCP-stdio `initialize` response carries a condensed `instructions` string (`MCP_INSTRUCTIONS`) as ambient gotcha context for every client |
+| `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 8, 0=unbounded); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`); the MCP-stdio `initialize` response carries a condensed `instructions` string (`MCP_INSTRUCTIONS`) as ambient gotcha context for every client |
 | `skills/esm-cli/SKILL.md` | Hard-won `esm`-CLI usage-knowledge doc, embedded at compile time into `cli.rs` (`include_str!`, same pattern as `schema/fo76.json`); `esm skill` prints it, `esm skill --install [--dir <repo>] [--force]` writes it into a consumer repo's `.claude/skills/esm-cli/`; this repo's own `.claude/skills/esm-cli` is a symlink to this directory |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Arc<Mutex<Database>>`); async: `open_database`, `record_by_edid`, `record_by_id`, `referenced_by`, `referenced_by_id`; sync: `file_info`, `list_groups`, `list_type_records`, `record_by_formid` |
 
@@ -151,7 +151,7 @@ Every round-trip has overhead. When you need many records of the same type, use 
 esm -p list --type WEAP --limit 500 --pretty       # all weapons in one call
 esm -p search "*Rifle*" --type WEAP --pretty       # search by name/EditorID
 esm -p refs 0x463F --limit 100 --pretty            # direct reverse lookup (depth=1)
-esm -p refs 0x463F --depth 6 --pretty              # recursive walk to depth 6
+esm -p refs 0x463F --depth 8 --pretty              # recursive walk to depth 8
 esm -p coverage --type WEAP                        # schema decode audit
 ```
 
@@ -198,7 +198,7 @@ The `.esm.midx` file is written automatically whenever the `.esm.idx` is freshly
 }
 ```
 
-The server exposes six read-only tools (all proxy to the warm daemon): `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none|stub|full`, default `stub` — references are annotated with EditorID+name inline), `esm_list_groups` (type inventory / table of contents), `esm_list_records`, `esm_refs` (depth-bound BFS reverse-reference walk; default `depth=1` for a single-level lookup, up to `depth=6` to walk the full reference graph — use this for "where does X drop?" questions). Each result includes a hop `depth` and an intermediate-node `path` array. Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
+The server exposes six read-only tools (all proxy to the warm daemon): `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none|stub|full`, default `stub` — references are annotated with EditorID+name inline), `esm_list_groups` (type inventory / table of contents), `esm_list_records`, `esm_refs` (depth-bound BFS reverse-reference walk; default `depth=1` for a single-level lookup, up to `depth=8` — or `depth=0` for unbounded — to walk the full reference graph — use this for "where does X drop?" questions). Each result includes a hop `depth` and an intermediate-node `path` array. Under the hood MCP-stdio proxies to the same HTTP daemon, so the warm-index benefit applies automatically.
 
 ## Coverage drift handling (vs TES5Edit)
 

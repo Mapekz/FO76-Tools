@@ -14,4 +14,38 @@ carrier_total?: number | null,
  * Total distinct entry-point ids across all seeds. Set only for
  * entry-point walks; used by the CLI capped-output note.
  */
-entry_point_total?: number | null, };
+entry_point_total?: number | null, 
+/**
+ * The raw `depth` this walk was asked for, before clamping — lets a
+ * caller detect that its request was silently adjusted. `0` means the
+ * caller asked for an unbounded walk (see [`DEFAULT_MAX_DEPTH`]).
+ */
+requested_depth: number, 
+/**
+ * The `max_depth` this walk actually used, post-clamp. `None` when
+ * `requested_depth == 0` (unbounded — there is no fixed cap to report).
+ */
+effective_depth: number | null, 
+/**
+ * True when the BFS discovered nodes at `effective_depth` that were
+ * never expanded further — this result is a genuine subset of the full
+ * reverse-reference graph, not its complete closure, regardless of
+ * `capped`/`--limit`.
+ */
+depth_capped: boolean, 
+/**
+ * Count of newly-discovered nodes at `effective_depth` that were not
+ * expanded (see `depth_capped`). Zero whenever `depth_capped` is false.
+ */
+frontier_remaining: number, 
+/**
+ * Row count per hop depth, index = depth, computed before `--limit`
+ * truncation (so this reflects the full walk, not just what's shown).
+ * Index 0 is always the carrier-row count (0 for a single-target walk).
+ */
+per_depth_totals: Array<number>, 
+/**
+ * The deepest depth present in `rows` after `--limit` truncation — lets
+ * a truncated result state precisely "you only got hops 1..=N".
+ */
+shown_max_depth: number, };

@@ -72,8 +72,9 @@ pub fn filter_op(s: &str) -> anyhow::Result<FilterOp> {
     }
 }
 
-/// Clamp an optional reverse-reference walk depth to
-/// `[1, ipc::DEFAULT_MAX_DEPTH]`, defaulting to `1` when `None`.
+/// Normalize an optional reverse-reference walk depth, preserving `0` as the
+/// unbounded sentinel and clamping nonzero values to
+/// `[1, ipc::DEFAULT_MAX_DEPTH]`. Defaults to `1` when `None`.
 ///
 /// This is the same clamp [`crate::ipc::referenced_by_enriched`] performs
 /// internally (that one stays in place — it's the authoritative safety net
@@ -83,8 +84,11 @@ pub fn filter_op(s: &str) -> anyhow::Result<FilterOp> {
 /// to a caller, or building an `Op` whose depth field should already reflect
 /// the clamp).
 pub fn clamp_ref_depth(d: Option<usize>) -> usize {
-    d.map(|d| d.clamp(1, crate::ipc::DEFAULT_MAX_DEPTH))
-        .unwrap_or(1)
+    match d {
+        None => 1,
+        Some(0) => 0,
+        Some(d) => d.clamp(1, crate::ipc::DEFAULT_MAX_DEPTH),
+    }
 }
 
 /// Build a [`DiffOptions`] from the primitive fields the CLI's `diff`/`Diff`

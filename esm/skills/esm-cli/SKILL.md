@@ -48,8 +48,10 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 ## Reverse references (`refs`)
 
 - `esm -p refs --formid <0x...> [--depth N] [--type SIG] [--paths] --json`.
-- `--depth` 1–6: direct referrers at 1; raise it to reach a target through an
-  intermediary (e.g. a quest alias).
+- `--depth` 1–8 (0 = unbounded, use with `--limit 0` and a `--type` filter — an
+  unbounded walk over a hub-heavy graph like CELL/REFR can return hundreds of
+  thousands of rows): direct referrers at 1; raise it to reach a target through
+  an intermediary (e.g. a quest alias).
 - `--type <SIG>` filters to ONE 4-char referrer type server-side (not a
   comma list) and composes correctly with `--limit`/`--depth`.
 - `--paths` annotates each row with the JSON field path(s) from referrer to

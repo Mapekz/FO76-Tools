@@ -261,8 +261,9 @@ impl EsmDatabase {
     /// Return all records that reference the given FormID or EditorID (auto-detected).
     ///
     /// `depth` controls the reverse-reference walk depth (default 1 = direct refs only,
-    /// capped at DEFAULT_MAX_DEPTH = 6). Each returned row includes its hop `depth` and
-    /// an intermediate-node `path` array (empty for depth-1 results).
+    /// capped at DEFAULT_MAX_DEPTH = 8; pass 0 for an unbounded walk with no fixed hop
+    /// cap). Each returned row includes its hop `depth` and an intermediate-node `path`
+    /// array (empty for depth-1 results).
     #[napi]
     pub async fn referenced_by_id(
         &self,
