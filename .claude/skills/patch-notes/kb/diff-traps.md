@@ -19,8 +19,19 @@ Many `_array_diff` `changed` entries whose from/to field sets are identical but 
 indices are not new content. **Confirm the same value multiset exists on both sides before
 reporting** — compare the serialized multiset, don't eyeball it.
 
-Seen in VMAD `script_fragments`, VMAD alias/property name-casing slots, RACE `Attacks[]` / `Bone
-Scale Data[]`, LCTN `Master Reference` / `Master Unique NPCs`, and NPC_ `Attacks[]`.
+Seen in VMAD `scripts[]`, VMAD `script_fragments`, VMAD alias/property name-casing slots, RACE
+`Attacks[]` / `Bone Scale Data[]`, LCTN `Master Reference` / `Master Unique NPCs`, and NPC_
+`Attacks[]`.
+
+**VMAD `scripts[]` is the highest-risk surface, because the false positive reads as a feature.**
+A permuted script list looks exactly like "a bespoke script replaced the generic one" — the diff
+shows `name` changing at an index, and the two scripts at that index have different property
+counts, which then reads as "properties 3 → 6." Both readings are artifacts of comparing two
+different scripts that happen to share a slot. **Compare script lists as a name multiset with
+per-script property counts, never index by index.** A script named in the *from* side is only
+removed if its name is absent from the whole *to* side. Corollary: globals or aliases bound by a
+script that merely moved are not new bindings — check whether the target records existed in the
+old snapshot before calling the logic new.
 
 The tell-tale differs by record type. RACE-style shows mirrored numeric pairs (a `Damage Mult` 1.0
 → 1.5 at one index paired with the exact reverse elsewhere). **NPC_ `Attacks[]` shows no mirrored
@@ -33,6 +44,15 @@ WendigoColossusSpawn variants, DEL_E09A_EncUltraciteAbomination, five RD01_Enc05
 creatures, three Burning and two Emperor Radscorpion variants, HTO_LvlMoleMiner_Molerat_BroodMother)
 had `Attacks` as their only changed path; bulk-getting both sides proved the multiset identical in
 all 17, order alone differing.
+
+**Example (VMAD `scripts[]`):** QUST `Burn_BountyHunt_Headhunt` (0x007EBDF4) showed
+`Virtual Machine Adapter / scripts` as its only changed path, with
+`defaultquestencounterwavescript` at index 0 replaced by
+`Burn:Burn_Bounty:Burn_Bounty_HeadhuntSpawnScript`. Both sides in fact carry the identical six
+scripts with identical property counts (3, 6, 12, 2, 5, 5) — the generic wave script moved to
+index 5 and the Head Hunt spawn script moved up from index 1. The three
+`Burn_BountyHunt_RecentHeadhuntGang_0N` globals it binds (0x00833A0A–0C) already existed at −1.0
+in the old snapshot, so no anti-repeat logic was added.
 *verified 2026-07-24 vs 20260724*
 
 ## `Value Currency` null → Caps001 is schema population
