@@ -489,6 +489,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
         depth: 1,
         type_filter: Some("WEAP".to_string()),
         paths: true,
+        sort: esm::ipc::RefSort::Formid,
     };
 
     // Round-trip check.
@@ -523,6 +524,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
         depth: 1,
         type_filter: Some("MISC".to_string()),
         paths: false,
+        sort: esm::ipc::RefSort::Formid,
     };
     let req_no_match = Request {
         esm: tmp.clone(),

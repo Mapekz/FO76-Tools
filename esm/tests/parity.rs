@@ -194,6 +194,7 @@ fn referenced_by_parity() {
             depth: 1,
             type_filter: None,
             paths: false,
+            sort: esm::ipc::RefSort::Formid,
         },
     );
     let _ = std::fs::remove_file(&path);

@@ -172,6 +172,7 @@ pub trait QueryBackend {
                 depth,
                 type_filter,
                 paths,
+                sort: ipc::RefSort::Formid,
             },
         )?;
         Ok(serde_json::from_value(v)?)

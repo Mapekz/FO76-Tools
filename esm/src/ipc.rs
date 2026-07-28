@@ -203,6 +203,12 @@ pub enum Op {
         /// requires decoding every emitted row, unlike the default walk.
         #[serde(default)]
         paths: bool,
+        /// Row ordering applied before `limit` truncation. `Formid` (the
+        /// wire default for older clients) preserves today's behavior;
+        /// `Depth` yields a breadth-first prefix under `--limit` instead of
+        /// a FormID-lexical slice.
+        #[serde(default)]
+        sort: RefSort,
     },
     ListGroups,
     ListTypeChildren {
@@ -239,6 +245,23 @@ pub enum Op {
 }
 
 // ─── Shared DTOs (lifted from CLI) ──────────────────────────────────────────
+
+/// Row ordering for a [`Op::ReferencedBy`] walk, applied server-side inside
+/// [`referenced_by_walk`] before `limit` truncation (sorting after
+/// truncation would be meaningless — the truncation has already happened).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum RefSort {
+    /// Sort by FormID ascending — today's behavior, and the wire default for
+    /// older clients that predate this field.
+    #[default]
+    Formid,
+    /// Sort by `(depth, form_id)` — under `--limit`, this yields a
+    /// breadth-first prefix of the walk instead of a FormID-lexical slice.
+    Depth,
+}
 
 /// One node on the hop chain from the lookup target to a result record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -534,6 +557,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             depth,
             type_filter,
             paths,
+            sort,
         } => {
             let ref_list = match resolve_ref_seeds(db, sel)? {
                 RefSeeds::Direct(target) => referenced_by_enriched(
@@ -543,6 +567,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                     *limit,
                     type_filter.as_deref(),
                     *paths,
+                    *sort,
                 )?,
                 RefSeeds::Carriers { label, seeds } => referenced_by_enriched_multi(
                     db,
@@ -552,6 +577,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                     *limit,
                     type_filter.as_deref(),
                     *paths,
+                    *sort,
                 )?,
             };
             Ok(serde_json::to_value(&ref_list)?)
@@ -777,6 +803,7 @@ pub fn referenced_by_enriched(
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
+    sort: RefSort,
 ) -> anyhow::Result<RefList> {
     let (rows, stats) = referenced_by_walk(
         db,
@@ -786,6 +813,7 @@ pub fn referenced_by_enriched(
         limit,
         type_filter,
         include_paths,
+        sort,
     )?;
     Ok(RefList {
         target: target.display(),
@@ -814,6 +842,7 @@ pub fn referenced_by_enriched(
 /// descendant row (and unioned on equal-depth re-reaches). Caller order is
 /// preserved end-to-end — do not re-sort here; see
 /// [`Database::perks_by_entry_point`].
+#[allow(clippy::too_many_arguments)]
 pub fn referenced_by_enriched_multi(
     db: &mut Database,
     seeds: &[(FormId, Vec<EntryPointRef>)],
@@ -822,14 +851,23 @@ pub fn referenced_by_enriched_multi(
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
+    sort: RefSort,
 ) -> anyhow::Result<RefList> {
     let entry_point_total = seeds
         .iter()
         .flat_map(|(_, tags)| tags.iter().map(|ep| ep.id))
         .collect::<std::collections::BTreeSet<_>>()
         .len();
-    let (rows, stats) =
-        referenced_by_walk(db, seeds, true, depth, limit, type_filter, include_paths)?;
+    let (rows, stats) = referenced_by_walk(
+        db,
+        seeds,
+        true,
+        depth,
+        limit,
+        type_filter,
+        include_paths,
+        sort,
+    )?;
     Ok(RefList {
         target: label,
         rows,
@@ -860,6 +898,7 @@ pub fn referenced_by_enriched_multi(
 /// [`Database::perks_by_entry_point`] — must sort before calling.
 ///
 /// Returns `(rows, stats)` — see [`WalkStats`].
+#[allow(clippy::too_many_arguments)]
 fn referenced_by_walk(
     db: &mut Database,
     seeds: &[(FormId, Vec<EntryPointRef>)],
@@ -868,6 +907,7 @@ fn referenced_by_walk(
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
+    sort: RefSort,
 ) -> anyhow::Result<(Vec<RefRow>, WalkStats)> {
     let requested_depth = depth;
     // `depth == 0` requests an unbounded walk (no fixed hop cap); any other
@@ -1028,11 +1068,15 @@ fn referenced_by_walk(
         }
     }
 
-    rows.sort_by_key(|r| {
+    let form_id_key = |r: &RefRow| {
         crate::parse_form_id_input(&r.form_id)
             .map(|f| f.0)
             .unwrap_or(u32::MAX)
-    });
+    };
+    match sort {
+        RefSort::Formid => rows.sort_by_key(form_id_key),
+        RefSort::Depth => rows.sort_by_key(|r| (r.depth, form_id_key(r))),
+    }
 
     let mut all_rows = seed_rows;
     all_rows.append(&mut rows);

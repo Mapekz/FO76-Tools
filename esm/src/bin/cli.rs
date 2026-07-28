@@ -253,8 +253,11 @@ enum Commands {
         entry_point: Option<String>,
         #[arg(long, default_value_t = 100)]
         limit: usize,
-        /// Reverse-reference walk depth (1 = direct refs only, up to 6).
-        #[arg(long, default_value_t = 1)]
+        /// Reverse-reference walk depth (1 = direct refs only, up to 8;
+        /// 0 = unbounded — no fixed hop cap. An unbounded walk over a
+        /// hub-heavy graph like CELL/REFR can return hundreds of thousands
+        /// of rows; combine with --limit 0 and a --type filter deliberately.
+        #[arg(long, default_value_t = 1, value_parser = parse_ref_depth)]
         depth: usize,
         /// Narrow rows to referencing records of this 4-character type
         /// (e.g. `OMOD`); case-insensitive. Applied server-side, so `--limit`/
@@ -267,6 +270,12 @@ enum Commands {
         /// — off by default.
         #[arg(long)]
         paths: bool,
+        /// Row ordering before --limit truncation. `formid` (default) keeps
+        /// today's FormID-ascending order; `depth` yields a breadth-first
+        /// prefix under --limit instead of a FormID-lexical slice — use this
+        /// when a low --limit might otherwise hide the deepest hops.
+        #[arg(long, value_enum, default_value = "formid")]
+        sort: RefSortArg,
         #[arg(long)]
         json: bool,
         #[arg(long)]
@@ -383,6 +392,39 @@ impl From<BodiesArg> for BodyDetail {
             BodiesArg::None => BodyDetail::None,
             BodiesArg::Stub => BodyDetail::Stub,
             BodiesArg::Full => BodyDetail::Full,
+        }
+    }
+}
+
+/// Validates `refs --depth` against `[0, DEFAULT_MAX_DEPTH]` — `usize`
+/// doesn't get a ranged `clap::value_parser!`, so this rejects out-of-range
+/// values explicitly rather than clamping them silently.
+fn parse_ref_depth(s: &str) -> Result<usize, String> {
+    let v: usize = s
+        .parse()
+        .map_err(|_| format!("invalid depth value '{s}'"))?;
+    if v > esm::ipc::DEFAULT_MAX_DEPTH {
+        Err(format!(
+            "{v} is not in 0..={} (0 = unbounded)",
+            esm::ipc::DEFAULT_MAX_DEPTH
+        ))
+    } else {
+        Ok(v)
+    }
+}
+
+/// CLI-facing mirror of `esm::ipc::RefSort` for `refs --sort <formid|depth>`.
+#[derive(Clone, Copy, ValueEnum)]
+enum RefSortArg {
+    Formid,
+    Depth,
+}
+
+impl From<RefSortArg> for esm::ipc::RefSort {
+    fn from(s: RefSortArg) -> Self {
+        match s {
+            RefSortArg::Formid => esm::ipc::RefSort::Formid,
+            RefSortArg::Depth => esm::ipc::RefSort::Depth,
         }
     }
 }
@@ -771,6 +813,7 @@ fn dispatch_command(
             depth,
             record_type,
             paths,
+            sort,
             json,
             pretty,
             sources:
@@ -790,6 +833,7 @@ fn dispatch_command(
             depth,
             record_type,
             paths,
+            sort.into(),
             json,
             pretty,
             localization_ba2,
@@ -1084,6 +1128,7 @@ fn cmd_refs(
     depth: usize,
     record_type: Option<String>,
     paths: bool,
+    sort: esm::ipc::RefSort,
     json: bool,
     pretty: bool,
     localization_ba2: Option<PathBuf>,
@@ -1091,6 +1136,21 @@ fn cmd_refs(
     lang: &str,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
+    if depth == 0 {
+        // Must warn *before* dispatching — an unbounded walk runs
+        // synchronously and can take minutes with no other feedback; a note
+        // attached to the finished RefList (as `capped`/`depth_capped` are)
+        // would only print after the wait is already over.
+        eprintln!(
+            "warning: --depth 0 requests an unbounded reverse-reference walk (no fixed \
+             hop cap). Measured on the live ESM: ~620K rows by hop 9, growing ~5-8x per \
+             level on hub-heavy graphs (CELL/REFR) — this can take minutes. Neither \
+             --type nor --limit reduce this cost: the walk traverses (and decodes) every \
+             referencer regardless, only filtering/truncating what gets printed \
+             afterward. The only way to bound the cost is a finite --depth; Ctrl-C now \
+             if that's what you want instead."
+        );
+    }
     // `--entry-point`/`--ep` bypasses `record_sel`'s FormID/EditorID parsing
     // entirely — clap's `conflicts_with_all` on all four already guarantees
     // at most one of formid/edid/target/entry_point is set.
@@ -1114,10 +1174,11 @@ fn cmd_refs(
             depth,
             type_filter: record_type,
             paths,
+            sort,
         };
         let v = esm::ipc::dispatch_op(&mut db, &op)?;
         let ref_list: RefList = serde_json::from_value(v)?;
-        print_refs(&ref_list, json, pretty);
+        print_refs(&ref_list, sort, json, pretty);
         return Ok(());
     }
     let v = backend.run(
@@ -1128,20 +1189,26 @@ fn cmd_refs(
             depth,
             type_filter: record_type,
             paths,
+            sort,
         },
     )?;
     let ref_list: RefList = serde_json::from_value(v)?;
-    print_refs(&ref_list, json, pretty);
+    print_refs(&ref_list, sort, json, pretty);
     Ok(())
 }
 
-fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
+fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: bool) {
     // Depth-0 rows only exist on the entry-point path (see
     // `referenced_by_enriched_multi`) — never on a plain FormID/EditorID
     // `refs` lookup. `has_carriers` gates the `D` column; `has_entry_points`
     // gates the target-label print so a type filter that suppresses every
     // carrier row still shows the legend (BFS rows inherit `entry_points`).
     let has_carriers = ref_list.rows.iter().any(|r| r.depth == 0);
+    // Show the D column whenever any printed row's depth is informative —
+    // either a carrier (depth 0) or any hop beyond direct referencers
+    // (depth 1 is the common case and would just repeat "1" on every row,
+    // so it alone doesn't earn the column).
+    let show_depth_column = has_carriers || ref_list.rows.iter().any(|r| r.depth > 1);
     let has_entry_points = ref_list.rows.iter().any(|r| !r.entry_points.is_empty());
     // Show an EP column only when more than one distinct id appears in the
     // rows actually being printed — a single-id match is already named by
@@ -1176,7 +1243,7 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
                         row.editor_id.as_deref().unwrap_or("").to_string(),
                         row.name.as_deref().unwrap_or("").to_string(),
                     ];
-                    if has_carriers {
+                    if show_depth_column {
                         // depth 0 marks a carrier (the entry point's own
                         // PERK) — `RefRow::depth`'s doc says 1 = direct
                         // reference, so 0 is free as a "this is the walk's
@@ -1213,7 +1280,7 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
                 })
                 .collect();
             let mut headers = vec!["FORMID", "TYPE", "EDID", "NAME"];
-            if has_carriers {
+            if show_depth_column {
                 headers.push("D");
             }
             if has_ep_column {
@@ -1228,11 +1295,42 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
             print_record_table(&headers, &table_rows);
         }
     }
+    // depth=1 is this tool's documented "direct referencers only" mode, not
+    // a truncated state — nearly every interconnected record has *some*
+    // referencer-of-a-referencer, so warning about it on the default depth
+    // would fire on almost every plain lookup and drown out the cases where
+    // this note is actually actionable (an intentionally elevated --depth
+    // that still didn't reach the full graph).
+    if ref_list.depth_capped && ref_list.requested_depth > 1 {
+        // Independent of --limit: the BFS itself stopped with an unexpanded
+        // frontier, so this result is a genuine subset of the full
+        // reverse-reference graph — not just a display truncation.
+        let Some(d) = ref_list.effective_depth else {
+            unreachable!("an unbounded walk (effective_depth=None) never leaves a frontier");
+        };
+        let escape = if d < esm::ipc::DEFAULT_MAX_DEPTH {
+            format!(
+                "raise --depth (up to {}) or pass --depth 0 for an unbounded walk",
+                esm::ipc::DEFAULT_MAX_DEPTH
+            )
+        } else {
+            "pass --depth 0 for an unbounded walk".to_string()
+        };
+        eprintln!(
+            "note: walk stopped at max depth {d} with {} frontier node(s) unexpanded; \
+             results are incomplete beyond depth {d} — {escape}",
+            ref_list.frontier_remaining,
+        );
+    }
     if ref_list.capped {
         let mut note = format!(
-            "note: output capped at {} of {} results",
+            "note: output capped at {} of {} results, ordered by {}",
             ref_list.rows.len(),
-            ref_list.total
+            ref_list.total,
+            match sort {
+                esm::ipc::RefSort::Formid => "formid",
+                esm::ipc::RefSort::Depth => "depth",
+            }
         );
         if let (Some(carrier_total), Some(ep_total)) =
             (ref_list.carrier_total, ref_list.entry_point_total)
@@ -1243,7 +1341,21 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
                 " ({carriers_shown} of {carrier_total} carriers, {eps_shown} of {ep_total} entry points shown)"
             ));
         }
-        note.push_str("; use --limit 0 to show all");
+        if !ref_list.per_depth_totals.is_empty() {
+            let totals: Vec<String> = ref_list
+                .per_depth_totals
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| **n > 0)
+                .map(|(d, n)| format!("{d}:{n}"))
+                .collect();
+            note.push_str(&format!(
+                "\n      per-depth totals: {}\n      rows shown cover depth 1-{} only",
+                totals.join(" "),
+                ref_list.shown_max_depth
+            ));
+        }
+        note.push_str("; use --limit 0 to show all, or --sort depth for a breadth-first prefix");
         eprintln!("{note}");
     }
 }
@@ -1290,6 +1402,7 @@ impl esm::chase::ChaseFetcher for BackendFetcher<'_> {
                 depth,
                 type_filter: Some(type_filter.to_string()),
                 paths,
+                sort: esm::ipc::RefSort::Formid,
             },
         )?;
         Ok(serde_json::from_value(v)?)
@@ -1358,6 +1471,7 @@ fn cmd_walk(
                     depth: 1,
                     type_filter: None,
                     paths: false,
+                    sort: esm::ipc::RefSort::Formid,
                 },
             )?;
             let ref_list: RefList = serde_json::from_value(v)?;

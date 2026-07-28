@@ -284,6 +284,7 @@ impl EsmDatabase {
                 depth: walk_depth,
                 type_filter: None,
                 paths: false,
+                sort: esm::ipc::RefSort::Formid,
             };
             esm::ipc::dispatch_op(&mut db, &op)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
