@@ -232,13 +232,23 @@ enum Commands {
         gate: bool,
     },
     Refs {
-        /// FormID or EditorID (auto-detected); overridden by --formid/--edid
-        #[arg(conflicts_with_all = ["formid", "edid"])]
+        /// FormID, EditorID, or PERK entry-point name (auto-detected);
+        /// overridden by --formid/--edid/--entry-point. An entry-point name
+        /// only matches when it isn't also an EditorID — e.g. `Blocker01`
+        /// (a record) always wins over any same-named entry point.
+        #[arg(conflicts_with_all = ["formid", "edid", "entry_point"])]
         target: Option<String>,
-        #[arg(long, conflicts_with = "edid")]
+        #[arg(long, conflicts_with_all = ["edid", "entry_point"])]
         formid: Option<String>,
-        #[arg(long, conflicts_with = "formid")]
+        #[arg(long, conflicts_with_all = ["formid", "entry_point"])]
         edid: Option<String>,
+        /// PERK "Entry Point" name or numeric id — resolves to every PERK
+        /// carrying it (e.g. `39`, `'Mod Percent Blocked'`), each emitted as
+        /// a depth-0 carrier row, then walks refs from all of them. Matching
+        /// is case-insensitive exact unless the value contains `*`, which
+        /// globs (e.g. `'Mod VATS*'`).
+        #[arg(long = "entry-point", visible_alias = "ep", conflicts_with_all = ["formid", "edid"])]
+        entry_point: Option<String>,
         #[arg(long, default_value_t = 100)]
         limit: usize,
         /// Reverse-reference walk depth (1 = direct refs only, up to 6).
@@ -754,6 +764,7 @@ fn dispatch_command(
             target,
             formid,
             edid,
+            entry_point,
             limit,
             depth,
             record_type,
@@ -772,6 +783,7 @@ fn dispatch_command(
             formid,
             edid,
             target,
+            entry_point,
             limit,
             depth,
             record_type,
@@ -1065,6 +1077,7 @@ fn cmd_refs(
     formid: Option<String>,
     edid: Option<String>,
     target: Option<String>,
+    entry_point: Option<String>,
     limit: usize,
     depth: usize,
     record_type: Option<String>,
@@ -1076,6 +1089,13 @@ fn cmd_refs(
     lang: &str,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
+    // `--entry-point`/`--ep` bypasses `record_sel`'s FormID/EditorID parsing
+    // entirely — clap's `conflicts_with_all` on all four already guarantees
+    // at most one of formid/edid/target/entry_point is set.
+    let sel = match entry_point {
+        Some(token) => RecordSel::EntryPoint(token),
+        None => record_sel(formid, edid, target)?,
+    };
     if localization_ba2.is_some() || strings_dir.is_some() {
         if daemon_mode {
             anyhow::bail!(
@@ -1086,7 +1106,6 @@ fn cmd_refs(
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
-        let sel = record_sel(formid, edid, target)?;
         let op = Op::ReferencedBy {
             sel,
             limit,
@@ -1099,7 +1118,6 @@ fn cmd_refs(
         print_refs(&ref_list, json, pretty);
         return Ok(());
     }
-    let sel = record_sel(formid, edid, target)?;
     let v = backend.run(
         file,
         Op::ReferencedBy {
@@ -1116,12 +1134,20 @@ fn cmd_refs(
 }
 
 fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
+    // Depth-0 rows only exist on the entry-point path (see
+    // `referenced_by_enriched_multi`) — never on a plain FormID/EditorID
+    // `refs` lookup, so this is a precise signal for "this was an
+    // entry-point query", not string-sniffing `ref_list.target`.
+    let has_carriers = ref_list.rows.iter().any(|r| r.depth == 0);
     if json {
         print_json(&serde_json::to_value(&ref_list.rows).unwrap(), pretty);
     } else {
         if ref_list.rows.is_empty() {
             eprintln!("note: no records reference {}", ref_list.target);
         } else {
+            if has_carriers {
+                eprintln!("{}", ref_list.target);
+            }
             // Include a VIA column only when at least one row has a multi-hop path,
             // and a PATHS column only when --paths was requested (field_paths is
             // Some(...) on every row in that case, even if the inner Vec is empty).
@@ -1137,6 +1163,13 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
                         row.editor_id.as_deref().unwrap_or("").to_string(),
                         row.name.as_deref().unwrap_or("").to_string(),
                     ];
+                    if has_carriers {
+                        // depth 0 marks a carrier (the entry point's own
+                        // PERK) — `RefRow::depth`'s doc says 1 = direct
+                        // reference, so 0 is free as a "this is the walk's
+                        // starting point, not something it found" sentinel.
+                        cells.push(row.depth.to_string());
+                    }
                     if has_via {
                         let via = if !row.path.is_empty() {
                             let chain: Vec<_> =
@@ -1159,6 +1192,9 @@ fn print_refs(ref_list: &RefList, json: bool, pretty: bool) {
                 })
                 .collect();
             let mut headers = vec!["FORMID", "TYPE", "EDID", "NAME"];
+            if has_carriers {
+                headers.push("D");
+            }
             if has_via {
                 headers.push("VIA");
             }

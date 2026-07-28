@@ -404,6 +404,81 @@ pub struct FilterResult {
     pub scan_capped: bool,
 }
 
+/// A PERK "Entry Point" selector for [`Database::perks_by_entry_point`] —
+/// either the enum's numeric id (some ids carry no name at all, e.g. one
+/// that only `mod_custom_V63-BERTHA_Perk` uses) or a name pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntryPointSpec {
+    Id(u16),
+    /// Case-insensitive exact match, unless `name` contains `*`, in which
+    /// case it's matched via [`crate::wildcard::wildcard_match`] (same
+    /// matcher `Database::search` uses).
+    Name(String),
+}
+
+impl EntryPointSpec {
+    /// Parse a CLI/MCP token: an all-ASCII-digit token is a numeric id,
+    /// everything else is a name pattern — except a `0x`/`0X`-prefixed
+    /// token, which is rejected outright rather than silently becoming a
+    /// (never-matching) name pattern: it's unambiguously someone passing a
+    /// FormID to `--entry-point` by mistake, and entry points are only ever
+    /// selected by name or by their small decimal id, never hex.
+    pub fn parse(s: &str) -> anyhow::Result<EntryPointSpec> {
+        let trimmed = s.trim();
+        if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
+            bail!(
+                "'{trimmed}' looks like a FormID, not a PERK entry-point name or \
+                 numeric id; use the positional target or --formid for a FormID lookup"
+            );
+        }
+        if !trimmed.is_empty() && trimmed.bytes().all(|b| b.is_ascii_digit()) {
+            if let Ok(id) = trimmed.parse::<u16>() {
+                return Ok(EntryPointSpec::Id(id));
+            }
+        }
+        Ok(EntryPointSpec::Name(trimmed.to_string()))
+    }
+
+    fn display(&self) -> String {
+        match self {
+            EntryPointSpec::Id(id) => id.to_string(),
+            EntryPointSpec::Name(n) => format!("'{n}'"),
+        }
+    }
+}
+
+/// `true` if `name` satisfies `pattern` per [`EntryPointSpec::Name`]'s
+/// matching rule: exact case-insensitive unless `pattern` contains `*`.
+/// Deliberately not [`crate::wildcard::wildcard_match`] alone — that
+/// matcher treats a `*`-free pattern as a *substring* search, which would
+/// make `--ep 'Mod Weapon Attack Damage'` also hit unrelated entry points
+/// like `Mod Weapon DMG Bonus Mult`-adjacent names sharing a prefix.
+fn entry_point_name_matches(pattern: &str, name: &str) -> bool {
+    if pattern.contains('*') {
+        wildcard_match(pattern, name)
+    } else {
+        pattern.eq_ignore_ascii_case(name)
+    }
+}
+
+/// Extract `(numeric id, name)` from a decoded PERK effect's
+/// `Effect."Entry Point"."Entry Point"` value. Handles both the resolved
+/// `{value, name}` shape and the bare-int fallback `format_int` in
+/// `decode/mod.rs` emits when the id falls outside the enum's name table.
+fn entry_point_id_name(v: &Value) -> Option<(u16, Option<&str>)> {
+    match v {
+        Value::Object(o) => {
+            let id = o.get("value")?.as_u64()?;
+            Some((
+                u16::try_from(id).ok()?,
+                o.get("name").and_then(Value::as_str),
+            ))
+        }
+        Value::Number(n) => Some((u16::try_from(n.as_u64()?).ok()?, None)),
+        _ => None,
+    }
+}
+
 impl Database {
     /// Open an ESM file or data folder.
     ///
@@ -843,28 +918,37 @@ impl Database {
         let referencers: Vec<FormId> = self.index.get_xref(form_id).to_vec();
         let mut out = Vec::new();
         for referencer in referencers {
-            let meta = match self.index.get_by_formid(referencer) {
-                Some(m) => m.clone(),
-                None => continue,
-            };
-            let rec = self.esm.parse_record_at(meta.offset)?;
-            let editor_id = edid_from_subrecords(&rec.subrecords);
-            let name =
-                crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL").and_then(|id| {
-                    self.localization
-                        .as_ref()
-                        .and_then(|l| l.lookup(crate::strings::StringKind::Strings, id))
-                        .map(|s| s.to_owned())
-                });
-            out.push(RecordRow {
-                form_id: referencer.display(),
-                record_type: Some(meta.signature.clone()),
-                editor_id,
-                name,
-                offset: meta.offset,
-            });
+            if let Some(row) = self.record_row_for(referencer)? {
+                out.push(row);
+            }
         }
         Ok(out)
+    }
+
+    /// Build a [`RecordRow`] (resolved type/EditorID/name) for an arbitrary
+    /// FormID already present in the index — `None` if it isn't. Shared by
+    /// [`Database::referenced_by`] (each referencer row) and
+    /// [`ipc::referenced_by_enriched`]'s carrier/seed rows.
+    fn record_row_for(&mut self, form_id: FormId) -> anyhow::Result<Option<RecordRow>> {
+        let Some(meta) = self.index.get_by_formid(form_id).cloned() else {
+            return Ok(None);
+        };
+        let rec = self.esm.parse_record_at(meta.offset)?;
+        let editor_id = edid_from_subrecords(&rec.subrecords);
+        let name =
+            crate::reader::lstring_id_from_subrecords(&rec.subrecords, "FULL").and_then(|id| {
+                self.localization
+                    .as_ref()
+                    .and_then(|l| l.lookup(crate::strings::StringKind::Strings, id))
+                    .map(|s| s.to_owned())
+            });
+        Ok(Some(RecordRow {
+            form_id: form_id.display(),
+            record_type: Some(meta.signature.clone()),
+            editor_id,
+            name,
+            offset: meta.offset,
+        }))
     }
 
     pub fn record_raw(&self, form_id: FormId) -> anyhow::Result<ParsedRecord> {
@@ -1236,6 +1320,76 @@ impl Database {
         out.sort();
         out.truncate(MAX_PATHS);
         Ok(out)
+    }
+
+    /// Carrier PERKs for an entry point (see [`EntryPointSpec`]) — the
+    /// reverse of `get`/`walk`'s "what entry point does this perk carry?".
+    /// FormID-sorted and deduped: a perk with several effects on the same
+    /// entry point, or matching several effects under a glob, appears once.
+    ///
+    /// Reuses the `ensure_filter_cache("PERK")` memoized decode (shared with
+    /// [`Database::filter_type_records`]), so repeat lookups after the first
+    /// are effectively free.
+    ///
+    /// Returns `(label, seeds)`: `label` is a human-readable description of
+    /// what matched — e.g. `"entry point 39 (Mod Percent Blocked)"` or
+    /// `"entry point 'Mod VATS*' (14 matched)"` — meant for [`ipc::RefList::target`];
+    /// `seeds` are the carrier FormIDs.
+    pub fn perks_by_entry_point(
+        &mut self,
+        spec: &EntryPointSpec,
+    ) -> anyhow::Result<(String, Vec<FormId>)> {
+        self.check_not_lite("entry-point lookup")?;
+        self.ensure_filter_cache("PERK")?;
+        let (_, entries) = self
+            .filter_cache
+            .get("PERK")
+            .expect("populated by ensure_filter_cache");
+
+        let mut seeds: Vec<FormId> = Vec::new();
+        let mut matched: std::collections::BTreeSet<(u16, Option<String>)> = Default::default();
+        for entry in entries {
+            let Some(effects) = entry.fields.get("Effects").and_then(Value::as_array) else {
+                continue;
+            };
+            let mut carrier = false;
+            for effect in effects {
+                let Some(ep) = effect.pointer("/Effect/Entry Point/Entry Point") else {
+                    continue;
+                };
+                let Some((id, name)) = entry_point_id_name(ep) else {
+                    continue;
+                };
+                let is_match = match spec {
+                    EntryPointSpec::Id(want) => id == *want,
+                    EntryPointSpec::Name(pat) => {
+                        name.is_some_and(|n| entry_point_name_matches(pat, n))
+                    }
+                };
+                if is_match {
+                    carrier = true;
+                    matched.insert((id, name.map(str::to_string)));
+                }
+            }
+            if carrier {
+                seeds.push(entry.form_id);
+            }
+        }
+        seeds.sort_by_key(|f| f.raw());
+
+        let label = match matched.len() {
+            0 => format!("entry point {} (no match)", spec.display()),
+            1 => {
+                let (id, name) = matched.iter().next().expect("len == 1");
+                match name {
+                    Some(n) => format!("entry point {id} ({n})"),
+                    None => format!("entry point {id} (unnamed)"),
+                }
+            }
+            n => format!("entry point {} ({n} matched)", spec.display()),
+        };
+
+        Ok((label, seeds))
     }
 }
 

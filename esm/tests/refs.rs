@@ -1,8 +1,11 @@
 mod common;
 
 use common::{make_xref_esm, unique_temp_path};
-use esm::ipc::{referenced_by_enriched, RefList};
-use esm::{Database, FormId};
+use esm::ipc::{
+    dispatch_op, referenced_by_enriched, referenced_by_enriched_multi, resolve_sel, Op, RecordSel,
+    RefList,
+};
+use esm::{Database, EntryPointSpec, FormId};
 use std::io::Write;
 
 /// Verify that `Database::referenced_by` returns each referencing record
@@ -521,6 +524,417 @@ fn type_filter_and_paths_compose() {
         "unexpected path(s): {:?}",
         list.rows[0].field_paths
     );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+// ── Entry-point lookup (`refs --entry-point`/`--ep`) ─────────────────────────
+
+/// Build a minimal PERK record with one "Entry Point"-typed effect per id in
+/// `entry_points`: a `PRKE` (Effect Type=2 "Entry Point", Rank=0), then a
+/// `DATA` (the Entry Point struct: id, Function=0, Perk Condition Tab
+/// Count=0, unused=0), then a `PRKF` (empty Effect End). No `EPFT`/`EPFB`/
+/// `EPFD` — those are optional trailers unrelated to entry-point *identity*,
+/// which lives entirely in the `DATA` union's "Entry Point" variant (verified
+/// against the real embedded schema: id 39 decodes to
+/// `{"value":39,"name":"Mod Percent Blocked"}` from exactly this shape,
+/// matching live `esm get` output byte-for-byte). An `entry_points` slice
+/// with a repeated id builds one perk with several effects on the *same*
+/// entry point — the multi-effect dedup case.
+fn build_perk_entry_points(form_id: u32, edid: &str, entry_points: &[u8]) -> Vec<u8> {
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
+    append_subrecord(&mut subs, b"DATA", &[0x01, 0x00, 0x01]); // top-level Data: Playable/Hidden/Unknown
+    for &ep in entry_points {
+        append_subrecord(&mut subs, b"PRKE", &[0x02, 0x00]);
+        append_subrecord(&mut subs, b"DATA", &[ep, 0x00, 0x00, 0x00]);
+        append_subrecord(&mut subs, b"PRKF", &[]);
+    }
+    let mut rec = Vec::new();
+    append_record(&mut rec, b"PERK", form_id, &subs);
+    rec
+}
+
+/// PERKs:
+///   10 CarrierA          — entry point 39 (Mod Percent Blocked)
+///   11 CarrierB          — entry point 39 (Mod Percent Blocked)
+///   12 OtherPerk         — entry point 40 (Mod Shield Deflect Arrow Chance)
+///   13 UnnamedPerk       — entry point 212 (outside the 212-entry name
+///                          table — real game data has exactly this case,
+///                          `mod_custom_V63-BERTHA_Perk`)
+///   14 MultiEffectPerk   — entry point 39 on *two* separate effects
+///   15 GlobA             — entry point 41 (Mod Incoming Spell Magnitude)
+///   16 GlobB             — entry point 42 (Mod Incoming Spell Duration)
+/// Referencers (both point only at CarrierA/10, not CarrierB/11):
+///   30 CONT RefCont
+///   31 LVLI RefList
+fn make_entry_point_esm() -> Vec<u8> {
+    let mut buf = tes4_header();
+    let mut perk_group = build_perk_entry_points(10, "CarrierA", &[39]);
+    perk_group.extend(build_perk_entry_points(11, "CarrierB", &[39]));
+    perk_group.extend(build_perk_entry_points(12, "OtherPerk", &[40]));
+    perk_group.extend(build_perk_entry_points(13, "UnnamedPerk", &[212]));
+    perk_group.extend(build_perk_entry_points(14, "MultiEffectPerk", &[39, 39]));
+    perk_group.extend(build_perk_entry_points(15, "GlobA", &[41]));
+    perk_group.extend(build_perk_entry_points(16, "GlobB", &[42]));
+    buf.extend(wrap_grup(b"PERK", &perk_group));
+    buf.extend(wrap_grup(b"CONT", &build_cont(30, "RefCont", 10)));
+    buf.extend(wrap_grup(b"LVLI", &build_lvli(31, "RefList", 10)));
+    buf
+}
+
+fn open_entry_point_db() -> (std::path::PathBuf, Database) {
+    let buf = make_entry_point_esm();
+    let tmp = unique_temp_path("refs_entry_point");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp file");
+        f.write_all(&buf).expect("write");
+    }
+    let db = Database::open(&tmp).expect("open");
+    (tmp, db)
+}
+
+/// A second, separate ESM for the EditorID-vs-entry-point-name collision
+/// case: PERK 18's *EditorID* is literally the string `"Mod Percent
+/// Blocked"`, while PERK 19 is an unrelated perk that genuinely carries
+/// entry point 39 (named "Mod Percent Blocked"). Kept apart from
+/// `make_entry_point_esm` so the collision doesn't also feed the plain
+/// entry-point tests above.
+fn make_edid_collision_esm() -> Vec<u8> {
+    let mut buf = tes4_header();
+    let mut perk_group = build_perk_entry_points(18, "Mod Percent Blocked", &[40]);
+    perk_group.extend(build_perk_entry_points(19, "RealCarrier", &[39]));
+    buf.extend(wrap_grup(b"PERK", &perk_group));
+    buf
+}
+
+fn open_edid_collision_db() -> (std::path::PathBuf, Database) {
+    let buf = make_edid_collision_esm();
+    let tmp = unique_temp_path("refs_entry_point_collision");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp file");
+        f.write_all(&buf).expect("write");
+    }
+    let db = Database::open(&tmp).expect("open");
+    (tmp, db)
+}
+
+#[test]
+fn entry_point_spec_parse_numeric_name_and_rejects_formid_like() {
+    assert_eq!(EntryPointSpec::parse("39").unwrap(), EntryPointSpec::Id(39));
+    assert_eq!(
+        EntryPointSpec::parse("  40  ").unwrap(),
+        EntryPointSpec::Id(40),
+        "whitespace must be trimmed"
+    );
+    assert_eq!(
+        EntryPointSpec::parse("Mod Percent Blocked").unwrap(),
+        EntryPointSpec::Name("Mod Percent Blocked".to_string())
+    );
+    assert!(
+        EntryPointSpec::parse("0x1A").is_err(),
+        "a 0x-prefixed token must be rejected, not silently coerced into a \
+         (never-matching) name pattern"
+    );
+    assert!(
+        EntryPointSpec::parse("0X1a").is_err(),
+        "uppercase 0X prefix must also be rejected"
+    );
+}
+
+/// `perks_by_entry_point` matches by numeric id and by case-insensitive
+/// exact name (not substring), dedups a perk with multiple effects on the
+/// same entry point down to one row, and excludes perks on other entry
+/// points entirely.
+#[test]
+fn perks_by_entry_point_matches_by_id_and_exact_case_insensitive_name() {
+    let (path, mut db) = open_entry_point_db();
+
+    let (label, seeds) = db
+        .perks_by_entry_point(&EntryPointSpec::Id(39))
+        .expect("perks_by_entry_point");
+    assert_eq!(
+        seeds,
+        vec![FormId(10), FormId(11), FormId(14)],
+        "expected CarrierA, CarrierB, and MultiEffectPerk (once, not twice)"
+    );
+    assert!(
+        label.contains("39") && label.contains("Mod Percent Blocked"),
+        "unexpected label: {label}"
+    );
+
+    let (_, seeds_by_name) = db
+        .perks_by_entry_point(&EntryPointSpec::Name("mod percent blocked".to_string()))
+        .expect("perks_by_entry_point by name");
+    assert_eq!(
+        seeds_by_name, seeds,
+        "case-insensitive name lookup must agree with the numeric lookup"
+    );
+
+    let (_, seeds_partial) = db
+        .perks_by_entry_point(&EntryPointSpec::Name("Mod Percent".to_string()))
+        .expect("perks_by_entry_point partial (non-glob)");
+    assert!(
+        seeds_partial.is_empty(),
+        "a non-glob name pattern must match exactly, not as a substring: {seeds_partial:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A `*`-glob name pattern can match several distinct entry points at once.
+#[test]
+fn perks_by_entry_point_glob_matches_multiple_distinct_entry_points() {
+    let (path, mut db) = open_entry_point_db();
+
+    let (label, seeds) = db
+        .perks_by_entry_point(&EntryPointSpec::Name("Mod Incoming Spell*".to_string()))
+        .expect("perks_by_entry_point glob");
+    assert_eq!(seeds, vec![FormId(15), FormId(16)]);
+    assert!(
+        label.contains("2 matched"),
+        "glob label should report the match count: {label}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// An entry point id outside the schema's name table (212, one past the last
+/// named entry) is only reachable by its numeric id — never by name, since
+/// it has none.
+#[test]
+fn perks_by_entry_point_reaches_unnamed_id_only_by_number() {
+    let (path, mut db) = open_entry_point_db();
+
+    let (label, seeds) = db
+        .perks_by_entry_point(&EntryPointSpec::Id(212))
+        .expect("perks_by_entry_point unnamed id");
+    assert_eq!(seeds, vec![FormId(13)]);
+    assert!(label.contains("unnamed"), "unexpected label: {label}");
+
+    let (_, seeds_by_name) = db
+        .perks_by_entry_point(&EntryPointSpec::Name("Unknown 212".to_string()))
+        .expect("perks_by_entry_point unnamed by (nonexistent) name");
+    assert!(
+        seeds_by_name.is_empty(),
+        "an unnamed id has no name to match against: {seeds_by_name:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// [`referenced_by_enriched_multi`] emits every seed as its own `depth: 0`
+/// row before the BFS-found referencer rows, and referencers of either seed
+/// are found and deduped together.
+#[test]
+fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
+    let (path, mut db) = open_entry_point_db();
+
+    let list = referenced_by_enriched_multi(
+        &mut db,
+        &[FormId(10), FormId(11)],
+        "entry point 39 (Mod Percent Blocked)".to_string(),
+        1,
+        0,
+        None,
+        false,
+    )
+    .expect("referenced_by_enriched_multi");
+
+    assert_eq!(list.target, "entry point 39 (Mod Percent Blocked)");
+    assert_eq!(list.total, 4, "2 carriers + CONT(30) + LVLI(31): {list:?}");
+    assert!(!list.capped);
+
+    let carrier_a = &list.rows[0];
+    assert_eq!(carrier_a.form_id, FormId(10).display());
+    assert_eq!(carrier_a.depth, 0);
+    assert!(carrier_a.path.is_empty());
+
+    let carrier_b = &list.rows[1];
+    assert_eq!(carrier_b.form_id, FormId(11).display());
+    assert_eq!(carrier_b.depth, 0);
+
+    let referencer_ids: Vec<&str> = list.rows[2..].iter().map(|r| r.form_id.as_str()).collect();
+    assert_eq!(
+        referencer_ids,
+        vec![FormId(30).display(), FormId(31).display()],
+        "referencer rows must sort by FormID after the carrier rows"
+    );
+    assert!(list.rows[2..].iter().all(|r| r.depth == 1));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `--type` narrows both the BFS referencer rows *and* the carrier rows —
+/// a carrier that isn't of the requested type is excluded just like any
+/// other row.
+#[test]
+fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
+    let (path, mut db) = open_entry_point_db();
+
+    let list = referenced_by_enriched_multi(
+        &mut db,
+        &[FormId(10), FormId(11)],
+        "entry point 39 (Mod Percent Blocked)".to_string(),
+        1,
+        0,
+        Some("CONT"),
+        false,
+    )
+    .expect("referenced_by_enriched_multi with type filter");
+
+    assert_eq!(
+        list.rows.len(),
+        1,
+        "both PERK carriers and the LVLI referencer must be filtered out: {list:?}"
+    );
+    assert_eq!(list.rows[0].form_id, FormId(30).display());
+    assert_eq!(list.rows[0].record_type.as_deref(), Some("CONT"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `resolve_sel` — used by every `Op` other than `ReferencedBy` — rejects an
+/// entry-point selector outright rather than silently misinterpreting it.
+#[test]
+fn resolve_sel_rejects_entry_point_selector() {
+    let (path, mut db) = open_entry_point_db();
+
+    let err = resolve_sel(&mut db, &RecordSel::EntryPoint("39".to_string()))
+        .expect_err("entry-point selector must not resolve to a single FormId");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("refs") || msg.contains("ReferencedBy"),
+        "error should point at refs/ReferencedBy: {msg}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// The explicit `RecordSel::EntryPoint` selector (`--entry-point`/`--ep`)
+/// resolves through the full `Op::ReferencedBy` dispatch path exactly like
+/// the CLI/daemon/N-API would use it.
+#[test]
+fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
+    let (path, mut db) = open_entry_point_db();
+
+    let v = dispatch_op(
+        &mut db,
+        &Op::ReferencedBy {
+            sel: RecordSel::EntryPoint("Mod Percent Blocked".to_string()),
+            limit: 0,
+            depth: 1,
+            type_filter: None,
+            paths: false,
+        },
+    )
+    .expect("dispatch_op");
+    let list: RefList = serde_json::from_value(v).expect("RefList");
+
+    assert!(list.target.contains("Mod Percent Blocked"));
+    let carrier_ids: Vec<&str> = list
+        .rows
+        .iter()
+        .filter(|r| r.depth == 0)
+        .map(|r| r.form_id.as_str())
+        .collect();
+    assert_eq!(
+        carrier_ids,
+        vec![
+            FormId(10).display(),
+            FormId(11).display(),
+            FormId(14).display()
+        ]
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A bare positional token that isn't a real EditorID (`RecordSel::Edid`,
+/// exactly what the CLI's auto-detect builds for a spaced, non-hex-looking
+/// token like `'Mod Percent Blocked'`) falls back to an entry-point name
+/// match — the mechanism behind `esm refs 'Mod Percent Blocked'` working
+/// without the explicit `--entry-point` flag.
+#[test]
+fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
+    let (path, mut db) = open_entry_point_db();
+
+    let v = dispatch_op(
+        &mut db,
+        &Op::ReferencedBy {
+            sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
+            limit: 0,
+            depth: 1,
+            type_filter: None,
+            paths: false,
+        },
+    )
+    .expect("dispatch_op should fall back to entry-point matching");
+    let list: RefList = serde_json::from_value(v).expect("RefList");
+
+    assert!(list.target.contains("Mod Percent Blocked"));
+    assert!(list
+        .rows
+        .iter()
+        .any(|r| r.depth == 0 && r.form_id == FormId(10).display()));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A real EditorID always wins over a same-named entry point — the fallback
+/// only triggers on an EditorID *miss*, never overriding a genuine match.
+#[test]
+fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
+    let (path, mut db) = open_edid_collision_db();
+
+    let v = dispatch_op(
+        &mut db,
+        &Op::ReferencedBy {
+            sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
+            limit: 0,
+            depth: 1,
+            type_filter: None,
+            paths: false,
+        },
+    )
+    .expect("dispatch_op");
+    let list: RefList = serde_json::from_value(v).expect("RefList");
+
+    assert_eq!(
+        list.target,
+        FormId(18).display(),
+        "target should be the record's own FormID (legacy direct-target \
+         label), not an entry-point label"
+    );
+    assert!(
+        list.rows.iter().all(|r| r.depth != 0),
+        "the direct-target path must never emit depth-0 carrier rows: {list:?}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Neither an EditorID nor an entry-point name matches: `dispatch_op` fails
+/// with a message naming both interpretations, mirroring `RecordSel::Auto`'s
+/// existing dual-interpretation error.
+#[test]
+fn dispatch_referenced_by_edid_neither_interpretation_bails() {
+    let (path, mut db) = open_entry_point_db();
+
+    let err = dispatch_op(
+        &mut db,
+        &Op::ReferencedBy {
+            sel: RecordSel::Edid("TotallyBogusTokenXYZ".to_string()),
+            limit: 0,
+            depth: 1,
+            type_filter: None,
+            paths: false,
+        },
+    )
+    .expect_err("neither interpretation should resolve");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("EditorID"), "message: {msg}");
+    assert!(msg.contains("entry point"), "message: {msg}");
 
     let _ = std::fs::remove_file(&path);
 }

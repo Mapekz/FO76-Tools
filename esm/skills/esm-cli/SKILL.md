@@ -58,6 +58,21 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 - The default `--limit 100` truncates popular targets. The "output capped"
   note goes to **stderr** — stdout stays valid JSON under `--json`. Pass
   `--limit 0` when you need everything.
+- `--entry-point <name|id>` (alias `--ep`) answers "what uses this hook?" —
+  the reverse of reading a PERK's own Entry Point off `get`/`walk`. It
+  resolves to every PERK carrying that entry point, each emitted as its own
+  `depth: 0` row (a `D` column appears in table output), then walks refs from
+  all of them at once: `esm -p refs --ep 'Mod Percent Blocked'` surfaces the
+  Blocker perks, the Ogua Gauntlet/Defender's leggo perks, and (one more
+  `--depth`) the OMODs/weapons/perk cards that reach them. Matching is exact
+  and case-insensitive unless the value contains `*` (`--ep 'Mod VATS*'`
+  fans out across every VATS entry point). A bare positional target also
+  auto-detects an entry-point name when it isn't a real EditorID — `refs
+  'Mod Percent Blocked'` works without the flag — but a real EditorID always
+  wins over a same-named entry point. Numeric ids matter: some entry-point
+  *names* are wrong (see below), and a few ids have no name in the schema at
+  all — `--ep 212` still finds its (unnamed) carrier, `--ep 0x...` is
+  rejected (that's a FormID, not an entry point).
 
 ## Mechanics digests: `walk` and `chase`
 

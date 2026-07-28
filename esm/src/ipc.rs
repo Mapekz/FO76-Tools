@@ -2,7 +2,7 @@
 
 use crate::diff::{diff_databases_with, DiffOptions};
 use crate::registry::Registry;
-use crate::{Database, FilterOp, FormId, ResolveDepth, SearchField};
+use crate::{Database, EntryPointSpec, FilterOp, FormId, ResolveDepth, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -60,6 +60,13 @@ pub enum RecordSel {
     /// prefix (or an explicit `--formid`/`--edid` flag) is unambiguous and
     /// stays `FormId`/`Edid` directly, never `Auto`.
     Auto(String),
+    /// A PERK "Entry Point" name or numeric id (see [`EntryPointSpec::parse`]),
+    /// resolving to every PERK that carries it rather than a single record.
+    /// Only meaningful for [`Op::ReferencedBy`] (via [`resolve_ref_seeds`]) —
+    /// `resolve_sel`, which every other `Op` uses, rejects it. Never produced
+    /// by [`RecordSel::from_input`]/[`RecordSel::from_parts`]; constructed
+    /// only by the CLI's explicit `--entry-point`/`--ep` flag.
+    EntryPoint(String),
 }
 
 impl RecordSel {
@@ -116,6 +123,7 @@ impl RecordSel {
             RecordSel::FormId(fid) => fid.display(),
             RecordSel::Edid(edid) => edid.clone(),
             RecordSel::Auto(token) => token.clone(),
+            RecordSel::EntryPoint(token) => token.clone(),
         }
     }
 }
@@ -482,9 +490,25 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
             type_filter,
             paths,
         } => {
-            let target = resolve_sel(db, sel)?;
-            let ref_list =
-                referenced_by_enriched(db, target, *depth, *limit, type_filter.as_deref(), *paths)?;
+            let ref_list = match resolve_ref_seeds(db, sel)? {
+                RefSeeds::Direct(target) => referenced_by_enriched(
+                    db,
+                    target,
+                    *depth,
+                    *limit,
+                    type_filter.as_deref(),
+                    *paths,
+                )?,
+                RefSeeds::Carriers { label, seeds } => referenced_by_enriched_multi(
+                    db,
+                    &seeds,
+                    label,
+                    *depth,
+                    *limit,
+                    type_filter.as_deref(),
+                    *paths,
+                )?,
+            };
             Ok(serde_json::to_value(&ref_list)?)
         }
         Op::ListGroups => {
@@ -563,6 +587,10 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
                 None => bail!("EditorID '{token}' not found"),
             }
         }
+        RecordSel::EntryPoint(token) => bail!(
+            "entry-point selector '{token}' is only valid for refs \
+             (Op::ReferencedBy) — it doesn't resolve to a single record"
+        ),
     }
 }
 
@@ -583,6 +611,10 @@ fn record_resolved(
             let fid = resolve_sel(db, sel)?;
             db.record_by_formid_resolved(fid, depth)
         }
+        RecordSel::EntryPoint(token) => bail!(
+            "entry-point selector '{token}' is only valid for refs \
+             (Op::ReferencedBy) — it doesn't resolve to a single record"
+        ),
     }
 }
 
@@ -700,6 +732,65 @@ pub fn referenced_by_enriched(
     type_filter: Option<&str>,
     include_paths: bool,
 ) -> anyhow::Result<RefList> {
+    let (rows, total, capped) = referenced_by_walk(
+        db,
+        &[target],
+        false,
+        depth,
+        limit,
+        type_filter,
+        include_paths,
+    )?;
+    Ok(RefList {
+        target: target.display(),
+        rows,
+        total,
+        capped,
+    })
+}
+
+/// Multi-seed reverse-reference walk: every entry in `seeds` is emitted as
+/// its own `depth: 0` "carrier" row — unlike [`referenced_by_enriched`],
+/// whose single target is only a BFS root and never appears in the output —
+/// then the BFS proceeds from all seeds at once, so a record referencing two
+/// different seeds is still only emitted once. Used by [`resolve_ref_seeds`]'s
+/// entry-point path (see [`crate::EntryPointSpec`]).
+pub fn referenced_by_enriched_multi(
+    db: &mut Database,
+    seeds: &[FormId],
+    label: String,
+    depth: usize,
+    limit: usize,
+    type_filter: Option<&str>,
+    include_paths: bool,
+) -> anyhow::Result<RefList> {
+    let (rows, total, capped) =
+        referenced_by_walk(db, seeds, true, depth, limit, type_filter, include_paths)?;
+    Ok(RefList {
+        target: label,
+        rows,
+        total,
+        capped,
+    })
+}
+
+/// Shared BFS behind [`referenced_by_enriched`] / [`referenced_by_enriched_multi`].
+///
+/// `seeds` are the BFS roots. When `emit_seeds` is true, each seed is also
+/// emitted as its own `depth: 0` row *before* the BFS-found referencer rows
+/// (sorted separately by FormID among themselves, so this never perturbs the
+/// referencer rows' own FormID sort — the one existing callers/tests rely
+/// on). When false (the legacy single-target path), seeds are only BFS
+/// roots, exactly as `target` always was.
+fn referenced_by_walk(
+    db: &mut Database,
+    seeds: &[FormId],
+    emit_seeds: bool,
+    depth: usize,
+    limit: usize,
+    type_filter: Option<&str>,
+    include_paths: bool,
+) -> anyhow::Result<(Vec<RefRow>, usize, bool)> {
     let max_depth = depth.clamp(1, DEFAULT_MAX_DEPTH);
     let type_filter = match type_filter {
         Some(t) => {
@@ -710,18 +801,48 @@ pub fn referenced_by_enriched(
         }
         None => None,
     };
+    let type_matches = |record_type: &Option<String>| match &type_filter {
+        Some(f) => record_type.as_deref() == Some(f.as_str()),
+        None => true,
+    };
 
-    // `seen` is both the dedup set for emitted results and the BFS visited set.
-    // Seeding with `target` prevents the target itself from appearing as its
-    // own result and breaks any self-referential cycles.
-    let mut seen: HashSet<FormId> = HashSet::new();
-    seen.insert(target);
+    // `seen` is both the dedup set for emitted referencer rows and the BFS
+    // visited set. Seeding with every entry in `seeds` prevents a seed from
+    // appearing as another seed's own referencer and breaks self-referential
+    // cycles.
+    let mut seen: HashSet<FormId> = seeds.iter().copied().collect();
 
     // Queue entries: (node_to_expand, path_of_intermediate_hops_leading_to_it).
-    // The path does NOT include the target or the node itself; it holds the
+    // The path does NOT include any seed or the node itself; it holds the
     // nodes that were emitted at earlier depths on the way here.
     let mut queue: VecDeque<(FormId, Vec<RefPathNode>)> = VecDeque::new();
-    queue.push_back((target, Vec::new()));
+    for &seed in seeds {
+        queue.push_back((seed, Vec::new()));
+    }
+
+    let mut seed_rows: Vec<RefRow> = Vec::new();
+    if emit_seeds {
+        let mut sorted_seeds = seeds.to_vec();
+        sorted_seeds.sort_by_key(|f| f.raw());
+        for seed in sorted_seeds {
+            let Some(row) = db.record_row_for(seed)? else {
+                continue;
+            };
+            if !type_matches(&row.record_type) {
+                continue;
+            }
+            seed_rows.push(RefRow {
+                form_id: row.form_id,
+                record_type: row.record_type,
+                editor_id: row.editor_id,
+                name: row.name,
+                offset: row.offset,
+                depth: 0,
+                path: Vec::new(),
+                field_paths: None,
+            });
+        }
+    }
 
     let mut rows: Vec<RefRow> = Vec::new();
 
@@ -738,12 +859,7 @@ pub fn referenced_by_enriched(
             let record_type = db.index.get_by_formid(fid).map(|m| m.signature.clone());
             let hop_depth = path_here.len() + 1;
 
-            let type_matches = match &type_filter {
-                Some(f) => record_type.as_deref() == Some(f.as_str()),
-                None => true,
-            };
-
-            if type_matches {
+            if type_matches(&record_type) {
                 let field_paths = if include_paths {
                     Some(db.formid_reference_paths(fid, current))
                 } else {
@@ -779,20 +895,72 @@ pub fn referenced_by_enriched(
             .unwrap_or(u32::MAX)
     });
 
-    let total = rows.len();
+    let mut all_rows = seed_rows;
+    all_rows.append(&mut rows);
+
+    let total = all_rows.len();
     let capped = limit > 0 && total > limit;
     let limited: Vec<RefRow> = if limit > 0 {
-        rows.into_iter().take(limit).collect()
+        all_rows.into_iter().take(limit).collect()
     } else {
-        rows
+        all_rows
     };
 
-    Ok(RefList {
-        target: target.display(),
-        rows: limited,
-        total,
-        capped,
-    })
+    Ok((limited, total, capped))
+}
+
+/// Seeds resolved from a [`RecordSel`] for [`Op::ReferencedBy`] — either a
+/// single direct target (today's behavior, unchanged) or every PERK carrying
+/// a matched entry point (see [`crate::EntryPointSpec`]).
+enum RefSeeds {
+    /// A resolved FormID/EditorID/Auto target. The target is only a BFS
+    /// root — [`referenced_by_enriched`] never emits it as a row.
+    Direct(FormId),
+    /// One or more PERK entry-point carriers, each emitted as its own
+    /// `depth: 0` row by [`referenced_by_enriched_multi`].
+    Carriers { label: String, seeds: Vec<FormId> },
+}
+
+/// Resolve a [`RecordSel`] to BFS seeds for [`Op::ReferencedBy`] specifically
+/// — the one place [`RecordSel::EntryPoint`] is handled, and the one place
+/// an EditorID lookup miss falls back to an entry-point name match (so a
+/// bare positional token like `'Mod Percent Blocked'` — parsed as
+/// [`RecordSel::Edid`] by [`RecordSel::from_input`], since it isn't
+/// FormID-shaped — resolves without needing the explicit `--entry-point`
+/// flag). Every other `Op` uses [`resolve_sel`], which does not have this
+/// fallback and rejects `RecordSel::EntryPoint` outright.
+fn resolve_ref_seeds(db: &mut Database, sel: &RecordSel) -> anyhow::Result<RefSeeds> {
+    match sel {
+        RecordSel::EntryPoint(token) => {
+            let spec = EntryPointSpec::parse(token)?;
+            let (label, seeds) = db.perks_by_entry_point(&spec)?;
+            Ok(RefSeeds::Carriers { label, seeds })
+        }
+        RecordSel::Edid(edid) => match resolve_sel(db, sel) {
+            Ok(fid) => Ok(RefSeeds::Direct(fid)),
+            Err(edid_err) => {
+                // Unlike the explicit `--entry-point` path above, a parse
+                // failure here (e.g. `edid` happens to look hex-prefixed,
+                // which `RecordSel::Edid` shouldn't produce in practice) is
+                // just another way to *not* be an entry point — fold it into
+                // the same "neither interpretation matched" message rather
+                // than surfacing `EntryPointSpec::parse`'s FormID-specific
+                // wording, which would be confusing here.
+                let carriers = EntryPointSpec::parse(edid)
+                    .ok()
+                    .and_then(|spec| db.perks_by_entry_point(&spec).ok())
+                    .filter(|(_, seeds)| !seeds.is_empty());
+                match carriers {
+                    Some((label, seeds)) => Ok(RefSeeds::Carriers { label, seeds }),
+                    None => bail!(
+                        "'{edid}' did not resolve as EditorID ({edid_err:#}) or as a \
+                         PERK entry point (no carriers matched)"
+                    ),
+                }
+            }
+        },
+        _ => Ok(RefSeeds::Direct(resolve_sel(db, sel)?)),
+    }
 }
 
 fn count_markers(v: &Value, m: &mut Markers) {
