@@ -88,7 +88,7 @@ describe('buildRecordColumns', () => {
     const recNew = makeRecord('0x00012345', 'Foo')
     const api = {
       recordById: vi.fn<(id: string) => Promise<RecordResult>>(async (id: string) =>
-        id === 'dbOld' ? recOld : recNew
+        id === 'dbOld' ? recOld : recNew,
       ),
     }
 

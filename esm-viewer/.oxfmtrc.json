@@ -1,0 +1,15 @@
+{
+  "semi": false,
+  "singleQuote": true,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    "out/**",
+    "dist/**",
+    "node_modules/**",
+    "src/shared/generated/**",
+    "*.md",
+    "*.yml",
+    "*.yaml",
+    "*.html"
+  ]
+}

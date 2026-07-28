@@ -133,9 +133,7 @@ export function DiffPanel({ onNavigate }: Props) {
 
   if (openDbs.length < 2) {
     return (
-      <div style={{ padding: 16, color: '#666' }}>
-        Open at least two ESM files to compare them.
-      </div>
+      <div style={{ padding: 16, color: '#666' }}>Open at least two ESM files to compare them.</div>
     )
   }
 
@@ -162,7 +160,7 @@ export function DiffPanel({ onNavigate }: Props) {
         // regardless of this param (verified against esm/src/diff.rs).
         'none',
         suppressNoise,
-        excludeList
+        excludeList,
       )
       setResult(res)
     } catch (e) {
@@ -255,7 +253,11 @@ export function DiffPanel({ onNavigate }: Props) {
           }}
         />
 
-        <button onClick={() => void runDiff()} disabled={loading || !oldId || !newId} style={{ alignSelf: 'flex-start' }}>
+        <button
+          onClick={() => void runDiff()}
+          disabled={loading || !oldId || !newId}
+          style={{ alignSelf: 'flex-start' }}
+        >
           {loading ? 'Diffing…' : 'Run Diff'}
         </button>
       </div>

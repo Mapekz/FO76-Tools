@@ -18,7 +18,7 @@ export async function loadAllTypeRecords(
   sig: string,
   total: number,
   chunkSize: number,
-  onChunk: (accumulated: RecordRow[]) => void
+  onChunk: (accumulated: RecordRow[]) => void,
 ): Promise<void> {
   let offset = 0
   let acc: RecordRow[] = []
@@ -43,7 +43,7 @@ export async function loadTypeChildrenPage(
   dbId: string,
   sig: string,
   current: GroupChild[],
-  pageSize: number
+  pageSize: number,
 ): Promise<GroupChild[]> {
   const next = await api.listTypeChildren(dbId, sig, current.length, pageSize)
   return [...current, ...next]
@@ -58,7 +58,7 @@ export async function loadGroupChildrenPage(
   dbId: string,
   groupOffset: number,
   current: GroupChild[],
-  pageSize: number
+  pageSize: number,
 ): Promise<GroupChild[]> {
   const next = await api.listGroupChildren(dbId, groupOffset, current.length, pageSize)
   return [...current, ...next]

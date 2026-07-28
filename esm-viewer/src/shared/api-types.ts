@@ -116,14 +116,14 @@ export interface Fo76Api {
     id: DbId,
     groupOffset: number,
     offset: number,
-    limit: number
+    limit: number,
   ): Promise<GroupChild[]>
   search(
     id: DbId,
     pattern: string,
     types: string[],
     field: 'edid' | 'name' | 'both',
-    limit: number
+    limit: number,
   ): Promise<RecordRow[]>
   filterTypeRecords(
     id: DbId,
@@ -131,7 +131,7 @@ export interface Fo76Api {
     path: string | undefined,
     op: FilterOp,
     value: string | undefined,
-    limit: number
+    limit: number,
   ): Promise<FilterResult>
   listTypeFieldPaths(id: DbId, sig: string): Promise<string[]>
   recordRaw(id: DbId, target: string): Promise<RawRecordView>
@@ -142,6 +142,6 @@ export interface Fo76Api {
     recordType: string | undefined,
     bodies: 'none' | 'stub' | 'full',
     suppressNoise: boolean,
-    excludeTypes: string[]
+    excludeTypes: string[],
   ): Promise<DiffResult>
 }

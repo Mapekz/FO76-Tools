@@ -28,7 +28,7 @@ function formatHexDump(hex: string): string {
 function RawRecordSection({
   view,
   loading,
-  error
+  error,
 }: {
   view: RawRecordView | null
   loading: boolean
@@ -61,7 +61,7 @@ function RawRecordSection({
               fontFamily: 'monospace',
               fontSize: 11,
               whiteSpace: 'pre-wrap',
-              wordBreak: 'break-all'
+              wordBreak: 'break-all',
             }}
           >
             {formatHexDump(sr.hex)}
@@ -150,7 +150,7 @@ export function RecordDetail({ onNavigate }: Props) {
           paddingBottom: 4,
           display: 'flex',
           alignItems: 'center',
-          gap: 8
+          gap: 8,
         }}
       >
         <strong>{header.signature}</strong>{' '}
@@ -169,7 +169,7 @@ export function RecordDetail({ onNavigate }: Props) {
                 color: '#e0e0e0',
                 border: '1px solid #444',
                 borderRadius: 3,
-                cursor: 'pointer'
+                cursor: 'pointer',
               }}
             >
               {m === 'decoded' ? 'Decoded' : 'Raw'}
@@ -179,8 +179,8 @@ export function RecordDetail({ onNavigate }: Props) {
       </div>
       {mode === 'decoded' && hasCoverageMarkers(fields) && (
         <div style={{ marginBottom: 8, color: COVERAGE_COLOR, fontSize: 11 }}>
-          Some fields are undecoded (see [raw]/[unmapped] badges below) — switch to Raw for the
-          full byte dump.
+          Some fields are undecoded (see [raw]/[unmapped] badges below) — switch to Raw for the full
+          byte dump.
         </div>
       )}
       {mode === 'decoded' ? (

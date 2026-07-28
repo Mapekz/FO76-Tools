@@ -384,8 +384,17 @@ export function RecordTree({ onNavigate }: Props) {
   )
 }
 
-const HEADER_CELL_STYLE: React.CSSProperties = { padding: '2px 6px', textAlign: 'left', cursor: 'pointer' }
-const BODY_CELL_STYLE: React.CSSProperties = { padding: '2px 6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+const HEADER_CELL_STYLE: React.CSSProperties = {
+  padding: '2px 6px',
+  textAlign: 'left',
+  cursor: 'pointer',
+}
+const BODY_CELL_STYLE: React.CSSProperties = {
+  padding: '2px 6px',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+}
 
 function sortIndicator(column: SortColumn, sortState: SortState | undefined): string {
   if (sortState?.column !== column) return ''
@@ -448,7 +457,10 @@ function RecordTypeTable({
           Name{sortIndicator('name', sortState)}
         </div>
       </div>
-      <div ref={parentRef} style={{ height: viewportHeight, overflow: 'auto', position: 'relative' }}>
+      <div
+        ref={parentRef}
+        style={{ height: viewportHeight, overflow: 'auto', position: 'relative' }}
+      >
         <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
           {rowVirtualizer.getVirtualItems().map((vi) => {
             const row = rows[vi.index]

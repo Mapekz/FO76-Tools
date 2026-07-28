@@ -53,7 +53,7 @@ export function OpenFilesPanel() {
         depth_capped: false,
         frontier_remaining: 0,
         per_depth_totals: [],
-        shown_max_depth: 0
+        shown_max_depth: 0,
       })
     }
   }
@@ -61,7 +61,9 @@ export function OpenFilesPanel() {
   return (
     <div style={{ padding: 8, borderBottom: '1px solid #444' }}>
       <button onClick={handleOpen}>Open ESM…</button>
-      <button onClick={handleOpenFolder} style={{ marginLeft: 4 }}>Open Folder…</button>
+      <button onClick={handleOpenFolder} style={{ marginLeft: 4 }}>
+        Open Folder…
+      </button>
       <ul style={{ listStyle: 'none', margin: '8px 0 0', padding: 0 }}>
         {openDbs.map((db) => (
           <li
@@ -80,7 +82,10 @@ export function OpenFilesPanel() {
               {db.path.split('/').pop()}
             </span>
             <button
-              onClick={(e) => { e.stopPropagation(); void handleClose(db.id) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                void handleClose(db.id)
+              }}
               style={{ fontSize: 10, padding: '1px 4px' }}
             >
               ✕

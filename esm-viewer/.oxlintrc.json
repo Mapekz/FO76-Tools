@@ -16,7 +16,12 @@
   "ignorePatterns": ["out/**", "dist/**", "src/shared/generated/**"],
   "overrides": [
     {
-      "files": ["src/main/**/*.ts", "src/preload/**/*.ts", "electron.vite.config.ts", "vitest.config.ts"],
+      "files": [
+        "src/main/**/*.ts",
+        "src/preload/**/*.ts",
+        "electron.vite.config.ts",
+        "vitest.config.ts"
+      ],
       "env": { "node": true }
     },
     {

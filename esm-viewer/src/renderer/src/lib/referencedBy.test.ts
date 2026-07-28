@@ -14,7 +14,7 @@ describe('fetchReferencedBy', () => {
       depth_capped: false,
       frontier_remaining: 0,
       per_depth_totals: [],
-      shown_max_depth: 0
+      shown_max_depth: 0,
     }
     const api = { referencedById: vi.fn<() => Promise<RefListResult>>(async () => result) }
 

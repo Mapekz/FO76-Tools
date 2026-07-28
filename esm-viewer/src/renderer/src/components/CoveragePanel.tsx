@@ -66,7 +66,16 @@ export function CoveragePanel() {
     : []
 
   return (
-    <div style={{ padding: 8, fontSize: 12, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div
+      style={{
+        padding: 8,
+        fontSize: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           Type:
@@ -96,17 +105,25 @@ export function CoveragePanel() {
                 border: '1px solid #444',
                 borderRadius: 3,
                 padding: '4px 6px',
-                fontFamily: 'monospace'
+                fontFamily: 'monospace',
               }}
             />
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <input type="checkbox" checked={scanAll} onChange={(e) => setScanAll(e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={scanAll}
+              onChange={(e) => setScanAll(e.target.checked)}
+            />
             Scan all records of this type (0 = unlimited, can be slow)
           </label>
         </div>
 
-        <button onClick={() => void runCoverage()} disabled={loading} style={{ alignSelf: 'flex-start' }}>
+        <button
+          onClick={() => void runCoverage()}
+          disabled={loading}
+          style={{ alignSelf: 'flex-start' }}
+        >
           {loading ? 'Scanning…' : 'Run'}
         </button>
       </div>
@@ -115,7 +132,14 @@ export function CoveragePanel() {
 
       {report && (
         <div style={{ overflow: 'auto', flex: 1, marginTop: 8 }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'monospace', fontSize: 11 }}>
+          <table
+            style={{
+              borderCollapse: 'collapse',
+              width: '100%',
+              fontFamily: 'monospace',
+              fontSize: 11,
+            }}
+          >
             <thead>
               <tr style={{ borderBottom: '1px solid #444', textAlign: 'right' }}>
                 <th style={{ textAlign: 'left', padding: '2px 6px' }}>Type</th>
@@ -130,7 +154,9 @@ export function CoveragePanel() {
             <tbody>
               {rows.map(([typeSig, m]) => (
                 <tr key={typeSig} style={{ borderBottom: '1px solid #2a2a3a', textAlign: 'right' }}>
-                  <td style={{ textAlign: 'left', padding: '2px 6px', color: '#82aaff' }}>{typeSig}</td>
+                  <td style={{ textAlign: 'left', padding: '2px 6px', color: '#82aaff' }}>
+                    {typeSig}
+                  </td>
                   <td style={{ padding: '2px 6px' }}>{m.records}</td>
                   <td style={{ padding: '2px 6px' }}>{m.unknown_record}</td>
                   <td style={{ padding: '2px 6px' }}>{m.raw_fallback}</td>
@@ -140,7 +166,7 @@ export function CoveragePanel() {
                     style={{
                       padding: '2px 6px',
                       fontWeight: 'bold',
-                      color: totalGaps(m) > 0 ? '#e8a838' : '#c3e88d'
+                      color: totalGaps(m) > 0 ? '#e8a838' : '#c3e88d',
                     }}
                   >
                     {totalGaps(m)}

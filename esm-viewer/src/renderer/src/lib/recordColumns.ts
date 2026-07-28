@@ -37,14 +37,14 @@ export async function buildRecordColumns(
   target: string,
   dbId: string,
   openDbs: DbHandle[],
-  api: Pick<Fo76Api, 'recordById'>
+  api: Pick<Fo76Api, 'recordById'>,
 ): Promise<{ active: RecordResult; columns: RecordColumn[] }> {
   const rec = await api.recordById(dbId, target, 'stub')
   const formId = rec.header.form_id
 
   const others = openDbs.filter((db) => db.id !== dbId)
   const settled = await Promise.allSettled(
-    others.map((db) => api.recordById(db.id, formId, 'stub'))
+    others.map((db) => api.recordById(db.id, formId, 'stub')),
   )
 
   // recordById rejects when the FormID is absent from that file — that

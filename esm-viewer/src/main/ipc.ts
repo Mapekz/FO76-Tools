@@ -22,14 +22,14 @@ export function registerIpc(): void {
   ipcMain.handle(CH.openFileDialog, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       filters: [{ name: 'ESM Files', extensions: ['esm'] }],
-      properties: ['openFile']
+      properties: ['openFile'],
     })
     return canceled ? null : filePaths[0]
   })
 
   ipcMain.handle(CH.openFolderDialog, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      properties: ['openDirectory']
+      properties: ['openDirectory'],
     })
     return canceled ? null : filePaths[0]
   })
@@ -46,7 +46,7 @@ export function registerIpc(): void {
   })
 
   ipcMain.handle(CH.listOpen, () =>
-    registry.listAll().map(({ id, path, info }) => ({ id, path, info }))
+    registry.listAll().map(({ id, path, info }) => ({ id, path, info })),
   )
 
   ipcMain.handle(CH.parseFormId, (_e, s: string) => {
@@ -84,7 +84,7 @@ export function registerIpc(): void {
       recordType: unknown,
       bodies: unknown,
       suppressNoise: unknown,
-      excludeTypes: unknown
+      excludeTypes: unknown,
     ) => {
       const entryOld = registry.get(oldId)
       const entryNew = registry.get(newId)
@@ -101,8 +101,8 @@ export function registerIpc(): void {
         validRecordType,
         validBodies,
         suppressNoise,
-        validExcludeTypes
+        validExcludeTypes,
       )
-    }
+    },
   )
 }

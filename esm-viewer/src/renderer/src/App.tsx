@@ -55,7 +55,7 @@ export function App() {
         console.error('load record error:', e)
       }
     },
-    [setActiveRecord, setRecordColumns, setReferencedBy, referencedByDepth]
+    [setActiveRecord, setRecordColumns, setReferencedBy, referencedByDepth],
   )
 
   // A NEW navigation choice (tree click, ctrl-click FormID link, referenced-by row):
@@ -65,7 +65,7 @@ export function App() {
       navPush({ dbId, formid: target })
       await loadRecord(dbId, target)
     },
-    [navPush, loadRecord]
+    [navPush, loadRecord],
   )
 
   // Single shared implementation of Back/Forward, used by the NavHistory buttons
@@ -132,11 +132,28 @@ export function App() {
   }, [goBack, goForward])
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#1a1a2e', color: '#e0e0e0', fontFamily: 'sans-serif' }}>
+    <div
+      style={{
+        display: 'flex',
+        height: '100vh',
+        background: '#1a1a2e',
+        color: '#e0e0e0',
+        fontFamily: 'sans-serif',
+      }}
+    >
       {/* Left panel */}
-      <div style={{ width: 320, borderRight: '1px solid #444', display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          width: 320,
+          borderRight: '1px solid #444',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         <OpenFilesPanel />
-        <div style={{ display: 'flex', gap: 4, padding: '4px 8px', borderBottom: '1px solid #444' }}>
+        <div
+          style={{ display: 'flex', gap: 4, padding: '4px 8px', borderBottom: '1px solid #444' }}
+        >
           {(['tree', 'search', 'filter', 'coverage', 'diff'] as const).map((v) => (
             <button
               key={v}
@@ -148,7 +165,7 @@ export function App() {
                 color: '#e0e0e0',
                 border: '1px solid #444',
                 borderRadius: 3,
-                cursor: 'pointer'
+                cursor: 'pointer',
               }}
             >
               {v === 'tree'

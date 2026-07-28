@@ -16,7 +16,7 @@ const OPERATORS: { value: FilterOp; label: string }[] = [
   { value: 'gt', label: '>' },
   { value: 'lt', label: '<' },
   { value: 'gte', label: '>=' },
-  { value: 'lte', label: '<=' }
+  { value: 'lte', label: '<=' },
 ]
 
 export function FilterPanel({ onNavigate }: Props) {
@@ -55,10 +55,7 @@ export function FilterPanel({ onNavigate }: Props) {
       setFieldPaths([])
       return
     }
-    window.api
-      .listTypeFieldPaths(activeDbId, sig)
-      .then(setFieldPaths)
-      .catch(console.error)
+    window.api.listTypeFieldPaths(activeDbId, sig).then(setFieldPaths).catch(console.error)
   }, [activeDbId, sig])
 
   if (!activeDbId) return null
@@ -74,7 +71,7 @@ export function FilterPanel({ onNavigate }: Props) {
         path.trim() || undefined,
         op,
         op === 'exists' ? undefined : value,
-        LIMIT
+        LIMIT,
       )
       setResult(res)
     } catch (e) {
@@ -87,7 +84,16 @@ export function FilterPanel({ onNavigate }: Props) {
   const rows: RecordRow[] = result?.rows ?? []
 
   return (
-    <div style={{ padding: 8, fontSize: 12, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div
+      style={{
+        padding: 8,
+        fontSize: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           Type:
@@ -112,7 +118,7 @@ export function FilterPanel({ onNavigate }: Props) {
             border: '1px solid #444',
             borderRadius: 3,
             padding: '4px 6px',
-            fontFamily: 'monospace'
+            fontFamily: 'monospace',
           }}
         />
         <datalist id="filter-field-paths">
@@ -148,12 +154,16 @@ export function FilterPanel({ onNavigate }: Props) {
               border: '1px solid #444',
               borderRadius: 3,
               padding: '4px 6px',
-              fontFamily: 'monospace'
+              fontFamily: 'monospace',
             }}
           />
         </div>
 
-        <button onClick={() => void runFilter()} disabled={loading || !sig} style={{ alignSelf: 'flex-start' }}>
+        <button
+          onClick={() => void runFilter()}
+          disabled={loading || !sig}
+          style={{ alignSelf: 'flex-start' }}
+        >
           {loading ? 'Filtering…' : 'Filter'}
         </button>
       </div>

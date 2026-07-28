@@ -33,8 +33,18 @@ export function validateBodies(v: unknown): 'none' | 'stub' | 'full' {
   throw new Error(`invalid bodies value: expected none|stub|full, got ${String(v)}`)
 }
 
-export function validateFilterOp(v: unknown): 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' {
-  if (v === 'exists' || v === 'eq' || v === 'contains' || v === 'gt' || v === 'lt' || v === 'gte' || v === 'lte') {
+export function validateFilterOp(
+  v: unknown,
+): 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' {
+  if (
+    v === 'exists' ||
+    v === 'eq' ||
+    v === 'contains' ||
+    v === 'gt' ||
+    v === 'lt' ||
+    v === 'gte' ||
+    v === 'lte'
+  ) {
     return v
   }
   throw new Error(`invalid filter op: expected exists|eq|contains|gt|lt|gte|lte, got ${String(v)}`)

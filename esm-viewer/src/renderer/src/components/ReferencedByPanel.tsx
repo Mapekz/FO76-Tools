@@ -47,7 +47,7 @@ export function ReferencedByPanel({ onNavigate }: Props) {
         activeDbId,
         activeRecord.header.form_id,
         newDepth,
-        window.api
+        window.api,
       )
       setReferencedBy(result)
     } catch (err) {

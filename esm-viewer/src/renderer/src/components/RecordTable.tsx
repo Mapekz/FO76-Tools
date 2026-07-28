@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from 'react'
 import { useStore, type RecordColumn } from '../store'
-import { buildAlignedTree, buildLeafNode, isFormIdStub, MISSING, type AlignedNode } from '../lib/alignedTree'
+import {
+  buildAlignedTree,
+  buildLeafNode,
+  isFormIdStub,
+  MISSING,
+  type AlignedNode,
+} from '../lib/alignedTree'
 
 interface Props {
   columns: RecordColumn[]
@@ -42,7 +48,9 @@ function buildSyntheticNodes(columns: RecordColumn[]): AlignedNode[] {
   const versionValues = columns.map((c) => c.record?.header.form_version ?? MISSING)
   const edidValues = columns.map((c) => c.record?.editor_id ?? MISSING)
   const headerSummaryValues = columns.map((c) =>
-    c.record ? { flags: c.record.header.flags, form_version: c.record.header.form_version } : MISSING
+    c.record
+      ? { flags: c.record.header.flags, form_version: c.record.header.form_version }
+      : MISSING,
   )
 
   const flagsNode = buildLeafNode('flags', `${HEADER_PATH}.flags`, flagsValues)
@@ -313,11 +321,12 @@ export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
                     textAlign: 'left',
                     padding: '4px 6px',
                     cursor: 'pointer',
-                    borderBottom:
-                      col.dbId === activeDbId ? '2px solid #7ec8e3' : '1px solid #444',
+                    borderBottom: col.dbId === activeDbId ? '2px solid #7ec8e3' : '1px solid #444',
                   }}
                 >
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div
+                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
                     {col.fileName}
                   </div>
                   {editorIdsDiffer && (

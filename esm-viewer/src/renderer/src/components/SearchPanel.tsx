@@ -38,7 +38,16 @@ export function SearchPanel({ onNavigate }: Props) {
   }
 
   return (
-    <div style={{ padding: 8, fontSize: 12, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+    <div
+      style={{
+        padding: 8,
+        fontSize: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <input
           type="text"
@@ -54,13 +63,16 @@ export function SearchPanel({ onNavigate }: Props) {
             border: '1px solid #444',
             borderRadius: 3,
             padding: '4px 6px',
-            fontFamily: 'monospace'
+            fontFamily: 'monospace',
           }}
         />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             Field:
-            <select value={field} onChange={(e) => setField(e.target.value as 'edid' | 'name' | 'both')}>
+            <select
+              value={field}
+              onChange={(e) => setField(e.target.value as 'edid' | 'name' | 'both')}
+            >
               <option value="edid">EditorID</option>
               <option value="name">Name</option>
               <option value="both">Both</option>
@@ -81,10 +93,14 @@ export function SearchPanel({ onNavigate }: Props) {
             border: '1px solid #444',
             borderRadius: 3,
             padding: '4px 6px',
-            fontFamily: 'monospace'
+            fontFamily: 'monospace',
           }}
         />
-        <button onClick={() => void runSearch()} disabled={loading} style={{ alignSelf: 'flex-start' }}>
+        <button
+          onClick={() => void runSearch()}
+          disabled={loading}
+          style={{ alignSelf: 'flex-start' }}
+        >
           {loading ? 'Searching…' : 'Search'}
         </button>
       </div>

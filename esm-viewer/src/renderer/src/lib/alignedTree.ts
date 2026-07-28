@@ -24,7 +24,7 @@ export interface AlignedNode {
 }
 
 export function isFormIdStub(
-  v: unknown
+  v: unknown,
 ): v is { formid: string; editor_id?: string; record_type: string } {
   return typeof v === 'object' && v !== null && 'formid' in v && 'record_type' in v
 }
@@ -170,7 +170,7 @@ function buildNode(label: string, path: string, values: unknown[]): AlignedNode 
 
   if (kind === 'object') {
     const badgesPerCol = values.map((v) =>
-      kindOf(v) === 'object' ? coverageBadges(v as Record<string, unknown>) : []
+      kindOf(v) === 'object' ? coverageBadges(v as Record<string, unknown>) : [],
     )
     const keys = objectChildKeys(values)
     const children = keys.map((k) => {

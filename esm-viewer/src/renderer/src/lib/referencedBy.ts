@@ -8,7 +8,7 @@ export async function fetchReferencedBy(
   dbId: string,
   target: string,
   depth: number,
-  api: Pick<Fo76Api, 'referencedById'>
+  api: Pick<Fo76Api, 'referencedById'>,
 ): Promise<RefListResult> {
   return api.referencedById(dbId, target, depth)
 }

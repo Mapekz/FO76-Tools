@@ -7,24 +7,24 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        external: ['@fo76/esm-napi', /\.node$/]
-      }
-    }
+        external: ['@fo76/esm-napi', /\.node$/],
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        external: ['@fo76/esm-napi', /\.node$/]
-      }
-    }
+        external: ['@fo76/esm-napi', /\.node$/],
+      },
+    },
   },
   renderer: {
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
-      }
+        '@renderer': resolve('src/renderer/src'),
+      },
     },
-    plugins: [react()]
-  }
+    plugins: [react()],
+  },
 })
