@@ -1,0 +1,6 @@
+# Formatting-only commits to skip in `git blame` (git blame --ignore-revs-file
+# .git-blame-ignore-revs, or `git config blame.ignoreRevsFile .git-blame-ignore-revs`
+# to make it the default for this checkout).
+
+# esm-viewer: adopt oxfmt, apply house style formatting (trailing commas, line rewraps)
+6f9220e71795e6a875c7fd6fb29b556b14563c4b
