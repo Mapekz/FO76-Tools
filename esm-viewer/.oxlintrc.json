@@ -11,7 +11,7 @@
     "nursery": "off"
   },
   "settings": {
-    "react": { "version": "18.0" }
+    "react": { "version": "19.0" }
   },
   "ignorePatterns": ["out/**", "dist/**", "src/shared/generated/**"],
   "overrides": [
