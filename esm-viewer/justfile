@@ -12,22 +12,22 @@ default: check
 # Rebuild the native N-API addon this app depends on.
 # Run after any Rust API change under ../esm/bindings/napi.
 addon:
-    npm run build:addon
+    bun run build:addon
 
 # oxlint (correctness/suspicious/perf + react/import/vitest, see .oxlintrc.json), then
 # oxfmt --check (see .oxfmtrc.json), then type-check main/preload (Node lib) and renderer
 # (DOM lib) separately — they use different tsconfigs, see tsconfig.json /
-# tsconfig.node.json — then run the vitest unit suite. Fast checks first.
+# tsconfig.node.json — then run the bun:test unit suite. Fast checks first.
 check:
-    npm run lint:ci
-    npm run format:check
-    npm run typecheck
-    npm run test
+    bun run lint:ci
+    bun run format:check
+    bun run typecheck
+    bun run test
 
 # Launch the app in dev mode (electron-vite dev). Rebuilds the addon first.
 dev:
-    npm run dev
+    bun run dev
 
 # Production build (electron-vite build). Rebuilds the addon first.
 build:
-    npm run build
+    bun run build

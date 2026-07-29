@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect } from 'bun:test'
 import { compareRows, sortRows, type SortState } from './recordSort'
 import type { RecordRow } from '../../../shared/api-types'
 

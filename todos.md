@@ -61,5 +61,5 @@ on both sides — run `just gen-types` in `esm/` to regenerate the shared TypeSc
 than passing silently.
 
 The typed-envelope gap at that boundary — N-API returns `serde_json::Value`, so
-`npm run typecheck` can't verify the seam — is written up in full in
+`bun run typecheck` can't verify the seam — is written up in full in
 [#9](https://github.com/Mapekz/FO76-Tools/issues/9).

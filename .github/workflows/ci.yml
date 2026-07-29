@@ -121,24 +121,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
+          bun-version: "1.3.14"
 
       - name: install
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: lint
-        run: npm run lint:ci
+        run: bun run lint:ci
 
       - name: format
-        run: npm run format:check
+        run: bun run format:check
 
       - name: typecheck
-        run: npm run typecheck
+        run: bun run typecheck
 
       - name: test
-        run: npm run test
+        run: bun run test
 
   # ── N-API binding: build + smoke ──────────────────────────────────────────
   #
@@ -161,18 +161,18 @@ jobs:
           rustflags: ""
           cache-workspaces: esm
 
-      - uses: actions/setup-node@v6
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
+          bun-version: "1.3.14"
 
       - name: install napi cli
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: build (debug)
-        run: npm run build:debug
+        run: bun run build:debug
 
       - name: smoke test (skips without FO76_ESM)
-        run: npm test
+        run: bun run test
 
   # ── Schema parity audit ───────────────────────────────────────────────────
   #

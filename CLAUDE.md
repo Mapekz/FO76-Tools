@@ -8,14 +8,14 @@ This repository contains three Fallout 76 tools. Most share no code, no workspac
 |---|---|---|
 | [`ba2/`](ba2/CLAUDE.md) | Rust / Cargo | BA2 archive CLI + library |
 | [`esm/`](esm/CLAUDE.md) | Rust / Cargo | FO76 ESM reader: CLI, HTTP/MCP server |
-| [`esm-viewer/`](esm-viewer/CLAUDE.md) | TypeScript / npm + Electron | FO76 ESM Viewer GUI; depends on `esm/bindings/napi` |
+| [`esm-viewer/`](esm-viewer/CLAUDE.md) | TypeScript / Bun + Electron | FO76 ESM Viewer GUI; depends on `esm/bindings/napi` |
 
 ## Working in this repo
 
 - **Always `cd` into the relevant subdirectory** before running commands — there are no root-level build scripts.
 - `ba2/` uses `cargo`. See [`ba2/CLAUDE.md`](ba2/CLAUDE.md).
 - `esm/` uses `cargo` (Rust workspace). See [`esm/CLAUDE.md`](esm/CLAUDE.md).
-- `esm-viewer/` uses `npm` + `just`. See [`esm-viewer/CLAUDE.md`](esm-viewer/CLAUDE.md).
+- `esm-viewer/` uses `bun` + `just`. See [`esm-viewer/CLAUDE.md`](esm-viewer/CLAUDE.md).
 
 ## Scope
 

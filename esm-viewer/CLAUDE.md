@@ -10,19 +10,35 @@ Do not add any feature that mutates an ESM file.
 ## Commands
 
 ```sh
-npm install                # install deps; relinks the @fo76/esm-napi symlink dependency
-npm run build:addon        # rebuild ../esm/bindings/napi (native addon this app consumes)
-npm run dev                # electron-vite dev (runs build:addon first via "predev")
-npm run build              # electron-vite build (runs build:addon first via "prebuild")
-npm run lint                # oxlint (see .oxlintrc.json)
-npm run lint:fix            # oxlint --fix
-npm run format              # oxfmt, writes in place (see .oxfmtrc.json)
-npm run format:check        # oxfmt --check
-npm run typecheck          # tsc --noEmit against both tsconfig.json and tsconfig.node.json
-npm run test                # vitest run (unit tests for renderer/src/lib/*)
+bun install                # install deps; relinks the @fo76/esm-napi symlink dependency
+bun run build:addon        # rebuild ../esm/bindings/napi (native addon this app consumes)
+bun run dev                # electron-vite dev (runs build:addon first via "predev")
+bun run build              # electron-vite build (runs build:addon first via "prebuild")
+bun run lint                # oxlint (see .oxlintrc.json)
+bun run lint:fix            # oxlint --fix
+bun run format              # oxfmt, writes in place (see .oxfmtrc.json)
+bun run format:check        # oxfmt --check
+bun run typecheck          # tsc --noEmit against both tsconfig.json and tsconfig.node.json
+bun run test                # bun test (unit tests for renderer/src/lib/*)
 just                        # = just check = lint:ci -> format:check -> typecheck -> test
-just dev / just build       # thin wrappers over the npm scripts above
+just dev / just build       # thin wrappers over the bun scripts above
 ```
+
+Package manager is Bun (`bun.lock`), not npm — see `package.json`'s `trustedDependencies` and
+its own `postinstall`.
+
+### Electron binary download gotcha
+
+`electron`'s own `postinstall` (`node install.js`) has been observed to silently truncate the
+zip extraction — it exits 0 and produces a `node_modules/electron/dist/` with only 1-2 files
+(no `version` file) instead of the full ~20-file distribution — when the `node` resolved from
+`PATH` is a sufficiently new major (reproduced with system Node v26.4.0; a plain `npm install`
+on the same machine fails identically, so this is not Bun-specific). `package.json`'s own
+`"postinstall": "bun node_modules/electron/install.js"` works around it by forcing the
+extraction to run under Bun's own runtime instead of whatever `node` is first on `PATH`. If
+`bun run dev`/`build` ever fails with an Electron binary error again, check
+`node_modules/electron/dist/version` exists before assuming the migration or a lockfile change
+broke something — rerun `bun run postinstall` (or `bun install`) first.
 
 ## Dependency on `esm/bindings/napi`
 
@@ -32,7 +48,7 @@ a symlinked local dependency, not a published package. It is a Rust workspace me
 (from `esm/app/` to repo-root `esm-viewer/`, via `git mv`, preserving history).
 
 **After any Rust API change to `EsmDatabase` in `esm/bindings/napi/src/lib.rs`, rebuild the
-addon** (`npm run build:addon`, or just let `predev`/`prebuild` do it automatically). Most DTO
+addon** (`bun run build:addon`, or just let `predev`/`prebuild` do it automatically). Most DTO
 shapes are generated, not hand-mirrored: run `just gen-types` in `esm/` (part of `esm/`'s
 `just check`) to regenerate `src/shared/generated/*.ts` from the `ts-rs`-derived Rust structs.
 `src/shared/api-types.ts` re-exports those under their existing names and hand-writes only the
@@ -40,12 +56,14 @@ IPC-contract pieces that aren't Rust types (`CH` channel names, `Fo76Api`, `Filt
 `Fo76Api` by hand when adding/removing/reshaping an `EsmDatabase` method.
 
 If `node_modules/@fo76/esm-napi` ever fails to resolve (e.g. after moving either directory
-again), `rm -rf node_modules package-lock.json && npm install` to force a clean relink, then
-verify with `readlink node_modules/@fo76/esm-napi`.
+again), `rm -rf node_modules bun.lock && bun install` to force a clean relink. Bun links this
+`file:` dependency as a real directory of per-file symlinks (not one directory symlink like
+npm) — verify with `ls -la node_modules/@fo76/esm-napi/` and check the entries point back into
+`../esm/bindings/napi/`, since `readlink node_modules/@fo76/esm-napi` itself will report nothing.
 
 ## Type-checking
 
-Nothing in the electron-vite/esbuild build pipeline checks types — it strips them. `npm run
+Nothing in the electron-vite/esbuild build pipeline checks types — it strips them. `bun run
 typecheck` is the actual gate, run separately (and via `just check`). There are two tsconfigs
 because main/preload and renderer target different environments:
 

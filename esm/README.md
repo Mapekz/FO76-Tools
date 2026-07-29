@@ -529,7 +529,7 @@ Both files are gitignored. Never commit them.
 
 ## Electron GUI
 
-The `app/` directory contains the FO76 ESM Viewer, an Electron desktop application. It depends on the `bindings/napi/` N-API addon (`@fo76/esm-napi`) which must be compiled from Rust before the app can run.
+The sibling `../esm-viewer/` directory (repo root, not inside `esm/`) contains the FO76 ESM Viewer, an Electron desktop application. It depends on the `bindings/napi/` N-API addon (`@fo76/esm-napi`) which must be compiled from Rust before the app can run.
 
 ### Building the native addon
 
@@ -537,17 +537,17 @@ Before running the Electron app for the first time, build the N-API addon:
 
 ```sh
 cd bindings/napi
-npm install
-npm run build          # or: npm run build:debug for a debug build
+bun install
+bun run build          # or: bun run build:debug for a debug build
 ```
 
-This compiles the Rust library into `bindings/napi/esm-napi.<platform>.node` and is required before `npm install` / `npm run dev` in `app/`.
+This compiles the Rust library into `bindings/napi/esm-napi.<platform>.node` and is required before `bun install` / `bun run dev` in `../esm-viewer/`.
 
 ### Running the app
 
 ```sh
-cd app
-npm install
-npm run dev            # start in development mode
-npm run build          # production build
+cd ../esm-viewer
+bun install
+bun run dev            # start in development mode
+bun run build          # production build
 ```

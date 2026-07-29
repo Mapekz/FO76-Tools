@@ -89,7 +89,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 The `bindings/napi/` sub-crate (`esm-napi`) builds a `esm-napi.<platform>.node` addon. The Electron app is now at `../esm-viewer/` (sibling directory of `esm/`, tracked separately at repo root) and depends on it via the `@fo76/esm-napi` npm package (local file dep, `"file:../esm/bindings/napi"`). After any Rust API change that affects `EsmDatabase`, rebuild the addon:
 
 ```sh
-cd bindings/napi && npm run build   # or build:debug
+cd bindings/napi && bun run build   # or build:debug
 ```
 
 The app loads the addon via `esm-viewer/src/main/addon.ts`. Most of the Rust N-API DTOs are mirrored to TypeScript via `ts-rs` (dev-dependency; `#[cfg_attr(test, derive(ts_rs::TS))]` + `#[cfg_attr(test, ts(export))]` on the DTOs in `lib.rs`/`ipc.rs`/`reader.rs`/`tree.rs`/`diff.rs`/`decode.rs`) — run `just gen-types` after changing any of those structs' shape, which regenerates `esm-viewer/src/shared/generated/*.ts`; `just check` fails if that regen produces an uncommitted diff. `esm-viewer/src/shared/api-types.ts` re-exports those generated types (aliasing a few names) and hand-writes only the IPC-contract-specific bits (`CH` channel names, `Fo76Api`, `FilterOp`) — keep *that* in sync when adding/removing `EsmDatabase` methods.

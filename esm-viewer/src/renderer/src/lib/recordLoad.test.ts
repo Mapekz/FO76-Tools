@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'bun:test'
 import { loadAllTypeRecords, loadGroupChildrenPage, loadTypeChildrenPage } from './recordLoad'
 import type { GroupChild, RecordRow } from '../../../shared/api-types'
 

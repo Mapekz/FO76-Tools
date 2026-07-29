@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi } from 'bun:test'
 import { buildRecordColumns, columnLabels } from './recordColumns'
 import type { DbHandle, RecordResult } from '../../../shared/api-types'
 

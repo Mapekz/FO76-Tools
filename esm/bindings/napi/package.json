@@ -7,7 +7,7 @@
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
-    "test": "node smoke.mjs"
+    "test": "bun smoke.mjs"
   },
   "napi": {
     "name": "esm-napi",
