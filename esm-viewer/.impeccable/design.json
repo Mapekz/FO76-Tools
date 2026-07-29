@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-29T00:00:00Z",
+  "title": "Design System: FO76 ESM Viewer",
+  "extensions": {
+    "colorMeta": {
+      "trace-blue": {
+        "role": "primary",
+        "displayName": "Trace Blue",
+        "canonical": "#7ec8e3",
+        "tonalRamp": [
+          "oklch(20% 0.04 220)",
+          "oklch(32% 0.06 220)",
+          "oklch(45% 0.08 220)",
+          "oklch(58% 0.09 220)",
+          "oklch(70% 0.09 220)",
+          "oklch(78% 0.09 220)",
+          "oklch(87% 0.06 220)",
+          "oklch(95% 0.03 220)"
+        ]
+      },
+      "signature-blue": {
+        "role": "secondary",
+        "displayName": "Signature Blue",
+        "canonical": "#82aaff",
+        "tonalRamp": [
+          "oklch(18% 0.06 260)",
+          "oklch(30% 0.09 260)",
+          "oklch(42% 0.12 260)",
+          "oklch(55% 0.14 260)",
+          "oklch(65% 0.15 260)",
+          "oklch(72% 0.15 260)",
+          "oklch(85% 0.09 260)",
+          "oklch(95% 0.04 260)"
+        ]
+      },
+      "complete-green": {
+        "role": "tertiary",
+        "displayName": "Complete Green",
+        "canonical": "#c3e88d",
+        "tonalRamp": [
+          "oklch(20% 0.05 130)",
+          "oklch(32% 0.08 130)",
+          "oklch(45% 0.11 130)",
+          "oklch(58% 0.13 130)",
+          "oklch(70% 0.14 130)",
+          "oklch(85% 0.14 130)",
+          "oklch(92% 0.09 130)",
+          "oklch(97% 0.04 130)"
+        ]
+      },
+      "gap-amber": {
+        "role": "tertiary",
+        "displayName": "Gap Amber",
+        "canonical": "#e8a838",
+        "tonalRamp": [
+          "oklch(20% 0.04 75)",
+          "oklch(32% 0.07 75)",
+          "oklch(45% 0.10 75)",
+          "oklch(58% 0.13 75)",
+          "oklch(70% 0.15 75)",
+          "oklch(78% 0.15 75)",
+          "oklch(88% 0.10 75)",
+          "oklch(96% 0.04 75)"
+        ]
+      },
+      "fault-red": {
+        "role": "tertiary",
+        "displayName": "Fault Red",
+        "canonical": "#e88",
+        "tonalRamp": [
+          "oklch(20% 0.06 15)",
+          "oklch(32% 0.09 15)",
+          "oklch(45% 0.12 15)",
+          "oklch(58% 0.14 15)",
+          "oklch(65% 0.15 15)",
+          "oklch(72% 0.15 15)",
+          "oklch(85% 0.09 15)",
+          "oklch(95% 0.04 15)"
+        ]
+      },
+      "workbench-black": {
+        "role": "neutral",
+        "displayName": "Workbench Black",
+        "canonical": "#1a1a2e",
+        "tonalRamp": ["#0a0a12", "#12121f", "#1a1a2e", "#16213e", "#1e1e2e", "#2a2a3a", "#33395a", "#4a5080"]
+      },
+      "panel-steel": {
+        "role": "neutral",
+        "displayName": "Panel Steel",
+        "canonical": "#16213e",
+        "tonalRamp": ["#0a0a12", "#12121f", "#1a1a2e", "#16213e", "#1e1e2e", "#2a2a3a", "#33395a", "#4a5080"]
+      },
+      "row-slate": {
+        "role": "neutral",
+        "displayName": "Row Slate",
+        "canonical": "#1e1e2e",
+        "tonalRamp": ["#0a0a12", "#12121f", "#1a1a2e", "#16213e", "#1e1e2e", "#2a2a3a", "#33395a", "#4a5080"]
+      },
+      "hover-graphite": {
+        "role": "neutral",
+        "displayName": "Hover Graphite",
+        "canonical": "#2a2a3a",
+        "tonalRamp": ["#0a0a12", "#12121f", "#1a1a2e", "#16213e", "#1e1e2e", "#2a2a3a", "#33395a", "#4a5080"]
+      },
+      "focus-indigo": {
+        "role": "neutral",
+        "displayName": "Focus Indigo",
+        "canonical": "#33395a",
+        "tonalRamp": ["#0a0a12", "#12121f", "#1a1a2e", "#16213e", "#1e1e2e", "#2a2a3a", "#33395a", "#4a5080"]
+      },
+      "bench-light": {
+        "role": "neutral",
+        "displayName": "Bench Light",
+        "canonical": "#e0e0e0",
+        "tonalRamp": ["#1a1a1a", "#333333", "#4d4d4d", "#666666", "#999999", "#bfbfbf", "#e0e0e0", "#f5f5f5"]
+      },
+      "dim-readout": {
+        "role": "neutral",
+        "displayName": "Dim Readout",
+        "canonical": "#aaa",
+        "tonalRamp": ["#1a1a1a", "#333333", "#4d4d4d", "#666666", "#808080", "#999999", "#aaaaaa", "#cccccc"]
+      },
+      "faint-readout": {
+        "role": "neutral",
+        "displayName": "Faint Readout",
+        "canonical": "#888",
+        "tonalRamp": ["#1a1a1a", "#2e2e2e", "#444444", "#5c5c5c", "#737373", "#888888", "#a3a3a3", "#c2c2c2"]
+      },
+      "ghost-text": {
+        "role": "neutral",
+        "displayName": "Ghost Text",
+        "canonical": "#666",
+        "tonalRamp": ["#1a1a1a", "#292929", "#3d3d3d", "#525252", "#666666", "#7a7a7a", "#969696", "#b8b8b8"]
+      },
+      "seam": {
+        "role": "neutral",
+        "displayName": "Seam",
+        "canonical": "#444",
+        "tonalRamp": ["#111111", "#222222", "#333333", "#444444", "#5c5c5c", "#757575", "#969696", "#bfbfbf"]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "canonical": "#333",
+        "tonalRamp": ["#0d0d0d", "#1a1a1a", "#262626", "#333333", "#474747", "#5e5e5e", "#7a7a7a", "#9e9e9e"]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#222",
+        "tonalRamp": ["#080808", "#121212", "#1c1c1c", "#222222", "#333333", "#474747", "#616161", "#818181"]
+      }
+    },
+    "typographyMeta": {
+      "data": { "displayName": "Data", "purpose": "Primary reading size — tree rows, list items, table cell values. Monospace." },
+      "label": { "displayName": "Label", "purpose": "Controls, tab labels, inline badges — one step down from Data. Monospace." },
+      "chrome": { "displayName": "Chrome", "purpose": "The app shell only. Never extend to panel content." }
+    }
+  },
+  "components": [
+    {
+      "name": "Standard Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The canonical button — e.g. the Tree/Search/Filter/Coverage/Diff view-tab strip.",
+      "html": "<button class=\"ds-btn\">Tree</button>",
+      "css": ".ds-btn { background: #16213e; color: #e0e0e0; font-family: monospace; font-size: 11px; padding: 3px 8px; border: 1px solid #444; border-radius: 3px; cursor: pointer; } .ds-btn:hover { background: #2a2a3a; } .ds-btn:focus-visible { outline: 1px solid #7ec8e3; outline-offset: 1px; } .ds-btn.ds-btn--active { background: #33395a; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Search/filter/diff text fields. Disabled state drops to the Hairline background.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"*Rifle*  (wildcard, case-insensitive)\" />",
+      "css": ".ds-input { background: #16213e; color: #e0e0e0; font-family: monospace; font-size: 12px; padding: 4px 6px; border: 1px solid #444; border-radius: 3px; } .ds-input::placeholder { color: #666; } .ds-input:focus-visible { outline: 1px solid #7ec8e3; outline-offset: 1px; } .ds-input:disabled { background: #222; color: #666; }"
+    },
+    {
+      "name": "FormID Link",
+      "kind": "custom",
+      "description": "The app's signature interaction: a monospace, underlined cross-reference to another record. Appears in nearly every panel.",
+      "html": "<a class=\"ds-formid-link\">[0001A2B3]</a>",
+      "css": ".ds-formid-link { font-family: monospace; color: #7ec8e3; text-decoration: underline; cursor: pointer; } .ds-formid-link:hover { color: #a8dcf0; }"
+    },
+    {
+      "name": "Tree / List Row",
+      "kind": "custom",
+      "description": "Expandable tree/list row with the app's one consistent focus signal: a left-border accent plus a background step.",
+      "html": "<div class=\"ds-row ds-row--focused\"><span class=\"ds-row__caret\">▶</span> WEAP (412)</div>",
+      "css": ".ds-row { padding: 3px 8px; font-family: monospace; font-size: 12px; background: #1e1e2e; border-left: 2px solid transparent; border-bottom: 1px solid #333; cursor: pointer; } .ds-row:hover { background: #2a2a3a; } .ds-row--focused { background: #33395a; border-left: 2px solid #7ec8e3; } .ds-row__caret { color: #aaa; margin-right: 4px; }"
+    },
+    {
+      "name": "Coverage Badge",
+      "kind": "custom",
+      "description": "Inline status marker using the three-color semaphore: green for fully decoded, amber for undecoded gaps.",
+      "html": "<span class=\"ds-badge ds-badge--gap\">3 gaps</span>",
+      "css": ".ds-badge { font-family: monospace; font-size: 11px; margin-left: 6px; } .ds-badge--gap { color: #e8a838; } .ds-badge--complete { color: #c3e88d; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Hex Workbench",
+    "overview": "FO76 ESM Viewer looks like a technician's bench for taking game data apart byte by byte, not a consumer app for browsing it. Every surface is dark, every value is set in monospace, and depth exists only as a tone-scale, never as a shadow — the same visual grammar as a debugger or hex editor, applied to Fallout 76 record data. Nothing here is decorative: color exists to carry meaning (a reference to follow, a value that's missing, a record that isn't fully decoded), and everything else recedes into a narrow band of near-black blues and grays so that meaning stands out immediately in a dense, data-heavy view.\n\nThis is a strictly utilitarian aesthetic and stays that way: it must never soften into a rounded, playful, or colorful consumer-app look, no matter what feature gets added. The tool is read constantly, for long stretches, by someone cross-referencing hundreds of records — legibility and density win over warmth every time.",
+    "keyCharacteristics": [
+      "Near-black navy canvas with a five-step tonal scale doing all the work shadows would normally do",
+      "Monospace is the actual body font of the app; sans-serif appears exactly once, on the outer shell",
+      "A three-color semaphore (green / amber / red) is the only place expressive color appears",
+      "Zero border-radius above 3px, zero box-shadows, zero icon library — plain Unicode glyphs stand in for icons"
+    ],
+    "rules": [
+      { "name": "The Missing-Tint Rule", "body": "A value absent from one file in a comparison gets a 10%-opacity Fault Red wash over its row, never a solid color swap. Solid color means \"different\"; translucent red means \"not here at all.\"", "section": "colors" },
+      { "name": "The One Accent Rule", "body": "Trace Blue marks references, Signature Blue marks structure, and the green/amber/red trio marks coverage/error state. No other color is introduced for emphasis.", "section": "colors" },
+      { "name": "The Monospace-For-Data Rule", "body": "Anything that is a value, an ID, a signature, or raw bytes renders in monospace. Sans-serif is chrome, not content.", "section": "typography" },
+      { "name": "The No-Shadow Rule", "body": "Depth is a background-tone step, never a shadow. If a new state needs to read as \"elevated\" or \"active,\" move it one step up the existing five-stop scale before reaching for anything else.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do set any record value, ID, signature, or raw byte content in monospace; reserve sans-serif for app chrome only.",
+      "Do build any new status indicator from the existing three-color semaphore instead of introducing a fourth meaning-color.",
+      "Do express any new hover/active/focus state as a step along the existing five-stop background scale, plus the 2px Trace Blue left-border for focus/selection specifically.",
+      "Do cap border-radius at 3px on any new rounded control.",
+      "Do converge new buttons, selects, and text inputs on the styled treatment, not the native browser default."
+    ],
+    "donts": [
+      "Don't add a box-shadow anywhere.",
+      "Don't pull in an icon font or SVG icon library for a one-off glyph.",
+      "Don't treat the unstyled native <button>/<select> instances as a second intentional style — they're a known first-pass gap.",
+      "Don't soften this into a rounded, playful, or brightly colorful consumer-app look, even for a broader audience — the utilitarian workbench identity is a permanent constraint."
+    ]
+  }
+}
