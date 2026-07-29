@@ -339,9 +339,9 @@ enum Commands {
         json: bool,
     },
     /// Print one compact indented digest of a record and the chain it
-    /// references, instead of a series of raw `get` dumps (native port of
-    /// dps-76/scripts/esm-walk.ts). BFS out to `--depth` hops, annotating
-    /// GLOB/keyword/AVIF/MGEF/PERK chains as it goes.
+    /// references, instead of a series of raw `get` dumps. BFS out to
+    /// `--depth` hops, annotating GLOB/keyword/AVIF/MGEF/PERK chains as it
+    /// goes.
     Walk {
         /// FormID or EditorID (auto-detected).
         selector: String,

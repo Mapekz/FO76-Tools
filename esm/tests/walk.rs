@@ -1,5 +1,4 @@
-//! Integration tests for `esm::walk` — the native port of
-//! `dps-76/scripts/esm-walk.ts`. Mirrors `tests/chase.rs`'s `FakeFetcher`
+//! Integration tests for `esm::walk`. Mirrors `tests/chase.rs`'s `FakeFetcher`
 //! pattern: `bulk_get` looks selectors up in a canned `records` map, `refs`
 //! returns a canned `RefList` keyed by `(target, type_filter)`.
 

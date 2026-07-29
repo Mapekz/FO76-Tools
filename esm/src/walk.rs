@@ -1,6 +1,6 @@
-//! Native port of `dps-76/scripts/esm-walk.ts` — the agent-facing record
-//! walker that prints one compact indented digest of an ESM record and the
-//! chain it references, instead of a series of raw `esm get` dumps.
+//! Agent-facing record walker that prints one compact indented digest of an
+//! ESM record and the chain it references, instead of a series of raw
+//! `esm get` dumps.
 //!
 //! ```text
 //! esm -p --esm <path> walk <formid|edid> [--refs] [--depth N] [--json]
