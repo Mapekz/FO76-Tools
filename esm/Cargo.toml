@@ -6,6 +6,8 @@ name = "esm"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
+# Local tooling — never uploaded to a registry.
+publish = false
 
 [features]
 server = ["dep:tokio", "dep:axum", "dep:tower-http"]

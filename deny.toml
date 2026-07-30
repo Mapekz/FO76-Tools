@@ -1,0 +1,87 @@
+# cargo-deny policy, shared by both Rust crates (esm/ and ba2/).
+#
+# The two crates are independently versioned with separate Cargo.lock files, so
+# CI runs cargo-deny once per crate with `--config ../deny.toml`. Keeping one
+# policy here rather than a copy in each crate means the two cannot drift apart.
+#
+# Run locally from either crate directory:
+#   cargo deny --config ../deny.toml --all-features check
+#
+# One consequence of sharing: entries that apply to only one crate produce an
+# informational warning in the other ("advisory was not encountered" for the
+# bincode ignore when checking ba2, which has no bincode). Warnings do not fail
+# the run — both crates exit 0 — and the noise is cheaper than two configs
+# drifting apart.
+
+[graph]
+# Check the `server` feature's tree too (axum, tokio, tower-http). Without this,
+# an advisory reachable only through an optional feature would go unnoticed.
+all-features = true
+
+[advisories]
+version = 2
+
+ignore = [
+    # RUSTSEC-2025-0141 — "Bincode is unmaintained".
+    #
+    # The bincode team permanently ceased development following a doxxing and
+    # harassment incident; the advisory states 1.3.3 is considered complete and
+    # that "No safe upgrade is available". It is an unmaintained notice, not a
+    # vulnerability, and downgrading would not clear it — every published
+    # version is equally unmaintained. (The 3.0.0 "release" is a one-line
+    # placeholder carrying the announcement, not a usable crate.)
+    #
+    # Accepted here because of how narrowly we use it: bincode encodes exactly
+    # one thing, the local *.esm.idx index cache in esm/src/index.rs. That file
+    # is written and read by the same binary on the same machine, never crosses
+    # a trust boundary, and never carries network or user-supplied input.
+    # `try_load_cache` already treats any decode error as "no usable cache" and
+    # rebuilds, so even a malformed file degrades to a slow start rather than a
+    # failure.
+    #
+    # Revisit if bincode ever needs to parse untrusted input, or when moving the
+    # cache to a maintained format (postcard/bitcode are the suggested
+    # alternatives) becomes worthwhile on its own merits.
+    "RUSTSEC-2025-0141",
+]
+
+[licenses]
+version = 2
+
+# Everything in both graphs is permissive except MPL-2.0. Expressions like
+# "MIT OR Apache-2.0 OR LGPL-2.1-or-later" are satisfied by the MIT arm, so
+# copyleft arms of OR expressions need no entry here.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    # matchit (via axum, `server` feature) is "MIT AND BSD-3-Clause" — an AND,
+    # so both arms must be allowed.
+    "BSD-3-Clause",
+    "MIT",
+    # Reached only via option-ext <- dirs-sys <- dirs. MPL-2.0 copyleft is
+    # file-scoped and does not extend to our own sources; these crates are built
+    # locally and not redistributed as binaries.
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+
+# Our own crates carry no `license` field, and the repository has no LICENSE
+# file. They are marked `publish = false` and are never uploaded to a registry,
+# so skip the license check for them rather than assert a licence that has not
+# actually been chosen.
+private = { ignore = true }
+
+[bans]
+# Duplicate versions are common and usually transitive (currently syn 2 and 3
+# coexist, and dirs pulls a Redox-only getrandom 0.2 alongside our 0.4). Worth
+# surfacing, not worth failing the build over.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

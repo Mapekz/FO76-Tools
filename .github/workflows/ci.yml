@@ -174,6 +174,37 @@ jobs:
       - name: smoke test (skips without FO76_ESM)
         run: bun run test
 
+  # ── Supply chain: advisories / licenses / bans / sources ───────────────────
+  #
+  # Named `deps`, not `audit` — the `audit` job below is the unrelated
+  # TES5Edit schema-parity gate.
+  #
+  # Both crates share one policy at the repo root (deny.toml), checked once per
+  # crate because they have independent Cargo.lock files.  --all-features so the
+  # esm `server` tree (axum, tokio, tower-http) is covered too; without it an
+  # advisory reachable only through an optional feature would go unnoticed.
+  deps:
+    name: ${{ matrix.crate }} (cargo-deny)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [esm, ba2]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The action invokes:
+      #   cargo-deny <arguments> <command> <command-arguments>
+      # so `--config` and `--all-features` belong in `arguments` — both are
+      # global cargo-deny flags and must precede the `check` subcommand.
+      # Putting --config in command-arguments makes `check` reject it.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features --config deny.toml
+          manifest-path: ${{ matrix.crate }}/Cargo.toml
+
   # ── Schema parity audit ───────────────────────────────────────────────────
   #
   # audit.py --gate checks schema/fo76.json against the Pascal source in

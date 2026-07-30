@@ -52,7 +52,21 @@ The 2026-07-28 follow-up (ReferencedByPanel hides the depth-1 `VIA` carrier that
 
 ## Cross-cutting
 
-No tracked follow-ups.
+Two follow-ups from the 2026-07-30 Rust 1.97.1 / edition 2024 / dependency migration:
+
+- **Drop `continue-on-error` from the CI `napi` job.** It was added "while the napi build
+  environment is being stabilised in CI", which means the napi 2 → 3 bump landed without CI able
+  to catch a regression — the addon build and smoke test were verified only locally. Once the
+  job has run green on a few pushes, remove the flag so the job actually gates.
+- **Revisit `bincode` (RUSTSEC-2025-0141).** bincode is permanently unmaintained; the advisory is
+  ignored in `deny.toml` with the reasoning recorded there (local-only index cache, no trust
+  boundary, already self-heals on decode failure). Nothing is broken, but if the cache format
+  ever needs changing anyway, `postcard` or `bitcode` would remove the exception.
+
+Separately, and not a migration artifact: **the Rust crates declare no license and the repository
+has no LICENSE file**, so `deny.toml` sets `licenses.private.ignore = true` and the crates are
+marked `publish = false`. That is a placeholder, not a decision — worth choosing a license (or
+deliberately confirming "all rights reserved") for a public repo.
 
 The one cross-project seam is `esm-viewer/` → `esm/bindings/napi` (the `@fo76/esm-napi` addon,
 a local `file:` dependency). Anything that changes the `EsmDatabase` N-API surface has to land

@@ -47,3 +47,25 @@ Before committing in any subproject, run that subproject's full check suite and 
 - **`esm-viewer/`**: `just check` (= lint + format check + typecheck + test).
 
 Fix formatting and clippy warnings rather than committing around them. Never commit with failing or skipped checks.
+
+Note that `just` in `esm/` does **not** build `bindings/napi` — it is a workspace member but not a
+*default* member, so `cargo fmt`/`clippy`/`test` skip it. After touching that crate, build it
+explicitly with `cargo build -p esm-napi`, and rebuild the addon (`cd bindings/napi && bun run build`)
+if the `EsmDatabase` surface changed.
+
+## Dependency policy
+
+Both Rust crates share one `cargo-deny` policy at the repo root, [`deny.toml`](deny.toml), enforced
+by the `deps` CI job (not to be confused with the `audit` job, which is the TES5Edit schema-parity
+gate). It covers advisories, licenses, bans, and sources. To check a change locally before pushing:
+
+```sh
+cd esm   # or ba2
+cargo deny --config ../deny.toml --all-features check
+```
+
+Both crates pin `rust-version` to the pinned toolchain rather than a true language floor, because
+edition 2024 selects Cargo's MSRV-aware resolver, which reads `rust-version` as a *ceiling* on
+dependency versions — a low value silently holds dependencies back. Keep `rust-version`,
+`clippy.toml`'s `msrv`, and `rust-toolchain.toml` in lockstep when bumping; a mismatch between the
+first two is a warning, which `-D warnings` turns into a failure.
