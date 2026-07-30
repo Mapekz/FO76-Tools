@@ -11,10 +11,10 @@ function pathLabel(node: RefPathNode): string {
   return node.editor_id ?? node.form_id
 }
 
-/** Render the hop chain for a depth>1 row: target ← hop1 ← hop2 ← … ← this row. */
+/** Render the hop chain for any row with a path: target ← hop1 ← … ← this row (entry-point walks seed path[0] with the carrier, so depth-1 rows render too). */
 function HopChain({ row }: { row: RefRow }) {
   const path = row.path ?? []
-  if (!row.depth || row.depth <= 1 || path.length === 0) return null
+  if (path.length === 0) return null
   const chain = [...path.map(pathLabel), row.editor_id ?? row.form_id]
   return (
     <div style={{ fontSize: 10, color: '#888', paddingLeft: 2 }}>
