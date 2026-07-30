@@ -64,7 +64,10 @@ struct DiffArgs {
     #[arg(long, value_enum, default_value = "full")]
     bodies: BodiesArg,
     /// Keep noisy fields (placement transforms, CELL precombine bookkeeping,
-    /// Object Bounds) instead of suppressing them from `changed` records.
+    /// Object Bounds, and — when form_version differs across the two files —
+    /// schema-gated and restamp-only appearances/disappearances, including
+    /// PTS re-save noise like materialized PNAM chain links and zero-padded
+    /// `_raw` growth) instead of suppressing them from `changed` records.
     #[arg(long)]
     keep_noise: bool,
     /// Record-type signature(s) to omit entirely from added/removed/changed

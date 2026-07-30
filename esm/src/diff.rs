@@ -173,8 +173,14 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 ///
 /// `opts.suppress_noise` strips known-noisy top-level fields (placement
 /// transforms, CELL precombine bookkeeping, …) from each `changed` record's
-/// `field_changes`, dropping the record entirely when nothing else changed
-/// — see [`strip_noise_fields`]. Dropped counts are recorded in
+/// `field_changes` — see [`strip_noise_fields`]. When the two sides'
+/// `form_version`s also differ, two further passes run: schema-gated
+/// appearance/disappearance suppression ([`strip_version_gated_transitions`])
+/// and, for the noise shapes that carry no schema gate at all (nested inside
+/// `_array_diff` elements, all-zero `_raw` padding growth, and known
+/// materialized-on-resave subrecords like INFO's PNAM chain link),
+/// [`strip_restamp_appearances`] — see issue #18. A record is dropped
+/// entirely when nothing else changed. Dropped counts are recorded in
 /// `DiffResult::suppressed_counts`.
 ///
 /// `opts.exclude_types` omits matching 4-character signatures from `added`,
@@ -292,6 +298,10 @@ pub fn diff_databases_with(
                     meta_a.form_version,
                     meta_b.form_version,
                 );
+                // Second, independent pass: appearances/disappearances with
+                // NO schema gate at all that the re-save's newer serializer
+                // still manufactures — see module docs above `strip_restamp_appearances`.
+                strip_restamp_appearances(&mut field_changes, &meta_b.signature);
             }
             if is_empty_diff(&field_changes) {
                 *suppressed_counts
@@ -747,6 +757,177 @@ fn strip_version_gated_transitions(
             true
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Restamp-appearance suppression (issue #18)
+// ---------------------------------------------------------------------------
+//
+// `strip_version_gated_transitions` only catches noise explained by a schema
+// `from_version`/`below_version` gate crossing between the two form_versions.
+// A PTS re-save that bumps `form_version` (without any authored edit)
+// produces three noise shapes with NO schema gate at all, so they survive
+// that pass untouched:
+//
+//   (a) appearances nested inside `_array_diff.changed[].changes` — e.g. INFO
+//       `Responses[].Response.Unknown: null -> {"hex":"00","_raw":true}`;
+//   (b) `_raw` trailing-byte growth on schema `kind: "unknown"` members — the
+//       newer serializer writes more padding bytes than the older one left
+//       implicit, e.g. STAT `Unknown: null -> {"hex":"00000000...","_raw":true}`;
+//   (c) subrecords the newer serializer materializes on re-save that the
+//       older one left implicit — e.g. INFO `Previous INFO: null -> <formid>`
+//       (the PNAM chain link).
+//
+// `strip_restamp_appearances` is a second, independent pass (schema-free —
+// unlike `strip_version_gated_transitions` it needs no `&Schema`, only the
+// record signature for rule (c)'s table lookup) that catches these. It is a
+// deliberately different traversal shape (arbitrary-depth recursion into
+// `_array_diff` elements and plain nested structs, with empty-parent
+// pruning) rather than an extension of `strip_version_gated_transitions`'s
+// one-level `retain` loop, so the two stay independently testable.
+
+/// `(record signature, top-level member name)` pairs whose `null -> X`
+/// appearance is known to be a subrecord the game's serializer now writes
+/// explicitly on re-save where an older serializer left it implicit — not an
+/// authored edit. Directional only: an `X -> null` disappearance of one of
+/// these members could be a genuine authored unlink (e.g. clearing a PNAM
+/// dialogue-chain link) and must stay visible.
+const MATERIALIZED_ON_RESAVE: &[(&str, &str)] = &[("INFO", "Previous INFO")];
+
+/// True when `hex` is a well-formed (even-length) hex-digit string that
+/// decodes to all-zero bytes. Malformed input (odd length, non-hex digits)
+/// is conservatively treated as non-zero — only unambiguous all-zero padding
+/// is ever eligible for suppression.
+fn is_zero_hex(hex: &str) -> bool {
+    hex.len() % 2 == 0 && hex.bytes().all(|b| b == b'0')
+}
+
+/// True when `v` is the decoder's raw-bytes-fallback shape `{"hex": H,
+/// "_raw": true}` (see `decode::mod::hex`, the `MemberDef::Unknown` /
+/// no-matching-union-variant fallback) and `H` is all-zero (see
+/// [`is_zero_hex`]).
+fn is_zero_raw_blob(v: &Value) -> bool {
+    let Some(map) = v.as_object() else {
+        return false;
+    };
+    map.get("_raw") == Some(&Value::Bool(true))
+        && map
+            .get("hex")
+            .and_then(Value::as_str)
+            .is_some_and(is_zero_hex)
+}
+
+/// Rule (b): a leaf `{"from": F, "to": T}` change is restamp noise when
+/// either side is `null` and the other is an all-zero `_raw` blob
+/// ([`is_zero_raw_blob`]). Symmetric — zero-padding growing OR shrinking
+/// across a re-save carries no information in either direction (see design
+/// review Q2, in contrast to rule (c) which stays directional).
+fn is_zero_raw_transition(from: &Value, to: &Value) -> bool {
+    (from.is_null() && is_zero_raw_blob(to)) || (to.is_null() && is_zero_raw_blob(from))
+}
+
+/// Rule (c): a leaf `{"from": null, "to": X}` appearance is restamp noise
+/// when `(sig, key)` is one of [`MATERIALIZED_ON_RESAVE`]'s tabled pairs.
+/// Never symmetric — see that constant's doc comment.
+fn is_materialized_on_resave(sig: &str, key: &str, from: &Value, to: &Value) -> bool {
+    from.is_null() && !to.is_null() && MATERIALIZED_ON_RESAVE.contains(&(sig, key))
+}
+
+/// Strip a `_array_diff` envelope's noise in place (`ad` is the object under
+/// the `"_array_diff"` key: `strategy`/`key_fields`/`count_from`/`count_to`/
+/// `added`/`removed`/`changed`). Walks every `changed[]` element's `changes`
+/// recursively via [`strip_restamp_leaves`], drops elements whose `changes`
+/// collapses to empty, and drops the `"changed"` key itself when every
+/// element was dropped. Returns `true` when the whole envelope is now
+/// noise-free and should be removed by the caller: `added`/`removed` were
+/// never present (rule (a) never touches genuine structural changes — see
+/// `is_pure_transition`'s same reasoning) and `changed` is now empty or
+/// absent.
+///
+/// `count_from == count_to` is NOT re-derived or asserted here as a
+/// correctness dependency — it's a defensive invariant that already holds
+/// whenever `added`/`removed` are both absent, by construction of the two
+/// strategies that populate `changed[]`: `positional_diff` only runs when
+/// `a.len() == b.len()`, and `keyed_diff`'s empty `added`/`removed` means
+/// every element paired 1:1 (see those functions' doc comments) — so a
+/// mismatch here would itself indicate a bug in an array-diff builder, not
+/// in this pass.
+fn strip_restamp_array_diff(ad: &mut serde_json::Map<String, Value>, sig: &str) -> bool {
+    if let Some(Value::Array(elements)) = ad.get_mut("changed") {
+        elements.retain_mut(|elem| {
+            let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut) else {
+                return true;
+            };
+            strip_restamp_leaves(changes, sig);
+            !changes.is_empty()
+        });
+        if elements.is_empty() {
+            ad.remove("changed");
+        }
+    }
+
+    !(ad.contains_key("added") || ad.contains_key("removed") || ad.contains_key("changed"))
+}
+
+/// Strip restamp-noise leaves from `value` (the entry keyed by `key` in a
+/// record of type `sig`) in place, and report whether the parent map should
+/// drop `key` entirely. Three shapes:
+///
+/// - a leaf `{"from": .., "to": ..}` change — tested directly against rules
+///   (b)/(c), no recursion;
+/// - an `_array_diff` envelope — delegates to [`strip_restamp_array_diff`];
+/// - a plain nested struct object (e.g. `Responses[].changes.Response`, one
+///   level of struct nesting under an array element's `changes`, per the
+///   design review) — recurse via [`strip_restamp_leaves`], then drop if the
+///   recursion emptied it.
+fn should_drop_after_strip(value: &mut Value, sig: &str, key: &str) -> bool {
+    let Some(obj) = value.as_object_mut() else {
+        return false;
+    };
+
+    if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
+        return strip_restamp_array_diff(ad, sig);
+    }
+
+    if obj.len() == 2 && obj.contains_key("from") && obj.contains_key("to") {
+        let from = &obj["from"];
+        let to = &obj["to"];
+        return is_zero_raw_transition(from, to) || is_materialized_on_resave(sig, key, from, to);
+    }
+
+    strip_restamp_leaves(obj, sig);
+    obj.is_empty()
+}
+
+/// Recursively strip restamp-noise leaves from a `changes`-shaped object
+/// map, in place, pruning parent keys whose value collapses to empty. See
+/// [`should_drop_after_strip`] for the per-key logic; this just drives it
+/// over every key in `map` and removes the ones it flags.
+fn strip_restamp_leaves(map: &mut serde_json::Map<String, Value>, sig: &str) {
+    let keys: Vec<String> = map.keys().cloned().collect();
+    let mut to_remove = Vec::new();
+    for key in keys {
+        if let Some(value) = map.get_mut(&key) {
+            if should_drop_after_strip(value, sig, &key) {
+                to_remove.push(key);
+            }
+        }
+    }
+    for key in to_remove {
+        map.remove(&key);
+    }
+}
+
+/// Drop restamp-only appearances/disappearances (see module docs above) from
+/// `field_changes`, in place. Schema-free — unlike
+/// [`strip_version_gated_transitions`] this doesn't need a `&Schema`, only
+/// `sig` for rule (c)'s table lookup. A no-op when `field_changes` isn't a
+/// JSON object (defensive; `json_diff` on two records always produces one).
+fn strip_restamp_appearances(field_changes: &mut Value, sig: &str) {
+    let Some(map) = field_changes.as_object_mut() else {
+        return;
+    };
+    strip_restamp_leaves(map, sig);
 }
 
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.
@@ -1443,5 +1624,255 @@ mod tests {
             fc,
             json!({"Value Currency": {"from": "0x0000000F", "to": null}})
         );
+    }
+
+    // `strip_restamp_appearances` and its helpers are private, so these live
+    // here too (issue #18). Same over-suppression risk as above, plus a new
+    // one specific to this pass: rule (b)/(c) are content-based heuristics,
+    // not schema-verified, so the tests lean extra hard on the boundary
+    // cases (non-zero hex, wrong signature/member, wrong direction).
+
+    #[test]
+    fn restamp_suppresses_null_to_zero_raw_leaf() {
+        let mut fc = json!({
+            "Unknown": {"from": null, "to": {"hex": "0000000000000000", "_raw": true}}
+        });
+        strip_restamp_appearances(&mut fc, "STAT");
+        assert_eq!(fc, json!({}));
+    }
+
+    #[test]
+    fn restamp_suppresses_zero_raw_to_null_disappearance() {
+        // Symmetric with the appearance case above (design review Q2): the
+        // serializer shrinking away all-zero padding carries no information
+        // either, same as it growing.
+        let mut fc = json!({
+            "Unknown": {"from": {"hex": "0000000000000000", "_raw": true}, "to": null}
+        });
+        strip_restamp_appearances(&mut fc, "STAT");
+        assert_eq!(fc, json!({}));
+    }
+
+    #[test]
+    fn restamp_keeps_null_to_nonzero_raw_leaf() {
+        // A single non-zero byte anywhere means this could be real data —
+        // must survive.
+        let fc = json!({
+            "Unknown": {"from": null, "to": {"hex": "0000000100000000", "_raw": true}}
+        });
+        let mut got = fc.clone();
+        strip_restamp_appearances(&mut got, "STAT");
+        assert_eq!(got, fc);
+    }
+
+    #[test]
+    fn restamp_strips_nested_array_element_leaf_and_drops_whole_key() {
+        // Shape of the real INFO `Responses[].Response.Unknown` case: one
+        // `_array_diff.changed[]` element, entirely noise, no added/removed.
+        let mut fc = json!({
+            "Responses": {
+                "_array_diff": {
+                    "strategy": "keyed",
+                    "count_from": 1,
+                    "count_to": 1,
+                    "changed": [{
+                        "key": {"index": 0},
+                        "index_from": 0,
+                        "index_to": 0,
+                        "changes": {
+                            "Response": {
+                                "Unknown": {"from": null, "to": {"hex": "00", "_raw": true}}
+                            }
+                        }
+                    }]
+                }
+            }
+        });
+        strip_restamp_appearances(&mut fc, "INFO");
+        assert_eq!(fc, json!({}));
+    }
+
+    #[test]
+    fn restamp_keeps_mixed_array_element_real_edit() {
+        // The critical regression test for per-leaf (not whole-element)
+        // stripping: the same element also carries a genuine authored edit
+        // alongside the noise leaf. Only the noise leaf must go; the element
+        // and the array key must survive with the real edit intact.
+        let mut fc = json!({
+            "Responses": {
+                "_array_diff": {
+                    "strategy": "keyed",
+                    "count_from": 1,
+                    "count_to": 1,
+                    "changed": [{
+                        "key": {"index": 0},
+                        "index_from": 0,
+                        "index_to": 0,
+                        "changes": {
+                            "Response": {
+                                "Unknown": {"from": null, "to": {"hex": "00", "_raw": true}}
+                            },
+                            "Response Text": {"from": "Old line", "to": "New line"}
+                        }
+                    }]
+                }
+            }
+        });
+        strip_restamp_appearances(&mut fc, "INFO");
+        assert_eq!(
+            fc,
+            json!({
+                "Responses": {
+                    "_array_diff": {
+                        "strategy": "keyed",
+                        "count_from": 1,
+                        "count_to": 1,
+                        "changed": [{
+                            "key": {"index": 0},
+                            "index_from": 0,
+                            "index_to": 0,
+                            "changes": {
+                                "Response Text": {"from": "Old line", "to": "New line"}
+                            }
+                        }]
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn restamp_drops_only_fully_noisy_elements_keeps_others() {
+        // Two changed[] elements: one pure noise (dropped), one with a real
+        // edit in its own element (kept) — the array key survives because
+        // `changed` isn't fully emptied.
+        let mut fc = json!({
+            "Responses": {
+                "_array_diff": {
+                    "strategy": "keyed",
+                    "count_from": 2,
+                    "count_to": 2,
+                    "changed": [
+                        {
+                            "key": {"index": 0},
+                            "index_from": 0,
+                            "index_to": 0,
+                            "changes": {
+                                "Response": {
+                                    "Unknown": {"from": null, "to": {"hex": "00", "_raw": true}}
+                                }
+                            }
+                        },
+                        {
+                            "key": {"index": 1},
+                            "index_from": 1,
+                            "index_to": 1,
+                            "changes": {
+                                "Response Text": {"from": "Old", "to": "New"}
+                            }
+                        }
+                    ]
+                }
+            }
+        });
+        strip_restamp_appearances(&mut fc, "INFO");
+        assert_eq!(
+            fc,
+            json!({
+                "Responses": {
+                    "_array_diff": {
+                        "strategy": "keyed",
+                        "count_from": 2,
+                        "count_to": 2,
+                        "changed": [{
+                            "key": {"index": 1},
+                            "index_from": 1,
+                            "index_to": 1,
+                            "changes": {
+                                "Response Text": {"from": "Old", "to": "New"}
+                            }
+                        }]
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn restamp_suppresses_materialized_on_resave_pnam() {
+        let mut fc = json!({
+            "Previous INFO": {"from": null, "to": "0x0031E5CD"}
+        });
+        strip_restamp_appearances(&mut fc, "INFO");
+        assert_eq!(fc, json!({}));
+    }
+
+    #[test]
+    fn restamp_keeps_materialized_member_disappearance() {
+        // Directional guard (design review Q2): unlike rule (b), rule (c)
+        // must NOT be symmetric — an authored unlink of a PNAM chain must
+        // stay visible.
+        let fc = json!({
+            "Previous INFO": {"from": "0x0031E5CD", "to": null}
+        });
+        let mut got = fc.clone();
+        strip_restamp_appearances(&mut got, "INFO");
+        assert_eq!(got, fc);
+    }
+
+    #[test]
+    fn restamp_keeps_materialized_field_on_wrong_signature_or_member() {
+        // Same leaf shape/value, but neither the signature nor the member
+        // name is the tabled (INFO, "Previous INFO") pair — precision guard
+        // on MATERIALIZED_ON_RESAVE, not just member-name matching.
+        let wrong_sig = json!({"Previous INFO": {"from": null, "to": "0x0031E5CD"}});
+        let mut got_wrong_sig = wrong_sig.clone();
+        strip_restamp_appearances(&mut got_wrong_sig, "STAT");
+        assert_eq!(got_wrong_sig, wrong_sig);
+
+        let wrong_member = json!({"Next INFO": {"from": null, "to": "0x0031E5CD"}});
+        let mut got_wrong_member = wrong_member.clone();
+        strip_restamp_appearances(&mut got_wrong_member, "INFO");
+        assert_eq!(got_wrong_member, wrong_member);
+    }
+
+    #[test]
+    fn restamp_keeps_null_to_formid_when_not_in_table() {
+        // Guards against rule (c) accidentally becoming a generic "any
+        // formid appearance is noise" rule — this member isn't all-zero hex
+        // and isn't in MATERIALIZED_ON_RESAVE, so it must survive untouched.
+        let fc = json!({"Base Object": {"from": null, "to": "0x0001234A"}});
+        let mut got = fc.clone();
+        strip_restamp_appearances(&mut got, "REFR");
+        assert_eq!(got, fc);
+    }
+
+    #[test]
+    fn materialized_on_resave_members_are_still_ungated_in_live_schema() {
+        // Canary (design review Q6 #9): MATERIALIZED_ON_RESAVE exists only
+        // because the live schema does NOT version-gate these members — if
+        // the extractor ever adds proper from_version/below_version gating
+        // for one of them, `strip_version_gated_transitions` would already
+        // catch it and this table entry becomes redundant (not wrong, but
+        // worth a human noticing). `schema/fo76.json` is a generated,
+        // drifting artifact, so this is worth pinning down.
+        let schema = Schema::load_embedded().expect("embedded schema must load");
+        for (sig, wanted) in MATERIALIZED_ON_RESAVE.iter().copied() {
+            let record = schema
+                .record(sig)
+                .unwrap_or_else(|| panic!("schema has no record {sig}"));
+            let member = record
+                .members
+                .iter()
+                .find(|m| member_name(m) == Some(wanted))
+                .unwrap_or_else(|| panic!("{sig} has no member named {wanted:?}"));
+            let (from_version, below_version) = member_version_bounds(member);
+            assert!(
+                from_version.is_none() && below_version.is_none(),
+                "{sig}.{wanted} is now schema-gated ({from_version:?}..{below_version:?}) — \
+                 the MATERIALIZED_ON_RESAVE entry may be redundant now that \
+                 strip_version_gated_transitions would already catch this"
+            );
+        }
     }
 }

@@ -999,6 +999,65 @@ fn suppress_noise_false_keeps_position_only_refr_change() {
 }
 
 // ---------------------------------------------------------------------------
+// Restamp-appearance suppression (issue #18): call-site gating
+// ---------------------------------------------------------------------------
+
+/// `strip_restamp_appearances` is only invoked when `meta_a.form_version !=
+/// meta_b.form_version` (same guard as `strip_version_gated_transitions`).
+/// `append_record` stamps every synthetic record with the same
+/// `TEST_FORM_VERSION` on both sides, so an INFO record whose B side adds a
+/// PNAM ("Previous INFO") subrecord the A side lacks — a `null -> <formid>`
+/// appearance that rule (c) would otherwise suppress unconditionally, since
+/// PNAM carries no schema version gate at all — must survive completely
+/// unsuppressed here: the whole pass never runs when form_versions match.
+#[test]
+fn restamp_pass_does_not_run_when_form_versions_match() {
+    let mut info_a = Vec::new();
+    {
+        let subs = Vec::new(); // no PNAM on the old side
+        append_record(&mut info_a, b"INFO", 1, &subs);
+    }
+    let mut info_b = Vec::new();
+    {
+        let mut subs = Vec::new();
+        append_subrecord(&mut subs, b"PNAM", &0x0031_E5CDu32.to_le_bytes());
+        append_record(&mut info_b, b"INFO", 1, &subs);
+    }
+
+    let mut buf_a = tes4_header();
+    buf_a.extend(wrap_grup(b"INFO", &info_a));
+    let mut buf_b = tes4_header();
+    buf_b.extend(wrap_grup(b"INFO", &info_b));
+
+    let (path_a, db_a) = write_and_open(&buf_a, "diff_restamp_same_fv_a");
+    let (path_b, db_b) = write_and_open(&buf_b, "diff_restamp_same_fv_b");
+
+    let result = diff_databases(&db_a, &db_b).expect("diff"); // default: suppress_noise = true
+
+    assert_eq!(
+        result.changed.len(),
+        1,
+        "the appearance-only INFO record must NOT be suppressed when \
+         form_version matches on both sides: {:?}",
+        result.changed
+    );
+    assert!(
+        result.suppressed_counts.is_empty(),
+        "nothing should be counted as suppressed: {:?}",
+        result.suppressed_counts
+    );
+    assert_eq!(
+        result.changed[0].field_changes.get("Previous INFO"),
+        Some(&json!({"from": null, "to": "0x0031E5CD"})),
+        "Previous INFO's null -> formid appearance must remain, unsuppressed: {:?}",
+        result.changed[0].field_changes
+    );
+
+    let _ = std::fs::remove_file(&path_a);
+    let _ = std::fs::remove_file(&path_b);
+}
+
+// ---------------------------------------------------------------------------
 // ref_names: description
 // ---------------------------------------------------------------------------
 
