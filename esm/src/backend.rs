@@ -332,12 +332,14 @@ impl RemoteBackend {
 
     pub fn status(&self) -> anyhow::Result<Value> {
         let url = format!("{}/status", self.base_url);
-        let resp = ureq::get(&url)
-            .set("Authorization", &format!("Bearer {}", self.token))
-            .timeout(CONNECT_TIMEOUT)
+        let mut resp = ureq::get(&url)
+            .header("Authorization", &format!("Bearer {}", self.token))
+            .config()
+            .timeout_global(Some(CONNECT_TIMEOUT))
+            .build()
             .call()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-        Ok(resp.into_json()?)
+        Ok(resp.body_mut().read_json()?)
     }
 
     pub fn shutdown(&self) -> anyhow::Result<()> {
@@ -351,14 +353,14 @@ impl RemoteBackend {
 
     fn post_op(&self, req: &Request) -> anyhow::Result<Response> {
         let url = format!("{}/op", self.base_url);
-        let mut request = ureq::post(&url)
-            .set("Authorization", &format!("Bearer {}", self.token))
-            .set("Content-Type", "application/json");
-        if let Some(t) = op_timeout() {
-            request = request.timeout(t);
-        }
-        let resp = request.send_json(req).map_err(|e| anyhow::anyhow!("{e}"))?;
-        let response: Response = resp.into_json()?;
+        let request = ureq::post(&url)
+            .header("Authorization", &format!("Bearer {}", self.token))
+            .header("Content-Type", "application/json")
+            .config()
+            .timeout_global(op_timeout())
+            .build();
+        let mut resp = request.send_json(req).map_err(|e| anyhow::anyhow!("{e}"))?;
+        let response: Response = resp.body_mut().read_json()?;
         Ok(response)
     }
 }
@@ -435,8 +437,10 @@ fn health_check(addr: &str, port: u16, token: &str) -> anyhow::Result<()> {
 fn health_check_url(base_url: &str, token: &str) -> anyhow::Result<()> {
     let url = format!("{base_url}/health");
     let resp = ureq::get(&url)
-        .set("Authorization", &format!("Bearer {}", token))
-        .timeout(CONNECT_TIMEOUT)
+        .header("Authorization", &format!("Bearer {}", token))
+        .config()
+        .timeout_global(Some(CONNECT_TIMEOUT))
+        .build()
         .call()
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     if resp.status() == 200 {
