@@ -29,7 +29,15 @@ use std::time::SystemTime;
 // `harvest_formids` and dropped from `refs`. Now dispatched to
 // `decode_vmad_perk`. Bump forces a rebuild so `refs` picks up the newly
 // decoded TERM tail FormIDs.
-const CACHE_VERSION: u32 = 11;
+//
+// Bumped 11 -> 12: no layout change, but the encoder did. bincode 1 -> 2 moved
+// the default integer encoding from fixed-width to varint, so a v11 file and a
+// v12 file with identical contents are different bytes. `try_load_cache`
+// already treats a decode error as "no usable cache", so this bump is
+// defence-in-depth: it rejects old files by version rather than relying on the
+// new decoder to fail on old bytes, which a dense binary format could
+// conceivably mis-parse without erroring.
+const CACHE_VERSION: u32 = 12;
 
 /// Per-record data stored in the lazy search index.
 ///
@@ -189,7 +197,7 @@ impl Index {
             search_index,
         };
 
-        let encoded = bincode::serialize(&cache)?;
+        let encoded = bincode::serde::encode_to_vec(&cache, bincode::config::standard())?;
         // Write to a sidecar temp file first, then rename atomically so a crash
         // mid-write cannot leave a partial (corrupt) cache at the real path.
         let tmp_path = self.cache_path.with_extension("tmp");
@@ -375,10 +383,11 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         );
     }
     let bytes = fs::read(&cache_path)?;
-    let cache: CacheFile = match bincode::deserialize(&bytes) {
-        Ok(c) => c,
-        Err(_) => return Ok(None), // stale or incompatible cache format
-    };
+    let cache: CacheFile =
+        match bincode::serde::decode_from_slice(&bytes, bincode::config::standard()) {
+            Ok((c, _)) => c,
+            Err(_) => return Ok(None), // stale or incompatible cache format
+        };
     let mtime = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
     let dur = mtime
         .duration_since(SystemTime::UNIX_EPOCH)
