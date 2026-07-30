@@ -361,30 +361,8 @@ impl EsmDatabase {
             // Lock ordering doesn't have a `Registry`'s canonical keys to compare here
             // (unlike `dispatch_inner`'s `Diff` arm) — order by raw `Arc` pointer address
             // instead, which is just as deadlock-safe as long as it's used consistently.
-            let same_db = Arc::ptr_eq(&arc_a, &arc_b);
-            if same_db {
-                let db = arc_a
-                    .lock()
-                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                esm::ipc::diff_locked(&db, &db, &options, &record_type)
-            } else if (Arc::as_ptr(&arc_a) as usize) < (Arc::as_ptr(&arc_b) as usize) {
-                let db_a = arc_a
-                    .lock()
-                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                let db_b = arc_b
-                    .lock()
-                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                esm::ipc::diff_locked(&db_a, &db_b, &options, &record_type)
-            } else {
-                let db_b = arc_b
-                    .lock()
-                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                let db_a = arc_a
-                    .lock()
-                    .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-                esm::ipc::diff_locked(&db_a, &db_b, &options, &record_type)
-            }
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::diff_pair(&arc_a, &arc_b, None, &options, &record_type)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?

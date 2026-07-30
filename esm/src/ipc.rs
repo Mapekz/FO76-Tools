@@ -759,29 +759,47 @@ pub fn diff_pair(
     let same_db =
         canonical_keys.map(|(ka, kb)| ka == kb).unwrap_or(false) || Arc::ptr_eq(arc_a, arc_b);
     if same_db {
-        let db = arc_a.lock().unwrap();
+        let db = arc_a
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
         // same_db means no added records — enrich_added_sources is a no-op.
         return diff_locked(&db, &db, options, record_type);
     }
     match canonical_keys {
         Some((ka, kb)) if ka < kb => {
-            let db_a = arc_a.lock().unwrap();
-            let db_b = arc_b.lock().unwrap();
+            let db_a = arc_a
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
+            let db_b = arc_b
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
             diff_locked(&db_a, &db_b, options, record_type)
         }
         Some(_) => {
-            let db_b = arc_b.lock().unwrap();
-            let db_a = arc_a.lock().unwrap();
+            let db_b = arc_b
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
+            let db_a = arc_a
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
             diff_locked(&db_a, &db_b, options, record_type)
         }
         None => {
             if Arc::as_ptr(arc_a) < Arc::as_ptr(arc_b) {
-                let db_a = arc_a.lock().unwrap();
-                let db_b = arc_b.lock().unwrap();
+                let db_a = arc_a
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
+                let db_b = arc_b
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
                 diff_locked(&db_a, &db_b, options, record_type)
             } else {
-                let db_b = arc_b.lock().unwrap();
-                let db_a = arc_a.lock().unwrap();
+                let db_b = arc_b
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
+                let db_a = arc_a
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
                 diff_locked(&db_a, &db_b, options, record_type)
             }
         }
