@@ -420,7 +420,7 @@ pub fn remove_daemon_info() -> anyhow::Result<()> {
 
 pub fn generate_token() -> String {
     let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).expect("getrandom");
+    getrandom::fill(&mut bytes).expect("getrandom");
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
