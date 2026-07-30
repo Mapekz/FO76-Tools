@@ -366,8 +366,8 @@ pub(crate) fn decode_member(
             ..
         } => {
             if let Some(data) = payload {
-                if let Some(v) = read_int(data, *width, *signed) {
-                    out.insert(name.clone(), format_int(v, format.as_ref()));
+                if let Some(v) = scalar_int(data, *width, *signed, format.as_ref()) {
+                    out.insert(name.clone(), v);
                 }
             } else if let Some(sig) = sig {
                 // If stop_before is set and a boundary sig precedes this
@@ -376,23 +376,21 @@ pub(crate) fn decode_member(
                 if !stop_before.is_empty() && stop_before_check(by_sig, sig, stop_before) {
                     // deferred
                 } else if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if let Some(v) = read_int(&sr.data, *width, *signed) {
-                        out.insert(name.clone(), format_int(v, format.as_ref()));
+                    if let Some(v) = scalar_int(&sr.data, *width, *signed, format.as_ref()) {
+                        out.insert(name.clone(), v);
                     }
                 }
             }
         }
         MemberDef::Float { sig, name, .. } => {
             if let Some(data) = payload {
-                if data.len() >= 4 {
-                    let f = f32::from_le_bytes(data[0..4].try_into().unwrap());
-                    out.insert(name.clone(), json_f32(f));
+                if let Some(v) = scalar_float(data) {
+                    out.insert(name.clone(), v);
                 }
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if sr.data.len() >= 4 {
-                        let f = f32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                        out.insert(name.clone(), json_f32(f));
+                    if let Some(v) = scalar_float(&sr.data) {
+                        out.insert(name.clone(), v);
                     }
                 }
             }
@@ -402,15 +400,7 @@ pub(crate) fn decode_member(
         } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    let s = match sized {
-                        Some(n) if *n > 0 => {
-                            String::from_utf8_lossy(&sr.data[..sr.data.len().min(*n as usize)])
-                                .trim_end_matches('\0')
-                                .to_string()
-                        }
-                        _ => read_zstring(&sr.data),
-                    };
-                    out.insert(name.clone(), json!(s));
+                    out.insert(name.clone(), scalar_string(&sr.data, sized));
                 }
             }
         }
@@ -479,15 +469,13 @@ pub(crate) fn decode_member(
             ..
         } => {
             if let Some(data) = payload {
-                if data.len() >= 4 {
-                    let id = FormId::new(u32::from_le_bytes(data[0..4].try_into().unwrap()));
-                    out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
+                if let Some(v) = scalar_formid(ctx, valid_refs, data) {
+                    out.insert(name.clone(), v);
                 }
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if sr.data.len() >= 4 {
-                        let id = FormId::new(u32::from_le_bytes(sr.data[0..4].try_into().unwrap()));
-                        out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
+                    if let Some(v) = scalar_formid(ctx, valid_refs, &sr.data) {
+                        out.insert(name.clone(), v);
                     }
                 }
             }
@@ -495,30 +483,19 @@ pub(crate) fn decode_member(
         MemberDef::Bytes { sig, name, len, .. } => {
             if let Some(data) = payload {
                 let n = len.unwrap_or(data.len());
-                out.insert(
-                    name.clone(),
-                    json!({"hex": hex::encode(&data[..data.len().min(n)])}),
-                );
+                out.insert(name.clone(), scalar_bytes(&data[..data.len().min(n)]));
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
                     let n = len.unwrap_or(sr.data.len());
-                    out.insert(
-                        name.clone(),
-                        json!({"hex": hex::encode(&sr.data[..sr.data.len().min(n)])}),
-                    );
+                    out.insert(name.clone(), scalar_bytes(&sr.data[..sr.data.len().min(n)]));
                 }
             }
         }
         MemberDef::ByteRgba { sig, name, .. } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if sr.data.len() >= 4 {
-                        out.insert(
-                            name.clone(),
-                            json!({
-                                "r": sr.data[0], "g": sr.data[1], "b": sr.data[2], "a": sr.data[3]
-                            }),
-                        );
+                    if let Some(v) = scalar_rgba(&sr.data) {
+                        out.insert(name.clone(), v);
                     }
                 }
             }
@@ -532,27 +509,13 @@ pub(crate) fn decode_member(
             // Before this fix only (2) was handled, so a sig-less Vec3 array
             // element silently decoded to `{}` (nothing inserted into `out`).
             if let Some(data) = payload {
-                if data.len() >= 12 {
-                    out.insert(
-                        name.clone(),
-                        json!({
-                            "x": json_f32(f32::from_le_bytes(data[0..4].try_into().unwrap())),
-                            "y": json_f32(f32::from_le_bytes(data[4..8].try_into().unwrap())),
-                            "z": json_f32(f32::from_le_bytes(data[8..12].try_into().unwrap())),
-                        }),
-                    );
+                if let Some(v) = scalar_vec3(data) {
+                    out.insert(name.clone(), v);
                 }
             } else if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if sr.data.len() >= 12 {
-                        out.insert(
-                            name.clone(),
-                            json!({
-                                "x": json_f32(f32::from_le_bytes(sr.data[0..4].try_into().unwrap())),
-                                "y": json_f32(f32::from_le_bytes(sr.data[4..8].try_into().unwrap())),
-                                "z": json_f32(f32::from_le_bytes(sr.data[8..12].try_into().unwrap())),
-                            }),
-                        );
+                    if let Some(v) = scalar_vec3(&sr.data) {
+                        out.insert(name.clone(), v);
                     }
                 }
             }
@@ -1134,16 +1097,17 @@ pub(crate) fn decode_struct_fields(
             } => {
                 let size = int_size(*width);
                 if pos + size <= data.len() {
-                    if let Some(v) = read_int(&data[pos..], *width, *signed) {
-                        struct_out.insert(name.clone(), format_int(v, format.as_ref()));
+                    if let Some(v) = scalar_int(&data[pos..], *width, *signed, format.as_ref()) {
+                        struct_out.insert(name.clone(), v);
                     }
                     pos += size;
                 }
             }
             MemberDef::Float { name, .. } => {
                 if pos + 4 <= data.len() {
-                    let f = f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
-                    struct_out.insert(name.clone(), json_f32(f));
+                    if let Some(v) = scalar_float(&data[pos..]) {
+                        struct_out.insert(name.clone(), v);
+                    }
                     pos += 4;
                 }
             }
@@ -1151,9 +1115,9 @@ pub(crate) fn decode_struct_fields(
                 name, valid_refs, ..
             } => {
                 if pos + 4 <= data.len() {
-                    let id =
-                        FormId::new(u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap()));
-                    struct_out.insert(name.clone(), resolve_formid(ctx, valid_refs, id));
+                    if let Some(v) = scalar_formid(ctx, valid_refs, &data[pos..]) {
+                        struct_out.insert(name.clone(), v);
+                    }
                     pos += 4;
                 }
             }
@@ -1161,10 +1125,7 @@ pub(crate) fn decode_struct_fields(
                 match sized {
                     Some(n) if *n > 0 => {
                         let end = (pos + *n as usize).min(data.len());
-                        let s = String::from_utf8_lossy(&data[pos..end])
-                            .trim_end_matches('\0')
-                            .to_string();
-                        struct_out.insert(name.clone(), json!(s));
+                        struct_out.insert(name.clone(), scalar_string(&data[pos..end], sized));
                         pos = end;
                     }
                     _ => {
@@ -1174,8 +1135,7 @@ pub(crate) fn decode_struct_fields(
                             .position(|&b| b == 0)
                             .map(|i| pos + i)
                             .unwrap_or(data.len());
-                        let s = String::from_utf8_lossy(&data[pos..end]).to_string();
-                        struct_out.insert(name.clone(), json!(s));
+                        struct_out.insert(name.clone(), scalar_string(&data[pos..], sized));
                         pos = if end < data.len() { end + 1 } else { end };
                     }
                 }
@@ -1183,30 +1143,22 @@ pub(crate) fn decode_struct_fields(
             MemberDef::Bytes { name, len, .. } => {
                 let n = len.unwrap_or(data.len().saturating_sub(pos));
                 let end = (pos + n).min(data.len());
-                struct_out.insert(name.clone(), json!({"hex": hex::encode(&data[pos..end])}));
+                struct_out.insert(name.clone(), scalar_bytes(&data[pos..end]));
                 pos = end;
             }
             MemberDef::ByteRgba { name, .. } => {
                 if pos + 4 <= data.len() {
-                    struct_out.insert(
-                        name.clone(),
-                        json!({
-                            "r": data[pos], "g": data[pos + 1], "b": data[pos + 2], "a": data[pos + 3]
-                        }),
-                    );
+                    if let Some(v) = scalar_rgba(&data[pos..]) {
+                        struct_out.insert(name.clone(), v);
+                    }
                     pos += 4;
                 }
             }
             MemberDef::Vec3 { name, .. } => {
                 if pos + 12 <= data.len() {
-                    struct_out.insert(
-                        name.clone(),
-                        json!({
-                            "x": json_f32(f32::from_le_bytes(data[pos..pos + 4].try_into().unwrap())),
-                            "y": json_f32(f32::from_le_bytes(data[pos + 4..pos + 8].try_into().unwrap())),
-                            "z": json_f32(f32::from_le_bytes(data[pos + 8..pos + 12].try_into().unwrap())),
-                        }),
-                    );
+                    if let Some(v) = scalar_vec3(&data[pos..]) {
+                        struct_out.insert(name.clone(), v);
+                    }
                     pos += 12;
                 }
             }
@@ -1774,6 +1726,69 @@ fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
 fn read_zstring(data: &[u8]) -> String {
     let end = data.iter().position(|&b| b == 0).unwrap_or(data.len());
     String::from_utf8_lossy(&data[..end]).into_owned()
+}
+
+fn scalar_int(
+    bytes: &[u8],
+    width: IntegerWidth,
+    signed: bool,
+    format: Option<&ValueFormat>,
+) -> Option<Value> {
+    read_int(bytes, width, signed).map(|v| format_int(v, format))
+}
+
+fn scalar_float(bytes: &[u8]) -> Option<Value> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    Some(json_f32(f32::from_le_bytes(
+        bytes[0..4].try_into().unwrap(),
+    )))
+}
+
+fn scalar_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], bytes: &[u8]) -> Option<Value> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    let id = FormId::new(u32::from_le_bytes(bytes[0..4].try_into().unwrap()));
+    Some(resolve_formid(ctx, valid_refs, id))
+}
+
+fn scalar_bytes(bytes: &[u8]) -> Value {
+    json!({"hex": hex::encode(bytes)})
+}
+
+fn scalar_rgba(bytes: &[u8]) -> Option<Value> {
+    if bytes.len() < 4 {
+        return None;
+    }
+    Some(json!({
+        "r": bytes[0], "g": bytes[1], "b": bytes[2], "a": bytes[3]
+    }))
+}
+
+fn scalar_vec3(bytes: &[u8]) -> Option<Value> {
+    if bytes.len() < 12 {
+        return None;
+    }
+    Some(json!({
+        "x": json_f32(f32::from_le_bytes(bytes[0..4].try_into().unwrap())),
+        "y": json_f32(f32::from_le_bytes(bytes[4..8].try_into().unwrap())),
+        "z": json_f32(f32::from_le_bytes(bytes[8..12].try_into().unwrap())),
+    }))
+}
+
+/// Fixed-size vs null-terminated string decode shared by `decode_member` (subrecord
+/// pool) and `decode_struct_fields` (contiguous buffer cursor). Callers own bounds
+/// checks and cursor advancement.
+fn scalar_string(bytes: &[u8], sized: &Option<u32>) -> Value {
+    let s = match sized {
+        Some(n) if *n > 0 => String::from_utf8_lossy(&bytes[..bytes.len().min(*n as usize)])
+            .trim_end_matches('\0')
+            .to_string(),
+        _ => read_zstring(bytes),
+    };
+    json!(s)
 }
 
 /// Resolve a `FieldValue` lookup key from an already-decoded output map.
