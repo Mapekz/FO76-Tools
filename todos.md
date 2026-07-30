@@ -25,11 +25,13 @@ lookups), so it reads as a considered partial refactor rather than an oversight.
 
 ## `ba2/`
 
-No tracked follow-ups.
+No tracked follow-ups beyond the issue queue.
 
-Note: DX10 texture archives are **deliberately** detected and rejected — that is a documented
-invariant (GNRL-only), not a gap. Adding DX10 support needs an explicit design and a separate
-code path, so it is not a backlog item.
+Scope change (2026-07-29): the GNRL-only stance is retired — the CLI should handle all BA2
+archives. DX10 (texture) read/list/extract support is planned in
+[#21](https://github.com/Mapekz/FO76-Tools/issues/21) (separate code path per the reader
+invariant; DX10 *write* remains out of scope pending its own design). Until #21 lands, the
+reader still detects and rejects DX10 with a clear error.
 
 ---
 
@@ -42,11 +44,9 @@ tests are structurally absent — a considered choice, not a gap. Enabling them 
 low priority in [#16](https://github.com/Mapekz/FO76-Tools/issues/16) (`P3`,
 `ready-for-human`), kept open in case component testing becomes desirable later.
 
-Follow-up (2026-07-28): `esm refs --ep` now seeds `path[0]` with the originating carrier so
-`VIA` is populated at depth 1, but `esm-viewer/src/renderer/src/components/ReferencedByPanel.tsx`
-still renders `HopChain` as `null` for `depth <= 1` — the GUI will not show the new depth-1
-carrier link without a follow-up change there. Out of scope for the EP-attribution work that
-landed the column in the CLI/JSON.
+The 2026-07-28 follow-up (ReferencedByPanel hides the depth-1 `VIA` carrier that
+`esm refs --ep` now provides) is promoted to
+[#20](https://github.com/Mapekz/FO76-Tools/issues/20).
 
 ---
 
