@@ -7,11 +7,11 @@
 //! - DX10 texture archives are detected and rejected with a clear error.
 //! - Version != 1 causes an error rather than a warning.
 
-use crate::compress::{decompress, Codec};
+use crate::compress::{Codec, decompress};
 use crate::format::{
-    read_header, read_record, Header, HEADER_SIZE, RECORD_SIZE, TAG_DX10, TAG_GNRL, VERSION,
+    HEADER_SIZE, Header, RECORD_SIZE, TAG_DX10, TAG_GNRL, VERSION, read_header, read_record,
 };
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use memmap2::Mmap;
 use std::collections::HashMap;
 use std::fs::File;
@@ -76,7 +76,7 @@ impl Ba2Archive {
         if &header.archive_type != TAG_GNRL {
             bail!(
                 "unsupported BA2 archive type {:?}; expected GNRL",
-                &header.archive_type
+                header.archive_type
             );
         }
 

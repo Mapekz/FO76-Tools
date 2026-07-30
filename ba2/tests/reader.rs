@@ -5,7 +5,7 @@ mod common;
 
 use ba2::compress::Codec;
 use ba2::reader::Ba2Archive;
-use ba2::{write_ba2, WriteOptions};
+use ba2::{WriteOptions, write_ba2};
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -190,7 +190,7 @@ fn rejects_truncated_name_length_prefix() {
     let mut buf = make_raw_header(1, b"GNRL", 1, nt_offset);
 
     // Record: minimal fields; only packed_size=0 and unpacked_size=1 matter here.
-    use ba2::format::{write_record, Record, RECORD_FLAGS};
+    use ba2::format::{RECORD_FLAGS, Record, write_record};
     use ba2::hash::hash_path;
     let (name_hash, dir_hash, ext) = hash_path("a.txt");
     let r = Record {
@@ -222,7 +222,7 @@ fn rejects_truncated_name_bytes() {
 
     let mut buf = make_raw_header(1, b"GNRL", 1, nt_offset);
 
-    use ba2::format::{write_record, Record, RECORD_FLAGS};
+    use ba2::format::{RECORD_FLAGS, Record, write_record};
     use ba2::hash::hash_path;
     let (name_hash, dir_hash, ext) = hash_path("a.txt");
     let r = Record {
@@ -237,7 +237,7 @@ fn rejects_truncated_name_bytes() {
     buf.extend_from_slice(&write_record(&r));
     buf.extend_from_slice(entry_data);
     buf.extend_from_slice(&100u16.to_le_bytes()); // claims 100-char name
-                                                  // …but writes 0 name bytes
+    // …but writes 0 name bytes
 
     let tmp = write_tmp(&buf);
     assert!(
@@ -259,7 +259,7 @@ fn read_data_out_of_range() {
 
     let mut buf = make_raw_header(1, b"GNRL", 1, nt_offset);
 
-    use ba2::format::{write_record, Record, RECORD_FLAGS};
+    use ba2::format::{RECORD_FLAGS, Record, write_record};
     use ba2::hash::hash_path;
     let (name_hash, dir_hash, ext) = hash_path("data/x.bin");
     let r = Record {

@@ -3,7 +3,7 @@
 mod common;
 
 use ba2::compress::Codec;
-use ba2::extract::{extract_all, extract_one, ExtractOptions};
+use ba2::extract::{ExtractOptions, extract_all, extract_one};
 use tempfile::TempDir;
 
 // ── extract_all ───────────────────────────────────────────────────────────

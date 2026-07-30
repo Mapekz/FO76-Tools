@@ -11,10 +11,10 @@
 //! memory is roughly one source file + its compressed buffer at a time,
 //! regardless of total archive size.
 
-use crate::compress::{compress_entry, Codec};
-use crate::format::{write_header, write_record, Record, HEADER_SIZE, RECORD_FLAGS, RECORD_SIZE};
+use crate::compress::{Codec, compress_entry};
+use crate::format::{HEADER_SIZE, RECORD_FLAGS, RECORD_SIZE, Record, write_header, write_record};
 use crate::hash::hash_path;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};

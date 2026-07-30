@@ -5,8 +5,8 @@
 //! the on-disk layout will show up immediately.
 
 use ba2::format::{
-    read_header, read_record, write_header, write_record, Record, HEADER_SIZE, MAGIC, PADDING,
-    RECORD_FLAGS, RECORD_SIZE, TAG_GNRL, VERSION,
+    HEADER_SIZE, MAGIC, PADDING, RECORD_FLAGS, RECORD_SIZE, Record, TAG_GNRL, VERSION, read_header,
+    read_record, write_header, write_record,
 };
 
 // ── Header ───────────────────────────────────────────────────────────────────

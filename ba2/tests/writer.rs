@@ -3,7 +3,7 @@
 use ba2::compress::Codec;
 use ba2::hash::hash_path;
 use ba2::reader::Ba2Archive;
-use ba2::{write_ba2, WriteOptions};
+use ba2::{WriteOptions, write_ba2};
 use tempfile::{NamedTempFile, TempDir};
 
 // ── Helpers ───────────────────────────────────────────────────────────────

@@ -1,9 +1,10 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use ba2::{
+    WriteOptions,
     compress::Codec,
-    extract::{extract_all, extract_one, ExtractOptions},
+    extract::{ExtractOptions, extract_all, extract_one},
     reader::Ba2Archive,
-    write_ba2, WriteOptions,
+    write_ba2,
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use globset::{Glob, GlobSetBuilder};

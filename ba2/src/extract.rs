@@ -8,7 +8,7 @@
 
 use crate::compress::Codec;
 use crate::reader::{Ba2Archive, Ba2Entry};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use globset::GlobSet;
 use std::path::{Component, Path, PathBuf};
 

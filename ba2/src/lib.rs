@@ -12,6 +12,6 @@ pub mod writer;
 
 // Convenience re-exports for library consumers.
 pub use compress::Codec;
-pub use extract::{extract_all, extract_one, ExtractOptions};
+pub use extract::{ExtractOptions, extract_all, extract_one};
 pub use reader::{Ba2Archive, Ba2Entry};
-pub use writer::{write_ba2, WriteOptions};
+pub use writer::{WriteOptions, write_ba2};

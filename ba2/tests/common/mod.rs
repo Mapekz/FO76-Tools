@@ -4,7 +4,7 @@
 //! subdirectory, so Cargo ignores it as a test target).  Individual test files
 //! pull it in with `mod common;`.
 
-use ba2::format::{write_header, write_record, Record, RECORD_FLAGS};
+use ba2::format::{RECORD_FLAGS, Record, write_header, write_record};
 use ba2::hash::hash_path;
 use std::io::Write;
 use tempfile::NamedTempFile;

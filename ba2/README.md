@@ -8,8 +8,12 @@ A Rust CLI and library for reading, extracting, and creating Bethesda **BA2 / BT
 
 ## Requirements
 
-- Toolchain pinned to **Rust 1.96.0** via `rust-toolchain.toml` (rustup installs it automatically).
-- MSRV **1.87** (`u16::is_multiple_of`), declared as `rust-version` in `Cargo.toml`.
+- Toolchain pinned to **Rust 1.97.1** via `rust-toolchain.toml` (rustup installs it automatically).
+- Edition **2024**.
+- `rust-version` in `Cargo.toml` tracks the pinned toolchain (**1.97**) rather than the true language
+  floor. Edition 2024 selects Cargo's MSRV-aware dependency resolver, which treats `rust-version` as
+  a ceiling on dependency selection — a lower value would silently hold dependencies back at older
+  releases. This crate has no external consumers, so there is nothing to gain from a low MSRV.
 
 ## Build
 

@@ -55,4 +55,6 @@ Public API re-exported from `lib.rs`: `Codec`, `Ba2Archive`, `Ba2Entry`, `extrac
 
 ## Toolchain
 
-Pinned to **Rust 1.96.0** via `rust-toolchain.toml` (components: `rustfmt`, `clippy`). MSRV **1.87** (`u16::is_multiple_of`), declared via `rust-version = "1.87"` in `Cargo.toml` and mirrored in `clippy.toml`.
+Pinned to **Rust 1.97.1** via `rust-toolchain.toml` (components: `rustfmt`, `clippy`), edition **2024**.
+
+`rust-version = "1.97"` in `Cargo.toml`, mirrored as `msrv` in `clippy.toml`, deliberately tracks the pinned toolchain instead of the true language floor. Edition 2024 selects Cargo's MSRV-aware dependency resolver, which reads `rust-version` as a ceiling when picking dependency versions — declaring a lower floor silently resolves dependencies to older releases. Keep the two values in lockstep with the pin when bumping.

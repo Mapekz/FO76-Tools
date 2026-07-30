@@ -1,8 +1,8 @@
 //! Integration tests for `ba2::compress` — codec dispatch, round-trips, sniffing.
 
 use ba2::compress::{
-    compress_entry, compress_lz4, compress_zlib, decompress, decompress_lz4, decompress_zlib,
-    is_zlib, Codec,
+    Codec, compress_entry, compress_lz4, compress_zlib, decompress, decompress_lz4,
+    decompress_zlib, is_zlib,
 };
 
 fn sample() -> Vec<u8> {

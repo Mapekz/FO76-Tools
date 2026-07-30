@@ -4,7 +4,7 @@
 //! represented as plain byte arrays — no derive macros, just explicit LE reads
 //! and writes so the layout is crystal-clear and testable.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 // ── Magic / type tags ────────────────────────────────────────────────────────
 

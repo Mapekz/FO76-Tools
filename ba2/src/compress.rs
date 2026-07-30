@@ -5,7 +5,7 @@
 //! The `Codec` enum covers both, plus the uncompressed `Store` variant.
 
 use anyhow::{Context, Result};
-use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
+use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use std::io::{Read, Write};
 
 /// Compression codec for BA2 data blobs.
