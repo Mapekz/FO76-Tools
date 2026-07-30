@@ -15,7 +15,7 @@ path = "src/bin/cli.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-lz4_flex = "0.11"
+lz4_flex = "0.14"
 flate2 = "1"
 memmap2 = "0.9"
 walkdir = "2"
