@@ -10,13 +10,16 @@
     "test": "bun smoke.mjs"
   },
   "napi": {
-    "name": "esm-napi",
-    "triples": {
-      "defaults": true,
-      "additional": ["aarch64-unknown-linux-gnu", "aarch64-apple-darwin"]
-    }
+    "binaryName": "esm-napi",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "x86_64-pc-windows-msvc",
+      "x86_64-apple-darwin",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-apple-darwin"
+    ]
   },
   "devDependencies": {
-    "@napi-rs/cli": "^2.18.4"
+    "@napi-rs/cli": "^3.8.1"
   }
 }

@@ -8,12 +8,15 @@ rust-version = "1.97"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "2", default-features = false, features = ["napi8", "serde-json", "async"] }
-napi-derive = { version = "2", features = ["type-def"] }
+napi = { version = "3", default-features = false, features = ["napi8", "serde-json", "async"] }
+napi-derive = { version = "3", features = ["type-def"] }
 esm = { path = "../.." }
 anyhow = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
+# Stays on 2.x: there is no napi-build 3.x on crates.io (2.4.0 is the newest),
+# and napi 3.12 itself build-depends on `napi-build ^2.4.0`. The upstream v2->v3
+# migration guide says to use "3" — that is wrong against the registry.
 napi-build = "2"
