@@ -276,10 +276,10 @@ fn eq_matches(current: &Value, value: Option<&str>) -> bool {
     let Some(value) = value else {
         return false;
     };
-    if let Value::Number(n) = current {
-        if let (Some(cur_f), Ok(val_f)) = (n.as_f64(), value.parse::<f64>()) {
-            return cur_f == val_f;
-        }
+    if let Value::Number(n) = current
+        && let (Some(cur_f), Ok(val_f)) = (n.as_f64(), value.parse::<f64>())
+    {
+        return cur_f == val_f;
     }
     match stringify_scalar(current) {
         Some(s) => s.eq_ignore_ascii_case(value),
@@ -476,10 +476,11 @@ impl EntryPointSpec {
                  numeric id; use the positional target or --formid for a FormID lookup"
             );
         }
-        if !trimmed.is_empty() && trimmed.bytes().all(|b| b.is_ascii_digit()) {
-            if let Ok(id) = trimmed.parse::<u16>() {
-                return Ok(EntryPointSpec::Id(id));
-            }
+        if !trimmed.is_empty()
+            && trimmed.bytes().all(|b| b.is_ascii_digit())
+            && let Ok(id) = trimmed.parse::<u16>()
+        {
+            return Ok(EntryPointSpec::Id(id));
         }
         Ok(EntryPointSpec::Name(trimmed.to_string()))
     }
@@ -1173,19 +1174,17 @@ impl Database {
         // plain `get` on a CURV record doesn't require a second out-of-band read
         // of that file. Referencing records already get this via `resolve_formid`
         // (decode.rs); this covers the CURV record itself.
-        if parsed.header.signature == "CURV" {
-            if let Some(curve) = self
+        if parsed.header.signature == "CURV"
+            && let Some(curve) = self
                 .curves
                 .as_ref()
                 .and_then(|curves| curves.get(parsed.header.form_id))
-            {
-                if let Value::Object(map) = &mut fields {
-                    map.insert(
-                        "Curve".to_string(),
-                        crate::decode::curve_points_value(curve),
-                    );
-                }
-            }
+            && let Value::Object(map) = &mut fields
+        {
+            map.insert(
+                "Curve".to_string(),
+                crate::decode::curve_points_value(curve),
+            );
         }
         Ok(RecordResult {
             header: parsed.header,

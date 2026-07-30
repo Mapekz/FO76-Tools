@@ -665,10 +665,10 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
             // FormID never gets silently redirected to an unrelated
             // same-named EditorID.
             let formid_attempt = crate::parse_form_id_input(token).ok();
-            if let Some(fid) = formid_attempt {
-                if db.get_formid_meta(fid).is_ok() {
-                    return Ok(fid);
-                }
+            if let Some(fid) = formid_attempt
+                && db.get_formid_meta(fid).is_ok()
+            {
+                return Ok(fid);
             }
             // Defense-in-depth: lite mode (`--mmap-index`) has no EditorID
             // index. The CLI already refuses `Auto` selectors in that mode
@@ -1061,18 +1061,17 @@ fn referenced_by_walk(
                 // emitted row without changing its path/VIA (first-reach wins
                 // for the path). Deeper re-reaches and seed self-hits are
                 // ignored as before.
-                if let Some(&idx) = emitted.get(&fid) {
-                    if rows[idx].depth == hop_depth {
-                        if let Some(origin_fid) = origin {
-                            merge_entry_points(
-                                &mut rows[idx].entry_points,
-                                seed_tags
-                                    .get(&origin_fid)
-                                    .map(|v| v.as_slice())
-                                    .unwrap_or(&[]),
-                            );
-                        }
-                    }
+                if let Some(&idx) = emitted.get(&fid)
+                    && rows[idx].depth == hop_depth
+                    && let Some(origin_fid) = origin
+                {
+                    merge_entry_points(
+                        &mut rows[idx].entry_points,
+                        seed_tags
+                            .get(&origin_fid)
+                            .map(|v| v.as_slice())
+                            .unwrap_or(&[]),
+                    );
                 }
                 continue;
             }

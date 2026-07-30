@@ -559,10 +559,10 @@ fn main() -> anyhow::Result<()> {
                 // running the binary it started with (see `daemon_fresh` in
                 // `backend.rs`). A `false` here means a rebuild happened since
                 // it started and the next `-p`/REPL call will respawn it.
-                if let Ok(info) = read_daemon_info() {
-                    if let Some(obj) = status.as_object_mut() {
-                        obj.insert("binary_current".to_string(), daemon_fresh(&info).into());
-                    }
+                if let Ok(info) = read_daemon_info()
+                    && let Some(obj) = status.as_object_mut()
+                {
+                    obj.insert("binary_current".to_string(), daemon_fresh(&info).into());
                 }
                 println!("{}", serde_json::to_string_pretty(&status)?);
                 Ok(())
@@ -1461,10 +1461,10 @@ fn print_ref_path(result: &esm::ipc::RefPathResult, json: bool, pretty: bool) {
         } else {
             println!("   <-{i} {label}  {name}");
         }
-        if let Some(fp) = &hop.field_paths {
-            if !fp.is_empty() {
-                println!("        via: {}", fp.join("; "));
-            }
+        if let Some(fp) = &hop.field_paths
+            && !fp.is_empty()
+        {
+            println!("        via: {}", fp.join("; "));
         }
     }
 }
@@ -1569,23 +1569,21 @@ fn cmd_walk(
             },
         )?;
         nf.matches = serde_json::from_value(v)?;
-    } else if want_refs {
-        if let Some(root) = result.nodes.first() {
-            let root_fid = esm::parse_form_id_input(&root.formid)?;
-            let v = fetcher.backend.run(
-                fetcher.file,
-                Op::ReferencedBy {
-                    sel: RecordSel::FormId(root_fid),
-                    limit: 0,
-                    depth: 1,
-                    type_filter: None,
-                    paths: false,
-                    sort: esm::ipc::RefSort::Formid,
-                },
-            )?;
-            let ref_list: RefList = serde_json::from_value(v)?;
-            result.refs = Some(esm::walk::build_refs_digest(&ref_list.rows));
-        }
+    } else if want_refs && let Some(root) = result.nodes.first() {
+        let root_fid = esm::parse_form_id_input(&root.formid)?;
+        let v = fetcher.backend.run(
+            fetcher.file,
+            Op::ReferencedBy {
+                sel: RecordSel::FormId(root_fid),
+                limit: 0,
+                depth: 1,
+                type_filter: None,
+                paths: false,
+                sort: esm::ipc::RefSort::Formid,
+            },
+        )?;
+        let ref_list: RefList = serde_json::from_value(v)?;
+        result.refs = Some(esm::walk::build_refs_digest(&ref_list.rows));
     }
 
     if json {

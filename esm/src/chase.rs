@@ -497,10 +497,10 @@ fn summarize_effect(effect_entry: &Value) -> String {
     }
 
     if let Some(item_data) = inner_map.get("Effect Item Data").and_then(Value::as_object) {
-        if let Some(mag) = item_data.get("Magnitude") {
-            if !mag.is_null() {
-                parts.push(format!("Magnitude={}", pyish(mag)));
-            }
+        if let Some(mag) = item_data.get("Magnitude")
+            && !mag.is_null()
+        {
+            parts.push(format!("Magnitude={}", pyish(mag)));
         }
         if is_truthy(item_data.get("Duration")) {
             parts.push(format!(
@@ -521,13 +521,13 @@ fn summarize_effect(effect_entry: &Value) -> String {
         if HANDLED_EFFECT_KEYS.contains(&key.as_str()) {
             continue;
         }
-        if let Some(obj) = val.as_object() {
-            if obj.contains_key("formid") {
-                parts.push(format!(
-                    "{key}={}",
-                    py_or_display(obj.get("editor_id"), obj.get("formid"))
-                ));
-            }
+        if let Some(obj) = val.as_object()
+            && obj.contains_key("formid")
+        {
+            parts.push(format!(
+                "{key}={}",
+                py_or_display(obj.get("editor_id"), obj.get("formid"))
+            ));
         }
     }
 
@@ -685,14 +685,14 @@ fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) ->
     if is_truthy(fields.get("Description")) {
         detail.insert("description".to_string(), fields["Description"].clone());
     }
-    if let Some(effects) = fields.get("Effects").and_then(Value::as_array) {
-        if !effects.is_empty() {
-            let capped: Vec<Value> = effects.iter().take(12).cloned().collect();
-            let truncated = effects.len().saturating_sub(capped.len());
-            detail.insert("effects".to_string(), Value::Array(capped));
-            if truncated > 0 {
-                detail.insert("effects_truncated".to_string(), json!(truncated));
-            }
+    if let Some(effects) = fields.get("Effects").and_then(Value::as_array)
+        && !effects.is_empty()
+    {
+        let capped: Vec<Value> = effects.iter().take(12).cloned().collect();
+        let truncated = effects.len().saturating_sub(capped.len());
+        detail.insert("effects".to_string(), Value::Array(capped));
+        if truncated > 0 {
+            detail.insert("effects_truncated".to_string(), json!(truncated));
         }
     }
     if detail.is_empty() {
@@ -1067,20 +1067,20 @@ fn effect_chase(
         let mut target: Option<Value> = None;
 
         if let Some(inner) = inner_obj {
-            if let Some(base) = inner.get("Base Effect") {
-                if is_formid_stub(base) {
-                    kind = EffectHopKind::BaseEffect;
-                    target = Some(stub(base));
-                }
+            if let Some(base) = inner.get("Base Effect")
+                && is_formid_stub(base)
+            {
+                kind = EffectHopKind::BaseEffect;
+                target = Some(stub(base));
             }
             if target.is_none() {
                 for key in PERK_EFFECT_TARGET_KEYS {
-                    if let Some(t) = inner.get(key) {
-                        if is_formid_stub(t) {
-                            kind = EffectHopKind::ForwardTarget;
-                            target = Some(stub(t));
-                            break;
-                        }
+                    if let Some(t) = inner.get(key)
+                        && is_formid_stub(t)
+                    {
+                        kind = EffectHopKind::ForwardTarget;
+                        target = Some(stub(t));
+                        break;
                     }
                 }
             }

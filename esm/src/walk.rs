@@ -193,10 +193,12 @@ fn pyish(v: &Value) -> String {
         }
         Value::String(s) => s.clone(),
         Value::Number(n) => {
-            if let Some(f) = n.as_f64() {
-                if f.is_finite() && f.fract() == 0.0 && f.abs() < 1e15 {
-                    return format!("{}", f as i64);
-                }
+            if let Some(f) = n.as_f64()
+                && f.is_finite()
+                && f.fract() == 0.0
+                && f.abs() < 1e15
+            {
+                return format!("{}", f as i64);
             }
             n.to_string()
         }
@@ -394,10 +396,10 @@ fn flatten_perk_condition_rows(node: &Value) -> Vec<Value> {
                 continue;
             };
             let mut row = data.clone();
-            if tab_index == 2 {
-                if let Value::Object(map) = &mut row {
-                    map.insert("Run On".to_string(), Value::String("Target".to_string()));
-                }
+            if tab_index == 2
+                && let Value::Object(map) = &mut row
+            {
+                map.insert("Run On".to_string(), Value::String("Target".to_string()));
             }
             out.push(row);
         }
@@ -425,10 +427,10 @@ fn fmt_condition_row(row: &Value, by_sel: &HashMap<String, BulkRecordEntry>) -> 
     let param1 = fmt_condition_operand(row.get("Parameter 1"), by_sel);
     let cmp = fmt_condition_operand(row.get("Comparison Value"), by_sel);
     let mut out = format!("{function}({param1}) {operator} {cmp}");
-    if let Some(run_on) = row.get("Run On").and_then(Value::as_str) {
-        if run_on != "Subject" {
-            out.push_str(&format!(" on {run_on}"));
-        }
+    if let Some(run_on) = row.get("Run On").and_then(Value::as_str)
+        && run_on != "Subject"
+    {
+        out.push_str(&format!(" on {run_on}"));
     }
     if row.get("AND/OR").and_then(Value::as_str) == Some("OR") {
         out.push_str(" [OR]");
@@ -555,10 +557,10 @@ fn digest_mgef(fields: &Value, lines: &mut Vec<String>, enqueue: &mut Vec<Enqueu
             enqueue.push((fid, "Equip Ability".to_string()));
         }
     }
-    if let Some(desc) = summary.description.and_then(Value::as_str) {
-        if !desc.is_empty() {
-            lines.push(format!("description \"{desc}\""));
-        }
+    if let Some(desc) = summary.description.and_then(Value::as_str)
+        && !desc.is_empty()
+    {
+        lines.push(format!("description \"{desc}\""));
     }
 }
 
@@ -703,10 +705,10 @@ fn digest_perk(
     enqueue: &mut Vec<EnqueueTarget>,
 ) -> anyhow::Result<()> {
     let data = fields.get("Data");
-    if let Some(desc) = fields.get("Description").and_then(Value::as_str) {
-        if !desc.is_empty() {
-            lines.push(format!("description \"{desc}\""));
-        }
+    if let Some(desc) = fields.get("Description").and_then(Value::as_str)
+        && !desc.is_empty()
+    {
+        lines.push(format!("description \"{desc}\""));
     }
     let playable = data
         .and_then(|d| d.pointer("/Playable/name"))
@@ -795,13 +797,12 @@ fn digest_weap(fields: &Value, lines: &mut Vec<String>) {
         .unwrap_or_default();
     let mut kw_names = Vec::new();
     for k in &keyword_ids {
-        if let Some(edid) = k.get("editor_id").and_then(Value::as_str) {
-            if edid.starts_with("WeaponType")
+        if let Some(edid) = k.get("editor_id").and_then(Value::as_str)
+            && (edid.starts_with("WeaponType")
                 || edid.starts_with("HasLegendary")
-                || edid.starts_with("ma_")
-            {
-                kw_names.push(edid.to_string());
-            }
+                || edid.starts_with("ma_"))
+        {
+            kw_names.push(edid.to_string());
         }
     }
     lines.push(format!(

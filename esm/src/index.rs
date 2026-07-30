@@ -467,10 +467,10 @@ pub fn full_name_for_record(esm: &EsmFile, meta: &RecordMeta) -> anyhow::Result<
 fn harvest_formids(val: &Value, out: &mut Vec<FormId>) {
     match val {
         Value::String(s) => {
-            if s.starts_with("0x") || s.starts_with("0X") {
-                if let Ok(fid) = parse_formid(s) {
-                    out.push(fid);
-                }
+            if (s.starts_with("0x") || s.starts_with("0X"))
+                && let Ok(fid) = parse_formid(s)
+            {
+                out.push(fid);
             }
         }
         Value::Array(arr) => {

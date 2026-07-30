@@ -268,10 +268,11 @@ impl RemoteBackend {
     /// `spawn_daemon_and_wait` stops it and spawns a fresh one instead of
     /// silently querying it with an outdated schema/decoder.
     pub fn connect_or_spawn() -> anyhow::Result<Self> {
-        if let Ok(info) = read_daemon_info() {
-            if daemon_alive(&info) && daemon_fresh(&info) {
-                return Ok(Self::from_daemon_info(&info));
-            }
+        if let Ok(info) = read_daemon_info()
+            && daemon_alive(&info)
+            && daemon_fresh(&info)
+        {
+            return Ok(Self::from_daemon_info(&info));
         }
         spawn_daemon_and_wait()?;
         let info = read_daemon_info().context("daemon started but discovery file missing")?;
@@ -494,16 +495,16 @@ pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
 
     // Re-check: another process may have won the race while we waited for the
     // lock.
-    if let Ok(info) = read_daemon_info() {
-        if health_check("127.0.0.1", info.port, &info.token).is_ok() {
-            if daemon_fresh(&info) {
-                return Ok(());
-            }
-            // Alive but stale: stop it before spawning a replacement so the
-            // fresh daemon isn't blocked from binding/registering.
-            stop_running_daemon(&info);
-            let _ = remove_daemon_info();
+    if let Ok(info) = read_daemon_info()
+        && health_check("127.0.0.1", info.port, &info.token).is_ok()
+    {
+        if daemon_fresh(&info) {
+            return Ok(());
         }
+        // Alive but stale: stop it before spawning a replacement so the
+        // fresh daemon isn't blocked from binding/registering.
+        stop_running_daemon(&info);
+        let _ = remove_daemon_info();
     }
 
     let server = esm_server_exe()?;
@@ -520,10 +521,10 @@ pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
 
     let deadline = std::time::Instant::now() + HEALTH_POLL_MAX;
     while std::time::Instant::now() < deadline {
-        if let Ok(info) = read_daemon_info() {
-            if health_check("127.0.0.1", info.port, &info.token).is_ok() {
-                return Ok(());
-            }
+        if let Ok(info) = read_daemon_info()
+            && health_check("127.0.0.1", info.port, &info.token).is_ok()
+        {
+            return Ok(());
         }
         std::thread::sleep(HEALTH_POLL_INTERVAL);
     }
@@ -535,10 +536,11 @@ pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
 /// resident daemon is alive but stale (binary rebuilt since it started),
 /// same freshness gate as `connect_or_spawn`.
 pub fn start_daemon_process() -> anyhow::Result<DaemonInfo> {
-    if let Ok(info) = read_daemon_info() {
-        if daemon_alive(&info) && daemon_fresh(&info) {
-            return Ok(info);
-        }
+    if let Ok(info) = read_daemon_info()
+        && daemon_alive(&info)
+        && daemon_fresh(&info)
+    {
+        return Ok(info);
     }
     spawn_daemon_and_wait()?;
     read_daemon_info()

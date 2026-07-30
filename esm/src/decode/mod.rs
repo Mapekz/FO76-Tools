@@ -200,38 +200,37 @@ pub(crate) fn curve_points_value(curve: &Curve) -> Value {
 /// present, the referenced record is expanded inline. Otherwise, a bare hex
 /// string is returned.
 pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
-    if valid_refs.iter().any(|r| r == "CURV") {
-        if let Some(curves) = ctx.curves {
-            if let Some(curve) = curves.get(id) {
-                return json!({
-                    "formid": id.display(),
-                    "editor_id": curve.edid,
-                    "curve_path": curve.path,
-                    "curve": curve_points_value(curve)
-                });
-            }
-        }
+    if valid_refs.iter().any(|r| r == "CURV")
+        && let Some(curves) = ctx.curves
+        && let Some(curve) = curves.get(id)
+    {
+        return json!({
+            "formid": id.display(),
+            "editor_id": curve.edid,
+            "curve_path": curve.path,
+            "curve": curve_points_value(curve)
+        });
     }
 
     // Reference-following branch
-    if ctx.resolve_depth != ResolveDepth::None {
-        if let Some(resolver) = ctx.resolver {
-            if id.0 == 0 {
-                return json!(null);
-            }
-            match ctx.resolve_depth {
-                ResolveDepth::Stub => {
-                    if let Some(stub) = resolver.stub(id) {
-                        return serde_json::to_value(&stub).unwrap_or_else(|_| json!(id.display()));
-                    }
+    if ctx.resolve_depth != ResolveDepth::None
+        && let Some(resolver) = ctx.resolver
+    {
+        if id.0 == 0 {
+            return json!(null);
+        }
+        match ctx.resolve_depth {
+            ResolveDepth::Stub => {
+                if let Some(stub) = resolver.stub(id) {
+                    return serde_json::to_value(&stub).unwrap_or_else(|_| json!(id.display()));
                 }
-                ResolveDepth::Full => {
-                    if let Some(full) = resolver.decode_full(id) {
-                        return full;
-                    }
-                }
-                ResolveDepth::None => {}
             }
+            ResolveDepth::Full => {
+                if let Some(full) = resolver.decode_full(id) {
+                    return full;
+                }
+            }
+            ResolveDepth::None => {}
         }
     }
 
@@ -344,16 +343,16 @@ pub(crate) fn decode_member(
         } => {
             if let Some(payload) = payload {
                 decode_struct_fields(ctx, name, fields, payload, out);
-            } else if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    let child_ctx = if fields.iter().any(contains_field_value_union) {
-                        Some(ctx.with_outer_struct(out.clone()))
-                    } else {
-                        None
-                    };
-                    let decode_ctx = child_ctx.as_ref().unwrap_or(ctx);
-                    decode_struct_fields(decode_ctx, name, fields, &sr.data, out);
-                }
+            } else if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+            {
+                let child_ctx = if fields.iter().any(contains_field_value_union) {
+                    Some(ctx.with_outer_struct(out.clone()))
+                } else {
+                    None
+                };
+                let decode_ctx = child_ctx.as_ref().unwrap_or(ctx);
+                decode_struct_fields(decode_ctx, name, fields, &sr.data, out);
             }
         }
         MemberDef::Integer {
@@ -375,10 +374,10 @@ pub(crate) fn decode_member(
                 // the pool for the correctly-positioned schema member.
                 if !stop_before.is_empty() && stop_before_check(by_sig, sig, stop_before) {
                     // deferred
-                } else if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if let Some(v) = scalar_int(&sr.data, *width, *signed, format.as_ref()) {
-                        out.insert(name.clone(), v);
-                    }
+                } else if let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+                    && let Some(v) = scalar_int(&sr.data, *width, *signed, format.as_ref())
+                {
+                    out.insert(name.clone(), v);
                 }
             }
         }
@@ -387,79 +386,78 @@ pub(crate) fn decode_member(
                 if let Some(v) = scalar_float(data) {
                     out.insert(name.clone(), v);
                 }
-            } else if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if let Some(v) = scalar_float(&sr.data) {
-                        out.insert(name.clone(), v);
-                    }
-                }
+            } else if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+                && let Some(v) = scalar_float(&sr.data)
+            {
+                out.insert(name.clone(), v);
             }
         }
         MemberDef::String {
             sig, name, sized, ..
         } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    out.insert(name.clone(), scalar_string(&sr.data, sized));
-                }
+            if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+            {
+                out.insert(name.clone(), scalar_string(&sr.data, sized));
             }
         }
         MemberDef::LString { sig, name, table } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    // "No string present" must decode to the same JSON in both
-                    // modes (`Value::Null`). The two representations are not
-                    // interchangeable on the wire — localized files store a
-                    // 4-byte ID, non-localized files store inline text — so a
-                    // mode-dependent encoding of "empty" makes every nameless
-                    // record look changed when a localized snapshot is diffed
-                    // against a non-localized one.
-                    let value = if ctx.is_localized {
-                        // Localized ESM: field is a 4-byte ID into string tables.
-                        if sr.data.len() < 4 {
+            if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+            {
+                // "No string present" must decode to the same JSON in both
+                // modes (`Value::Null`). The two representations are not
+                // interchangeable on the wire — localized files store a
+                // 4-byte ID, non-localized files store inline text — so a
+                // mode-dependent encoding of "empty" makes every nameless
+                // record look changed when a localized snapshot is diffed
+                // against a non-localized one.
+                let value = if ctx.is_localized {
+                    // Localized ESM: field is a 4-byte ID into string tables.
+                    if sr.data.len() < 4 {
+                        Value::Null
+                    } else {
+                        let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
+                        if id == 0 {
+                            // 0 is the engine's "no string" sentinel, not a
+                            // missing table entry — mirrors resolve_formid's
+                            // null-FormID special case.
                             Value::Null
                         } else {
-                            let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                            if id == 0 {
-                                // 0 is the engine's "no string" sentinel, not a
-                                // missing table entry — mirrors resolve_formid's
-                                // null-FormID special case.
-                                Value::Null
-                            } else {
-                                let kind = lstring_table_to_kind(table, ctx.record_signature, sig);
-                                match ctx.localization.and_then(|loc| loc.lookup(kind, id)) {
-                                    Some(text) => json!(text),
-                                    None => json!({
-                                        "lstring_id": format!("0x{:08X}", id),
-                                        (markers::UNRESOLVED): true
-                                    }),
-                                }
+                            let kind = lstring_table_to_kind(table, ctx.record_signature, sig);
+                            match ctx.localization.and_then(|loc| loc.lookup(kind, id)) {
+                                Some(text) => json!(text),
+                                None => json!({
+                                    "lstring_id": format!("0x{:08X}", id),
+                                    (markers::UNRESOLVED): true
+                                }),
                             }
                         }
-                    } else {
-                        // Non-localized ESM: field is an inline NUL-terminated string,
-                        // optionally prefixed with `<ID=XXXXXXXX>` (a reference marker).
-                        let raw = &sr.data;
-                        let nul_end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-                        let s = String::from_utf8_lossy(&raw[..nul_end]);
-                        // Strip the optional `<ID=XXXXXXXX>` prefix.
-                        let text = if s.starts_with("<ID=") {
-                            if let Some(close) = s.find('>') {
-                                s[close + 1..].trim_start().to_string()
-                            } else {
-                                s.into_owned()
-                            }
+                    }
+                } else {
+                    // Non-localized ESM: field is an inline NUL-terminated string,
+                    // optionally prefixed with `<ID=XXXXXXXX>` (a reference marker).
+                    let raw = &sr.data;
+                    let nul_end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+                    let s = String::from_utf8_lossy(&raw[..nul_end]);
+                    // Strip the optional `<ID=XXXXXXXX>` prefix.
+                    let text = if s.starts_with("<ID=") {
+                        if let Some(close) = s.find('>') {
+                            s[close + 1..].trim_start().to_string()
                         } else {
                             s.into_owned()
-                        };
-                        if text.is_empty() {
-                            Value::Null
-                        } else {
-                            json!(text)
                         }
+                    } else {
+                        s.into_owned()
                     };
-                    out.insert(name.clone(), value);
-                }
+                    if text.is_empty() {
+                        Value::Null
+                    } else {
+                        json!(text)
+                    }
+                };
+                out.insert(name.clone(), value);
             }
         }
         MemberDef::FormId {
@@ -472,32 +470,30 @@ pub(crate) fn decode_member(
                 if let Some(v) = scalar_formid(ctx, valid_refs, data) {
                     out.insert(name.clone(), v);
                 }
-            } else if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if let Some(v) = scalar_formid(ctx, valid_refs, &sr.data) {
-                        out.insert(name.clone(), v);
-                    }
-                }
+            } else if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+                && let Some(v) = scalar_formid(ctx, valid_refs, &sr.data)
+            {
+                out.insert(name.clone(), v);
             }
         }
         MemberDef::Bytes { sig, name, len, .. } => {
             if let Some(data) = payload {
                 let n = len.unwrap_or(data.len());
                 out.insert(name.clone(), scalar_bytes(&data[..data.len().min(n)]));
-            } else if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    let n = len.unwrap_or(sr.data.len());
-                    out.insert(name.clone(), scalar_bytes(&sr.data[..sr.data.len().min(n)]));
-                }
+            } else if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+            {
+                let n = len.unwrap_or(sr.data.len());
+                out.insert(name.clone(), scalar_bytes(&sr.data[..sr.data.len().min(n)]));
             }
         }
         MemberDef::ByteRgba { sig, name, .. } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if let Some(v) = scalar_rgba(&sr.data) {
-                        out.insert(name.clone(), v);
-                    }
-                }
+            if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+                && let Some(v) = scalar_rgba(&sr.data)
+            {
+                out.insert(name.clone(), v);
             }
         }
         MemberDef::Vec3 { sig, name } => {
@@ -512,12 +508,11 @@ pub(crate) fn decode_member(
                 if let Some(v) = scalar_vec3(data) {
                     out.insert(name.clone(), v);
                 }
-            } else if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    if let Some(v) = scalar_vec3(&sr.data) {
-                        out.insert(name.clone(), v);
-                    }
-                }
+            } else if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+                && let Some(v) = scalar_vec3(&sr.data)
+            {
+                out.insert(name.clone(), v);
             }
         }
         MemberDef::RStruct { name, members } => {
@@ -575,12 +570,11 @@ pub(crate) fn decode_member(
             while target_count.is_none_or(|n| items.len() < n) {
                 // If stop_before is set, halt when a boundary sig precedes
                 // the element's anchor in document order.
-                if !stop_before.is_empty() {
-                    if let Some(anchor) = anchor {
-                        if stop_before_check(by_sig, anchor, stop_before) {
-                            break;
-                        }
-                    }
+                if !stop_before.is_empty()
+                    && let Some(anchor) = anchor
+                    && stop_before_check(by_sig, anchor, stop_before)
+                {
+                    break;
                 }
                 let before: usize = by_sig.values().map(|v| v.len()).sum();
 
@@ -883,21 +877,21 @@ pub(crate) fn decode_member(
                     variants.len(),
                 ),
             };
-            if let Some(idx) = chosen {
-                if let Some(variant) = variants.get(idx) {
-                    // Decode into a temporary map first: some variants are
-                    // anonymous (Pascal `wbInteger('', ...)` reusing the
-                    // union's own name conceptually), so their decoded value
-                    // would otherwise land under the empty-string key instead
-                    // of the union's own (correctly-deduped) name.
-                    let mut tmp = Map::new();
-                    decode_member(ctx, variant, &mut tmp, by_sig, effective_payload);
-                    for (k, v) in tmp {
-                        let key = if k.is_empty() { name.clone() } else { k };
-                        insert_unique(out, key, v);
-                    }
-                    return;
+            if let Some(idx) = chosen
+                && let Some(variant) = variants.get(idx)
+            {
+                // Decode into a temporary map first: some variants are
+                // anonymous (Pascal `wbInteger('', ...)` reusing the
+                // union's own name conceptually), so their decoded value
+                // would otherwise land under the empty-string key instead
+                // of the union's own (correctly-deduped) name.
+                let mut tmp = Map::new();
+                decode_member(ctx, variant, &mut tmp, by_sig, effective_payload);
+                for (k, v) in tmp {
+                    let key = if k.is_empty() { name.clone() } else { k };
+                    insert_unique(out, key, v);
                 }
+                return;
             }
             if let UnionDecider::PresentSignature { present_signature } = decider {
                 let in_scope = |idx: usize| doc_index_in_present_signature_scope(ctx, idx);
@@ -954,16 +948,16 @@ pub(crate) fn decode_member(
             }
         }
         MemberDef::Unknown { sig, name } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    out.insert(
-                        name.clone(),
-                        json!({
-                            "hex": hex::encode(&sr.data),
-                            "_raw": true
-                        }),
-                    );
-                }
+            if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+            {
+                out.insert(
+                    name.clone(),
+                    json!({
+                        "hex": hex::encode(&sr.data),
+                        "_raw": true
+                    }),
+                );
             }
         }
         MemberDef::RawFallback { sig, name, reason } => {
@@ -989,25 +983,25 @@ pub(crate) fn decode_member(
             }
         }
         MemberDef::Vmad { sig, name } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    let decoded = match ctx.record_signature {
-                        Some("QUST") => decode_vmad_qust(ctx, &sr.data),
-                        Some("INFO") => decode_vmad_info(ctx, &sr.data),
-                        Some("PACK") => decode_vmad_pack(ctx, &sr.data),
-                        Some("PERK") => decode_vmad_perk(ctx, &sr.data),
-                        Some("SCEN") => decode_vmad_scen(ctx, &sr.data),
-                        // TERM wires wbVMADFragmentedPERK in xEdit's FO76 definitions
-                        // ("same fragments format as in PERK") — reuse that decoder so
-                        // the fragment tail's script-entry properties (e.g. a prize
-                        // terminal's `Form_*` item grants) are decoded and harvested
-                        // into the xref index instead of being silently dropped by the
-                        // generic `decode_vmad`, which stops after the base scripts.
-                        Some("TERM") => decode_vmad_perk(ctx, &sr.data),
-                        _ => decode_vmad(ctx, &sr.data),
-                    };
-                    out.insert(name.clone(), decoded);
-                }
+            if let Some(sig) = sig
+                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
+            {
+                let decoded = match ctx.record_signature {
+                    Some("QUST") => decode_vmad_qust(ctx, &sr.data),
+                    Some("INFO") => decode_vmad_info(ctx, &sr.data),
+                    Some("PACK") => decode_vmad_pack(ctx, &sr.data),
+                    Some("PERK") => decode_vmad_perk(ctx, &sr.data),
+                    Some("SCEN") => decode_vmad_scen(ctx, &sr.data),
+                    // TERM wires wbVMADFragmentedPERK in xEdit's FO76 definitions
+                    // ("same fragments format as in PERK") — reuse that decoder so
+                    // the fragment tail's script-entry properties (e.g. a prize
+                    // terminal's `Form_*` item grants) are decoded and harvested
+                    // into the xref index instead of being silently dropped by the
+                    // generic `decode_vmad`, which stops after the base scripts.
+                    Some("TERM") => decode_vmad_perk(ctx, &sr.data),
+                    _ => decode_vmad(ctx, &sr.data),
+                };
+                out.insert(name.clone(), decoded);
             }
         }
         MemberDef::Ctda { sig, name } => {
@@ -1307,28 +1301,25 @@ pub(crate) fn decode_struct_fields(
                     Some(ArrayCount::Fixed(n)) => *n,
                     _ => 0,
                 };
-                if n > 0 {
-                    if let Some(elem_size) = field_byte_size(ctx, element) {
-                        let mut items = Vec::with_capacity(n.min(4096));
-                        // Snapshot current fields so element structs can resolve
-                        // FieldValue deciders that reference parent-scope fields
-                        // (e.g. "Form Type" for OMOD property enum selection).
-                        let child_ctx = ctx.with_outer_struct(struct_out.clone());
-                        for _ in 0..n {
-                            if pos + elem_size > data.len() {
-                                break;
-                            }
-                            let v = decode_field_value(
-                                &child_ctx,
-                                element,
-                                &data[pos..pos + elem_size],
-                            );
-                            items.push(v);
-                            pos += elem_size;
+                if n > 0
+                    && let Some(elem_size) = field_byte_size(ctx, element)
+                {
+                    let mut items = Vec::with_capacity(n.min(4096));
+                    // Snapshot current fields so element structs can resolve
+                    // FieldValue deciders that reference parent-scope fields
+                    // (e.g. "Form Type" for OMOD property enum selection).
+                    let child_ctx = ctx.with_outer_struct(struct_out.clone());
+                    for _ in 0..n {
+                        if pos + elem_size > data.len() {
+                            break;
                         }
-                        if !items.is_empty() {
-                            struct_out.insert(name.clone(), Value::Array(items));
-                        }
+                        let v =
+                            decode_field_value(&child_ctx, element, &data[pos..pos + elem_size]);
+                        items.push(v);
+                        pos += elem_size;
+                    }
+                    if !items.is_empty() {
+                        struct_out.insert(name.clone(), Value::Array(items));
                     }
                 }
             }
@@ -1473,15 +1464,15 @@ fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
         } => (*from_version, *below_version),
         _ => (None, None),
     };
-    if let Some(v) = from_v {
-        if form_version < v {
-            return false;
-        }
+    if let Some(v) = from_v
+        && form_version < v
+    {
+        return false;
     }
-    if let Some(v) = below_v {
-        if form_version >= v {
-            return false;
-        }
+    if let Some(v) = below_v
+        && form_version >= v
+    {
+        return false;
     }
     true
 }
@@ -1574,10 +1565,10 @@ fn choose_union_variant(
 
 /// Resolve the target record signature for a decoded sibling FormID field.
 fn sibling_target_sig(value: &Value, ctx: &DecodeContext<'_>) -> Option<String> {
-    if let Value::Object(o) = value {
-        if let Some(rt) = o.get("record_type").and_then(|v| v.as_str()) {
-            return Some(rt.to_string());
-        }
+    if let Value::Object(o) = value
+        && let Some(rt) = o.get("record_type").and_then(|v| v.as_str())
+    {
+        return Some(rt.to_string());
     }
     let id = match value {
         Value::String(s) => parse_formid(s).ok(),

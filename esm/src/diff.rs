@@ -216,10 +216,10 @@ pub fn diff_databases_with(
         }
         let mut stub = record_stub_from_db(b, &meta, *id)?;
         // Decode fields best-effort (never aborts the diff on failure).
-        if let Some(depth) = depth {
-            if let Ok(r) = b.record_by_formid_resolved(*id, depth) {
-                stub.fields = Some(r.fields);
-            }
+        if let Some(depth) = depth
+            && let Ok(r) = b.record_by_formid_resolved(*id, depth)
+        {
+            stub.fields = Some(r.fields);
         }
         added.push(stub);
     }
@@ -235,10 +235,10 @@ pub fn diff_databases_with(
         let mut stub = record_stub_from_db(a, &meta, *id)?;
         // Old-side decode: any FormID refs resolve against A, which is
         // correct since the referenced records may no longer exist in B.
-        if let Some(depth) = depth {
-            if let Ok(r) = a.record_by_formid_resolved(*id, depth) {
-                stub.fields = Some(r.fields);
-            }
+        if let Some(depth) = depth
+            && let Ok(r) = a.record_by_formid_resolved(*id, depth)
+        {
+            stub.fields = Some(r.fields);
         }
         removed.push(stub);
     }
@@ -907,10 +907,10 @@ fn strip_restamp_leaves(map: &mut serde_json::Map<String, Value>, sig: &str) {
     let keys: Vec<String> = map.keys().cloned().collect();
     let mut to_remove = Vec::new();
     for key in keys {
-        if let Some(value) = map.get_mut(&key) {
-            if should_drop_after_strip(value, sig, &key) {
-                to_remove.push(key);
-            }
+        if let Some(value) = map.get_mut(&key)
+            && should_drop_after_strip(value, sig, &key)
+        {
+            to_remove.push(key);
         }
     }
     for key in to_remove {
@@ -1033,10 +1033,10 @@ fn wrap_array_diff(inner: serde_json::Map<String, Value>) -> Value {
 fn unwrap_wrapper(
     m: &serde_json::Map<String, Value>,
 ) -> (Option<&str>, &serde_json::Map<String, Value>) {
-    if m.len() == 1 {
-        if let Some((k, Value::Object(inner))) = m.iter().next() {
-            return (Some(k.as_str()), inner);
-        }
+    if m.len() == 1
+        && let Some((k, Value::Object(inner))) = m.iter().next()
+    {
+        return (Some(k.as_str()), inner);
     }
     (None, m)
 }

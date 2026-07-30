@@ -42,15 +42,15 @@ pub(super) fn doc_index_in_present_signature_scope(
     ctx: &DecodeContext<'_>,
     doc_index: usize,
 ) -> bool {
-    if let Some(min) = ctx.scope_min_doc_index {
-        if doc_index < min {
-            return false;
-        }
+    if let Some(min) = ctx.scope_min_doc_index
+        && doc_index < min
+    {
+        return false;
     }
-    if let Some(max) = ctx.scope_max_doc_index {
-        if doc_index >= max {
-            return false;
-        }
+    if let Some(max) = ctx.scope_max_doc_index
+        && doc_index >= max
+    {
+        return false;
     }
     true
 }
