@@ -57,9 +57,9 @@
 
 use crate::ipc::RecordSel;
 use crate::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
 /// Record types whose Conditions are checked for a `WornHasKeyword` (or
@@ -667,7 +667,7 @@ fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) ->
                 detail: json!({"note": "fetch failed: no response"}),
                 hop_depth: None,
                 path_chain: None,
-            }
+            };
         }
         Some(e) => e,
     };

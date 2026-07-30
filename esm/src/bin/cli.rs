@@ -1,8 +1,8 @@
 use anyhow::Context as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use esm::backend::{
-    daemon_fresh, read_daemon_info, start_daemon_process, stop_daemon, LocalBackend, QueryBackend,
-    RemoteBackend,
+    LocalBackend, QueryBackend, RemoteBackend, daemon_fresh, read_daemon_info,
+    start_daemon_process, stop_daemon,
 };
 use esm::ipc::{Op, RecordSel};
 use esm::{

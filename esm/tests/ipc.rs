@@ -4,7 +4,7 @@ use common::{
     append_record, append_subrecord, cstr, make_minimal_esm, tes4_header, unique_temp_path,
     wrap_grup,
 };
-use esm::ipc::{dispatch, Op, RecordSel, Request, Response};
+use esm::ipc::{Op, RecordSel, Request, Response, dispatch};
 use esm::registry::Registry;
 use esm::{
     BodyDetail, BulkRecordEntry, Database, DiffOptions, DiffResult, ResolveDepth, SearchField,

@@ -1,8 +1,8 @@
-use crate::decode::{decode_record, DecodeContext, ResolveDepth};
-use crate::formid::{parse_formid, FormId};
+use crate::decode::{DecodeContext, ResolveDepth, decode_record};
+use crate::formid::{FormId, parse_formid};
 use crate::reader::{
-    edid_from_subrecords, inline_string_from_subrecords, lstring_id_from_subrecords, EsmFile,
-    RecordMeta,
+    EsmFile, RecordMeta, edid_from_subrecords, inline_string_from_subrecords,
+    lstring_id_from_subrecords,
 };
 use crate::schema::Schema;
 use crate::strings::Localization;

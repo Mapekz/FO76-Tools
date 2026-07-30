@@ -1,6 +1,6 @@
 mod common;
 
-use esm::curves::{ba2_internal_path, eval, CurveIndex, CurvePoint};
+use esm::curves::{CurveIndex, CurvePoint, ba2_internal_path, eval};
 use esm::index::Index;
 use esm::reader::EsmFile;
 use esm::{Database, FormId, ResolveDepth};

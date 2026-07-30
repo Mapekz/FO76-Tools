@@ -21,8 +21,13 @@ subproject is tracked in the repo-root [`todos.md`](../todos.md).
 
 ## Requirements
 
-- Toolchain pinned to **Rust 1.96.0** via `rust-toolchain.toml` (rustup installs it automatically).
-- MSRV **1.82** (`Option::is_none_or`), declared as `rust-version` in `Cargo.toml`.
+- Toolchain pinned to **Rust 1.97.1** via `rust-toolchain.toml` (rustup installs it automatically).
+- Edition **2024**.
+- `rust-version` in `Cargo.toml` tracks the pinned toolchain (**1.97**) rather than the true language
+  floor. Edition 2024 selects Cargo's MSRV-aware dependency resolver, which treats `rust-version` as
+  a ceiling on dependency selection — a lower value would silently hold dependencies back at older
+  releases. This crate has no external consumers, so there is nothing to gain from a low MSRV. The
+  `bindings/napi` member declares the same value.
 
 ## Build
 

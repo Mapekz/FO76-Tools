@@ -2,8 +2,8 @@ mod common;
 
 use common::{make_xref_esm, unique_temp_path};
 use esm::ipc::{
-    dispatch_op, find_ref_path, referenced_by_enriched, referenced_by_enriched_multi, resolve_sel,
-    Op, RecordSel, RefList,
+    Op, RecordSel, RefList, dispatch_op, find_ref_path, referenced_by_enriched,
+    referenced_by_enriched_multi, resolve_sel,
 };
 use esm::{Database, EntryPointRef, EntryPointSpec, FormId};
 use std::io::Write;
@@ -1223,10 +1223,11 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
     );
     let ids: Vec<&str> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
     assert_eq!(ids, vec![FormId(30).display(), FormId(32).display()]);
-    assert!(list
-        .rows
-        .iter()
-        .all(|r| r.record_type.as_deref() == Some("CONT")));
+    assert!(
+        list.rows
+            .iter()
+            .all(|r| r.record_type.as_deref() == Some("CONT"))
+    );
     // Legend still attributable via inherited entry_points even with no
     // depth-0 carrier rows.
     assert!(list.rows.iter().all(|r| !r.entry_points.is_empty()));
@@ -1315,10 +1316,11 @@ fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
     let list: RefList = serde_json::from_value(v).expect("RefList");
 
     assert!(list.target.contains("Mod Percent Blocked"));
-    assert!(list
-        .rows
-        .iter()
-        .any(|r| r.depth == 0 && r.form_id == FormId(10).display()));
+    assert!(
+        list.rows
+            .iter()
+            .any(|r| r.depth == 0 && r.form_id == FormId(10).display())
+    );
 
     let _ = std::fs::remove_file(&path);
 }

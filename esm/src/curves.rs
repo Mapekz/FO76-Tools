@@ -229,10 +229,9 @@ fn parse_curve_json(bytes: &[u8]) -> Option<Vec<CurvePoint>> {
     // Support both top-level array and {"curve": [...]} wrapper
     let arr = if v.is_array() {
         v.as_array()?.to_vec()
-    } else if let Some(inner) = v.get("curve").or_else(|| v.get("points")) {
-        inner.as_array()?.to_vec()
     } else {
-        return None;
+        let inner = v.get("curve").or_else(|| v.get("points"))?;
+        inner.as_array()?.to_vec()
     };
 
     let mut points: Vec<CurvePoint> = arr

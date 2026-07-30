@@ -1,9 +1,9 @@
 //! Query backends: in-process (`LocalBackend`) and HTTP daemon client (`RemoteBackend`).
 
+use crate::SearchField;
 use crate::ipc::{self, Op, Request, Response};
 use crate::registry::Registry;
-use crate::SearchField;
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

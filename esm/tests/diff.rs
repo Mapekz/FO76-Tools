@@ -118,14 +118,16 @@ fn vmad_property_value_change_is_reported() {
 #[test]
 fn vmad_struct_array_inner_reorder_is_not_a_change() {
     let wave = |order: [&str; 3]| {
-        json!(order
-            .iter()
-            .map(|n| match *n {
-                "IDString" => json!({"name": "IDString", "type": 2, "value": "Entourage"}),
-                "Difficulty" => json!({"name": "Difficulty", "type": 3, "value": 2}),
-                _ => json!({"name": "SpawnArea", "type": 1, "value": "0x0000123F"}),
-            })
-            .collect::<Vec<_>>())
+        json!(
+            order
+                .iter()
+                .map(|n| match *n {
+                    "IDString" => json!({"name": "IDString", "type": 2, "value": "Entourage"}),
+                    "Difficulty" => json!({"name": "Difficulty", "type": 3, "value": 2}),
+                    _ => json!({"name": "SpawnArea", "type": 1, "value": "0x0000123F"}),
+                })
+                .collect::<Vec<_>>()
+        )
     };
     let a = json!({"value": [wave(["IDString", "Difficulty", "SpawnArea"])]});
     let b = json!({"value": [wave(["SpawnArea", "IDString", "Difficulty"])]});

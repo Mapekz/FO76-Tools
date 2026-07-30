@@ -1,5 +1,5 @@
 use crate::curves::Curve;
-use crate::formid::{parse_formid, FormId};
+use crate::formid::{FormId, parse_formid};
 use crate::reader::OwnedSubrecord;
 use crate::schema::{
     ArrayCount, EnumFormat, FieldDef, IntegerWidth, LStringTable, MemberDef, Schema, UnionDecider,
@@ -7,7 +7,7 @@ use crate::schema::{
 };
 use crate::strings::{Localization, StringKind};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::collections::{HashMap, VecDeque};
 
 mod rules;
@@ -16,7 +16,7 @@ mod vmad;
 
 #[cfg(test)]
 pub(crate) use rules::apply_weapon_bash_curve;
-use rules::{apply_post_decode_rules, PostDecodeTarget};
+use rules::{PostDecodeTarget, apply_post_decode_rules};
 use scope::*;
 pub use vmad::decode_vmad;
 use vmad::{
@@ -1682,10 +1682,11 @@ pub(crate) fn json_f32(f: f32) -> Value {
     if !f.is_finite() {
         return json!(f);
     }
-    json!(f
-        .to_string()
-        .parse::<f64>()
-        .expect("f32::to_string output must parse as f64"))
+    json!(
+        f.to_string()
+            .parse::<f64>()
+            .expect("f32::to_string output must parse as f64")
+    )
 }
 
 fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
@@ -2894,15 +2895,15 @@ mod tests {
         // scripts array.
         let mut data = vmad_header(2, 0);
         data.push(4); // extra_bind_data_version (s8)
-                      // script_entry: name + status + prop_count=1 + one Object property
+        // script_entry: name + status + prop_count=1 + one Object property
         data.extend(vmad_wstring("Arcade_PrizeTerminal_Tier02"));
         data.push(0); // status
         data.extend_from_slice(&1u16.to_le_bytes()); // prop_count
         data.extend(vmad_wstring("Form_NWOTShirt"));
         data.push(1); // type = object
         data.push(1); // status
-                      // Object format 2: Unused(u16) + Alias(s16) + FormID(u32) =
-                      // 0x006677E5 (little-endian, matching the real ESM bytes).
+        // Object format 2: Unused(u16) + Alias(s16) + FormID(u32) =
+        // 0x006677E5 (little-endian, matching the real ESM bytes).
         data.extend_from_slice(&[0x00, 0x00, 0xff, 0xff, 0xe5, 0x77, 0x66, 0x00]);
         data.extend_from_slice(&0u16.to_le_bytes()); // frag_count = 0
 
@@ -3059,10 +3060,11 @@ mod tests {
         let mut out = weap_bash_fixture("Gun", 5.0, curve, None);
         apply_weapon_bash_curve(&mut out);
         assert_eq!(bash_damage_source(&out), Some("curve_zero_reference"));
-        assert!(out
-            .get("Bash Damage")
-            .and_then(|v| v.get("curve"))
-            .is_none());
+        assert!(
+            out.get("Bash Damage")
+                .and_then(|v| v.get("curve"))
+                .is_none()
+        );
     }
 
     #[test]

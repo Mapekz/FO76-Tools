@@ -22,18 +22,18 @@ pub mod tree;
 pub mod walk;
 pub mod wildcard;
 
-use crate::decode::{decode_record, DecodeContext};
+use crate::decode::{DecodeContext, decode_record};
 use crate::formid::parse_formid;
 use crate::index::Index;
-use crate::reader::{edid_from_subrecords, EsmFile, FileInfo, ParsedRecord, RecordHeaderInfo};
+use crate::reader::{EsmFile, FileInfo, ParsedRecord, RecordHeaderInfo, edid_from_subrecords};
 use crate::schema::Schema;
 use crate::strings::{Localization, StringKind};
 use crate::tree::ChildRef;
 use crate::wildcard::wildcard_match;
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
 pub use diff::{
-    apply_type_filter, BodyDetail, DiffOptions, DiffResult, RecordDiff, RecordStub, RefName,
+    BodyDetail, DiffOptions, DiffResult, RecordDiff, RecordStub, RefName, apply_type_filter,
 };
 pub use formid::FormId;
 pub use index::SearchMeta;
@@ -1588,7 +1588,7 @@ pub fn looks_like_formid(s: &str) -> bool {
 
 #[cfg(test)]
 mod filter_predicate_tests {
-    use super::{predicate_matches, FilterOp};
+    use super::{FilterOp, predicate_matches};
     use serde_json::json;
 
     #[test]

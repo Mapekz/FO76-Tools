@@ -14,11 +14,11 @@
 //! prevents those unused-helper warnings from becoming errors under `-D warnings`.
 #![allow(dead_code)]
 
+use esm::Database;
 use esm::decode::{DecodeContext, ResolveDepth};
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
 use esm::schema::Schema;
-use esm::Database;
 use serde_json::Value;
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -116,7 +116,7 @@ pub fn make_minimal_esm() -> Vec<u8> {
     buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
     buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
     buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
-                                                // TES4 data_size=0, so no payload bytes
+    // TES4 data_size=0, so no payload bytes
 
     // GRUP header: sig=GRUP, group_size=72, label=WEAP, group_type=0, stamp=0, unknown=0
     // group_size = 24 (header) + 24 (rec1) + 24 (rec2) = 72

@@ -5,7 +5,7 @@
 use esm::chase::ChaseFetcher;
 use esm::ipc::RecordSel;
 use esm::reader::RecordHeaderInfo;
-use esm::walk::{build_refs_digest, render_text, walk, WalkOptions, WalkResult};
+use esm::walk::{WalkOptions, WalkResult, build_refs_digest, render_text, walk};
 use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use serde_json::json;
 use std::collections::HashMap;
@@ -232,9 +232,11 @@ fn perk_digest_no_effects_variant() {
     let mut f = perk_fixture();
     let result = walk(&mut f, sel(PERK_NO_EFFECTS_FID), &WalkOptions { depth: 1 }).unwrap();
     let lines = node_digest(&result, PERK_NO_EFFECTS_FID);
-    assert!(lines
-        .iter()
-        .any(|l| l.contains("NO effects — bonus is engine/script-side (description only)")));
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("NO effects — bonus is engine/script-side (description only)"))
+    );
 }
 
 // ─── magic-item digest: GLOB flat-wins both ways ───────────────────────────
@@ -322,7 +324,7 @@ fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
                 depth: 1,
                 path: Vec::new(),
                 field_paths: Some(vec![
-                    "Effects[0].Conditions.Conditions[0].Parameter 1".to_string()
+                    "Effects[0].Conditions.Conditions[0].Parameter 1".to_string(),
                 ]),
                 ..Default::default()
             }],
@@ -481,10 +483,12 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
         digest.groups[0].tag.as_deref(),
         Some("  [player-facing signal]")
     );
-    assert!(digest.groups[0]
-        .sample
-        .iter()
-        .any(|s| s == "co_Weapon_Test_NONPLAYABLE ⚠NONPLAYABLE"));
+    assert!(
+        digest.groups[0]
+            .sample
+            .iter()
+            .any(|s| s == "co_Weapon_Test_NONPLAYABLE ⚠NONPLAYABLE")
+    );
 
     let lvli = digest
         .groups
@@ -540,8 +544,11 @@ fn render_text_refs_summary_ends_with_reminder_when_nonempty() {
     let text = render_text(&result);
     assert!(text.contains("QUST ×1: MQ000"));
     assert!(text.contains("[player-facing signal]"));
-    assert!(text
-        .contains("Reminder: the record graph cannot distinguish shipped from UNRELEASED content"));
+    assert!(
+        text.contains(
+            "Reminder: the record graph cannot distinguish shipped from UNRELEASED content"
+        )
+    );
 }
 
 // ─── not-found search fallback ──────────────────────────────────────────────

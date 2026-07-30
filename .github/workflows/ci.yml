@@ -9,7 +9,7 @@ jobs:
   # ── Rust: fmt / clippy / test ──────────────────────────────────────────────
   #
   # Matrix covers both independent Rust crates.  Each crate has its own
-  # rust-toolchain.toml (both currently pin 1.96.0); setup-rust-toolchain reads
+  # rust-toolchain.toml (both currently pin 1.97.1); setup-rust-toolchain reads
   # that file automatically so CI always matches the pinned local toolchain.
   rust:
     name: ${{ matrix.crate }} (fmt / clippy / test)

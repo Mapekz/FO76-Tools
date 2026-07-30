@@ -4,14 +4,14 @@
 //! for unchanged records; only records with different payloads are decoded and
 //! field-diffed via `json_diff`.
 
+use crate::Database;
 use crate::decode::ResolveDepth;
-use crate::formid::{parse_formid, FormId};
+use crate::formid::{FormId, parse_formid};
 use crate::reader::{
-    edid_from_subrecords, inline_string_from_subrecords, lstring_id_from_subrecords, OwnedSubrecord,
+    OwnedSubrecord, edid_from_subrecords, inline_string_from_subrecords, lstring_id_from_subrecords,
 };
 use crate::schema::{MemberDef, Schema};
 use crate::strings::StringKind;
-use crate::Database;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -799,7 +799,7 @@ const MATERIALIZED_ON_RESAVE: &[(&str, &str)] = &[("INFO", "Previous INFO")];
 /// is conservatively treated as non-zero — only unambiguous all-zero padding
 /// is ever eligible for suppression.
 fn is_zero_hex(hex: &str) -> bool {
-    hex.len() % 2 == 0 && hex.bytes().all(|b| b == b'0')
+    hex.len().is_multiple_of(2) && hex.bytes().all(|b| b == b'0')
 }
 
 /// True when `v` is the decoder's raw-bytes-fallback shape `{"hex": H,

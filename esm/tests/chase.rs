@@ -9,7 +9,7 @@
 //! `RefList` keyed by `(target, type_filter)` — the exact two calls
 //! `chase()`'s reverse-chase makes (one per `CONSUMER_TYPES` entry).
 
-use esm::chase::{chase, render_text, ChaseFetcher, ChaseOptions, EffectHopKind, HopKind};
+use esm::chase::{ChaseFetcher, ChaseOptions, EffectHopKind, HopKind, chase, render_text};
 use esm::ipc::RecordSel;
 use esm::reader::RecordHeaderInfo;
 use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
@@ -410,7 +410,7 @@ fn fixture() -> FakeFetcher {
                 depth: 1,
                 path: Vec::new(),
                 field_paths: Some(vec![
-                    "Effects[0].Conditions.Conditions[0].Parameter 1".to_string()
+                    "Effects[0].Conditions.Conditions[0].Parameter 1".to_string(),
                 ]),
                 ..Default::default()
             }],

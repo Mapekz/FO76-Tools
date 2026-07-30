@@ -1,6 +1,6 @@
 //! Wire types and the canonical `dispatch` function shared by CLI, daemon, and N-API.
 
-use crate::diff::{diff_databases_with, DiffOptions};
+use crate::diff::{DiffOptions, diff_databases_with};
 use crate::registry::Registry;
 use crate::{
     Database, EntryPointRef, EntryPointSpec, FilterOp, FormId, RecordRow, ResolveDepth, SearchField,

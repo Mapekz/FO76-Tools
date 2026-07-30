@@ -1,10 +1,10 @@
 use crate::compress::decompress_record_data;
 use crate::format::{
-    GroupHeader, RecordHeader, Signature, Subrecord, SubrecordHeader, COMPRESSED_FLAG, GRUP_SIG,
-    HEADER_SIZE, SUBRECORD_HEADER_SIZE, TES4_SIG, XXXX_SIG,
+    COMPRESSED_FLAG, GRUP_SIG, GroupHeader, HEADER_SIZE, RecordHeader, SUBRECORD_HEADER_SIZE,
+    Signature, Subrecord, SubrecordHeader, TES4_SIG, XXXX_SIG,
 };
 use crate::formid::FormId;
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use memmap2::Mmap;
 use serde::{Deserialize, Serialize};
 use std::fs::File;

@@ -3,7 +3,7 @@
 //! Parses BTDX/GNRL BA2 files for extracting named file blobs.
 //! Texture (DX10) archives are not supported.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use memmap2::Mmap;
 use std::collections::HashMap;
 use std::fs::File;

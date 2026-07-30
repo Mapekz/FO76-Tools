@@ -4,11 +4,21 @@ members = [".", "bindings/napi"]
 [package]
 name = "esm"
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.82"
+edition = "2024"
+rust-version = "1.97"
 
 [features]
 server = ["dep:tokio", "dep:axum", "dep:tower-http"]
+
+[lints.clippy]
+# TEMPORARY — removed by the follow-up let-chain commit.
+#
+# Edition 2024 with rust-version 1.97 makes let-chains available, so clippy now
+# wants 54 nested `if`s collapsed into `if a && let Some(b) = c` form. 25 of
+# those sites are in the decoder, which needs verification against real game
+# data rather than a blind rewrite, so the conversion lands as its own commit
+# instead of riding along with the mechanical edition bump.
+collapsible_if = "allow"
 
 [lib]
 name = "esm"

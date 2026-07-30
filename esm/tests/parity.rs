@@ -14,7 +14,7 @@ mod common;
 
 use common::{make_xref_esm, unique_temp_path};
 use esm::diff::DiffOptions;
-use esm::ipc::{diff_locked, diff_pair, dispatch, dispatch_op, Op, RecordSel, Request, Response};
+use esm::ipc::{Op, RecordSel, Request, Response, diff_locked, diff_pair, dispatch, dispatch_op};
 use esm::registry::Registry;
 use esm::{Database, FormId, ResolveDepth, SearchField};
 use std::io::Write;

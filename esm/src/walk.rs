@@ -41,7 +41,7 @@
 //!   the raw rows to [`build_refs_digest`] (a pure function, easily unit
 //!   tested without any fetcher).
 
-use crate::chase::{consumer_refs_by_type, ChaseFetcher};
+use crate::chase::{ChaseFetcher, consumer_refs_by_type};
 use crate::ipc::RecordSel;
 use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
 use anyhow::Context as _;

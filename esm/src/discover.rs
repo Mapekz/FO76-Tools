@@ -12,7 +12,7 @@
 //! - **Curves**: prefer `misc/curvetables/json` or `curvetables/json` in the
 //!   folder; else any `.ba2` in the folder whose name contains `"startup"`.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
 
 /// Source for string tables found next to an ESM.

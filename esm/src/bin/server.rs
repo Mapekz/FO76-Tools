@@ -5,19 +5,19 @@
 //! MCP proxy:    `esm-server --mcp-stdio <ESM>`
 
 use axum::{
+    Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Json, Response},
     routing::{get, post},
-    Router,
 };
 use clap::Parser;
-use esm::backend::{
-    exe_sig, generate_token, remove_daemon_info, shared_registry, write_daemon_info, DaemonInfo,
-    QueryBackend, RemoteBackend, SharedRegistry,
-};
-use esm::ipc::{dispatch, dispatch_op, Op, RecordSel, Request, Response as OpResponse};
 use esm::ResolveDepth;
+use esm::backend::{
+    DaemonInfo, QueryBackend, RemoteBackend, SharedRegistry, exe_sig, generate_token,
+    remove_daemon_info, shared_registry, write_daemon_info,
+};
+use esm::ipc::{Op, RecordSel, Request, Response as OpResponse, dispatch, dispatch_op};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -581,8 +581,8 @@ fn call_tool_proxy(
     name: &str,
     args: &serde_json::Value,
 ) -> anyhow::Result<String> {
-    use esm::ipc::Op;
     use esm::SearchField;
+    use esm::ipc::Op;
 
     match name {
         "esm_file_info" => {

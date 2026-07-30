@@ -13,7 +13,7 @@
 //! For `.dlstrings` / `.ilstrings`:  `data[offset..]` starts with a u32 LE `len`
 //!   followed by `len` UTF-8 bytes; `len` *includes* the NUL terminator.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::collections::HashMap;
 
 /// Which string table a localised string belongs to.

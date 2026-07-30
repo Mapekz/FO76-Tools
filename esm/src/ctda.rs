@@ -4,10 +4,10 @@
 //! type byte, resolves the function index to a human-readable name, and decodes
 //! each parameter field according to the function's declared parameter types.
 
-use crate::decode::{hex, json_f32, resolve_formid, DecodeContext};
+use crate::decode::{DecodeContext, hex, json_f32, resolve_formid};
 use crate::formid::FormId;
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use std::sync::OnceLock;
 
 // Comparison operators encoded in bits 5-7 of the CTDA type byte.
