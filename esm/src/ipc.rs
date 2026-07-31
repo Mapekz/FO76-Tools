@@ -1076,7 +1076,10 @@ fn referenced_by_walk(
                 continue;
             }
 
-            let record_type = db.index.get_by_formid(fid).map(|m| m.signature.clone());
+            let record_type = db
+                .index
+                .get_by_formid(fid)
+                .map(|m| m.signature.as_str().to_owned());
 
             if type_matches(&record_type) {
                 let field_paths = if include_paths {
@@ -1570,7 +1573,7 @@ pub fn coverage_report(
         .index
         .form_index
         .values()
-        .map(|m| m.signature.clone())
+        .map(|m| m.signature.as_str().to_owned())
         .collect::<HashSet<_>>()
         .into_iter()
         .collect();
@@ -1591,7 +1594,7 @@ pub fn coverage_report(
             .index
             .records_by_type(sig)
             .into_iter()
-            .map(|(_, m)| m.clone())
+            .map(|(_, m)| *m)
             .take(if sample == 0 { usize::MAX } else { sample })
             .collect();
 

@@ -1,4 +1,5 @@
 use crate::decode::{DecodeContext, ResolveDepth, decode_record};
+use crate::format::Signature;
 use crate::formid::{FormId, parse_formid};
 use crate::reader::{
     EsmFile, RecordMeta, edid_from_subrecords, inline_string_from_subrecords,
@@ -82,7 +83,7 @@ pub struct Index {
     cache_path: PathBuf,
     xref_index: Option<HashMap<FormId, Vec<FormId>>>,
     search_index: Option<HashMap<FormId, SearchMeta>>,
-    type_index: HashMap<String, Vec<FormId>>,
+    type_index: HashMap<Signature, Vec<FormId>>,
 }
 
 impl Index {
@@ -126,7 +127,7 @@ impl Index {
 
     pub fn records_by_type(&self, sig: &str) -> Vec<(FormId, &RecordMeta)> {
         self.type_index
-            .get(sig)
+            .get(&Signature::from_slice(sig.as_bytes()))
             .map(|ids| {
                 ids.iter()
                     .filter_map(|id| self.form_index.get(id).map(|m| (*id, m)))
@@ -163,11 +164,8 @@ impl Index {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default();
 
-        let form_index: HashMap<u32, RecordMeta> = self
-            .form_index
-            .iter()
-            .map(|(k, v)| (k.raw(), v.clone()))
-            .collect();
+        let form_index: HashMap<u32, RecordMeta> =
+            self.form_index.iter().map(|(k, v)| (k.raw(), *v)).collect();
         let edid_index = self.edid_index.as_ref().map(|m| {
             m.iter()
                 .map(|(k, v)| (k.clone(), v.raw()))
@@ -347,13 +345,10 @@ impl Index {
     }
 }
 
-fn build_type_index(form_index: &HashMap<FormId, RecordMeta>) -> HashMap<String, Vec<FormId>> {
-    let mut type_index: HashMap<String, Vec<FormId>> = HashMap::new();
+fn build_type_index(form_index: &HashMap<FormId, RecordMeta>) -> HashMap<Signature, Vec<FormId>> {
+    let mut type_index: HashMap<Signature, Vec<FormId>> = HashMap::new();
     for (id, meta) in form_index {
-        type_index
-            .entry(meta.signature.clone())
-            .or_default()
-            .push(*id);
+        type_index.entry(meta.signature).or_default().push(*id);
     }
     for ids in type_index.values_mut() {
         ids.sort_by_key(|id| id.raw());
@@ -584,7 +579,7 @@ mod tests {
             weap1,
             RecordMeta {
                 offset: 0,
-                signature: "WEAP".into(),
+                signature: Signature::from_slice(b"WEAP"),
                 flags: 0,
                 form_version: 155,
             },
@@ -593,7 +588,7 @@ mod tests {
             weap2,
             RecordMeta {
                 offset: 100,
-                signature: "WEAP".into(),
+                signature: Signature::from_slice(b"WEAP"),
                 flags: 0,
                 form_version: 155,
             },
@@ -602,7 +597,7 @@ mod tests {
             npc_,
             RecordMeta {
                 offset: 200,
-                signature: "NPC_".into(),
+                signature: Signature::from_slice(b"NPC_"),
                 flags: 0,
                 form_version: 155,
             },

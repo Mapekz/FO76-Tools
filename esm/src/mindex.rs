@@ -29,6 +29,7 @@
 //!
 //! Entries start immediately after the header at byte 40.
 
+use crate::format::Signature;
 use crate::formid::FormId;
 use crate::index::unique_tmp_path;
 use crate::reader::{EsmFile, RecordMeta};
@@ -199,9 +200,11 @@ fn read_entry(mmap: &[u8], off: usize) -> RecordMeta {
     let file_off = u64::from_le_bytes(mmap[off + 8..off + 16].try_into().unwrap());
     let sig_bytes = &mmap[off + 16..off + 20];
     let form_version = u16::from_le_bytes(mmap[off + 20..off + 22].try_into().unwrap());
-    let signature = String::from_utf8_lossy(sig_bytes)
-        .trim_end_matches('\0')
-        .to_string();
+    // No NUL-trimming needed: `Signature::from_slice` always produces exactly
+    // 4 bytes, and on-disk signatures are always exactly 4 ASCII bytes (see
+    // `write_midx_file` below) — any trailing NUL padding is preserved as-is
+    // rather than being significant.
+    let signature = Signature::from_slice(sig_bytes);
     RecordMeta {
         offset: file_off,
         signature,
@@ -296,10 +299,8 @@ fn write_midx_file(
         buf[off..off + 4].copy_from_slice(&form_id.to_le_bytes());
         buf[off + 4..off + 8].copy_from_slice(&meta.flags.to_le_bytes());
         buf[off + 8..off + 16].copy_from_slice(&meta.offset.to_le_bytes());
-        // Signature: up to 4 ASCII bytes, NUL-padded (rest already 0)
-        let sig = meta.signature.as_bytes();
-        let sig_len = sig.len().min(4);
-        buf[off + 16..off + 16 + sig_len].copy_from_slice(&sig[..sig_len]);
+        // Signature: always exactly 4 bytes.
+        buf[off + 16..off + 20].copy_from_slice(&meta.signature.0);
         buf[off + 20..off + 22].copy_from_slice(&meta.form_version.to_le_bytes());
         // [off+22..off+24] = _pad, already 0
     }
@@ -332,7 +333,7 @@ mod tests {
     fn make_meta(offset: u64, sig: &str, flags: u32, form_version: u16) -> RecordMeta {
         RecordMeta {
             offset,
-            signature: sig.to_string(),
+            signature: Signature::from_slice(sig.as_bytes()),
             flags,
             form_version,
         }

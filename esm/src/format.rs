@@ -8,7 +8,7 @@ pub const TES4_SIG: [u8; 4] = *b"TES4";
 pub const GRUP_SIG: [u8; 4] = *b"GRUP";
 pub const XXXX_SIG: [u8; 4] = *b"XXXX";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Signature(pub [u8; 4]);
 
 impl Signature {
@@ -27,6 +27,31 @@ impl Signature {
 impl std::fmt::Display for Signature {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+/// Serde helper for struct fields that must stay a genuine `Signature` for
+/// internal Rust use (e.g. `HashMap` keys, `.as_str()` calls) but need to
+/// cross a JSON API boundary as the plain 4-character ASCII string
+/// (`"WEAP"`) rather than `Signature`'s default derive.
+///
+/// `Signature`'s own `#[derive(...)]` deliberately does not include
+/// `Serialize`/`Deserialize` — a derive would serialize the raw `[u8; 4]`
+/// byte array (`[87,69,65,80]`), not the ASCII string. Apply this module
+/// instead, per-field, via `#[serde(with = "crate::format::serde_str")]`,
+/// wherever a struct's `Signature` field is meant for JSON output/input
+/// specifically (see `RecordMeta::signature`).
+pub mod serde_str {
+    use super::Signature;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(sig: &Signature, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(sig.as_str())
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Signature, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Ok(Signature::from_slice(s.as_bytes()))
     }
 }
 

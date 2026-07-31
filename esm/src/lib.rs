@@ -880,7 +880,7 @@ impl Database {
 
             let meta = self.index.get_by_formid(*form_id);
             let offset = meta.map(|m| m.offset).unwrap_or(0);
-            let record_type = meta.map(|m| m.signature.clone());
+            let record_type = meta.map(|m| m.signature.as_str().to_owned());
 
             matches.push((
                 form_id.raw(),
@@ -924,7 +924,7 @@ impl Database {
             .into_iter()
             .skip(offset)
             .take(if limit == 0 { usize::MAX } else { limit })
-            .map(|(fid, meta)| (fid, meta.offset, meta.signature.clone()))
+            .map(|(fid, meta)| (fid, meta.offset, meta.signature.as_str().to_owned()))
             .collect();
         let mut out = Vec::new();
         for (form_id, rec_offset, record_type) in records {
@@ -991,7 +991,7 @@ impl Database {
             });
         Ok(Some(RecordRow {
             form_id: form_id.display(),
-            record_type: Some(meta.signature.clone()),
+            record_type: Some(meta.signature.as_str().to_owned()),
             editor_id,
             name,
             offset: meta.offset,

@@ -210,7 +210,7 @@ pub fn diff_databases_with(
     // Added: in B but not A
     let mut added = Vec::new();
     for id in b_ids.difference(&a_ids) {
-        let meta = b.index.form_index[id].clone();
+        let meta = b.index.form_index[id];
         if exclude_types.contains(meta.signature.as_str()) {
             continue;
         }
@@ -228,7 +228,7 @@ pub fn diff_databases_with(
     // Removed: in A but not B
     let mut removed = Vec::new();
     for id in a_ids.difference(&b_ids) {
-        let meta = a.index.form_index[id].clone();
+        let meta = a.index.form_index[id];
         if exclude_types.contains(meta.signature.as_str()) {
             continue;
         }
@@ -251,8 +251,8 @@ pub fn diff_databases_with(
     common_ids.sort_by_key(|id| id.raw());
 
     for id in common_ids {
-        let meta_a = a.index.form_index[&id].clone();
-        let meta_b = b.index.form_index[&id].clone();
+        let meta_a = a.index.form_index[&id];
+        let meta_b = b.index.form_index[&id];
 
         if exclude_types.contains(meta_a.signature.as_str()) {
             continue;
@@ -285,7 +285,7 @@ pub fn diff_databases_with(
         }
 
         if opts.suppress_noise {
-            strip_noise_fields(&mut field_changes, &meta_b.signature);
+            strip_noise_fields(&mut field_changes, meta_b.signature.as_str());
             // Suppress only pure appearances/disappearances whose schema
             // activation actually changes between these form versions. The
             // old blanket appearance rule discarded genuine new subrecords
@@ -294,18 +294,18 @@ pub fn diff_databases_with(
                 strip_version_gated_transitions(
                     &mut field_changes,
                     &b.schema,
-                    &meta_b.signature,
+                    meta_b.signature.as_str(),
                     meta_a.form_version,
                     meta_b.form_version,
                 );
                 // Second, independent pass: appearances/disappearances with
                 // NO schema gate at all that the re-save's newer serializer
                 // still manufactures — see module docs above `strip_restamp_appearances`.
-                strip_restamp_appearances(&mut field_changes, &meta_b.signature);
+                strip_restamp_appearances(&mut field_changes, meta_b.signature.as_str());
             }
             if is_empty_diff(&field_changes) {
                 *suppressed_counts
-                    .entry(meta_b.signature.clone())
+                    .entry(meta_b.signature.as_str().to_owned())
                     .or_insert(0) += 1;
                 continue;
             }
@@ -317,7 +317,7 @@ pub fn diff_databases_with(
         let stub = RecordStub {
             form_id: id.display(),
             editor_id: rb.editor_id.clone(),
-            record_type: meta_b.signature.clone(),
+            record_type: meta_b.signature.as_str().to_owned(),
             offset: meta_b.offset,
             name,
             description,
@@ -413,7 +413,7 @@ fn record_stub_from_db(
     Ok(RecordStub {
         form_id: id.display(),
         editor_id,
-        record_type: meta.signature.clone(),
+        record_type: meta.signature.as_str().to_owned(),
         offset: meta.offset,
         name,
         description,
@@ -471,7 +471,7 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
     for db in [primary, fallback] {
         if let Some(meta) = db.index.form_index.get(&id) {
             let offset = meta.offset;
-            let sig = meta.signature.clone();
+            let sig = meta.signature.as_str().to_owned();
             let rec = match db.parse_record_at(offset) {
                 Ok(r) => r,
                 Err(_) => continue,

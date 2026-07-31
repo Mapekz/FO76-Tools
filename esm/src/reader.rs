@@ -49,10 +49,11 @@ pub struct FileInfo {
     pub is_localized: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct RecordMeta {
     pub offset: u64,
-    pub signature: String,
+    #[serde(with = "crate::format::serde_str")]
+    pub signature: Signature,
     pub flags: u32,
     pub form_version: u16,
 }
@@ -284,7 +285,7 @@ where
             let rh = RecordHeader::parse(&slice[..HEADER_SIZE as usize])?;
             f(RecordMeta {
                 offset: pos,
-                signature: rh.signature.to_string(),
+                signature: rh.signature,
                 flags: rh.flags,
                 form_version: rh.form_version,
             })?;
