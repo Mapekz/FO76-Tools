@@ -121,7 +121,7 @@ digits.)
 Before any agent work, one warm call so the index loads once, up front:
 
 ```sh
-esm/target/release/esm -p --esm "$NEW_ESM" info
+esm/target/release/esm --esm "$NEW_ESM" info
 ```
 
 ## 4. Triage
@@ -214,16 +214,16 @@ Read every draft + report. Then, in order:
    owner's draft actually covers those FormIDs (search the draft text). Anything uncovered:
    chase it yourself now — extract the record diff, then for `mod_Custom_*`/unique-effect
    OMODs (or a PERK/SPEL/ALCH/ENCH selector directly) run
-   `esm/target/release/esm -p --esm "$NEW_ESM" chase <OMOD_OR_PERK_OR_SPEL_OR_ALCH_OR_ENCH>
-   --json`; for anything else, `esm/target/release/esm -p --esm "$NEW_ESM" refs <id> --type
+   `esm/target/release/esm --esm "$NEW_ESM" chase <OMOD_OR_PERK_OR_SPEL_OR_ALCH_OR_ENCH>
+   --json`; for anything else, `esm/target/release/esm --esm "$NEW_ESM" refs <id> --type
    <SIG> --paths --pretty` (one 4-char type per call) plus a bulk `get` for whatever it turns
    up — write the missing bullets. This step exists because deferrals DO fall through; never
    skip it.
-2. **Chase every `unresolved[]` item** worth a story: resolve it live via `esm -p chase` / bulk
+2. **Chase every `unresolved[]` item** worth a story: resolve it live via `esm chase` / bulk
    `get --resolve stub` / `refs --type <SIG> --paths` (never a loop of single-selector
    `get`s), soften it to "Unconfirmed:", or cut it. Never pass one through silently.
 3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself in ONE bulk call —
-   `esm/target/release/esm -p --esm "$NEW_ESM" get <id1> <id2> <id3> --resolve stub --pretty`.
+   `esm/target/release/esm --esm "$NEW_ESM" get <id1> <id2> <id3> --resolve stub --pretty`.
 4. **Merge `kb_proposals[]`** into the KB, routing by each proposal's `kind`: `mechanic` →
    `.claude/skills/patch-notes/kb/mechanics.md`, `trap` →
    `.claude/skills/patch-notes/kb/diff-traps.md`. These are the only files outside `$OUT` this
@@ -277,8 +277,8 @@ expansions in the printed summary either.
 - Never assert a record's liveness from an EDID prefix alone (`zzz_`/`CUT_`/`DEL_`/`POST_`).
   For PCRD-granted perks the clean signal is a PCRD listing the rank; item-granted perks
   (OMOD/ENCH Perks property) legitimately have no PCRD — verify the grant path instead via
-  `esm/target/release/esm -p --esm "$NEW_ESM" refs <perk-id> --type PCRD --paths --pretty`.
-- Every number in the final summary traces to the slice, an `--extract`, or a live `esm -p`
+  `esm/target/release/esm --esm "$NEW_ESM" refs <perk-id> --type PCRD --paths --pretty`.
+- Every number in the final summary traces to the slice, an `--extract`, or a live `esm`
   call this run — never memory, never estimation, never rounding.
 - Every lint reaching the summary was re-verified live this run.
 - DROP-tier bundles are dropped *with logged reasons* (`triage.json`); the printed summary

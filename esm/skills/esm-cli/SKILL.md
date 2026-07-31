@@ -21,19 +21,21 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   containing data folder. Exceptions: `diff <FILE_A> <FILE_B>` (two
   positionals), `daemon` (no path; resolves at spawn), and `skill` (no path —
   it only reads its own embedded doc).
-- **Always pass `-p` for one-shot calls** — it auto-spawns/uses a warm daemon
-  and exits after printing. Without `-p` the CLI drops into a REPL. `--local`
-  runs cold in-process (seconds per open — never use it for bulk work).
-- After rebuilding the binary or changing loose files next to the dump, run
-  `esm daemon stop` — the daemon caches both the old code and the loose-file
-  view.
+- Every subcommand is one-shot: it auto-spawns/uses a warm daemon and exits
+  after printing. There is no interactive mode — a missing subcommand is a
+  usage error, not a REPL. `--local` runs cold in-process (seconds per open —
+  never use it for bulk work).
+- Rebuilding the binary self-heals the daemon (a size+mtime fingerprint check
+  respawns it automatically) — no manual step needed. Changing loose files
+  next to the dump (strings/curvetables) does *not* self-heal: run
+  `esm daemon stop` after adding or changing those.
 
 ## Fetching records
 
 - Selectors are `0x...` formids or EditorIDs. Bare tokens that *look* numeric
   auto-resolve FormID-first with EditorID fallback; scripts should still pass
   explicit `--formid`/`--edid` where the flag exists to skip the ambiguity.
-- **Bulk get**: `esm -p get <sel1> <sel2> … --json` — one target returns the
+- **Bulk get**: `esm get <sel1> <sel2> … --json` — one target returns the
   classic single object; 2+ return a JSON array in input order, each entry
   tagged with its own `sel`. A bad selector becomes `{"sel":…, "error":…}` in
   the array instead of failing the call (the single-target form throws).
@@ -46,7 +48,7 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 
 ## Reverse references (`refs`)
 
-- `esm -p refs --formid <0x...> [--depth N] [--type SIG] [--paths] --json`.
+- `esm refs --formid <0x...> [--depth N] [--type SIG] [--paths] --json`.
 - `--depth` 1–8 (0 = unbounded, use with `--limit 0` and a `--type` filter — an
   unbounded walk over a hub-heavy graph like CELL/REFR can return hundreds of
   thousands of rows): direct referrers at 1; raise it to reach a target through
@@ -63,7 +65,7 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   the reverse of reading a PERK's own Entry Point off `get`/`walk`. It
   resolves to every PERK carrying that entry point, each emitted as its own
   `depth: 0` row (a `D` column appears in table output), then walks refs from
-  all of them at once: `esm -p refs --ep 'Mod Percent Blocked'` surfaces the
+  all of them at once: `esm refs --ep 'Mod Percent Blocked'` surfaces the
   Blocker perks, the Ogua Gauntlet/Defender's leggo perks, and (one more
   `--depth`) the OMODs/weapons/perk cards that reach them. Matching is exact
   and case-insensitive unless the value contains `*` (`--ep 'Mod VATS*'`
@@ -93,7 +95,7 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 
 One rule: **read records with `walk`; `chase` is the machine contract.**
 
-- `esm -p walk <selector> [--refs] [--depth N] [--ref-limit N] [--json]` —
+- `esm walk <selector> [--refs] [--depth N] [--ref-limit N] [--json]` —
   the interactive tool for *any* record type: one compact digest instead of
   a chain of raw `get` dumps. Resolves AVs/GLOBs/keywords to editor ids,
   prints curve points with the flat-wins rule applied, and falls back to a
@@ -118,7 +120,7 @@ One rule: **read records with `walk`; `chase` is the machine contract.**
 one call):
 
 ```
-$ esm -p walk mod_Legendary_Weapon1_DmgConsecutiveHits --depth 3
+$ esm walk mod_Legendary_Weapon1_DmgConsecutiveHits --depth 3
 ▸ OMOD 0x004F577D mod_Legendary_Weapon1_DmgConsecutiveHits "Furious"
   enchantment → 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits
   keyword hook → KYWD 0x001B3FAC FeaturedItem
@@ -141,7 +143,7 @@ effect rows inline), `AV hook → AVIF …` (reverse-chased like a keyword
 hook), `direct property → SPEL …` (forward-fetched), and bare-number
 properties as before.
 
-- `esm -p chase <selector> [--depth N] [--ref-limit N]` — the pipeline
+- `esm chase <selector> [--depth N] [--ref-limit N]` — the pipeline
   evidence contract, not an interactive tool: always emits classified
   mechanism JSON (`direct_property` / `perk_grant` / `keyword_hook` per
   `Data.Properties[]` row for an OMOD; an own-`Effects[]` walk for
@@ -432,5 +434,5 @@ Decoded field names come from the schema layer and can change across
 rebuilds — the same WEAP field has been `Min Power Per Shot`, `Max Power Per
 Shot`, and `Full Power Damage Mult` at different times, once renaming
 mid-session after a daemon restart. After any esm rebuild, re-dump one known
-record (e.g. `esm -p get GaussRifle`) and grep the actual field names before
+record (e.g. `esm get GaussRifle`) and grep the actual field names before
 trusting fixtures, extractor code, or prior notes.

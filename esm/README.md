@@ -180,12 +180,12 @@ Counts `_raw`, `_unmapped`, `_unknown_record`, and `_unresolved` markers across 
 ### `daemon` — Manage the background warm daemon
 
 ```sh
-esm daemon start    # explicitly pre-warm (optional — -p auto-spawns on demand)
+esm daemon start    # explicitly pre-warm (optional — any call auto-spawns on demand)
 esm daemon status   # check if running, which ESMs are resident and their record counts
 esm daemon stop     # graceful shutdown
 ```
 
-The daemon is normally transparent: the first `esm -p` call auto-spawns it, subsequent calls use it as a fast HTTP backend, and it shuts itself down after 10 minutes of idle. Use these subcommands only when you need explicit control.
+The daemon is normally transparent: the first `esm` call auto-spawns it, subsequent calls use it as a fast HTTP backend, and it shuts itself down after 10 minutes of idle. Use these subcommands only when you need explicit control.
 
 ## Server — `esm-server`
 
@@ -475,10 +475,10 @@ AI agents scanning many records should still avoid cold per-record process spawn
 # Build both binaries once (server binary must be adjacent to esm for auto-spawn)
 cargo build --release --features server
 
-# The first -p call auto-spawns and warms the daemon; all subsequent calls are fast
+# The first call auto-spawns and warms the daemon; all subsequent calls are fast
 # (assumes FO76_ESM_PATH is set — or pass --esm path/to/data on each call)
-esm -p get 0x463F --pretty
-esm -p get AssaultRifle --pretty
+esm get 0x463F --pretty
+esm get AssaultRifle --pretty
 ```
 
 The daemon keeps the index in memory, self-shuts-down after 10 min idle, stale-evicts if the ESM changes, and is safe for concurrent agents (advisory spawn-lock prevents double-spawn).
@@ -486,9 +486,9 @@ The daemon keeps the index in memory, self-shuts-down after 10 min idle, stale-e
 **Prefer bulk ops** over N single `get`s — each round-trip has overhead:
 
 ```sh
-esm -p list --type WEAP --limit 500 --pretty   # all weapons in one call
-esm -p search "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
-esm -p refs 0x463F --limit 100 --pretty        # reverse FormID lookup
+esm list --type WEAP --limit 500 --pretty   # all weapons in one call
+esm search "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
+esm refs 0x463F --limit 100 --pretty        # reverse FormID lookup
 ```
 
 **Gotcha:** `--localization-ba2`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open (the daemon doesn't accept per-call source overrides). Pass a data folder or place the Localization/Startup BA2 files (or `strings/`/`misc/curvetables/` directories) next to the ESM so the daemon auto-loads them on open, and drop per-call flags in sweeps.

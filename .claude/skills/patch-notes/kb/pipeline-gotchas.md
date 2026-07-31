@@ -16,7 +16,7 @@ satisfies a "does this dir have string files for token X" check for **both** sid
 happens the newer snapshot's `FULL`/`DESC` lstring IDs resolve against the **older** snapshot's
 table, which silently hides every localized text change and reports stale values as current.
 
-**Symptom:** a rename you can see live via two `esm -p get` calls is absent from the diff, and the
+**Symptom:** a rename you can see live via two `esm get` calls is absent from the diff, and the
 diff's `_unresolved` count is in the hundreds instead of low double digits (192 vs 12 on
 20260710→20260717).
 **Fix:** always pass `--strings-dir-a`/`--strings-dir-b` per side, or let the daemon auto-detect

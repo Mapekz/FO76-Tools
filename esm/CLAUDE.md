@@ -53,7 +53,7 @@ Clean layering — edit at the right level:
 | `src/lib.rs` | `Database` facade (all public API); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
 | `src/chase.rs` | The mechanism classifier core and the pipeline's JSON-only evidence contract (see `docs/adr/0001`): classifies an OMOD's `Data.Properties[]` rows into direct-property/perk-grant/keyword-hook mechanisms (keyword/AVIF hooks resolved by reverse refs, evidence path-sliced to the gated `Effects[N]` rows) or walks a PERK/SPEL/ALCH/ENCH root's own `Effects[]`; `esm chase` always emits the `ChaseTree` JSON (frozen chase.py-compatible shape) and hard-errors on other root types — interactive reading lives in `walk`, which consumes this module's classifier |
 | `src/walk.rs` | The interactive surface: BFS over `ChaseFetcher` (same seam as `chase.rs`) printing one compact indented per-record-type digest (GLOB/AVIF/KYWD/MGEF/SPEL·ENCH·ALCH/PERK/WEAP/OMOD, generic fallback) instead of a series of raw `get` dumps; an OMOD root's mechanisms are classified inline via `chase.rs`'s classifier and rendered as path-sliced evidence rows (bounded by `--ref-limit`), with `Data.Includes[]` stubs named for `_PARENT_` shells; `build_refs_digest` groups a `--refs` reverse-reference summary by record type |
-| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk; `--entry-point`/`--ep <name\|id>` seeds the walk from every PERK carrying a given "Entry Point" instead of one FormID/EditorID), `chase` (JSON-only; `--depth`/`--ref-limit`), `walk` (`--refs`/`--depth N`/`--ref-limit N`/`--json`), `tree`, `diff`, `coverage`, `skill` (`--install`/`--dir`/`--force`), `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process); ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths, and `skill`/`daemon`, which take none) |
+| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk; `--entry-point`/`--ep <name\|id>` seeds the walk from every PERK carrying a given "Entry Point" instead of one FormID/EditorID), `chase` (JSON-only; `--depth`/`--ref-limit`), `walk` (`--refs`/`--depth N`/`--ref-limit N`/`--json`), `tree`, `diff`, `coverage`, `skill` (`--install`/`--dir`/`--force`), `daemon {start,stop,status}`; every subcommand is one-shot and daemon-backed by default, `--local` forces cold in-process; ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths, and `skill`/`daemon`, which take none) |
 | `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 8, 0=unbounded); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`); the MCP-stdio `initialize` response carries a condensed `instructions` string (`MCP_INSTRUCTIONS`) as ambient gotcha context for every client |
 | `skills/esm-cli/SKILL.md` | Hard-won `esm`-CLI usage-knowledge doc, embedded at compile time into `cli.rs` (`include_str!`, same pattern as `schema/fo76.json`); `esm skill` prints it, `esm skill --install [--dir <repo>] [--force]` writes it into a consumer repo's `.claude/skills/esm-cli/`; this repo's own `.claude/skills/esm-cli` is a symlink to this directory |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Arc<Mutex<Database>>`); async: `open_database`, `record_by_edid`, `record_by_id`, `referenced_by`, `referenced_by_id`; sync: `file_info`, `list_groups`, `list_type_records`, `record_by_formid` |
@@ -99,28 +99,28 @@ Game data files (`*.esm`, `*.ba2`, and `Index`'s shared `esm_cache/` directory h
 
 ## Bulk / sweep workflow (for agents)
 
-AI agents that scan many records must avoid cold per-record process spawns. Each cold `esm get` / `esm -p get` invocation maps `Index`'s rkyv cache sections fresh (measured warm on the 20260724 snapshot: ~0.08 s / ~120 MiB, per `README.md`) and then exits — round-trip and decode overhead still add up across a large sweep, so the daemon (below) stays the right call for bulk work.
+AI agents that scan many records must avoid cold per-record process spawns. Each cold `esm --local get` invocation maps `Index`'s rkyv cache sections fresh (measured warm on the 20260724 snapshot: ~0.08 s / ~120 MiB, per `README.md`) and then exits — round-trip and decode overhead still add up across a large sweep, so the daemon (below) stays the right call for bulk work.
 
 The ESM path itself comes from `--esm <PATH>` (works before or after the subcommand) or, if omitted, the `FO76_ESM_PATH` environment variable — set once (see `CLAUDE.local.md`) and every example below can drop the path entirely. `diff` is the exception: it always takes two explicit positional paths and ignores `--esm`/`FO76_ESM_PATH`.
 
-### Recommended: warm daemon (fastest, no extra flags)
+### Recommended: warm daemon (fastest, on by default)
 
-Build `esm-server` once, then use `-p` for every single-record lookup:
+Build `esm-server` once; every subsequent call is daemon-backed automatically:
 
 ```sh
 # Build both binaries (server must be alongside esm for auto-spawn to work)
 cargo build --release --features server
 
-# Every -p call auto-spawns the daemon on first use; subsequent calls are fast HTTP round-trips
-esm -p get 0x463F --pretty
-esm -p get AssaultRifle --pretty
+# The first call auto-spawns the daemon; subsequent calls are fast HTTP round-trips
+esm get 0x463F --pretty
+esm get AssaultRifle --pretty
 ```
 
 The daemon warms the index once on first load and serves all subsequent lookups in memory. It self-manages:
-- **Auto-spawns** on the first `-p` call (no manual `daemon start` needed).
+- **Auto-spawns** on the first call (no manual `daemon start` needed).
 - **Auto-shuts-down** after 10 min idle (`ESM_DAEMON_IDLE_SECS=0` to disable).
 - **Stale-evicts** if the ESM changes on disk — no manual restart needed.
-- **Rebuild-evicts** if the `esm-server` binary itself changes on disk (new schema, new decode logic, any `cargo build`) — a `-p` call against a stale-but-alive daemon stops it and respawns a fresh one before serving the request, and the daemon's own watchdog self-evicts within ~30s even with no client polling it. No manual `daemon stop` needed after a rebuild.
+- **Rebuild-evicts** if the `esm-server` binary itself changes on disk (new schema, new decode logic, any `cargo build`) — a call against a stale-but-alive daemon stops it and respawns a fresh one before serving the request, and the daemon's own watchdog self-evicts within ~30s even with no client polling it. No manual `daemon stop` needed after a rebuild.
 - **Parallel-agent safe** — advisory spawn-lock (`esm-daemon.lock`) prevents double-spawn; multiple agents share one daemon instance.
 
 Use `esm daemon status` to check (includes a `binary_current` flag — `false` means a rebuild happened and the daemon is about to self-evict/respawn), `esm daemon stop` to kill early.
@@ -131,13 +131,13 @@ Any record containing FormID references (COBJ, NPC_, WEAP, …) returns raw hex 
 
 ```sh
 # Without --resolve: components are raw FormIDs → requires N follow-up gets
-esm -p get 0x008B33D7 --pretty
+esm get 0x008B33D7 --pretty
 
 # With --resolve stub: all references annotated inline in one call
-esm -p get 0x008B33D7 --resolve stub --pretty
+esm get 0x008B33D7 --resolve stub --pretty
 
 # --resolve full recursively expands references to their complete decoded record
-esm -p get 0x008B33D7 --resolve full --pretty
+esm get 0x008B33D7 --resolve full --pretty
 ```
 
 Default to `--resolve stub` when the record you're reading is reference-heavy (recipes, NPCs, leveled lists, quests). Use `--resolve full` only when you need the complete sub-record data. Bare `get` is fine only when you specifically want raw FormID values.
@@ -147,11 +147,11 @@ Default to `--resolve stub` when the record you're reading is reference-heavy (r
 Every round-trip has overhead. When you need many records of the same type, use bulk ops:
 
 ```sh
-esm -p list --type WEAP --limit 500 --pretty       # all weapons in one call
-esm -p search "*Rifle*" --type WEAP --pretty       # search by name/EditorID
-esm -p refs 0x463F --limit 100 --pretty            # direct reverse lookup (depth=1)
-esm -p refs 0x463F --depth 8 --pretty              # recursive walk to depth 8
-esm -p coverage --type WEAP                        # schema decode audit
+esm list --type WEAP --limit 500 --pretty       # all weapons in one call
+esm search "*Rifle*" --type WEAP --pretty       # search by name/EditorID
+esm refs 0x463F --limit 100 --pretty            # direct reverse lookup (depth=1)
+esm refs 0x463F --depth 8 --pretty              # recursive walk to depth 8
+esm coverage --type WEAP                        # schema decode audit
 ```
 
 ### Selectors: FormID vs EditorID vs Auto
@@ -213,8 +213,8 @@ FO76's EditorIDs use informal prefixes to mark content that isn't part of the li
 **Authoritative check for perks specifically: does a `PCRD` (Perk Card) record reference it?** A `PERK` rank is only actually reachable by a player if some `PCRD`'s `Perks` array lists it. Verify with:
 
 ```sh
-esm -p refs <perk-formid> --limit 20   # look for a PCRD in the results
-esm -p get <pcrd-formid> --resolve stub --pretty   # inspect its Perks[].Perk["Male Perk"] list — only these ranks are live
+esm refs <perk-formid> --limit 20   # look for a PCRD in the results
+esm get <pcrd-formid> --resolve stub --pretty   # inspect its Perks[].Perk["Male Perk"] list — only these ranks are live
 ```
 
 A `PERK` record with no referencing `PCRD` (e.g. `Deadeye01/02`, `Bandito01`) is orphaned — the record decodes fine and may even have `Playable: true`, but nothing in the game ever grants it to a player. A `PCRD` whose `Perks` array stops at rank N means ranks N+1 onward (even if unprefixed, even if not `CUT_`) are dead. Other record types don't have as clean an authoritative signal as `PCRD` — for those, the prefix heuristic above is what's available; flag uncertainty rather than asserting liveness.

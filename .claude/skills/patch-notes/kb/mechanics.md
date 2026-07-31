@@ -22,7 +22,7 @@ matters, it's an alias line, not a paragraph.
 
 ## Chasing a unique-weapon effect
 
-`esm -p chase <FORMID_OR_EDID>` automates this (always emits classified JSON) — run it first, hand-walk only what it
+`esm chase <FORMID_OR_EDID>` automates this (always emits classified JSON) — run it first, hand-walk only what it
 misses (`esm/src/chase.rs`'s module docstring lists the limits). It accepts an OMOD, or a PERK /
 SPEL / ALCH / ENCH directly (walking that record's own `Effects[]`), and auto-follows one extra
 hop through an MGEF's `Perk to Apply` / `Equip Ability`.
