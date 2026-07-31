@@ -63,7 +63,7 @@ struct AppState {
     /// `None` in legacy UI mode — no idle-TTL in that mode.
     /// Updated by `op_handler` on every real op (Shutdown excluded).
     /// `/health` and `/status` do NOT update this, so liveness pings from
-    /// `esm -p` clients don't keep the daemon alive indefinitely.
+    /// CLI clients don't keep the daemon alive indefinitely.
     last_activity: Option<Arc<StdMutex<Instant>>>,
 }
 
@@ -348,7 +348,7 @@ async fn diff_route(State(state): State<AppState>) -> impl IntoResponse {
 const MCP_INSTRUCTIONS: &str = "\
 esm-server gotchas (run `esm skill` for the full usage-knowledge doc):
 - ESM path: --esm <PATH> or FO76_ESM_PATH env var; the .esm file or its data folder.
-- CLI callers: pass -p for one-shot output (uses this warm daemon); no -p drops into a REPL.
+- CLI callers: every subcommand is one-shot and daemon-backed by default; --local forces a cold in-process open.
 - --limit 0 means unlimited for list/search/refs — the default limits truncate silently otherwise.
 - Bulk esm_get_record (ids: [...]) returns one entry per selector tagged with its 'sel'; a bad \
 selector yields a per-entry error instead of failing the whole call.
@@ -803,7 +803,7 @@ async fn run_daemon(warm_xref: bool) -> anyhow::Result<()> {
     // its own executable and self-evicts if the binary on disk no longer
     // matches the one it started with (i.e. a rebuild happened underneath it).
     // Clients already detect this via `daemon_fresh` in `backend.rs` and
-    // respawn on their next `-p` call, but this watchdog closes the gap for
+    // respawn on their next call, but this watchdog closes the gap for
     // any daemon left resident with no client polling it (e.g. started via
     // `esm daemon start` and never queried again) — it self-heals without
     // waiting for a client to notice. Idle-shutdown stays gated on `idle_secs`.

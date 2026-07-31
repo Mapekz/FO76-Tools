@@ -4,7 +4,7 @@
 //! instead of a series of raw `esm get` dumps. Accepts any record type.
 //!
 //! ```text
-//! esm -p --esm <path> walk <formid|edid> [--refs] [--depth N] [--ref-limit N] [--json]
+//! esm --esm <path> walk <formid|edid> [--refs] [--depth N] [--ref-limit N] [--json]
 //! ```
 //!
 //! [`walk`] does a breadth-first traversal (queue + visited set keyed on

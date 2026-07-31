@@ -11,17 +11,12 @@ use esm::{
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::ffi::OsString;
-use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "esm", about = "Read and inspect Fallout 76 ESM files")]
+#[command(subcommand_required = true, arg_required_else_help = true)]
 struct Cli {
-    /// One-shot print mode: run the command and exit (auto-spawns a warm daemon
-    /// if none is running, so repeated `-p` calls avoid cold reloads).
-    #[arg(short = 'p', long)]
-    print: bool,
     /// Force in-process (cold) open, bypassing the daemon entirely.
     #[arg(long)]
     local: bool,
@@ -36,7 +31,7 @@ struct Cli {
     #[arg(long, global = true, env = "FO76_ESM_PATH")]
     esm: Option<PathBuf>,
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 }
 
 const DEFAULT_LANG: &str = "en";
@@ -110,24 +105,6 @@ struct DiffArgs {
     curves_dir_b: Option<PathBuf>,
 }
 
-impl DiffArgs {
-    fn has_source_overrides(&self) -> bool {
-        self.localization_ba2.is_some()
-            || self.localization_ba2_a.is_some()
-            || self.localization_ba2_b.is_some()
-            || self.strings_dir.is_some()
-            || self.strings_dir_a.is_some()
-            || self.strings_dir_b.is_some()
-            || self.lang != DEFAULT_LANG
-            || self.startup_ba2.is_some()
-            || self.startup_ba2_a.is_some()
-            || self.startup_ba2_b.is_some()
-            || self.curves_dir.is_some()
-            || self.curves_dir_a.is_some()
-            || self.curves_dir_b.is_some()
-    }
-}
-
 #[derive(clap::Args)]
 struct LocalizationArgs {
     #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
@@ -138,24 +115,12 @@ struct LocalizationArgs {
     lang: String,
 }
 
-impl LocalizationArgs {
-    fn has_overrides(&self) -> bool {
-        self.localization_ba2.is_some() || self.strings_dir.is_some() || self.lang != DEFAULT_LANG
-    }
-}
-
 #[derive(clap::Args)]
 struct GetSourceArgs {
     #[command(flatten)]
     localization: LocalizationArgs,
     #[arg(long)]
     startup_ba2: Option<PathBuf>,
-}
-
-impl GetSourceArgs {
-    fn has_overrides(&self) -> bool {
-        self.localization.has_overrides() || self.startup_ba2.is_some()
-    }
 }
 
 #[derive(Subcommand)]
@@ -372,12 +337,6 @@ enum DaemonAction {
     Status,
 }
 
-#[derive(Parser)]
-struct ReplInput {
-    #[command(subcommand)]
-    command: Commands,
-}
-
 #[derive(Clone, Copy, ValueEnum)]
 enum SearchInArg {
     Edid,
@@ -517,14 +476,13 @@ fn cmd_skill(install: bool, dir: Option<PathBuf>, force: bool) -> anyhow::Result
 #[derive(Clone, Copy)]
 struct DispatchOptions {
     daemon_mode: bool,
-    session: bool,
 }
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let esm_opt = cli.esm.clone();
 
-    if let Some(Commands::Daemon { action }) = cli.command {
+    if let Commands::Daemon { action } = cli.command {
         return match action {
             DaemonAction::Start => {
                 let info = start_daemon_process()?;
@@ -546,7 +504,7 @@ fn main() -> anyhow::Result<()> {
                 // Best-effort: annotate whether the resident daemon is still
                 // running the binary it started with (see `daemon_fresh` in
                 // `backend.rs`). A `false` here means a rebuild happened since
-                // it started and the next `-p`/REPL call will respawn it.
+                // it started and the next call will respawn it.
                 if let Ok(info) = read_daemon_info()
                     && let Some(obj) = status.as_object_mut()
                 {
@@ -560,113 +518,28 @@ fn main() -> anyhow::Result<()> {
 
     // `skill` needs no ESM and no backend/daemon at all — handled up front,
     // same as `daemon` above, so it works with no --esm/FO76_ESM_PATH set.
-    if let Some(Commands::Skill {
+    if let Commands::Skill {
         install,
         dir,
         force,
-    }) = cli.command
+    } = cli.command
     {
         return cmd_skill(install, dir, force);
     }
 
-    // A supplied subcommand always runs once and exits. With no subcommand,
-    // the CLI enters the REPL.
-    // -p → explicitly request one-shot print mode and a warm daemon.
-    // --local → bypass daemon entirely for both modes (cold in-process open).
-    let mut backend = if cli.print && !cli.local {
-        Backend::Remote(RemoteBackend::connect_with_override(
-            cli.addr.as_deref(),
-            cli.port,
-        )?)
-    } else {
-        make_backend(cli.local, cli.addr.as_deref(), cli.port)?
-    };
+    // Every subcommand runs once and exits. Daemon-backed by default;
+    // --local bypasses the daemon entirely (cold in-process open).
+    let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
     let daemon_mode = matches!(backend, Backend::Remote(_));
 
-    if let Some(cmd) = cli.command {
-        let esm = match &cmd {
-            Commands::Diff(args) => args.file_a.clone(),
-            Commands::Daemon { .. } => unreachable!(),
-            Commands::Skill { .. } => unreachable!(),
-            _ => resolve_esm(esm_opt.clone())?,
-        };
-        return dispatch_command(
-            &esm,
-            &mut backend,
-            cmd,
-            DispatchOptions {
-                daemon_mode,
-                session: false,
-            },
-        );
-    }
-
-    // No subcommand: pure REPL
-    let esm = resolve_esm(esm_opt)?;
-    run_repl(&esm, &mut backend, daemon_mode)
-}
-
-fn run_repl(esm: &Path, backend: &mut Backend, daemon_mode: bool) -> anyhow::Result<()> {
-    eprintln!(
-        "esm REPL — session: {} (type 'help' for commands)",
-        esm.display()
-    );
-    let stdin = io::stdin();
-    let mut stderr = io::stderr();
-    loop {
-        write!(stderr, "esm> ")?;
-        stderr.flush()?;
-        let mut line = String::new();
-        if stdin.lock().read_line(&mut line)? == 0 {
-            break;
-        }
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if line == "quit" || line == "exit" {
-            break;
-        }
-        let mut tokens: Vec<String> = shlex::split(line)
-            .unwrap_or_else(|| line.split_whitespace().map(String::from).collect());
-        if line == "help" {
-            tokens = vec!["--help".to_string()];
-        }
-        let mut args: Vec<OsString> = std::iter::once(OsString::from("esm"))
-            .chain(tokens.into_iter().map(OsString::from))
-            .collect();
-        if args.get(1).is_some_and(|token| token == "diff") {
-            // `Commands::Diff` always has the same two positional paths. In a
-            // session, inject the already-open ESM as side A before handing
-            // the tokens to the same clap parser used by one-shot mode.
-            args.insert(2, esm.as_os_str().to_owned());
-        }
-        let cmd = match ReplInput::try_parse_from(args) {
-            Ok(parsed) => parsed.command,
-            Err(e) => {
-                eprintln!("{e}");
-                continue;
-            }
-        };
-        // These lifecycle commands deliberately remain early-return-only in
-        // `main`, before any ESM or backend is constructed.
-        if matches!(&cmd, Commands::Daemon { .. } | Commands::Skill { .. }) {
-            eprintln!("error: daemon and skill commands are only available outside the REPL");
-            continue;
-        }
-        if let Err(e) = dispatch_command(
-            esm,
-            backend,
-            cmd,
-            DispatchOptions {
-                daemon_mode,
-                session: true,
-            },
-        ) {
-            eprintln!("error: {:#}", e);
-        }
-    }
-    Ok(())
+    let cmd = cli.command;
+    let esm = match &cmd {
+        Commands::Diff(args) => args.file_a.clone(),
+        Commands::Daemon { .. } => unreachable!(),
+        Commands::Skill { .. } => unreachable!(),
+        _ => resolve_esm(esm_opt.clone())?,
+    };
+    dispatch_command(&esm, &mut backend, cmd, DispatchOptions { daemon_mode })
 }
 
 fn dispatch_command(
@@ -675,21 +548,6 @@ fn dispatch_command(
     cmd: Commands,
     options: DispatchOptions,
 ) -> anyhow::Result<()> {
-    let has_session_overrides = match &cmd {
-        Commands::Get { sources, .. } => sources.has_overrides(),
-        Commands::List { sources, .. }
-        | Commands::Refs { sources, .. }
-        | Commands::Search { sources, .. } => sources.has_overrides(),
-        Commands::Diff(args) => args.has_source_overrides(),
-        _ => false,
-    };
-    if options.session && has_session_overrides {
-        anyhow::bail!(
-            "per-call BA2/strings/curves/language overrides are unavailable in the REPL; \
-             configure them when opening the session"
-        );
-    }
-
     match cmd {
         Commands::Info => cmd_info(backend, esm),
         Commands::Get {
@@ -1422,9 +1280,9 @@ fn print_ref_path(result: &esm::ipc::RefPathResult, json: bool, pretty: bool) {
 
 /// [`esm::chase::ChaseFetcher`] implementation that composes `chase`'s two
 /// primitive ops (`Op::RecordBulk`, `Op::ReferencedBy`) over an existing
-/// `Backend` — the warm daemon for free when `-p`/REPL mode is in play, a
-/// cold in-process open under `--local`. Holds the `&Path` to the ESM being
-/// queried so `esm::chase::chase` itself only deals in selectors/FormIDs.
+/// `Backend` — the warm daemon by default, a cold in-process open under
+/// `--local`. Holds the `&Path` to the ESM being queried so
+/// `esm::chase::chase` itself only deals in selectors/FormIDs.
 struct BackendFetcher<'a> {
     backend: &'a mut Backend,
     file: &'a Path,
@@ -2263,18 +2121,38 @@ mod tests {
     }
 
     #[test]
-    fn repl_parser_exposes_chase_and_walk() {
-        let chase = ReplInput::try_parse_from(["esm", "chase", "0x463F"])
-            .expect("REPL should parse chase through the shared command enum");
+    fn cli_parses_chase_and_walk() {
+        let chase = Cli::try_parse_from(["esm", "chase", "0x463F"])
+            .expect("chase should parse through the top-level command enum");
         assert!(matches!(chase.command, Commands::Chase { .. }));
 
-        let walk = ReplInput::try_parse_from(["esm", "walk", "0x463F"])
-            .expect("REPL should parse walk through the shared command enum");
+        let walk = Cli::try_parse_from(["esm", "walk", "0x463F"])
+            .expect("walk should parse through the top-level command enum");
         assert!(matches!(walk.command, Commands::Walk { .. }));
     }
 
+    /// Bare `esm` used to silently enter a REPL (exit 0, empty stdout) —
+    /// the worst failure mode for a scripted caller. There is no REPL left
+    /// to fall into: a missing subcommand is now a usage error.
     #[test]
-    fn one_shot_json_has_no_trailing_repl_prompt() {
+    fn bare_invocation_is_a_usage_error_not_a_silent_no_op() {
+        assert!(Cli::try_parse_from(["esm"]).is_err());
+    }
+
+    /// `-p`/`--print` was a vestigial no-op (see git history: it stopped
+    /// gating anything once subcommands became always-one-shot) — removed
+    /// rather than left as dead surface area callers might still reach for.
+    #[test]
+    fn dash_p_no_longer_exists() {
+        let err = match Cli::try_parse_from(["esm", "-p", "get", "0x463F"]) {
+            Ok(_) => panic!("-p should no longer parse"),
+            Err(e) => e,
+        };
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn one_shot_json_stdout_is_exactly_one_document() {
         let Ok(esm_path) = std::env::var("RUST_TEST_ESM") else {
             return;
         };

@@ -374,7 +374,7 @@ fn record_sel_json_round_trip() {
 
 /// A `Response::Ok { data }` carrying an extreme-magnitude decoded float
 /// (subnormal or near f32::MAX) must survive a JSON text round-trip exactly —
-/// this is what happens on every `-p`/daemon request: the server serializes
+/// this is what happens on every daemon request: the server serializes
 /// `Response` to text, sends it over HTTP, and the client re-parses it.
 ///
 /// serde_json's *default* float parser does not guarantee exact round-trip
