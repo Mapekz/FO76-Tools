@@ -16,6 +16,7 @@ pub mod mindex;
 pub mod query;
 pub mod reader;
 pub mod registry;
+mod rkyvcache;
 pub mod schema;
 pub mod strings;
 pub mod tree;

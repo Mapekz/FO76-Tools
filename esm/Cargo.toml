@@ -37,6 +37,7 @@ fs2 = "0.4"
 getrandom = "0.4"
 lz4_flex = "0.14"
 memmap2 = "0.9"
+rkyv = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 shlex = "2"
