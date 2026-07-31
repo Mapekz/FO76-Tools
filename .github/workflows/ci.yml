@@ -144,11 +144,9 @@ jobs:
   #
   # Builds the native addon (catches Rust↔JS API drift) and runs the smoke test.
   # Without FO76_ESM set, smoke.mjs exits 0 (SKIP), so no game data is required.
-  # continue-on-error while the napi build environment is being stabilised in CI.
   napi:
     name: napi (build + smoke)
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: esm/bindings/napi
