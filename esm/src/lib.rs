@@ -1326,7 +1326,7 @@ impl Database {
     /// "primary" is the smallest matched id on that carrier. That order
     /// drives both the per-EP carrier grouping in table output and the
     /// BFS's first-reach attribution priority in
-    /// [`ipc::referenced_by_walk`] (earlier seeds win equal-depth ties for
+    /// `ipc::referenced_by_walk` (earlier seeds win equal-depth ties for
     /// `path`/`VIA`; equal-depth `entry_points` are unioned).
     ///
     /// Reuses the `ensure_filter_cache("PERK")` memoized decode (shared with
