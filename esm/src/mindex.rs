@@ -3,7 +3,7 @@
 //! The `.midx` file is a compact, sorted binary table of all records in an ESM,
 //! optimised for fast single-FormID lookups without loading the full ~280 MiB
 //! `.esm.idx` bincode cache.  A binary search over the table uses only ~20
-//! cache-line accesses for a ~1M-record file (~24 MiB).
+//! cache-line accesses for a ~5.6M-record file (~135 MiB).
 //!
 //! # On-disk layout
 //!
@@ -30,6 +30,7 @@
 //! Entries start immediately after the header at byte 40.
 
 use crate::formid::FormId;
+use crate::index::unique_tmp_path;
 use crate::reader::{EsmFile, RecordMeta};
 use anyhow::Context;
 use memmap2::Mmap;
@@ -303,10 +304,25 @@ fn write_midx_file(
         // [off+22..off+24] = _pad, already 0
     }
 
-    let mut file = fs::File::create(path).with_context(|| format!("create {}", path.display()))?;
-    file.write_all(&buf)
-        .with_context(|| format!("write {}", path.display()))?;
-    Ok(())
+    let tmp_path = unique_tmp_path(path)?;
+    let write_result: anyhow::Result<()> = (|| {
+        let mut file = fs::File::create(&tmp_path)
+            .with_context(|| format!("create {}", tmp_path.display()))?;
+        file.write_all(&buf)
+            .with_context(|| format!("write {}", tmp_path.display()))?;
+        file.sync_all()
+            .with_context(|| format!("sync {}", tmp_path.display()))?;
+        Ok(())
+    })();
+    match write_result {
+        Ok(()) => {
+            fs::rename(&tmp_path, path).with_context(|| format!("rename to {}", path.display()))
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&tmp_path); // best-effort cleanup
+            Err(e)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -526,6 +542,38 @@ mod tests {
         let result = MmapFormIndex::try_load(&esm).unwrap();
         assert!(result.is_some(), "valid midx must load");
         assert!(result.unwrap().get_by_formid(FormId::new(1)).is_none());
+
+        let _ = fs::remove_file(&midx_path);
+        let _ = fs::remove_file(&esm_path);
+    }
+
+    /// `write_midx_file` must atomically publish a file that `try_load` accepts.
+    #[test]
+    fn write_midx_file_try_load_round_trip() {
+        let tmp = std::env::temp_dir();
+        let esm_path = tmp.join("esm_mindex_test_write_try_load.esm");
+        let midx_path = midx_path_for(&esm_path);
+        let (src_size, src_secs, src_nanos) = write_dummy_esm(&esm_path);
+
+        let mut form_index: HashMap<FormId, RecordMeta> = HashMap::new();
+        form_index.insert(FormId::new(0x0000_1000), make_meta(100, "WEAP", 0, 131));
+        form_index.insert(FormId::new(0x0000_2000), make_meta(200, "ARMO", 4, 131));
+
+        let mut entries: Vec<(u32, &RecordMeta)> =
+            form_index.iter().map(|(f, m)| (f.raw(), m)).collect();
+        entries.sort_unstable_by_key(|&(f, _)| f);
+
+        write_midx_file(&midx_path, &entries, src_size, src_secs, src_nanos).unwrap();
+
+        let esm = EsmFile::open(&esm_path).unwrap();
+        let idx = MmapFormIndex::try_load(&esm)
+            .unwrap()
+            .expect("write_midx_file output must load via try_load");
+        for (fid, expected) in &form_index {
+            let got = idx.get_by_formid(*fid).expect("form_id not found");
+            assert_eq!(got.offset, expected.offset);
+            assert_eq!(got.signature, expected.signature);
+        }
 
         let _ = fs::remove_file(&midx_path);
         let _ = fs::remove_file(&esm_path);

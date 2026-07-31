@@ -200,10 +200,11 @@ impl Index {
         let encoded = bincode::serde::encode_to_vec(&cache, bincode::config::standard())?;
         // Write to a sidecar temp file first, then rename atomically so a crash
         // mid-write cannot leave a partial (corrupt) cache at the real path.
-        let tmp_path = self.cache_path.with_extension("tmp");
+        let tmp_path = unique_tmp_path(&self.cache_path)?;
         let write_result: anyhow::Result<()> = (|| {
             let mut file = fs::File::create(&tmp_path)?;
             file.write_all(&encoded)?;
+            file.sync_all()?;
             Ok(())
         })();
         match write_result {
@@ -360,6 +361,23 @@ fn build_type_index(form_index: &HashMap<FormId, RecordMeta>) -> HashMap<String,
     type_index
 }
 
+/// Build a unique temp path next to `base`, e.g. `SeventySix.esm.idx.tmp.<16 hex>`.
+pub(crate) fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
+    let mut bytes = [0u8; 8];
+    getrandom::fill(&mut bytes)?;
+    let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    let parent = base
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("base path has no parent: {}", base.display()))?;
+    let mut name = base
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("base path has no file name: {}", base.display()))?
+        .to_os_string();
+    name.push(".tmp.");
+    name.push(hex);
+    Ok(parent.join(name))
+}
+
 fn cache_path_for(esm_path: &Path) -> PathBuf {
     let mut p = esm_path.to_path_buf();
     p.set_extension("esm.idx");
@@ -373,7 +391,7 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
     }
     let meta = fs::metadata(&esm.path)?;
     // Reject obviously oversized cache files before reading them into RAM.
-    // A legitimate .esm.idx is a bincode-serialized HashMap of ~100k records
+    // A legitimate .esm.idx is a bincode-serialized HashMap of ~5.6M records
     // and typically stays well under 300 MiB; anything above 1 GiB is suspect.
     let cache_meta = fs::metadata(&cache_path)?;
     if cache_meta.len() > 1024 * 1024 * 1024 {
@@ -623,5 +641,15 @@ mod tests {
 
         // Unknown type returns empty
         assert!(index.records_by_type("XXXX").is_empty());
+    }
+
+    #[test]
+    fn unique_tmp_path_differs_and_same_parent() -> anyhow::Result<()> {
+        let base = PathBuf::from("/tmp/SeventySix.esm.idx");
+        let p1 = unique_tmp_path(&base)?;
+        let p2 = unique_tmp_path(&base)?;
+        assert_ne!(p1, p2);
+        assert_eq!(p1.parent(), base.parent());
+        Ok(())
     }
 }
