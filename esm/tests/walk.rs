@@ -72,12 +72,12 @@ impl ChaseFetcher for FakeFetcher {
         &mut self,
         target: FormId,
         _depth: usize,
-        _limit: usize,
+        limit: usize,
         type_filter: &str,
         _paths: bool,
     ) -> anyhow::Result<RefList> {
         let key = (target.display(), type_filter.to_string());
-        Ok(self
+        let mut list = self
             .refs_by_type
             .get(&key)
             .cloned()
@@ -87,7 +87,16 @@ impl ChaseFetcher for FakeFetcher {
                 total: 0,
                 capped: false,
                 ..Default::default()
-            }))
+            });
+        // Simulate a real backend's `--ref-limit` truncation, so a test can
+        // assert `WalkOptions::ref_limit`/`ChaseOptions::ref_limit` actually
+        // bounds how many consumers get fetched (see
+        // `omod_keyword_hook_consumer_fetch_bounded_by_ref_limit`).
+        if limit > 0 && list.rows.len() > limit {
+            list.rows.truncate(limit);
+            list.capped = true;
+        }
+        Ok(list)
     }
 }
 
@@ -194,7 +203,15 @@ fn perk_fixture() -> FakeFetcher {
 #[test]
 fn perk_digest_enqueues_ability_spel_and_renders_entry_point() {
     let mut f = perk_fixture();
-    let result = walk(&mut f, sel(PERK_FID), &WalkOptions { depth: 1 }).unwrap();
+    let result = walk(
+        &mut f,
+        sel(PERK_FID),
+        &WalkOptions {
+            depth: 1,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
 
     // The Ability effect's SPEL target was fetched and visited one hop out.
     assert!(
@@ -230,7 +247,15 @@ fn perk_digest_enqueues_ability_spel_and_renders_entry_point() {
 #[test]
 fn perk_digest_no_effects_variant() {
     let mut f = perk_fixture();
-    let result = walk(&mut f, sel(PERK_NO_EFFECTS_FID), &WalkOptions { depth: 1 }).unwrap();
+    let result = walk(
+        &mut f,
+        sel(PERK_NO_EFFECTS_FID),
+        &WalkOptions {
+            depth: 1,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
     let lines = node_digest(&result, PERK_NO_EFFECTS_FID);
     assert!(
         lines
@@ -282,7 +307,15 @@ fn magic_item_fixture() -> FakeFetcher {
 #[test]
 fn magic_item_glob_magnitude_flat_wins_rule_both_ways() {
     let mut f = magic_item_fixture();
-    let result = walk(&mut f, sel(SPEL_MAGIC_FID), &WalkOptions { depth: 1 }).unwrap();
+    let result = walk(
+        &mut f,
+        sel(SPEL_MAGIC_FID),
+        &WalkOptions {
+            depth: 1,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
     let text = node_digest(&result, SPEL_MAGIC_FID).join("\n");
 
     assert!(
@@ -335,7 +368,15 @@ fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
     );
     // No fixture entry for (KYWD_FID, "PERK") -> FakeFetcher defaults to empty.
 
-    let result = walk(&mut f, sel(KYWD_FID), &WalkOptions { depth: 1 }).unwrap();
+    let result = walk(
+        &mut f,
+        sel(KYWD_FID),
+        &WalkOptions {
+            depth: 1,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
     let text = node_digest(&result, KYWD_FID).join("\n");
     assert!(text.contains("SPEL consumers (gate on this):"));
     assert!(text.contains(SPEL_CONSUMER_FID));
@@ -390,7 +431,15 @@ fn chain_fixture() -> FakeFetcher {
 #[test]
 fn depth_zero_never_enqueues_children() {
     let mut f = chain_fixture();
-    let result = walk(&mut f, sel(CHAIN_PERK_FID), &WalkOptions { depth: 0 }).unwrap();
+    let result = walk(
+        &mut f,
+        sel(CHAIN_PERK_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
     assert_eq!(result.nodes.len(), 1, "nodes = {:?}", result.nodes);
     assert_eq!(result.nodes[0].formid, CHAIN_PERK_FID);
 }
@@ -398,7 +447,15 @@ fn depth_zero_never_enqueues_children() {
 #[test]
 fn repeated_reference_is_visited_only_once() {
     let mut f = chain_fixture();
-    let result = walk(&mut f, sel(CHAIN_PERK_FID), &WalkOptions { depth: 1 }).unwrap();
+    let result = walk(
+        &mut f,
+        sel(CHAIN_PERK_FID),
+        &WalkOptions {
+            depth: 1,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
     let spel_nodes: Vec<_> = result
         .nodes
         .iter()
@@ -625,7 +682,15 @@ fn omod_follows_ench_property_and_enqueues_it() {
         json!({"_record_type": "Enchantment", "Editor ID": "TestGrantedEnch"}),
     );
 
-    let result = walk(&mut f, sel(OMOD_FID), &WalkOptions { depth: 1 }).unwrap();
+    let result = walk(
+        &mut f,
+        sel(OMOD_FID),
+        &WalkOptions {
+            depth: 1,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
     let text = node_digest(&result, OMOD_FID).join("\n");
     assert!(text.contains("enchantment →"));
     assert!(text.contains(ENCH_PROP_FID));
@@ -637,4 +702,322 @@ fn omod_follows_ench_property_and_enqueues_it() {
         .find(|n| n.formid == ENCH_PROP_FID)
         .expect("ENCH property should have been enqueued and visited");
     assert_eq!(ench_node.via.as_deref(), Some("OMOD property"));
+}
+
+// ─── OMOD mechanism slice (chase classifier, inline) ───────────────────────
+
+const OMOD_MIXED_FID: &str = "0x00600052";
+const KYWD_HOOK_FID: &str = "0x00600053";
+const OMOD_ENCH_ONLY_FID: &str = "0x00600054";
+const GATING_PERK_FID: &str = "0x00600055";
+
+/// An OMOD property row typed KYWD (a keyword-hook mechanism) should render a
+/// `keyword hook →` line naming the KYWD, a `gates <consumer>` line naming
+/// the reverse-chased SPEL/PERK that actually gates on it, and the exact
+/// path-sliced `Effects[N]` row that consumer gates — never the consumer's
+/// full digest — alongside the `enchantment →` line the ENCH property still
+/// gets via [`digest_omod_ench_follow`]. See `digest_node`'s `"OMOD"` arm.
+#[test]
+fn omod_mixed_property_renders_keyword_hook_slice() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        OMOD_MIXED_FID,
+        "OMOD",
+        "mod_Legendary_Weapon1_Mixed",
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {
+                "Properties": [
+                    {
+                        "Property": {"value": 19, "name": "Enchantments"},
+                        "Value 1": {"formid": ENCH_PROP_FID, "editor_id": "TestGrantedEnch", "record_type": "ENCH"},
+                        "Value 2": 0,
+                    },
+                    {
+                        "Property": {"value": 31, "name": "Keywords"},
+                        "Value 1": {"formid": KYWD_HOOK_FID, "editor_id": "TestKeywordHook", "record_type": "KYWD"},
+                        "Value 2": 2,
+                    }
+                ]
+            },
+        }),
+    );
+    f.insert(
+        ENCH_PROP_FID,
+        "ENCH",
+        "TestGrantedEnch",
+        json!({"_record_type": "Enchantment", "Editor ID": "TestGrantedEnch"}),
+    );
+    f.insert(
+        GATING_PERK_FID,
+        "PERK",
+        "GatingPerkBACKUP",
+        json!({
+            "_record_type": "Perk",
+            "Effects": [
+                {
+                    "Effect": {
+                        "Entry Point": {
+                            "Entry Point": {"value": 1, "name": "Set Damage on Consecutive Hits"},
+                            "Function": {"value": 1, "name": "Set Value"},
+                        },
+                        "Float": 10,
+                    }
+                }
+            ],
+        }),
+    );
+    f.refs_by_type.insert(
+        (KYWD_HOOK_FID.to_string(), "PERK".to_string()),
+        RefList {
+            target: KYWD_HOOK_FID.to_string(),
+            rows: vec![RefRow {
+                form_id: GATING_PERK_FID.to_string(),
+                record_type: Some("PERK".to_string()),
+                editor_id: Some("GatingPerkBACKUP".to_string()),
+                name: None,
+                offset: 0,
+                depth: 1,
+                path: Vec::new(),
+                field_paths: Some(vec![
+                    "Effects[0].Effect.Perk Conditions[0].Perk Condition.Conditions[0].Condition.Condition Data.Parameter 1"
+                        .to_string(),
+                ]),
+                ..Default::default()
+            }],
+            total: 1,
+            capped: false,
+            ..Default::default()
+        },
+    );
+    // No fixture entry for (KYWD_HOOK_FID, "SPEL") -> defaults to empty.
+
+    // The mechanism slice runs regardless of `--depth` — depth 0 only caps
+    // BFS enqueueing, not this inline classification.
+    let result = walk(
+        &mut f,
+        sel(OMOD_MIXED_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, OMOD_MIXED_FID).join("\n");
+
+    assert!(text.contains("enchantment →"), "digest:\n{text}");
+    assert!(
+        text.contains(&format!(
+            "keyword hook → KYWD {KYWD_HOOK_FID} TestKeywordHook"
+        )),
+        "digest:\n{text}"
+    );
+    assert!(
+        text.contains(&format!("gates PERK {GATING_PERK_FID} GatingPerkBACKUP")),
+        "digest:\n{text}"
+    );
+    assert!(
+        text.contains("Effects[0] Set Damage on Consecutive Hits/Set Value  Float=10"),
+        "expected the path-sliced gated effect row, got:\n{text}"
+    );
+}
+
+/// An ENCH-only OMOD (every FormID property target is ENCH-typed, so `walk`
+/// forward-follows all of them via `digest_omod_ench_follow`) should render
+/// no other mechanism-hook lines — there is nothing left for the classifier
+/// to surface.
+#[test]
+fn omod_with_only_ench_properties_renders_no_other_mechanism_lines() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        OMOD_ENCH_ONLY_FID,
+        "OMOD",
+        "mod_Legendary_Weapon1_EnchOnly",
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {
+                "Properties": [
+                    {
+                        "Property": {"value": 19, "name": "Enchantments"},
+                        "Value 1": {"formid": ENCH_PROP_FID, "editor_id": "TestGrantedEnch", "record_type": "ENCH"},
+                        "Value 2": 0,
+                    }
+                ]
+            },
+        }),
+    );
+    f.insert(
+        ENCH_PROP_FID,
+        "ENCH",
+        "TestGrantedEnch",
+        json!({"_record_type": "Enchantment", "Editor ID": "TestGrantedEnch"}),
+    );
+
+    let result = walk(
+        &mut f,
+        sel(OMOD_ENCH_ONLY_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, OMOD_ENCH_ONLY_FID).join("\n");
+    assert!(text.contains("enchantment →"), "digest:\n{text}");
+    for unexpected in [
+        "keyword hook →",
+        "perk grant →",
+        "AV hook →",
+        "direct property →",
+        "gates ",
+    ] {
+        assert!(
+            !text.contains(unexpected),
+            "unexpected mechanism line {unexpected:?} in:\n{text}"
+        );
+    }
+}
+
+const OMOD_HUB_FID: &str = "0x00600058";
+const KYWD_HUB_FID: &str = "0x00600059";
+
+/// `ref_limit` (plumbed from `WalkOptions` through to
+/// `esm::chase::ChaseOptions`) must bound how many reverse-chased consumers
+/// the OMOD mechanism slice fetches/renders — mirrors the "hub AVIF/KYWD
+/// blowup" gotcha in the esm-cli skill doc, where a widely-read
+/// keyword/AVIF returns dozens of unrelated consumers.
+#[test]
+fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        OMOD_HUB_FID,
+        "OMOD",
+        "mod_Legendary_Hub_Test",
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {
+                "Properties": [
+                    {
+                        "Property": {"value": 31, "name": "Keywords"},
+                        "Value 1": {"formid": KYWD_HUB_FID, "editor_id": "HubKeyword", "record_type": "KYWD"},
+                        "Value 2": 2,
+                    }
+                ]
+            },
+        }),
+    );
+    let mut rows = Vec::new();
+    for i in 0..5 {
+        let fid = format!("0x0060006{i}");
+        f.insert(
+            &fid,
+            "PERK",
+            &format!("HubConsumer{i}"),
+            json!({
+                "_record_type": "Perk",
+                "Effects": [
+                    {
+                        "Effect": {
+                            "Entry Point": {
+                                "Entry Point": {"value": 1, "name": "SomeEntryPoint"},
+                                "Function": {"value": 1, "name": "AddValue"},
+                            },
+                            "Float": i,
+                        }
+                    }
+                ],
+            }),
+        );
+        rows.push(RefRow {
+            form_id: fid,
+            record_type: Some("PERK".to_string()),
+            editor_id: Some(format!("HubConsumer{i}")),
+            name: None,
+            offset: 0,
+            depth: 1,
+            path: Vec::new(),
+            field_paths: Some(vec![
+                "Effects[0].Effect.Perk Conditions[0].Perk Condition.Conditions[0].Condition.Condition Data.Parameter 1"
+                    .to_string(),
+            ]),
+            ..Default::default()
+        });
+    }
+    f.refs_by_type.insert(
+        (KYWD_HUB_FID.to_string(), "PERK".to_string()),
+        RefList {
+            target: KYWD_HUB_FID.to_string(),
+            rows,
+            total: 5,
+            capped: false,
+            ..Default::default()
+        },
+    );
+
+    let result = walk(
+        &mut f,
+        sel(OMOD_HUB_FID),
+        &WalkOptions {
+            depth: 0,
+            ref_limit: 2,
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, OMOD_HUB_FID).join("\n");
+    let gates_count = text.matches("gates PERK").count();
+    assert_eq!(
+        gates_count, 2,
+        "expected ref_limit=2 to bound the consumer fetch to 2 `gates` lines, got:\n{text}"
+    );
+}
+
+const OMOD_SHELL_FID: &str = "0x0060005A";
+const OMOD_PARENT_FID: &str = "0x0060005B";
+
+/// A `_PARENT_*`-style empty-shell OMOD (no `Data.Properties[]` at all, its
+/// real payload lives on the OMOD it `Data.Includes[]`) should render an
+/// `include →` line pointing at the included OMOD — read straight off the
+/// already-stub-resolved fields, no extra fetch.
+#[test]
+fn omod_includes_stub_renders_include_line() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        OMOD_SHELL_FID,
+        "OMOD",
+        "_PARENT_Legendary_Weapon1_Shell",
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {
+                "Includes": [
+                    {
+                        "Mod": {
+                            "formid": OMOD_PARENT_FID,
+                            "editor_id": "mod_Legendary_Weapon1_Parent",
+                            "record_type": "OMOD",
+                        },
+                        "Minimum Level": 0,
+                        "Optional": {"value": 0, "name": "False"},
+                        "Don't Use All": {"value": 0, "name": "False"},
+                    }
+                ]
+            },
+        }),
+    );
+
+    let result = walk(
+        &mut f,
+        sel(OMOD_SHELL_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, OMOD_SHELL_FID).join("\n");
+    assert!(
+        text.contains(&format!(
+            "include → OMOD {OMOD_PARENT_FID} mod_Legendary_Weapon1_Parent"
+        )),
+        "expected an include stub line, got:\n{text}"
+    );
 }

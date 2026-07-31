@@ -1,0 +1,18 @@
+# Context Map
+
+Three independent Fallout 76 tools live in this repo (see `docs/agents/domain.md` for how
+to consume these docs). Per-subproject `CONTEXT.md` files are created lazily — only `esm/`
+has one so far.
+
+## Contexts
+
+- [esm](./esm/CONTEXT.md) — reading, diffing, and explaining FO76 ESM records
+- ba2 — BA2 archive reading (no `CONTEXT.md` yet)
+- esm-viewer — Electron GUI over esm's native addon (no `CONTEXT.md` yet)
+
+## Relationships
+
+- **esm → esm-viewer**: esm-viewer consumes esm's N-API addon (`esm/bindings/napi`); they
+  share esm's record/decode vocabulary
+- **ba2 ↔ esm**: esm reads strings/curve tables out of BA2 archives via the ba2 reader;
+  otherwise the two share no vocabulary

@@ -39,7 +39,7 @@ every one to ground truth. Run all commands from the repo root.
 
 1. **Chase the mechanic to ground truth** (`{MECHANICS_KB}`, "Chasing a unique-weapon effect"). For
    `mod_Custom_*`/unique-effect OMODs, run
-   `esm/target/release/esm -p --esm "{NEW_ESM}" chase <OMOD> --json` FIRST — it automates the
+   `esm/target/release/esm -p --esm "{NEW_ESM}" chase <OMOD>` FIRST (always emits classified JSON) — it automates the
    keyword/perk-grant/direct-property walk in a handful of bulk calls and returns just the
    gating `Effects[N]` entry, not full record dumps. `chase` also accepts a **PERK, SPEL, ALCH,
    or ENCH selector directly** — run it on whatever the OMOD forward-fetches (or on the record

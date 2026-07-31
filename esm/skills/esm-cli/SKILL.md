@@ -90,30 +90,73 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   broad glob at the default `--limit 100` may show only carrier rows — use
   `--limit 0` (or a larger limit) for EP walks when you need the referencers.
 
-## Mechanics digests: `walk` and `chase`
+## Mechanics digests: `walk` (interactive) and `chase` (pipeline JSON)
 
-- `esm -p walk <selector> [--refs] [--depth N] [--json]` — one compact digest
-  instead of a chain of raw `get` dumps. Follows the standard chains
-  (SPEL/ENCH/ALCH `Effects[]` → MGEF → "Perk to Apply" → PERK / "Equip
-  Ability" → SPEL; PERK Ability → SPEL; OMOD → ENCH properties), resolves
-  AVs/GLOBs/keywords to editor ids, prints curve points, and falls back to a
-  search when the selector doesn't resolve. Walking a KYWD or AVIF
-  reverse-chases its SPEL/PERK consumers (`refs --type … --paths`) instead of
-  dumping the mostly-empty record. `--depth` caps chain-following (default 2;
-  use 3 for OMOD → granted-perk). `--refs` appends grouped reverse references
-  (see obtainability below).
-- `esm -p chase <selector> [--depth N] [--ref-limit N] [--json]` — the
-  mechanism taxonomy. An OMOD selector classifies each `Data.Properties[]`
-  row: bare number (nothing to chase), directly-attached ENCH/SPEL, PERK
-  grant (property 116), or KYWD/AVIF hook (reverse `refs --type SPEL/PERK
-  --paths` to find the gated `Effects[N]` via `WornHasKeyword(...)`). A
-  PERK/SPEL/ALCH/ENCH selector walks its own `Effects[]` directly. Both walks
-  auto-follow one extra hop when a `Base Effect` MGEF carries "Perk to Apply"
-  (→ PERK) or "Equip Ability" (→ SPEL).
-- Reach for `chase` to decode an OMOD's mechanism or resolve an
-  ENCH → MGEF → PERK proc chain in one call; use `walk` for everything else
-  (MGEF archetypes, curves, GLOBs, conditions, PERK entry points, WEAP stats,
-  obtainability review).
+One rule: **read records with `walk`; `chase` is the machine contract.**
+
+- `esm -p walk <selector> [--refs] [--depth N] [--ref-limit N] [--json]` —
+  the interactive tool for *any* record type: one compact digest instead of
+  a chain of raw `get` dumps. Resolves AVs/GLOBs/keywords to editor ids,
+  prints curve points with the flat-wins rule applied, and falls back to a
+  search when the selector doesn't resolve. Walking a KYWD or AVIF root
+  reverse-chases its SPEL/PERK consumers instead of dumping the mostly-empty
+  record. On an OMOD root every mechanism is classified and rendered inline:
+  ENCH-typed properties are followed into the BFS as before; keyword/AVIF
+  hooks are resolved by a reverse walk and rendered as *path-sliced* evidence
+  rows (only the consumer's gated `Effects[N]` rows — a hub perk's dozen
+  unrelated effects never print); perk grants render the granted perk's
+  effect rows; and `Data.Includes[]` stubs are named so `_PARENT_*`
+  empty-shell OMODs point at the include carrying the real mechanic.
+  A hook keyword no SPEL/PERK condition references renders a `dead end`
+  note instead (tag keywords: `FeaturedItem`, `NonDroppable`, naming
+  keywords, …). `--depth` caps BFS chain-following (default 2; use 3 for
+  OMOD → ENCH → MGEF → granted-perk); the root's mechanism slice renders at
+  any depth. `--refs` appends grouped reverse references (see obtainability
+  below).
+
+**Worked example** (`mod_Legendary_Weapon1_DmgConsecutiveHits` / "Furious",
+`0x004F577D`, an ENCH property plus a KYWD-hook property — both mechanisms,
+one call):
+
+```
+$ esm -p walk mod_Legendary_Weapon1_DmgConsecutiveHits --depth 3
+▸ OMOD 0x004F577D mod_Legendary_Weapon1_DmgConsecutiveHits "Furious"
+  enchantment → 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits
+  keyword hook → KYWD 0x001B3FAC FeaturedItem
+    (no SPEL/PERK condition references this — dead end; may be UI-only, native-engine-consumed, or a shared/common tag)
+  keyword hook → KYWD 0x001EF480 HasLegendary_Weapon_DamageConsecutiveHits
+    gates PERK 0x00578B06 LegendaryCommonWeaponPerkBACKUP
+      Effects[11] Set Damage on Consecutive Hits/Set Value  Float=10.0  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1.0
+      Effects[12] Mod Max Consecutive Hits Allowed/Set Value  Float=9.0  Conditions: …
+      Effects[13] Mod Damage on Consecutive Hits/Set Value  Float=0.05  Conditions: …
+  include → OMOD 0x004519F4 _PARENT_mod_Legendary_Weapon_WEIGHTVALUE_1
+▸▸ ENCH 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits  (via OMOD property)
+  effect[0] → MGEF 0x006C3174 AbLegendary_Weapon_DmgConsecutiveHits (Script)
+    Perk to Apply → 0x006C3175 Legendary_Weapon_DmgConsecutiveHits
+▸▸▸ PERK 0x006C3175 Legendary_Weapon_DmgConsecutiveHits  (via Perk to Apply)
+  effect[0] Entry Point "Mod Max Consecutive Hits Allowed"  fn Add Value  value 9
+```
+
+Other mechanism headers you'll see: `perk grant → PERK …` (granted perk's
+effect rows inline), `AV hook → AVIF …` (reverse-chased like a keyword
+hook), `direct property → SPEL …` (forward-fetched), and bare-number
+properties as before.
+
+- `esm -p chase <selector> [--depth N] [--ref-limit N]` — the pipeline
+  evidence contract, not an interactive tool: always emits classified
+  mechanism JSON (`direct_property` / `perk_grant` / `keyword_hook` per
+  `Data.Properties[]` row for an OMOD; an own-`Effects[]` walk for
+  PERK/SPEL/ALCH/ENCH roots; hard error on any other type, no search
+  fallback). The JSON shape is stable — the patch-notes deep-writer parses
+  it. Reach for it only when you need machine-parseable classification
+  (scripts, fan-out agents); when *you* are reading a record, use `walk`.
+
+**Gotcha — hub AVIF/KYWD blowup**: a property targeting a widely-read AV
+(e.g. `Health`) makes the reverse hook-resolution return dozens of unrelated
+consumers (survival hunger/thirst, Daily Ops mutations, unrelated legendary
+armor perks). `--ref-limit` (default 25) bounds it on both commands; walk's
+KYWD/AVIF-root digest additionally caps display at 10 rows per consumer
+type.
 
 ## Reading the digests
 

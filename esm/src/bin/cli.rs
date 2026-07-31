@@ -320,13 +320,9 @@ enum Commands {
         #[command(flatten)]
         sources: LocalizationArgs,
     },
-    /// Automate the "chase pattern" (see .claude/skills/patch-notes/kb/mechanics.md):
-    /// for an OMOD, classify its Data.Properties[] rows into
-    /// direct-property/perk-grant/keyword-hook mechanisms; for a PERK/SPEL/
-    /// ALCH/ENCH, walk its own Effects[] array directly. Either way, forward-
-    /// or reverse-fetches whatever record carries the mechanic (including one
-    /// extra hop through an MGEF's "Perk to Apply"/"Equip Ability") and emits
-    /// a compact evidence tree.
+    /// Pipeline evidence contract: classified mechanism JSON for OMOD/PERK/
+    /// SPEL/ALCH/ENCH roots (hard error on other types). For interactive
+    /// reading use `walk`.
     Chase {
         /// OMOD/PERK/SPEL/ALCH/ENCH FormID or EditorID (auto-detected).
         selector: String,
@@ -338,19 +334,21 @@ enum Commands {
         /// (OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH).
         #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
         ref_limit: usize,
-        #[arg(long)]
-        json: bool,
     },
-    /// Print one compact indented digest of a record and the chain it
-    /// references, instead of a series of raw `get` dumps. BFS out to
-    /// `--depth` hops, annotating GLOB/keyword/AVIF/MGEF/PERK chains as it
-    /// goes.
+    /// Interactive digest of any record and the chain it references — on
+    /// OMOD roots, classifies and slices each mechanism inline
+    /// (keyword/AVIF hooks resolved via reverse refs, bounded by
+    /// --ref-limit).
     Walk {
         /// FormID or EditorID (auto-detected).
         selector: String,
         /// BFS depth cap (0 = just the root, no chain-following).
         #[arg(long, default_value_t = esm::walk::DEFAULT_DEPTH)]
         depth: usize,
+        /// Cap on refs rows fetched per record-type filter for an OMOD
+        /// root's keyword/AVIF mechanism consumer lookups.
+        #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
+        ref_limit: usize,
         /// Print the root record's grouped reverse-reference summary
         /// (obtainability signal) after the chain digest.
         #[arg(long)]
@@ -904,14 +902,14 @@ fn dispatch_command(
             selector,
             depth,
             ref_limit,
-            json,
-        } => cmd_chase(backend, esm, &selector, depth, ref_limit, json),
+        } => cmd_chase(backend, esm, &selector, depth, ref_limit),
         Commands::Walk {
             selector,
             depth,
+            ref_limit,
             refs,
             json,
-        } => cmd_walk(backend, esm, &selector, depth, refs, json),
+        } => cmd_walk(backend, esm, &selector, depth, ref_limit, refs, json),
         Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
     }
@@ -1518,23 +1516,20 @@ impl esm::chase::ChaseFetcher for BackendFetcher<'_> {
     }
 }
 
+/// `chase` is JSON-only — a pipeline evidence contract, not something meant
+/// to be read directly (see `esm::chase`'s module docs and `docs/adr/0001`).
 fn cmd_chase(
     backend: &mut Backend,
     file: &Path,
     selector: &str,
     depth: usize,
     ref_limit: usize,
-    json: bool,
 ) -> anyhow::Result<()> {
     let sel = RecordSel::from_input(selector)?;
     let opts = esm::chase::ChaseOptions { depth, ref_limit };
     let mut fetcher = BackendFetcher { backend, file };
     let tree = esm::chase::chase(&mut fetcher, sel, &opts)?;
-    if json {
-        println!("{}", serde_json::to_string_pretty(&tree)?);
-    } else {
-        println!("{}", esm::chase::render_text(&tree));
-    }
+    println!("{}", serde_json::to_string_pretty(&tree)?);
     Ok(())
 }
 
@@ -1545,16 +1540,18 @@ fn cmd_chase(
 /// - `--refs` → one *unfiltered* `Op::ReferencedBy` (every referencing record
 ///   type, not just SPEL/PERK), reduced client-side by
 ///   `esm::walk::build_refs_digest`.
+#[allow(clippy::too_many_arguments)]
 fn cmd_walk(
     backend: &mut Backend,
     file: &Path,
     selector: &str,
     depth: usize,
+    ref_limit: usize,
     want_refs: bool,
     json: bool,
 ) -> anyhow::Result<()> {
     let sel = RecordSel::from_input(selector)?;
-    let opts = esm::walk::WalkOptions { depth };
+    let opts = esm::walk::WalkOptions { depth, ref_limit };
     let mut fetcher = BackendFetcher { backend, file };
     let mut result = esm::walk::walk(&mut fetcher, sel, &opts)?;
 

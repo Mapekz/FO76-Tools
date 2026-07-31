@@ -1,9 +1,10 @@
-//! Agent-facing record walker that prints one compact indented digest of an
-//! ESM record and the chain it references, instead of a series of raw
-//! `esm get` dumps.
+//! The sole interactive record surface (see
+//! `docs/adr/0001-walk-interactive-chase-pipeline-json.md`): prints one
+//! compact indented digest of an ESM record and the chain it references,
+//! instead of a series of raw `esm get` dumps. Accepts any record type.
 //!
 //! ```text
-//! esm -p --esm <path> walk <formid|edid> [--refs] [--depth N] [--json]
+//! esm -p --esm <path> walk <formid|edid> [--refs] [--depth N] [--ref-limit N] [--json]
 //! ```
 //!
 //! [`walk`] does a breadth-first traversal (queue + visited set keyed on
@@ -14,6 +15,26 @@
 //! OMOD's ENCH property, ...). It composes the same two primitives
 //! `esm::chase`'s "chase pattern" uses — [`ChaseFetcher::bulk_get`] and
 //! [`ChaseFetcher::refs`] — no new trait, no new wire `Op`.
+//!
+//! **OMOD roots get more than a forward-only digest.** [`digest_node`]'s
+//! `"OMOD"` arm calls straight into `esm::chase`'s mechanism classifier
+//! ([`crate::chase::omod_chase`]) on the already-fetched root — no redundant
+//! re-fetch — and renders each classified `Data.Properties[]` mechanism as
+//! path-sliced evidence rows nested under the record's digest: a keyword/AVIF
+//! hook names the gating SPEL/PERK consumer and shows only the gated
+//! `Effects[N]` rows it triggers (never the consumer's full digest), a perk
+//! grant or direct SPEL/ENCH attachment shows the granted record's own
+//! effects, and an MGEF pass-through ("Perk to Apply"/"Equip Ability") is
+//! named the same way `chase` names it. This mechanism slice runs
+//! unconditionally as part of the root digest — `--depth` only governs BFS
+//! *enqueueing*, not whether the root's own mechanisms get classified.
+//! ENCH-typed properties are the one exception: they're still handled
+//! entirely by [`digest_omod_ench_follow`] (forward-fetched *and* enqueued
+//! into the BFS as their own node), not by the chase classifier, so an
+//! OMOD → ENCH → MGEF → granted-perk chain still lands in one `walk` call.
+//! `Data.Includes[]` stubs (the `_PARENT_*` empty-shell OMOD pattern) are
+//! named too, straight off the already-stub-resolved fields — zero extra
+//! fetches.
 //!
 //! Every record is fetched at [`ResolveDepth::Stub`], so every direct FormID
 //! reference on a fetched record's own fields already arrives pre-annotated
@@ -41,7 +62,10 @@
 //!   the raw rows to [`build_refs_digest`] (a pure function, easily unit
 //!   tested without any fetcher).
 
-use crate::chase::{ChaseFetcher, consumer_refs_by_type};
+use crate::chase::{
+    ChaseFetcher, ChaseOptions, Evidence, Hop, HopKind, RootStub, consumer_refs_by_type,
+    first_array_container, fmt_stub, omod_chase, summarize_effect,
+};
 use crate::ipc::RecordSel;
 use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
 use anyhow::Context as _;
@@ -101,14 +125,25 @@ type EnqueueTarget = (FormId, String);
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct WalkOptions {
     /// BFS depth cap — nodes reached only via a chain longer than this are
-    /// never fetched. 0 means "just the root, no enqueueing".
+    /// never fetched. 0 means "just the root, no enqueueing". Only governs
+    /// BFS enqueueing — an OMOD root's inline mechanism slice (see
+    /// `digest_omod_mechanisms`) always runs regardless of this cap.
     pub depth: usize,
+    /// Cap on refs rows fetched per record-type filter, passed straight
+    /// through to `esm::chase::ChaseOptions::ref_limit` for an OMOD root's
+    /// keyword/AVIF mechanism consumer lookups (see
+    /// `digest_omod_mechanisms`). Shares `esm::chase::DEFAULT_REF_LIMIT`
+    /// rather than a duplicated constant. Unrelated to
+    /// [`CONSUMER_REF_LIMIT`], which bounds a *directly*-walked KYWD/AVIF
+    /// root's own consumer digest and is deliberately left as-is.
+    pub ref_limit: usize,
 }
 
 impl Default for WalkOptions {
     fn default() -> Self {
         Self {
             depth: DEFAULT_DEPTH,
+            ref_limit: crate::chase::DEFAULT_REF_LIMIT,
         }
     }
 }
@@ -955,6 +990,175 @@ fn digest_omod_ench_follow(
     Ok(())
 }
 
+/// Classify an OMOD root's `Data.Properties[]` rows via `esm::chase`'s
+/// mechanism classifier ([`omod_chase`]) and render each non-bare-number,
+/// non-ENCH mechanism as path-sliced evidence rows nested under the record's
+/// digest (see module docs). Runs on the already-fetched root — `fields` was
+/// already pulled down by [`walk`]'s own `bulk_get`, so this only spends
+/// fetches on whatever forward/reverse evidence the classifier needs.
+/// `ref_limit` bounds the reverse keyword/AVIF consumer walk (see
+/// [`WalkOptions::ref_limit`]); runs regardless of `--depth`, which only
+/// governs BFS enqueueing.
+fn digest_omod_mechanisms(
+    f: &mut impl ChaseFetcher,
+    formid: FormId,
+    sig: &str,
+    editor_id: &str,
+    fields: &Value,
+    ref_limit: usize,
+    lines: &mut Vec<String>,
+) -> anyhow::Result<()> {
+    // `tree.root` is discarded below (walk already knows the root's identity
+    // from its own `WalkNode`) — Name/Description are left `None` since
+    // `omod_chase` never reads them back off `root`, only echoes them.
+    let root = RootStub {
+        formid: Some(formid.display()),
+        record_type: Some(sig.to_string()),
+        editor_id: Some(editor_id.to_string()),
+        name: None,
+        description: None,
+    };
+    let opts = ChaseOptions {
+        depth: crate::chase::DEFAULT_DEPTH,
+        ref_limit,
+    };
+    let tree = omod_chase(f, root, fields, &opts)?;
+    for hop in &tree.hops {
+        render_omod_hop(hop, lines);
+    }
+    Ok(())
+}
+
+/// Render one classified [`Hop`] as indented mechanism lines. Skips bare-
+/// number properties (`hop.target.is_none()` — nothing to chase, unchanged
+/// from before this walk had a dedicated OMOD digest) and ENCH-typed targets
+/// ([`digest_omod_ench_follow`] already forward-follows and enqueues those as
+/// their own BFS node — rendering them again here would be redundant).
+fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>) {
+    let Some(target) = &hop.target else {
+        return;
+    };
+    let target_rt = target
+        .get("record_type")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if target_rt == "ENCH" {
+        return;
+    }
+
+    match hop.kind {
+        HopKind::PerkGrant => {
+            lines.push(format!("perk grant → {}", fmt_stub(target)));
+            render_forward_evidence(&hop.evidence, lines);
+        }
+        HopKind::KeywordHook => {
+            lines.push(format!("keyword hook → {}", fmt_stub(target)));
+            render_reverse_evidence(&hop.evidence, lines);
+        }
+        // An AVIF direct-property target is reverse-chased exactly like a
+        // KYWD keyword_hook (see `esm::chase::omod_chase`) even though its
+        // `HopKind` stays `DirectProperty` — the hop-kind taxonomy doesn't
+        // distinguish "direct" from "AV hook", so dispatch on the target's
+        // own record_type here instead.
+        HopKind::DirectProperty if target_rt == "AVIF" => {
+            lines.push(format!("AV hook → {}", fmt_stub(target)));
+            render_reverse_evidence(&hop.evidence, lines);
+        }
+        // Direct SPEL attachment (the other `FORWARD_FETCH_TYPES` member
+        // besides ENCH/PERK) — forward-fetched the same way a perk grant is.
+        HopKind::DirectProperty => {
+            lines.push(format!("direct property → {}", fmt_stub(target)));
+            render_forward_evidence(&hop.evidence, lines);
+        }
+    }
+}
+
+/// Render forward-fetched [`Evidence`] (perk_grant / direct SPEL attachment):
+/// the target's own `Effects[]` array (already capped by
+/// `esm::chase`'s `forward_evidence`), path-labeled by array position since
+/// there's no gating condition to slice down to one entry — plus a trailing
+/// MGEF pass-through line when the target's own Base Effect carries "Perk to
+/// Apply"/"Equip Ability" (named, not expanded further — same as `chase`).
+fn render_forward_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
+    for ev in evidence {
+        if let Some(effects) = ev.detail.get("effects").and_then(Value::as_array) {
+            for (i, eff) in effects.iter().enumerate() {
+                lines.push(format!("  Effects[{i}] {}", summarize_effect(eff)));
+            }
+            if let Some(trunc) = ev
+                .detail
+                .get("effects_truncated")
+                .and_then(Value::as_u64)
+                .filter(|n| *n > 0)
+            {
+                lines.push(format!("  … +{trunc} more effects (truncated)"));
+            }
+        }
+        if let Some(p) = ev.detail.get("perk_to_apply").filter(|v| !v.is_null()) {
+            lines.push(format!("  Perk to Apply → {}", fmt_stub(p)));
+        }
+        if let Some(e) = ev.detail.get("equip_ability").filter(|v| !v.is_null()) {
+            lines.push(format!("  Equip Ability → {}", fmt_stub(e)));
+        }
+    }
+}
+
+/// Render reverse-chased [`Evidence`] (keyword_hook / AVIF consumer lookup):
+/// group consecutive entries sharing the same gating consumer under one
+/// `"gates <consumer>"` header, then the exact path-sliced `Effects[N]` row
+/// each evidence entry names — never the consumer's full digest. Empty
+/// evidence (no SPEL/PERK condition ever references this target) renders one
+/// dead-end line instead of silently vanishing.
+fn render_reverse_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
+    if evidence.is_empty() {
+        lines.push(
+            "  (no SPEL/PERK condition references this — dead end; may be UI-only, \
+             native-engine-consumed, or a shared/common tag)"
+                .to_string(),
+        );
+        return;
+    }
+    let mut last_source: Option<String> = None;
+    for ev in evidence {
+        let source_fid = ev
+            .source
+            .get("formid")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if last_source.as_deref() != Some(source_fid) {
+            lines.push(format!("  gates {}", fmt_stub(&ev.source)));
+            last_source = Some(source_fid.to_string());
+        }
+        if let Some(effect) = ev.detail.get("effect") {
+            let label = ev
+                .via
+                .as_deref()
+                .and_then(first_array_container)
+                .unwrap_or_else(|| "effect".to_string());
+            lines.push(format!("    {label} {}", summarize_effect(effect)));
+        } else if let Some(note) = ev.detail.get("note").and_then(Value::as_str) {
+            lines.push(format!("    {note}"));
+        }
+    }
+}
+
+/// `Data.Includes[]` names another OMOD this one composes from — the
+/// `_PARENT_*` empty-shell pattern, where the real properties live on the
+/// included OMOD rather than this one. Already stub-resolved on the fetched
+/// `fields` (a `Stub`-depth `bulk_get` annotates every direct reference), so
+/// this is zero extra fetches — unlike the property-based mechanism slice
+/// above, which forward/reverse-fetches whatever the classifier finds.
+fn digest_omod_includes(fields: &Value, lines: &mut Vec<String>) {
+    let Some(includes) = fields.pointer("/Data/Includes").and_then(Value::as_array) else {
+        return;
+    };
+    for inc in includes {
+        if let Some(target) = inc.get("Mod").filter(|v| is_ref_stub(v)) {
+            lines.push(format!("include → {}", fmt_stub(target)));
+        }
+    }
+}
+
 // ─── refs digest (root-only, `--refs`) ──────────────────────────────────────
 
 /// Group an unfiltered reverse-`refs` row list by `record_type`, sorted by
@@ -1012,12 +1216,17 @@ pub fn build_refs_digest(rows: &[RefRow]) -> RefsDigest {
 
 /// Run one node's record-type-specific digest, returning the lines to attach
 /// to its [`WalkNode`] plus any FormIDs it wants enqueued one hop further
-/// (with the "via" edge label to attach to the enqueued node).
+/// (with the "via" edge label to attach to the enqueued node). `ref_limit`
+/// only matters for the OMOD arm's mechanism slice (see
+/// [`digest_omod_mechanisms`]) and the KYWD/AVIF root's own consumer digest
+/// (which ignores it — see [`WalkOptions::ref_limit`]).
 fn digest_node(
     f: &mut impl ChaseFetcher,
     sig: &str,
     formid: FormId,
+    editor_id: &str,
     fields: &Value,
+    ref_limit: usize,
 ) -> anyhow::Result<(Vec<String>, Vec<EnqueueTarget>)> {
     let mut lines = Vec::new();
     let mut enqueue = Vec::new();
@@ -1032,10 +1241,15 @@ fn digest_node(
         "SPEL" | "ENCH" | "ALCH" => digest_magic_item(f, fields, &mut lines, &mut enqueue)?,
         "PERK" => digest_perk(f, fields, &mut lines, &mut enqueue)?,
         "WEAP" => digest_weap(fields, &mut lines),
+        "OMOD" => {
+            // Ordered to match the mechanism-slice narrative: the ENCH chain
+            // (a full BFS-followed node) first, then the property mechanisms
+            // the classifier resolves inline, then the Includes[] pointers.
+            digest_omod_ench_follow(f, fields, &mut lines, &mut enqueue)?;
+            digest_omod_mechanisms(f, formid, sig, editor_id, fields, ref_limit, &mut lines)?;
+            digest_omod_includes(fields, &mut lines);
+        }
         _ => digest_generic(fields, &mut lines),
-    }
-    if sig == "OMOD" {
-        digest_omod_ench_follow(f, fields, &mut lines, &mut enqueue)?;
     }
     Ok((lines, enqueue))
 }
@@ -1096,7 +1310,14 @@ pub fn walk(
             .filter(|s| !s.is_empty())
             .map(str::to_string);
 
-        let (lines, enqueue) = digest_node(f, &header.signature, formid, &fields)?;
+        let (lines, enqueue) = digest_node(
+            f,
+            &header.signature,
+            formid,
+            &editor_id,
+            &fields,
+            opts.ref_limit,
+        )?;
 
         nodes.push(WalkNode {
             depth,

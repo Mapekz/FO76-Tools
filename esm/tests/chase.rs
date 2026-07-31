@@ -9,7 +9,7 @@
 //! `RefList` keyed by `(target, type_filter)` — the exact two calls
 //! `chase()`'s reverse-chase makes (one per `CONSUMER_TYPES` entry).
 
-use esm::chase::{ChaseFetcher, ChaseOptions, EffectHopKind, HopKind, chase, render_text};
+use esm::chase::{ChaseFetcher, ChaseOptions, EffectHopKind, HopKind, chase};
 use esm::ipc::RecordSel;
 use esm::reader::RecordHeaderInfo;
 use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
@@ -675,42 +675,28 @@ fn omod_with_no_properties_has_empty_hops() {
     assert!(tree.effect_hops.is_empty());
 }
 
+/// `chase` is JSON-only (see `docs/adr/0001`): `ChaseTree`'s JSON shape is a
+/// frozen pipeline contract the `/patch-notes` deep-writer consumes, so the
+/// `#[serde(rename_all = "snake_case")]` hop-kind tags are load-bearing —
+/// this is the one test that round-trips the tree through `serde_json` and
+/// checks the wire tags directly, rather than only the typed `HopKind`/
+/// `EffectHopKind` enum values other tests in this file already cover.
 #[test]
-fn render_text_mentions_omod_and_hop_kinds() {
+fn chase_tree_json_uses_snake_case_hop_kind_tags() {
     let mut f = fixture();
     let tree = chase(&mut f, sel(OMOD_FID), &ChaseOptions::default()).unwrap();
-    let text = render_text(&tree);
-    assert!(text.starts_with("OMOD "));
-    assert!(text.contains("mod_Custom_Test"));
-    assert!(text.contains("perk_grant"));
-    assert!(text.contains("keyword_hook"));
-    assert!(text.contains("TestSpellEffect"));
-}
+    let json = serde_json::to_value(&tree).unwrap();
+    let kinds: Vec<&str> = json["hops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"direct_property"));
+    assert!(kinds.contains(&"perk_grant"));
+    assert!(kinds.contains(&"keyword_hook"));
 
-#[test]
-fn render_text_no_properties_message() {
-    let mut f = fixture();
-    let entry = f.records.get_mut(OMOD_FID).unwrap();
-    entry
-        .fields
-        .as_mut()
-        .unwrap()
-        .pointer_mut("/Data")
-        .unwrap()
-        .as_object_mut()
-        .unwrap()
-        .insert("Properties".to_string(), json!([]));
-    let tree = chase(&mut f, sel(OMOD_FID), &ChaseOptions::default()).unwrap();
-    let text = render_text(&tree);
-    assert!(text.contains("nothing to chase"));
-}
-
-#[test]
-fn render_text_effect_root_shows_record_type_header_and_pass_through() {
-    let mut f = fixture();
-    let tree = chase(&mut f, sel(SPEL_ROOT_FID), &ChaseOptions::default()).unwrap();
-    let text = render_text(&tree);
-    assert!(text.starts_with("SPEL "));
-    assert!(text.contains("base_effect"));
-    assert!(text.contains("Perk to Apply:"));
+    let effect_tree = chase(&mut f, sel(SPEL_ROOT_FID), &ChaseOptions::default()).unwrap();
+    let effect_json = serde_json::to_value(&effect_tree).unwrap();
+    assert_eq!(effect_json["effect_hops"][0]["kind"], json!("base_effect"));
 }

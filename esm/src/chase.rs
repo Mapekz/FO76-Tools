@@ -1,10 +1,28 @@
-//! Native port of `tools/chase/chase.py` — automates the "chase pattern" for
-//! unique-weapon OMOD effects documented under "Chasing a unique-weapon effect"
-//! in `.claude/skills/patch-notes/kb/mechanics.md`,
-//! and (since the OMOD-only original) generalized to also accept PERK, SPEL,
-//! ALCH, and ENCH selectors directly — the record types an OMOD's own
-//! forward-fetch hops resolve into. Read the KB section first — this module
-//! is a mechanical implementation of the walks it describes, nothing more.
+//! Mechanism classifier core, shared by two different contracts (see
+//! `docs/adr/0001-walk-interactive-chase-pipeline-json.md`):
+//!
+//! - **`esm chase`** (this module's own CLI surface, via [`chase`]/[`ChaseTree`])
+//!   is the machine-facing pipeline evidence contract: it always emits the
+//!   classified `ChaseTree` as JSON and hard-errors on any selector that
+//!   doesn't resolve to one of the five accepted root types. Its JSON shape
+//!   is frozen — a native port of `tools/chase/chase.py`'s output, still
+//!   consumed unchanged by the `/patch-notes` deep-writer agent. This module
+//!   has no human text renderer of its own; interactive reading of a
+//!   classified OMOD lives entirely in `esm::walk`, which calls straight into
+//!   this module's classification functions (see [`omod_chase`]) and renders
+//!   the result itself.
+//! - **`esm walk`** (`src/walk.rs`) is the sole interactive surface. On an
+//!   OMOD root it runs this module's classifier inline and renders each
+//!   mechanism as path-sliced evidence rows under the record's digest — see
+//!   that module's docs for the exact rendering.
+//!
+//! Automates the "chase pattern" for unique-weapon OMOD effects documented
+//! under "Chasing a unique-weapon effect" in
+//! `.claude/skills/patch-notes/kb/mechanics.md`, generalized past the
+//! OMOD-only original to also accept PERK, SPEL, ALCH, and ENCH selectors
+//! directly — the record types an OMOD's own forward-fetch hops resolve
+//! into. Read the KB section first — this module is a mechanical
+//! implementation of the walks it describes, nothing more.
 //!
 //! [`chase`] dispatches on the resolved selector's record type:
 //!
@@ -182,16 +200,6 @@ pub enum HopKind {
     KeywordHook,
 }
 
-impl HopKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            HopKind::DirectProperty => "direct_property",
-            HopKind::PerkGrant => "perk_grant",
-            HopKind::KeywordHook => "keyword_hook",
-        }
-    }
-}
-
 /// One classified `Data.Properties[]` row plus whatever evidence the chase
 /// found to explain what it does downstream.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,16 +230,6 @@ pub enum EffectHopKind {
     /// Neither shape matched — a bare stat tweak or entry-point-only effect,
     /// terminal (matches OMOD's bare-scalar `DirectProperty` treatment).
     NoTarget,
-}
-
-impl EffectHopKind {
-    fn as_str(self) -> &'static str {
-        match self {
-            EffectHopKind::BaseEffect => "base_effect",
-            EffectHopKind::ForwardTarget => "forward_target",
-            EffectHopKind::NoTarget => "no_target",
-        }
-    }
 }
 
 /// One classified `Effects[]` entry from a PERK/SPEL/ALCH/ENCH root — the
@@ -319,15 +317,6 @@ fn pyish(v: &Value) -> String {
     }
 }
 
-/// Python `repr()`-ish rendering, used only for the `value1=.../value2=...`
-/// fallback line in [`render_text`] (mirrors `f"value1={value!r}"`).
-fn py_repr(v: &Value) -> String {
-    match v {
-        Value::String(s) => format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'")),
-        other => pyish(other),
-    }
-}
-
 /// `a or b` (Python truthiness), rendered as text — used wherever the
 /// prototype does `x.get("editor_id") or x.get("formid")`.
 fn py_or_display(a: Option<&Value>, b: Option<&Value>) -> String {
@@ -380,7 +369,10 @@ fn split_token(part: &str) -> Option<(&str, Vec<usize>)> {
 /// Return the path prefix up to and including the first `[N]` index, e.g.
 /// `"Effects[1].Effect.Conditions..."` -> `"Effects[1]"`. This isolates the one
 /// Effects entry a keyword/AVIF gates, instead of the whole record.
-fn first_array_container(path: &str) -> Option<String> {
+///
+/// `pub(crate)` so `esm::walk`'s OMOD digest can turn an [`Evidence::via`]
+/// field path back into the `"Effects[N]"` label it prints for a sliced row.
+pub(crate) fn first_array_container(path: &str) -> Option<String> {
     let mut prefix: Vec<&str> = Vec::new();
     for part in path.split('.') {
         prefix.push(part);
@@ -469,7 +461,11 @@ const HANDLED_EFFECT_KEYS: &[&str] = &[
 /// a single compact line: base effect / entry point, magnitude, duration, any
 /// other FormID reference on the effect, and any gating conditions found
 /// anywhere inside it.
-fn summarize_effect(effect_entry: &Value) -> String {
+///
+/// `pub(crate)` so `esm::walk`'s OMOD mechanism slice can render the same
+/// compact one-line form for a forward-fetched or path-sliced `Effects[N]`
+/// row — this crate's one shared "what does this effect entry do" formatter.
+pub(crate) fn summarize_effect(effect_entry: &Value) -> String {
     let inner = match effect_entry.as_object() {
         Some(map) => map.get("Effect").unwrap_or(effect_entry),
         None => return truncate_json(effect_entry, 200),
@@ -915,7 +911,12 @@ pub fn chase(
 /// Run the chase for an OMOD root: classify each `Data.Properties[]` row into
 /// direct-property/perk-grant/keyword-hook (see the module docs) and forward-
 /// or reverse-fetch whatever record carries the mechanic.
-fn omod_chase(
+///
+/// `pub(crate)` (rather than only reachable through [`chase`]'s dispatch) so
+/// `esm::walk`'s OMOD digest can classify an already-fetched root directly —
+/// see that module's `digest_node`. Building the `RootStub` is cheap and the
+/// caller doesn't need to have paid for a fresh `bulk_get` first.
+pub(crate) fn omod_chase(
     f: &mut impl ChaseFetcher,
     root: RootStub,
     fields: &Value,
@@ -1146,9 +1147,13 @@ fn effect_chase(
     })
 }
 
-// ─── rendering ───────────────────────────────────────────────────────────────
+// ─── rendering primitives (reused by `esm::walk`; no renderer of chase's own
+// remains — see the module docs and `docs/adr/0001`) ────────────────────────
 
-fn fmt_stub(stub: &Value) -> String {
+/// "record_type formid editor_id" — the universal stub rendering both this
+/// module's tests and `esm::walk`'s OMOD mechanism-slice digest use to name a
+/// classified hop's target or a reverse-chased consumer.
+pub(crate) fn fmt_stub(stub: &Value) -> String {
     let rt = stub
         .get("record_type")
         .filter(|v| is_truthy(Some(*v)))
@@ -1165,147 +1170,6 @@ fn fmt_stub(stub: &Value) -> String {
         .map(pyish)
         .unwrap_or_default();
     format!("{rt} {fid} {edid}").trim_end().to_string()
-}
-
-/// Render one [`Evidence`] entry's lines (source/via header, then whichever of
-/// description/effect/effects+truncation/perk_to_apply/equip_ability/note the
-/// detail carries) — shared by the OMOD hops loop and the PERK/SPEL/ALCH/ENCH
-/// effect-hops loop in [`render_text`].
-fn render_evidence(lines: &mut Vec<String>, ev: &Evidence) {
-    let via = ev
-        .via
-        .as_deref()
-        .map(|v| format!("  via {v}"))
-        .unwrap_or_default();
-    lines.push(format!("      -> {}{}", fmt_stub(&ev.source), via));
-    let detail = &ev.detail;
-    if let Some(desc) = detail.get("description").filter(|v| is_truthy(Some(*v))) {
-        lines.push(format!("         Description: \"{}\"", pyish(desc)));
-    }
-    if let Some(effect) = detail.get("effect") {
-        lines.push(format!("         Effect: {}", summarize_effect(effect)));
-    }
-    if let Some(effects) = detail.get("effects").and_then(Value::as_array) {
-        for eff in effects {
-            lines.push(format!("         Effect: {}", summarize_effect(eff)));
-        }
-        if let Some(trunc) = detail
-            .get("effects_truncated")
-            .filter(|v| is_truthy(Some(*v)))
-        {
-            lines.push(format!(
-                "         ... +{} more effects (truncated)",
-                pyish(trunc)
-            ));
-        }
-    }
-    if let Some(p) = detail.get("perk_to_apply").filter(|v| is_truthy(Some(*v))) {
-        lines.push(format!("         Perk to Apply: {}", fmt_stub(p)));
-    }
-    if let Some(e) = detail.get("equip_ability").filter(|v| is_truthy(Some(*v))) {
-        lines.push(format!("         Equip Ability: {}", fmt_stub(e)));
-    }
-    if let Some(note) = detail.get("note") {
-        lines.push(format!("         Note: {}", pyish(note)));
-    }
-}
-
-fn render_effect_hop(lines: &mut Vec<String>, hop: &EffectHop) {
-    lines.push(String::new());
-    lines.push(format!(
-        "  [{}] {} ({})",
-        hop.effect_index,
-        summarize_effect(&hop.effect),
-        hop.kind.as_str()
-    ));
-    if let Some(target) = &hop.target {
-        lines.push(format!("      -> {}", fmt_stub(target)));
-    }
-    for ev in &hop.evidence {
-        render_evidence(lines, ev);
-    }
-}
-
-/// Render a [`ChaseTree`] as human-readable text — the CLI's default (non
-/// `--json`) output. Dispatches on which of `hops`/`effect_hops` is populated;
-/// the OMOD path ports `chase.py`'s `render_text` line-for-line.
-pub fn render_text(tree: &ChaseTree) -> String {
-    let mut lines: Vec<String> = Vec::new();
-    let root = &tree.root;
-    let mut header = format!(
-        "{} {} {}",
-        root.record_type.as_deref().unwrap_or("?"),
-        root.formid.as_deref().unwrap_or("None"),
-        root.editor_id.as_deref().unwrap_or("None"),
-    );
-    if is_truthy(root.name.as_ref()) {
-        header.push_str(&format!("  \"{}\"", pyish(root.name.as_ref().unwrap())));
-    }
-    lines.push(header);
-    if is_truthy(root.description.as_ref()) {
-        lines.push(format!(
-            "  Description: \"{}\"",
-            pyish(root.description.as_ref().unwrap())
-        ));
-    }
-
-    if !tree.effect_hops.is_empty() {
-        for hop in &tree.effect_hops {
-            render_effect_hop(&mut lines, hop);
-        }
-        return lines.join("\n");
-    }
-
-    if tree.hops.is_empty() {
-        lines.push("  (nothing to chase — no Properties/Effects on this record)".to_string());
-        return lines.join("\n");
-    }
-
-    for hop in &tree.hops {
-        lines.push(String::new());
-        lines.push(format!(
-            "  [{}] {} {} ({})",
-            hop.property_index,
-            pyish(&hop.property),
-            pyish(&hop.function),
-            hop.kind.as_str()
-        ));
-        if let Some(target) = &hop.target {
-            lines.push(format!("      -> {}", fmt_stub(target)));
-        } else {
-            lines.push(format!(
-                "      value1={} value2={}",
-                py_repr(&hop.value1),
-                py_repr(&hop.value2)
-            ));
-        }
-        if let Some(ct) = &hop.curve_table {
-            lines.push(format!("      curve_table={}", pyish(ct)));
-        }
-
-        let is_avif = hop
-            .target
-            .as_ref()
-            .and_then(|t| t.get("record_type"))
-            .and_then(Value::as_str)
-            == Some("AVIF");
-        if hop.evidence.is_empty() {
-            if hop.kind == HopKind::KeywordHook || is_avif {
-                lines.push(
-                    "      (no SPEL/PERK condition references this target — dead end; \
-                     may be UI-only, native-engine-consumed, or a shared/common tag)"
-                        .to_string(),
-                );
-            }
-            continue;
-        }
-
-        for ev in &hop.evidence {
-            render_evidence(&mut lines, ev);
-        }
-    }
-
-    lines.join("\n")
 }
 
 // ─── colocated unit tests for private helpers ───────────────────────────────
