@@ -46,11 +46,9 @@ allow = [
     "Zlib",
 ]
 
-# Our own crates carry no `license` field, and the repository has no LICENSE
-# file. They are marked `publish = false` and are never uploaded to a registry,
-# so skip the license check for them rather than assert a licence that has not
-# actually been chosen.
-private = { ignore = true }
+# Our own crates are MIT-licensed (see the repo-root LICENSE file and each
+# crate's `license` field) and checked like any dependency — no ignore.
+private = { ignore = false }
 
 [bans]
 # Duplicate versions are common and usually transitive (currently syn 2 and 3

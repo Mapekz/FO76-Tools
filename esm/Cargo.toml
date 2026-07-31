@@ -6,6 +6,7 @@ name = "esm"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
+license = "MIT"
 # Local tooling — never uploaded to a registry.
 publish = false
 

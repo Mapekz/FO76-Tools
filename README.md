@@ -9,3 +9,7 @@ An umbrella for independent Fallout 76 tooling. Each subproject has its own lang
 | [`esm-viewer/`](esm-viewer/) | TypeScript / Electron | "FO76 ESM Viewer" desktop GUI for browsing, searching, and diffing game records; built on `esm-napi` |
 
 Deferred work for every subproject is tracked in a single repo-root backlog: [`todos.md`](todos.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

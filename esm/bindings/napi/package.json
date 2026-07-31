@@ -2,6 +2,7 @@
   "name": "@fo76/esm-napi",
   "version": "0.1.0",
   "description": "Native N-API binding for the esm crate",
+  "license": "MIT",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {

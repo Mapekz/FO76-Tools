@@ -2,6 +2,7 @@
   "name": "@fo76/esm-viewer",
   "version": "0.1.0",
   "description": "FO76 ESM Viewer — Fallout 76 ESM record browser",
+  "license": "MIT",
   "productName": "FO76 ESM Viewer",
   "main": "out/main/index.js",
   "scripts": {
