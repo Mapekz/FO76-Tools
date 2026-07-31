@@ -1056,7 +1056,13 @@ impl Database {
         for child in children_slice {
             match child {
                 ChildRef::Group(idx) => {
-                    result.push(GroupChild::Group(tree.group_node(idx)));
+                    // `ChildRef::Group` stores its arena index as `u32` (Stage
+                    // 4 pinned every `TreeIndex`-adjacent stored index to
+                    // `u32` for portable rkyv layout — see `tree.rs`), while
+                    // `TreeView::group_node` keeps `usize` at the in-memory
+                    // API boundary. Lossless widening cast, not a narrowing
+                    // one.
+                    result.push(GroupChild::Group(tree.group_node(idx as usize)));
                 }
                 ChildRef::Record {
                     form_id,

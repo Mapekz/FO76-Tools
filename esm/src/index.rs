@@ -5,6 +5,7 @@ use crate::reader::{
     EsmFile, RecordMeta, edid_from_subrecords, inline_string_from_subrecords,
     lstring_id_from_subrecords,
 };
+use crate::rkyvcache::{CacheSig, Section, SectionKind, write_section};
 use crate::schema::Schema;
 use crate::strings::Localization;
 use crate::tree::TreeIndex;
@@ -38,7 +39,20 @@ use std::time::SystemTime;
 // defence-in-depth: it rejects old files by version rather than relying on the
 // new decoder to fail on old bytes, which a dense binary format could
 // conceivably mis-parse without erroring.
-const CACHE_VERSION: u32 = 12;
+//
+// Bumped 12 -> 13: `TreeIndex` moved out of the bincode `CacheFile` blob into
+// its own rkyv-backed `.esm.tree` section (see `rkyvcache.rs` / `tree.rs`'s
+// `TreeView`) — `CacheFile` lost its `tree` field, changing the bincode byte
+// shape. `try_load_cache` already treats a decode error as "no usable cache",
+// but a removed field (rather than a changed type) is exactly the kind of
+// change a length-prefixed/varint format like bincode 2 could conceivably
+// mis-parse into a structurally different-but-plausible `CacheFile` without
+// erroring, so this bump rejects a pre-this-change `.esm.idx` by version
+// check rather than leaving that to chance. This section's own
+// `.esm.tree` file carries its own independent version/layout-fingerprint
+// check (see `Section::map`), gated on this same `CACHE_VERSION` constant —
+// see `try_load_cache`/`build_fresh` below.
+const CACHE_VERSION: u32 = 13;
 
 /// Per-record data stored in the lazy search index.
 ///
@@ -69,21 +83,44 @@ struct CacheFile {
     mtime_nanos: u32,
     form_index: HashMap<u32, RecordMeta>,
     edid_index: Option<HashMap<String, u32>>,
-    tree: TreeIndex,
     xref_index: Option<HashMap<u32, Vec<u32>>>,
     search_index: Option<HashMap<u32, SearchMeta>>,
 }
 
-#[derive(Debug, Clone)]
+/// # Not `Clone`; `Debug` is hand-written
+///
+/// `tree`'s `Section` wraps a `Mmap`, which implements neither trait.
+/// Nothing in this crate needs `Index: Clone` (`Database`, which owns one,
+/// doesn't derive it either; `Registry` shares `Database` instances via
+/// `Arc<Mutex<Database>>`, cloning the `Arc`, never the `Database`/`Index`
+/// itself) — but at least one existing test does format an `Index`-carrying
+/// `Result` via `unwrap_err`, so `Debug` is implemented manually below,
+/// summarizing `tree` as just its mapped/absent state rather than requiring
+/// `Section<A>: Debug`.
 pub struct Index {
     pub path: PathBuf,
     form_index: HashMap<FormId, RecordMeta>,
     edid_index: Option<HashMap<String, FormId>>,
-    tree: TreeIndex,
+    tree: Section<rkyv::Archived<TreeIndex>>,
     cache_path: PathBuf,
     xref_index: Option<HashMap<FormId, Vec<FormId>>>,
     search_index: Option<HashMap<FormId, SearchMeta>>,
     type_index: HashMap<Signature, Vec<FormId>>,
+}
+
+impl std::fmt::Debug for Index {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Index")
+            .field("path", &self.path)
+            .field("form_index_len", &self.form_index.len())
+            .field("edid_index_built", &self.edid_index.is_some())
+            .field("tree_mapped", &self.tree.is_mapped())
+            .field("cache_path", &self.cache_path)
+            .field("xref_index_built", &self.xref_index.is_some())
+            .field("search_index_built", &self.search_index.is_some())
+            .field("type_index_len", &self.type_index.len())
+            .finish()
+    }
 }
 
 /// Borrowed view over one search entry. Exists so [`crate::Database::search`]
@@ -122,7 +159,7 @@ impl Index {
             path,
             form_index: HashMap::new(),
             edid_index: None,
-            tree: crate::tree::TreeIndex::default(),
+            tree: Section::Absent,
             cache_path,
             xref_index: None,
             search_index: None,
@@ -260,7 +297,6 @@ impl Index {
             mtime_nanos: dur.subsec_nanos(),
             form_index,
             edid_index,
-            tree: self.tree.clone(),
             xref_index,
             search_index,
         };
@@ -434,9 +470,12 @@ impl Index {
     }
 
     /// Borrowed view over the GRUP tree — replaces the removed `pub tree`
-    /// field. See [`crate::tree::TreeView`].
+    /// field. See [`crate::tree::TreeView`]. `Section::get` already returns
+    /// `Option<&Archived<TreeIndex>>`, exactly what `TreeView::new` expects —
+    /// `Section::Absent` (lite mode, or no cache built yet) degrades to an
+    /// empty-equivalent `TreeView` rather than a panic.
     pub fn tree(&self) -> crate::tree::TreeView<'_> {
-        crate::tree::TreeView::new(&self.tree)
+        crate::tree::TreeView::new(self.tree.get())
     }
 }
 
@@ -471,6 +510,15 @@ pub(crate) fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
 fn cache_path_for(esm_path: &Path) -> PathBuf {
     let mut p = esm_path.to_path_buf();
     p.set_extension("esm.idx");
+    p
+}
+
+/// Return the `.esm.tree` rkyv-section path for a given ESM path — same
+/// `set_extension` pattern as [`cache_path_for`] (and `mindex.rs`'s
+/// `midx_path_for`).
+fn tree_path_for(esm_path: &Path) -> PathBuf {
+    let mut p = esm_path.to_path_buf();
+    p.set_extension("esm.tree");
     p
 }
 
@@ -509,6 +557,28 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         return Ok(None);
     }
 
+    // Since Stage 4, `TreeIndex` no longer lives in the bincode `CacheFile`
+    // blob above — it's its own rkyv-backed `.esm.tree` section. The cache as
+    // a whole is only usable if BOTH pieces load/validate against the same
+    // ESM identity; either one failing means a full rebuild of everything,
+    // exactly matching this function's pre-existing "any piece invalid ->
+    // rebuild everything" behavior (now checking two things instead of one).
+    let sig = CacheSig {
+        size: meta.len(),
+        mtime_secs: dur.as_secs(),
+        mtime_nanos: dur.subsec_nanos(),
+    };
+    let tree_section = Section::<rkyv::Archived<TreeIndex>>::map(
+        &tree_path_for(&esm.path),
+        SectionKind::Tree,
+        sig,
+        CACHE_VERSION,
+        crate::tree::TREE_LAYOUT_FINGERPRINT,
+    )?;
+    if !tree_section.is_mapped() {
+        return Ok(None);
+    }
+
     let form_index: HashMap<FormId, RecordMeta> = cache
         .form_index
         .into_iter()
@@ -531,7 +601,7 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         path: esm.path.clone(),
         form_index,
         edid_index,
-        tree: cache.tree,
+        tree: tree_section,
         xref_index,
         search_index,
         cache_path,
@@ -553,11 +623,41 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
     let type_index = build_type_index(&form_index);
 
     let cache_path = cache_path_for(&esm.path);
+    let tree_path = tree_path_for(&esm.path);
+    let sig = CacheSig::read(&esm.path)?;
+
+    // Write the freshly-built tree to its own rkyv section, then drop the
+    // owned value and map it straight back in — there is exactly one code
+    // path for how `Index` ever reads tree data afterwards (through the
+    // archived section via `Index::tree()`), never a second one that keeps
+    // the owned `TreeIndex` around.
+    write_section(
+        &tree_path,
+        SectionKind::Tree,
+        sig,
+        CACHE_VERSION,
+        crate::tree::TREE_LAYOUT_FINGERPRINT,
+        &tree,
+    )?;
+    drop(tree);
+    let tree_section = Section::<rkyv::Archived<TreeIndex>>::map(
+        &tree_path,
+        SectionKind::Tree,
+        sig,
+        CACHE_VERSION,
+        crate::tree::TREE_LAYOUT_FINGERPRINT,
+    )?;
+    anyhow::ensure!(
+        tree_section.is_mapped(),
+        "just-written tree section at {} failed to map back — this should never happen",
+        tree_path.display()
+    );
+
     let index = Index {
         path: esm.path.clone(),
         form_index,
         edid_index: None,
-        tree,
+        tree: tree_section,
         xref_index: None,
         search_index: None,
         cache_path,
@@ -704,7 +804,7 @@ mod tests {
             path: std::path::PathBuf::from("/tmp/test.esm"),
             form_index,
             edid_index: None,
-            tree: crate::tree::TreeIndex::default(),
+            tree: Section::Absent,
             cache_path,
             xref_index: None,
             search_index: None,
