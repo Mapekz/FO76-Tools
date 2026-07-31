@@ -8,7 +8,19 @@ pub const TES4_SIG: [u8; 4] = *b"TES4";
 pub const GRUP_SIG: [u8; 4] = *b"GRUP";
 pub const XXXX_SIG: [u8; 4] = *b"XXXX";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
 pub struct Signature(pub [u8; 4]);
 
 impl Signature {

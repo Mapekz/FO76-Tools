@@ -52,7 +52,21 @@ use std::time::SystemTime;
 // `.esm.tree` file carries its own independent version/layout-fingerprint
 // check (see `Section::map`), gated on this same `CACHE_VERSION` constant —
 // see `try_load_cache`/`build_fresh` below.
-const CACHE_VERSION: u32 = 13;
+//
+// Bumped 13 -> 14: `form_index` (the FormID -> `RecordMeta` table) and the
+// derived type directory (previously `type_index`, rebuilt from
+// `form_index` on every single load via `build_type_index`) moved out of the
+// bincode `CacheFile` blob into their own combined rkyv-backed `.esm.forms`
+// section (see `rkyvcache.rs` / this file's `FormsSection`,
+// `try_load_cache`, `build_fresh`) — `CacheFile` lost its `form_index`
+// field, changing the bincode byte shape the same way Stage 4's `tree`
+// removal did above. `form_index` held ~5.64M entries and was the bulk of
+// this crate's cold-load cost; it and the type directory are now read
+// zero-copy via `rkyv::access_unchecked`, the same mechanism `tree` already
+// used. This section's own `.esm.forms` file carries its own independent
+// version/layout-fingerprint check (see `Section::map`), gated on this same
+// `CACHE_VERSION` constant — see `try_load_cache`/`build_fresh` below.
+const CACHE_VERSION: u32 = 14;
 
 /// Per-record data stored in the lazy search index.
 ///
@@ -81,44 +95,98 @@ struct CacheFile {
     size: u64,
     mtime_secs: u64,
     mtime_nanos: u32,
-    form_index: HashMap<u32, RecordMeta>,
     edid_index: Option<HashMap<String, u32>>,
     xref_index: Option<HashMap<u32, Vec<u32>>>,
     search_index: Option<HashMap<u32, SearchMeta>>,
 }
 
+/// One combined rkyv section: the sorted FormID→[`RecordMeta`] table plus
+/// the type directory, always built and written together (mirrors how
+/// they're already always rebuilt together in `build_fresh`/
+/// `build_type_index`) — see `rkyvcache.rs` for the section mechanics this
+/// is built on, and `tree.rs`'s `TreeIndex` for the prior-stage type this
+/// one's plumbing mirrors.
+#[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
+struct FormsSection {
+    /// Sorted ascending by `.0` (the raw FormID `u32`) — binary-searchable.
+    /// A sorted `Vec`, not a `HashMap`: an `ArchivedHashMap<u32, RecordMeta>`
+    /// measures ~37.7 B/entry (Swiss-table control bytes + empty slots) vs.
+    /// a sorted `Vec`'s ~28 B/entry at 5.64M entries — a ~55 MB difference
+    /// for no behavioral benefit, since lookup is O(log n) either way.
+    records: Vec<(u32, RecordMeta)>,
+    /// Type signature (raw `[u8; 4]` bytes, not the `Signature` newtype
+    /// directly — see the module-level note on that choice) -> sorted
+    /// FormIDs of that type. Only ~178 distinct keys in practice, so —
+    /// unlike `records` — the HashMap-vs-Vec density argument doesn't
+    /// apply here; a plain `HashMap` is simplest and the entry count makes
+    /// any overhead irrelevant.
+    types: HashMap<[u8; 4], Vec<u32>>,
+}
+
+/// FNV-1a fingerprint of this section's archived layout, folding
+/// `size_of`/`align_of` per [`crate::rkyvcache::fnv1a_u64`]'s doc comment.
+/// Passed as the `layout_fingerprint` argument to `write_section`/
+/// `Section::map` for the `.esm.forms` section — see `try_load_cache`/
+/// `build_fresh` below.
+///
+/// `RecordMeta` is folded in separately from `FormsSection` itself because
+/// it sits behind a `Vec` indirection (`records: Vec<(u32, RecordMeta)>`) —
+/// a layout change to `RecordMeta` (e.g. one driven by a layout change to
+/// `Signature`, which it embeds inline) would not change
+/// `size_of::<Archived<FormsSection>>()` itself, the same reasoning
+/// `tree.rs`'s `TREE_LAYOUT_FINGERPRINT` documents for folding in
+/// `GroupEntry`/`ChildRef` alongside `TreeIndex`.
+const FORMS_LAYOUT_FINGERPRINT: u64 = {
+    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
+
+    let acc = fnv1a_u64(
+        FNV_OFFSET_BASIS,
+        core::mem::size_of::<rkyv::Archived<FormsSection>>() as u64,
+    );
+    let acc = fnv1a_u64(
+        acc,
+        core::mem::align_of::<rkyv::Archived<FormsSection>>() as u64,
+    );
+    let acc = fnv1a_u64(
+        acc,
+        core::mem::size_of::<rkyv::Archived<RecordMeta>>() as u64,
+    );
+    fnv1a_u64(
+        acc,
+        core::mem::align_of::<rkyv::Archived<RecordMeta>>() as u64,
+    )
+};
+
 /// # Not `Clone`; `Debug` is hand-written
 ///
-/// `tree`'s `Section` wraps a `Mmap`, which implements neither trait.
-/// Nothing in this crate needs `Index: Clone` (`Database`, which owns one,
-/// doesn't derive it either; `Registry` shares `Database` instances via
+/// `tree`/`forms`'s `Section`s wrap a `Mmap`, which implements neither
+/// trait. Nothing in this crate needs `Index: Clone` (`Database`, which owns
+/// one, doesn't derive it either; `Registry` shares `Database` instances via
 /// `Arc<Mutex<Database>>`, cloning the `Arc`, never the `Database`/`Index`
 /// itself) — but at least one existing test does format an `Index`-carrying
 /// `Result` via `unwrap_err`, so `Debug` is implemented manually below,
-/// summarizing `tree` as just its mapped/absent state rather than requiring
-/// `Section<A>: Debug`.
+/// summarizing `tree`/`forms` as just their mapped/absent state rather than
+/// requiring `Section<A>: Debug`.
 pub struct Index {
     pub path: PathBuf,
-    form_index: HashMap<FormId, RecordMeta>,
     edid_index: Option<HashMap<String, FormId>>,
     tree: Section<rkyv::Archived<TreeIndex>>,
+    forms: Section<rkyv::Archived<FormsSection>>,
     cache_path: PathBuf,
     xref_index: Option<HashMap<FormId, Vec<FormId>>>,
     search_index: Option<HashMap<FormId, SearchMeta>>,
-    type_index: HashMap<Signature, Vec<FormId>>,
 }
 
 impl std::fmt::Debug for Index {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Index")
             .field("path", &self.path)
-            .field("form_index_len", &self.form_index.len())
+            .field("forms_mapped", &self.forms.is_mapped())
             .field("edid_index_built", &self.edid_index.is_some())
             .field("tree_mapped", &self.tree.is_mapped())
             .field("cache_path", &self.cache_path)
             .field("xref_index_built", &self.xref_index.is_some())
             .field("search_index_built", &self.search_index.is_some())
-            .field("type_index_len", &self.type_index.len())
             .finish()
     }
 }
@@ -157,90 +225,138 @@ impl Index {
         };
         Self {
             path,
-            form_index: HashMap::new(),
             edid_index: None,
             tree: Section::Absent,
+            forms: Section::Absent,
             cache_path,
             xref_index: None,
             search_index: None,
-            type_index: HashMap::new(),
         }
     }
 
     /// Resolve a FormID to its [`RecordMeta`]. Owned, not borrowed — cheap
-    /// since `RecordMeta` is `Copy`.
+    /// since `RecordMeta` is `Copy`. `None` if the forms section is absent
+    /// (lite mode / no cache built yet) or `form_id` isn't present.
     pub fn get_by_formid(&self, form_id: FormId) -> Option<RecordMeta> {
-        self.form_index.get(&form_id).copied()
+        let records = self.forms.get()?.records.as_slice();
+        let idx = records
+            .binary_search_by_key(&form_id.raw(), |entry| entry.0.to_native())
+            .ok()?;
+        Some(owned_record_meta(&records[idx].1))
     }
 
     /// Alloc-free type lookup: resolve a FormID to just its [`Signature`]
-    /// without fetching the whole [`RecordMeta`].
+    /// without fetching the whole [`RecordMeta`] — this is the accessor
+    /// [`crate::Database::search`]'s type-filter branch relies on to avoid
+    /// paying for the rest of `RecordMeta` when only the type tag is needed.
     pub fn signature_of(&self, form_id: FormId) -> Option<Signature> {
-        self.form_index.get(&form_id).map(|m| m.signature)
+        let records = self.forms.get()?.records.as_slice();
+        let idx = records
+            .binary_search_by_key(&form_id.raw(), |entry| entry.0.to_native())
+            .ok()?;
+        Some(Signature(records[idx].1.signature.0))
     }
 
-    /// Whether `form_id` is present in the form index.
+    /// Whether `form_id` is present in the form index. `false` if the forms
+    /// section is absent (lite mode / no cache built yet).
     pub fn contains(&self, form_id: FormId) -> bool {
-        self.form_index.contains_key(&form_id)
+        self.forms.get().is_some_and(|f| {
+            f.records
+                .binary_search_by_key(&form_id.raw(), |entry| entry.0.to_native())
+                .is_ok()
+        })
     }
 
-    /// Total number of records in the form index.
+    /// Total number of records in the form index. `0` if the forms section
+    /// is absent (lite mode / no cache built yet).
     pub fn len(&self) -> usize {
-        self.form_index.len()
+        self.forms.get().map_or(0, |f| f.records.len())
     }
 
     pub fn is_empty(&self) -> bool {
-        self.form_index.is_empty()
+        self.forms.get().is_none_or(|f| f.records.is_empty())
     }
 
-    /// Iterate every FormID present in the form index, in arbitrary order.
+    /// Iterate every FormID present in the form index, in on-disk
+    /// (FormID-sorted) order. Empty iterator if the forms section is absent
+    /// (lite mode / no cache built yet).
     pub fn iter_form_ids(&self) -> impl Iterator<Item = FormId> + '_ {
-        self.form_index.keys().copied()
+        let records: &[_] = self.forms.get().map_or(&[][..], |f| f.records.as_slice());
+        records.iter().map(|entry| FormId::new(entry.0.to_native()))
+    }
+
+    /// Iterate every `(FormId, RecordMeta)` pair, in on-disk (FormID-sorted)
+    /// order. Internal helper for [`Self::ensure_edid_index`]/
+    /// [`Self::ensure_search_index`], which — unlike [`Self::iter_form_ids`]
+    /// — need the full `RecordMeta` (specifically `.offset`) alongside each
+    /// FormID to parse the record. Empty iterator if the forms section is
+    /// absent, same degrade-gracefully contract as every other accessor
+    /// here.
+    fn iter_all(&self) -> impl Iterator<Item = (FormId, RecordMeta)> + '_ {
+        let records: &[_] = self.forms.get().map_or(&[][..], |f| f.records.as_slice());
+        records.iter().map(|entry| {
+            (
+                FormId::new(entry.0.to_native()),
+                owned_record_meta(&entry.1),
+            )
+        })
     }
 
     pub fn get_by_edid(&self, edid: &str) -> Option<FormId> {
         self.edid_index.as_ref()?.get(edid).copied()
     }
 
-    /// Iterate every distinct record-type [`Signature`] present in the file —
-    /// replaces "collect every record's signature into a `HashSet`" callers,
-    /// since `type_index`'s keys are already that distinct set.
+    /// Iterate every distinct record-type [`Signature`] present in the
+    /// file — replaces "collect every record's signature into a `HashSet`"
+    /// callers, since the type directory's keys are already that distinct
+    /// set. Empty iterator if the forms section is absent.
     pub fn signatures(&self) -> impl Iterator<Item = Signature> + '_ {
-        self.type_index.keys().copied()
+        self.forms
+            .get()
+            .into_iter()
+            .flat_map(|f| f.types.keys().map(|bytes| Signature(*bytes)))
     }
 
     /// Number of records of the given 4-character type signature, without
-    /// materializing a full `Vec`/iterator of them.
+    /// materializing a full `Vec`/iterator of them. `0` if the forms section
+    /// is absent or the type has no records.
     pub fn count_by_type(&self, sig: &str) -> usize {
-        self.type_index
-            .get(&Signature::from_slice(sig.as_bytes()))
-            .map(|ids| ids.len())
-            .unwrap_or(0)
+        let key = Signature::from_slice(sig.as_bytes()).0;
+        self.forms
+            .get()
+            .and_then(|f| f.types.get(&key))
+            .map_or(0, |ids| ids.len())
     }
 
     /// FormIDs of the given 4-character type signature, sorted (per
-    /// `build_type_index`). Alloc-free beyond the returned iterator itself —
-    /// does not fetch each record's [`RecordMeta`].
+    /// `build_type_index`/`build_fresh`). Alloc-free beyond the returned
+    /// iterator itself — does not fetch each record's [`RecordMeta`]. Empty
+    /// iterator if the forms section is absent or the type has no records.
     pub fn form_ids_by_type(&self, sig: &str) -> impl ExactSizeIterator<Item = FormId> + '_ {
-        let ids: &[FormId] = self
-            .type_index
-            .get(&Signature::from_slice(sig.as_bytes()))
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        ids.iter().copied()
+        let key = Signature::from_slice(sig.as_bytes()).0;
+        let ids: &[_] = self
+            .forms
+            .get()
+            .and_then(|f| f.types.get(&key))
+            .map_or(&[][..], |v| v.as_slice());
+        ids.iter().map(|id| FormId::new(id.to_native()))
     }
 
     /// `(FormId, RecordMeta)` pairs for every record of the given
     /// 4-character type signature, FormID-sorted. Owned pairs — cheap since
-    /// `RecordMeta` is `Copy`.
+    /// `RecordMeta` is `Copy`. Empty iterator if the forms section is absent
+    /// or the type has no records.
     pub fn records_by_type(&self, sig: &str) -> impl Iterator<Item = (FormId, RecordMeta)> + '_ {
-        let ids: &[FormId] = self
-            .type_index
-            .get(&Signature::from_slice(sig.as_bytes()))
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
-        ids.iter()
-            .filter_map(move |id| self.form_index.get(id).map(|m| (*id, *m)))
+        let key = Signature::from_slice(sig.as_bytes()).0;
+        let ids: &[_] = self
+            .forms
+            .get()
+            .and_then(|f| f.types.get(&key))
+            .map_or(&[][..], |v| v.as_slice());
+        ids.iter().filter_map(move |id| {
+            let form_id = FormId::new(id.to_native());
+            self.get_by_formid(form_id).map(|meta| (form_id, meta))
+        })
     }
 
     pub fn ensure_edid_index(&mut self, esm: &EsmFile) -> anyhow::Result<()> {
@@ -248,10 +364,10 @@ impl Index {
             return Ok(());
         }
         let mut edid_index = HashMap::new();
-        for (form_id, meta) in &self.form_index {
+        for (form_id, meta) in self.iter_all() {
             let rec = esm.parse_record_at(meta.offset)?;
             if let Some(edid) = edid_from_subrecords(&rec.subrecords) {
-                edid_index.insert(edid, *form_id);
+                edid_index.insert(edid, form_id);
             }
         }
         self.edid_index = Some(edid_index);
@@ -262,7 +378,7 @@ impl Index {
     fn save_cache(&self, esm: &EsmFile) -> anyhow::Result<()> {
         // Don't persist an empty (lite) index — it would overwrite a valid cache
         // with an empty one.
-        if self.form_index.is_empty() {
+        if self.is_empty() {
             return Ok(());
         }
         let meta = fs::metadata(&esm.path)?;
@@ -271,8 +387,6 @@ impl Index {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default();
 
-        let form_index: HashMap<u32, RecordMeta> =
-            self.form_index.iter().map(|(k, v)| (k.raw(), *v)).collect();
         let edid_index = self.edid_index.as_ref().map(|m| {
             m.iter()
                 .map(|(k, v)| (k.clone(), v.raw()))
@@ -295,7 +409,6 @@ impl Index {
             size: meta.len(),
             mtime_secs: dur.as_secs(),
             mtime_nanos: dur.subsec_nanos(),
-            form_index,
             edid_index,
             xref_index,
             search_index,
@@ -336,7 +449,11 @@ impl Index {
         if self.xref_index.is_some() {
             return Ok(());
         }
-        let form_index = &self.form_index;
+        // Reborrow immutably up front (same pattern the pre-section version
+        // used for `form_index`) so the closure below can query the forms
+        // section without conflicting with `self.xref_index = ...` after
+        // `walk_records` returns.
+        let index = &*self;
         let mut xref: HashMap<FormId, Vec<FormId>> = HashMap::new();
         esm.walk_records(|meta| {
             let rec = match esm.parse_record_at(meta.offset) {
@@ -344,7 +461,7 @@ impl Index {
                 Err(_) => return Ok(()),
             };
             let referencer = rec.header.form_id;
-            if !form_index.contains_key(&referencer) {
+            if !index.contains(referencer) {
                 return Ok(());
             }
             let ctx = DecodeContext::for_record(
@@ -366,7 +483,7 @@ impl Index {
             // of how many times it references it internally.
             let mut seen = HashSet::new();
             for target in refs {
-                if target != referencer && form_index.contains_key(&target) && seen.insert(target) {
+                if target != referencer && index.contains(target) && seen.insert(target) {
                     xref.entry(target).or_default().push(referencer);
                 }
             }
@@ -424,7 +541,7 @@ impl Index {
             return Ok(());
         }
         let mut search_index: HashMap<FormId, SearchMeta> = HashMap::new();
-        for (form_id, meta) in &self.form_index {
+        for (form_id, meta) in self.iter_all() {
             let rec = match esm.parse_record_at(meta.offset) {
                 Ok(r) => r,
                 Err(_) => continue,
@@ -453,7 +570,7 @@ impl Index {
                 || desc_text.is_some()
             {
                 search_index.insert(
-                    *form_id,
+                    form_id,
                     SearchMeta {
                         editor_id,
                         full_id,
@@ -490,6 +607,20 @@ fn build_type_index(form_index: &HashMap<FormId, RecordMeta>) -> HashMap<Signatu
     type_index
 }
 
+/// Convert one archived `RecordMeta` entry back to owned — hand-rolled
+/// rather than `rkyv::Deserialize`, the same reasoning `tree.rs`'s
+/// `owned_child_ref` documents: `RecordMeta` is small, has no allocations to
+/// speak of, and this avoids threading a fallible deserializer through what
+/// is otherwise an infallible conversion.
+fn owned_record_meta(archived: &rkyv::Archived<RecordMeta>) -> RecordMeta {
+    RecordMeta {
+        offset: archived.offset.to_native(),
+        signature: Signature(archived.signature.0),
+        flags: archived.flags.to_native(),
+        form_version: archived.form_version.to_native(),
+    }
+}
+
 /// Build a unique temp path next to `base`, e.g. `SeventySix.esm.idx.tmp.<16 hex>`.
 pub(crate) fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
     let mut bytes = [0u8; 8];
@@ -519,6 +650,14 @@ fn cache_path_for(esm_path: &Path) -> PathBuf {
 fn tree_path_for(esm_path: &Path) -> PathBuf {
     let mut p = esm_path.to_path_buf();
     p.set_extension("esm.tree");
+    p
+}
+
+/// Return the `.esm.forms` rkyv-section path for a given ESM path — same
+/// `set_extension` pattern as [`cache_path_for`]/[`tree_path_for`].
+fn forms_path_for(esm_path: &Path) -> PathBuf {
+    let mut p = esm_path.to_path_buf();
+    p.set_extension("esm.forms");
     p
 }
 
@@ -557,12 +696,13 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
         return Ok(None);
     }
 
-    // Since Stage 4, `TreeIndex` no longer lives in the bincode `CacheFile`
-    // blob above — it's its own rkyv-backed `.esm.tree` section. The cache as
-    // a whole is only usable if BOTH pieces load/validate against the same
-    // ESM identity; either one failing means a full rebuild of everything,
-    // exactly matching this function's pre-existing "any piece invalid ->
-    // rebuild everything" behavior (now checking two things instead of one).
+    // Since Stage 4/5, `TreeIndex` and `form_index`+the type directory no
+    // longer live in the bincode `CacheFile` blob above — they're their own
+    // rkyv-backed `.esm.tree`/`.esm.forms` sections. The cache as a whole is
+    // only usable if ALL THREE pieces load/validate against the same ESM
+    // identity; any one failing means a full rebuild of everything, exactly
+    // matching this function's pre-existing "any piece invalid -> rebuild
+    // everything" behavior (now checking three things instead of one).
     let sig = CacheSig {
         size: meta.len(),
         mtime_secs: dur.as_secs(),
@@ -578,12 +718,17 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
     if !tree_section.is_mapped() {
         return Ok(None);
     }
+    let forms_section = Section::<rkyv::Archived<FormsSection>>::map(
+        &forms_path_for(&esm.path),
+        SectionKind::Forms,
+        sig,
+        CACHE_VERSION,
+        FORMS_LAYOUT_FINGERPRINT,
+    )?;
+    if !forms_section.is_mapped() {
+        return Ok(None);
+    }
 
-    let form_index: HashMap<FormId, RecordMeta> = cache
-        .form_index
-        .into_iter()
-        .map(|(k, v)| (FormId::new(k), v))
-        .collect();
     let edid_index = cache
         .edid_index
         .map(|m| m.into_iter().map(|(k, v)| (k, FormId::new(v))).collect());
@@ -595,17 +740,15 @@ fn try_load_cache(esm: &EsmFile) -> anyhow::Result<Option<Index>> {
     let search_index = cache
         .search_index
         .map(|m| m.into_iter().map(|(k, v)| (FormId::new(k), v)).collect());
-    let type_index = build_type_index(&form_index);
 
     Ok(Some(Index {
         path: esm.path.clone(),
-        form_index,
         edid_index,
         tree: tree_section,
+        forms: forms_section,
         xref_index,
         search_index,
         cache_path,
-        type_index,
     }))
 }
 
@@ -624,7 +767,22 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
 
     let cache_path = cache_path_for(&esm.path);
     let tree_path = tree_path_for(&esm.path);
+    let forms_path = forms_path_for(&esm.path);
     let sig = CacheSig::read(&esm.path)?;
+
+    // Opportunistically write the compact mmap index alongside the .idx so
+    // that `Database::open_lite` / `--mmap-index` paths are always ready.
+    // Must happen here, using the LOCAL, still-owned `form_index` map:
+    // `Index` no longer keeps an owned `HashMap<FormId, RecordMeta>` field
+    // for a later call site to reach through (it now holds only the mapped
+    // `.esm.forms` section) — so this has to run before `form_index` is
+    // consumed/dropped below, not after `Index` is constructed like the
+    // pre-this-task code did. `mindex.rs` itself is untouched by this task
+    // (see the scope note in the commit this belongs to) — it keeps working
+    // as a second, independent FormID index built from this same data.
+    if let Err(e) = crate::mindex::build_from_form_index_and_save(&form_index, &esm.path) {
+        log::warn!("failed to write .esm.midx: {e}");
+    }
 
     // Write the freshly-built tree to its own rkyv section, then drop the
     // owned value and map it straight back in — there is exactly one code
@@ -653,23 +811,53 @@ fn build_fresh(esm: &EsmFile) -> anyhow::Result<Index> {
         tree_path.display()
     );
 
+    // Build the combined forms section (sorted FormID table + type
+    // directory) from the local owned `form_index`/`type_index`, write it,
+    // drop the owned data, and map it straight back in — same
+    // write→drop→re-map protocol as `tree` above.
+    let mut records: Vec<(u32, RecordMeta)> = form_index
+        .iter()
+        .map(|(id, meta)| (id.raw(), *meta))
+        .collect();
+    records.sort_unstable_by_key(|(raw_id, _)| *raw_id);
+    let types: HashMap<[u8; 4], Vec<u32>> = type_index
+        .into_iter()
+        .map(|(sig, ids)| (sig.0, ids.into_iter().map(|id| id.raw()).collect()))
+        .collect();
+    drop(form_index);
+    let forms_data = FormsSection { records, types };
+    write_section(
+        &forms_path,
+        SectionKind::Forms,
+        sig,
+        CACHE_VERSION,
+        FORMS_LAYOUT_FINGERPRINT,
+        &forms_data,
+    )?;
+    drop(forms_data);
+    let forms_section = Section::<rkyv::Archived<FormsSection>>::map(
+        &forms_path,
+        SectionKind::Forms,
+        sig,
+        CACHE_VERSION,
+        FORMS_LAYOUT_FINGERPRINT,
+    )?;
+    anyhow::ensure!(
+        forms_section.is_mapped(),
+        "just-written forms section at {} failed to map back — this should never happen",
+        forms_path.display()
+    );
+
     let index = Index {
         path: esm.path.clone(),
-        form_index,
         edid_index: None,
         tree: tree_section,
+        forms: forms_section,
         xref_index: None,
         search_index: None,
         cache_path,
-        type_index,
     };
     index.save_cache(esm)?;
-
-    // Opportunistically write the compact mmap index alongside the .idx so
-    // that `Database::open_lite` / `--mmap-index` paths are always ready.
-    if let Err(e) = crate::mindex::build_from_form_index_and_save(&index.form_index, &esm.path) {
-        log::warn!("failed to write .esm.midx: {e}");
-    }
 
     Ok(index)
 }
@@ -759,12 +947,88 @@ mod tests {
         Ok(())
     }
 
-    /// Verify that `records_by_type` uses the pre-built type_index and returns
-    /// a deterministic sorted order on repeated calls.
+    /// Arbitrary, test-only `cache_version` — these tests exercise the
+    /// `write_section`/`Section::map` mechanics against a real `FormsSection`,
+    /// not this module's real `CACHE_VERSION` (which stays private to
+    /// `try_load_cache`/`build_fresh`).
+    const TEST_CACHE_VERSION: u32 = 5252;
+
+    /// Distinct, non-colliding temp `.esm.forms` path per test — same
+    /// precedent as `rkyvcache.rs`'s `test_path`/`tree.rs`'s round-trip test,
+    /// suffixed with pid+nonce so parallel/sequential `cargo test` runs never
+    /// collide on the same file.
+    fn test_forms_path(name: &str) -> PathBuf {
+        let pid = std::process::id();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("esm_index_test_{name}_{pid}_{nonce}.esm.forms"))
+    }
+
+    /// Build a `FormsSection` from `form_index` (mirroring `build_fresh`'s
+    /// own conversion), write it via `write_section`, and map it back via
+    /// `Section::map`. Shared boilerplate for every forms-section test below.
+    fn write_and_map_forms(
+        form_index: &HashMap<FormId, RecordMeta>,
+        path: &Path,
+    ) -> Section<rkyv::Archived<FormsSection>> {
+        let type_index = build_type_index(form_index);
+        let mut records: Vec<(u32, RecordMeta)> = form_index
+            .iter()
+            .map(|(id, meta)| (id.raw(), *meta))
+            .collect();
+        records.sort_unstable_by_key(|(raw_id, _)| *raw_id);
+        let types: HashMap<[u8; 4], Vec<u32>> = type_index
+            .into_iter()
+            .map(|(sig, ids)| (sig.0, ids.into_iter().map(|id| id.raw()).collect()))
+            .collect();
+        let data = FormsSection { records, types };
+
+        let sig = CacheSig {
+            size: 123_456,
+            mtime_secs: 1_700_000_000,
+            mtime_nanos: 0,
+        };
+        write_section(
+            path,
+            SectionKind::Forms,
+            sig,
+            TEST_CACHE_VERSION,
+            FORMS_LAYOUT_FINGERPRINT,
+            &data,
+        )
+        .expect("write forms section");
+        let section = Section::<rkyv::Archived<FormsSection>>::map(
+            path,
+            SectionKind::Forms,
+            sig,
+            TEST_CACHE_VERSION,
+            FORMS_LAYOUT_FINGERPRINT,
+        )
+        .expect("map forms section");
+        assert!(section.is_mapped(), "freshly written section must map back");
+        section
+    }
+
+    fn index_over(forms: Section<rkyv::Archived<FormsSection>>) -> Index {
+        Index {
+            path: PathBuf::from("/tmp/test.esm"),
+            edid_index: None,
+            tree: Section::Absent,
+            forms,
+            cache_path: PathBuf::from("/tmp/test.esm.idx"),
+            xref_index: None,
+            search_index: None,
+        }
+    }
+
+    /// Verify that `records_by_type` (through the real `.esm.forms` rkyv
+    /// section, not an in-memory stand-in) returns a deterministic sorted
+    /// order on repeated calls, and that `count_by_type`/`form_ids_by_type`/
+    /// `signatures` all agree with it.
     #[test]
     fn records_by_type_sorted_and_stable() {
-        use crate::reader::RecordMeta;
-
         let weap1 = FormId::new(0x0000_0010);
         let weap2 = FormId::new(0x0000_0005);
         let npc_ = FormId::new(0x0000_0020);
@@ -798,18 +1062,8 @@ mod tests {
             },
         );
 
-        let type_index = build_type_index(&form_index);
-        let cache_path = std::path::PathBuf::from("/tmp/test.esm.idx");
-        let index = Index {
-            path: std::path::PathBuf::from("/tmp/test.esm"),
-            form_index,
-            edid_index: None,
-            tree: Section::Absent,
-            cache_path,
-            xref_index: None,
-            search_index: None,
-            type_index,
-        };
+        let path = test_forms_path("records_by_type_sorted_and_stable");
+        let index = index_over(write_and_map_forms(&form_index, &path));
 
         // First call
         let first: Vec<(FormId, RecordMeta)> = index.records_by_type("WEAP").collect();
@@ -845,6 +1099,158 @@ mod tests {
         let mut sigs: Vec<String> = index.signatures().map(|s| s.as_str().to_owned()).collect();
         sigs.sort_unstable();
         assert_eq!(sigs, vec!["NPC_".to_string(), "WEAP".to_string()]);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Round-trip a `FormsSection` built from a small synthetic set of
+    /// records (3 distinct signatures) through `write_section` +
+    /// `Section::map`, and assert every accessor (`get_by_formid`,
+    /// `signature_of`, `contains`, `len`/`is_empty`, `iter_form_ids`,
+    /// `signatures`, `count_by_type`, `form_ids_by_type`, `records_by_type`)
+    /// agrees with the original in-memory data — including a FormID that's
+    /// absent and a signature with zero records. Mirrors `tree.rs`'s
+    /// `tree_round_trip_through_rkyv_section`.
+    #[test]
+    fn forms_round_trip_through_rkyv_section() {
+        let weap1 = FormId::new(0x0000_0010);
+        let weap2 = FormId::new(0x0000_0005);
+        let npc_ = FormId::new(0x0000_0020);
+        let armo1 = FormId::new(0x0000_0030);
+
+        let mut form_index: HashMap<FormId, RecordMeta> = HashMap::new();
+        form_index.insert(
+            weap1,
+            RecordMeta {
+                offset: 10,
+                signature: Signature::from_slice(b"WEAP"),
+                flags: 0,
+                form_version: 155,
+            },
+        );
+        form_index.insert(
+            weap2,
+            RecordMeta {
+                offset: 20,
+                signature: Signature::from_slice(b"WEAP"),
+                flags: 1,
+                form_version: 155,
+            },
+        );
+        form_index.insert(
+            npc_,
+            RecordMeta {
+                offset: 30,
+                signature: Signature::from_slice(b"NPC_"),
+                flags: 4,
+                form_version: 131,
+            },
+        );
+        form_index.insert(
+            armo1,
+            RecordMeta {
+                offset: 40,
+                signature: Signature::from_slice(b"ARMO"),
+                flags: 0,
+                form_version: 131,
+            },
+        );
+
+        let path = test_forms_path("forms_round_trip_through_rkyv_section");
+        let index = index_over(write_and_map_forms(&form_index, &path));
+
+        // get_by_formid / signature_of / contains agree with the original
+        // for every present FormID.
+        for (&id, meta) in &form_index {
+            let got = index
+                .get_by_formid(id)
+                .unwrap_or_else(|| panic!("formid {id:?} must be present"));
+            assert_eq!(got.offset, meta.offset);
+            assert_eq!(got.signature, meta.signature);
+            assert_eq!(got.flags, meta.flags);
+            assert_eq!(got.form_version, meta.form_version);
+            assert_eq!(index.signature_of(id), Some(meta.signature));
+            assert!(index.contains(id));
+        }
+
+        // An absent FormID: get_by_formid/signature_of/contains all agree
+        // it's not present.
+        let missing = FormId::new(0xDEAD_BEEF);
+        assert!(index.get_by_formid(missing).is_none());
+        assert_eq!(index.signature_of(missing), None);
+        assert!(!index.contains(missing));
+
+        // len / is_empty
+        assert_eq!(index.len(), 4);
+        assert!(!index.is_empty());
+
+        // iter_form_ids() — same set as the original, order-independent.
+        let mut ids: Vec<FormId> = index.iter_form_ids().collect();
+        ids.sort_by_key(|id| id.raw());
+        let mut expected_ids: Vec<FormId> = form_index.keys().copied().collect();
+        expected_ids.sort_by_key(|id| id.raw());
+        assert_eq!(ids, expected_ids);
+
+        // signatures() — the 3 distinct types present.
+        let mut sigs: Vec<String> = index.signatures().map(|s| s.as_str().to_owned()).collect();
+        sigs.sort_unstable();
+        assert_eq!(
+            sigs,
+            vec!["ARMO".to_string(), "NPC_".to_string(), "WEAP".to_string()]
+        );
+
+        // count_by_type / form_ids_by_type / records_by_type agree for a
+        // multi-record type...
+        assert_eq!(index.count_by_type("WEAP"), 2);
+        let weap_ids: Vec<FormId> = index.form_ids_by_type("WEAP").collect();
+        assert_eq!(weap_ids, vec![weap2, weap1], "sorted ascending by FormID");
+        assert_eq!(index.form_ids_by_type("WEAP").len(), 2);
+        let weap_records: Vec<(FormId, RecordMeta)> = index.records_by_type("WEAP").collect();
+        assert_eq!(
+            weap_records.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+            weap_ids
+        );
+
+        // ...a single-record type...
+        assert_eq!(index.count_by_type("ARMO"), 1);
+        assert_eq!(
+            index.form_ids_by_type("ARMO").collect::<Vec<_>>(),
+            vec![armo1]
+        );
+
+        // ...and a signature with ZERO records: count_by_type returns 0, and
+        // form_ids_by_type/records_by_type return empty iterators rather
+        // than panicking.
+        assert_eq!(index.count_by_type("XXXX"), 0);
+        assert_eq!(index.form_ids_by_type("XXXX").len(), 0);
+        assert_eq!(index.form_ids_by_type("XXXX").count(), 0);
+        assert_eq!(index.records_by_type("XXXX").count(), 0);
+
+        let _ = fs::remove_file(&path);
+    }
+
+    /// Regression test for lite-mode behavior: every accessor over an
+    /// absent forms section (`Index::empty`'s state, or a cache that hasn't
+    /// been built yet) must answer with its empty-equivalent rather than
+    /// panicking. Mirrors `tree.rs`'s `tree_view_absent_state_never_panics`;
+    /// exercised via `Index::empty` itself (rather than a bare
+    /// `Section::Absent` built by hand) since that's the real production
+    /// path this guards — see `Database::open_lite` in `lib.rs`.
+    #[test]
+    fn forms_absent_state_never_panics() {
+        let index = Index::empty(PathBuf::from("/tmp/fo76_forms_absent_test.esm"));
+
+        assert!(index.get_by_formid(FormId::new(1)).is_none());
+        assert_eq!(index.signature_of(FormId::new(1)), None);
+        assert!(!index.contains(FormId::new(1)));
+        assert_eq!(index.len(), 0);
+        assert!(index.is_empty());
+        assert_eq!(index.iter_form_ids().count(), 0);
+        assert_eq!(index.signatures().count(), 0);
+        assert_eq!(index.count_by_type("WEAP"), 0);
+        assert_eq!(index.form_ids_by_type("WEAP").len(), 0);
+        assert_eq!(index.form_ids_by_type("WEAP").count(), 0);
+        assert_eq!(index.records_by_type("WEAP").count(), 0);
     }
 
     #[test]

@@ -49,10 +49,9 @@ pub struct FileInfo {
     pub is_localized: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct RecordMeta {
     pub offset: u64,
-    #[serde(with = "crate::format::serde_str")]
     pub signature: Signature,
     pub flags: u32,
     pub form_version: u16,
