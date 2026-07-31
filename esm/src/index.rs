@@ -408,11 +408,14 @@ impl Index {
         })
     }
 
-    /// Create an empty index for use with [`crate::Database::open_lite`].
+    /// Create an index with every section absent.
     ///
-    /// The index holds no records and must not be persisted to disk — it exists
-    /// only as a structural placeholder when the mmap form index is used for
-    /// lookups.
+    /// The index holds no records and must not be persisted to disk — it is
+    /// the same starting state a fresh cache is in before [`Index::build`]
+    /// (or a lazy `ensure_*_index` call) populates any section, and every
+    /// accessor must degrade to its empty-equivalent rather than panic when
+    /// handed one. Exercised directly by this module's absent-state
+    /// regression tests.
     pub fn empty(path: PathBuf) -> Self {
         Self {
             path,
@@ -426,7 +429,7 @@ impl Index {
 
     /// Resolve a FormID to its [`RecordMeta`]. Owned, not borrowed — cheap
     /// since `RecordMeta` is `Copy`. `None` if the forms section is absent
-    /// (lite mode / no cache built yet) or `form_id` isn't present.
+    /// (no cache built yet) or `form_id` isn't present.
     pub fn get_by_formid(&self, form_id: FormId) -> Option<RecordMeta> {
         let records = self.forms.get()?.records.as_slice();
         let idx = records
@@ -448,7 +451,7 @@ impl Index {
     }
 
     /// Whether `form_id` is present in the form index. `false` if the forms
-    /// section is absent (lite mode / no cache built yet).
+    /// section is absent (no cache built yet).
     pub fn contains(&self, form_id: FormId) -> bool {
         self.forms.get().is_some_and(|f| {
             f.records
@@ -458,7 +461,7 @@ impl Index {
     }
 
     /// Total number of records in the form index. `0` if the forms section
-    /// is absent (lite mode / no cache built yet).
+    /// is absent (no cache built yet).
     pub fn len(&self) -> usize {
         self.forms.get().map_or(0, |f| f.records.len())
     }
@@ -469,7 +472,7 @@ impl Index {
 
     /// Iterate every FormID present in the form index, in on-disk
     /// (FormID-sorted) order. Empty iterator if the forms section is absent
-    /// (lite mode / no cache built yet).
+    /// (no cache built yet).
     pub fn iter_form_ids(&self) -> impl Iterator<Item = FormId> + '_ {
         let records: &[_] = self.forms.get().map_or(&[][..], |f| f.records.as_slice());
         records.iter().map(|entry| FormId::new(entry.0.to_native()))
@@ -817,8 +820,9 @@ impl Index {
     /// Borrowed view over the GRUP tree — replaces the removed `pub tree`
     /// field. See [`crate::tree::TreeView`]. `Section::get` already returns
     /// `Option<&Archived<TreeIndex>>`, exactly what `TreeView::new` expects —
-    /// `Section::Absent` (lite mode, or no cache built yet) degrades to an
-    /// empty-equivalent `TreeView` rather than a panic.
+    /// `Section::Absent` (no cache built yet, or a corrupt/foreign file that
+    /// degraded to absent) degrades to an empty-equivalent `TreeView` rather
+    /// than a panic.
     pub fn tree(&self) -> crate::tree::TreeView<'_> {
         crate::tree::TreeView::new(self.tree.get())
     }
@@ -868,7 +872,7 @@ pub(crate) fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
 
 /// Return the `.esm.tree` rkyv-section path for a given ESM path — same
 /// `set_extension` pattern as [`forms_path_for`]/[`edid_path_for`]/
-/// [`search_path_for`]/[`xref_path_for`] (and `mindex.rs`'s `midx_path_for`).
+/// [`search_path_for`]/[`xref_path_for`].
 fn tree_path_for(esm_path: &Path) -> PathBuf {
     let mut p = esm_path.to_path_buf();
     p.set_extension("esm.tree");
@@ -937,18 +941,6 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
 
     let tree_path = tree_path_for(&esm.path);
     let forms_path = forms_path_for(&esm.path);
-
-    // Opportunistically write the compact mmap index alongside the .idx so
-    // that `Database::open_lite` / `--mmap-index` paths are always ready.
-    // Must happen here, using the LOCAL, still-owned `form_index` map:
-    // `Index` never keeps an owned `HashMap<FormId, RecordMeta>` field for a
-    // later call site to reach through — it only ever holds the mapped
-    // `.esm.forms` section. `mindex.rs` itself is untouched by this task —
-    // it keeps working as a second, independent FormID index built from
-    // this same data.
-    if let Err(e) = crate::mindex::build_from_form_index_and_save(&form_index, &esm.path) {
-        log::warn!("failed to write .esm.midx: {e}");
-    }
 
     // Write the freshly-built tree to its own rkyv section, then drop the
     // owned value and map it straight back in — there is exactly one code
@@ -1504,13 +1496,13 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// Regression test for lite-mode behavior: every accessor over an
-    /// absent forms section (`Index::empty`'s state, or a cache that hasn't
-    /// been built yet) must answer with its empty-equivalent rather than
-    /// panicking. Mirrors `tree.rs`'s `tree_view_absent_state_never_panics`;
-    /// exercised via `Index::empty` itself (rather than a bare
-    /// `Section::Absent` built by hand) since that's the real production
-    /// path this guards — see `Database::open_lite` in `lib.rs`.
+    /// Regression test: every accessor over an absent forms section
+    /// (`Index::empty`'s state, or a cache that hasn't been built yet) must
+    /// answer with its empty-equivalent rather than panicking. Mirrors
+    /// `tree.rs`'s `tree_view_absent_state_never_panics`; exercised via
+    /// `Index::empty` itself (rather than a bare `Section::Absent` built by
+    /// hand) since that's the real state a section starts in before its
+    /// first build.
     #[test]
     fn forms_absent_state_never_panics() {
         let index = Index::empty(PathBuf::from("/tmp/fo76_forms_absent_test.esm"));
@@ -1554,8 +1546,8 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// Regression test for lite-mode behavior: `get_by_edid` over an absent
-    /// edid section (`Index::empty`'s state, or an index that hasn't called
+    /// Regression test: `get_by_edid` over an absent edid section
+    /// (`Index::empty`'s state, or an index that hasn't called
     /// `ensure_edid_index` yet) must return `None` rather than panicking.
     #[test]
     fn edid_absent_state_never_panics() {
@@ -1618,9 +1610,9 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// Regression test for lite-mode behavior: `has_search_index`/
-    /// `iter_search` over an absent search section must answer with their
-    /// empty-equivalent rather than panicking.
+    /// Regression test: `has_search_index`/`iter_search` over an absent
+    /// search section must answer with their empty-equivalent rather than
+    /// panicking.
     #[test]
     fn search_absent_state_never_panics() {
         let index = Index::empty(PathBuf::from("/tmp/fo76_search_absent_test.esm"));
@@ -1653,8 +1645,8 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// Regression test for lite-mode behavior: `get_xref` over an absent
-    /// xref section must return an empty `Vec` rather than panicking.
+    /// Regression test: `get_xref` over an absent xref section must return
+    /// an empty `Vec` rather than panicking.
     #[test]
     fn xref_absent_state_never_panics() {
         let index = Index::empty(PathBuf::from("/tmp/fo76_xref_absent_test.esm"));

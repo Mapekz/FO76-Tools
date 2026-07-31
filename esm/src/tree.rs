@@ -290,8 +290,8 @@ impl TreeIndex {
 /// cheap, already-`pub` header stub with no arena internals of its own).
 ///
 /// Wraps `Option<&Archived<TreeIndex>>` rather than a bare reference because
-/// the backing [`crate::rkyvcache::Section`] can be `Section::Absent` — no
-/// cache built yet, or [`crate::index::Index::empty`]'s lite mode — and every
+/// the backing [`crate::rkyvcache::Section`] can be `Section::Absent` —
+/// [`crate::index::Index::empty`]'s state, or no cache built yet — and every
 /// existing caller in `lib.rs` (`list_groups`, `list_type_children`,
 /// `list_group_children`, `group_children_at`) expects a working,
 /// empty-result answer in that case rather than a panic, exactly as before
@@ -308,8 +308,8 @@ impl<'a> TreeView<'a> {
     }
 
     /// Arena indices of every top-level (group_type == 0) GRUP, in file
-    /// order. Empty iterator when no tree section is mapped (lite mode / no
-    /// cache built yet).
+    /// order. Empty iterator when no tree section is mapped (no cache built
+    /// yet).
     pub fn roots(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
         self.tree
             .map_or(&[][..], |t| t.roots.as_slice())
@@ -700,10 +700,10 @@ mod tests {
         let _ = std::fs::remove_file(&tree_path);
     }
 
-    /// Regression test for lite-mode behavior: a `TreeView` over an absent
-    /// section (no `.esm.tree` written — `Index::empty`'s state, or a cache
-    /// that hasn't been built yet) must answer every method with its
-    /// empty-equivalent rather than panicking. `group_node` is deliberately
+    /// Regression test: a `TreeView` over an absent section (no `.esm.tree`
+    /// written — `Index::empty`'s state, or a cache that hasn't been built
+    /// yet) must answer every method with its empty-equivalent rather than
+    /// panicking. `group_node` is deliberately
     /// not exercised here — see its doc comment: it is documented as
     /// unreachable in this state via any of the other four methods' own
     /// contracts, so it is not part of the "returns empty" surface being

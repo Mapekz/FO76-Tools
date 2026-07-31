@@ -12,7 +12,6 @@ pub mod formid;
 pub mod hardcoded;
 pub mod index;
 pub mod ipc;
-pub mod mindex;
 pub mod query;
 pub mod reader;
 pub mod registry;
@@ -68,13 +67,6 @@ pub struct Database {
     /// Optional curve index built from Startup BA2. When present, FormID fields
     /// whose `valid_refs` includes `"CURV"` have their curve data inlined.
     pub curves: Option<crate::curves::CurveIndex>,
-    /// Optional zero-copy mmap'd form index, set only in [`Database::open_lite`].
-    ///
-    /// When present, [`record_by_formid`](Self::record_by_formid) and related
-    /// methods use binary search over this table instead of `index`'s
-    /// internal form-index HashMap.  The full index (`index`) is empty in
-    /// this mode.
-    pub mmap_index: Option<crate::mindex::MmapFormIndex>,
     /// Per-record-type memoized decode, populated lazily by `filter_type_records`
     /// and `list_type_field_paths`. In-memory only — never persisted, no
     /// CACHE_VERSION bump (these are ephemeral, rebuilt each time the Database
@@ -605,46 +597,6 @@ impl Database {
             is_localized,
             localization,
             curves,
-            mmap_index: None,
-            filter_cache: std::collections::HashMap::new(),
-        })
-    }
-
-    /// Open an ESM file or folder in **lite mode**: mmap the ESM and load the
-    /// compact `.esm.midx` binary index (building it from an ESM walk if absent).
-    ///
-    /// When `path` is a directory, it is scanned for exactly one `.esm` file.
-    ///
-    /// Compared to [`Database::open`], this skips mapping `tree`/`forms`
-    /// (both eager on every full open) and the ESM-identity coupling across
-    /// all five of `Index`'s rkyv sections entirely — a single small
-    /// `.esm.midx` file is the only thing touched, so this stays the
-    /// cheapest cold path even though `Database::open` itself is now also
-    /// zero-copy (measured warm on the 20260724 snapshot: full open ~0.08 s /
-    /// ~120 MiB; lite open ~0.01 s / ~26 MiB). The trade-off is that only
-    /// FormID-based lookups (`record_by_formid`,
-    /// `record_raw`, `record_by_formid_resolved`) are supported.  Operations
-    /// that require the full index (EditorID lookup, `list`, `search`, `refs`,
-    /// `tree`) return an error directing the caller to use the warm daemon.
-    ///
-    /// Use `--mmap-index` on the CLI or `ESM_MMAP_INDEX=1` to activate this
-    /// path.
-    pub fn open_lite(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let path = path.as_ref();
-        let esm_path = crate::discover::resolve_sources(path, "en")?.esm;
-        let esm = EsmFile::open(&esm_path)?;
-        let mmap_index = crate::mindex::MmapFormIndex::load_or_build(&esm)
-            .with_context(|| format!("build mmap index for {}", esm_path.display()))?;
-        let schema = Schema::load_embedded().context("load embedded schema")?;
-        let is_localized = esm.file_info().map(|i| i.is_localized).unwrap_or(false);
-        Ok(Database {
-            esm,
-            index: Index::empty(esm_path),
-            schema,
-            is_localized,
-            localization: None,
-            curves: None,
-            mmap_index: Some(mmap_index),
             filter_cache: std::collections::HashMap::new(),
         })
     }
@@ -695,29 +647,11 @@ impl Database {
         Ok(info)
     }
 
-    /// Resolve a FormID to its [`RecordMeta`], consulting the mmap index in
-    /// lite mode or the full HashMap in normal mode.
+    /// Resolve a FormID to its [`RecordMeta`] via the full `Index` HashMap.
     fn get_formid_meta(&self, form_id: FormId) -> anyhow::Result<RecordMeta> {
-        if let Some(ref midx) = self.mmap_index {
-            midx.get_by_formid(form_id)
-                .with_context(|| format!("FormID {} not found", form_id))
-        } else {
-            self.index
-                .get_by_formid(form_id)
-                .with_context(|| format!("FormID {} not found", form_id))
-        }
-    }
-
-    /// Bail with a helpful message when a full-index operation is attempted in
-    /// lite mode (opened via [`Database::open_lite`] / `--mmap-index`).
-    fn check_not_lite(&self, op: &str) -> anyhow::Result<()> {
-        if self.mmap_index.is_some() {
-            bail!(
-                "{op} requires the full index; start the warm daemon \
-                 (`esm daemon start`) or remove --mmap-index"
-            );
-        }
-        Ok(())
+        self.index
+            .get_by_formid(form_id)
+            .with_context(|| format!("FormID {} not found", form_id))
     }
 
     pub fn record_by_formid(&mut self, form_id: FormId) -> anyhow::Result<RecordResult> {
@@ -726,7 +660,6 @@ impl Database {
     }
 
     pub fn record_by_edid(&mut self, edid: &str) -> anyhow::Result<RecordResult> {
-        self.check_not_lite("EditorID lookup")?;
         self.index.ensure_edid_index(&self.esm)?;
         let form_id = self
             .index
@@ -736,7 +669,6 @@ impl Database {
     }
 
     pub fn list_by_type(&self, sig: &str, limit: usize) -> anyhow::Result<Vec<ListEntry>> {
-        self.check_not_lite("list_by_type")?;
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
@@ -787,7 +719,6 @@ impl Database {
         field: SearchField,
         limit: usize,
     ) -> anyhow::Result<Vec<RecordRow>> {
-        self.check_not_lite("search")?;
         self.index
             .ensure_search_index(&self.esm, self.is_localized)?;
         assert!(
@@ -916,7 +847,6 @@ impl Database {
         offset: usize,
         limit: usize,
     ) -> anyhow::Result<Vec<RecordRow>> {
-        self.check_not_lite("list_type_records")?;
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
@@ -957,7 +887,6 @@ impl Database {
     /// persisted to its own `.esm.xref` rkyv section so subsequent calls —
     /// in this process or a fresh one — are instant.
     pub fn referenced_by(&mut self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
-        self.check_not_lite("referenced_by")?;
         self.index.ensure_xref_index(
             &self.esm,
             &self.schema,
@@ -1205,7 +1134,6 @@ impl Database {
         edid: &str,
         depth: crate::decode::ResolveDepth,
     ) -> anyhow::Result<RecordResult> {
-        self.check_not_lite("EditorID lookup")?;
         self.index.ensure_edid_index(&self.esm)?;
         let form_id = self
             .index
@@ -1263,7 +1191,6 @@ impl Database {
     /// cached. Used by [`Database::filter_type_records`] and
     /// [`Database::list_type_field_paths`].
     fn ensure_filter_cache(&mut self, sig: &str) -> anyhow::Result<()> {
-        self.check_not_lite("filter_type_records")?;
         if self.filter_cache.contains_key(sig) {
             return Ok(());
         }
@@ -1321,7 +1248,6 @@ impl Database {
         value: Option<&str>,
         limit: usize,
     ) -> anyhow::Result<FilterResult> {
-        self.check_not_lite("filter_type_records")?;
         let sig = sig.to_uppercase();
         self.ensure_filter_cache(&sig)?;
 
@@ -1416,7 +1342,6 @@ impl Database {
         &mut self,
         spec: &EntryPointSpec,
     ) -> anyhow::Result<(String, EntryPointCarriers)> {
-        self.check_not_lite("entry-point lookup")?;
         self.ensure_filter_cache("PERK")?;
         let (_, entries) = self
             .filter_cache

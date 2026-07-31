@@ -29,15 +29,6 @@ struct Cli {
     addr: Option<String>,
     #[arg(long)]
     port: Option<u16>,
-    /// Use the zero-copy mmap form index for FormID lookups (with --local).
-    ///
-    /// Loads a compact ~24 MiB `.esm.midx` instead of the full ~280 MiB
-    /// `.esm.idx` bincode cache, making cold FormID lookups sub-second without
-    /// a background daemon.  EditorID / list / search / refs / tree require the
-    /// full index and will error in this mode — use the daemon for those.
-    /// Env: ESM_MMAP_INDEX=1.
-    #[arg(long, env = "ESM_MMAP_INDEX")]
-    mmap_index: bool,
     /// Path to the ESM file or its data folder. If omitted, falls back to the
     /// FO76_ESM_PATH environment variable. Applies to every subcommand except
     /// `diff` (which takes two explicit positionals), `daemon`, and `skill`
@@ -495,7 +486,7 @@ fn skill_dest_path(dir: &Path) -> PathBuf {
 /// Pure overwrite-guard decision for `esm skill --install`: refuses to
 /// clobber an existing install unless `--force` was passed. Split out from
 /// `cmd_skill` so the decision is unit-testable without touching the
-/// filesystem (precedent: `mmap_index_supports` above).
+/// filesystem.
 fn skill_install_allowed(dest_exists: bool, force: bool) -> Result<(), &'static str> {
     if dest_exists && !force {
         Err("destination already exists; pass --force to overwrite")
@@ -526,7 +517,6 @@ fn cmd_skill(install: bool, dir: Option<PathBuf>, force: bool) -> anyhow::Result
 #[derive(Clone, Copy)]
 struct DispatchOptions {
     daemon_mode: bool,
-    mmap_index: bool,
     session: bool,
 }
 
@@ -606,7 +596,6 @@ fn main() -> anyhow::Result<()> {
             cmd,
             DispatchOptions {
                 daemon_mode,
-                mmap_index: cli.mmap_index,
                 session: false,
             },
         );
@@ -671,7 +660,6 @@ fn run_repl(esm: &Path, backend: &mut Backend, daemon_mode: bool) -> anyhow::Res
             cmd,
             DispatchOptions {
                 daemon_mode,
-                mmap_index: false,
                 session: true,
             },
         ) {
@@ -737,7 +725,6 @@ fn dispatch_command(
             startup_ba2,
             resolve,
             options.daemon_mode,
-            options.mmap_index,
         ),
         Commands::List {
             r#type,
@@ -988,16 +975,6 @@ fn record_sel(
     RecordSel::from_parts(formid.as_deref(), edid.as_deref(), target.as_deref())
 }
 
-/// Whether `--mmap-index` (lite mode: the mmap-only `.esm.midx` FormID index,
-/// no full `.esm.idx` HashMap load) can serve this selector. Only a bare
-/// `FormId` lookup works in lite mode — `Edid` needs the full EditorID index,
-/// and `Auto`'s EditorID-fallback half is equally unavailable even though its
-/// FormID half alone would work, so it's rejected the same as `Edid` rather
-/// than silently only ever taking the FormID branch.
-fn mmap_index_supports(sel: &RecordSel) -> bool {
-    matches!(sel, RecordSel::FormId(_))
-}
-
 #[allow(clippy::too_many_arguments)]
 fn cmd_get(
     backend: &mut Backend,
@@ -1014,7 +991,6 @@ fn cmd_get(
     startup_ba2: Option<PathBuf>,
     resolve: String,
     daemon_mode: bool,
-    mmap_index: bool,
 ) -> anyhow::Result<()> {
     let has_overrides =
         localization_ba2.is_some() || strings_dir.is_some() || startup_ba2.is_some();
@@ -1046,29 +1022,6 @@ fn cmd_get(
     }
     let target = targets.into_iter().next();
 
-    // ── mmap-index fast path (--local --mmap-index, FormID only) ─────────────
-    // Loads the compact ~24 MiB .esm.midx instead of the full .esm.idx.
-    // Only active in local mode (--local); ignored when hitting the daemon.
-    if mmap_index && !daemon_mode && !has_overrides {
-        let sel = record_sel(formid.clone(), edid.clone(), target.clone())?;
-        if !mmap_index_supports(&sel) {
-            anyhow::bail!(
-                "--mmap-index only supports FormID lookups; \
-                 for EditorID use the warm daemon (`esm daemon start`) \
-                 or remove --mmap-index"
-            );
-        }
-        let mut db = Database::open_lite(file)?;
-        let depth = parse_resolve(&resolve)?;
-        let op = if raw {
-            Op::RecordRaw { sel }
-        } else {
-            Op::Record { sel, depth }
-        };
-        let v = esm::ipc::dispatch_op(&mut db, &op)?;
-        print_json(&v, pretty || !json);
-        return Ok(());
-    }
     if has_overrides && daemon_mode {
         anyhow::bail!(
             "--localization-ba2/--strings-dir/--startup-ba2 are not supported in daemon mode; \
@@ -2279,16 +2232,6 @@ fn cmd_coverage(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `--mmap-index` (lite mode) only has a FormID index — `Edid` and the
-    /// EditorID-fallback half of `Auto` both require the full index and must
-    /// be rejected, exactly like plain `Edid` selectors already are.
-    #[test]
-    fn mmap_index_supports_formid_only() {
-        assert!(mmap_index_supports(&RecordSel::FormId(esm::FormId(1))));
-        assert!(!mmap_index_supports(&RecordSel::Edid("Foo".to_string())));
-        assert!(!mmap_index_supports(&RecordSel::Auto("18000".to_string())));
-    }
 
     /// `esm skill --install` writes to `<dir>/.claude/skills/esm-cli/SKILL.md`.
     #[test]

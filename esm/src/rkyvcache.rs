@@ -41,9 +41,6 @@
 //! built on; a later stage wires up real cache types and calls
 //! [`write_section`]/[`Section::map`]. Until then every item below is dead
 //! code from rustc's point of view.
-// `dead_code` would otherwise fire on every item in this file — lift this
-// once a later stage adds real callers.
-#![allow(dead_code)]
 
 use anyhow::Context;
 use memmap2::Mmap;
@@ -159,11 +156,10 @@ where
             Ok(f) => f,
             // A file that existed a moment ago but failed to open (removed
             // in a race, permissions changed, etc.) degrades to "rebuild"
-            // like any other corrupt-cache case, rather than propagating —
-            // this mirrors `MmapFormIndex::try_load`'s treatment of `Mmap`
-            // errors in `mindex.rs`. We do NOT do this for `File::open`
-            // itself failing for a structural reason (e.g. `path`'s parent
-            // directory being unreadable) — such errors are rare and usually
+            // like any other corrupt-cache case, rather than propagating. We
+            // do NOT do this for `File::open` itself failing for a
+            // structural reason (e.g. `path`'s parent directory being
+            // unreadable) — such errors are rare and usually
             // indicate the caller passed a bad location, not "no cache yet",
             // so we still propagate those. In practice `fs::File::open`'s
             // error kinds are dominated by NotFound (already handled above)
@@ -280,12 +276,10 @@ where
         match self {
             Section::Absent => None,
             Section::Mapped { mmap, payload, .. } => {
-                // SAFETY: this is the only call to `access_unchecked` in this
-                // module — a later integration stage owns keeping it the
-                // only one in the crate, the way `mindex.rs`'s single
-                // `Mmap::map` call owns that module's one `unsafe` mmap. Its
-                // preconditions were established by `Section::map`, above,
-                // and hold together as follows:
+                // SAFETY: this is the only call to `access_unchecked` in the
+                // crate — keep it that way. Its preconditions were
+                // established by `Section::map`, above, and hold together as
+                // follows:
                 //
                 // 1. `magic`/`format_version`/`section_kind` were checked
                 //    (parse_header 4a-4c), so these bytes are one of *our*

@@ -670,13 +670,6 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
             {
                 return Ok(fid);
             }
-            // Defense-in-depth: lite mode (`--mmap-index`) has no EditorID
-            // index. The CLI already refuses `Auto` selectors in that mode
-            // (see `mmap_index_supports` in `src/bin/cli.rs`), so this
-            // shouldn't be reachable in practice, but bail with the same
-            // message `record_by_edid_resolved` uses rather than panicking
-            // or producing a confusing miss if it ever is.
-            db.check_not_lite("EditorID lookup")?;
             db.index.ensure_edid_index(&db.esm)?;
             if let Some(fid) = db.index.get_by_edid(token) {
                 return Ok(fid);
