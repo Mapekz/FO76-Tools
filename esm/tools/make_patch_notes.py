@@ -389,8 +389,8 @@ def run_esm_diff(
         if result.stderr:
             eprint(result.stderr)
 
-    # Write JSON to disk -- result.raw_json is the exact text esm produced
-    # (sans the trailing --local REPL prompt), so this matches byte-for-byte.
+    # Write JSON to disk -- result.raw_json is the exact text esm produced,
+    # so this matches byte-for-byte.
     json_out.parent.mkdir(parents=True, exist_ok=True)
     with open(json_out, "w") as f:
         f.write(result.raw_json)

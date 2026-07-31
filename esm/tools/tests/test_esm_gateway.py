@@ -783,11 +783,23 @@ class EsmGatewayDiffTests(unittest.TestCase):
             exclude_type="LAND,NAVM",
         )
 
-    def test_parses_json_and_strips_trailing_repl_prompt(self):
-        fake_esm = self._fake_esm('{"added": [], "removed": [], "changed": []}esm> ')
+    def test_parses_json(self):
+        fake_esm = self._fake_esm('{"added": [], "removed": [], "changed": []}')
         result = self._diff(fake_esm)
         self.assertEqual(result.data, {"added": [], "removed": [], "changed": []})
         self.assertEqual(result.raw_json, '{"added": [], "removed": [], "changed": []}')
+
+    def test_trailing_garbage_after_json_is_rejected(self):
+        # Previously tolerated via `raw_decode` as a workaround for a CLI bug
+        # where a subcommand ran and then fell through into the REPL, which
+        # wrote its `esm> ` prompt to stdout right after the JSON. That bug
+        # was fixed at the CLI level (a subcommand always exits after
+        # running) and the REPL has since been removed entirely, so this is
+        # no longer an `esm` quirk to route around -- any bytes trailing the
+        # JSON blob are a hard error now, same as invalid JSON outright.
+        fake_esm = self._fake_esm('{"added": [], "removed": [], "changed": []}esm> ')
+        with self.assertRaises(DaemonError):
+            self._diff(fake_esm)
 
     def test_cmd_reflects_argv_used(self):
         fake_esm = self._fake_esm("{}")

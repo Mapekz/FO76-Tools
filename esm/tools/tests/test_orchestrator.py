@@ -4,12 +4,14 @@ tools/update_manifest.py (narrative-stage manifest updater).
 
 The orchestrator end-to-end tests never spawn a real `esm`/`esm-server`: the
 diff step is satisfied by a tiny generated shell script that ignores its
-arguments and `cat`s `tools/tests/fixtures/diff_small.json` followed by the
-`--local` REPL's trailing `esm> ` prompt (exercising make_patch_notes.py's
-`json.JSONDecoder().raw_decode`-based tolerance of that prompt), and the
+arguments and `cat`s `tools/tests/fixtures/diff_small.json` verbatim, and the
 bundles/lints stages run against `esm_gateway.FakeGateway` backed by
 `tools/tests/fixtures/refs_graph.json` (`--offline --refs-fixture`). No real
 daemon or ESM is touched.
+
+(`esm_gateway`'s own tests cover the stricter JSON-parsing contract this fake
+binary complies with -- see `test_esm_gateway.py`'s
+`test_trailing_garbage_after_json_is_rejected`.)
 """
 
 from __future__ import annotations
@@ -38,14 +40,12 @@ REFS_GRAPH = FIXTURES_DIR / "refs_graph.json"
 # Shared fixture builders
 # ---------------------------------------------------------------------------
 
-_FAKE_ESM_TEMPLATE = "#!/bin/sh\ncat \"{diff_json}\"\nprintf 'esm> '\n"
+_FAKE_ESM_TEMPLATE = "#!/bin/sh\ncat \"{diff_json}\"\n"
 
 
 def make_fake_esm(tmp_dir: Path, diff_json: Path = DIFF_SMALL) -> Path:
     """A tiny shell-script stand-in for the `esm` binary: ignores every
-    argument and cats a fixed diff.json fixture, followed by the `--local`
-    REPL's trailing prompt string -- exercises make_patch_notes.py's
-    raw_decode()-based tolerance of that prompt."""
+    argument and cats a fixed diff.json fixture verbatim."""
     script = tmp_dir / "fake_esm.sh"
     script.write_text(_FAKE_ESM_TEMPLATE.format(diff_json=diff_json))
     mode = script.stat().st_mode

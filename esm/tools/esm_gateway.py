@@ -322,7 +322,7 @@ def ensure_daemon(
     Mirrors `RemoteBackend::connect_or_spawn` in backend.rs: if a discovery
     file exists, points at a live daemon, AND that daemon is running the
     binary it started with (`daemon_fresh`), reuse it. Otherwise run one
-    `esm -p --esm <esm_path> info` subprocess -- the Rust CLI itself performs
+    `esm --esm <esm_path> info` subprocess -- the Rust CLI itself performs
     the spawn-lock-coordinated spawn/stale-eviction dance (see
     `spawn_daemon_and_wait` in backend.rs) -- then poll the discovery file
     and `/health` until the (new) daemon is ready.
@@ -334,7 +334,7 @@ def ensure_daemon(
     esm_bin = Path(esm_bin)
     esm_path = Path(esm_path)
     subprocess.run(
-        [str(esm_bin), "-p", "--esm", str(esm_path), "info"],
+        [str(esm_bin), "--esm", str(esm_path), "info"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,
@@ -349,7 +349,7 @@ def ensure_daemon(
 
     raise DaemonError(
         f"daemon did not become healthy within {timeout:.0f}s after running "
-        f"'{esm_bin} -p info {esm_path}'"
+        f"'{esm_bin} info {esm_path}'"
     )
 
 
@@ -411,9 +411,8 @@ class DiffResult:
     dict on the Rust side -- see `src/diff.rs`; unrelated to this Python
     class despite the name collision, which mirrors the Rust type name for
     the reader's convenience).
-    `raw_json`: the exact JSON text consumed by `raw_decode` (sans the
-    trailing `--local` REPL prompt) -- what callers write to `diff.json`
-    verbatim, so the file matches what `esm` produced byte-for-byte.
+    `raw_json`: the exact JSON text `esm` produced on stdout -- what callers
+    write to `diff.json` verbatim, so the file matches byte-for-byte.
     `cmd`: the argv that was run (for verbose/debug echo).
     `stderr`: the subprocess's captured stderr (for verbose echo on success;
     failure already folds stderr into the raised `DaemonError` instead).
@@ -675,7 +674,7 @@ class EsmGateway:
         **Why subprocess + `--local`, not the warm daemon's `/op Diff` route,
         even though that route works fine** (`Op::Diff` dispatches through a
         `Registry` two-key lookup and is exercised today by plain
-        `esm -p diff A B`): `make_patch_notes.py`'s `locate_strings_dirs`
+        `esm diff A B`): `make_patch_notes.py`'s `locate_strings_dirs`
         always resolves and passes an explicit `--strings-dir`/
         `--strings-dir-a`/`--strings-dir-b` (it's a hard error to omit one,
         by design -- "Refusing to diff without strings"), and optionally
@@ -690,11 +689,9 @@ class EsmGateway:
         here (see esm/CLAUDE.md's "Bulk / sweep workflow" for how daemon
         auto-load works when no override flags are given).
 
-        Tolerates `--local`'s trailing interactive-REPL prompt ("esm> ")
-        after the JSON blob via `json.JSONDecoder().raw_decode`, same as
-        the CLI's own `-p`/`--local` split relies on for any subprocess
-        caller. `stdin=DEVNULL` avoids blocking on that REPL waiting for
-        input.
+        `stdin=DEVNULL` is defensive hygiene for any subprocess call, not a
+        workaround for anything `esm` does here -- there is no interactive
+        fallback left in the CLI for a closed stdin to trip over.
 
         Raises `DaemonError` on a non-zero exit or unparsable JSON. Has no
         CLI-output side effects (no `eprint`/`die`/banners) -- callers that
@@ -728,16 +725,14 @@ class EsmGateway:
 
         raw_output = result.stdout
         try:
-            data, json_end = json.JSONDecoder().raw_decode(raw_output)
+            data = json.loads(raw_output)
         except json.JSONDecodeError as exc:
             raise DaemonError(
                 f"esm diff produced invalid JSON: {exc}\n"
                 f"First 500 chars: {raw_output[:500]}"
             ) from exc
 
-        return DiffResult(
-            data=data, raw_json=raw_output[:json_end], cmd=cmd, stderr=result.stderr
-        )
+        return DiffResult(data=data, raw_json=raw_output, cmd=cmd, stderr=result.stderr)
 
 
 # ─── FakeGateway: fixture-backed stand-in, no daemon/ESM required ───────────
