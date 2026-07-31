@@ -1,7 +1,7 @@
 //! Query backends: in-process (`LocalBackend`) and HTTP daemon client (`RemoteBackend`).
 
 use crate::SearchField;
-use crate::ipc::{self, Op, Request, Response};
+use crate::ipc::{self, Op, RecordSel, Request, Response};
 use crate::registry::Registry;
 use anyhow::{Context, bail};
 use fs2::FileExt;
@@ -35,6 +35,24 @@ fn op_timeout() -> Option<Duration> {
         Some(n) => Some(Duration::from_secs(n)),
         None => Some(Duration::from_secs(300)),
     }
+}
+
+/// Default selector-count threshold for splitting `Op::RecordBulk` into multiple
+/// `/op` round-trips (see [`RemoteBackend::run`]). Overridable via `ESM_BULK_CHUNK`
+/// (`0` disables chunking), same env-knob shape as [`op_timeout`].
+///
+/// This bounds daemon *peak memory per round-trip*, not response bytes — per-record
+/// payload size spans three orders of magnitude (a bare EditorID lookup vs. a
+/// `--resolve full` FLST, which alone can be several MB), so no selector count is a
+/// byte guarantee. The actual fix for issue #26 is lifting the response-size cap in
+/// [`read_json_unlimited`]; chunking here only keeps one very large bulk `get` from
+/// building its entire resolved `Vec<BulkRecordEntry>` (and its serialized JSON) in a
+/// single allocation on the daemon.
+fn bulk_chunk_default() -> usize {
+    std::env::var("ESM_BULK_CHUNK")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or(512)
 }
 
 /// Discovery file written by the daemon on start.
@@ -251,6 +269,7 @@ impl QueryBackend for LocalBackend {
 pub struct RemoteBackend {
     base_url: String,
     token: String,
+    bulk_chunk: usize,
 }
 
 impl RemoteBackend {
@@ -258,7 +277,18 @@ impl RemoteBackend {
         Self {
             base_url: format!("http://{addr}:{port}"),
             token,
+            bulk_chunk: bulk_chunk_default(),
         }
+    }
+
+    /// Override the selector-count threshold at which `Op::RecordBulk` requests are
+    /// split across multiple `/op` round-trips (see [`Self::run`]). `0` disables
+    /// chunking entirely. Exists so tests (and any explicit caller) can pin the
+    /// threshold without mutating process-global env — `std::env::set_var` is
+    /// `unsafe` under edition 2024 and races under a multithreaded `cargo test`.
+    pub fn with_bulk_chunk(mut self, n: usize) -> Self {
+        self.bulk_chunk = n;
+        self
     }
 
     pub fn from_daemon_info(info: &DaemonInfo) -> Self {
@@ -341,7 +371,7 @@ impl RemoteBackend {
             .build()
             .call()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-        Ok(resp.body_mut().read_json()?)
+        read_json_unlimited(resp.body_mut())
     }
 
     pub fn shutdown(&self) -> anyhow::Result<()> {
@@ -362,13 +392,75 @@ impl RemoteBackend {
             .timeout_global(op_timeout())
             .build();
         let mut resp = request.send_json(req).map_err(|e| anyhow::anyhow!("{e}"))?;
-        let response: Response = resp.body_mut().read_json()?;
+        let response: Response = read_json_unlimited(resp.body_mut())?;
         Ok(response)
     }
+
+    /// Split a large `Op::RecordBulk` across multiple `/op` round-trips of at most
+    /// `self.bulk_chunk` selectors each, concatenating the resulting entry arrays in
+    /// order. Safe because `dispatch_op` resolves `Op::RecordBulk` as
+    /// `sels.iter().map(...).collect()` (see `ipc.rs`) — order-preserving, each entry
+    /// self-identified by its own `sel`, each independently fallible — so N chunked
+    /// requests produce byte-for-byte the same array as one request would, just spread
+    /// over more round-trips. A `Response::Err` from any chunk fails the whole call,
+    /// same as an unchunked request would.
+    fn run_bulk_chunked(
+        &self,
+        esm: &Path,
+        sels: &[RecordSel],
+        depth: crate::ResolveDepth,
+    ) -> anyhow::Result<Value> {
+        let mut out = Vec::with_capacity(sels.len());
+        for chunk in sels.chunks(self.bulk_chunk) {
+            let req = Request {
+                esm: esm.to_path_buf(),
+                op: Op::RecordBulk {
+                    sels: chunk.to_vec(),
+                    depth,
+                },
+            };
+            match self.post_op(&req)? {
+                Response::Ok { data } => match data {
+                    Value::Array(entries) => out.extend(entries),
+                    other => bail!("expected RecordBulk to return a JSON array, got {other}"),
+                },
+                Response::Err { error } => bail!("{}", error),
+            }
+        }
+        Ok(Value::Array(out))
+    }
+}
+
+/// Deserialize a `/op` (or `/status`) response body with no size ceiling.
+///
+/// `Body::read_json` applies ureq's 10 MiB `MAX_BODY_SIZE`; `BodyWithConfig`'s own
+/// default limit is `u64::MAX`, so routing through `.with_config()` alone lifts it —
+/// see issue #26. Unbounded is correct here, not a hazard: the peer is a localhost,
+/// bearer-token-gated daemon this client spawned itself, and response size is purely a
+/// function of the request the caller just made. `read_json` parses via
+/// `serde_json::from_reader`, so lifting the ceiling adds no buffering step — it only
+/// stops refusing large-but-legitimate results.
+///
+/// The response body deliberately stays one JSON document rather than moving to a
+/// streamed/NDJSON shape: `dispatch_op` (`ipc.rs`) materializes a `serde_json::Value`
+/// for every op, and axum's `Json` responder serializes it in one `to_vec` — the daemon
+/// already holds two full in-memory copies before a byte goes out, so streaming the
+/// wire format wouldn't bound daemon memory without rewriting every dispatch arm into a
+/// lazy/iterator model. It would also break `tools/esm_gateway.py`'s single
+/// `json.loads` of the body and the tested one-JSON-document stdout contract
+/// (`cli.rs`'s `one_shot_json_stdout_is_exactly_one_document`, see ADR 0002).
+fn read_json_unlimited<T: serde::de::DeserializeOwned>(body: &mut ureq::Body) -> anyhow::Result<T> {
+    Ok(body.with_config().read_json()?)
 }
 
 impl QueryBackend for RemoteBackend {
     fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
+        if let Op::RecordBulk { sels, depth } = &op
+            && self.bulk_chunk > 0
+            && sels.len() > self.bulk_chunk
+        {
+            return self.run_bulk_chunked(esm, sels, *depth);
+        }
         let req = Request {
             esm: esm.to_path_buf(),
             op,

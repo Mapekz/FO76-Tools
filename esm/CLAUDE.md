@@ -43,7 +43,7 @@ Clean layering — edit at the right level:
 | `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; five independent zero-copy `rkyv` disk-cache sections (`tree`/`forms`/`edid`/`search`/`xref`, `CACHE_VERSION = 14`) inside the shared `esm_cache/` directory, named `<esm file name>.<section>`, built on `src/rkyvcache.rs` (`cache_dir_for`/`section_path_for`) |
 | `src/registry.rs` | `Registry`: lazily opens and caches `Database` per canonical path; stale-file eviction via `FileSig` (one `fs::metadata` check per cache hit); `auto_warm` flag for daemon mode |
 | `src/ipc.rs` | Wire types (`Op`, `Request`/`Response`, `RecordSel`) and the canonical `dispatch_op`/`dispatch_inner` — the one query-dispatch surface shared by the daemon, CLI, HTTP/MCP server, and N-API bindings; `diff_locked` (post-lock diff + type-filter, shared by the registry-backed and N-API diff paths) |
-| `src/backend.rs` | `QueryBackend` trait; `LocalBackend` (in-process, no daemon) / `RemoteBackend` (HTTP client to the warm daemon); daemon lifecycle — spawn/stop, staleness detection via `exe_sig`/`daemon_fresh` |
+| `src/backend.rs` | `QueryBackend` trait; `LocalBackend` (in-process, no daemon) / `RemoteBackend` (HTTP client to the warm daemon; `/op` responses read with no size ceiling via `read_json_unlimited`, and a large `Op::RecordBulk` is transparently split across multiple round-trips via `run_bulk_chunked`, `ESM_BULK_CHUNK`); daemon lifecycle — spawn/stop, staleness detection via `exe_sig`/`daemon_fresh` |
 | `src/tree.rs` | GRUP tree arena (`TreeIndex`); `GroupNode`, `RecordStub`, `GroupLabel` enum |
 | `src/schema.rs` | Serde model for `schema/fo76.json`; `MemberDef` enum (18 variants, `#[serde(tag="kind")]`); `load_embedded()` |
 | `src/decode.rs` | Schema-driven decoder → `serde_json::Value`; `DecodeContext<'a>`, `FormIdRefResolver` trait; never panics |
@@ -122,6 +122,7 @@ The daemon warms the index once on first load and serves all subsequent lookups 
 - **Stale-evicts** if the ESM changes on disk — no manual restart needed.
 - **Rebuild-evicts** if the `esm-server` binary itself changes on disk (new schema, new decode logic, any `cargo build`) — a call against a stale-but-alive daemon stops it and respawns a fresh one before serving the request, and the daemon's own watchdog self-evicts within ~30s even with no client polling it. No manual `daemon stop` needed after a rebuild.
 - **Parallel-agent safe** — advisory spawn-lock (`esm-daemon.lock`) prevents double-spawn; multiple agents share one daemon instance.
+- **No response-size ceiling** — `/op` responses are read with no size limit, so a large bulk `get`, an unbounded `refs --limit 0`, or a wide `search`/`list` never hits an artificial cap. A bulk `get` over more than `ESM_BULK_CHUNK` selectors (default 512, `0` disables) is transparently split across multiple round-trips and reassembled — invisible to callers, just smooths daemon peak memory per request.
 
 Use `esm daemon status` to check (includes a `binary_current` flag — `false` means a rebuild happened and the daemon is about to self-evict/respawn), `esm daemon stop` to kill early.
 

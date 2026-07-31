@@ -6,7 +6,7 @@
 
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Json, Response},
     routing::{get, post},
@@ -693,6 +693,15 @@ fn build_legacy_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Request-body cap for `/op`, mirroring the response-side fix for issue #26: axum's
+/// `Json` extractor otherwise falls back to a 2 MB default (`DefaultBodyLimit`), which
+/// bounds the *client → daemon* direction. The CLI's own `Op::RecordBulk` requests stay
+/// well under it after chunking (`RemoteBackend::run_bulk_chunked`), but
+/// `tools/esm_gateway.py` and the MCP `esm_get_record` tool POST an unchunked selector
+/// list — same class of arbitrary framework default as the bug this issue fixes, so it
+/// gets the same generous treatment rather than a matching silent failure mode.
+const OP_REQUEST_BODY_LIMIT: usize = 256 * 1024 * 1024;
+
 /// Router for daemon mode.
 ///
 /// Exposes only the three token-gated endpoints that the CLI / Electron / MCP
@@ -702,6 +711,7 @@ fn build_daemon_router(state: AppState) -> Router {
         .route("/health", get(health))
         .route("/status", get(status))
         .route("/op", post(op_handler))
+        .layer(DefaultBodyLimit::max(OP_REQUEST_BODY_LIMIT))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
