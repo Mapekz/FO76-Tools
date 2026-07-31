@@ -27,7 +27,6 @@ required-features = ["server"]
 
 [dependencies]
 anyhow = "1"
-bincode = { version = "2", features = ["serde"] }
 log = "0.4"
 byteorder = "1.5"
 clap = { version = "4", features = ["derive", "env"] }

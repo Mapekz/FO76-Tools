@@ -21,29 +21,7 @@ all-features = true
 [advisories]
 version = 2
 
-ignore = [
-    # RUSTSEC-2025-0141 — "Bincode is unmaintained".
-    #
-    # The bincode team permanently ceased development following a doxxing and
-    # harassment incident; the advisory states 1.3.3 is considered complete and
-    # that "No safe upgrade is available". It is an unmaintained notice, not a
-    # vulnerability, and downgrading would not clear it — every published
-    # version is equally unmaintained. (The 3.0.0 "release" is a one-line
-    # placeholder carrying the announcement, not a usable crate.)
-    #
-    # Accepted here because of how narrowly we use it: bincode encodes exactly
-    # one thing, the local *.esm.idx index cache in esm/src/index.rs. That file
-    # is written and read by the same binary on the same machine, never crosses
-    # a trust boundary, and never carries network or user-supplied input.
-    # `try_load_cache` already treats any decode error as "no usable cache" and
-    # rebuilds, so even a malformed file degrades to a slow start rather than a
-    # failure.
-    #
-    # Revisit if bincode ever needs to parse untrusted input, or when moving the
-    # cache to a maintained format (postcard/bitcode are the suggested
-    # alternatives) becomes worthwhile on its own merits.
-    "RUSTSEC-2025-0141",
-]
+ignore = []
 
 [licenses]
 version = 2
