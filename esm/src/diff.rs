@@ -204,13 +204,13 @@ pub fn diff_databases_with(
         .collect();
     let depth = opts.bodies.resolve_depth();
 
-    let a_ids: HashSet<FormId> = a.index.form_index.keys().copied().collect();
-    let b_ids: HashSet<FormId> = b.index.form_index.keys().copied().collect();
+    let a_ids: HashSet<FormId> = a.index.iter_form_ids().collect();
+    let b_ids: HashSet<FormId> = b.index.iter_form_ids().collect();
 
     // Added: in B but not A
     let mut added = Vec::new();
     for id in b_ids.difference(&a_ids) {
-        let meta = b.index.form_index[id];
+        let meta = b.index.get_by_formid(*id).expect("present in b_ids");
         if exclude_types.contains(meta.signature.as_str()) {
             continue;
         }
@@ -228,7 +228,7 @@ pub fn diff_databases_with(
     // Removed: in A but not B
     let mut removed = Vec::new();
     for id in a_ids.difference(&b_ids) {
-        let meta = a.index.form_index[id];
+        let meta = a.index.get_by_formid(*id).expect("present in a_ids");
         if exclude_types.contains(meta.signature.as_str()) {
             continue;
         }
@@ -251,8 +251,14 @@ pub fn diff_databases_with(
     common_ids.sort_by_key(|id| id.raw());
 
     for id in common_ids {
-        let meta_a = a.index.form_index[&id];
-        let meta_b = b.index.form_index[&id];
+        let meta_a = a
+            .index
+            .get_by_formid(id)
+            .expect("present in a_ids/b_ids intersection");
+        let meta_b = b
+            .index
+            .get_by_formid(id)
+            .expect("present in a_ids/b_ids intersection");
 
         if exclude_types.contains(meta_a.signature.as_str()) {
             continue;
@@ -469,7 +475,7 @@ fn collect_formid_refs(val: &Value, out: &mut HashSet<String>) {
 fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> Option<RefName> {
     let id = parse_formid(fid_str).ok()?;
     for db in [primary, fallback] {
-        if let Some(meta) = db.index.form_index.get(&id) {
+        if let Some(meta) = db.index.get_by_formid(id) {
             let offset = meta.offset;
             let sig = meta.signature.as_str().to_owned();
             let rec = match db.parse_record_at(offset) {

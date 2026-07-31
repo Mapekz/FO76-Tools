@@ -1569,13 +1569,13 @@ pub fn coverage_report(
     record_type: Option<&str>,
     sample: usize,
 ) -> anyhow::Result<CoverageReport> {
+    // `signatures()` iterates the pre-built type_index's keys — already the
+    // distinct set of signatures present, no HashSet dedup needed and no
+    // 5.64M-record form_index scan (down from that to 178 entries).
     let mut all_sigs: Vec<String> = db
         .index
-        .form_index
-        .values()
-        .map(|m| m.signature.as_str().to_owned())
-        .collect::<HashSet<_>>()
-        .into_iter()
+        .signatures()
+        .map(|s| s.as_str().to_owned())
         .collect();
     all_sigs.sort();
 
@@ -1593,8 +1593,7 @@ pub fn coverage_report(
         let metas: Vec<crate::reader::RecordMeta> = db
             .index
             .records_by_type(sig)
-            .into_iter()
-            .map(|(_, m)| *m)
+            .map(|(_, m)| m)
             .take(if sample == 0 { usize::MAX } else { sample })
             .collect();
 

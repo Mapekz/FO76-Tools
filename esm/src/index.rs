@@ -77,13 +77,26 @@ struct CacheFile {
 #[derive(Debug, Clone)]
 pub struct Index {
     pub path: PathBuf,
-    pub form_index: HashMap<FormId, RecordMeta>,
+    form_index: HashMap<FormId, RecordMeta>,
     edid_index: Option<HashMap<String, FormId>>,
-    pub tree: TreeIndex,
+    tree: TreeIndex,
     cache_path: PathBuf,
     xref_index: Option<HashMap<FormId, Vec<FormId>>>,
     search_index: Option<HashMap<FormId, SearchMeta>>,
     type_index: HashMap<Signature, Vec<FormId>>,
+}
+
+/// Borrowed view over one search entry. Exists so [`crate::Database::search`]
+/// never has to clone/allocate just to test whether an entry matches — every
+/// field is a borrow (or a plain `Copy` scalar), valid for as long as the
+/// [`Index`] this came from.
+#[derive(Debug, Clone, Copy)]
+pub struct SearchRef<'a> {
+    pub editor_id: Option<&'a str>,
+    pub full_id: Option<u32>,
+    pub desc_id: Option<u32>,
+    pub full_text: Option<&'a str>,
+    pub desc_text: Option<&'a str>,
 }
 
 impl Index {
@@ -117,23 +130,80 @@ impl Index {
         }
     }
 
-    pub fn get_by_formid(&self, form_id: FormId) -> Option<&RecordMeta> {
-        self.form_index.get(&form_id)
+    /// Resolve a FormID to its [`RecordMeta`]. Owned, not borrowed — cheap
+    /// since `RecordMeta` is `Copy`.
+    pub fn get_by_formid(&self, form_id: FormId) -> Option<RecordMeta> {
+        self.form_index.get(&form_id).copied()
+    }
+
+    /// Alloc-free type lookup: resolve a FormID to just its [`Signature`]
+    /// without fetching the whole [`RecordMeta`].
+    pub fn signature_of(&self, form_id: FormId) -> Option<Signature> {
+        self.form_index.get(&form_id).map(|m| m.signature)
+    }
+
+    /// Whether `form_id` is present in the form index.
+    pub fn contains(&self, form_id: FormId) -> bool {
+        self.form_index.contains_key(&form_id)
+    }
+
+    /// Total number of records in the form index.
+    pub fn len(&self) -> usize {
+        self.form_index.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.form_index.is_empty()
+    }
+
+    /// Iterate every FormID present in the form index, in arbitrary order.
+    pub fn iter_form_ids(&self) -> impl Iterator<Item = FormId> + '_ {
+        self.form_index.keys().copied()
     }
 
     pub fn get_by_edid(&self, edid: &str) -> Option<FormId> {
         self.edid_index.as_ref()?.get(edid).copied()
     }
 
-    pub fn records_by_type(&self, sig: &str) -> Vec<(FormId, &RecordMeta)> {
+    /// Iterate every distinct record-type [`Signature`] present in the file —
+    /// replaces "collect every record's signature into a `HashSet`" callers,
+    /// since `type_index`'s keys are already that distinct set.
+    pub fn signatures(&self) -> impl Iterator<Item = Signature> + '_ {
+        self.type_index.keys().copied()
+    }
+
+    /// Number of records of the given 4-character type signature, without
+    /// materializing a full `Vec`/iterator of them.
+    pub fn count_by_type(&self, sig: &str) -> usize {
         self.type_index
             .get(&Signature::from_slice(sig.as_bytes()))
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.form_index.get(id).map(|m| (*id, m)))
-                    .collect()
-            })
-            .unwrap_or_default()
+            .map(|ids| ids.len())
+            .unwrap_or(0)
+    }
+
+    /// FormIDs of the given 4-character type signature, sorted (per
+    /// `build_type_index`). Alloc-free beyond the returned iterator itself —
+    /// does not fetch each record's [`RecordMeta`].
+    pub fn form_ids_by_type(&self, sig: &str) -> impl ExactSizeIterator<Item = FormId> + '_ {
+        let ids: &[FormId] = self
+            .type_index
+            .get(&Signature::from_slice(sig.as_bytes()))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        ids.iter().copied()
+    }
+
+    /// `(FormId, RecordMeta)` pairs for every record of the given
+    /// 4-character type signature, FormID-sorted. Owned pairs — cheap since
+    /// `RecordMeta` is `Copy`.
+    pub fn records_by_type(&self, sig: &str) -> impl Iterator<Item = (FormId, RecordMeta)> + '_ {
+        let ids: &[FormId] = self
+            .type_index
+            .get(&Signature::from_slice(sig.as_bytes()))
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
+        ids.iter()
+            .filter_map(move |id| self.form_index.get(id).map(|m| (*id, *m)))
     }
 
     pub fn ensure_edid_index(&mut self, esm: &EsmFile) -> anyhow::Result<()> {
@@ -272,17 +342,36 @@ impl Index {
     }
 
     /// Return the list of FormIDs that reference the given FormID.
-    pub fn get_xref(&self, form_id: FormId) -> &[FormId] {
+    pub fn get_xref(&self, form_id: FormId) -> Vec<FormId> {
         self.xref_index
             .as_ref()
             .and_then(|m| m.get(&form_id))
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+            .cloned()
+            .unwrap_or_default()
     }
 
-    /// Return the lazy search index (if already built).
-    pub fn search_index(&self) -> Option<&HashMap<FormId, SearchMeta>> {
-        self.search_index.as_ref()
+    /// Whether the lazy search index has been built yet.
+    pub fn has_search_index(&self) -> bool {
+        self.search_index.is_some()
+    }
+
+    /// Iterate the lazy search index (if already built) as borrowed
+    /// [`SearchRef`] views — empty iterator if not yet built.
+    pub fn iter_search(&self) -> impl Iterator<Item = (FormId, SearchRef<'_>)> + '_ {
+        self.search_index.iter().flat_map(|m| {
+            m.iter().map(|(id, meta)| {
+                (
+                    *id,
+                    SearchRef {
+                        editor_id: meta.editor_id.as_deref(),
+                        full_id: meta.full_id,
+                        desc_id: meta.desc_id,
+                        full_text: meta.full_text.as_deref(),
+                        desc_text: meta.desc_text.as_deref(),
+                    },
+                )
+            })
+        })
     }
 
     /// Build the search index on first call, then cache it to disk.
@@ -342,6 +431,12 @@ impl Index {
         self.search_index = Some(search_index);
         self.save_cache(esm)?;
         Ok(())
+    }
+
+    /// Borrowed view over the GRUP tree — replaces the removed `pub tree`
+    /// field. See [`crate::tree::TreeView`].
+    pub fn tree(&self) -> crate::tree::TreeView<'_> {
+        crate::tree::TreeView::new(&self.tree)
     }
 }
 
@@ -617,9 +712,9 @@ mod tests {
         };
 
         // First call
-        let first = index.records_by_type("WEAP");
+        let first: Vec<(FormId, RecordMeta)> = index.records_by_type("WEAP").collect();
         // Second call — must return same order
-        let second = index.records_by_type("WEAP");
+        let second: Vec<(FormId, RecordMeta)> = index.records_by_type("WEAP").collect();
 
         assert_eq!(first.len(), 2);
         assert_eq!(second.len(), 2);
@@ -629,13 +724,27 @@ mod tests {
         assert_eq!(first[0].0, second[0].0, "order must be stable across calls");
         assert_eq!(first[1].0, second[1].0, "order must be stable across calls");
 
+        // count_by_type / form_ids_by_type must agree with records_by_type
+        // without materializing the full RecordMeta for each entry.
+        assert_eq!(index.count_by_type("WEAP"), 2);
+        let weap_ids: Vec<FormId> = index.form_ids_by_type("WEAP").collect();
+        assert_eq!(weap_ids, vec![weap2, weap1]);
+
         // NPC_ should return exactly one record
-        let npc_records = index.records_by_type("NPC_");
+        let npc_records: Vec<(FormId, RecordMeta)> = index.records_by_type("NPC_").collect();
         assert_eq!(npc_records.len(), 1);
         assert_eq!(npc_records[0].0, npc_);
+        assert_eq!(index.count_by_type("NPC_"), 1);
 
         // Unknown type returns empty
-        assert!(index.records_by_type("XXXX").is_empty());
+        assert_eq!(index.records_by_type("XXXX").count(), 0);
+        assert_eq!(index.count_by_type("XXXX"), 0);
+
+        // signatures() enumerates the distinct types present, alloc-free vs.
+        // a full form_index scan.
+        let mut sigs: Vec<String> = index.signatures().map(|s| s.as_str().to_owned()).collect();
+        sigs.sort_unstable();
+        assert_eq!(sigs, vec!["NPC_".to_string(), "WEAP".to_string()]);
     }
 
     #[test]

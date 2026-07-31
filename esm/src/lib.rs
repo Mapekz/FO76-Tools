@@ -71,8 +71,9 @@ pub struct Database {
     /// Optional zero-copy mmap'd form index, set only in [`Database::open_lite`].
     ///
     /// When present, [`record_by_formid`](Self::record_by_formid) and related
-    /// methods use binary search over this table instead of the HashMap in
-    /// `index.form_index`.  The full index (`index`) is empty in this mode.
+    /// methods use binary search over this table instead of `index`'s
+    /// internal form-index HashMap.  The full index (`index`) is empty in
+    /// this mode.
     pub mmap_index: Option<crate::mindex::MmapFormIndex>,
     /// Per-record-type memoized decode, populated lazily by `filter_type_records`
     /// and `list_type_field_paths`. In-memory only — never persisted, no
@@ -698,7 +699,6 @@ impl Database {
         } else {
             self.index
                 .get_by_formid(form_id)
-                .cloned()
                 .with_context(|| format!("FormID {} not found", form_id))
         }
     }
@@ -738,10 +738,7 @@ impl Database {
         let records = self.index.records_by_type(sig);
         let mut out = Vec::new();
         // `limit == 0` means "no limit" (matches `search`/`filter_type_records`).
-        for (form_id, meta) in records
-            .into_iter()
-            .take(if limit == 0 { usize::MAX } else { limit })
-        {
+        for (form_id, meta) in records.take(if limit == 0 { usize::MAX } else { limit }) {
             let rec = self.esm.parse_record_at(meta.offset)?;
             let editor_id = edid_from_subrecords(&rec.subrecords);
             let full_lstring_id =
@@ -788,6 +785,10 @@ impl Database {
         self.check_not_lite("search")?;
         self.index
             .ensure_search_index(&self.esm, self.is_localized)?;
+        assert!(
+            self.index.has_search_index(),
+            "search_index must be populated after ensure_search_index"
+        );
 
         let type_filter: Option<HashSet<&str>> = if types.is_empty() {
             None
@@ -795,80 +796,71 @@ impl Database {
             Some(types.iter().map(|s| s.as_str()).collect())
         };
 
-        let search_index = self
-            .index
-            .search_index()
-            .expect("search_index must be populated after ensure_search_index");
-
         // Collect matching entries. HashMap order is nondeterministic, so we
         // accumulate into a Vec and sort by FormID before returning.
         let mut matches: Vec<(u32, RecordRow)> = Vec::new();
 
-        for (form_id, smeta) in search_index {
-            // Type filter.
+        for (form_id, sref) in self.index.iter_search() {
+            // Type filter — alloc-free: only the record's Signature is
+            // needed here, not the whole RecordMeta.
             if let Some(ref filter) = type_filter {
-                let sig = self
-                    .index
-                    .get_by_formid(*form_id)
-                    .map(|m| m.signature.as_str())
-                    .unwrap_or("");
-                if !filter.contains(sig) {
+                let sig = self.index.signature_of(form_id);
+                let sig_str = sig.as_ref().map(|s| s.as_str()).unwrap_or("");
+                if !filter.contains(sig_str) {
                     continue;
                 }
             }
 
-            // Resolve display name: lstring ID for localized ESMs,
-            // inline text for non-localized ESMs.
-            let name: Option<String> = smeta
-                .full_id
-                .and_then(|id| {
-                    self.localization
-                        .as_ref()
-                        .and_then(|l| l.lookup(StringKind::Strings, id))
-                        .map(|s| s.to_owned())
-                })
-                .or_else(|| smeta.full_text.clone());
+            // Resolve display name/description as borrowed &str first — no
+            // allocation yet. SearchField::Edid never reads either, so skip
+            // the localization lookup entirely in that case.
+            let name_str: Option<&str> = if field == SearchField::Edid {
+                None
+            } else {
+                sref.full_id
+                    .and_then(|id| {
+                        self.localization
+                            .as_ref()
+                            .and_then(|l| l.lookup(StringKind::Strings, id))
+                    })
+                    .or(sref.full_text)
+            };
+            let desc_str: Option<&str> = if field == SearchField::Edid {
+                None
+            } else {
+                sref.desc_id
+                    .and_then(|id| {
+                        self.localization
+                            .as_ref()
+                            .and_then(|l| l.lookup(StringKind::Strings, id))
+                    })
+                    .or(sref.desc_text)
+            };
 
-            // Resolve description: lstring ID for localized ESMs,
-            // inline text for non-localized ESMs.
-            let desc: Option<String> = smeta
-                .desc_id
-                .and_then(|id| {
-                    self.localization
-                        .as_ref()
-                        .and_then(|l| l.lookup(StringKind::Strings, id))
-                        .map(|s| s.to_owned())
-                })
-                .or_else(|| smeta.desc_text.clone());
-
-            // Check if this record matches the pattern for the requested field.
+            // Check if this record matches the pattern for the requested
+            // field — tested entirely against borrowed &str data, no
+            // allocation regardless of outcome.
             let matched = match field {
-                SearchField::Edid => smeta
+                SearchField::Edid => sref
                     .editor_id
-                    .as_deref()
                     .map(|e| wildcard_match(pattern, e))
                     .unwrap_or(false),
                 SearchField::Name => {
-                    name.as_deref()
+                    name_str
                         .map(|n| wildcard_match(pattern, n))
                         .unwrap_or(false)
-                        || desc
-                            .as_deref()
+                        || desc_str
                             .map(|d| wildcard_match(pattern, d))
                             .unwrap_or(false)
                 }
                 SearchField::Both => {
-                    smeta
-                        .editor_id
-                        .as_deref()
+                    sref.editor_id
                         .map(|e| wildcard_match(pattern, e))
                         .unwrap_or(false)
-                        || name
-                            .as_deref()
+                        || name_str
                             .map(|n| wildcard_match(pattern, n))
                             .unwrap_or(false)
-                        || desc
-                            .as_deref()
+                        || desc_str
                             .map(|d| wildcard_match(pattern, d))
                             .unwrap_or(false)
                 }
@@ -878,7 +870,13 @@ impl Database {
                 continue;
             }
 
-            let meta = self.index.get_by_formid(*form_id);
+            // Only now build the owned `name` — the one of the two that
+            // actually crosses into the outgoing RecordRow (RecordRow has no
+            // description field; desc_str above only ever needed to be
+            // borrowed for the match test).
+            let name: Option<String> = name_str.map(|s| s.to_owned());
+
+            let meta = self.index.get_by_formid(form_id);
             let offset = meta.map(|m| m.offset).unwrap_or(0);
             let record_type = meta.map(|m| m.signature.as_str().to_owned());
 
@@ -887,7 +885,7 @@ impl Database {
                 RecordRow {
                     form_id: form_id.display(),
                     record_type,
-                    editor_id: smeta.editor_id.clone(),
+                    editor_id: sref.editor_id.map(|s| s.to_owned()),
                     name,
                     offset,
                 },
@@ -921,7 +919,6 @@ impl Database {
         let records: Vec<(FormId, u64, String)> = self
             .index
             .records_by_type(sig)
-            .into_iter()
             .skip(offset)
             .take(if limit == 0 { usize::MAX } else { limit })
             .map(|(fid, meta)| (fid, meta.offset, meta.signature.as_str().to_owned()))
@@ -962,7 +959,7 @@ impl Database {
             self.localization.as_ref(),
             self.curves.as_ref(),
         )?;
-        let referencers: Vec<FormId> = self.index.get_xref(form_id).to_vec();
+        let referencers: Vec<FormId> = self.index.get_xref(form_id);
         let mut out = Vec::new();
         for referencer in referencers {
             if let Some(row) = self.record_row_for(referencer)? {
@@ -977,7 +974,7 @@ impl Database {
     /// [`Database::referenced_by`] (each referencer row) and
     /// [`ipc::referenced_by_enriched`]'s carrier/seed rows.
     fn record_row_for(&mut self, form_id: FormId) -> anyhow::Result<Option<RecordRow>> {
-        let Some(meta) = self.index.get_by_formid(form_id).cloned() else {
+        let Some(meta) = self.index.get_by_formid(form_id) else {
             return Ok(None);
         };
         let rec = self.esm.parse_record_at(meta.offset)?;
@@ -1005,12 +1002,8 @@ impl Database {
 
     /// List all top-level (group_type == 0) GRUPs in file order.
     pub fn list_groups(&self) -> Vec<GroupNode> {
-        self.index
-            .tree
-            .roots
-            .iter()
-            .map(|&idx| self.index.tree.group_node(idx))
-            .collect()
+        let tree = self.index.tree();
+        tree.roots().map(|idx| tree.group_node(idx)).collect()
     }
 
     /// List direct children of the top-level GRUP with the given record type signature.
@@ -1026,13 +1019,7 @@ impl Database {
         let sig_upper = sig.to_uppercase();
 
         // Find the top-level group with this record-type signature
-        let group_idx = self.index.tree.roots.iter().copied().find(|&idx| {
-            let entry = &self.index.tree.groups[idx];
-            matches!(
-                TreeIndex::decode_label(entry.group_type, entry.label),
-                crate::tree::GroupLabel::RecordType { ref sig } if sig == &sig_upper
-            )
-        });
+        let group_idx = self.index.tree().find_root_by_type(&sig_upper);
 
         let Some(group_idx) = group_idx else {
             return Ok(Vec::new());
@@ -1050,7 +1037,7 @@ impl Database {
         offset: usize,
         limit: usize,
     ) -> anyhow::Result<Vec<GroupChild>> {
-        let Some(&group_idx) = self.index.tree.offset_map.get(&group_offset) else {
+        let Some(group_idx) = self.index.tree().group_idx_at_offset(group_offset) else {
             return Ok(Vec::new());
         };
         Ok(self.group_children_at(group_idx, offset, limit))
@@ -1061,19 +1048,15 @@ impl Database {
     /// Infallible: pagination clamps to the child count, and `record_stub_at`
     /// failures already collapse to `None` editor_ids rather than propagating.
     fn group_children_at(&self, group_idx: usize, offset: usize, limit: usize) -> Vec<GroupChild> {
+        let tree = self.index.tree();
         // Collect the paginated child slice (avoid holding borrow into mutable self below)
-        let children_slice: Vec<ChildRef> = {
-            let entry = &self.index.tree.groups[group_idx];
-            let start = offset.min(entry.children.len());
-            let end = (offset + limit).min(entry.children.len());
-            entry.children[start..end].to_vec()
-        };
+        let children_slice: Vec<ChildRef> = tree.children(group_idx, offset, limit);
 
         let mut result = Vec::new();
         for child in children_slice {
             match child {
                 ChildRef::Group(idx) => {
-                    result.push(GroupChild::Group(self.index.tree.group_node(idx)));
+                    result.push(GroupChild::Group(tree.group_node(idx)));
                 }
                 ChildRef::Record {
                     form_id,
@@ -1229,7 +1212,7 @@ impl Database {
         let Some(meta) = self.index.get_by_formid(referencer) else {
             return Vec::new();
         };
-        let Ok(result) = self.record_at_meta_with_depth(meta, crate::decode::ResolveDepth::None)
+        let Ok(result) = self.record_at_meta_with_depth(&meta, crate::decode::ResolveDepth::None)
         else {
             return Vec::new();
         };
@@ -1250,7 +1233,7 @@ impl Database {
         let Some(meta) = self.index.get_by_formid(node) else {
             return Vec::new();
         };
-        let Ok(result) = self.record_at_meta_with_depth(meta, crate::decode::ResolveDepth::None)
+        let Ok(result) = self.record_at_meta_with_depth(&meta, crate::decode::ResolveDepth::None)
         else {
             return Vec::new();
         };
@@ -1273,10 +1256,14 @@ impl Database {
             return Ok(());
         }
 
-        let all_records = self.index.records_by_type(sig);
-        let total = all_records.len();
-        let records: Vec<(FormId, u64)> = all_records
-            .into_iter()
+        // `count_by_type` looks up the type_index directly, avoiding a full
+        // materialization of every (FormId, RecordMeta) pair just to measure
+        // `total` — `records_by_type` itself is still walked below, but only
+        // up to `FILTER_SCAN_CAP`.
+        let total = self.index.count_by_type(sig);
+        let records: Vec<(FormId, u64)> = self
+            .index
+            .records_by_type(sig)
             .take(FILTER_SCAN_CAP)
             .map(|(fid, meta)| (fid, meta.offset))
             .collect();

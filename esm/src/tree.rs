@@ -86,9 +86,13 @@ pub(crate) struct GroupEntry {
     pub children: Vec<ChildRef>,
 }
 
-/// An internal reference to a direct child of a GRUP.
+/// A reference to a direct child of a GRUP — either a nested GRUP (by arena
+/// index) or a record header stub. Returned by [`TreeView::children`], so it
+/// is `pub` (not just `pub(crate)`) even though its fields carry no
+/// presentation formatting of their own — callers pair it with
+/// [`TreeView::group_node`] or a record parse to build a presentation type.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) enum ChildRef {
+pub enum ChildRef {
     Group(usize),
     Record {
         form_id: u32,
@@ -201,6 +205,66 @@ impl TreeIndex {
             child_count: entry.children.len(),
             offset: entry.start,
         }
+    }
+
+    /// Find the top-level (root) GRUP whose decoded label is
+    /// `GroupLabel::RecordType { sig }` matching `sig` exactly. `sig` is
+    /// compared as given — callers are expected to uppercase first (matches
+    /// the convention `GroupLabel::RecordType`'s `sig` is always uppercase).
+    fn find_root_by_type(&self, sig: &str) -> Option<usize> {
+        self.roots.iter().copied().find(|&idx| {
+            let entry = &self.groups[idx];
+            matches!(
+                Self::decode_label(entry.group_type, entry.label),
+                GroupLabel::RecordType { sig: ref s } if s == sig
+            )
+        })
+    }
+}
+
+/// Borrowed view over the GRUP tree, covering exactly the four operations
+/// [`crate::Database`]'s group-listing methods need. Neither [`TreeIndex`]
+/// nor its internal arena types leak through this beyond [`ChildRef`] (a
+/// cheap, already-`pub` header stub with no arena internals of its own).
+#[derive(Debug, Clone, Copy)]
+pub struct TreeView<'a> {
+    tree: &'a TreeIndex,
+}
+
+impl<'a> TreeView<'a> {
+    pub(crate) fn new(tree: &'a TreeIndex) -> Self {
+        Self { tree }
+    }
+
+    /// Arena indices of every top-level (group_type == 0) GRUP, in file order.
+    pub fn roots(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        self.tree.roots.iter().copied()
+    }
+
+    /// Convert an arena entry to a presentation [`GroupNode`].
+    pub fn group_node(&self, idx: usize) -> GroupNode {
+        self.tree.group_node(idx)
+    }
+
+    /// Find the top-level GRUP whose record-type signature matches `sig`
+    /// (already uppercased by the caller).
+    pub fn find_root_by_type(&self, sig: &str) -> Option<usize> {
+        self.tree.find_root_by_type(sig)
+    }
+
+    /// Arena index of the GRUP starting at byte `offset`, if any.
+    pub fn group_idx_at_offset(&self, offset: u64) -> Option<usize> {
+        self.tree.offset_map.get(&offset).copied()
+    }
+
+    /// Paginate the direct children of the GRUP at arena index `idx`,
+    /// clamping `offset`/`limit` to the actual child count (never panics on
+    /// out-of-range pagination).
+    pub fn children(&self, idx: usize, offset: usize, limit: usize) -> Vec<ChildRef> {
+        let entry = &self.tree.groups[idx];
+        let start = offset.min(entry.children.len());
+        let end = (offset + limit).min(entry.children.len());
+        entry.children[start..end].to_vec()
     }
 }
 

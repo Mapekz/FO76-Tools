@@ -174,7 +174,7 @@ impl Registry {
                 let db = r.db.lock().unwrap();
                 ResidentInfo {
                     path: path.clone(),
-                    record_count: db.index.form_index.len(),
+                    record_count: db.index.len(),
                 }
             })
             .collect()
