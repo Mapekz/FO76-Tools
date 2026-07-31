@@ -19,17 +19,13 @@ This repository contains three Fallout 76 tools. Most share no code, no workspac
 
 ## Scope
 
-`esm/` and `esm-viewer/` are read-only by design — they inspect, diff, and serve `.esm` files, never write them. ESM write/serialize support (mod authoring: editing records and saving them back to a `.esm`) is **permanently out of scope**, not deferred — don't add it to `todos.md` or design toward it.
-
-## Backlog
-
-Deferred work for **all** subprojects lives in one place: [`todos.md`](todos.md) at the repo root, grouped by project. Add follow-ups there — do not create per-project `todos.md` files or a `todos/` directory.
+`esm/` and `esm-viewer/` are read-only by design — they inspect, diff, and serve `.esm` files, never write them. ESM write/serialize support (mod authoring: editing records and saving them back to a `.esm`) is **permanently out of scope**, not deferred — don't file it or design toward it.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live in GitHub Issues ([`Mapekz/FO76-Tools`](https://github.com/Mapekz/FO76-Tools)), managed via the `gh` CLI. `todos.md` remains the separate hand-maintained backlog. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues ([`Mapekz/FO76-Tools`](https://github.com/Mapekz/FO76-Tools)), managed via the `gh` CLI — the single backlog for all three subprojects. See `docs/agents/issue-tracker.md`. Considered non-decisions (deliberate scope exclusions, carve-outs) are recorded as a present-tense note next to the code they constrain, not in a separate notes file.
 
 ### Triage labels
 

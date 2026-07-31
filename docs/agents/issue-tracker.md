@@ -21,6 +21,6 @@ Create a GitHub issue.
 
 Run `gh issue view <number> --comments`.
 
-## Relationship to `todos.md`
+## The only backlog
 
-`todos.md` at the repo root remains the hand-maintained, priority-ordered backlog grouped by subproject (`ba2/`, `esm/`, `esm-viewer/`) — it is **not** replaced or superseded by this convention. GitHub Issues is what these skills read from and write to when asked to file, triage, or close a *tracked issue*; `todos.md` is for the user's own informal, dated backlog notes. Don't auto-migrate entries between the two.
+GitHub Issues is the single backlog for all three subprojects — there is no separate notes file. A considered non-decision (a deliberate scope exclusion, a carve-out kept out of the table it looks like it should be in) is recorded as a present-tense comment next to the code it constrains, not filed as an issue and not parked in a notes file.

@@ -16,8 +16,7 @@ esm/
 ```
 
 The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling
-[`../esm-viewer/`](../esm-viewer/) directory, not in this crate. Deferred work for every
-subproject is tracked in the repo-root [`todos.md`](../todos.md).
+[`../esm-viewer/`](../esm-viewer/) directory, not in this crate.
 
 ## Requirements
 

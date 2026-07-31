@@ -826,8 +826,9 @@ fn type_filter_case_insensitive() {
 }
 
 /// `limit`/`total`/`capped` are computed against the *filtered* set, not the
-/// pre-filter walk — this is the "server-side filter so limits/depth interact
-/// correctly" requirement from the P3 backlog item.
+/// pre-filter walk — filters need to interact correctly with limits/depth,
+/// not just cosmetically drop non-matching rows after they've already
+/// counted against the cap.
 #[test]
 fn type_filter_limit_and_total_apply_post_filter() {
     let (path, mut db) = open_chain_db();

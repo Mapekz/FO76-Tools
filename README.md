@@ -8,7 +8,7 @@ An umbrella for independent Fallout 76 tooling. Each subproject has its own lang
 | [`esm/`](esm/README.md) | Rust | Read-only FO76 ESM engine: `esm` CLI, HTTP/MCP server, and the `esm-napi` N-API addon |
 | [`esm-viewer/`](esm-viewer/) | TypeScript / Electron | "FO76 ESM Viewer" desktop GUI for browsing, searching, and diffing game records; built on `esm-napi` |
 
-Deferred work for every subproject is tracked in a single repo-root backlog: [`todos.md`](todos.md).
+Deferred work for every subproject is tracked in [GitHub Issues](https://github.com/Mapekz/FO76-Tools/issues).
 
 ## License
 
