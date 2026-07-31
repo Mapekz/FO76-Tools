@@ -2,11 +2,7 @@
 
 # Game data (large, not redistributable — obtain from your own install)
 *.esm
-*.esm.tree
-*.esm.forms
-*.esm.edid
-*.esm.search
-*.esm.xref
+esm_cache/
 *.ba2
 Data/
 

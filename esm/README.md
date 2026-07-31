@@ -2,7 +2,7 @@
 
 A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 181 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, and schema coverage auditing.
 
-> **Read-only.** This tool never modifies your `.esm` files. The only files it writes are sidecar index caches next to the ESM: five zero-copy rkyv sections (`<name>.esm.tree`, `<name>.esm.forms`, `<name>.esm.edid`, `<name>.esm.search`, `<name>.esm.xref`) — see [Index cache](#index-cache) for sizes and what each holds. Game data files (`*.esm`, `*.ba2`, and every one of those cache files) are gitignored and non-redistributable — obtain them from your own game install.
+> **Read-only.** This tool never modifies your `.esm` files. The only files it writes live in a shared sidecar directory next to the ESM, `esm_cache/`, holding five zero-copy rkyv sections per ESM (`<name>.esm.tree`, `<name>.esm.forms`, `<name>.esm.edid`, `<name>.esm.search`, `<name>.esm.xref`) — see [Index cache](#index-cache) for sizes and what each holds. Game data files (`*.esm`, `*.ba2`, and the `esm_cache/` directory) are gitignored and non-redistributable — obtain them from your own game install.
 
 ## Workspace layout
 
@@ -513,24 +513,27 @@ Five tools exposed: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_
 
 ## Index cache
 
-`Index`'s cache is five independent, zero-copy [rkyv](https://rkyv.org/) sections — each its own
-mmap'd file next to the ESM, read via `rkyv::access_unchecked` rather than deserialized into heap
-HashMaps (see `src/rkyvcache.rs`). This replaced a single bincode-encoded `.esm.idx` blob; `bincode`
-is no longer a dependency of this crate at all (it was permanently unmaintained — RUSTSEC-2025-0141 —
-see `deny.toml`'s git history for the full rationale).
+`Index`'s cache is five independent, zero-copy [rkyv](https://rkyv.org/) sections, each its own
+mmap'd file inside `esm_cache/` — one shared, fixed-name directory sibling to the ESM, holding one
+file per ESM per section, named `<esm file name>.<section>` (e.g. `SeventySix.esm.forms`) so
+multiple plugins in one directory never collide. Sections are read via `rkyv::access_unchecked`
+rather than deserialized into heap HashMaps (see `src/rkyvcache.rs`,
+`cache_dir_for`/`section_path_for`). This replaced a single bincode-encoded `.esm.idx` blob;
+`bincode` is no longer a dependency of this crate at all (it was permanently unmaintained —
+RUSTSEC-2025-0141 — see `deny.toml`'s git history for the full rationale).
 
 Two are eager — both built together on `Database::open` whenever either is missing or stale, since
 `get_by_formid` and the GRUP tree browser are core paths:
 
-- **`<name>.esm.forms`** (~200 MiB) — FormID→[`RecordMeta`] table (sorted `Vec`, binary-searched) plus
-  the per-type FormID directory. This is the zero-copy replacement for what used to be the bulk of
-  `.esm.idx`'s ~280 MiB and its cold-load cost.
+- **`<name>.esm.forms`** (~200 MiB) — FormID→[`RecordMeta`] table (sorted `Vec`, binary-searched)
+  plus the per-type FormID directory. This is the zero-copy replacement for what used to be the
+  bulk of `.esm.idx`'s ~280 MiB and its cold-load cost.
 - **`<name>.esm.tree`** (~140 MiB) — the GRUP structural tree (`tree` / `list-groups` / `list_type_children`).
 
 Three are lazy — built on first use of the matching operation, same as before this migration, just
-persisted to their own file instead of one shared blob (so, e.g., `ensure_edid_index` only ever writes
-`.esm.edid`, not the other two). A fresh process opening the same ESM later still picks up whichever of
-these a prior process already built, exactly as before:
+persisted to their own file instead of one shared blob (so, e.g., `ensure_edid_index` only ever
+writes `<name>.esm.edid`, not the other two). A fresh process opening the same ESM later still
+picks up whichever of these a prior process already built, exactly as before:
 
 - **`<name>.esm.edid`** (~15 MiB) — EditorID→FormID map (`--edid` lookups).
 - **`<name>.esm.search`** (~30 MiB) — FormID→name/description map (`search`).
@@ -541,7 +544,7 @@ the source ESM's size+mtime) validated before any bytes are trusted — a stale,
 file degrades to "rebuild that section," never a crash. `CACHE_VERSION` (`src/index.rs`) still gates
 all five as a shared semantic-layout counter; bump it whenever a section's on-disk *meaning* changes.
 
-All five files are gitignored. Never commit them.
+The whole `esm_cache/` directory is gitignored. Never commit it.
 
 ## Electron GUI
 

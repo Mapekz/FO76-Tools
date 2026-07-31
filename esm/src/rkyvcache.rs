@@ -37,10 +37,14 @@
 //! # Callers
 //!
 //! The shared base all five of `Index`'s sections are built on: `tree.rs`'s
-//! `TreeIndex` (`.esm.tree`) and `index.rs`'s `FormsSection` (`.esm.forms`),
-//! `EdidSection` (`.esm.edid`), `SearchSection` (`.esm.search`), and
-//! `XrefSection` (`.esm.xref`) each call [`write_section`]/[`Section::map`]
-//! with their own [`SectionKind`] and layout fingerprint.
+//! `TreeIndex` (`tree`) and `index.rs`'s `FormsSection` (`forms`),
+//! `EdidSection` (`edid`), `SearchSection` (`search`), and `XrefSection`
+//! (`xref`) each call [`write_section`]/[`Section::map`] with their own
+//! [`SectionKind`] and layout fingerprint, at the path [`section_path_for`]
+//! returns: a fixed-name `esm_cache/` directory, a sibling of the ESM (see
+//! [`cache_dir_for`]), holding one file per ESM per section, named
+//! `<esm file name>.<section>` (e.g. `esm_cache/SeventySix.esm.forms`) so
+//! multiple plugins in one directory never collide.
 
 use anyhow::Context;
 use memmap2::Mmap;
@@ -49,7 +53,7 @@ use std::fs;
 use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::marker::PhantomData;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const HEADER_SIZE: usize = 64;
 const MAGIC: &[u8; 8] = b"ESMRKYV1";
@@ -108,6 +112,48 @@ pub(crate) enum SectionKind {
     Edid = 3,
     Search = 4,
     Xref = 5,
+}
+
+impl SectionKind {
+    /// File suffix for this section inside [`cache_dir_for`]'s directory
+    /// (see [`section_path_for`]). A `match`, not a lookup table, so adding
+    /// a variant without naming its suffix here is a compile error rather
+    /// than a silent gap.
+    const fn file_name(self) -> &'static str {
+        match self {
+            SectionKind::Tree => "tree",
+            SectionKind::Forms => "forms",
+            SectionKind::Edid => "edid",
+            SectionKind::Search => "search",
+            SectionKind::Xref => "xref",
+        }
+    }
+}
+
+/// The shared rkyv cache directory, `esm_cache/`, a sibling of the ESM.
+/// Fixed name — does not vary with the ESM's own name — so every ESM in a
+/// directory shares one obviously-named cache folder; see
+/// [`section_path_for`] for how per-ESM collisions are avoided inside it.
+pub(crate) fn cache_dir_for(esm_path: &Path) -> anyhow::Result<PathBuf> {
+    let parent = esm_path
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("esm path has no parent: {}", esm_path.display()))?;
+    Ok(parent.join("esm_cache"))
+}
+
+/// Path to one section's file inside [`cache_dir_for`]'s directory, named
+/// `<esm file name>.<section>` — the full original file name (extension
+/// included) so two different plugins in the same directory never collide,
+/// followed by the [`SectionKind`] so the path and the kind stored in the
+/// file's own header (checked by [`Section::map`]) can never drift apart.
+pub(crate) fn section_path_for(esm_path: &Path, kind: SectionKind) -> anyhow::Result<PathBuf> {
+    let file_name = esm_path
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("esm path has no file name: {}", esm_path.display()))?;
+    let mut name = file_name.to_os_string();
+    name.push(".");
+    name.push(kind.file_name());
+    Ok(cache_dir_for(esm_path)?.join(name))
 }
 
 /// One memory-mapped rkyv section: a fixed header followed immediately by
@@ -479,18 +525,45 @@ pub(crate) const fn fnv1a_u64(acc: u64, x: u64) -> u64 {
     acc
 }
 
+/// Build a unique temp path next to `base`, e.g.
+/// `esm_cache/SeventySix.esm.forms.tmp.<16 hex>`. Used by [`write_section`]
+/// so two in-flight writers (or two successive calls) never collide, and so
+/// a crash mid-write leaves debris under a random name nothing ever opens —
+/// see [`write_section`]'s doc comment for the full write/publish sequence
+/// this exists to support.
+fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
+    let mut bytes = [0u8; 8];
+    getrandom::fill(&mut bytes)?;
+    let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    let parent = base
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("base path has no parent: {}", base.display()))?;
+    let mut name = base
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("base path has no file name: {}", base.display()))?
+        .to_os_string();
+    name.push(".tmp.");
+    name.push(hex);
+    Ok(parent.join(name))
+}
+
 /// Write `value` as a new section file at `path` (via a unique temp file,
-/// fsync, then atomic rename — mirroring `index.rs::save_cache`'s pattern,
-/// reusing its `unique_tmp_path` helper directly since it is already
-/// `pub(crate)` there). `cache_version` is the CALLER's semantic layout
-/// version (e.g. this crate's existing `index::CACHE_VERSION` constant) —
-/// stored in the header and checked on load alongside `layout_fingerprint`.
+/// fsync, then atomic rename). `cache_version` is the CALLER's semantic
+/// layout version (e.g. this crate's existing `index::CACHE_VERSION`
+/// constant) — stored in the header and checked on load alongside
+/// `layout_fingerprint`.
+///
+/// `path`'s parent directory (the shared `esm_cache/` — see
+/// [`section_path_for`]) is created if it doesn't exist yet, since a lazy
+/// section (`ensure_edid_index` etc.) can write long after the eager
+/// tree/forms pair already created it, or — for a brand-new ESM — before
+/// anything has.
 ///
 /// # Write sequence — header written LAST
 ///
 /// 1. Unique temp path next to `path` (getrandom-suffixed, via
-///    `index::unique_tmp_path` — never a fixed `.tmp` name, so two
-///    in-flight writers, or two successive calls, never collide).
+///    [`unique_tmp_path`] — never a fixed `.tmp` name, so two in-flight
+///    writers, or two successive calls, never collide).
 /// 2. Create the temp file and write a 64-byte ALL-ZERO placeholder header.
 /// 3. Serialize `value` with rkyv directly into the file through a buffered
 ///    `IoWriter` (rkyv's streaming writer-based API), so the archive bytes
@@ -533,7 +606,11 @@ where
             >,
         >,
 {
-    let tmp_path = crate::index::unique_tmp_path(path)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create cache directory {}", parent.display()))?;
+    }
+    let tmp_path = unique_tmp_path(path)?;
 
     let write_result: anyhow::Result<()> = (|| {
         // 2. Placeholder header.
@@ -1222,6 +1299,101 @@ mod tests {
         assert!(second.is_mapped());
         assert_eq!(second.get().unwrap().a, 99);
         assert_eq!(second.get().unwrap().b.as_str(), "second");
+
+        let _ = fs::remove_file(&path);
+    }
+
+    // ── cache_dir_for / section_path_for / unique_tmp_path ──────────────────
+
+    #[test]
+    fn unique_tmp_path_differs_and_same_parent() -> anyhow::Result<()> {
+        let base = PathBuf::from("/tmp/esm_cache/SeventySix.esm.forms");
+        let p1 = unique_tmp_path(&base)?;
+        let p2 = unique_tmp_path(&base)?;
+        assert_ne!(p1, p2);
+        assert_eq!(p1.parent(), base.parent());
+        Ok(())
+    }
+
+    #[test]
+    fn cache_dir_for_is_a_fixed_name_sibling_directory() {
+        let dir = cache_dir_for(Path::new("/data/SeventySix.esm")).unwrap();
+        assert_eq!(dir, PathBuf::from("/data/esm_cache"));
+    }
+
+    /// The whole point of the fixed directory name: two different plugins in
+    /// the same directory share it (this is deliberate, not a bug —
+    /// [`section_path_for`] is what keeps their files from colliding).
+    #[test]
+    fn cache_dir_for_is_shared_across_different_esms_in_one_directory() {
+        let a = cache_dir_for(Path::new("/data/SeventySix.esm")).unwrap();
+        let b = cache_dir_for(Path::new("/data/Foo.esp")).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn section_path_for_names_file_by_esm_name_and_kind() {
+        let esm = Path::new("/data/SeventySix.esm");
+        assert_eq!(
+            section_path_for(esm, SectionKind::Tree).unwrap(),
+            PathBuf::from("/data/esm_cache/SeventySix.esm.tree")
+        );
+        assert_eq!(
+            section_path_for(esm, SectionKind::Xref).unwrap(),
+            PathBuf::from("/data/esm_cache/SeventySix.esm.xref")
+        );
+    }
+
+    /// Regression guard for the reason [`section_path_for`] prefixes with
+    /// the ESM's full file name (extension included) rather than just its
+    /// stem: two plugins with the same stem but different extensions must
+    /// still land on different files inside the shared directory.
+    #[test]
+    fn section_path_for_does_not_collide_across_same_stem_different_extension() {
+        let esm_file = section_path_for(Path::new("/data/Foo.esm"), SectionKind::Tree).unwrap();
+        let esp_file = section_path_for(Path::new("/data/Foo.esp"), SectionKind::Tree).unwrap();
+        assert_ne!(esm_file, esp_file);
+        assert_eq!(
+            esm_file.parent(),
+            esp_file.parent(),
+            "both still share the one esm_cache/ directory"
+        );
+    }
+
+    /// `write_section` must create `esm_cache/` on demand — a lazy section
+    /// (`ensure_edid_index` etc.) can be the first writer for a brand-new
+    /// ESM, with no eager tree/forms write to have created it first. Since
+    /// `esm_cache/` is SHARED across every ESM in the parent directory, this
+    /// test cannot assert the directory is absent beforehand (another
+    /// test/process may have already created it) — only that writing
+    /// succeeds and the section reads back correctly either way, and cleans
+    /// up only its own file, never the shared directory.
+    #[test]
+    fn write_section_creates_missing_cache_dir() {
+        let pid = std::process::id();
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let esm_path = std::env::temp_dir().join(format!(
+            "esm_rkyvcache_test_write_creates_dir_{pid}_{nonce}.esm"
+        ));
+
+        let path = section_path_for(&esm_path, TEST_KIND).unwrap();
+        let sig = test_sig();
+        write_section(
+            &path,
+            TEST_KIND,
+            sig,
+            TEST_CACHE_VERSION,
+            TEST_LAYOUT_FINGERPRINT,
+            &dummy_value(),
+        )
+        .expect("write_section must create the cache dir if missing and succeed either way");
+
+        let section = map_dummy(&path, TEST_KIND, sig);
+        assert!(section.is_mapped(), "freshly written section must map back");
+        assert_eq!(section.get().unwrap().a, 7);
 
         let _ = fs::remove_file(&path);
     }

@@ -29,6 +29,16 @@ Two follow-ups from the 2026-07-31 bincode → rkyv disk-cache migration (RUSTSE
   drift was wider than this entry's original scope, since commit `7b88574` had missed those too
   despite its own claim to have covered "every other doc/comment location."
 
+A follow-up 2026-07-31 relocation, done same day: the five flat `.esm.tree`/`.esm.forms`/
+`.esm.edid`/`.esm.search`/`.esm.xref` sidecars above moved into one shared `esm_cache/` directory
+(sibling of the ESM), files named `<esm file name>.<section>` so multiple plugins in one directory
+never collide. Closes three gaps the flat scheme had: `.tmp.<hex>` crash debris wasn't gitignored,
+five near-duplicate path helpers existed with no single source of truth, and a naive
+`set_extension`-based rename would have fabricated a bogus `.esm` for a non-`.esm` input.
+`CACHE_VERSION` was deliberately not bumped — see `index.rs`'s changelog comment on
+`CACHE_VERSION` for why. `cache_dir_for`/`section_path_for` (`rkyvcache.rs`) are now the one place
+a section's file name is decided.
+
 Outstanding work beyond the above lives in [GitHub Issues](https://github.com/Mapekz/FO76-Tools/issues).
 
 One 2026-07-22 architecture-review finding was deliberately **not** filed: the seven IPC methods

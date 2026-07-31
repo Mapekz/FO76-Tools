@@ -5,13 +5,13 @@ use crate::reader::{
     EsmFile, RecordMeta, edid_from_subrecords, inline_string_from_subrecords,
     lstring_id_from_subrecords,
 };
-use crate::rkyvcache::{CacheSig, Section, SectionKind, write_section};
+use crate::rkyvcache::{CacheSig, Section, SectionKind, section_path_for, write_section};
 use crate::schema::Schema;
 use crate::strings::Localization;
 use crate::tree::TreeIndex;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 // Bumped 9 -> 10: fixed the VMAD Object-property FormID offset (decode.rs
 // `read_scalar` base type 1) — it was reading the wrong 4 bytes of the 8-byte
@@ -78,6 +78,19 @@ use std::path::{Path, PathBuf};
 // `.esm.tree`/`.esm.forms` pair built by the previous stage continues to
 // validate and load warm under this same `CACHE_VERSION` rather than being
 // forced through an expensive whole-ESM rebuild for no shape-related reason.
+//
+// NOT bumped for the flat-files -> `esm_cache/` directory move: all five
+// sections relocated from `<esm>.esm.{tree,forms,edid,search,xref}`
+// (siblings of the ESM) into a shared `esm_cache/` directory, one file per
+// ESM per section named `<esm file name>.<section>` — see
+// `rkyvcache::cache_dir_for`/`section_path_for`. This changes *where* each
+// section's bytes live, not what they mean: no on-disk shape, header
+// layout, or layout fingerprint changed, so a bump here would force a
+// needless full ESM rebuild. The relocation itself is sufficient
+// invalidation — `Index::build` simply never looks at the old flat paths
+// again, so a pre-move `.esm.forms` etc. is orphaned in place (not deleted;
+// this crate is read-only w.r.t. the ESM directory tree) and a fresh
+// `esm_cache/` entry is built the next time each section is needed.
 const CACHE_VERSION: u32 = 14;
 
 /// Per-record data stored in the lazy search index.
@@ -132,7 +145,7 @@ struct FormsSection {
 /// FNV-1a fingerprint of this section's archived layout, folding
 /// `size_of`/`align_of` per [`crate::rkyvcache::fnv1a_u64`]'s doc comment.
 /// Passed as the `layout_fingerprint` argument to `write_section`/
-/// `Section::map` for the `.esm.forms` section — see `Index::build`/
+/// `Section::map` for the `forms` section — see `Index::build`/
 /// `build_tree_and_forms` below.
 ///
 /// `RecordMeta` is folded in separately from `FormsSection` itself because
@@ -163,7 +176,7 @@ const FORMS_LAYOUT_FINGERPRINT: u64 = {
     )
 };
 
-/// One rkyv section: the EditorID → raw FormID map (`.esm.edid`). A thin
+/// One rkyv section: the EditorID → raw FormID map (`edid`). A thin
 /// named wrapper around the map, matching how `018d7a8` wrapped
 /// `records`/`types` in [`FormsSection`] rather than archiving a bare
 /// top-level collection.
@@ -198,7 +211,7 @@ const EDID_LAYOUT_FINGERPRINT: u64 = {
     )
 };
 
-/// One rkyv section: the raw FormID → [`SearchMeta`] map (`.esm.search`).
+/// One rkyv section: the raw FormID → [`SearchMeta`] map (`search`).
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 struct SearchSection {
     entries: HashMap<u32, SearchMeta>,
@@ -232,7 +245,7 @@ const SEARCH_LAYOUT_FINGERPRINT: u64 = {
 };
 
 /// One rkyv section: the raw referencee FormID → raw referencing FormIDs map
-/// (`.esm.xref`).
+/// (`xref`).
 ///
 /// `refs`'s archived key type is the endian-wrapped `rkyv::rend::u32_le`,
 /// not a bare `u32` — `rend`'s newtypes only get the blanket `Borrow<T> for
@@ -336,7 +349,7 @@ impl Index {
     /// Some(...)` for free, purely because the whole blob decoded in one
     /// shot. Now that each of the three lives in its own independent
     /// section file (the whole point of sectioning — `ensure_edid_index`
-    /// only ever writes `.esm.edid`, never a shared blob), that property
+    /// only ever writes the `edid` section, never a shared blob), that property
     /// has to be reconstructed explicitly: `Section::map` already degrades
     /// a missing/stale/corrupt file to `Section::Absent` on its own (never
     /// an `Err` for that reason), so mapping all three here — unconditionally,
@@ -353,14 +366,14 @@ impl Index {
         let sig = CacheSig::read(&esm.path)?;
 
         let tree_section = Section::<rkyv::Archived<TreeIndex>>::map(
-            &tree_path_for(&esm.path),
+            &section_path_for(&esm.path, SectionKind::Tree)?,
             SectionKind::Tree,
             sig,
             CACHE_VERSION,
             crate::tree::TREE_LAYOUT_FINGERPRINT,
         )?;
         let forms_section = Section::<rkyv::Archived<FormsSection>>::map(
-            &forms_path_for(&esm.path),
+            &section_path_for(&esm.path, SectionKind::Forms)?,
             SectionKind::Forms,
             sig,
             CACHE_VERSION,
@@ -377,21 +390,21 @@ impl Index {
         // comment above for why no extra "leave absent" branch is needed:
         // `Section::map` already IS that branch, uniformly, for all three.
         let edid_section = Section::<rkyv::Archived<EdidSection>>::map(
-            &edid_path_for(&esm.path),
+            &section_path_for(&esm.path, SectionKind::Edid)?,
             SectionKind::Edid,
             sig,
             CACHE_VERSION,
             EDID_LAYOUT_FINGERPRINT,
         )?;
         let search_section = Section::<rkyv::Archived<SearchSection>>::map(
-            &search_path_for(&esm.path),
+            &section_path_for(&esm.path, SectionKind::Search)?,
             SectionKind::Search,
             sig,
             CACHE_VERSION,
             SEARCH_LAYOUT_FINGERPRINT,
         )?;
         let xref_section = Section::<rkyv::Archived<XrefSection>>::map(
-            &xref_path_for(&esm.path),
+            &section_path_for(&esm.path, SectionKind::Xref)?,
             SectionKind::Xref,
             sig,
             CACHE_VERSION,
@@ -563,7 +576,7 @@ impl Index {
     }
 
     /// Build the lazy EditorID index on first call, writing it to its own
-    /// `.esm.edid` section so a later call — in this process (the
+    /// `edid` section so a later call — in this process (the
     /// `is_mapped()` early-return below) or a fresh one (see
     /// [`Self::build`]'s doc comment) — reuses it rather than rebuilding.
     /// Same write→drop→re-map protocol `9e7c160`/`018d7a8` established for
@@ -582,7 +595,7 @@ impl Index {
         }
 
         let sig = CacheSig::read(&esm.path)?;
-        let path = edid_path_for(&esm.path);
+        let path = section_path_for(&esm.path, SectionKind::Edid)?;
         let data = EdidSection { edid_to_form };
         write_section(
             &path,
@@ -610,7 +623,7 @@ impl Index {
     }
 
     /// Build the reverse-reference index on first call, then cache it to its
-    /// own `.esm.xref` section.
+    /// own `xref` section.
     ///
     /// Walks every record, decodes it with `ResolveDepth::None` (so FormID
     /// fields come out as `"0x........"` hex strings), harvests those strings,
@@ -668,7 +681,7 @@ impl Index {
         })?;
 
         let sig = CacheSig::read(&esm.path)?;
-        let path = xref_path_for(&esm.path);
+        let path = section_path_for(&esm.path, SectionKind::Xref)?;
         let data = XrefSection { refs: xref };
         write_section(
             &path,
@@ -737,7 +750,7 @@ impl Index {
     }
 
     /// Build the search index on first call, then cache it to its own
-    /// `.esm.search` section.
+    /// `search` section.
     ///
     /// Iterates every record, extracting the EditorID and name/description
     /// fields.  For **localized** ESMs the FULL and DESC lstring IDs are
@@ -790,7 +803,7 @@ impl Index {
         }
 
         let sig = CacheSig::read(&esm.path)?;
-        let path = search_path_for(&esm.path);
+        let path = section_path_for(&esm.path, SectionKind::Search)?;
         let data = SearchSection { entries };
         write_section(
             &path,
@@ -853,64 +866,6 @@ fn owned_record_meta(archived: &rkyv::Archived<RecordMeta>) -> RecordMeta {
     }
 }
 
-/// Build a unique temp path next to `base`, e.g. `SeventySix.esm.forms.tmp.<16 hex>`.
-pub(crate) fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
-    let mut bytes = [0u8; 8];
-    getrandom::fill(&mut bytes)?;
-    let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-    let parent = base
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("base path has no parent: {}", base.display()))?;
-    let mut name = base
-        .file_name()
-        .ok_or_else(|| anyhow::anyhow!("base path has no file name: {}", base.display()))?
-        .to_os_string();
-    name.push(".tmp.");
-    name.push(hex);
-    Ok(parent.join(name))
-}
-
-/// Return the `.esm.tree` rkyv-section path for a given ESM path — same
-/// `set_extension` pattern as [`forms_path_for`]/[`edid_path_for`]/
-/// [`search_path_for`]/[`xref_path_for`].
-fn tree_path_for(esm_path: &Path) -> PathBuf {
-    let mut p = esm_path.to_path_buf();
-    p.set_extension("esm.tree");
-    p
-}
-
-/// Return the `.esm.forms` rkyv-section path for a given ESM path — same
-/// `set_extension` pattern as [`tree_path_for`].
-fn forms_path_for(esm_path: &Path) -> PathBuf {
-    let mut p = esm_path.to_path_buf();
-    p.set_extension("esm.forms");
-    p
-}
-
-/// Return the `.esm.edid` rkyv-section path for a given ESM path — same
-/// `set_extension` pattern as [`tree_path_for`].
-fn edid_path_for(esm_path: &Path) -> PathBuf {
-    let mut p = esm_path.to_path_buf();
-    p.set_extension("esm.edid");
-    p
-}
-
-/// Return the `.esm.search` rkyv-section path for a given ESM path — same
-/// `set_extension` pattern as [`tree_path_for`].
-fn search_path_for(esm_path: &Path) -> PathBuf {
-    let mut p = esm_path.to_path_buf();
-    p.set_extension("esm.search");
-    p
-}
-
-/// Return the `.esm.xref` rkyv-section path for a given ESM path — same
-/// `set_extension` pattern as [`tree_path_for`].
-fn xref_path_for(esm_path: &Path) -> PathBuf {
-    let mut p = esm_path.to_path_buf();
-    p.set_extension("esm.xref");
-    p
-}
-
 /// The eager, all-or-nothing pair [`build_tree_and_forms`] rebuilds and
 /// [`Index::build`] maps — factored into a named alias per clippy's
 /// `type_complexity` lint.
@@ -939,8 +894,8 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     let tree = TreeIndex::build(esm)?;
     let type_index = build_type_index(&form_index);
 
-    let tree_path = tree_path_for(&esm.path);
-    let forms_path = forms_path_for(&esm.path);
+    let tree_path = section_path_for(&esm.path, SectionKind::Tree)?;
+    let forms_path = section_path_for(&esm.path, SectionKind::Forms)?;
 
     // Write the freshly-built tree to its own rkyv section, then drop the
     // owned value and map it straight back in — there is exactly one code
@@ -1045,6 +1000,7 @@ fn harvest_formids(val: &Value, out: &mut Vec<FormId>) {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::Path;
 
     /// Arbitrary, test-only `cache_version` — these tests exercise the
     /// `write_section`/`Section::map` mechanics against real section types,
@@ -1052,47 +1008,19 @@ mod tests {
     /// `Index::build`/`build_tree_and_forms`).
     const TEST_CACHE_VERSION: u32 = 5252;
 
-    /// Distinct, non-colliding temp `.esm.forms` path per test — same
-    /// precedent as `rkyvcache.rs`'s `test_path`/`tree.rs`'s round-trip test,
-    /// suffixed with pid+nonce so parallel/sequential `cargo test` runs never
-    /// collide on the same file.
-    fn test_forms_path(name: &str) -> PathBuf {
+    /// Distinct, non-colliding synthetic ESM path per test — same precedent
+    /// as `rkyvcache.rs`'s `test_path`/`tree.rs`'s round-trip test, suffixed
+    /// with pid+nonce so parallel/sequential `cargo test` runs never collide.
+    /// Section paths are derived from this via the real [`section_path_for`],
+    /// same as production code, so these tests exercise the actual shared
+    /// `esm_cache/` layout rather than a hand-rolled stand-in.
+    fn test_esm_path(name: &str) -> PathBuf {
         let pid = std::process::id();
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("esm_index_test_{name}_{pid}_{nonce}.esm.forms"))
-    }
-
-    /// Same as [`test_forms_path`] but for `.esm.edid`.
-    fn test_edid_path(name: &str) -> PathBuf {
-        let pid = std::process::id();
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("esm_index_test_{name}_{pid}_{nonce}.esm.edid"))
-    }
-
-    /// Same as [`test_forms_path`] but for `.esm.search`.
-    fn test_search_path(name: &str) -> PathBuf {
-        let pid = std::process::id();
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("esm_index_test_{name}_{pid}_{nonce}.esm.search"))
-    }
-
-    /// Same as [`test_forms_path`] but for `.esm.xref`.
-    fn test_xref_path(name: &str) -> PathBuf {
-        let pid = std::process::id();
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("esm_index_test_{name}_{pid}_{nonce}.esm.xref"))
+        std::env::temp_dir().join(format!("esm_index_test_{name}_{pid}_{nonce}.esm"))
     }
 
     /// Build a `FormsSection` from `form_index` (mirroring
@@ -1290,7 +1218,7 @@ mod tests {
         }
     }
 
-    /// Verify that `records_by_type` (through the real `.esm.forms` rkyv
+    /// Verify that `records_by_type` (through the real `forms` rkyv
     /// section, not an in-memory stand-in) returns a deterministic sorted
     /// order on repeated calls, and that `count_by_type`/`form_ids_by_type`/
     /// `signatures` all agree with it.
@@ -1329,7 +1257,11 @@ mod tests {
             },
         );
 
-        let path = test_forms_path("records_by_type_sorted_and_stable");
+        let path = section_path_for(
+            &test_esm_path("records_by_type_sorted_and_stable"),
+            SectionKind::Forms,
+        )
+        .unwrap();
         let index = index_over(write_and_map_forms(&form_index, &path));
 
         // First call
@@ -1423,7 +1355,11 @@ mod tests {
             },
         );
 
-        let path = test_forms_path("forms_round_trip_through_rkyv_section");
+        let path = section_path_for(
+            &test_esm_path("forms_round_trip_through_rkyv_section"),
+            SectionKind::Forms,
+        )
+        .unwrap();
         let index = index_over(write_and_map_forms(&form_index, &path));
 
         // get_by_formid / signature_of / contains agree with the original
@@ -1531,7 +1467,11 @@ mod tests {
         edid_to_form.insert("ArmoVaultSuit".to_string(), 0x0000_0020);
         edid_to_form.insert("NpcRaider01".to_string(), 0x0000_0030);
 
-        let path = test_edid_path("edid_round_trip_through_rkyv_section");
+        let path = section_path_for(
+            &test_esm_path("edid_round_trip_through_rkyv_section"),
+            SectionKind::Edid,
+        )
+        .unwrap();
         let index = index_with_edid(write_and_map_edid(&edid_to_form, &path));
 
         for (edid, &raw) in &edid_to_form {
@@ -1585,7 +1525,11 @@ mod tests {
             },
         );
 
-        let path = test_search_path("search_round_trip_through_rkyv_section");
+        let path = section_path_for(
+            &test_esm_path("search_round_trip_through_rkyv_section"),
+            SectionKind::Search,
+        )
+        .unwrap();
         let index = index_with_search(write_and_map_search(&entries, &path));
 
         assert!(index.has_search_index());
@@ -1629,7 +1573,11 @@ mod tests {
         refs.insert(0x0000_0010, vec![0x0000_0020, 0x0000_0030]);
         refs.insert(0x0000_0040, vec![0x0000_0050]);
 
-        let path = test_xref_path("xref_round_trip_through_rkyv_section");
+        let path = section_path_for(
+            &test_esm_path("xref_round_trip_through_rkyv_section"),
+            SectionKind::Xref,
+        )
+        .unwrap();
         let index = index_with_xref(write_and_map_xref(&refs, &path));
 
         assert_eq!(
@@ -1727,11 +1675,11 @@ mod tests {
         let esm_path = tmp.join(format!("fo76_warm_reuse_test_{pid}_{nonce}.esm"));
         fs::write(&esm_path, &bytes).expect("write synthetic esm");
 
-        let tree_path = tree_path_for(&esm_path);
-        let forms_path = forms_path_for(&esm_path);
-        let edid_path = edid_path_for(&esm_path);
-        let search_path = search_path_for(&esm_path);
-        let xref_path = xref_path_for(&esm_path);
+        let tree_path = section_path_for(&esm_path, SectionKind::Tree).unwrap();
+        let forms_path = section_path_for(&esm_path, SectionKind::Forms).unwrap();
+        let edid_path = section_path_for(&esm_path, SectionKind::Edid).unwrap();
+        let search_path = section_path_for(&esm_path, SectionKind::Search).unwrap();
+        let xref_path = section_path_for(&esm_path, SectionKind::Xref).unwrap();
 
         // "Process A": open once via the real entry point. tree/forms are
         // eager, so this builds them fresh; edid/search/xref are lazy and
@@ -1745,10 +1693,13 @@ mod tests {
         assert!(!first.search.is_mapped(), "sanity: search starts absent");
         assert!(!first.xref.is_mapped(), "sanity: xref starts absent");
         drop(first);
-        assert!(tree_path.exists(), "sanity: .esm.tree written by process A");
+        assert!(
+            tree_path.exists(),
+            "sanity: tree section written by process A"
+        );
         assert!(
             forms_path.exists(),
-            "sanity: .esm.forms written by process A"
+            "sanity: forms section written by process A"
         );
 
         // "Process A, later": persist edid/search/xref directly via
@@ -1844,20 +1795,13 @@ mod tests {
         );
 
         let _ = fs::remove_file(&esm_path);
+        // `esm_cache/` is a directory SHARED by every ESM in this parent
+        // directory (by design), so removing only this test's own files —
+        // never the whole directory — is required, not just tidier.
         let _ = fs::remove_file(&tree_path);
         let _ = fs::remove_file(&forms_path);
         let _ = fs::remove_file(&edid_path);
         let _ = fs::remove_file(&search_path);
         let _ = fs::remove_file(&xref_path);
-    }
-
-    #[test]
-    fn unique_tmp_path_differs_and_same_parent() -> anyhow::Result<()> {
-        let base = PathBuf::from("/tmp/SeventySix.esm.forms");
-        let p1 = unique_tmp_path(&base)?;
-        let p2 = unique_tmp_path(&base)?;
-        assert_ne!(p1, p2);
-        assert_eq!(p1.parent(), base.parent());
-        Ok(())
     }
 }

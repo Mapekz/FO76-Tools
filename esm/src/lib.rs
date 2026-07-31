@@ -884,7 +884,7 @@ impl Database {
     /// EditorID, and resolved name for each.
     ///
     /// The reverse-reference index is built lazily on the first call and
-    /// persisted to its own `.esm.xref` rkyv section so subsequent calls —
+    /// persisted to its own `xref` rkyv section so subsequent calls —
     /// in this process or a fresh one — are instant.
     pub fn referenced_by(&mut self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
         self.index.ensure_xref_index(

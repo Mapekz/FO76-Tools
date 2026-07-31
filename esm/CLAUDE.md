@@ -40,7 +40,7 @@ Clean layering — edit at the right level:
 | `src/strings.rs` | `.strings`/`.dlstrings`/`.ilstrings` parser; `Localization::from_ba2` / `from_loose_files` |
 | `src/curves.rs` | `CurveIndex` (FormID → `Curve`); loads JSON from Startup BA2; `Curve::eval` (linear interp) |
 | `src/discover.rs` | Generic ESM+strings+curves discovery from a file or folder input; `resolve_sources` locates the `.esm` plus sibling `strings/`/curvetables sources (loose or BA2) |
-| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; five independent zero-copy `rkyv` disk-cache sections (`*.esm.tree`/`.forms`/`.edid`/`.search`/`.xref`, `CACHE_VERSION = 14`), built on `src/rkyvcache.rs` |
+| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; five independent zero-copy `rkyv` disk-cache sections (`tree`/`forms`/`edid`/`search`/`xref`, `CACHE_VERSION = 14`) inside the shared `esm_cache/` directory, named `<esm file name>.<section>`, built on `src/rkyvcache.rs` (`cache_dir_for`/`section_path_for`) |
 | `src/registry.rs` | `Registry`: lazily opens and caches `Database` per canonical path; stale-file eviction via `FileSig` (one `fs::metadata` check per cache hit); `auto_warm` flag for daemon mode |
 | `src/ipc.rs` | Wire types (`Op`, `Request`/`Response`, `RecordSel`) and the canonical `dispatch_op`/`dispatch_inner` — the one query-dispatch surface shared by the daemon, CLI, HTTP/MCP server, and N-API bindings; `diff_locked` (post-lock diff + type-filter, shared by the registry-backed and N-API diff paths) |
 | `src/backend.rs` | `QueryBackend` trait; `LocalBackend` (in-process, no daemon) / `RemoteBackend` (HTTP client to the warm daemon); daemon lifecycle — spawn/stop, staleness detection via `exe_sig`/`daemon_fresh` |
@@ -72,7 +72,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 
 ## Critical Invariants — Do Not Break
 
-- **READ-ONLY: no ESM write path exists.** `compress.rs` only decompresses. The only files written are `Index`'s five rkyv cache sections (`*.esm.tree`/`.forms`/`.edid`/`.search`/`.xref`, not the source ESM). Do not add ESM mutation without an explicit design.
+- **READ-ONLY: no ESM write path exists.** `compress.rs` only decompresses. The only files written are `Index`'s five rkyv cache sections (`tree`/`forms`/`edid`/`search`/`xref`, inside the shared `esm_cache/` directory, not the source ESM). Do not add ESM mutation without an explicit design.
 - **`compress.rs` = decompress only**: `decompress_lz4`, `decompress_zlib`, `decompress_record_data`. No `compress_*` functions.
 - **GNRL-only in `ba2.rs`**: DX10 texture archives are detected and rejected. Do not add DX10 support without a separate path.
 - **Three `unsafe { Mmap::map }` blocks** (in `reader.rs`, `ba2.rs`, and `rkyvcache.rs`), plus one categorically different `unsafe { rkyv::access_unchecked }` in `rkyvcache.rs::Section::get` (asserts the *validity* of already-mapped bytes, not that a mapping itself is sound — see its 54-line SAFETY comment). All four have `// SAFETY:` comments — keep them accurate if you touch the surrounding code.
@@ -95,7 +95,7 @@ The app loads the addon via `esm-viewer/src/main/addon.ts`. Most of the Rust N-A
 
 ## Game Data
 
-Game data files (`*.esm`, `*.ba2`, and `Index`'s five rkyv cache sections `*.esm.tree`/`.forms`/`.edid`/`.search`/`.xref`) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via `--esm`/`FO76_ESM_PATH`/`Database::open(path)`.
+Game data files (`*.esm`, `*.ba2`, and `Index`'s shared `esm_cache/` directory holding its five rkyv cache sections `tree`/`forms`/`edid`/`search`/`xref`) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via `--esm`/`FO76_ESM_PATH`/`Database::open(path)`.
 
 ## Bulk / sweep workflow (for agents)
 

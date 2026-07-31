@@ -2,7 +2,7 @@
 //!
 //! ESM records live in a tree of GRUPs (top-level type groups, world cells,
 //! etc.). This module provides a flat arena (`TreeIndex`) built by one
-//! structural scan of the file, cached in its own rkyv-backed `.esm.tree`
+//! structural scan of the file, cached in its own rkyv-backed `tree`
 //! section (see [`crate::rkyvcache`] and `index.rs`'s `Index::build`/
 //! `build_tree_and_forms`), and a presentation layer (`GroupLabel`,
 //! `GroupNode`, `RecordStub`, `GroupChild`) for browsing.
@@ -113,7 +113,7 @@ pub enum ChildRef {
 }
 
 /// The cached structural tree of the ESM file, persisted to its own
-/// rkyv-backed `.esm.tree` section (see [`crate::rkyvcache`]) rather than
+/// rkyv-backed `tree` section (see [`crate::rkyvcache`]) rather than
 /// bincode-encoded — so every stored index here is `u32`, not `usize`, for
 /// the same portability reason documented on [`GroupEntry`].
 #[derive(Debug, Clone, Default, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
@@ -128,7 +128,7 @@ pub struct TreeIndex {
 /// `GroupEntry`, `ChildRef`), folding `size_of`/`align_of` per
 /// [`crate::rkyvcache::fnv1a_u64`]'s doc comment. Passed as the
 /// `layout_fingerprint` argument to `write_section`/`Section::map` for the
-/// `.esm.tree` section — see `index.rs`'s `Index::build`/
+/// `tree` section — see `index.rs`'s `Index::build`/
 /// `build_tree_and_forms`.
 pub(crate) const TREE_LAYOUT_FINGERPRINT: u64 = {
     use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
@@ -492,7 +492,7 @@ mod tests {
         );
     }
 
-    // ── Stage 4: TreeIndex/TreeView through the rkyv `.esm.tree` section ────
+    // ── Stage 4: TreeIndex/TreeView through the rkyv `tree` section ─────────
 
     /// Arbitrary, test-only `cache_version` — this test exercises the
     /// `write_section`/`Section::map` mechanics in isolation, not
@@ -573,7 +573,7 @@ mod tests {
     /// structure for a tree with nested GRUPs and both `ChildRef` variants.
     #[test]
     fn tree_round_trip_through_rkyv_section() {
-        use crate::rkyvcache::{CacheSig, Section, SectionKind, write_section};
+        use crate::rkyvcache::{CacheSig, Section, SectionKind, section_path_for, write_section};
 
         let bytes = build_nested_tree_esm();
         let pid = std::process::id();
@@ -583,7 +583,7 @@ mod tests {
             .as_nanos();
         let tmp = std::env::temp_dir();
         let esm_path = tmp.join(format!("fo76_tree_rt_test_{pid}_{nonce}.esm"));
-        let tree_path = tmp.join(format!("fo76_tree_rt_test_{pid}_{nonce}.esm.tree"));
+        let tree_path = section_path_for(&esm_path, SectionKind::Tree).expect("tree section path");
         std::fs::write(&esm_path, &bytes).expect("write synthetic esm");
 
         let esm = EsmFile::open(&esm_path).expect("open synthetic esm");
@@ -698,10 +698,12 @@ mod tests {
         assert_eq!(view.children(0, 100, 5).len(), 0);
 
         let _ = std::fs::remove_file(&esm_path);
+        // `esm_cache/` is a directory SHARED by every ESM in this parent
+        // directory (by design), so remove only this test's own file.
         let _ = std::fs::remove_file(&tree_path);
     }
 
-    /// Regression test: a `TreeView` over an absent section (no `.esm.tree`
+    /// Regression test: a `TreeView` over an absent section (no `tree` file
     /// written — `Index::empty`'s state, or a cache that hasn't been built
     /// yet) must answer every method with its empty-equivalent rather than
     /// panicking. `group_node` is deliberately

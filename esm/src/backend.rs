@@ -22,7 +22,7 @@ const HEALTH_POLL_MAX: Duration = Duration::from_secs(30);
 ///
 /// Generous because the *first* `refs`/`list`/`search` against a cold daemon triggers a
 /// one-time whole-ESM index build (xref, edid, search) followed by writing that index's
-/// own `.esm.xref`/`.esm.edid`/`.esm.search` rkyv section — easily tens of seconds on a
+/// own `xref`/`edid`/`search` rkyv section — easily tens of seconds on a
 /// full FO76 ESM (the xref build in particular decodes every record in the file).
 ///
 /// Override with `ESM_OP_TIMEOUT_SECS` (set to `0` for no deadline).

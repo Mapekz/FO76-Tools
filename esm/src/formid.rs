@@ -54,8 +54,8 @@ pub fn parse_formid(s: &str) -> anyhow::Result<FormId> {
 /// (`"0x0000463F"`) rather than `FormId`'s default bare-number derive.
 ///
 /// `FormId`'s own `#[derive(Serialize, Deserialize)]` intentionally stays a
-/// raw `u32` newtype. Its rkyv-cached counterparts (`.esm.forms`'s sorted
-/// `Vec<(u32, RecordMeta)>`, `.esm.xref`'s `HashMap<u32, Vec<u32>>` — see
+/// raw `u32` newtype. Its rkyv-cached counterparts (`forms`'s sorted
+/// `Vec<(u32, RecordMeta)>`, `xref`'s `HashMap<u32, Vec<u32>>` — see
 /// `index.rs`) go further and store the bare `u32` directly rather than this
 /// type at all, since a plain integer needs no endian-wrapper ceremony to
 /// archive; switching this serde derive to a string would still bloat any
