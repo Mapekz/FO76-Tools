@@ -14,7 +14,25 @@ Scope checks are dated so a stale claim is obvious on sight.
 
 ## `esm/`
 
-No tracked follow-ups — outstanding work lives in [GitHub Issues](https://github.com/Mapekz/FO76-Tools/issues).
+Two follow-ups from the 2026-07-31 bincode → rkyv disk-cache migration (RUSTSEC-2025-0141;
+`.esm.idx` replaced by five independent zero-copy sections — `.esm.tree`/`.esm.forms` eager,
+`.esm.edid`/`.esm.search`/`.esm.xref` lazy — see `src/rkyvcache.rs` and the commit history from
+`340f5ac` through `fcb5996`):
+
+- **Consolidate `mindex.rs`/`.esm.midx` into `.esm.forms`.** `Index`'s own `.esm.forms` section is
+  now *also* a zero-copy, binary-searched FormID table, so `mindex.rs`'s ~440-line hand-rolled
+  binary format is largely redundant with it. Deliberately kept alongside during the migration
+  (scope note in the `018d7a8` commit) rather than bundled in, because deleting it means also
+  touching `Database.mmap_index`/`open_lite` in `lib.rs` and the `--mmap-index` CLI flag in
+  `bin/cli.rs` — a public-surface change that deserves its own dedicated pass rather than riding
+  along with a storage-layer refactor.
+- **Finish the doc pass in `esm/CLAUDE.md` and `src/bin/cli.rs`.** Both still describe the old
+  `.esm.idx` bincode design (the CLAUDE.md unsafe-block-count invariant, its Conventions section,
+  and one `.esm.idx` mention in `cli.rs`) — every other doc/comment location was fixed in commit
+  `7b88574`, but these two had unrelated uncommitted work from a concurrent session in progress at
+  the time, so they were left alone rather than risking a collision.
+
+Outstanding work beyond the above lives in [GitHub Issues](https://github.com/Mapekz/FO76-Tools/issues).
 
 One 2026-07-22 architecture-review finding was deliberately **not** filed: the seven IPC methods
 carved out of `esm-viewer`'s `CONTRACT` table and hand-written in three places. The carve-out is
@@ -58,10 +76,10 @@ Two follow-ups from the 2026-07-30 Rust 1.97.1 / edition 2024 / dependency migra
   environment is being stabilised in CI", which means the napi 2 → 3 bump landed without CI able
   to catch a regression — the addon build and smoke test were verified only locally. Once the
   job has run green on a few pushes, remove the flag so the job actually gates.
-- **Revisit `bincode` (RUSTSEC-2025-0141).** bincode is permanently unmaintained; the advisory is
-  ignored in `deny.toml` with the reasoning recorded there (local-only index cache, no trust
-  boundary, already self-heals on decode failure). Nothing is broken, but if the cache format
-  ever needs changing anyway, `postcard` or `bitcode` would remove the exception.
+- ~~**Revisit `bincode` (RUSTSEC-2025-0141).**~~ Done 2026-07-31: `esm/`'s disk cache moved to
+  zero-copy `rkyv` sections (`340f5ac`..`fcb5996`); `bincode` is no longer a dependency and the
+  `deny.toml` ignore is removed. See the `esm/` section above for two small follow-ups this left
+  behind.
 
 Separately, and not a migration artifact: **the Rust crates declare no license and the repository
 has no LICENSE file**, so `deny.toml` sets `licenses.private.ignore = true` and the crates are
