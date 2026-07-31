@@ -2,7 +2,7 @@
 
 A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 181 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, and schema coverage auditing.
 
-> **Read-only.** This tool never modifies your `.esm` files. The only files it writes are sidecar index caches next to the ESM: `<name>.esm.idx` (full bincode cache, ~280 MiB) and `<name>.esm.midx` (compact mmap index, ~24 MiB). Game data files (`*.esm`, `*.ba2`, `*.esm.idx`, `*.esm.midx`) are gitignored and non-redistributable — obtain them from your own game install.
+> **Read-only.** This tool never modifies your `.esm` files. The only files it writes are sidecar index caches next to the ESM: five zero-copy rkyv sections (`<name>.esm.tree`, `<name>.esm.forms`, `<name>.esm.edid`, `<name>.esm.search`, `<name>.esm.xref`) plus `<name>.esm.midx` (compact mmap index for `--mmap-index`/lite mode) — see [Index cache](#index-cache) for sizes and what each holds. Game data files (`*.esm`, `*.ba2`, and every one of those cache files) are gitignored and non-redistributable — obtain them from your own game install.
 
 ## Workspace layout
 
@@ -467,7 +467,7 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test
 
 ## Bulk / sweep workflow (for agents)
 
-AI agents scanning many records must avoid cold per-record process spawns. Each cold `esm get` invocation reads and deserializes the **entire ~280 MiB `.esm.idx`** bincode cache for a single lookup, then exits — 5–10 s per record, heavy swap thrash at scale.
+AI agents scanning many records should still avoid cold per-record process spawns. `Index`'s disk cache is zero-copy rkyv now (mmap'd, not fully deserialized into heap HashMaps), so a cold `esm get` is far cheaper than it once was — but it still maps `tree`+`forms` on every invocation (~0.08 s / ~120 MiB warm on a 5.6M-record ESM, measured on the 20260724 snapshot), and that cost repeats per process. 1000 cold sweeps still means 1000× that overhead; `--mmap-index`/lite mode (below) or the warm daemon avoid it entirely.
 
 ### Warm daemon (fastest, no extra flags)
 
@@ -503,7 +503,7 @@ esm --local --mmap-index get 0x463F --pretty
 ESM_MMAP_INDEX=1 esm --local get 0x463F --pretty
 ```
 
-Loads a compact ~24 MiB `.esm.midx` table (binary-sorted, O(log n) lookup) instead of the 280 MiB bincode cache. FormID lookups only — EditorID / list / search / refs / tree require the full index; use the daemon for those.
+Loads a compact ~135 MiB `.esm.midx` table (binary-sorted, O(log n) lookup) instead of mapping `Index`'s `tree`/`forms` sections at all — the cheapest possible cold path, with no ESM-identity coupling to anything else. FormID lookups only — EditorID / list / search / refs / tree require the full index; use the daemon for those.
 
 ### MCP opt-in
 
@@ -525,12 +525,38 @@ Five tools exposed: `esm_file_info`, `esm_get_record`, `esm_list_records`, `esm_
 
 ## Index cache
 
-On first open, the tool writes two sidecar files next to the ESM:
+`Index`'s cache is five independent, zero-copy [rkyv](https://rkyv.org/) sections — each its own
+mmap'd file next to the ESM, read via `rkyv::access_unchecked` rather than deserialized into heap
+HashMaps (see `src/rkyvcache.rs`). This replaced a single bincode-encoded `.esm.idx` blob; `bincode`
+is no longer a dependency of this crate at all (it was permanently unmaintained — RUSTSEC-2025-0141 —
+see `deny.toml`'s git history for the full rationale).
 
-- **`<name>.esm.idx`** (~280 MiB, bincode) — full FormID→offset HashMap, lazy EDID/search/xref indexes, and the GRUP tree. Loaded by `Database::open` on all subsequent opens; keyed by path, size, and mtime, and rebuilt automatically when the ESM changes or `CACHE_VERSION` is bumped.
-- **`<name>.esm.midx`** (~24 MiB, flat binary) — compact, sorted FormID table written alongside `.idx` on every fresh build. Used by `Database::open_lite` (the `--mmap-index` path) for fast, RAM-light cold FormID lookups without deserializing the full bincode cache. Binary-searched in O(log n) with ~20 page accesses per lookup.
+Two are eager — both built together on `Database::open` whenever either is missing or stale, since
+`get_by_formid` and the GRUP tree browser are core paths:
 
-Both files are gitignored. Never commit them.
+- **`<name>.esm.forms`** (~200 MiB) — FormID→[`RecordMeta`] table (sorted `Vec`, binary-searched) plus
+  the per-type FormID directory. This is the zero-copy replacement for what used to be the bulk of
+  `.esm.idx`'s ~280 MiB and its cold-load cost.
+- **`<name>.esm.tree`** (~140 MiB) — the GRUP structural tree (`tree` / `list-groups` / `list_type_children`).
+
+Three are lazy — built on first use of the matching operation, same as before this migration, just
+persisted to their own file instead of one shared blob (so, e.g., `ensure_edid_index` only ever writes
+`.esm.edid`, not the other two). A fresh process opening the same ESM later still picks up whichever of
+these a prior process already built, exactly as before:
+
+- **`<name>.esm.edid`** (~15 MiB) — EditorID→FormID map (`--edid` lookups).
+- **`<name>.esm.search`** (~30 MiB) — FormID→name/description map (`search`).
+- **`<name>.esm.xref`** (~55 MiB) — FormID→referencing-FormIDs map (`refs`).
+
+Every section carries its own header (magic, format/section/cache version, a layout fingerprint, and
+the source ESM's size+mtime) validated before any bytes are trusted — a stale, foreign, or corrupt
+file degrades to "rebuild that section," never a crash. `CACHE_VERSION` (`src/index.rs`) still gates
+all five as a shared semantic-layout counter; bump it whenever a section's on-disk *meaning* changes.
+
+- **`<name>.esm.midx`** (~135 MiB, flat binary, unrelated to the rkyv sections above) — a separate,
+  standalone FormID table used only by `Database::open_lite` (`--mmap-index`). See `src/mindex.rs`.
+
+All six files are gitignored. Never commit them.
 
 ## Electron GUI
 

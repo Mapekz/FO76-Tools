@@ -80,7 +80,7 @@ pub struct Database {
     /// CACHE_VERSION bump (these are ephemeral, rebuilt each time the Database
     /// is opened; `tree`/`GroupLabel`/`RecordStub` in `tree.rs` are the only
     /// precedent for presentation-layer types, and this is analogous — it's not
-    /// part of the bincode-cached Index at all).
+    /// part of any of `Index`'s persisted rkyv sections at all).
     filter_cache: std::collections::HashMap<String, (usize, Vec<FilterCacheEntry>)>,
 }
 
@@ -615,9 +615,14 @@ impl Database {
     ///
     /// When `path` is a directory, it is scanned for exactly one `.esm` file.
     ///
-    /// Compared to [`Database::open`], this skips the ~280 MiB `.esm.idx`
-    /// bincode load entirely — startup is typically sub-second even cold.
-    /// The trade-off is that only FormID-based lookups (`record_by_formid`,
+    /// Compared to [`Database::open`], this skips mapping `tree`/`forms`
+    /// (both eager on every full open) and the ESM-identity coupling across
+    /// all five of `Index`'s rkyv sections entirely — a single small
+    /// `.esm.midx` file is the only thing touched, so this stays the
+    /// cheapest cold path even though `Database::open` itself is now also
+    /// zero-copy (measured warm on the 20260724 snapshot: full open ~0.08 s /
+    /// ~120 MiB; lite open ~0.01 s / ~26 MiB). The trade-off is that only
+    /// FormID-based lookups (`record_by_formid`,
     /// `record_raw`, `record_by_formid_resolved`) are supported.  Operations
     /// that require the full index (EditorID lookup, `list`, `search`, `refs`,
     /// `tree`) return an error directing the caller to use the warm daemon.
@@ -949,7 +954,8 @@ impl Database {
     /// EditorID, and resolved name for each.
     ///
     /// The reverse-reference index is built lazily on the first call and
-    /// persisted to the `.esm.idx` cache so subsequent calls are instant.
+    /// persisted to its own `.esm.xref` rkyv section so subsequent calls —
+    /// in this process or a fresh one — are instant.
     pub fn referenced_by(&mut self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
         self.check_not_lite("referenced_by")?;
         self.index.ensure_xref_index(

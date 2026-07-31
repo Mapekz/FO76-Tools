@@ -21,8 +21,9 @@ const HEALTH_POLL_MAX: Duration = Duration::from_secs(30);
 /// Deadline for a full `/op` round-trip.
 ///
 /// Generous because the *first* `refs`/`list`/`search` against a cold daemon triggers a
-/// one-time whole-ESM index build (xref, edid, search) followed by a full re-serialisation
-/// of the ~280 MiB `.esm.idx` cache — easily tens of seconds on a full FO76 ESM.
+/// one-time whole-ESM index build (xref, edid, search) followed by writing that index's
+/// own `.esm.xref`/`.esm.edid`/`.esm.search` rkyv section — easily tens of seconds on a
+/// full FO76 ESM (the xref build in particular decodes every record in the file).
 ///
 /// Override with `ESM_OP_TIMEOUT_SECS` (set to `0` for no deadline).
 fn op_timeout() -> Option<Duration> {
@@ -77,8 +78,9 @@ impl DaemonInfo {
 }
 
 /// Signature `(path, size, mtime_secs, mtime_nanos)` of the currently-running
-/// executable, mirroring the mtime convention used for the `.esm.idx` cache
-/// (see `index.rs`). Returns an empty/zeroed tuple on any error so callers can
+/// executable, mirroring the mtime convention used for the ESM identity stamp
+/// every `Index` rkyv section carries (`CacheSig`, see `rkyvcache.rs`/`index.rs`).
+/// Returns an empty/zeroed tuple on any error so callers can
 /// still start (or compare against) a daemon even when the exe can't be stat'd.
 ///
 /// `pub` (not `pub(crate)`): the daemon binary (`src/bin/server.rs`) is a

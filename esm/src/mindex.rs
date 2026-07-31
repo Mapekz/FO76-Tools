@@ -1,9 +1,20 @@
 //! Zero-copy mmap'd FormID index (`.esm.midx`).
 //!
-//! The `.midx` file is a compact, sorted binary table of all records in an ESM,
-//! optimised for fast single-FormID lookups without loading the full ~280 MiB
-//! `.esm.idx` bincode cache.  A binary search over the table uses only ~20
-//! cache-line accesses for a ~5.6M-record file (~135 MiB).
+//! The `.midx` file is a compact, sorted binary table of all records in an ESM.
+//! A binary search over the table uses only ~20 cache-line accesses for a
+//! ~5.6M-record file (~135 MiB).
+//!
+//! `Index`'s own `.esm.forms` rkyv section (`index.rs`) is now *also* a
+//! zero-copy, binary-searched FormID table with the same big-O lookup cost —
+//! bincode and its full-file-deserialize cost are gone from this crate
+//! entirely (see `deny.toml`'s removed RUSTSEC-2025-0141 entry). This
+//! narrows `.midx`'s remaining distinguishing value to `Database::open_lite`
+//! specifically: it's a single small file with no ESM-identity coupling to
+//! `tree`/`edid`/`search`/`xref`, so it's the cheapest possible cold path for
+//! a FormID-only lookup with zero other setup. Deleting it in favour of
+//! `open_lite` reading `.esm.forms` directly is a deliberate, tracked
+//! follow-up (see `todos.md`), not done as part of the migration that
+//! introduced `.esm.forms`.
 //!
 //! # On-disk layout
 //!
@@ -244,8 +255,10 @@ pub fn build_from_form_index_and_save(
 
 /// Walk the ESM to collect all records and write the `.midx`.
 ///
-/// Used by [`MmapFormIndex::load_or_build`] when no valid `.midx` exists yet
-/// and we want to avoid loading the full `.esm.idx` bincode cache.
+/// Used by [`MmapFormIndex::load_or_build`] as a standalone fallback when no
+/// valid `.midx` exists yet — independent of `Index`'s own `.esm.forms`
+/// section, so `open_lite` never needs to build or map anything beyond this
+/// one file.
 fn build_from_esm_and_save(esm: &EsmFile) -> anyhow::Result<()> {
     let mut entries: Vec<(u32, RecordMeta)> = Vec::new();
     esm.walk_records(|meta| {
