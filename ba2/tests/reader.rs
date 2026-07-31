@@ -5,7 +5,8 @@ mod common;
 
 use ba2::compress::Codec;
 use ba2::reader::Ba2Archive;
-use ba2::{WriteOptions, write_ba2};
+use ba2::{ArchiveKind, WriteOptions, write_ba2};
+use common::TestTexture;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -122,19 +123,13 @@ fn write_tmp(data: &[u8]) -> NamedTempFile {
 }
 
 #[test]
-fn rejects_dx10() {
-    // DX10 (texture) archives are not supported.
+fn opens_dx10() {
+    // Empty DX10 archives open cleanly, just like empty GNRL ones.
     let header = make_raw_header(1, b"DX10", 0, 24);
     let tmp = write_tmp(&header);
-    let result = Ba2Archive::open(tmp.path());
-    assert!(result.is_err(), "DX10 archive must be rejected");
-    // Verify the error message mentions DX10 or texture so it's diagnosable.
-    let msg = result.err().unwrap().to_string();
-    assert!(
-        msg.contains("DX10") || msg.contains("texture"),
-        "error should mention DX10: {}",
-        msg
-    );
+    let archive = Ba2Archive::open(tmp.path()).unwrap();
+    assert_eq!(archive.kind(), ArchiveKind::Dx10);
+    assert_eq!(archive.list().len(), 0);
 }
 
 #[test]
@@ -282,5 +277,237 @@ fn read_data_out_of_range() {
     assert!(
         archive.read("data/x.bin", Codec::Auto).is_err(),
         "read() must fail when data extent exceeds file size"
+    );
+}
+
+// ── DX10 ─────────────────────────────────────────────────────────────────────
+
+#[test]
+fn dx10_multi_chunk_reassembly_order() {
+    let tex = TestTexture {
+        path: "textures/multi.dds",
+        dxgi_format: 77, // BC3_UNORM
+        width: 8,
+        height: 8,
+        mip_count: 2,
+        cubemap: false,
+        chunks: &[(0, 0, &[0xAAu8; 16]), (1, 1, &[0xBBu8; 4])],
+    };
+    let tmp = common::make_test_texture_archive(&[tex]);
+    let archive = Ba2Archive::open(tmp.path()).unwrap();
+    assert_eq!(archive.kind(), ArchiveKind::Dx10);
+
+    let data = archive.read("textures/multi.dds", Codec::Auto).unwrap();
+    let mut expected = ba2::dds::synth_header(77, 8, 8, 2, false).unwrap();
+    expected.extend_from_slice(&[0xAAu8; 16]);
+    expected.extend_from_slice(&[0xBBu8; 4]);
+    assert_eq!(
+        data, expected,
+        "chunks must be decompressed and concatenated in on-disk order, after the synthesized header"
+    );
+}
+
+#[test]
+fn dx10_stored_chunk_reads_raw() {
+    // TestTexture chunks are always stored (packed_size == 0) — verify that
+    // path explicitly, since it's the common case in this test file.
+    let tex = TestTexture {
+        path: "textures/stored.dds",
+        dxgi_format: 71,
+        width: 4,
+        height: 4,
+        mip_count: 1,
+        cubemap: false,
+        chunks: &[(0, 0, &[0x11u8; 8])],
+    };
+    let tmp = common::make_test_texture_archive(&[tex]);
+    let archive = Ba2Archive::open(tmp.path()).unwrap();
+    assert!(!archive.list()[0].is_compressed());
+    let data = archive.read("textures/stored.dds", Codec::Auto).unwrap();
+    assert!(data.ends_with(&[0x11u8; 8]));
+}
+
+#[test]
+fn dx10_cubemap_flag_decoded() {
+    let tex = TestTexture {
+        path: "textures/shared/cubemaps/test.dds",
+        dxgi_format: 71,
+        width: 4,
+        height: 4,
+        mip_count: 1,
+        cubemap: true,
+        chunks: &[(0, 0, &[0x01u8; 8])],
+    };
+    let tmp = common::make_test_texture_archive(&[tex]);
+    let archive = Ba2Archive::open(tmp.path()).unwrap();
+    let t = archive.list()[0].texture().unwrap();
+    assert!(t.cubemap);
+
+    let data = archive
+        .read("textures/shared/cubemaps/test.dds", Codec::Auto)
+        .unwrap();
+    let caps2 = u32::from_le_bytes(data[112..116].try_into().unwrap());
+    assert_eq!(
+        caps2, 0x0000_FE00,
+        "DDSCAPS2_CUBEMAP | DDSCAPS2_CUBEMAP_ALLFACES must be set"
+    );
+}
+
+#[test]
+fn dx10_unknown_dxgi_format_errors_at_read_not_open() {
+    let tex = TestTexture {
+        path: "textures/unknown.dds",
+        dxgi_format: 255, // not one of the 15 formats FO76 ships
+        width: 4,
+        height: 4,
+        mip_count: 1,
+        cubemap: false,
+        chunks: &[(0, 0, &[0u8; 8])],
+    };
+    let tmp = common::make_test_texture_archive(&[tex]);
+    let archive = Ba2Archive::open(tmp.path()).unwrap(); // open doesn't validate dxgi_format
+    assert!(archive.read("textures/unknown.dds", Codec::Auto).is_err());
+}
+
+#[test]
+fn dx10_chunk_decompressed_length_mismatch_errors() {
+    use ba2::compress::compress_zlib;
+    use ba2::format::{
+        TEX_CHUNK_SIZE, TEX_RECORD_SIZE, TexChunk, TexRecord, write_tex_chunk, write_tex_record,
+    };
+    use ba2::hash::hash_path;
+
+    let payload = b"zlib payload for a length-mismatch test";
+    let compressed = compress_zlib(payload).unwrap();
+    let (name_hash, dir_hash, ext) = hash_path("textures/bad.dds");
+
+    let data_start = 24u64 + TEX_RECORD_SIZE as u64 + TEX_CHUNK_SIZE as u64;
+    let nt_offset = data_start + compressed.len() as u64;
+
+    let mut buf = make_raw_header(1, b"DX10", 1, nt_offset);
+    let tex = TexRecord {
+        name_hash,
+        ext,
+        dir_hash,
+        chunk_count: 1,
+        height: 4,
+        width: 4,
+        mip_count: 1,
+        dxgi_format: 71,
+        cubemap: false,
+        tile_mode: 0x08,
+    };
+    buf.extend_from_slice(&write_tex_record(&tex));
+    let chunk = TexChunk {
+        data_offset: data_start,
+        packed_size: compressed.len() as u32,
+        // Deliberately wrong: the payload decompresses to `payload.len()`.
+        unpacked_size: payload.len() as u32 + 5,
+        mip_first: 0,
+        mip_last: 0,
+    };
+    buf.extend_from_slice(&write_tex_chunk(&chunk));
+    buf.extend_from_slice(&compressed);
+    let name = "textures\\bad.dds";
+    buf.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    buf.extend_from_slice(name.as_bytes());
+
+    let tmp = write_tmp(&buf);
+    let archive = Ba2Archive::open(tmp.path()).unwrap();
+    assert!(
+        archive.read("textures/bad.dds", Codec::Auto).is_err(),
+        "a chunk decompressing to a different length than its unpacked_size must error"
+    );
+}
+
+#[test]
+fn dx10_rejects_chunk_header_size_mismatch() {
+    use ba2::format::{TexRecord, write_tex_record};
+
+    let tex = TexRecord {
+        name_hash: 0,
+        ext: *b"dds\0",
+        dir_hash: 0,
+        chunk_count: 1,
+        height: 4,
+        width: 4,
+        mip_count: 1,
+        dxgi_format: 71,
+        cubemap: false,
+        tile_mode: 0x08,
+    };
+    let mut tex_bytes = write_tex_record(&tex);
+    tex_bytes[14..16].copy_from_slice(&99u16.to_le_bytes()); // should always be 24
+
+    let mut buf = make_raw_header(1, b"DX10", 1, 48);
+    buf.extend_from_slice(&tex_bytes);
+
+    let tmp = write_tmp(&buf);
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "unexpected chunk_header_size must be rejected"
+    );
+}
+
+#[test]
+fn dx10_rejects_truncated_chunk_area() {
+    use ba2::format::{TexRecord, write_tex_record};
+
+    // Claims 5 chunks but the file ends right after the texture header.
+    let tex = TexRecord {
+        name_hash: 0,
+        ext: *b"dds\0",
+        dir_hash: 0,
+        chunk_count: 5,
+        height: 4,
+        width: 4,
+        mip_count: 1,
+        dxgi_format: 71,
+        cubemap: false,
+        tile_mode: 0x08,
+    };
+    let mut buf = make_raw_header(1, b"DX10", 1, 48);
+    buf.extend_from_slice(&write_tex_record(&tex));
+
+    let tmp = write_tmp(&buf);
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "texture records extending past EOF must be rejected"
+    );
+}
+
+#[test]
+fn dx10_rejects_records_extending_past_name_table() {
+    use ba2::format::{TexChunk, TexRecord, write_tex_chunk, write_tex_record};
+
+    let tex = TexRecord {
+        name_hash: 0,
+        ext: *b"dds\0",
+        dir_hash: 0,
+        chunk_count: 1,
+        height: 4,
+        width: 4,
+        mip_count: 1,
+        dxgi_format: 71,
+        cubemap: false,
+        tile_mode: 0x08,
+    };
+    let chunk = TexChunk {
+        data_offset: 72,
+        packed_size: 0,
+        unpacked_size: 8,
+        mip_first: 0,
+        mip_last: 0,
+    };
+    // The full record area (header + tex record + chunk) ends at byte 72,
+    // but the name table is declared to start at byte 30 — inside it.
+    let mut buf = make_raw_header(1, b"DX10", 1, 30);
+    buf.extend_from_slice(&write_tex_record(&tex));
+    buf.extend_from_slice(&write_tex_chunk(&chunk));
+
+    let tmp = write_tmp(&buf);
+    assert!(
+        Ba2Archive::open(tmp.path()).is_err(),
+        "texture records extending past the declared name table start must be rejected"
     );
 }

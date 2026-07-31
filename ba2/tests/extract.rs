@@ -4,6 +4,7 @@ mod common;
 
 use ba2::compress::Codec;
 use ba2::extract::{ExtractOptions, extract_all, extract_one};
+use common::TestTexture;
 use tempfile::TempDir;
 
 // ── extract_all ───────────────────────────────────────────────────────────
@@ -100,4 +101,37 @@ fn extract_one_missing_returns_error() {
         extract_one(&archive, "foo/nonexistent.txt", out.path(), Codec::Auto).is_err(),
         "extract_one for a missing entry must return an error"
     );
+}
+
+// ── DX10 ─────────────────────────────────────────────────────────────────────
+
+/// A DX10 texture entry extracts to a `.dds` file whose bytes are the
+/// synthesized header followed by the concatenated (decompressed) mip chunks.
+#[test]
+fn extract_one_writes_texture_as_dds() {
+    let tex = TestTexture {
+        path: "textures/props/test_d.dds",
+        dxgi_format: 71,
+        width: 8,
+        height: 8,
+        mip_count: 1,
+        cubemap: false,
+        chunks: &[(0, 0, &[0x42u8; 32])],
+    };
+    let tmp = common::make_test_texture_archive(&[tex]);
+    let archive = ba2::reader::Ba2Archive::open(tmp.path()).unwrap();
+    let out = TempDir::new().unwrap();
+
+    let dest = extract_one(
+        &archive,
+        "textures/props/test_d.dds",
+        out.path(),
+        Codec::Auto,
+    )
+    .unwrap();
+    assert!(dest.ends_with("textures/props/test_d.dds"));
+
+    let mut expected = ba2::dds::synth_header(71, 8, 8, 1, false).unwrap();
+    expected.extend_from_slice(&[0x42u8; 32]);
+    assert_eq!(std::fs::read(&dest).unwrap(), expected);
 }

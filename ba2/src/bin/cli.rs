@@ -1,19 +1,21 @@
 use anyhow::{Context, Result, bail};
 use ba2::{
-    WriteOptions,
+    ArchiveKind, WriteOptions,
     compress::Codec,
+    dds,
     extract::{ExtractOptions, extract_all, extract_one},
     reader::Ba2Archive,
     write_ba2,
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use globset::{Glob, GlobSetBuilder};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(
     name = "ba2",
-    about = "Extract and create Bethesda BA2 (GNRL) archives — Fallout 76 / Fallout 4"
+    about = "Extract and create Bethesda BA2 (GNRL and DX10 texture) archives — Fallout 76 / Fallout 4"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -74,9 +76,14 @@ enum Commands {
         /// (used with --files or --list when the archive path is not explicit).
         #[arg(long)]
         base: Option<PathBuf>,
-        /// Compression codec: lz4 (default, FO76), zlib (FO4), store.
-        #[arg(long, default_value = "lz4", value_name = "CODEC")]
-        compress: CodecArg,
+        /// Archive kind: gnrl (default, general files) or dx10 (textures;
+        /// every source must be a .dds).
+        #[arg(long = "type", default_value = "gnrl", value_name = "KIND")]
+        kind: ArchiveKindArg,
+        /// Compression codec (default: lz4 for gnrl, zlib for dx10 — matches
+        /// what FO76 actually ships for each kind).
+        #[arg(long, value_name = "CODEC")]
+        compress: Option<CodecArg>,
     },
 }
 
@@ -100,6 +107,22 @@ impl From<CodecArg> for Codec {
     }
 }
 
+/// Archive kind selection for CLI arguments.
+#[derive(Clone, Copy, ValueEnum)]
+enum ArchiveKindArg {
+    Gnrl,
+    Dx10,
+}
+
+impl From<ArchiveKindArg> for ArchiveKind {
+    fn from(a: ArchiveKindArg) -> ArchiveKind {
+        match a {
+            ArchiveKindArg::Gnrl => ArchiveKind::Gnrl,
+            ArchiveKindArg::Dx10 => ArchiveKind::Dx10,
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -118,6 +141,7 @@ fn main() -> Result<()> {
             files,
             list,
             base,
+            kind,
             compress,
         } => cmd_create(
             &archive,
@@ -125,7 +149,8 @@ fn main() -> Result<()> {
             &files,
             list.as_deref(),
             base.as_deref(),
-            compress.into(),
+            kind.into(),
+            compress.map(Into::into),
         ),
     }
 }
@@ -148,6 +173,23 @@ fn cmd_info(archive_path: &Path) -> Result<()> {
         .map(|m| m.len())
         .unwrap_or(0);
     println!("File size:          {} bytes", meta);
+
+    if archive.kind() == ArchiveKind::Dx10 {
+        let mut total_chunks = 0usize;
+        let mut by_format: BTreeMap<&str, usize> = BTreeMap::new();
+        for e in archive.list() {
+            if let Some(t) = e.texture() {
+                total_chunks += t.chunks.len();
+                let name = dds::format_name(t.dxgi_format).unwrap_or("UNKNOWN");
+                *by_format.entry(name).or_insert(0) += 1;
+            }
+        }
+        println!("Total chunks:       {}", total_chunks);
+        println!("Formats:");
+        for (name, count) in by_format {
+            println!("  {:<20}  {}", name, count);
+        }
+    }
     Ok(())
 }
 
@@ -156,33 +198,62 @@ fn cmd_list(archive_path: &Path, long: bool) -> Result<()> {
         .with_context(|| format!("cannot open '{}'", archive_path.display()))?;
     let entries = archive.list();
     if long {
-        println!(
-            "{:<10}  {:<10}  {:<6}  {:<8}  {:<8}  NAME",
-            "UNPACKED", "PACKED", "CODEC", "NAME_HASH", "DIR_HASH"
-        );
-        for e in entries {
-            let codec = if !e.is_compressed() {
-                "store"
-            } else {
-                "lz4/zlib"
-            };
-            let ext_str = std::str::from_utf8(&e.ext)
-                .map(|s| s.trim_end_matches('\0'))
-                .unwrap_or("????");
-            println!(
-                "{:<10}  {:<10}  {:<6}  {:08X}  {:08X}  {} [.{}]",
-                e.unpacked_size,
-                if e.is_compressed() {
-                    e.packed_size.to_string()
-                } else {
-                    "-".to_string()
-                },
-                codec,
-                e.name_hash,
-                e.dir_hash,
-                e.name,
-                ext_str,
-            );
+        match archive.kind() {
+            ArchiveKind::Gnrl => {
+                println!(
+                    "{:<10}  {:<10}  {:<6}  {:<8}  {:<8}  NAME",
+                    "UNPACKED", "PACKED", "CODEC", "NAME_HASH", "DIR_HASH"
+                );
+                for e in entries {
+                    let codec = if !e.is_compressed() {
+                        "store"
+                    } else {
+                        "lz4/zlib"
+                    };
+                    let ext_str = std::str::from_utf8(&e.ext)
+                        .map(|s| s.trim_end_matches('\0'))
+                        .unwrap_or("????");
+                    println!(
+                        "{:<10}  {:<10}  {:<6}  {:08X}  {:08X}  {} [.{}]",
+                        e.unpacked_size(),
+                        if e.is_compressed() {
+                            e.packed_size().to_string()
+                        } else {
+                            "-".to_string()
+                        },
+                        codec,
+                        e.name_hash,
+                        e.dir_hash,
+                        e.name,
+                        ext_str,
+                    );
+                }
+            }
+            ArchiveKind::Dx10 => {
+                println!(
+                    "{:<11}  {:<16}  {:<4}  {:<6}  {:<10}  {:<10}  NAME",
+                    "PIXELS", "FORMAT", "MIPS", "CHUNKS", "PACKED", "UNPACKED"
+                );
+                for e in entries {
+                    let Some(t) = e.texture() else { continue };
+                    let pixels = format!("{}x{}", t.width, t.height);
+                    let format_str = dds::format_name(t.dxgi_format)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("UNKNOWN({})", t.dxgi_format));
+                    let cube = if t.cubemap { "+cube" } else { "" };
+                    println!(
+                        "{:<11}  {:<16}  {:<4}  {:<6}  {:<10}  {:<10}  {}{}",
+                        pixels,
+                        format_str,
+                        t.mip_count,
+                        t.chunks.len(),
+                        e.packed_size(),
+                        e.unpacked_size(),
+                        e.name,
+                        cube,
+                    );
+                }
+            }
         }
     } else {
         for e in entries {
@@ -244,7 +315,8 @@ fn cmd_create(
     files: &[PathBuf],
     list: Option<&Path>,
     base: Option<&Path>,
-    codec: Codec,
+    kind: ArchiveKind,
+    compress: Option<Codec>,
 ) -> Result<()> {
     // Collect (archive_path, source_path) pairs.
     let pairs: Vec<(String, PathBuf)> = if let Some(dir) = from {
@@ -261,7 +333,16 @@ fn cmd_create(
         bail!("no files to pack");
     }
 
+    // Real FO76 archives compress GNRL blobs with LZ4 and DX10 texture
+    // chunks with zlib; use that as the default per kind and let an explicit
+    // --compress override it.
+    let codec = compress.unwrap_or(match kind {
+        ArchiveKind::Gnrl => Codec::Lz4,
+        ArchiveKind::Dx10 => Codec::Zlib,
+    });
+
     let opts = WriteOptions {
+        kind,
         codec,
         ..Default::default()
     };
