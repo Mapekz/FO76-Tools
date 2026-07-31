@@ -40,8 +40,7 @@ Clean layering — edit at the right level:
 | `src/strings.rs` | `.strings`/`.dlstrings`/`.ilstrings` parser; `Localization::from_ba2` / `from_loose_files` |
 | `src/curves.rs` | `CurveIndex` (FormID → `Curve`); loads JSON from Startup BA2; `Curve::eval` (linear interp) |
 | `src/discover.rs` | Generic ESM+strings+curves discovery from a file or folder input; `resolve_sources` locates the `.esm` plus sibling `strings/`/curvetables sources (loose or BA2) |
-| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; `bincode` disk cache (`*.esm.idx`, `CACHE_VERSION = 9`) |
-| `src/mindex.rs` | Zero-copy mmap'd FormID index (`*.esm.midx`); 40-byte header + 24-byte sorted entries; `MmapFormIndex` (binary search, O(log n)); written opportunistically in `build_fresh` |
+| `src/index.rs` | `Index`: FormID→offset, lazy EDID/xref/search indexes; five independent zero-copy `rkyv` disk-cache sections (`*.esm.tree`/`.forms`/`.edid`/`.search`/`.xref`, `CACHE_VERSION = 14`), built on `src/rkyvcache.rs` |
 | `src/registry.rs` | `Registry`: lazily opens and caches `Database` per canonical path; stale-file eviction via `FileSig` (one `fs::metadata` check per cache hit); `auto_warm` flag for daemon mode |
 | `src/ipc.rs` | Wire types (`Op`, `Request`/`Response`, `RecordSel`) and the canonical `dispatch_op`/`dispatch_inner` — the one query-dispatch surface shared by the daemon, CLI, HTTP/MCP server, and N-API bindings; `diff_locked` (post-lock diff + type-filter, shared by the registry-backed and N-API diff paths) |
 | `src/backend.rs` | `QueryBackend` trait; `LocalBackend` (in-process, no daemon) / `RemoteBackend` (HTTP client to the warm daemon); daemon lifecycle — spawn/stop, staleness detection via `exe_sig`/`daemon_fresh` |
@@ -51,10 +50,10 @@ Clean layering — edit at the right level:
 | `src/ctda.rs` | CTDA condition decoder; function-index table (binary search); imports `crate::decode::{hex, resolve_formid}` |
 | `src/diff.rs` | `diff_databases_with(a,b,opts)` — byte-equality fast-path, sparse `{from,to}` JSON diff; keyed per-element array diffs (`_array_diff`); `DiffOptions` (bodies for all added/removed records, placement/CELL noise suppression, type exclusion); `ref_names` sidecar |
 | `src/wildcard.rs` | Case-insensitive `*`-wildcard matcher; has rustdoc doctest |
-| `src/lib.rs` | `Database` facade (all public API); `Database::open_lite` (mmap index only, no 280 MiB bincode load); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
+| `src/lib.rs` | `Database` facade (all public API); `DatabaseResolver` (depth-limited FormID expansion to 2 levels) |
 | `src/chase.rs` | The mechanism classifier core and the pipeline's JSON-only evidence contract (see `docs/adr/0001`): classifies an OMOD's `Data.Properties[]` rows into direct-property/perk-grant/keyword-hook mechanisms (keyword/AVIF hooks resolved by reverse refs, evidence path-sliced to the gated `Effects[N]` rows) or walks a PERK/SPEL/ALCH/ENCH root's own `Effects[]`; `esm chase` always emits the `ChaseTree` JSON (frozen chase.py-compatible shape) and hard-errors on other root types — interactive reading lives in `walk`, which consumes this module's classifier |
 | `src/walk.rs` | The interactive surface: BFS over `ChaseFetcher` (same seam as `chase.rs`) printing one compact indented per-record-type digest (GLOB/AVIF/KYWD/MGEF/SPEL·ENCH·ALCH/PERK/WEAP/OMOD, generic fallback) instead of a series of raw `get` dumps; an OMOD root's mechanisms are classified inline via `chase.rs`'s classifier and rendered as path-sliced evidence rows (bounded by `--ref-limit`), with `Data.Includes[]` stubs named for `_PARENT_` shells; `build_refs_digest` groups a `--refs` reverse-reference summary by record type |
-| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk; `--entry-point`/`--ep <name\|id>` seeds the walk from every PERK carrying a given "Entry Point" instead of one FormID/EditorID), `chase` (JSON-only; `--depth`/`--ref-limit`), `walk` (`--refs`/`--depth N`/`--ref-limit N`/`--json`), `tree`, `diff`, `coverage`, `skill` (`--install`/`--dir`/`--force`), `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process), `--mmap-index`; ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths, and `skill`/`daemon`, which take none) |
+| `src/bin/cli.rs` | Thin clap CLI: `info`, `get`, `list`, `search`, `refs` (`--depth N` recursive walk; `--entry-point`/`--ep <name\|id>` seeds the walk from every PERK carrying a given "Entry Point" instead of one FormID/EditorID), `chase` (JSON-only; `--depth`/`--ref-limit`), `walk` (`--refs`/`--depth N`/`--ref-limit N`/`--json`), `tree`, `diff`, `coverage`, `skill` (`--install`/`--dir`/`--force`), `daemon {start,stop,status}`; `-p` (one-shot via warm daemon), `--local` (cold in-process); ESM path from global `--esm`/`FO76_ESM_PATH` (except `diff`, which keeps two positional paths, and `skill`/`daemon`, which take none) |
 | `src/bin/server.rs` | Axum HTTP + MCP-stdio server (feature `server`); six read-only MCP tools: `esm_file_info`, `esm_search`, `esm_get_record` (supports `resolve=none\|stub\|full`, default `stub`), `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse walk, default depth=1, max 8, 0=unbounded); `--daemon` mode with idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`); the MCP-stdio `initialize` response carries a condensed `instructions` string (`MCP_INSTRUCTIONS`) as ambient gotcha context for every client |
 | `skills/esm-cli/SKILL.md` | Hard-won `esm`-CLI usage-knowledge doc, embedded at compile time into `cli.rs` (`include_str!`, same pattern as `schema/fo76.json`); `esm skill` prints it, `esm skill --install [--dir <repo>] [--force]` writes it into a consumer repo's `.claude/skills/esm-cli/`; this repo's own `.claude/skills/esm-cli` is a symlink to this directory |
 | `bindings/napi/src/lib.rs` | N-API class `EsmDatabase` (`Arc<Mutex<Database>>`); async: `open_database`, `record_by_edid`, `record_by_id`, `referenced_by`, `referenced_by_id`; sync: `file_info`, `list_groups`, `list_type_records`, `record_by_formid` |
@@ -66,19 +65,19 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `Dif
 ## Conventions to Follow
 
 - **Error handling**: `anyhow::Result<T>` everywhere (lib, CLI, napi). `bail!` for validation, `.context()`/`.with_context()` for context. **No custom error enum** — don't add enums unless the public API requires callers to `match` on variants (which would mean taking on a `thiserror` dependency; it is deliberately not declared).
-- **Serialization**: manual little-endian byte reads (`u*::from_le_bytes`, `byteorder::ReadBytesExt`) for fixed headers; `serde`/`serde_json` for output; `bincode` for the index cache. No `binrw`/`nom`.
+- **Serialization**: manual little-endian byte reads (`u*::from_le_bytes`, `byteorder::ReadBytesExt`) for fixed headers; `serde`/`serde_json` for output; zero-copy `rkyv` sections (`src/rkyvcache.rs`) for the index cache. No `binrw`/`nom`.
 - **Schema editing**: `schema/fo76.json` is embedded at compile time (`include_str!`). Change the extractor (`tools/extractor/extract.py`) or add overrides to `fo76.overrides.json` — don't hand-edit `fo76.json` directly unless fixing something the extractor can't express.
 - **Decoder must never panic**: unknown/malformed bytes → raw hex fallback (`_raw`, `_unknown_record`, `_unmapped`). Do not add unwraps on untrusted input.
 - **Tests**: most tests live in `tests/` (one file per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_records.rs`, `decode_coverage.rs`). Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode.rs`). All tests use synthetic in-memory byte buffers — no real ESM required. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
 
 ## Critical Invariants — Do Not Break
 
-- **READ-ONLY: no ESM write path exists.** `compress.rs` only decompresses. The only files written are `*.esm.idx` and `*.esm.midx` (index caches, not the source ESM). Do not add ESM mutation without an explicit design.
+- **READ-ONLY: no ESM write path exists.** `compress.rs` only decompresses. The only files written are `Index`'s five rkyv cache sections (`*.esm.tree`/`.forms`/`.edid`/`.search`/`.xref`, not the source ESM). Do not add ESM mutation without an explicit design.
 - **`compress.rs` = decompress only**: `decompress_lz4`, `decompress_zlib`, `decompress_record_data`. No `compress_*` functions.
 - **GNRL-only in `ba2.rs`**: DX10 texture archives are detected and rejected. Do not add DX10 support without a separate path.
-- **Three `unsafe { Mmap::map }` blocks** (in `reader.rs`, `ba2.rs`, and `mindex.rs`). All three have `// SAFETY:` comments — keep them accurate if you touch the surrounding code.
+- **Three `unsafe { Mmap::map }` blocks** (in `reader.rs`, `ba2.rs`, and `rkyvcache.rs`), plus one categorically different `unsafe { rkyv::access_unchecked }` in `rkyvcache.rs::Section::get` (asserts the *validity* of already-mapped bytes, not that a mapping itself is sound — see its 54-line SAFETY comment). All four have `// SAFETY:` comments — keep them accurate if you touch the surrounding code.
 - **XXXX oversized-subrecord rule** in `reader.rs` (around line 304): a 6-byte `XXXX` subrecord whose `data_size` field carries the actual size precedes an oversized subrecord with `data_size = 0`. Preserve this when modifying the subrecord scanner.
-- **`index.rs` cache**: keyed by path/size/mtime. **Bump `CACHE_VERSION`** whenever the cached data layout changes — the old cache becomes invalid and will be rebuilt.
+- **`index.rs` cache**: keyed by path/size/mtime, plus a per-section `layout_fingerprint` (`FORMS_/EDID_/SEARCH_/XREF_LAYOUT_FINGERPRINT` in `index.rs`, `TREE_LAYOUT_FINGERPRINT` in `tree.rs`) folding each section's archived `size_of`/`align_of` — the other half of cache invalidation, alongside `CACHE_VERSION`. **Bump `CACHE_VERSION`** whenever any section's cached data layout changes — the old cache becomes invalid and will be rebuilt.
 - **FormID layout**: high byte = master-file index, low 24 bits = object ID. All values little-endian.
 - **Decode output key conventions** (must stay consistent): `_record_type`, `_unknown_record`, `_unmapped`, `_raw`, `_unresolved`, and (diff output only) `_array_diff`. These are the flags the `coverage` subcommand, MCP server, and patch-notes tooling rely on.
 - **`advance_union` / `RArray` paths in `decode.rs`**: struct union variants advance by real decoded byte counts; fixed scalars still use `field_byte_size`. Change with extra care and verify against real ESM output.
@@ -96,11 +95,11 @@ The app loads the addon via `esm-viewer/src/main/addon.ts`. Most of the Rust N-A
 
 ## Game Data
 
-Game data files (`*.esm`, `*.ba2`, `*.esm.idx`, `*.esm.midx`) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via `--esm`/`FO76_ESM_PATH`/`Database::open(path)`.
+Game data files (`*.esm`, `*.ba2`, and `Index`'s five rkyv cache sections `*.esm.tree`/`.forms`/`.edid`/`.search`/`.xref`) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via `--esm`/`FO76_ESM_PATH`/`Database::open(path)`.
 
 ## Bulk / sweep workflow (for agents)
 
-AI agents that scan many records must avoid cold per-record process spawns. Each cold `esm get` / `esm -p get` invocation reads and deserializes the **entire ~280 MiB `.esm.idx`** bincode cache into heap HashMaps just to perform one lookup, then exits. 1000 sweeps = 1000× (read 280 MiB + allocate ~280 MiB of HashMaps) — 5–10 s per record, heavy swap thrash.
+AI agents that scan many records must avoid cold per-record process spawns. Each cold `esm get` / `esm -p get` invocation maps `Index`'s rkyv cache sections fresh (measured warm on the 20260724 snapshot: ~0.08 s / ~120 MiB, per `README.md`) and then exits — round-trip and decode overhead still add up across a large sweep, so the daemon (below) stays the right call for bulk work.
 
 The ESM path itself comes from `--esm <PATH>` (works before or after the subcommand) or, if omitted, the `FO76_ESM_PATH` environment variable — set once (see `CLAUDE.local.md`) and every example below can drop the path entirely. `diff` is the exception: it always takes two explicit positional paths and ignores `--esm`/`FO76_ESM_PATH`.
 
@@ -157,7 +156,7 @@ esm -p coverage --type WEAP                        # schema decode audit
 
 ### Selectors: FormID vs EditorID vs Auto
 
-A bare positional selector with no `0x` prefix that still *looks* like a FormID (e.g. `18000`) resolves as `RecordSel::Auto`: the FormID interpretation is tried first, with an EditorID lookup as fallback. An explicit `0x`-prefixed token, or an explicit `--formid`/`--edid` flag, skips the ambiguity entirely and never becomes `Auto`. `--mmap-index` lite mode only understands `FormId` selectors — both `Edid` and `Auto` are rejected (even though `Auto`'s FormID half alone would work) — use the daemon for ambiguous or EditorID lookups.
+A bare positional selector with no `0x` prefix that still *looks* like a FormID (e.g. `18000`) resolves as `RecordSel::Auto`: the FormID interpretation is tried first, with an EditorID lookup as fallback. An explicit `0x`-prefixed token, or an explicit `--formid`/`--edid` flag, skips the ambiguity entirely and never becomes `Auto`.
 
 ### Gotcha: capped-output notes print to stderr, not stdout
 
@@ -166,21 +165,6 @@ A bare positional selector with no `0x` prefix that still *looks* like a FormID 
 ### Gotcha: `--localization-ba2` / `--startup-ba2` bypass the daemon
 
 Passing `--localization-ba2`, `--strings-dir`, or `--startup-ba2` to `get` forces a cold in-process open (the daemon doesn't load BA2 args from per-call flags). For sweeps that need localized strings, place the Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a `misc/curvetables/` folder) next to the ESM — the daemon auto-loads them on open, and warm lookups return localized output without per-call BA2 flags.
-
-### Daemonless option: `--mmap-index`
-
-For cold FormID lookups without a background process, use the zero-copy mmap index:
-
-```sh
-# Loads a ~24 MiB .esm.midx table instead of the 280 MiB bincode cache
-esm --local --mmap-index get 0x463F --pretty
-# Or set the env var so every --local call uses it
-ESM_MMAP_INDEX=1 esm --local get 0x463F --pretty
-```
-
-Limitations: FormID lookups only. EditorID (`--edid`), `list`, `search`, `refs`, and `tree` require the full index — use the daemon for those.
-
-The `.esm.midx` file is written automatically whenever the `.esm.idx` is freshly built, so it's always available alongside the bincode cache.
 
 ### MCP opt-in (for AI clients that support it)
 

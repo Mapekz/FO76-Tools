@@ -24,7 +24,6 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 - **Always pass `-p` for one-shot calls** — it auto-spawns/uses a warm daemon
   and exits after printing. Without `-p` the CLI drops into a REPL. `--local`
   runs cold in-process (seconds per open — never use it for bulk work).
-  `--mmap-index` is a FormID-only lite mode: no EditorID lookups at all.
 - After rebuilding the binary or changing loose files next to the dump, run
   `esm daemon stop` — the daemon caches both the old code and the loose-file
   view.

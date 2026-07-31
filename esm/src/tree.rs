@@ -3,9 +3,9 @@
 //! ESM records live in a tree of GRUPs (top-level type groups, world cells,
 //! etc.). This module provides a flat arena (`TreeIndex`) built by one
 //! structural scan of the file, cached in its own rkyv-backed `.esm.tree`
-//! section (see [`crate::rkyvcache`] and `index.rs`'s `try_load_cache`/
-//! `build_fresh`), and a presentation layer (`GroupLabel`, `GroupNode`,
-//! `RecordStub`, `GroupChild`) for browsing.
+//! section (see [`crate::rkyvcache`] and `index.rs`'s `Index::build`/
+//! `build_tree_and_forms`), and a presentation layer (`GroupLabel`,
+//! `GroupNode`, `RecordStub`, `GroupChild`) for browsing.
 
 use crate::format::Signature;
 use crate::formid::FormId;
@@ -128,7 +128,8 @@ pub struct TreeIndex {
 /// `GroupEntry`, `ChildRef`), folding `size_of`/`align_of` per
 /// [`crate::rkyvcache::fnv1a_u64`]'s doc comment. Passed as the
 /// `layout_fingerprint` argument to `write_section`/`Section::map` for the
-/// `.esm.tree` section — see `index.rs`'s `try_load_cache`/`build_fresh`.
+/// `.esm.tree` section — see `index.rs`'s `Index::build`/
+/// `build_tree_and_forms`.
 pub(crate) const TREE_LAYOUT_FINGERPRINT: u64 = {
     use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
 

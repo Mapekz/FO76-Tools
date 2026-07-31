@@ -34,13 +34,13 @@
 //! [64 .. 64+payload_len)             rkyv archive payload
 //! ```
 //!
-//! # Status
+//! # Callers
 //!
-//! This module has no callers yet. It is the shared base every future
-//! section (a GRUP tree arena, a FormID table, an EditorID map, ...) will be
-//! built on; a later stage wires up real cache types and calls
-//! [`write_section`]/[`Section::map`]. Until then every item below is dead
-//! code from rustc's point of view.
+//! The shared base all five of `Index`'s sections are built on: `tree.rs`'s
+//! `TreeIndex` (`.esm.tree`) and `index.rs`'s `FormsSection` (`.esm.forms`),
+//! `EdidSection` (`.esm.edid`), `SearchSection` (`.esm.search`), and
+//! `XrefSection` (`.esm.xref`) each call [`write_section`]/[`Section::map`]
+//! with their own [`SectionKind`] and layout fingerprint.
 
 use anyhow::Context;
 use memmap2::Mmap;
@@ -545,10 +545,12 @@ where
             .with_context(|| format!("write placeholder header to {}", tmp_path.display()))?;
 
         // 3. Stream the payload straight into the file via rkyv's IoWriter
-        // adapter. `TODO(stage4+)`: if a future section's value ever becomes
-        // large enough that even rkyv's internal scratch allocation
-        // (`ArenaHandle`) matters, revisit a bounded/streaming allocator too
-        // — every value serialized by this task is test-only and tiny.
+        // adapter. `TODO`: `FormsSection` alone is ~200 MiB (5.64M records);
+        // `ArenaHandle`'s scratch allocation for a value this size hasn't
+        // been profiled. If it turns out to matter, revisit a
+        // bounded/streaming allocator here too — this streams the *output*
+        // straight to disk already, but `ArenaHandle` is rkyv's *internal*
+        // scratch space during serialization, a separate cost.
         let io_writer = rkyv::ser::writer::IoWriter::new(writer);
         let io_writer = rkyv::api::high::to_bytes_in::<_, rkyv::rancor::Error>(value, io_writer)
             .map_err(|e| anyhow::anyhow!("rkyv serialize into {}: {e}", tmp_path.display()))?;

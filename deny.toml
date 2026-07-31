@@ -7,9 +7,9 @@
 # Run locally from either crate directory:
 #   cargo deny --config ../deny.toml --all-features check
 #
-# One consequence of sharing: entries that apply to only one crate produce an
-# informational warning in the other ("advisory was not encountered" for the
-# bincode ignore when checking ba2, which has no bincode). Warnings do not fail
+# One consequence of sharing: an `ignore` entry that applies to only one
+# crate's dependency tree produces an informational "advisory was not
+# encountered" warning when checking the other crate. Warnings do not fail
 # the run — both crates exit 0 — and the noise is cheaper than two configs
 # drifting apart.
 

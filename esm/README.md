@@ -2,7 +2,7 @@
 
 A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 181 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, and schema coverage auditing.
 
-> **Read-only.** This tool never modifies your `.esm` files. The only files it writes are sidecar index caches next to the ESM: five zero-copy rkyv sections (`<name>.esm.tree`, `<name>.esm.forms`, `<name>.esm.edid`, `<name>.esm.search`, `<name>.esm.xref`) plus `<name>.esm.midx` (compact mmap index for `--mmap-index`/lite mode) — see [Index cache](#index-cache) for sizes and what each holds. Game data files (`*.esm`, `*.ba2`, and every one of those cache files) are gitignored and non-redistributable — obtain them from your own game install.
+> **Read-only.** This tool never modifies your `.esm` files. The only files it writes are sidecar index caches next to the ESM: five zero-copy rkyv sections (`<name>.esm.tree`, `<name>.esm.forms`, `<name>.esm.edid`, `<name>.esm.search`, `<name>.esm.xref`) — see [Index cache](#index-cache) for sizes and what each holds. Game data files (`*.esm`, `*.ba2`, and every one of those cache files) are gitignored and non-redistributable — obtain them from your own game install.
 
 ## Workspace layout
 
@@ -467,7 +467,7 @@ RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test
 
 ## Bulk / sweep workflow (for agents)
 
-AI agents scanning many records should still avoid cold per-record process spawns. `Index`'s disk cache is zero-copy rkyv now (mmap'd, not fully deserialized into heap HashMaps), so a cold `esm get` is far cheaper than it once was — but it still maps `tree`+`forms` on every invocation (~0.08 s / ~120 MiB warm on a 5.6M-record ESM, measured on the 20260724 snapshot), and that cost repeats per process. 1000 cold sweeps still means 1000× that overhead; `--mmap-index`/lite mode (below) or the warm daemon avoid it entirely.
+AI agents scanning many records should still avoid cold per-record process spawns. `Index`'s disk cache is zero-copy rkyv now (mmap'd, not fully deserialized into heap HashMaps), so a cold `esm get` is far cheaper than it once was — but it still maps `tree`+`forms` on every invocation (~0.08 s / ~120 MiB warm on a 5.6M-record ESM, measured on the 20260724 snapshot), and that cost repeats per process. 1000 cold sweeps still means 1000× that overhead; the warm daemon (below) avoids it entirely.
 
 ### Warm daemon (fastest, no extra flags)
 
@@ -492,18 +492,6 @@ esm -p refs 0x463F --limit 100 --pretty        # reverse FormID lookup
 ```
 
 **Gotcha:** `--localization-ba2`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open (the daemon doesn't accept per-call source overrides). Pass a data folder or place the Localization/Startup BA2 files (or `strings/`/`misc/curvetables/` directories) next to the ESM so the daemon auto-loads them on open, and drop per-call flags in sweeps.
-
-### Daemonless option: `--mmap-index`
-
-For cold FormID lookups without a background process:
-
-```sh
-esm --local --mmap-index get 0x463F --pretty
-# or via env var
-ESM_MMAP_INDEX=1 esm --local get 0x463F --pretty
-```
-
-Loads a compact ~135 MiB `.esm.midx` table (binary-sorted, O(log n) lookup) instead of mapping `Index`'s `tree`/`forms` sections at all — the cheapest possible cold path, with no ESM-identity coupling to anything else. FormID lookups only — EditorID / list / search / refs / tree require the full index; use the daemon for those.
 
 ### MCP opt-in
 
@@ -553,10 +541,7 @@ the source ESM's size+mtime) validated before any bytes are trusted — a stale,
 file degrades to "rebuild that section," never a crash. `CACHE_VERSION` (`src/index.rs`) still gates
 all five as a shared semantic-layout counter; bump it whenever a section's on-disk *meaning* changes.
 
-- **`<name>.esm.midx`** (~135 MiB, flat binary, unrelated to the rkyv sections above) — a separate,
-  standalone FormID table used only by `Database::open_lite` (`--mmap-index`). See `src/mindex.rs`.
-
-All six files are gitignored. Never commit them.
+All five files are gitignored. Never commit them.
 
 ## Electron GUI
 
