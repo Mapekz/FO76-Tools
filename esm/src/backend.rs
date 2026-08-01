@@ -300,15 +300,7 @@ impl RemoteBackend {
     /// `spawn_daemon_and_wait` stops it and spawns a fresh one instead of
     /// silently querying it with an outdated schema/decoder.
     pub fn connect_or_spawn() -> anyhow::Result<Self> {
-        if let Ok(info) = read_daemon_info()
-            && daemon_alive(&info)
-            && daemon_fresh(&info)
-        {
-            return Ok(Self::from_daemon_info(&info));
-        }
-        spawn_daemon_and_wait()?;
-        let info = read_daemon_info().context("daemon started but discovery file missing")?;
-        Ok(Self::from_daemon_info(&info))
+        connect_or_spawn_with(&RealHost)
     }
 
     /// Connect with optional address/port override (skips discovery file for addr).
@@ -566,6 +558,137 @@ pub fn esm_server_exe() -> anyhow::Result<PathBuf> {
     }
 }
 
+// ─── DaemonHost seam ────────────────────────────────────────────────────────
+//
+// Separates OS-facing primitives (file lock, process spawn, HTTP health, clock)
+// from the lifecycle *policy* (re-check-after-lock, stale stop-and-respawn,
+// health-poll timeout) so the policy can run against a fake host in unit tests
+// without real processes, sockets, or multi-second sleeps.
+
+/// OS-facing primitives used by daemon spawn / connect / stop policy.
+trait DaemonHost {
+    /// Guard that releases the advisory spawn-coalescing lock on drop.
+    type LockGuard;
+    /// Opaque handle for a spawned daemon process.
+    type Child;
+
+    /// Acquire the advisory spawn-coalescing lock.
+    fn lock_exclusive(&self) -> anyhow::Result<Self::LockGuard>;
+    fn read_info(&self) -> anyhow::Result<DaemonInfo>;
+    fn remove_info(&self) -> anyhow::Result<()>;
+    fn health_check(&self, port: u16, token: &str) -> anyhow::Result<()>;
+    /// Request a graceful `/op` shutdown from a running daemon.
+    fn request_shutdown(&self, port: u16, token: &str) -> anyhow::Result<()>;
+    /// Spawn the daemon process; returns a handle for [`Self::kill`] / pid checks.
+    fn spawn_server(&self) -> anyhow::Result<Self::Child>;
+    fn kill(&self, child: &mut Self::Child);
+    /// Force-kill a process by PID (used after a graceful shutdown attempt).
+    fn kill_pid(&self, pid: u32);
+    fn is_pid_alive(&self, pid: u32) -> bool;
+    fn now(&self) -> std::time::Instant;
+    fn sleep(&self, d: Duration);
+}
+
+/// Production host: real file lock, discovery JSON, ureq health checks, processes, clock.
+struct RealHost;
+
+impl DaemonHost for RealHost {
+    type LockGuard = std::fs::File;
+    type Child = std::process::Child;
+
+    fn lock_exclusive(&self) -> anyhow::Result<Self::LockGuard> {
+        let lock_path = runtime_dir().join("esm-daemon.lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| format!("open spawn lock {}", lock_path.display()))?;
+        lock_file
+            .lock_exclusive()
+            .context("acquire daemon spawn lock")?;
+        Ok(lock_file)
+    }
+
+    fn read_info(&self) -> anyhow::Result<DaemonInfo> {
+        read_daemon_info()
+    }
+
+    fn remove_info(&self) -> anyhow::Result<()> {
+        remove_daemon_info()
+    }
+
+    fn health_check(&self, port: u16, token: &str) -> anyhow::Result<()> {
+        health_check("127.0.0.1", port, token)
+    }
+
+    fn request_shutdown(&self, port: u16, token: &str) -> anyhow::Result<()> {
+        RemoteBackend::new("127.0.0.1", port, token.to_string()).shutdown()
+    }
+
+    fn spawn_server(&self) -> anyhow::Result<Self::Child> {
+        let server = esm_server_exe()?;
+        let child = Command::new(&server)
+            .arg("--daemon")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .context("spawn esm-server --daemon")?;
+        Ok(child)
+    }
+
+    fn kill(&self, child: &mut Self::Child) {
+        let _ = child.kill();
+    }
+
+    fn kill_pid(&self, pid: u32) {
+        #[cfg(unix)]
+        {
+            let _ = Command::new("kill").arg(pid.to_string()).status();
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .status();
+        }
+    }
+
+    fn is_pid_alive(&self, pid: u32) -> bool {
+        is_pid_alive(pid)
+    }
+
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
+    fn sleep(&self, d: Duration) {
+        std::thread::sleep(d);
+    }
+}
+
+/// Return a healthy, binary-fresh daemon if one is already running.
+fn existing_fresh_daemon<H: DaemonHost>(host: &H) -> Option<DaemonInfo> {
+    let info = host.read_info().ok()?;
+    if host.health_check(info.port, &info.token).is_ok() && daemon_fresh(&info) {
+        Some(info)
+    } else {
+        None
+    }
+}
+
+fn connect_or_spawn_with<H: DaemonHost>(host: &H) -> anyhow::Result<RemoteBackend> {
+    if let Some(info) = existing_fresh_daemon(host) {
+        return Ok(RemoteBackend::from_daemon_info(&info));
+    }
+    spawn_daemon_and_wait_with(host)?;
+    let info = host
+        .read_info()
+        .context("daemon started but discovery file missing")?;
+    Ok(RemoteBackend::from_daemon_info(&info))
+}
+
 /// Spawn `esm-server --daemon` detached and poll until `/health` succeeds.
 ///
 /// An advisory file lock (`esm-daemon.lock`) is held for the duration of the
@@ -577,56 +700,42 @@ pub fn esm_server_exe() -> anyhow::Result<PathBuf> {
 /// started) is stopped here, under the lock, before the respawn below —
 /// this is what lets a resident daemon self-heal after `cargo build`.
 pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
+    spawn_daemon_and_wait_with(&RealHost)
+}
+
+fn spawn_daemon_and_wait_with<H: DaemonHost>(host: &H) -> anyhow::Result<()> {
     // Acquire an advisory exclusive lock for the duration of the spawn.
-    // The lock file is created if absent and automatically released when
-    // `lock_file` is dropped (fd close).
-    let lock_path = runtime_dir().join("esm-daemon.lock");
-    let lock_file = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(&lock_path)
-        .with_context(|| format!("open spawn lock {}", lock_path.display()))?;
-    lock_file
-        .lock_exclusive()
-        .context("acquire daemon spawn lock")?;
+    // The lock is released when `_guard` is dropped (fd close / fake unlock).
+    let _guard = host.lock_exclusive()?;
 
     // Re-check: another process may have won the race while we waited for the
     // lock.
-    if let Ok(info) = read_daemon_info()
-        && health_check("127.0.0.1", info.port, &info.token).is_ok()
+    if let Ok(info) = host.read_info()
+        && host.health_check(info.port, &info.token).is_ok()
     {
         if daemon_fresh(&info) {
             return Ok(());
         }
         // Alive but stale: stop it before spawning a replacement so the
         // fresh daemon isn't blocked from binding/registering.
-        stop_running_daemon(&info);
-        let _ = remove_daemon_info();
+        stop_running_daemon_with(host, &info);
+        let _ = host.remove_info();
     }
 
-    let server = esm_server_exe()?;
-    let mut child = Command::new(&server)
-        .arg("--daemon")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .context("spawn esm-server --daemon")?;
+    let mut child = host.spawn_server()?;
 
-    // Detach: don't wait on the child.
-    let _ = child.id();
-
-    let deadline = std::time::Instant::now() + HEALTH_POLL_MAX;
-    while std::time::Instant::now() < deadline {
-        if let Ok(info) = read_daemon_info()
-            && health_check("127.0.0.1", info.port, &info.token).is_ok()
+    // Detach: don't wait on the child (real Child::id is a no-op side-effect
+    // reminder; fakes have nothing equivalent).
+    let deadline = host.now() + HEALTH_POLL_MAX;
+    while host.now() < deadline {
+        if let Ok(info) = host.read_info()
+            && host.health_check(info.port, &info.token).is_ok()
         {
             return Ok(());
         }
-        std::thread::sleep(HEALTH_POLL_INTERVAL);
+        host.sleep(HEALTH_POLL_INTERVAL);
     }
-    let _ = child.kill();
+    host.kill(&mut child);
     bail!("daemon did not become ready within {:?}", HEALTH_POLL_MAX);
 }
 
@@ -634,46 +743,38 @@ pub fn spawn_daemon_and_wait() -> anyhow::Result<()> {
 /// resident daemon is alive but stale (binary rebuilt since it started),
 /// same freshness gate as `connect_or_spawn`.
 pub fn start_daemon_process() -> anyhow::Result<DaemonInfo> {
-    if let Ok(info) = read_daemon_info()
-        && daemon_alive(&info)
-        && daemon_fresh(&info)
-    {
-        return Ok(info);
-    }
-    spawn_daemon_and_wait()?;
-    read_daemon_info()
+    start_daemon_process_with(&RealHost)
 }
 
-/// Gracefully shut down a running daemon: request `/op shutdown`, wait
+fn start_daemon_process_with<H: DaemonHost>(host: &H) -> anyhow::Result<DaemonInfo> {
+    if let Some(info) = existing_fresh_daemon(host) {
+        return Ok(info);
+    }
+    spawn_daemon_and_wait_with(host)?;
+    host.read_info()
+}
+
+/// Gracefully shut down a running daemon: request `/op` shutdown, wait
 /// briefly, then force-kill by PID if it's still alive. Does not touch the
 /// discovery file — callers remove it themselves once they're done reading
 /// `info` (e.g. `info.pid`).
-fn stop_running_daemon(info: &DaemonInfo) {
-    let backend = RemoteBackend::from_daemon_info(info);
-    let _ = backend.shutdown();
+fn stop_running_daemon_with<H: DaemonHost>(host: &H, info: &DaemonInfo) {
+    let _ = host.request_shutdown(info.port, &info.token);
     // Give it a moment, then signal if still alive
-    std::thread::sleep(Duration::from_millis(200));
-    if is_pid_alive(info.pid) {
-        #[cfg(unix)]
-        {
-            let _ = Command::new("kill").arg(info.pid.to_string()).status();
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &info.pid.to_string(), "/F"])
-                .status();
-        }
+    host.sleep(Duration::from_millis(200));
+    if host.is_pid_alive(info.pid) {
+        host.kill_pid(info.pid);
     }
 }
 
 /// Stop a running daemon.
 pub fn stop_daemon() -> anyhow::Result<()> {
-    if let Ok(info) = read_daemon_info() {
-        if daemon_alive(&info) {
-            stop_running_daemon(&info);
+    let host = RealHost;
+    if let Ok(info) = host.read_info() {
+        if host.health_check(info.port, &info.token).is_ok() {
+            stop_running_daemon_with(&host, &info);
         }
-        let _ = remove_daemon_info();
+        let _ = host.remove_info();
     }
     Ok(())
 }
@@ -707,6 +808,10 @@ pub fn shared_registry(warm_xref: bool) -> SharedRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
+    use std::rc::Rc;
+    use std::time::Instant;
 
     /// Unique path in the OS temp dir for a test fixture file, disambiguated
     /// by pid + name so parallel test runs don't collide.
@@ -829,5 +934,311 @@ mod tests {
         assert_eq!(info.pid, 2);
         assert_eq!(info.exe_path, "");
         assert!(!daemon_fresh(&info));
+    }
+
+    // ─── FakeHost + lifecycle policy tests ──────────────────────────────────
+
+    /// Shared mutable state for one or more [`FakeHost`] handles (e.g. two
+    /// simulated spawners racing for the same lock / discovery file).
+    struct FakeState {
+        locked: bool,
+        info: Option<DaemonInfo>,
+        /// Scripted `/health` outcomes, consumed FIFO. An empty queue means
+        /// every check fails (drives the poll-timeout path).
+        health_results: VecDeque<Result<(), String>>,
+        /// When `spawn_server` runs, install this discovery info (simulating
+        /// the child writing `esm-daemon.json`).
+        info_on_spawn: Option<DaemonInfo>,
+        /// After spawn, enqueue this many `Ok(())` health results so the poll
+        /// loop can succeed without the test hand-queuing them.
+        health_ok_after_spawn: usize,
+        spawn_count: usize,
+        kill_child_count: usize,
+        kill_pid_count: usize,
+        shutdown_count: usize,
+        remove_info_count: usize,
+        pid_alive: bool,
+        clock: Instant,
+    }
+
+    struct FakeLockGuard {
+        state: Rc<RefCell<FakeState>>,
+    }
+
+    impl Drop for FakeLockGuard {
+        fn drop(&mut self) {
+            self.state.borrow_mut().locked = false;
+        }
+    }
+
+    struct FakeChild;
+
+    #[derive(Clone)]
+    struct FakeHost {
+        state: Rc<RefCell<FakeState>>,
+    }
+
+    impl FakeHost {
+        fn new() -> Self {
+            Self {
+                state: Rc::new(RefCell::new(FakeState {
+                    locked: false,
+                    info: None,
+                    health_results: VecDeque::new(),
+                    info_on_spawn: None,
+                    health_ok_after_spawn: 0,
+                    spawn_count: 0,
+                    kill_child_count: 0,
+                    kill_pid_count: 0,
+                    shutdown_count: 0,
+                    remove_info_count: 0,
+                    pid_alive: true,
+                    clock: Instant::now(),
+                })),
+            }
+        }
+
+        /// Second handle sharing the same in-memory OS state (two spawners).
+        fn clone_handle(&self) -> Self {
+            Self {
+                state: Rc::clone(&self.state),
+            }
+        }
+
+        fn set_info(&self, info: DaemonInfo) {
+            self.state.borrow_mut().info = Some(info);
+        }
+
+        fn queue_health_ok(&self, n: usize) {
+            let mut s = self.state.borrow_mut();
+            for _ in 0..n {
+                s.health_results.push_back(Ok(()));
+            }
+        }
+
+        fn set_info_on_spawn(&self, info: DaemonInfo) {
+            self.state.borrow_mut().info_on_spawn = Some(info);
+        }
+
+        fn set_health_ok_after_spawn(&self, n: usize) {
+            self.state.borrow_mut().health_ok_after_spawn = n;
+        }
+
+        fn spawn_count(&self) -> usize {
+            self.state.borrow().spawn_count
+        }
+
+        fn kill_child_count(&self) -> usize {
+            self.state.borrow().kill_child_count
+        }
+
+        fn shutdown_count(&self) -> usize {
+            self.state.borrow().shutdown_count
+        }
+
+        fn remove_info_count(&self) -> usize {
+            self.state.borrow().remove_info_count
+        }
+
+        fn kill_pid_count(&self) -> usize {
+            self.state.borrow().kill_pid_count
+        }
+    }
+
+    impl DaemonHost for FakeHost {
+        type LockGuard = FakeLockGuard;
+        type Child = FakeChild;
+
+        fn lock_exclusive(&self) -> anyhow::Result<Self::LockGuard> {
+            let mut s = self.state.borrow_mut();
+            // Single-threaded tests never hold the lock across a second
+            // acquire; a true concurrent wait would need a condvar. Bail so a
+            // mistaken re-entrant acquire fails loudly instead of deadlocking.
+            if s.locked {
+                bail!("fake spawn lock already held");
+            }
+            s.locked = true;
+            drop(s);
+            Ok(FakeLockGuard {
+                state: Rc::clone(&self.state),
+            })
+        }
+
+        fn read_info(&self) -> anyhow::Result<DaemonInfo> {
+            self.state
+                .borrow()
+                .info
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("no daemon info"))
+        }
+
+        fn remove_info(&self) -> anyhow::Result<()> {
+            let mut s = self.state.borrow_mut();
+            s.info = None;
+            s.remove_info_count += 1;
+            Ok(())
+        }
+
+        fn health_check(&self, _port: u16, _token: &str) -> anyhow::Result<()> {
+            let mut s = self.state.borrow_mut();
+            match s.health_results.pop_front() {
+                Some(Ok(())) => Ok(()),
+                Some(Err(e)) => bail!("{e}"),
+                None => bail!("health check failed"),
+            }
+        }
+
+        fn request_shutdown(&self, _port: u16, _token: &str) -> anyhow::Result<()> {
+            self.state.borrow_mut().shutdown_count += 1;
+            Ok(())
+        }
+
+        fn spawn_server(&self) -> anyhow::Result<Self::Child> {
+            let mut s = self.state.borrow_mut();
+            s.spawn_count += 1;
+            if let Some(info) = s.info_on_spawn.clone() {
+                s.info = Some(info);
+            }
+            let n = s.health_ok_after_spawn;
+            for _ in 0..n {
+                s.health_results.push_back(Ok(()));
+            }
+            Ok(FakeChild)
+        }
+
+        fn kill(&self, _child: &mut Self::Child) {
+            self.state.borrow_mut().kill_child_count += 1;
+        }
+
+        fn kill_pid(&self, _pid: u32) {
+            let mut s = self.state.borrow_mut();
+            s.kill_pid_count += 1;
+            s.pid_alive = false;
+        }
+
+        fn is_pid_alive(&self, _pid: u32) -> bool {
+            self.state.borrow().pid_alive
+        }
+
+        fn now(&self) -> Instant {
+            self.state.borrow().clock
+        }
+
+        fn sleep(&self, d: Duration) {
+            self.state.borrow_mut().clock += d;
+        }
+    }
+
+    /// Fresh daemon info stamped against a real on-disk fixture so the
+    /// untouched `daemon_fresh` returns true.
+    fn fresh_info(port: u16, pid: u32) -> (DaemonInfo, PathBuf) {
+        let path = fixture_path(&format!("lifecycle_fresh_{port}.bin"));
+        std::fs::write(&path, b"fresh-bin").unwrap();
+        let mut info = info_for(&path);
+        info.port = port;
+        info.token = "tok".into();
+        info.pid = pid;
+        (info, path)
+    }
+
+    /// Stale daemon info: empty `exe_path` makes real `daemon_fresh` return false.
+    fn stale_info(port: u16, pid: u32) -> DaemonInfo {
+        DaemonInfo {
+            port,
+            token: "tok".into(),
+            pid,
+            exe_path: String::new(),
+            exe_size: 0,
+            exe_mtime_secs: 0,
+            exe_mtime_nanos: 0,
+        }
+    }
+
+    #[test]
+    fn recheck_after_lock_returns_without_spawning() {
+        let host = FakeHost::new();
+        let (info, path) = fresh_info(9001, 42);
+        host.set_info(info);
+        // One health Ok for the re-check-after-lock probe.
+        host.queue_health_ok(1);
+
+        spawn_daemon_and_wait_with(&host).unwrap();
+        assert_eq!(host.spawn_count(), 0);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn two_spawners_coalesce_to_single_spawn() {
+        // First caller finds nothing and spawns; second caller (sharing state)
+        // re-checks after lock and sees the healthy fresh daemon — no 2nd spawn.
+        let first = FakeHost::new();
+        let second = first.clone_handle();
+
+        let (info, path) = fresh_info(9002, 43);
+        first.set_info_on_spawn(info);
+        first.set_health_ok_after_spawn(1);
+
+        spawn_daemon_and_wait_with(&first).unwrap();
+        assert_eq!(first.spawn_count(), 1);
+
+        // Second spawner: discovery + health already good (post-first-spawn).
+        second.queue_health_ok(1);
+        spawn_daemon_and_wait_with(&second).unwrap();
+        assert_eq!(
+            second.spawn_count(),
+            1,
+            "second caller must not spawn again"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn stale_daemon_is_stopped_then_respawned() {
+        let host = FakeHost::new();
+        let stale = stale_info(9003, 44);
+        host.set_info(stale);
+        // Re-check-after-lock: alive (health ok) but stale (empty exe_path).
+        host.queue_health_ok(1);
+
+        let (fresh, path) = fresh_info(9003, 45);
+        host.set_info_on_spawn(fresh);
+        host.set_health_ok_after_spawn(1);
+        // After graceful shutdown sleep, pid still looks alive → force kill.
+        host.state.borrow_mut().pid_alive = true;
+
+        spawn_daemon_and_wait_with(&host).unwrap();
+
+        assert_eq!(host.shutdown_count(), 1, "stale daemon should be shut down");
+        assert_eq!(host.remove_info_count(), 1);
+        assert_eq!(host.kill_pid_count(), 1);
+        assert_eq!(host.spawn_count(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn health_poll_timeout_kills_child_and_errors_fast() {
+        let host = FakeHost::new();
+        let clock_start = host.now();
+        // Spawn succeeds but health never becomes ready (empty queue → always Err).
+        let wall_start = Instant::now();
+        let err = spawn_daemon_and_wait_with(&host).unwrap_err();
+        let wall_elapsed = wall_start.elapsed();
+
+        assert!(
+            err.to_string().contains("did not become ready"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(host.spawn_count(), 1);
+        assert_eq!(host.kill_child_count(), 1);
+        // Fake clock must have advanced through the full poll window.
+        assert!(
+            host.now() >= clock_start + HEALTH_POLL_MAX,
+            "fake clock did not reach HEALTH_POLL_MAX"
+        );
+        // Wall time must stay tiny — if this fails, sleep() isn't faked.
+        assert!(
+            wall_elapsed < Duration::from_secs(2),
+            "timeout path slept for real time ({wall_elapsed:?}); clock not faked"
+        );
     }
 }
