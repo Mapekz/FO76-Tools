@@ -64,7 +64,7 @@
 
 use crate::chase::{
     ChaseFetcher, ChaseOptions, Evidence, Hop, HopKind, RootStub, consumer_refs_by_type,
-    first_array_container, fmt_stub, omod_chase, summarize_effect,
+    first_array_container, fmt_stub, omod_chase, summarize_effect, summarize_explosion_detail,
 };
 use crate::ipc::RecordSel;
 use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
@@ -115,6 +115,11 @@ const GENERIC_DUMP_MAX_LINES: usize = 120;
 /// Cap on candidate FormIDs scanned for an OMOD's ENCH-typed properties
 /// (mirrors the TS original's `formIds.slice(0, 25)`).
 const OMOD_ENCH_CANDIDATE_CAP: usize = 25;
+
+/// Cap on `Data.Includes[]` targets enqueued into the walk BFS per OMOD node.
+/// Shares [`crate::chase::OMOD_INCLUDE_ENQUEUE_CAP`] (corpus peak 79 on one
+/// selector; 20 covers the overwhelming majority while bounding BFS breadth).
+const OMOD_INCLUDE_ENQUEUE_CAP: usize = crate::chase::OMOD_INCLUDE_ENQUEUE_CAP;
 
 /// A digest function's request to enqueue one more hop: the target FormID
 /// plus the "via" edge label to attach to its [`WalkNode`] once visited.
@@ -999,6 +1004,7 @@ fn digest_omod_ench_follow(
 /// `ref_limit` bounds the reverse keyword/AVIF consumer walk (see
 /// [`WalkOptions::ref_limit`]); runs regardless of `--depth`, which only
 /// governs BFS enqueueing.
+#[allow(clippy::too_many_arguments)]
 fn digest_omod_mechanisms(
     f: &mut impl ChaseFetcher,
     formid: FormId,
@@ -1007,6 +1013,7 @@ fn digest_omod_mechanisms(
     fields: &Value,
     ref_limit: usize,
     lines: &mut Vec<String>,
+    enqueue: &mut Vec<EnqueueTarget>,
 ) -> anyhow::Result<()> {
     // `tree.root` is discarded below (walk already knows the root's identity
     // from its own `WalkNode`) — Name/Description are left `None` since
@@ -1023,10 +1030,79 @@ fn digest_omod_mechanisms(
         ref_limit,
     };
     let tree = omod_chase(f, root, fields, &opts)?;
-    for hop in &tree.hops {
-        render_omod_hop(hop, lines);
-    }
+    render_omod_hops(&tree.hops, lines, enqueue);
     Ok(())
+}
+
+/// Render classified [`Hop`]s in classifier order. Consecutive
+/// [`HopKind::TagKeyword`] hops collapse into one `tags` block; include-
+/// sourced hops (`source_omod.is_some()`) are skipped here — walk enqueues
+/// includes as their own BFS nodes instead of folding them into the
+/// includer's digest.
+fn render_omod_hops(hops: &[Hop], lines: &mut Vec<String>, enqueue: &mut Vec<EnqueueTarget>) {
+    let mut i = 0;
+    while i < hops.len() {
+        let hop = &hops[i];
+        if hop.source_omod.is_some() {
+            i += 1;
+            continue;
+        }
+        let Some(target) = &hop.target else {
+            i += 1;
+            continue;
+        };
+        let target_rt = target
+            .get("record_type")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if target_rt == "ENCH" {
+            i += 1;
+            continue;
+        }
+        if hop.kind == HopKind::TagKeyword {
+            let start = i;
+            i += 1;
+            while i < hops.len() {
+                let next = &hops[i];
+                if next.source_omod.is_some() || next.kind != HopKind::TagKeyword {
+                    break;
+                }
+                i += 1;
+            }
+            render_tag_keyword_block(&hops[start..i], lines);
+            continue;
+        }
+        render_omod_hop(hop, lines, enqueue);
+        i += 1;
+    }
+}
+
+/// One `tags` block for a contiguous run of [`HopKind::TagKeyword`] hops —
+/// editor_id plus Notes when present; never a dead-end caveat.
+fn render_tag_keyword_block(hops: &[Hop], lines: &mut Vec<String>) {
+    if hops.is_empty() {
+        return;
+    }
+    lines.push("tags".to_string());
+    for hop in hops {
+        let Some(target) = &hop.target else {
+            continue;
+        };
+        let edid = target
+            .get("editor_id")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let notes = hop
+            .evidence
+            .first()
+            .and_then(|ev| ev.detail.get("notes"))
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        match notes {
+            Some(n) => lines.push(format!("    {edid} — {n}")),
+            None => lines.push(format!("    {edid}")),
+        }
+    }
 }
 
 /// Render one classified [`Hop`] as indented mechanism lines. Skips bare-
@@ -1034,7 +1110,7 @@ fn digest_omod_mechanisms(
 /// from before this walk had a dedicated OMOD digest) and ENCH-typed targets
 /// ([`digest_omod_ench_follow`] already forward-follows and enqueues those as
 /// their own BFS node — rendering them again here would be redundant).
-fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>) {
+fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>, enqueue: &mut Vec<EnqueueTarget>) {
     let Some(target) = &hop.target else {
         return;
     };
@@ -1055,6 +1131,11 @@ fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>) {
             lines.push(format!("keyword hook → {}", fmt_stub(target)));
             render_reverse_evidence(&hop.evidence, lines);
         }
+        HopKind::TagKeyword => {
+            // Consecutive runs are flushed by [`render_omod_hops`]; a lone
+            // call still renders a one-entry tags block.
+            render_tag_keyword_block(std::slice::from_ref(hop), lines);
+        }
         // An AVIF direct-property target is reverse-chased exactly like a
         // KYWD keyword_hook (see `esm::chase::omod_chase`) even though its
         // `HopKind` stays `DirectProperty` — the hop-kind taxonomy doesn't
@@ -1064,12 +1145,114 @@ fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>) {
             lines.push(format!("AV hook → {}", fmt_stub(target)));
             render_reverse_evidence(&hop.evidence, lines);
         }
+        HopKind::DirectProperty if target_rt == "PROJ" => {
+            lines.push(format!("direct property → {}", fmt_stub(target)));
+            render_projectile_evidence(&hop.evidence, lines);
+            if let Some(fid) = stub_formid(Some(target)) {
+                enqueue.push((fid, "OMOD property".to_string()));
+            }
+        }
         // Direct SPEL attachment (the other `FORWARD_FETCH_TYPES` member
         // besides ENCH/PERK) — forward-fetched the same way a perk grant is.
         HopKind::DirectProperty => {
             lines.push(format!("direct property → {}", fmt_stub(target)));
             render_forward_evidence(&hop.evidence, lines);
         }
+    }
+}
+
+/// Compact PROJ/EXPL summary from chase's projectile evidence detail.
+fn render_projectile_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
+    for ev in evidence {
+        let d = &ev.detail;
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(t) = d.get("type").and_then(Value::as_str) {
+            parts.push(format!("type {t}"));
+        }
+        if let Some(s) = d.get("speed") {
+            parts.push(format!("speed {}", pyish(s)));
+        }
+        if !parts.is_empty() {
+            lines.push(format!("  {}", parts.join("  ")));
+        }
+        if let Some(expl) = d.get("explosion").filter(|v| is_ref_stub(v)) {
+            lines.push(format!("  explosion → {}", fmt_stub(expl)));
+        }
+        render_explosion_detail_lines(d, lines, "  ");
+    }
+}
+
+/// Shared EXPL field lines (radius/force/stagger/impact/chain/damage) used by
+/// both the OMOD projectile-evidence slice and the EXPL digest arm.
+fn render_explosion_detail_lines(detail: &Value, lines: &mut Vec<String>, indent: &str) {
+    if let Some(radius) = detail.get("radius").and_then(Value::as_array) {
+        let inner = radius.first().map(pyish).unwrap_or_else(|| "?".to_string());
+        let outer = radius.get(1).map(pyish).unwrap_or_else(|| "?".to_string());
+        lines.push(format!("{indent}radius {inner}/{outer}"));
+    }
+    let mut phys: Vec<String> = Vec::new();
+    if let Some(f) = detail.get("force") {
+        phys.push(format!("force {}", pyish(f)));
+    }
+    if let Some(s) = detail.get("stagger").and_then(Value::as_str) {
+        phys.push(format!("stagger {s}"));
+    }
+    if !phys.is_empty() {
+        lines.push(format!("{indent}{}", phys.join("  ")));
+    }
+    if let Some(ipds) = detail.get("impact_data_set").and_then(Value::as_str) {
+        lines.push(format!("{indent}impact {ipds}"));
+    }
+    if detail.get("chain").and_then(Value::as_bool) == Some(true) {
+        lines.push(format!("{indent}chain"));
+    }
+    if let Some(placed) = detail.get("placed_object").filter(|v| is_ref_stub(v)) {
+        lines.push(format!("{indent}placed object → {}", fmt_stub(placed)));
+    }
+    if let Some(spawn) = detail.get("spawn_projectile").filter(|v| is_ref_stub(v)) {
+        lines.push(format!("{indent}spawn projectile → {}", fmt_stub(spawn)));
+    }
+    if let Some(damage) = detail.get("damage").and_then(Value::as_array) {
+        if damage.is_empty() {
+            // Empty + chain signals arc falloff elsewhere; empty alone is a
+            // utility explosion (radius/force/stagger IS the effect).
+            if detail.get("chain").and_then(Value::as_bool) != Some(true) {
+                lines.push(format!("{indent}damage (none)"));
+            }
+        } else {
+            for row in damage {
+                lines.push(format!("{indent}damage {}", format_damage_row(row)));
+            }
+        }
+    }
+}
+
+fn format_damage_row(row: &Value) -> String {
+    if let Some(flat) = row.get("flat") {
+        return format!("flat {}", pyish(flat));
+    }
+    if let Some(m) = row.get("base_weapon_mult") {
+        return format!("base weapon mult {}", pyish(m));
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(t) = row.get("type").and_then(Value::as_str) {
+        parts.push(t.to_string());
+    }
+    if let Some(c) = row.get("curve").and_then(Value::as_str) {
+        parts.push(format!("via {c}"));
+    }
+    if let Some(range) = row.get("range").and_then(Value::as_array)
+        && range.len() >= 2
+    {
+        parts.push(format!("[{}–{}]", pyish(&range[0]), pyish(&range[1])));
+    }
+    if let Some(amount) = row.get("amount") {
+        parts.push(format!("amount {}", pyish(amount)));
+    }
+    if parts.is_empty() {
+        pyish(row)
+    } else {
+        parts.join("  ")
     }
 }
 
@@ -1143,20 +1326,69 @@ fn render_reverse_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
 }
 
 /// `Data.Includes[]` names another OMOD this one composes from — the
-/// `_PARENT_*` empty-shell pattern, where the real properties live on the
-/// included OMOD rather than this one. Already stub-resolved on the fetched
-/// `fields` (a `Stub`-depth `bulk_get` annotates every direct reference), so
-/// this is zero extra fetches — unlike the property-based mechanism slice
-/// above, which forward/reverse-fetches whatever the classifier finds.
-fn digest_omod_includes(fields: &Value, lines: &mut Vec<String>) {
+/// `_PARENT_*` empty-shell pattern (properties compose onto the includer) or
+/// a `modcol_*` collection (each include is an alternative). Nothing in the
+/// data reliably distinguishes the two, so we don't merge: each include is
+/// enqueued into the BFS as its own walked node (same pattern as
+/// [`digest_omod_ench_follow`]), bounded by [`OMOD_INCLUDE_ENQUEUE_CAP`].
+fn digest_omod_includes(
+    fields: &Value,
+    editor_id: &str,
+    lines: &mut Vec<String>,
+    enqueue: &mut Vec<EnqueueTarget>,
+) {
     let Some(includes) = fields.pointer("/Data/Includes").and_then(Value::as_array) else {
         return;
     };
+    let mut named = 0usize;
+    let mut total = 0usize;
     for inc in includes {
-        if let Some(target) = inc.get("Mod").filter(|v| is_ref_stub(v)) {
-            lines.push(format!("include → {}", fmt_stub(target)));
+        let Some(target) = inc.get("Mod").filter(|v| is_ref_stub(v)) else {
+            continue;
+        };
+        total += 1;
+        if named >= OMOD_INCLUDE_ENQUEUE_CAP {
+            continue;
+        }
+        lines.push(format!("include → {}", fmt_stub(target)));
+        if let Some(fid) = stub_formid(Some(target)) {
+            enqueue.push((fid, format!("include of {editor_id}")));
+        }
+        named += 1;
+    }
+    if total > OMOD_INCLUDE_ENQUEUE_CAP {
+        lines.push(format!(
+            "  … +{} more includes (truncated)",
+            total - OMOD_INCLUDE_ENQUEUE_CAP
+        ));
+    }
+}
+
+fn digest_proj(fields: &Value, lines: &mut Vec<String>, enqueue: &mut Vec<EnqueueTarget>) {
+    let Some(data) = fields.get("Data") else {
+        return;
+    };
+    if let Some(t) = data
+        .get("Type")
+        .and_then(|v| v.get("name"))
+        .and_then(Value::as_str)
+    {
+        lines.push(format!("type {t}"));
+    }
+    if let Some(s) = data.get("Speed") {
+        lines.push(format!("speed {}", pyish(s)));
+    }
+    if let Some(expl) = data.get("Explosion").filter(|v| is_ref_stub(v)) {
+        lines.push(format!("explosion → {}", fmt_stub(expl)));
+        if let Some(fid) = stub_formid(Some(expl)) {
+            enqueue.push((fid, "projectile explosion".to_string()));
         }
     }
+}
+
+fn digest_expl(fields: &Value, lines: &mut Vec<String>) {
+    let detail = summarize_explosion_detail(fields);
+    render_explosion_detail_lines(&detail, lines, "");
 }
 
 // ─── refs digest (root-only, `--refs`) ──────────────────────────────────────
@@ -1241,13 +1473,25 @@ fn digest_node(
         "SPEL" | "ENCH" | "ALCH" => digest_magic_item(f, fields, &mut lines, &mut enqueue)?,
         "PERK" => digest_perk(f, fields, &mut lines, &mut enqueue)?,
         "WEAP" => digest_weap(fields, &mut lines),
+        "PROJ" => digest_proj(fields, &mut lines, &mut enqueue),
+        "EXPL" => digest_expl(fields, &mut lines),
         "OMOD" => {
             // Ordered to match the mechanism-slice narrative: the ENCH chain
             // (a full BFS-followed node) first, then the property mechanisms
-            // the classifier resolves inline, then the Includes[] pointers.
+            // the classifier resolves inline, then the Includes[] pointers
+            // (enqueued as their own BFS nodes — no property merge).
             digest_omod_ench_follow(f, fields, &mut lines, &mut enqueue)?;
-            digest_omod_mechanisms(f, formid, sig, editor_id, fields, ref_limit, &mut lines)?;
-            digest_omod_includes(fields, &mut lines);
+            digest_omod_mechanisms(
+                f,
+                formid,
+                sig,
+                editor_id,
+                fields,
+                ref_limit,
+                &mut lines,
+                &mut enqueue,
+            )?;
+            digest_omod_includes(fields, editor_id, &mut lines, &mut enqueue);
         }
         _ => digest_generic(fields, &mut lines),
     }

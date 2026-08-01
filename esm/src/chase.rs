@@ -78,7 +78,7 @@ use crate::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Record types whose Conditions are checked for a `WornHasKeyword` (or
 /// similar) gate on a keyword/AVIF this OMOD ADDs. Mirrors the KB's "SPEL/PERK
@@ -111,6 +111,16 @@ const PERK_EFFECT_TARGET_KEYS: [&str; 5] = ["Ability", "Quest", "Spell", "Item",
 pub const DEFAULT_DEPTH: usize = 1;
 /// Cap on refs rows fetched per record-type filter before bulk-fetching consumers.
 pub const DEFAULT_REF_LIMIT: usize = 25;
+
+/// Cap on `Data.Includes[]` targets expanded per OMOD level (chase hop
+/// expansion and walk BFS enqueue share this bound). Corpus include-breadth
+/// peaks at 79 on one selector OMOD; 20 covers the overwhelming majority
+/// while keeping chase/walk BFS bounded and fail-fast per ADR 0001.
+pub const OMOD_INCLUDE_ENQUEUE_CAP: usize = 20;
+
+/// Max depth when expanding `Data.Includes[]` chains inside [`omod_chase`].
+/// Measured corpus max is 3; do not search deeper.
+const OMOD_INCLUDE_MAX_DEPTH: usize = 3;
 
 // ─── fetch seam ─────────────────────────────────────────────────────────────
 
@@ -192,12 +202,19 @@ pub struct RootStub {
 }
 
 /// How one `Data.Properties[]` row was classified (see the module docs).
+///
+/// This is the *resolution* taxonomy (forward fetch vs reverse refs vs
+/// non-mechanism tag), not the domain's four-way mechanism taxonomy — see
+/// `CONTEXT.md`'s **Mechanism** / **Tag keyword** terms. `OverrideProjectile`
+/// stays [`DirectProperty`]; tag keywords that are not SPEL/PERK gates are
+/// [`TagKeyword`] rather than a misclassified [`KeywordHook`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HopKind {
     DirectProperty,
     PerkGrant,
     KeywordHook,
+    TagKeyword,
 }
 
 /// One classified `Data.Properties[]` row plus whatever evidence the chase
@@ -214,6 +231,12 @@ pub struct Hop {
     pub kind: HopKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<Value>,
+    /// When this hop's property row was sourced from a `Data.Includes[]`
+    /// target rather than the root OMOD itself — the included OMOD's stub.
+    /// `None` for the root's own properties (additive to the frozen chase
+    /// JSON shape; see ADR 0001).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_omod: Option<Value>,
     pub evidence: Vec<Evidence>,
 }
 
@@ -706,6 +729,351 @@ fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) ->
     }
 }
 
+/// Min/max `y` across an inline-resolved curve table's `curve` points, if any.
+fn curve_y_range(curve_table: &Value) -> Option<(f64, f64)> {
+    let points = curve_table.get("curve")?.as_array()?;
+    let mut min_y = f64::INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for p in points {
+        let Some(y) = p.get("y").and_then(Value::as_f64) else {
+            continue;
+        };
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    if min_y.is_finite() && max_y.is_finite() {
+        Some((min_y, max_y))
+    } else {
+        None
+    }
+}
+
+/// Summarize an EXPL record's damage / radius / force / stagger / chain payload
+/// into one JSON object. Covers the five corpus damage shapes (per-type
+/// `Damage Types[]` + curve, legacy `Data.Damage Curve Table`,
+/// `Base Weapon Damage Mult`, flat `Data.Damage`, or none) plus utility
+/// fields so a JSON consumer can read damage without guessing which shape is
+/// present. `pub(crate)` so `esm::walk`'s EXPL digest arm reuses the same
+/// logic.
+pub(crate) fn summarize_explosion_detail(fields: &Value) -> Value {
+    let data = fields.get("Data");
+    let mut detail = serde_json::Map::new();
+
+    if let Some(d) = data {
+        let inner = d.get("Inner Radius").cloned().unwrap_or(Value::Null);
+        let outer = d.get("Outer Radius").cloned().unwrap_or(Value::Null);
+        if !inner.is_null() || !outer.is_null() {
+            detail.insert("radius".to_string(), json!([inner, outer]));
+        }
+        if is_truthy(d.get("Force")) {
+            detail.insert("force".to_string(), d["Force"].clone());
+        }
+        let stagger = named(d.get("Stagger"));
+        if is_truthy(Some(&stagger)) {
+            detail.insert("stagger".to_string(), stagger);
+        }
+        if let Some(ipds) = d.get("Impact Data Set").filter(|v| is_formid_stub(v)) {
+            detail.insert(
+                "impact_data_set".to_string(),
+                ipds.get("editor_id")
+                    .cloned()
+                    .unwrap_or_else(|| stub(ipds).get("formid").cloned().unwrap_or(Value::Null)),
+            );
+        }
+        let chain = d
+            .pointer("/Flags1/flags")
+            .and_then(Value::as_array)
+            .is_some_and(|flags| flags.iter().any(|f| f.as_str() == Some("Chain")));
+        detail.insert("chain".to_string(), json!(chain));
+
+        if let Some(placed) = d.get("Placed Object").filter(|v| is_formid_stub(v)) {
+            detail.insert("placed_object".to_string(), stub(placed));
+        }
+        if let Some(spawn) = d.get("Spawn Projectile").filter(|v| is_formid_stub(v)) {
+            detail.insert("spawn_projectile".to_string(), stub(spawn));
+        }
+    }
+
+    let mut damage: Vec<Value> = Vec::new();
+    if let Some(types) = fields.get("Damage Types").and_then(Value::as_array) {
+        for entry in types {
+            let type_edid = entry
+                .pointer("/Type/editor_id")
+                .cloned()
+                .unwrap_or(Value::Null);
+            let mut row = serde_json::Map::new();
+            row.insert("type".to_string(), type_edid);
+            if let Some(ct) = entry.get("Curve Table").filter(|v| is_truthy(Some(*v))) {
+                row.insert(
+                    "curve".to_string(),
+                    ct.get("editor_id").cloned().unwrap_or(Value::Null),
+                );
+                if let Some((lo, hi)) = curve_y_range(ct) {
+                    row.insert("range".to_string(), json!([lo, hi]));
+                }
+            } else if is_truthy(entry.get("Amount")) {
+                row.insert("amount".to_string(), entry["Amount"].clone());
+            }
+            damage.push(Value::Object(row));
+        }
+    }
+    if let Some(d) = data {
+        if let Some(ct) = d.get("Damage Curve Table").filter(|v| is_truthy(Some(*v))) {
+            let mut row = serde_json::Map::new();
+            row.insert(
+                "curve".to_string(),
+                ct.get("editor_id").cloned().unwrap_or(Value::Null),
+            );
+            if let Some((lo, hi)) = curve_y_range(ct) {
+                row.insert("range".to_string(), json!([lo, hi]));
+            }
+            damage.push(Value::Object(row));
+        }
+        if is_truthy(d.get("Base Weapon Damage Mult")) {
+            damage.push(json!({"base_weapon_mult": d["Base Weapon Damage Mult"]}));
+        }
+        if is_truthy(d.get("Damage")) {
+            damage.push(json!({"flat": d["Damage"]}));
+        }
+    }
+    detail.insert("damage".to_string(), Value::Array(damage));
+    Value::Object(detail)
+}
+
+/// Build forward evidence for a PROJ-targeting OMOD property: speed/type plus
+/// the linked EXPL's radius/force/stagger/chain/damage summary when present.
+fn projectile_evidence(
+    target: &Value,
+    proj_fields: &Value,
+    expl_by_sel: &HashMap<&str, &BulkRecordEntry>,
+) -> Evidence {
+    let mut detail = serde_json::Map::new();
+    if let Some(data) = proj_fields.get("Data") {
+        if is_truthy(data.get("Speed")) {
+            detail.insert("speed".to_string(), data["Speed"].clone());
+        }
+        let proj_type = named(data.get("Type"));
+        if is_truthy(Some(&proj_type)) {
+            detail.insert("type".to_string(), proj_type);
+        }
+        if let Some(expl) = data.get("Explosion").filter(|v| is_formid_stub(v)) {
+            detail.insert("explosion".to_string(), stub(expl));
+            let expl_fid = expl.get("formid").and_then(Value::as_str).unwrap_or("");
+            if let Some(entry) = expl_by_sel.get(expl_fid)
+                && entry.error.is_none()
+            {
+                let expl_fields = entry.fields.as_ref().unwrap_or(&Value::Null);
+                if let Value::Object(expl_detail) = summarize_explosion_detail(expl_fields) {
+                    for (k, v) in expl_detail {
+                        detail.insert(k, v);
+                    }
+                }
+            }
+        }
+    }
+    Evidence {
+        source: stub(target),
+        via: None,
+        detail: Value::Object(detail),
+        hop_depth: None,
+        path_chain: None,
+    }
+}
+
+/// Synthetic evidence for a [`HopKind::TagKeyword`]: the KYWD's own Notes/Type,
+/// not a reverse-chased consumer.
+fn tag_keyword_evidence(target: &Value, kywd_fields: Option<&Value>, type_name: Value) -> Evidence {
+    let notes = kywd_fields
+        .and_then(|f| f.get("Notes"))
+        .filter(|n| !n.is_null())
+        .cloned()
+        .unwrap_or(Value::Null);
+    Evidence {
+        source: stub(target),
+        via: None,
+        detail: json!({"tag": true, "notes": notes, "type": type_name}),
+        hop_depth: None,
+        path_chain: None,
+    }
+}
+
+/// Look up a successfully-fetched KYWD's decoded fields from a `bulk_get` map
+/// keyed by formid display string.
+fn kywd_fields_from_map<'a>(
+    by_sel: &'a HashMap<&str, &BulkRecordEntry>,
+    formid: &str,
+) -> Option<&'a Value> {
+    let entry = by_sel.get(formid)?;
+    if entry.error.is_some() {
+        return None;
+    }
+    entry.fields.as_ref()
+}
+
+/// True when a KYWD's `Type.name` is a populated enum other than `"None"` —
+/// those are categorically item-policy / UI tags, never SPEL/PERK gates.
+fn is_populated_kywd_type(type_name: &Value) -> bool {
+    is_truthy(Some(type_name)) && type_name.as_str() != Some("None")
+}
+
+/// Classify one OMOD `Data.Properties[]` row into a [`Hop`] plus an optional
+/// forward/reverse fetch destination. Shared by the root's own properties and
+/// by include-expanded rows so the KYWD/PERK/AVIF/PROJ/forward-type dispatch
+/// lives in one place.
+fn classify_property_row(
+    prop: &Value,
+    property_index: usize,
+    source_omod: Option<Value>,
+    kywd_by_sel: &HashMap<&str, &BulkRecordEntry>,
+) -> (Hop, Option<FetchDest>) {
+    let prop_name = named(prop.get("Property"));
+    let function = named(prop.get("Function Type"));
+    let value1 = field_or_null(prop.get("Value 1"));
+    let value2 = field_or_null(prop.get("Value 2"));
+    let curve_table = prop
+        .get("Curve Table")
+        .filter(|v| is_truthy(Some(*v)))
+        .cloned();
+
+    let mut hop = Hop {
+        property_index,
+        property: prop_name,
+        function,
+        value1: value1.clone(),
+        value2,
+        curve_table,
+        kind: HopKind::DirectProperty,
+        target: None,
+        source_omod,
+        evidence: Vec::new(),
+    };
+
+    if !is_formid_stub(&value1) {
+        return (hop, None);
+    }
+
+    let target = stub(&value1);
+    let rt = target
+        .get("record_type")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    hop.target = Some(target.clone());
+
+    if rt == "KYWD" {
+        let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
+        if let Some(fields) = kywd_fields_from_map(kywd_by_sel, fid) {
+            let type_name = named(fields.get("Type"));
+            if is_populated_kywd_type(&type_name) {
+                hop.kind = HopKind::TagKeyword;
+                hop.evidence = vec![tag_keyword_evidence(&target, Some(fields), type_name)];
+                return (hop, None);
+            }
+        }
+        hop.kind = HopKind::KeywordHook;
+        (hop, Some(FetchDest::Reverse(target)))
+    } else if rt == "PERK" {
+        hop.kind = HopKind::PerkGrant;
+        (hop, Some(FetchDest::Forward(target)))
+    } else if FORWARD_FETCH_TYPES.contains(&rt.as_str()) || rt == "PROJ" {
+        // PROJ joins the forward-fetch path alongside ENCH/SPEL, but is
+        // deliberately kept out of FORWARD_FETCH_TYPES — that constant's
+        // evidence builder assumes Effects/Description, which a PROJ lacks
+        // (see projectile_evidence).
+        hop.kind = HopKind::DirectProperty;
+        (hop, Some(FetchDest::Forward(target)))
+    } else if rt == "AVIF" {
+        hop.kind = HopKind::DirectProperty;
+        (hop, Some(FetchDest::Reverse(target)))
+    } else {
+        hop.kind = HopKind::DirectProperty;
+        (hop, None)
+    }
+}
+
+/// Where a classified property row still needs a follow-up fetch.
+enum FetchDest {
+    Forward(Value),
+    Reverse(Value),
+}
+
+/// Collect `(properties, source_omod)` batches for the root plus a bounded
+/// BFS over `Data.Includes[]` (depth ≤ [`OMOD_INCLUDE_MAX_DEPTH`], breadth ≤
+/// [`OMOD_INCLUDE_ENQUEUE_CAP`] per level).
+fn collect_property_sources(
+    f: &mut impl ChaseFetcher,
+    root_fields: &Value,
+) -> anyhow::Result<Vec<(Vec<Value>, Option<Value>)>> {
+    let root_properties: Vec<Value> = root_fields
+        .pointer("/Data/Properties")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut sources: Vec<(Vec<Value>, Option<Value>)> = vec![(root_properties, None)];
+
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut queue: VecDeque<(String, usize)> = VecDeque::new();
+    if let Some(includes) = root_fields
+        .pointer("/Data/Includes")
+        .and_then(Value::as_array)
+    {
+        for inc in includes.iter().take(OMOD_INCLUDE_ENQUEUE_CAP) {
+            if let Some(fid) = inc
+                .get("Mod")
+                .and_then(|m| m.get("formid"))
+                .and_then(Value::as_str)
+                && visited.insert(fid.to_string())
+            {
+                queue.push_back((fid.to_string(), 1));
+            }
+        }
+    }
+
+    while let Some((fid_str, depth)) = queue.pop_front() {
+        if depth > OMOD_INCLUDE_MAX_DEPTH {
+            continue;
+        }
+        let fid = crate::parse_form_id_input(&fid_str)
+            .with_context(|| format!("invalid include FormID {fid_str:?}"))?;
+        let fetched = f.bulk_get(&[RecordSel::FormId(fid)], ResolveDepth::Stub)?;
+        let Some(entry) = fetched.into_iter().next() else {
+            continue;
+        };
+        if entry.error.is_some() {
+            continue;
+        }
+        let fields = entry.fields.clone().unwrap_or(Value::Null);
+        let omod_stub = json!({
+            "formid": fid_str,
+            "editor_id": entry.editor_id.clone().unwrap_or_default(),
+            "record_type": entry.header.as_ref().map(|h| h.signature.clone()).unwrap_or_else(|| "OMOD".to_string()),
+        });
+        let properties: Vec<Value> = fields
+            .pointer("/Data/Properties")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        sources.push((properties, Some(omod_stub)));
+
+        if depth < OMOD_INCLUDE_MAX_DEPTH
+            && let Some(includes) = fields.pointer("/Data/Includes").and_then(Value::as_array)
+        {
+            for inc in includes.iter().take(OMOD_INCLUDE_ENQUEUE_CAP) {
+                if let Some(child_fid) = inc
+                    .get("Mod")
+                    .and_then(|m| m.get("formid"))
+                    .and_then(Value::as_str)
+                    && visited.insert(child_fid.to_string())
+                {
+                    queue.push_back((child_fid.to_string(), depth + 1));
+                }
+            }
+        }
+    }
+
+    Ok(sources)
+}
+
 /// One reverse-`refs` call per [`CONSUMER_TYPES`] entry (SPEL, PERK) against a
 /// keyword/AVIF `target_fid` — the "who reads this?" half of the chase
 /// pattern. Shared verbatim by [`reverse_chase`] (which flattens every type's
@@ -909,8 +1277,10 @@ pub fn chase(
 }
 
 /// Run the chase for an OMOD root: classify each `Data.Properties[]` row into
-/// direct-property/perk-grant/keyword-hook (see the module docs) and forward-
-/// or reverse-fetch whatever record carries the mechanic.
+/// direct-property/perk-grant/keyword-hook/tag-keyword (see the module docs)
+/// and forward- or reverse-fetch whatever record carries the mechanic. Also
+/// expands `Data.Includes[]` up to [`OMOD_INCLUDE_MAX_DEPTH`] /
+/// [`OMOD_INCLUDE_ENQUEUE_CAP`], tagging those hops with [`Hop::source_omod`].
 ///
 /// `pub(crate)` (rather than only reachable through [`chase`]'s dispatch) so
 /// `esm::walk`'s OMOD digest can classify an already-fetched root directly —
@@ -922,74 +1292,59 @@ pub(crate) fn omod_chase(
     fields: &Value,
     opts: &ChaseOptions,
 ) -> anyhow::Result<ChaseTree> {
-    let properties: Vec<Value> = fields
-        .pointer("/Data/Properties")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    let sources = collect_property_sources(f, fields)?;
 
-    let mut hops: Vec<Hop> = Vec::with_capacity(properties.len());
+    // ---- one bulk_get for every KYWD-typed property target (Type/Notes) ----
+    let mut kywd_fids: Vec<String> = Vec::new();
+    for (properties, _) in &sources {
+        for prop in properties {
+            let value1 = field_or_null(prop.get("Value 1"));
+            if !is_formid_stub(&value1) {
+                continue;
+            }
+            let rt = value1
+                .get("record_type")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if rt == "KYWD"
+                && let Some(fid) = value1.get("formid").and_then(Value::as_str)
+            {
+                kywd_fids.push(fid.to_string());
+            }
+        }
+    }
+    kywd_fids.sort();
+    kywd_fids.dedup();
+    let kywd_sels: Vec<RecordSel> = kywd_fids
+        .iter()
+        .map(|s| crate::parse_form_id_input(s).map(RecordSel::FormId))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let kywd_fetched = if kywd_sels.is_empty() {
+        Vec::new()
+    } else {
+        f.bulk_get(&kywd_sels, ResolveDepth::Stub)?
+    };
+    let kywd_by_sel: HashMap<&str, &BulkRecordEntry> =
+        kywd_fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+
+    let mut hops: Vec<Hop> = Vec::new();
     let mut forward_targets: Vec<(usize, Value)> = Vec::new();
     let mut reverse_targets: Vec<(usize, Value)> = Vec::new();
 
-    for (i, prop) in properties.iter().enumerate() {
-        let prop_name = named(prop.get("Property"));
-        let function = named(prop.get("Function Type"));
-        let value1 = field_or_null(prop.get("Value 1"));
-        let value2 = field_or_null(prop.get("Value 2"));
-        let curve_table = prop
-            .get("Curve Table")
-            .filter(|v| is_truthy(Some(*v)))
-            .cloned();
-
-        let mut hop = Hop {
-            property_index: i,
-            property: prop_name,
-            function,
-            value1: value1.clone(),
-            value2,
-            curve_table,
-            kind: HopKind::DirectProperty,
-            target: None,
-            evidence: Vec::new(),
-        };
-
-        if !is_formid_stub(&value1) {
-            hop.kind = HopKind::DirectProperty;
-            hop.evidence = Vec::new();
+    for (properties, source_omod) in &sources {
+        for (i, prop) in properties.iter().enumerate() {
+            let (hop, dest) = classify_property_row(prop, i, source_omod.clone(), &kywd_by_sel);
+            let hop_idx = hops.len();
+            match dest {
+                Some(FetchDest::Forward(t)) => forward_targets.push((hop_idx, t)),
+                Some(FetchDest::Reverse(t)) => reverse_targets.push((hop_idx, t)),
+                None => {}
+            }
             hops.push(hop);
-            continue;
         }
-
-        let target = stub(&value1);
-        let rt = target
-            .get("record_type")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        hop.target = Some(target.clone());
-
-        if rt == "KYWD" {
-            hop.kind = HopKind::KeywordHook;
-            reverse_targets.push((i, target));
-        } else if rt == "PERK" {
-            hop.kind = HopKind::PerkGrant;
-            forward_targets.push((i, target));
-        } else if FORWARD_FETCH_TYPES.contains(&rt.as_str()) {
-            hop.kind = HopKind::DirectProperty;
-            forward_targets.push((i, target));
-        } else if rt == "AVIF" {
-            hop.kind = HopKind::DirectProperty;
-            reverse_targets.push((i, target));
-        } else {
-            hop.kind = HopKind::DirectProperty;
-            hop.evidence = Vec::new();
-        }
-
-        hops.push(hop);
     }
 
-    // ---- forward fetch (perk_grant + direct ENCH/SPEL attachments): 1 bulk call ----
+    // ---- forward fetch (perk_grant + direct ENCH/SPEL/PROJ attachments) ----
     if !forward_targets.is_empty() {
         let sels: Vec<RecordSel> = forward_targets
             .iter()
@@ -1001,8 +1356,60 @@ pub(crate) fn omod_chase(
         let fetched = f.bulk_get(&sels, ResolveDepth::Stub)?;
         let by_sel: HashMap<&str, &BulkRecordEntry> =
             fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+
+        // Collect EXPL formids from every PROJ target's Data.Explosion for one
+        // batched follow-up fetch (PROJ evidence needs the linked explosion).
+        let mut expl_fids: Vec<String> = Vec::new();
+        for (_, target) in &forward_targets {
+            let rt = target
+                .get("record_type")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if rt != "PROJ" {
+                continue;
+            }
+            let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
+            let Some(entry) = by_sel.get(fid) else {
+                continue;
+            };
+            if let Some(expl_fid) = entry
+                .fields
+                .as_ref()
+                .and_then(|fl| fl.pointer("/Data/Explosion/formid"))
+                .and_then(Value::as_str)
+            {
+                expl_fids.push(expl_fid.to_string());
+            }
+        }
+        expl_fids.sort();
+        expl_fids.dedup();
+        let expl_sels: Vec<RecordSel> = expl_fids
+            .iter()
+            .map(|s| crate::parse_form_id_input(s).map(RecordSel::FormId))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let expl_fetched = if expl_sels.is_empty() {
+            Vec::new()
+        } else {
+            f.bulk_get(&expl_sels, ResolveDepth::Stub)?
+        };
+        let expl_by_sel: HashMap<&str, &BulkRecordEntry> =
+            expl_fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+
         for (i, target) in &forward_targets {
-            hops[*i].evidence = vec![forward_evidence(target, &by_sel)];
+            let rt = target
+                .get("record_type")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            if rt == "PROJ" {
+                let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
+                let proj_fields = by_sel
+                    .get(fid)
+                    .and_then(|e| e.fields.as_ref())
+                    .unwrap_or(&Value::Null);
+                hops[*i].evidence = vec![projectile_evidence(target, proj_fields, &expl_by_sel)];
+            } else {
+                hops[*i].evidence = vec![forward_evidence(target, &by_sel)];
+            }
         }
 
         // MGEF pass-through: if a forward-fetched target's own Effects[] carry
@@ -1011,7 +1418,14 @@ pub(crate) fn omod_chase(
         // the mechanics KB), surface it as one more Evidence entry on the hop.
         let mgef_sources: Vec<(usize, Vec<Value>)> = forward_targets
             .iter()
-            .filter_map(|(i, _)| {
+            .filter_map(|(i, target)| {
+                let rt = target
+                    .get("record_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                if rt == "PROJ" {
+                    return None;
+                }
                 let effects = hops[*i]
                     .evidence
                     .first()?
@@ -1030,6 +1444,26 @@ pub(crate) fn omod_chase(
     // ---- reverse chase (keyword_hook + AVIF consumer lookup) ----
     for (i, target) in &reverse_targets {
         hops[*i].evidence = reverse_chase(f, target, opts.depth, opts.ref_limit)?;
+    }
+
+    // ---- demote empty KeywordHooks to TagKeyword (untyped, nothing gates) ----
+    for hop in &mut hops {
+        if hop.kind != HopKind::KeywordHook || !hop.evidence.is_empty() {
+            continue;
+        }
+        let Some(target) = hop.target.clone() else {
+            continue;
+        };
+        let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
+        // Only demote when we successfully fetched the KYWD's own record —
+        // without Type/Notes we can't build the synthetic tag evidence the
+        // walk renderer expects, and a failed lookup leaves the hop as a
+        // KeywordHook dead-end (fixture FakeFetchers that omit KYWD bodies).
+        let Some(fields) = kywd_fields_from_map(&kywd_by_sel, fid) else {
+            continue;
+        };
+        hop.kind = HopKind::TagKeyword;
+        hop.evidence = vec![tag_keyword_evidence(&target, Some(fields), json!("None"))];
     }
 
     Ok(ChaseTree {

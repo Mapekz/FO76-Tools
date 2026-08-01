@@ -31,3 +31,11 @@ Both consume one classifier core in `src/chase.rs` — the verbs differ in contr
   the resolution to the agent, costing extra round-trips on the most common query.
 - **Narrow chase back to OMOD-only**: rejected because the deep-writer fans out over
   changed records of all five types and would otherwise need to parse two output shapes.
+
+## Addendum (2026-08-01) — additive chase JSON tolerance
+
+The frozen `chase` JSON shape is additive-tolerant. The OMOD classifier work for issues
+#23/#24/#25 adds `HopKind::TagKeyword` and optional `Hop.source_omod` without renaming or
+removing existing fields or enum variants. Any future addition to the shape should follow
+the same rule — new optional fields and new enum variants only; no renames, no removals —
+unless a future ADR explicitly revisits the contract.
