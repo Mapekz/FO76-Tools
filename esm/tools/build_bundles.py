@@ -63,43 +63,40 @@ DEFAULT_SETTINGS = {
     "refs_depth": 2,
     "context_cap": 12,
     "unique_keyword_patterns": ["if_tmp_*"],
+    # Types whose "true" bundle-mates are typically >1 direct hop away
+    # (e.g. a KYWD's actual family is reached via the item that carries it,
+    # then that item's container/NPC) -- these get base_depth + 1 for the
+    # reverse BFS. Stored as a list (JSON-friendly); converted to a set at
+    # the call site that does membership checks.
+    "special_depth_types": ["KYWD", "LVLI", "OMOD", "ENCH", "MGEF"],
+    # Anchor selection priority (index 0 = highest). Unlisted types rank
+    # below every listed type.
+    "anchor_priority": [
+        "QUST", "NPC_", "WEAP", "ARMO", "COBJ", "ALCH", "PERK", "PCRD",
+        "AVTR", "CHAL", "LVLI", "OMOD", "ENCH", "SPEL", "MGEF", "MISC",
+        "KYWD", "GLOB",
+    ],
+    # Context-member attachment preference (drop-source relevance), in rank
+    # order; anything else (besides a unique-keyword-pattern KYWD, ranked
+    # just after these) sorts last. A candidate connected via one of
+    # context_top_tier_relations outranks all of these -- see _context_rank.
+    "context_preferred_types": ["NPC_", "CONT", "QUST", "COBJ"],
+    # Edge relations whose target is the single most story-relevant context
+    # node for this bundle -- an OMOD's own weapon/armor ("mod_for"), or a
+    # COBJ's crafted item ("crafts") -- and so rank above even
+    # NPC_/CONT/QUST/COBJ in attach_context's preference order. Stored as a
+    # list (JSON-friendly); converted to a set at the call site.
+    "context_top_tier_relations": ["mod_for", "crafts"],
+    # Bundle-merge overlap threshold (non-context member Jaccard-ish ratio,
+    # see `merge_by_overlap`).
+    "overlap_merge_threshold": 0.6,
 }
 
 # Record types never meaningfully decoded / already excluded upstream.
 EXCLUDED_TYPES = {"WRLD", "CELL"}
 
-# Types whose "true" bundle-mates are typically >1 direct hop away (e.g. a
-# KYWD's actual family is reached via the item that carries it, then that
-# item's container/NPC) -- these get base_depth + 1 for the reverse BFS.
-SPECIAL_DEPTH_TYPES = {"KYWD", "LVLI", "OMOD", "ENCH", "MGEF"}
-
-# Anchor selection priority (index 0 = highest priority). Unlisted types
-# rank below every listed type.
-ANCHOR_PRIORITY = [
-    "QUST", "NPC_", "WEAP", "ARMO", "COBJ", "ALCH", "PERK", "PCRD",
-    "AVTR", "CHAL", "LVLI", "OMOD", "ENCH", "SPEL", "MGEF", "MISC", "KYWD", "GLOB",
-]
-_ANCHOR_RANK = {t: i for i, t in enumerate(ANCHOR_PRIORITY)}
-_UNLISTED_RANK = len(ANCHOR_PRIORITY)
-
 # added > changed > removed, per the anchor tie-break rule.
 _STATUS_WEIGHT = {"added": 2, "changed": 1, "removed": 0}
-
-# Context-member attachment preference (drop-source relevance), in rank
-# order; anything else (besides a unique-keyword-pattern KYWD, ranked just
-# after these) sorts last. A candidate connected to a bundle member via one
-# of CONTEXT_TOP_TIER_RELATIONS outranks all of these -- see _context_rank.
-CONTEXT_PREFERRED_TYPES = ["NPC_", "CONT", "QUST", "COBJ"]
-
-# Edge relations whose target is the single most story-relevant context node
-# for this bundle -- an OMOD's own weapon/armor ("mod_for"), or a COBJ's
-# crafted item ("crafts") -- and so rank above even NPC_/CONT/QUST/COBJ in
-# attach_context's preference order (see _context_rank).
-CONTEXT_TOP_TIER_RELATIONS = {"mod_for", "crafts"}
-
-# Bundle-merge overlap threshold (non-context member Jaccard-ish ratio, see
-# `merge_by_overlap`).
-OVERLAP_MERGE_THRESHOLD = 0.6
 
 
 def _iso_now():
@@ -118,8 +115,8 @@ def _int_fid(fid):
         return 0
 
 
-def _priority_rank(record_type):
-    return _ANCHOR_RANK.get(record_type, _UNLISTED_RANK)
+def _priority_rank(record_type, anchor_rank, unlisted_rank):
+    return anchor_rank.get(record_type, unlisted_rank)
 
 
 # --------------------------------------------------------------------------
@@ -239,12 +236,12 @@ def gather_forward_edges(u, ref_names):
     return edges, context
 
 
-def gather_reverse_edges(u, client, old_esm, new_esm, refs_depth):
+def gather_reverse_edges(u, client, old_esm, new_esm, refs_depth, special_depth_types):
     """Step 3. For every fid in U, call `client.refs()` (a depth-bounded
     reverse BFS over the live ESM graph). Every returned row becomes an
     edge `row.form_id -> fid` regardless of the row's own hop depth --
     `via` carries the intermediate hop chain -- which is what lets a
-    multi-hop type (KYWD/LVLI/OMOD/ENCH/MGEF, `SPECIAL_DEPTH_TYPES`) reach
+    multi-hop type (KYWD/LVLI/OMOD/ENCH/MGEF, `special_depth_types`) reach
     its true bundle-mates through one extra hop. `removed`-status records
     only exist pre-patch, so they're queried against `old_esm`; everything
     else against `new_esm`. A daemon error for one record is skipped rather
@@ -253,7 +250,7 @@ def gather_reverse_edges(u, client, old_esm, new_esm, refs_depth):
     context = {}
     for fid, rec in u.items():
         record_type = (rec or {}).get("record_type")
-        depth = refs_depth + (1 if record_type in SPECIAL_DEPTH_TYPES else 0)
+        depth = refs_depth + (1 if record_type in special_depth_types else 0)
         esm_path = old_esm if (rec or {}).get("status") == "removed" else new_esm
         if not esm_path:
             continue
@@ -306,11 +303,13 @@ def _record_type_of(fid, u, *context_maps):
     return None
 
 
-def build_edges(u, ref_names, client, old_esm, new_esm, refs_depth):
+def build_edges(u, ref_names, client, old_esm, new_esm, refs_depth, special_depth_types):
     """Steps 2+3 combined: gather forward + reverse edges, attach
     relation/label, and dedupe. Returns (edges, context_stubs)."""
     fwd_edges, fwd_context = gather_forward_edges(u, ref_names)
-    rev_edges, rev_context = gather_reverse_edges(u, client, old_esm, new_esm, refs_depth)
+    rev_edges, rev_context = gather_reverse_edges(
+        u, client, old_esm, new_esm, refs_depth, special_depth_types
+    )
 
     context_stubs = {}
     context_stubs.update(rev_context)
@@ -441,13 +440,13 @@ def build_components(u, dsu):
 # --------------------------------------------------------------------------
 
 
-def _anchor_key(fid, rec, degree):
+def _anchor_key(fid, rec, degree, anchor_rank, unlisted_rank):
     """Sort key such that max() picks the correct anchor: highest
-    ANCHOR_PRIORITY, then status weight (added > changed > removed), then
+    anchor_priority, then status weight (added > changed > removed), then
     has-a-name, then edge degree, then LOWEST form_id (negated, since max()
     wants the biggest key)."""
     return (
-        -_priority_rank((rec or {}).get("record_type")),
+        -_priority_rank((rec or {}).get("record_type"), anchor_rank, unlisted_rank),
         _STATUS_WEIGHT.get((rec or {}).get("status"), -1),
         1 if (rec or {}).get("name") else 0,
         degree,
@@ -455,8 +454,18 @@ def _anchor_key(fid, rec, degree):
     )
 
 
-def select_anchor(member_fids, u, full_degree):
-    return max(member_fids, key=lambda fid: _anchor_key(fid, u.get(fid), full_degree.get(fid, 0)))
+def select_anchor(member_fids, u, full_degree, anchor_rank=None, unlisted_rank=None):
+    if anchor_rank is None:
+        priority = cast(list[str], DEFAULT_SETTINGS["anchor_priority"])
+        anchor_rank = {t: i for i, t in enumerate(priority)}
+    if unlisted_rank is None:
+        unlisted_rank = len(cast(list[str], DEFAULT_SETTINGS["anchor_priority"]))
+    return max(
+        member_fids,
+        key=lambda fid: _anchor_key(
+            fid, u.get(fid), full_degree.get(fid, 0), anchor_rank, unlisted_rank
+        ),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -474,7 +483,7 @@ def _internal_adjacency(member_fids, edges):
     return adj
 
 
-def split_oversized(component, u, edges, max_members):
+def split_oversized(component, u, edges, max_members, anchor_rank=None, unlisted_rank=None):
     """Step 6a. A component over `max_members` containing >=2
     anchor-priority-type nodes splits into one bundle per such node ("top
     anchor"): every other member is assigned to its BFS-nearest top anchor
@@ -484,17 +493,27 @@ def split_oversized(component, u, edges, max_members):
     internal edge) falls back to the single highest-priority anchor.
     Components at/under the cap, or with <2 anchor-priority-type nodes, are
     returned unsplit."""
+    if anchor_rank is None:
+        priority = cast(list[str], DEFAULT_SETTINGS["anchor_priority"])
+        anchor_rank = {t: i for i, t in enumerate(priority)}
+    if unlisted_rank is None:
+        unlisted_rank = len(cast(list[str], DEFAULT_SETTINGS["anchor_priority"]))
     if len(component) <= max_members:
         return [component]
 
-    anchor_candidates = [fid for fid in component if (u[fid] or {}).get("record_type") in _ANCHOR_RANK]
+    anchor_candidates = [
+        fid for fid in component if (u[fid] or {}).get("record_type") in anchor_rank
+    ]
     if len(anchor_candidates) < 2:
         return [component]
 
     adjacency = _internal_adjacency(component, edges)
 
     def _anchor_sort_key(fid):
-        return (_priority_rank((u[fid] or {}).get("record_type")), _int_fid(fid))
+        return (
+            _priority_rank((u[fid] or {}).get("record_type"), anchor_rank, unlisted_rank),
+            _int_fid(fid),
+        )
 
     dist = {a: 0 for a in anchor_candidates}
     owner = {a: a for a in anchor_candidates}
@@ -535,14 +554,14 @@ def split_oversized(component, u, edges, max_members):
 # --------------------------------------------------------------------------
 
 
-def merge_same_anchor(groups, u, full_degree):
+def merge_same_anchor(groups, u, full_degree, anchor_rank=None, unlisted_rank=None):
     """Merge any groups that independently select the same anchor (e.g. two
     split fragments of an oversized component whose BFS-nearest assignment
     both happened to keep the same top anchor closest)."""
     by_anchor = {}
     order = []
     for g in groups:
-        a = select_anchor(g, u, full_degree)
+        a = select_anchor(g, u, full_degree, anchor_rank, unlisted_rank)
         if a not in by_anchor:
             by_anchor[a] = set()
             order.append(a)
@@ -555,11 +574,13 @@ def _overlap_ratio(a, b):
     return (len(a & b) / denom) if denom else 0.0
 
 
-def merge_by_overlap(groups, threshold=OVERLAP_MERGE_THRESHOLD):
+def merge_by_overlap(groups, threshold=None):
     """Merge any two groups whose non-context member overlap / min(member
     count) is >= threshold -- e.g. two oversized-split fragments that
     shared enough satellites that splitting them was effectively spurious.
     Iterates to a fixpoint (a 3-way merge can create a new overlap)."""
+    if threshold is None:
+        threshold = cast(float, DEFAULT_SETTINGS["overlap_merge_threshold"])
     groups = [set(g) for g in sorted(groups, key=lambda g: min(_int_fid(f) for f in g))]
     changed = True
     while changed:
@@ -613,18 +634,20 @@ def build_context_member_incidence(context_incidence):
     return member_inc
 
 
-def _context_rank(stub, incident_pairs, unique_keyword_patterns):
+def _context_rank(
+    stub, incident_pairs, unique_keyword_patterns, context_preferred_types, context_top_tier_relations
+):
     """Rank 0 (highest): connected to a bundle member via a
-    CONTEXT_TOP_TIER_RELATIONS edge (e.g. an OMOD's own mod target, or a
+    context_top_tier_relations edge (e.g. an OMOD's own mod target, or a
     COBJ's crafted item) -- the single most story-relevant context node.
     Rank 1: NPC_/CONT/QUST/COBJ. Rank 2: a unique-keyword-pattern KYWD.
     Rank 3: everything else."""
     record_type = (stub or {}).get("record_type")
     editor_id = (stub or {}).get("editor_id") or ""
-    if any(e.get("relation") in CONTEXT_TOP_TIER_RELATIONS for _u_fid, e in incident_pairs):
+    if any(e.get("relation") in context_top_tier_relations for _u_fid, e in incident_pairs):
         return (0, 0)
-    if isinstance(record_type, str) and record_type in CONTEXT_PREFERRED_TYPES:
-        return (1, CONTEXT_PREFERRED_TYPES.index(record_type))
+    if isinstance(record_type, str) and record_type in context_preferred_types:
+        return (1, context_preferred_types.index(record_type))
     if record_type == "KYWD" and any(
         fnmatch.fnmatch(editor_id.lower(), pat.lower()) for pat in unique_keyword_patterns
     ):
@@ -638,6 +661,8 @@ def attach_context(
     context_stubs,
     cap,
     unique_keyword_patterns,
+    context_preferred_types=None,
+    context_top_tier_relations=None,
     context_member_incidence=None,
 ):
     """Step 7a. Candidate context nodes = anything incident to a member of
@@ -650,6 +675,14 @@ def attach_context(
     `context_member_incidence` is the reverse index from
     `build_context_member_incidence(context_incidence)`; when omitted, the
     full `context_incidence` scan is used (fine for small unit tests)."""
+    if context_preferred_types is None:
+        context_preferred_types = cast(list[str], DEFAULT_SETTINGS["context_preferred_types"])
+    if context_top_tier_relations is None:
+        context_top_tier_relations = set(
+            cast(list[str], DEFAULT_SETTINGS["context_top_tier_relations"])
+        )
+    elif not isinstance(context_top_tier_relations, set):
+        context_top_tier_relations = set(context_top_tier_relations)
     if context_member_incidence is not None:
         by_context = defaultdict(list)
         for u_fid in members:
@@ -668,7 +701,13 @@ def attach_context(
 
     ordered = sorted(
         candidates.keys(),
-        key=lambda c: _context_rank(context_stubs.get(c), candidates[c], unique_keyword_patterns)
+        key=lambda c: _context_rank(
+            context_stubs.get(c),
+            candidates[c],
+            unique_keyword_patterns,
+            context_preferred_types,
+            context_top_tier_relations,
+        )
         + (_int_fid(c),),
     )
     chosen = ordered[:cap]
@@ -809,9 +848,20 @@ def build_bundles(comp, client, old_esm, new_esm, config):
     categories = config.get("categories") or []
     ref_names = comp.get("ref_names") or {}
 
+    # Derive set/rank views once per run (not per record / per property row).
+    special_depth_types = set(cast(list[str], settings["special_depth_types"]))
+    anchor_priority = cast(list[str], settings["anchor_priority"])
+    anchor_rank = {t: i for i, t in enumerate(anchor_priority)}
+    unlisted_rank = len(anchor_priority)
+    context_preferred_types = cast(list[str], settings["context_preferred_types"])
+    context_top_tier_relations = set(cast(list[str], settings["context_top_tier_relations"]))
+
     u = build_universe(comp)
 
-    edges, context_stubs = build_edges(u, ref_names, client, old_esm, new_esm, settings["refs_depth"])
+    edges, context_stubs = build_edges(
+        u, ref_names, client, old_esm, new_esm,
+        settings["refs_depth"], special_depth_types,
+    )
     full_degree, context_u_degree = compute_degrees(u, edges)
 
     dsu = union_find(u, edges, full_degree, context_u_degree, settings["hub_degree"])
@@ -819,10 +869,14 @@ def build_bundles(comp, client, old_esm, new_esm, config):
 
     split_groups = []
     for component in components:
-        split_groups.extend(split_oversized(component, u, edges, settings["max_members"]))
+        split_groups.extend(
+            split_oversized(
+                component, u, edges, settings["max_members"], anchor_rank, unlisted_rank
+            )
+        )
 
-    merged_groups = merge_same_anchor(split_groups, u, full_degree)
-    merged_groups = merge_by_overlap(merged_groups, OVERLAP_MERGE_THRESHOLD)
+    merged_groups = merge_same_anchor(split_groups, u, full_degree, anchor_rank, unlisted_rank)
+    merged_groups = merge_by_overlap(merged_groups, settings["overlap_merge_threshold"])
 
     context_incidence = build_context_incidence(edges, u)
     context_member_incidence = build_context_member_incidence(context_incidence)
@@ -836,7 +890,7 @@ def build_bundles(comp, client, old_esm, new_esm, config):
 
     raw_bundles = []
     for member_fids in merged_groups:
-        anchor_fid = select_anchor(member_fids, u, full_degree)
+        anchor_fid = select_anchor(member_fids, u, full_degree, anchor_rank, unlisted_rank)
         anchor_rec = u[anchor_fid] or {}
 
         member_dicts: list[pl.Member] = []
@@ -858,6 +912,7 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         context_members, context_edges = attach_context(
             member_fids, context_incidence, context_stubs,
             settings["context_cap"], settings["unique_keyword_patterns"],
+            context_preferred_types, context_top_tier_relations,
             context_member_incidence,
         )
 
@@ -926,6 +981,13 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         "refs_depth": settings["refs_depth"],
         "hub_degree": settings["hub_degree"],
         "max_members": settings["max_members"],
+        "context_cap": settings["context_cap"],
+        "unique_keyword_patterns": settings["unique_keyword_patterns"],
+        "special_depth_types": settings["special_depth_types"],
+        "anchor_priority": settings["anchor_priority"],
+        "context_preferred_types": settings["context_preferred_types"],
+        "context_top_tier_relations": settings["context_top_tier_relations"],
+        "overlap_merge_threshold": settings["overlap_merge_threshold"],
         "counts": {
             "bundles": n_bundles,
             "singletons": n_singletons,
