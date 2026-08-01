@@ -225,6 +225,14 @@ jobs:
           # Matches the .python-version file (3.14.5).
           python-version: "3.14"
 
+      # hardcoded.py shells out to the esm CLI (same reader as reader.rs) so the
+      # drift guard below needs a release build on PATH.  Shares this job with
+      # the TES5Edit clone rather than duplicating it in a separate job.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ""
+          cache-workspaces: esm
+
       # Clone the Eckserah FO76 fork — the source schema/fo76.json is generated
       # from — as a sibling of esm/ (the path extract.py hard-codes).  Pinned
       # to an exact commit; bump this together with a schema regeneration when
@@ -238,3 +246,16 @@ jobs:
       - name: audit --gate
         working-directory: esm
         run: python3 tools/extractor/audit.py --gate
+
+      - name: build esm CLI (release)
+        working-directory: esm
+        run: cargo build --release
+
+      # Regenerates schema/hardcoded_fo76.json via the esm CLI and fails if the
+      # checked-in table drifts from Fallout76.esp at the pinned TES5Edit commit.
+      - name: hardcoded.py drift guard
+        working-directory: esm
+        run: |
+          export PATH="$PWD/target/release:$PATH"
+          python3 tools/extractor/hardcoded.py
+          git diff --exit-code schema/hardcoded_fo76.json

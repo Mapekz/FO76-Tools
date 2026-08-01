@@ -8,28 +8,26 @@ record in the ESM. xEdit ships these as a pseudo-plugin at
 ``Core/Hardcoded/Fallout76.esp`` inside the TES5Edit checkout, purely so it has
 something to resolve those FormIDs against.
 
-This script parses that plugin directly as raw ESP bytes (TES4 header, GRUP
-groups, record headers, subrecord headers — the same on-disk format as
-``src/format.rs``/``src/reader.rs``) and emits a small lookup table of
-``{formid, type, editor_id}`` entries, checked in at ``schema/hardcoded_fo76.json``
-since the TES5Edit checkout is not always present (same rationale as
-``schema/fo76.json``).
+This script shells out to the ``esm`` CLI (the same reader as ``src/reader.rs``,
+including the XXXX oversized-subrecord rule) to list every record in that
+pseudo-plugin and emit a small lookup table of ``{formid, type, editor_id}``
+entries, checked in at ``schema/hardcoded_fo76.json`` since the TES5Edit
+checkout is not always present (same rationale as ``schema/fo76.json``).
 """
 
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 TES5 = ROOT.parent / "TES5Edit"
 HARDCODED_ESP = TES5 / "Core" / "Hardcoded" / "Fallout76.esp"
 OUT = ROOT / "schema" / "hardcoded_fo76.json"
-
-HEADER_SIZE = 24
-SUBRECORD_HEADER_SIZE = 6
-COMPRESSED_FLAG = 0x0004_0000
 
 
 def read_zstring(data: bytes) -> str | None:
@@ -53,100 +51,101 @@ def read_zstring(data: bytes) -> str | None:
     return text
 
 
-def parse_subrecords(data: bytes) -> list[tuple[str, bytes]]:
-    """Parse a record's data payload into (signature, data) subrecords.
+def run_esm(esm_bin: str, esp_path: Path, *args: str) -> Any:
+    """Run ``esm --esm <esp> --local <args...>`` and parse stdout as JSON."""
+    cmd = [esm_bin, "--esm", str(esp_path), "--local", *args]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip() or f"exit {exc.returncode}"
+        raise RuntimeError(f"command failed ({detail}): {' '.join(cmd)}") from exc
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"unparseable JSON from {' '.join(cmd)}: {exc}"
+        ) from exc
 
-    Mirrors the XXXX oversized-subrecord rule in `parse_subrecords` (`src/reader.rs`):
-    a 6-byte XXXX subrecord whose 4-byte payload carries the real size precedes an
-    oversized subrecord whose own header `size` field is 0.
+
+def extract_full(record: dict[str, Any]) -> str | None:
+    """Pull a display name from a decoded ``get`` record, if present.
+
+    Schema-mapped AVIF rows expose ``fields.Name``; unknown types (e.g. EYES)
+    keep FULL under ``fields._unmapped.FULL[].hex`` as raw NUL-terminated bytes.
     """
-    out: list[tuple[str, bytes]] = []
-    pos = 0
-    pending_size: int | None = None
-    n = len(data)
-    while pos + SUBRECORD_HEADER_SIZE <= n:
-        sig = data[pos : pos + 4].decode("ascii", errors="replace")
-        size = int.from_bytes(data[pos + 4 : pos + 6], "little")
-        pos += SUBRECORD_HEADER_SIZE
+    fields = record.get("fields") or {}
+    name = fields.get("Name")
+    if isinstance(name, str) and name:
+        return name
+    unmapped = fields.get("_unmapped") or {}
+    full_entries = unmapped.get("FULL") or []
+    if isinstance(full_entries, list) and full_entries:
+        hex_str = full_entries[0].get("hex")
+        if isinstance(hex_str, str) and hex_str:
+            return read_zstring(bytes.fromhex(hex_str))
+    return None
 
-        if sig == "XXXX" and size == 4 and pos + 4 <= n:
-            pending_size = int.from_bytes(data[pos : pos + 4], "little")
-            pos += 4
+
+def extract(esp_path: Path, esm_bin: str) -> list[dict]:
+    # ``tree`` always emits JSON (no ``--json`` flag on this subcommand).
+    tree = run_esm(esm_bin, esp_path, "tree", "--limit", "0")
+    if not isinstance(tree, list):
+        raise RuntimeError(f"expected tree JSON array, got {type(tree).__name__}")
+
+    rows: list[dict] = []
+    for group in tree:
+        label = group.get("label") or {}
+        sig = label.get("sig")
+        if not isinstance(sig, str) or not sig:
             continue
+        listed = run_esm(
+            esm_bin, esp_path, "list", "--type", sig, "--limit", "0", "--json"
+        )
+        if not isinstance(listed, list):
+            raise RuntimeError(
+                f"expected list JSON array for type {sig}, got {type(listed).__name__}"
+            )
+        rows.extend(listed)
 
-        if size == 0 and pending_size is not None:
-            size = pending_size
-        pending_size = None
+    if not rows:
+        return []
 
-        end = min(pos + size, n)
-        out.append((sig, data[pos:end]))
-        pos = end
-    return out
+    formids = [row["form_id"] for row in rows]
+    # Two or more targets → JSON array tagged with ``sel``; batch all at once.
+    records = run_esm(esm_bin, esp_path, "get", *formids, "--json")
+    if not isinstance(records, list):
+        raise RuntimeError(
+            f"expected get JSON array for {len(formids)} targets, "
+            f"got {type(records).__name__}"
+        )
+    by_formid = {rec["header"]["form_id"]: rec for rec in records}
 
-
-def walk_records(data: bytes, pos: int, end: int, out: list[dict]) -> None:
-    """Recursively walk a GRUP/record container, appending hardcoded-form entries."""
-    while pos + HEADER_SIZE <= end:
-        sig = data[pos : pos + 4]
-        if sig == b"GRUP":
-            group_size = int.from_bytes(data[pos + 4 : pos + 8], "little")
-            group_type = int.from_bytes(data[pos + 12 : pos + 16], "little", signed=True)
-            group_end = pos + group_size  # group_size includes the 24-byte header
-            if group_end > end:
-                raise ValueError(f"GRUP extends beyond container at offset {pos}")
-            _ = group_type  # only top-level record groups (type 0) are expected here
-            walk_records(data, pos + HEADER_SIZE, group_end, out)
-            pos = group_end
-            continue
-
-        record_sig = sig.decode("ascii", errors="replace")
-        data_size = int.from_bytes(data[pos + 4 : pos + 8], "little")
-        flags = int.from_bytes(data[pos + 8 : pos + 12], "little")
-        form_id = int.from_bytes(data[pos + 12 : pos + 16], "little")
-        record_end = pos + HEADER_SIZE + data_size
-        if record_end > end:
-            raise ValueError(f"record extends beyond container at offset {pos}")
-
-        if record_sig != "TES4":
-            if flags & COMPRESSED_FLAG:
-                raise ValueError(
-                    f"compressed record {record_sig} {form_id:#010x} — "
-                    "hardcoded.py does not implement decompression (unexpected in this file)"
-                )
-            payload = data[pos + HEADER_SIZE : record_end]
-            subs = parse_subrecords(payload)
-            editor_id = None
-            full = None
-            for sub_sig, sub_data in subs:
-                if sub_sig == "EDID" and editor_id is None:
-                    editor_id = read_zstring(sub_data)
-                elif sub_sig == "FULL" and full is None:
-                    full = read_zstring(sub_data)
-            # xEdit authored a few EDIDs in the pseudo-plugin as display-style
-            # labels ("Kill Streak", "Projectiles Fired"); real EditorIDs never
-            # contain spaces, so normalize them away.
-            if editor_id is not None:
-                editor_id = editor_id.replace(" ", "")
-            entry = {
-                "formid": f"0x{form_id:08X}",
-                "type": record_sig,
-                "editor_id": editor_id,
-            }
+    out: list[dict] = []
+    for row in rows:
+        formid = row["form_id"]
+        editor_id = row.get("editor_id")
+        # xEdit authored a few EDIDs in the pseudo-plugin as display-style
+        # labels ("Kill Streak", "Projectiles Fired"); real EditorIDs never
+        # contain spaces, so normalize them away.
+        if editor_id is not None:
+            editor_id = editor_id.replace(" ", "")
+        entry: dict = {
+            "formid": formid,
+            "type": row["record_type"],
+            "editor_id": editor_id,
+        }
+        rec = by_formid.get(formid)
+        if rec is not None:
+            full = extract_full(rec)
             if full:
                 entry["full"] = full
-            out.append(entry)
+        out.append(entry)
 
-        pos = record_end
-
-
-def extract(esp_path: Path) -> list[dict]:
-    data = esp_path.read_bytes()
-    if data[0:4] != b"TES4":
-        raise ValueError(f"expected TES4 record at start of {esp_path}")
-    tes4_data_size = int.from_bytes(data[4:8], "little")
-    start = HEADER_SIZE + tes4_data_size
-    out: list[dict] = []
-    walk_records(data, start, len(data), out)
     out.sort(key=lambda e: e["formid"])
     return out
 
@@ -155,7 +154,18 @@ def main() -> None:
     if not HARDCODED_ESP.exists():
         print(f"Missing {HARDCODED_ESP}", file=sys.stderr)
         sys.exit(1)
-    entries = extract(HARDCODED_ESP)
+    esm_bin = shutil.which("esm")
+    if esm_bin is None:
+        print(
+            "Missing esm binary on PATH (build with `cargo build --release`)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    try:
+        entries = extract(HARDCODED_ESP, esm_bin)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        sys.exit(1)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {OUT} ({len(entries)} entries)", file=sys.stderr)
