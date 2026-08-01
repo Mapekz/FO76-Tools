@@ -54,6 +54,15 @@ pub struct DiffOptions {
     /// 4-character record-type signatures (e.g. `["LAND", "NAVM"]`) to omit
     /// entirely from `added`, `removed`, and `changed`.
     pub exclude_types: Vec<String>,
+    /// Minimum appearance count for a `(leaf_name, value)` pair to be treated
+    /// as a serializer default and stripped when `form_version`s differ
+    /// (issue #22). Measured on the 20260710→20260717 snapshot: N=100 lands
+    /// `changed` at 10,571 records (also stripping 3,484 padding-zeroed `_raw`
+    /// leaves), collapsing 40 distinct serializer-default rules — near the
+    /// issue's ~11.6K true-churn estimate. Wiring this to CLI/config is issue
+    /// #15 — the field exists so that can land without another diff-engine
+    /// change.
+    pub restamp_default_min_count: usize,
 }
 
 impl Default for DiffOptions {
@@ -62,6 +71,7 @@ impl Default for DiffOptions {
             bodies: BodyDetail::Full,
             suppress_noise: true,
             exclude_types: Vec::new(),
+            restamp_default_min_count: 100,
         }
     }
 }
@@ -127,6 +137,25 @@ pub struct RefName {
     pub description: Option<String>,
 }
 
+/// A `(leaf_name, value)` serializer-default rule auto-classified by the
+/// calibrated appearance-default pass (issue #22), with the global appearance
+/// count that triggered it. Emitted in [`DiffResult::auto_suppressed_defaults`]
+/// so a human/agent can audit exactly what a given diff run dropped.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct SuppressedDefault {
+    /// Last path segment of the field, with any `[N]`/`[]` index suffix stripped
+    /// (e.g. path `Effects[].Effect.Cooldown Duration` → `Cooldown Duration`).
+    pub leaf_name: String,
+    /// The appearance `to` value that was classified as a serializer default.
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub value: Value,
+    /// How many times this `(leaf_name, value)` appearance occurred across the
+    /// whole diff (must be ≥ [`DiffOptions::restamp_default_min_count`]).
+    pub count: usize,
+}
+
 /// Top-level result of comparing two ESM files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -146,8 +175,15 @@ pub struct DiffResult {
     /// Count of `changed` records dropped entirely by noise suppression
     /// (`DiffOptions::suppress_noise`), keyed by record-type signature.
     /// Telemetry for renderers, e.g. "312 placement moves omitted".
+    /// Also holds leaf-level counters for issue #22 shapes (e.g.
+    /// `"padding_zeroed"`).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub suppressed_counts: BTreeMap<String, usize>,
+    /// Serializer-default `(leaf_name, value, count)` rules the calibrated
+    /// appearance-default pass (issue #22) auto-classified and applied,
+    /// sorted by `count` descending. Empty when the pass did not run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auto_suppressed_defaults: Vec<SuppressedDefault>,
 }
 
 /// Compare two ESM databases and return a structured diff, using default
@@ -174,14 +210,17 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 /// `opts.suppress_noise` strips known-noisy top-level fields (placement
 /// transforms, CELL precombine bookkeeping, …) from each `changed` record's
 /// `field_changes` — see [`strip_noise_fields`]. When the two sides'
-/// `form_version`s also differ, two further passes run: schema-gated
-/// appearance/disappearance suppression ([`strip_version_gated_transitions`])
-/// and, for the noise shapes that carry no schema gate at all (nested inside
+/// `form_version`s also differ, further passes run: schema-gated
+/// appearance/disappearance suppression ([`strip_version_gated_transitions`]);
+/// for the noise shapes that carry no schema gate at all (nested inside
 /// `_array_diff` elements, all-zero `_raw` padding growth, and known
 /// materialized-on-resave subrecords like INFO's PNAM chain link),
-/// [`strip_restamp_appearances`] — see issue #18. A record is dropped
+/// [`strip_restamp_appearances`] (issue #18); then a global calibrated
+/// appearance-default pass plus padding-zeroing suppression (issue #22) —
+/// see [`apply_restamp_calibrated_suppression`]. A record is dropped
 /// entirely when nothing else changed. Dropped counts are recorded in
-/// `DiffResult::suppressed_counts`.
+/// `DiffResult::suppressed_counts`; auto-classified defaults land in
+/// `DiffResult::auto_suppressed_defaults`.
 ///
 /// `opts.exclude_types` omits matching 4-character signatures from `added`,
 /// `removed`, and `changed` outright — checked before any payload
@@ -246,6 +285,10 @@ pub fn diff_databases_with(
 
     // Common: compare payloads, decode only on mismatch
     let mut changed = Vec::new();
+    // Parallel to `changed`: true when this record's form_versions differed
+    // (gates the issue #18/#22 restamp passes). Kept aside so #22's global
+    // frequency pass can run after the per-record loop.
+    let mut changed_restamp: Vec<bool> = Vec::new();
     let mut suppressed_counts: BTreeMap<String, usize> = BTreeMap::new();
     let mut common_ids: Vec<FormId> = a_ids.intersection(&b_ids).copied().collect();
     common_ids.sort_by_key(|id| id.raw());
@@ -290,6 +333,7 @@ pub fn diff_databases_with(
             continue; // decoded-equal despite byte differences (volatile header bytes)
         }
 
+        let mut restamp = false;
         if opts.suppress_noise {
             strip_noise_fields(&mut field_changes, meta_b.signature.as_str());
             // Suppress only pure appearances/disappearances whose schema
@@ -297,6 +341,7 @@ pub fn diff_databases_with(
             // old blanket appearance rule discarded genuine new subrecords
             // and could show only the removal half of a field swap.
             if meta_a.form_version != meta_b.form_version {
+                restamp = true;
                 strip_version_gated_transitions(
                     &mut field_changes,
                     &b.schema,
@@ -343,7 +388,24 @@ pub fn diff_databases_with(
             field_changes,
             prev_editor_id,
         });
+        changed_restamp.push(restamp);
     }
+
+    // Issue #22: padding-zeroing + calibrated appearance-default suppression.
+    // Needs a global frequency pass over all `changed` records, so it runs
+    // after the per-record loop. Still gated by `suppress_noise` and applied
+    // only to records whose form_versions differed (same gate as #18).
+    let auto_suppressed_defaults = if opts.suppress_noise && changed_restamp.iter().any(|&r| r) {
+        apply_restamp_calibrated_suppression(
+            &mut changed,
+            &changed_restamp,
+            &mut suppressed_counts,
+            opts.restamp_default_min_count,
+        )
+    } else {
+        Vec::new()
+    };
+
     changed.sort_by(|x, y| x.stub.form_id.cmp(&y.stub.form_id));
 
     // Build ref_names: one-hop FormID resolution for every hex ref in field_changes
@@ -379,6 +441,7 @@ pub fn diff_databases_with(
         changed,
         ref_names,
         suppressed_counts,
+        auto_suppressed_defaults,
     })
 }
 
@@ -934,6 +997,413 @@ fn strip_restamp_appearances(field_changes: &mut Value, sig: &str) {
         return;
     };
     strip_restamp_leaves(map, sig);
+}
+
+// ---------------------------------------------------------------------------
+// Restamp calibrated-default + padding-zero suppression (issue #22)
+// ---------------------------------------------------------------------------
+//
+// After #18, a PTS form_version bump still leaves two residual noise shapes:
+//
+//   (d) padding-zeroing — a `_raw` hex leaf whose value goes from garbage
+//       bytes to all zeros, e.g. `{"hex": {"from": "3809c7", "to": "000000"}}`.
+//       Both sides are present (so not an appearance); the newer serializer
+//       deterministically zeroed uninitialized padding. Structurally
+//       unambiguous — strip unconditionally, no frequency test.
+//
+//   (e) calibrated appearance defaults — `null → <engine default>` leaves
+//       whose `(leaf_name, value)` pair repeats across ≥N records in the
+//       same diff and never also appears as a genuine authored edit. Leaf
+//       name (last path segment, `[N]`/`[]` stripped) is the key — not the
+//       full path — so the same serializer constant at
+//       `Model.Enlighten Auto UV` / `Female.World Model.Enlighten Auto UV` /
+//       `Male.World Model.Enlighten Auto UV` collapses into one rule.
+//
+// Both run only when form_versions differ (same gate as #18), and only when
+// `DiffOptions::suppress_noise` is on. The calibrated pass needs a global
+// frequency count, so it runs after the per-record loop.
+
+/// Deterministic JSON serialization used as a HashMap key for appearance
+/// values. `serde_json::to_string` is stable for a given `Value` shape as
+/// produced by the decoder (schema field order).
+fn canonical_json(v: &Value) -> String {
+    serde_json::to_string(v).expect("serde_json::Value always serializes")
+}
+
+/// Last path segment with any `[N]`/`[]` index suffix stripped.
+/// `"Effects[].Effect.Cooldown Duration"` → `"Cooldown Duration"`.
+fn leaf_name(path: &str) -> &str {
+    let last = path.rsplit('.').next().unwrap_or(path);
+    match last.find('[') {
+        Some(i) => &last[..i],
+        None => last,
+    }
+}
+
+/// True when `v` is a leaf `{"from": .., "to": ..}` change.
+fn is_from_to_leaf(v: &Value) -> bool {
+    v.as_object()
+        .is_some_and(|m| m.len() == 2 && m.contains_key("from") && m.contains_key("to"))
+}
+
+/// True when `v` is the residual `_raw` hex-diff shape
+/// `{"hex": {"from": <str>, "to": <all-zeros, non-empty>}}` — garbage padding
+/// bytes zeroed by a newer serializer (issue #22 rule (d)).
+fn is_padding_zeroed_value(v: &Value) -> bool {
+    let Some(map) = v.as_object() else {
+        return false;
+    };
+    // After json_diff, equal `_raw: true` on both sides is omitted, leaving
+    // exactly the `hex` key with a from/to string change.
+    if map.len() != 1 {
+        return false;
+    }
+    is_padding_zeroed_hex_diff(map.get("hex").unwrap_or(&Value::Null))
+}
+
+/// True when `v` is `{"from": <hex str>, "to": <all-zeros, non-empty>}`.
+fn is_padding_zeroed_hex_diff(v: &Value) -> bool {
+    let Some(m) = v.as_object() else {
+        return false;
+    };
+    if m.len() != 2 || !m.contains_key("from") || !m.contains_key("to") {
+        return false;
+    }
+    let Some(from) = m.get("from").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(to) = m.get("to").and_then(Value::as_str) else {
+        return false;
+    };
+    !from.is_empty() && !to.is_empty() && to.bytes().all(|b| b == b'0')
+}
+
+/// Walk every from/to leaf under a `field_changes` tree, invoking `f(path, leaf)`.
+/// Paths use `.` for nesting and append `[]` when descending into an
+/// `_array_diff` envelope (matching the issue #22 leaf-name examples).
+fn walk_diff_leaves(v: &Value, path: &str, f: &mut dyn FnMut(&str, &Value)) {
+    let Some(map) = v.as_object() else {
+        return;
+    };
+
+    if is_from_to_leaf(v) {
+        f(path, v);
+        return;
+    }
+
+    if let Some(ad) = map.get("_array_diff").and_then(Value::as_object) {
+        if let Some(elems) = ad.get("changed").and_then(Value::as_array) {
+            for elem in elems {
+                if let Some(changes) = elem.get("changes") {
+                    walk_diff_leaves(changes, path, f);
+                }
+            }
+        }
+        return;
+    }
+
+    for (k, child) in map {
+        if k.starts_with('_') {
+            continue;
+        }
+        let child_path = if path.is_empty() {
+            k.clone()
+        } else {
+            format!("{path}.{k}")
+        };
+        let child_path = if child
+            .as_object()
+            .is_some_and(|m| m.contains_key("_array_diff"))
+        {
+            format!("{child_path}[]")
+        } else {
+            child_path
+        };
+        walk_diff_leaves(child, &child_path, f);
+    }
+}
+
+/// `(leaf_name, canonical_json(value))` key used by the calibrated-default pass.
+type DefaultKey = (String, String);
+
+/// Appearance frequency map: key → `(representative value, count)`.
+type AppearanceCounts = HashMap<DefaultKey, (Value, usize)>;
+
+/// Collect global appearance frequencies and the "seen as real edit" set
+/// across every `changed` record (issue #22 pass 1).
+fn collect_restamp_default_stats(
+    changed: &[RecordDiff],
+) -> (AppearanceCounts, HashSet<DefaultKey>) {
+    let mut appearance_counts: AppearanceCounts = HashMap::new();
+    let mut real_edits: HashSet<DefaultKey> = HashSet::new();
+
+    for rd in changed {
+        walk_diff_leaves(&rd.field_changes, "", &mut |path, leaf| {
+            let Some(map) = leaf.as_object() else {
+                return;
+            };
+            let from = map.get("from").unwrap_or(&Value::Null);
+            let to = map.get("to").unwrap_or(&Value::Null);
+            let name = leaf_name(path).to_owned();
+
+            // Padding-zero hex leaves are neither appearances nor real edits.
+            if name == "hex" && is_padding_zeroed_hex_diff(leaf) {
+                return;
+            }
+
+            if from.is_null() && !to.is_null() {
+                let key = canonical_json(to);
+                appearance_counts
+                    .entry((name, key))
+                    .and_modify(|(_, c)| *c += 1)
+                    .or_insert_with(|| (to.clone(), 1));
+            } else if !to.is_null() {
+                // Genuine authored value change (both sides present, or a
+                // non-null `to` that isn't an appearance). Record only the
+                // `to` value — a disappearance `V → null` must NOT poison
+                // the appearance `null → V` (the old value being removed is
+                // not an authored write of V). Recording `to` is what blocks
+                // a real bulk rollout that happens to share a constant with
+                // a serializer default.
+                real_edits.insert((name, canonical_json(to)));
+            }
+        });
+    }
+
+    (appearance_counts, real_edits)
+}
+
+/// Strip padding-zeroed `_raw` hex leaves (issue #22 rule (d)) from an
+/// `_array_diff` envelope. Returns the number of leaves stripped; `true` when
+/// the envelope is now empty of structural content and should be dropped.
+fn strip_padding_zeroed_array_diff(ad: &mut serde_json::Map<String, Value>) -> (usize, bool) {
+    let mut stripped = 0;
+    if let Some(Value::Array(elements)) = ad.get_mut("changed") {
+        elements.retain_mut(|elem| {
+            let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut) else {
+                return true;
+            };
+            stripped += strip_padding_zeroed_map(changes);
+            !changes.is_empty()
+        });
+        if elements.is_empty() {
+            ad.remove("changed");
+        }
+    }
+    let empty =
+        !(ad.contains_key("added") || ad.contains_key("removed") || ad.contains_key("changed"));
+    (stripped, empty)
+}
+
+/// Strip padding-zeroed leaves from a changes-shaped map; returns count stripped.
+fn strip_padding_zeroed_map(map: &mut serde_json::Map<String, Value>) -> usize {
+    let keys: Vec<String> = map.keys().cloned().collect();
+    let mut stripped = 0;
+    let mut to_remove = Vec::new();
+    for key in keys {
+        let Some(value) = map.get_mut(&key) else {
+            continue;
+        };
+        let (n, drop) = strip_padding_zeroed_value(value);
+        stripped += n;
+        if drop {
+            to_remove.push(key);
+        }
+    }
+    for key in to_remove {
+        map.remove(&key);
+    }
+    stripped
+}
+
+/// Strip padding-zero noise from `value` in place. Returns `(leaves_stripped,
+/// should_drop_from_parent)`.
+fn strip_padding_zeroed_value(value: &mut Value) -> (usize, bool) {
+    if is_padding_zeroed_value(value) {
+        return (1, true);
+    }
+    let Some(obj) = value.as_object_mut() else {
+        return (0, false);
+    };
+    if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
+        let (n, empty) = strip_padding_zeroed_array_diff(ad);
+        return (n, empty);
+    }
+    // Nested struct (or a hex-bearing object with sibling keys): strip hex
+    // padding-zero if present, then recurse.
+    let mut stripped = 0;
+    if obj.get("hex").is_some_and(is_padding_zeroed_hex_diff) {
+        obj.remove("hex");
+        stripped += 1;
+    }
+    stripped += strip_padding_zeroed_map(obj);
+    (stripped, obj.is_empty())
+}
+
+/// Strip all padding-zeroed `_raw` hex leaves from `field_changes`. Returns
+/// the number of leaves removed.
+fn strip_padding_zeroed(field_changes: &mut Value) -> usize {
+    let Some(map) = field_changes.as_object_mut() else {
+        return 0;
+    };
+    strip_padding_zeroed_map(map)
+}
+
+/// Strip calibrated appearance-default leaves matching `suppressible` from an
+/// `_array_diff` envelope. Returns `true` when the envelope should be dropped.
+fn strip_calibrated_array_diff(
+    ad: &mut serde_json::Map<String, Value>,
+    path: &str,
+    suppressible: &HashSet<DefaultKey>,
+) -> bool {
+    if let Some(Value::Array(elements)) = ad.get_mut("changed") {
+        elements.retain_mut(|elem| {
+            let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut) else {
+                return true;
+            };
+            strip_calibrated_map(changes, path, suppressible);
+            !changes.is_empty()
+        });
+        if elements.is_empty() {
+            ad.remove("changed");
+        }
+    }
+    !(ad.contains_key("added") || ad.contains_key("removed") || ad.contains_key("changed"))
+}
+
+/// Strip matching appearance leaves from a changes-shaped map, in place.
+fn strip_calibrated_map(
+    map: &mut serde_json::Map<String, Value>,
+    path_prefix: &str,
+    suppressible: &HashSet<DefaultKey>,
+) {
+    let keys: Vec<String> = map.keys().cloned().collect();
+    let mut to_remove = Vec::new();
+    for key in keys {
+        let child_path = if path_prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{path_prefix}.{key}")
+        };
+        let Some(value) = map.get_mut(&key) else {
+            continue;
+        };
+        let child_path = if value
+            .as_object()
+            .is_some_and(|m| m.contains_key("_array_diff"))
+        {
+            format!("{child_path}[]")
+        } else {
+            child_path
+        };
+        if should_drop_calibrated(value, &child_path, suppressible) {
+            to_remove.push(key);
+        }
+    }
+    for key in to_remove {
+        map.remove(&key);
+    }
+}
+
+/// Strip calibrated defaults from `value` in place; return whether the parent
+/// should drop this key (value emptied or leaf matched).
+fn should_drop_calibrated(
+    value: &mut Value,
+    path: &str,
+    suppressible: &HashSet<DefaultKey>,
+) -> bool {
+    let Some(obj) = value.as_object_mut() else {
+        return false;
+    };
+
+    if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
+        return strip_calibrated_array_diff(ad, path, suppressible);
+    }
+
+    if obj.len() == 2 && obj.contains_key("from") && obj.contains_key("to") {
+        if obj.get("from").is_some_and(Value::is_null)
+            && let Some(to) = obj.get("to")
+            && !to.is_null()
+        {
+            let pair = (leaf_name(path).to_owned(), canonical_json(to));
+            return suppressible.contains(&pair);
+        }
+        return false;
+    }
+
+    strip_calibrated_map(obj, path, suppressible);
+    obj.is_empty()
+}
+
+/// Strip appearance leaves whose `(leaf_name, value)` is in `suppressible`.
+fn strip_calibrated_defaults(field_changes: &mut Value, suppressible: &HashSet<DefaultKey>) {
+    let Some(map) = field_changes.as_object_mut() else {
+        return;
+    };
+    strip_calibrated_map(map, "", suppressible);
+}
+
+/// Issue #22 second-stage suppression: padding-zeroing + calibrated
+/// appearance defaults. Mutates `changed` in place (drops emptied restamp
+/// records), updates `suppressed_counts`, and returns the audit list of
+/// auto-classified defaults (sorted by count descending).
+fn apply_restamp_calibrated_suppression(
+    changed: &mut Vec<RecordDiff>,
+    restamp: &[bool],
+    suppressed_counts: &mut BTreeMap<String, usize>,
+    min_count: usize,
+) -> Vec<SuppressedDefault> {
+    debug_assert_eq!(changed.len(), restamp.len());
+
+    let (appearance_counts, real_edits) = collect_restamp_default_stats(changed);
+
+    let mut auto_suppressed_defaults: Vec<SuppressedDefault> = appearance_counts
+        .into_iter()
+        .filter(|((name, key), (_, count))| {
+            *count >= min_count && !real_edits.contains(&(name.clone(), key.clone()))
+        })
+        .map(|((leaf_name, _), (value, count))| SuppressedDefault {
+            leaf_name,
+            value,
+            count,
+        })
+        .collect();
+    auto_suppressed_defaults.sort_by(|a, b| {
+        b.count
+            .cmp(&a.count)
+            .then_with(|| a.leaf_name.cmp(&b.leaf_name))
+    });
+
+    let suppressible: HashSet<DefaultKey> = auto_suppressed_defaults
+        .iter()
+        .map(|s| (s.leaf_name.clone(), canonical_json(&s.value)))
+        .collect();
+
+    let mut kept = Vec::with_capacity(changed.len());
+    for (rd, is_restamp) in changed.drain(..).zip(restamp.iter().copied()) {
+        let mut rd = rd;
+        if is_restamp {
+            let n = strip_padding_zeroed(&mut rd.field_changes);
+            if n > 0 {
+                *suppressed_counts
+                    .entry("padding_zeroed".to_owned())
+                    .or_insert(0) += n;
+            }
+            if !suppressible.is_empty() {
+                strip_calibrated_defaults(&mut rd.field_changes, &suppressible);
+            }
+            if is_empty_diff(&rd.field_changes) {
+                *suppressed_counts
+                    .entry(rd.stub.record_type.clone())
+                    .or_insert(0) += 1;
+                continue;
+            }
+        }
+        kept.push(rd);
+    }
+    *changed = kept;
+
+    auto_suppressed_defaults
 }
 
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.
@@ -1880,5 +2350,235 @@ mod tests {
                  strip_version_gated_transitions would already catch this"
             );
         }
+    }
+
+    // -------------------------------------------------------------------
+    // Issue #22: padding-zeroing + calibrated appearance-default suppression
+    // -------------------------------------------------------------------
+
+    fn stub_diff(form_id: &str, record_type: &str, field_changes: Value) -> RecordDiff {
+        RecordDiff {
+            stub: RecordStub {
+                form_id: form_id.to_owned(),
+                record_type: record_type.to_owned(),
+                ..Default::default()
+            },
+            field_changes,
+            prev_editor_id: None,
+        }
+    }
+
+    #[test]
+    fn leaf_name_strips_array_index_suffix() {
+        assert_eq!(
+            leaf_name("Effects[].Effect.Cooldown Duration"),
+            "Cooldown Duration"
+        );
+        assert_eq!(leaf_name("Model.Enlighten Auto UV"), "Enlighten Auto UV");
+        assert_eq!(
+            leaf_name("Female.World Model.Enlighten Auto UV"),
+            "Enlighten Auto UV"
+        );
+        assert_eq!(leaf_name("Unknown[0]"), "Unknown");
+    }
+
+    #[test]
+    fn padding_zeroed_detects_garbage_to_zeros_hex_leaf() {
+        assert!(is_padding_zeroed_value(&json!({
+            "hex": {"from": "3809c7", "to": "000000"}
+        })));
+        // Non-zero destination must survive.
+        assert!(!is_padding_zeroed_value(&json!({
+            "hex": {"from": "3809c7", "to": "000001"}
+        })));
+        // Appearance (null → zero raw) is #18's job, not this shape.
+        assert!(!is_padding_zeroed_value(&json!({
+            "from": null,
+            "to": {"hex": "000000", "_raw": true}
+        })));
+    }
+
+    #[test]
+    fn padding_zeroed_strips_leaf_and_counts() {
+        let mut fc = json!({
+            "Unknown": {"hex": {"from": "3809c7", "to": "000000"}},
+            "Attack Damage": {"from": 30, "to": 45},
+        });
+        assert_eq!(strip_padding_zeroed(&mut fc), 1);
+        assert_eq!(fc, json!({"Attack Damage": {"from": 30, "to": 45}}));
+    }
+
+    #[test]
+    fn calibrated_collapses_leaf_name_across_paths() {
+        // Same (leaf_name, value) at three different full paths — counting by
+        // leaf name (not full path) is what lets N=3 fire here. A path-keyed
+        // rule would see each path only once and miss the threshold.
+        let default = json!({"Unknown": 1, "Max Distance": 50.0});
+        let mut changed = vec![
+            stub_diff(
+                "0x00000001",
+                "STAT",
+                json!({"Model": {"Enlighten Auto UV": {"from": null, "to": default.clone()}}}),
+            ),
+            stub_diff(
+                "0x00000002",
+                "NPC_",
+                json!({"Female": {"World Model": {
+                    "Enlighten Auto UV": {"from": null, "to": default.clone()}
+                }}}),
+            ),
+            stub_diff(
+                "0x00000003",
+                "NPC_",
+                json!({"Male": {"World Model": {
+                    "Enlighten Auto UV": {"from": null, "to": default}
+                }}}),
+            ),
+        ];
+        let restamp = vec![true, true, true];
+        let mut counts = BTreeMap::new();
+        let auto = apply_restamp_calibrated_suppression(&mut changed, &restamp, &mut counts, 3);
+        assert_eq!(auto.len(), 1);
+        assert_eq!(auto[0].leaf_name, "Enlighten Auto UV");
+        assert_eq!(auto[0].count, 3);
+        assert!(
+            changed.is_empty(),
+            "all three records were appearance-only noise: {changed:?}"
+        );
+        assert_eq!(counts.get("STAT").copied(), Some(1));
+        assert_eq!(counts.get("NPC_").copied(), Some(2));
+    }
+
+    #[test]
+    fn calibrated_preserves_appearance_that_collides_with_real_edit() {
+        let shared = json!(2.0);
+        let mut changed = vec![
+            // Appearances of Sneak Attack Multiplier → 2.0 (would hit N=2 alone)
+            stub_diff(
+                "0x00000001",
+                "WEAP",
+                json!({"Sneak Attack Multiplier": {"from": null, "to": shared.clone()}}),
+            ),
+            stub_diff(
+                "0x00000002",
+                "WEAP",
+                json!({"Sneak Attack Multiplier": {"from": null, "to": shared.clone()}}),
+            ),
+            // Genuine authored edit of the same leaf_name to the same value
+            // elsewhere — must poison the auto-classify rule.
+            stub_diff(
+                "0x00000003",
+                "WEAP",
+                json!({"Sneak Attack Multiplier": {"from": 1.5, "to": shared}}),
+            ),
+        ];
+        let restamp = vec![true, true, true];
+        let mut counts = BTreeMap::new();
+        let auto = apply_restamp_calibrated_suppression(&mut changed, &restamp, &mut counts, 2);
+        assert!(
+            auto.is_empty(),
+            "rule must not fire when the value is also a real edit: {auto:?}"
+        );
+        assert_eq!(changed.len(), 3, "nothing stripped: {changed:?}");
+    }
+
+    #[test]
+    fn calibrated_disappearance_does_not_poison_appearance_default() {
+        // A `V → null` disappearance records the old value on `from`, but that
+        // must NOT block suppressing `null → V` appearances of the same
+        // serializer default (issue #22: only authored `to` values poison).
+        let default = json!("0x0000000F");
+        let mut changed = vec![
+            stub_diff(
+                "0x00000001",
+                "WEAP",
+                json!({"Value Currency": {"from": null, "to": default.clone()}}),
+            ),
+            stub_diff(
+                "0x00000002",
+                "WEAP",
+                json!({"Value Currency": {"from": null, "to": default.clone()}}),
+            ),
+            stub_diff(
+                "0x00000003",
+                "WEAP",
+                json!({"Value Currency": {"from": default, "to": null}}),
+            ),
+        ];
+        let restamp = vec![true, true, true];
+        let mut counts = BTreeMap::new();
+        let auto = apply_restamp_calibrated_suppression(&mut changed, &restamp, &mut counts, 2);
+        assert_eq!(auto.len(), 1);
+        assert_eq!(auto[0].leaf_name, "Value Currency");
+        // Two appearance-only records dropped; the disappearance remains.
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].stub.form_id, "0x00000003");
+    }
+
+    #[test]
+    fn calibrated_drops_noise_only_record_keeps_mixed() {
+        let default = json!(0);
+        let mut changed = vec![
+            stub_diff(
+                "0x00000001",
+                "OMOD",
+                json!({"Required Count": {"from": null, "to": default.clone()}}),
+            ),
+            stub_diff(
+                "0x00000002",
+                "OMOD",
+                json!({
+                    "Required Count": {"from": null, "to": default.clone()},
+                    "Attack Damage": {"from": 10, "to": 20},
+                }),
+            ),
+            stub_diff(
+                "0x00000003",
+                "OMOD",
+                json!({"Required Count": {"from": null, "to": default}}),
+            ),
+        ];
+        let restamp = vec![true, true, true];
+        let mut counts = BTreeMap::new();
+        let auto = apply_restamp_calibrated_suppression(&mut changed, &restamp, &mut counts, 3);
+        assert_eq!(auto.len(), 1);
+        assert_eq!(auto[0].leaf_name, "Required Count");
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].stub.form_id, "0x00000002");
+        assert_eq!(
+            changed[0].field_changes,
+            json!({"Attack Damage": {"from": 10, "to": 20}})
+        );
+        assert_eq!(counts.get("OMOD").copied(), Some(2));
+    }
+
+    #[test]
+    fn calibrated_skips_non_restamp_records() {
+        // form_versions matched → restamp=false → pass must not touch the record,
+        // even when the same appearance would otherwise clear the threshold.
+        let default = json!(false);
+        let mut changed = vec![
+            stub_diff(
+                "0x00000001",
+                "ACTI",
+                json!({"Activator Can Be Instanced": {"from": null, "to": default.clone()}}),
+            ),
+            stub_diff(
+                "0x00000002",
+                "ACTI",
+                json!({"Activator Can Be Instanced": {"from": null, "to": default}}),
+            ),
+        ];
+        // Count still sees both (global collect), but apply only hits restamp=true.
+        let restamp = vec![false, false];
+        let mut counts = BTreeMap::new();
+        let auto = apply_restamp_calibrated_suppression(&mut changed, &restamp, &mut counts, 2);
+        assert_eq!(auto.len(), 1, "rule is classified from global count");
+        assert_eq!(
+            changed.len(),
+            2,
+            "non-restamp records must survive: {changed:?}"
+        );
+        assert!(counts.is_empty());
     }
 }

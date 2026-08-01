@@ -2,6 +2,7 @@
 import type { RecordDiff } from "./RecordDiff";
 import type { RecordStub } from "./RecordStub";
 import type { RefName } from "./RefName";
+import type { SuppressedDefault } from "./SuppressedDefault";
 
 /**
  * Top-level result of comparing two ESM files.
@@ -29,5 +30,13 @@ ref_names?: { [key in string]: RefName },
  * Count of `changed` records dropped entirely by noise suppression
  * (`DiffOptions::suppress_noise`), keyed by record-type signature.
  * Telemetry for renderers, e.g. "312 placement moves omitted".
+ * Also holds leaf-level counters for issue #22 shapes (e.g.
+ * `"padding_zeroed"`).
  */
-suppressed_counts?: { [key in string]: number }, };
+suppressed_counts?: { [key in string]: number }, 
+/**
+ * Serializer-default `(leaf_name, value, count)` rules the calibrated
+ * appearance-default pass (issue #22) auto-classified and applied,
+ * sorted by `count` descending. Empty when the pass did not run.
+ */
+auto_suppressed_defaults?: Array<SuppressedDefault>, };

@@ -111,5 +111,6 @@ where
             .into_iter()
             .map(|s| s.as_ref().to_uppercase())
             .collect(),
+        ..Default::default()
     }
 }

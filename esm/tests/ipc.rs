@@ -551,6 +551,7 @@ fn op_diff_with_options_roundtrip() {
             bodies: BodyDetail::Stub,
             suppress_noise: false,
             exclude_types: vec!["LAND".to_string(), "NAVM".to_string()],
+            ..Default::default()
         },
     };
     let req = Request {
@@ -623,6 +624,7 @@ fn dispatch_diff_two_esms_with_options() {
                 bodies: BodyDetail::None,
                 suppress_noise: true,
                 exclude_types: vec!["MISC".to_string()],
+                ..Default::default()
             },
         },
     };
