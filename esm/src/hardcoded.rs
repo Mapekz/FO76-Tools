@@ -15,6 +15,7 @@
 
 use crate::formid::FormId;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 #[derive(Debug, Deserialize)]
@@ -38,6 +39,13 @@ pub struct HardcodedForm {
 struct HardcodedTable {
     /// Sorted by FormID ascending for binary search.
     entries: Vec<(u32, HardcodedForm)>,
+    /// EditorID → FormID, the reverse of `entries`. Case-sensitive exact
+    /// match, mirroring `Index::get_by_edid` (a plain `HashMap<String,
+    /// _>::get(&str)` over raw EDID subrecord text) — a case-insensitive
+    /// hardcoded side would let e.g. `esm get damagerecieved` resolve while
+    /// `esm get abfortifydamagerecieved` still fails, which reads as a bug.
+    /// `esm search` remains the case-insensitive surface.
+    by_edid: HashMap<String, u32>,
 }
 
 static TABLE: OnceLock<HardcodedTable> = OnceLock::new();
@@ -67,7 +75,17 @@ fn table() -> &'static HardcodedTable {
             })
             .collect();
         entries.sort_by_key(|(id, _)| *id);
-        HardcodedTable { entries }
+        // Built from the now-sorted `entries`, so a hypothetical duplicate
+        // EditorID (none exist in the current table — see
+        // `editor_ids_are_unique` below) resolves deterministically to the
+        // lowest FormID rather than last-write-wins.
+        let mut by_edid = HashMap::with_capacity(entries.len());
+        for (id, form) in &entries {
+            if let Some(edid) = &form.editor_id {
+                by_edid.entry(edid.clone()).or_insert(*id);
+            }
+        }
+        HardcodedTable { entries, by_edid }
     })
 }
 
@@ -82,6 +100,14 @@ pub fn lookup(id: FormId) -> Option<&'static HardcodedForm> {
         .binary_search_by_key(&id.raw(), |(k, _)| *k)
         .ok()
         .map(|i| &t.entries[i].1)
+}
+
+/// Look up a hardcoded engine form's FormID by its EditorID (case-sensitive
+/// exact match). The reverse of [`lookup`] — same fallback-only contract:
+/// callers should only consult this after a real ESM EditorID lookup misses,
+/// so a same-named real record always takes precedence.
+pub fn lookup_by_editor_id(edid: &str) -> Option<FormId> {
+    table().by_edid.get(edid).copied().map(FormId::new)
 }
 
 #[cfg(test)]
@@ -123,6 +149,51 @@ mod tests {
             t.entries.len() >= 220,
             "expected ~228 hardcoded entries, got {}",
             t.entries.len()
+        );
+    }
+
+    #[test]
+    fn lookup_by_editor_id_resolves_kill_streak() {
+        let fid = lookup_by_editor_id("KillStreak").expect("KillStreak should resolve");
+        assert_eq!(fid.raw(), 0x0000_0399);
+    }
+
+    #[test]
+    fn lookup_by_editor_id_is_case_sensitive() {
+        assert!(lookup_by_editor_id("killstreak").is_none());
+        assert!(lookup_by_editor_id("KILLSTREAK").is_none());
+    }
+
+    #[test]
+    fn lookup_by_editor_id_unknown_returns_none() {
+        assert!(lookup_by_editor_id("NotARealHardcodedForm").is_none());
+    }
+
+    #[test]
+    fn lookup_and_lookup_by_editor_id_agree() {
+        let fid = lookup_by_editor_id("DamageRecieved").expect("DamageRecieved should resolve");
+        let form = lookup(fid).expect("its FormID should look back up");
+        assert_eq!(form.editor_id.as_deref(), Some("DamageRecieved"));
+        assert_eq!(form.record_type, "AVIF");
+    }
+
+    /// Guards the assumption `by_edid`'s construction relies on: every entry
+    /// has a distinct EditorID, so `.entry(..).or_insert(..)`'s
+    /// lowest-FormID-wins tiebreak never actually triggers today. If
+    /// `tools/extractor/hardcoded.py` regenerates the table with a collision,
+    /// this catches it rather than letting `by_edid` silently drop an entry.
+    #[test]
+    fn editor_ids_are_unique() {
+        let t = table();
+        let named = t
+            .entries
+            .iter()
+            .filter(|(_, form)| form.editor_id.is_some())
+            .count();
+        assert_eq!(
+            t.by_edid.len(),
+            named,
+            "expected every hardcoded EditorID to be unique — by_edid dropped a collision"
         );
     }
 }

@@ -1129,6 +1129,13 @@ impl Database {
     }
 
     /// Decode a record by EditorID with the given resolution depth.
+    ///
+    /// Only resolves against real ESM records — unlike `ipc::resolve_sel`
+    /// (the CLI/daemon/N-API serving path), this does not fall back to
+    /// `crate::hardcoded`'s engine-hardcoded EditorID table. Prefer
+    /// `ipc::resolve_sel` + [`Self::record_by_formid_resolved`] for that
+    /// broader precedence-aware resolution; this method stays as a narrower
+    /// public building block rather than duplicating that fallback here.
     pub fn record_by_edid_resolved(
         &mut self,
         edid: &str,

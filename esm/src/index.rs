@@ -91,7 +91,19 @@ use std::path::PathBuf;
 // again, so a pre-move `.esm.forms` etc. is orphaned in place (not deleted;
 // this crate is read-only w.r.t. the ESM directory tree) and a fresh
 // `esm_cache/` entry is built the next time each section is needed.
-const CACHE_VERSION: u32 = 14;
+//
+// Bumped 14 -> 15 for `ensure_xref_index` gaining a hardcoded-target fallback
+// (issue #27): `xref` targets now include the ~228 engine-hardcoded FormIDs
+// in `crate::hardcoded`, not just real indexed records. This is a *content*
+// change to what `XrefSection`'s `HashMap<u32, Vec<u32>>` holds, not a
+// layout change — `XREF_LAYOUT_FINGERPRINT` only folds in `size_of`/
+// `align_of` of the archived type, both unchanged, so it can't catch this on
+// its own. A stale pre-bump `xref` section would silently keep missing these
+// edges forever without this bump. Forces a rebuild of all five sections
+// (not just `xref`) since they share this one constant — accepted as the
+// simple, hard-to-get-wrong choice over threading a second, narrower
+// invalidation axis through just the xref section.
+const CACHE_VERSION: u32 = 15;
 
 /// Per-record data stored in the lazy search index.
 ///
@@ -673,7 +685,32 @@ impl Index {
             // of how many times it references it internally.
             let mut seen = HashSet::new();
             for target in refs {
-                if target != referencer && index.contains(target) && seen.insert(target) {
+                // A target is kept if it's either a real indexed record or
+                // one of the ~228 engine-hardcoded FormIDs (`crate::hardcoded`,
+                // e.g. AVIF `DamageRecieved`/`KillStreak`) — hardcoded forms
+                // have no backing record by design, so without this fallback
+                // every real reference to one was silently dropped while the
+                // index was built (issue #27). `index.contains` still runs
+                // first and short-circuits for the overwhelming majority of
+                // targets, so the 228-entry binary search only fires on an
+                // index miss — matching `hardcoded::lookup`'s own "consult
+                // only as a fallback" contract.
+                //
+                // This is a bounded, curated allowlist, not a relaxation of
+                // the existence check itself: `harvest_formids` collects
+                // every `0x…`-shaped string in the decoded JSON, including
+                // values from misdecoded bytes, and `index.contains` is what
+                // keeps that garbage out. `0x0` (NULL) in particular appears
+                // dozens of times among PERK effects alone and stays
+                // correctly excluded — it is below the hardcoded table's
+                // `0x1A` floor. A few other harvested low FormIDs also fall
+                // outside both the index and the table (e.g. `0x14`, just
+                // under that floor, and a couple just above the table's
+                // `0x39B` ceiling); those stay dropped too — undocumented
+                // engine internals this table doesn't cover.
+                let target_exists =
+                    index.contains(target) || crate::hardcoded::lookup(target).is_some();
+                if target != referencer && target_exists && seen.insert(target) {
                     xref.entry(target.raw()).or_default().push(referencer.raw());
                 }
             }

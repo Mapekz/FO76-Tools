@@ -522,7 +522,9 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
         }
         Op::RecordRaw { sel } => {
             let form_id = resolve_sel(db, sel)?;
-            let rec = db.record_raw(form_id)?;
+            let rec = db
+                .record_raw(form_id)
+                .map_err(|e| explain_hardcoded_miss(form_id, e))?;
             let view = raw_record_view(&rec);
             Ok(serde_json::to_value(&view)?)
         }
@@ -654,8 +656,12 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
         RecordSel::FormId(fid) => Ok(*fid),
         RecordSel::Edid(edid) => {
             db.index.ensure_edid_index(&db.esm)?;
+            // Real ESM records take precedence — only consult the
+            // engine-hardcoded table (`crate::hardcoded`) once the real
+            // index has already missed, per its own fallback-only contract.
             db.index
                 .get_by_edid(edid)
+                .or_else(|| crate::hardcoded::lookup_by_editor_id(edid))
                 .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", edid))
         }
         RecordSel::Auto(token) => {
@@ -672,6 +678,12 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
             }
             db.index.ensure_edid_index(&db.esm)?;
             if let Some(fid) = db.index.get_by_edid(token) {
+                return Ok(fid);
+            }
+            // Both real-ESM attempts (FormID and EditorID) have now missed —
+            // only then fall back to the hardcoded table, same
+            // real-record-wins ordering as the `Edid` branch above.
+            if let Some(fid) = crate::hardcoded::lookup_by_editor_id(token) {
                 return Ok(fid);
             }
             match formid_attempt {
@@ -694,23 +706,51 @@ fn record_resolved(
     sel: &RecordSel,
     depth: ResolveDepth,
 ) -> anyhow::Result<crate::RecordResult> {
-    // `record_by_formid_resolved`/`record_by_edid_resolved` already collapse to
-    // an unresolved decode when `depth == ResolveDepth::None`, so there's no
-    // separate "unresolved" path to special-case here.
-    match sel {
-        RecordSel::FormId(fid) => db.record_by_formid_resolved(*fid, depth),
-        RecordSel::Edid(edid) => db.record_by_edid_resolved(edid, depth),
-        RecordSel::Auto(_) => {
-            // Delegate to `resolve_sel` for the FormID-then-EditorID fallback
-            // logic rather than duplicating it here.
-            let fid = resolve_sel(db, sel)?;
-            db.record_by_formid_resolved(fid, depth)
-        }
-        RecordSel::EntryPoint(token) => bail!(
-            "entry-point selector '{token}' is only valid for refs \
-             (Op::ReferencedBy) — it doesn't resolve to a single record"
-        ),
-    }
+    // `record_by_formid_resolved` already collapses to an unresolved decode
+    // when `depth == ResolveDepth::None`, so there's no separate "unresolved"
+    // path to special-case here.
+    //
+    // Delegate FormID/EditorID/Auto resolution to `resolve_sel` uniformly
+    // (rather than `Database::record_by_edid_resolved` reimplementing the
+    // EditorID lookup locally) so every selector form — not just `Auto` —
+    // gets `resolve_sel`'s hardcoded-table fallback. `resolve_sel` already
+    // bails with the exact same message text for `EntryPoint`, so there is
+    // no separate arm needed for it either.
+    let fid = resolve_sel(db, sel)?;
+    db.record_by_formid_resolved(fid, depth)
+        .map_err(|e| explain_hardcoded_miss(fid, e))
+}
+
+/// If `form_id` is one of the ~228 engine-hardcoded FormIDs (`crate::hardcoded`)
+/// with no backing ESM record, replace a "not found" error with an
+/// explanation of *why* — it's baked into the game executable, not decodable
+/// data — plus a pointer at `esm refs` for its referrers. Otherwise passes
+/// `err` through unchanged.
+///
+/// Applied only at this serving boundary (`record_resolved`, `Op::RecordRaw`
+/// below), not inside `Database::get_formid_meta` itself: that method is also
+/// called from `DatabaseResolver::stub`/`decode_full` (`src/lib.rs`), which
+/// already do their own `hardcoded::lookup` and discard the miss error
+/// entirely (`let Ok(meta) = ... else { ... }`), and from `resolve_sel`'s
+/// `Auto` probe, which only checks `.is_ok()`. Building this string there
+/// would cost an extra binary search plus an allocation on every unresolved
+/// reference of a `--resolve stub|full` decode or `coverage`/`diff` sweep —
+/// paths that can hit it millions of times — for a hint two of those three
+/// callers throw away.
+fn explain_hardcoded_miss(form_id: FormId, err: anyhow::Error) -> anyhow::Error {
+    let Some(form) = crate::hardcoded::lookup(form_id) else {
+        return err;
+    };
+    let named = match &form.editor_id {
+        Some(edid) => format!("{} ({} '{}')", form_id.display(), form.record_type, edid),
+        None => format!("{} ({})", form_id.display(), form.record_type),
+    };
+    anyhow::anyhow!(
+        "{named} is an engine-hardcoded form: it is defined by the game \
+         executable, not by a record in this ESM, so it has no fields to \
+         decode. Use `esm refs {}` to list the records that reference it.",
+        form_id.display()
+    )
 }
 
 /// Resolve one selector of an `Op::RecordBulk` request, converting a lookup

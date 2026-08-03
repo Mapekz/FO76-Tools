@@ -10,7 +10,8 @@ mod common;
 
 use common::{append_record, append_subrecord, cstr, tes4_header, wrap_grup, write_and_open};
 use esm::decode::FormIdRefResolver;
-use esm::{DatabaseResolver, FormId};
+use esm::ipc::{Op, RecordSel, dispatch_op};
+use esm::{DatabaseResolver, FormId, ResolveDepth};
 
 /// FormID 0x00000399 is the engine-hardcoded AVIF `KillStreak` (verified
 /// against xEdit's `Core/Hardcoded/Fallout76.esp`; the pseudo-plugin spells
@@ -80,6 +81,38 @@ fn real_esm_record_wins_over_hardcoded_table_entry() {
         .expect("real record should resolve");
     assert_eq!(stub.record_type, "WEAP");
     assert_eq!(stub.editor_id.as_deref(), Some("TestOverride"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// `esm get`'s serving path (`ipc::dispatch_op` → `Op::Record` →
+/// `record_resolved`), not just `DatabaseResolver`, must also recognize a
+/// hardcoded-form miss and explain it instead of a bare "not found" — issue
+/// #27's selector-resolution half. `KillStreak` now resolves as an
+/// EditorID (via `ipc::resolve_sel`'s hardcoded fallback) but still has no
+/// record to decode, so the miss must name the form and point at `esm refs`.
+#[test]
+fn dispatch_record_explains_hardcoded_edid_miss() {
+    let mut buf = tes4_header();
+    let mut weap = Vec::new();
+    append_record(&mut weap, b"WEAP", 1, &[]); // unrelated record, keeps the ESM non-empty
+    buf.extend_from_slice(&wrap_grup(b"WEAP", &weap));
+
+    let (path, mut db) = write_and_open(&buf, "hardcoded_dispatch_edid_miss");
+
+    let err = dispatch_op(
+        &mut db,
+        &Op::Record {
+            sel: RecordSel::Edid("KillStreak".to_string()),
+            depth: ResolveDepth::None,
+        },
+    )
+    .expect_err("KillStreak resolves but has no record to decode");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("engine-hardcoded") && msg.contains("esm refs 0x00000399"),
+        "expected an explanatory hardcoded-form message, got: {msg}"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

@@ -47,6 +47,178 @@ fn referenced_by_deduplicates_within_record() {
     let _ = std::fs::remove_file(&tmp);
 }
 
+/// AVIF `KillStreak` — the FormID `tests/hardcoded.rs` already uses as its
+/// canonical example of an engine-hardcoded form with no backing ESM record.
+const KILL_STREAK: u32 = 0x0000_0399;
+
+/// Regression test for issue #27: `esm refs` silently dropped every real
+/// reference to an engine-hardcoded FormID (e.g. AVIF `DamageRecieved`/
+/// `KillStreak`), because `ensure_xref_index`'s `index.contains(target)`
+/// check required the *target* to have a backing ESM record — hardcoded
+/// forms never do, by design (they live in `Fallout76.exe`, not the ESM).
+///
+/// This fixture's WEAP(2) references `KillStreak` (0x399) via `YNAM`, the
+/// same FormID-carrier subrecord `make_xref_esm` uses. Before the fix,
+/// `referenced_by(FormId(KILL_STREAK))` returned an empty `Vec` even though
+/// the edge is real; after the fix it must return exactly the one referencer.
+#[test]
+fn referenced_by_resolves_hardcoded_target() {
+    let mut buf = tes4_header();
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &edid_bytes("TestReferencer"));
+    append_subrecord(&mut subs, b"YNAM", &KILL_STREAK.to_le_bytes());
+    let mut rec = Vec::new();
+    append_record(&mut rec, b"WEAP", 2, &subs);
+    buf.extend(wrap_grup(b"WEAP", &rec));
+
+    let tmp = unique_temp_path("refs_hardcoded_target");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+
+    let mut db = Database::open(&tmp).expect("open db");
+    let rows = db
+        .referenced_by(FormId(KILL_STREAK))
+        .expect("referenced_by");
+
+    assert_eq!(
+        rows.len(),
+        1,
+        "expected the WEAP referencer to appear even though KillStreak has \
+         no backing ESM record; rows: {rows:#?}"
+    );
+    assert_eq!(
+        rows[0].form_id,
+        FormId(2).display(),
+        "the sole referencing record should be form_id=2"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Negative guard on the same fix: the hardcoded-table fallback must stay a
+/// bounded, curated allowlist (~228 entries), not a relaxation of the
+/// existence check itself. `harvest_formids` collects every `0x…`-shaped
+/// string in decoded output, including from misdecoded bytes, so a target
+/// that is in *neither* the ESM index nor the hardcoded table (here 0x39E,
+/// just past the table's 0x39B ceiling) must still be dropped — and NULL
+/// (0x0), which appears routinely in real records, must never become an
+/// xref key.
+#[test]
+fn referenced_by_still_excludes_out_of_range_and_null_targets() {
+    const OUT_OF_RANGE: u32 = 0x0000_039E;
+
+    let mut buf = tes4_header();
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &edid_bytes("TestReferencer"));
+    append_subrecord(&mut subs, b"YNAM", &OUT_OF_RANGE.to_le_bytes());
+    append_subrecord(&mut subs, b"ZNAM", &0u32.to_le_bytes()); // NULL
+    let mut rec = Vec::new();
+    append_record(&mut rec, b"WEAP", 2, &subs);
+    buf.extend(wrap_grup(b"WEAP", &rec));
+
+    let tmp = unique_temp_path("refs_hardcoded_negative");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+
+    let mut db = Database::open(&tmp).expect("open db");
+    assert!(
+        db.referenced_by(FormId(OUT_OF_RANGE))
+            .expect("referenced_by")
+            .is_empty(),
+        "0x39E is outside the hardcoded table's range and has no ESM record \
+         — it must stay unindexed, not become a new hub key"
+    );
+    assert!(
+        db.referenced_by(FormId(0))
+            .expect("referenced_by")
+            .is_empty(),
+        "NULL (0x0) must never become an xref key"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Part 2 of issue #27: a hardcoded form's EditorID, not just its raw hex
+/// FormID, must resolve — `esm refs DamageRecieved`, not only
+/// `esm refs --formid 0x397`. Drives the same selector-resolution path
+/// (`ipc::resolve_sel`) the `refs`/`ref-path`/raw-`get` CLI surfaces share.
+#[test]
+fn resolve_sel_edid_falls_back_to_hardcoded_table() {
+    let mut buf = tes4_header();
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &edid_bytes("TestReferencer"));
+    append_subrecord(&mut subs, b"YNAM", &KILL_STREAK.to_le_bytes());
+    let mut rec = Vec::new();
+    append_record(&mut rec, b"WEAP", 2, &subs);
+    buf.extend(wrap_grup(b"WEAP", &rec));
+
+    let tmp = unique_temp_path("refs_hardcoded_edid_sel");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+
+    let mut db = Database::open(&tmp).expect("open db");
+    let target = resolve_sel(&mut db, &RecordSel::Edid("KillStreak".to_string()))
+        .expect("KillStreak should resolve via the hardcoded-table fallback");
+    assert_eq!(target, FormId(KILL_STREAK));
+
+    let list = referenced_by_enriched(
+        &mut db,
+        target,
+        1,
+        100,
+        None,
+        false,
+        esm::ipc::RefSort::Formid,
+    )
+    .expect("referenced_by_enriched");
+    assert_eq!(list.rows.len(), 1);
+    assert_eq!(list.rows[0].form_id, FormId(2).display());
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// Precedence: a real ESM record must win over a same-named hardcoded-table
+/// entry — the same rule `tests/hardcoded.rs`'s
+/// `real_esm_record_wins_over_hardcoded_table_entry` pins for
+/// `DatabaseResolver::stub`, mirrored here for `ipc::resolve_sel`. Reuses
+/// the hardcoded EditorID `KillStreak` on a real WEAP record at an unrelated
+/// FormID; resolution must return the real record, not 0x399.
+#[test]
+fn resolve_sel_edid_real_record_wins_over_hardcoded_table() {
+    const REAL_FORM_ID: u32 = 0x0000_0800; // arbitrary, outside the hardcoded range
+
+    let mut buf = tes4_header();
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &edid_bytes("KillStreak"));
+    let mut rec = Vec::new();
+    append_record(&mut rec, b"WEAP", REAL_FORM_ID, &subs);
+    buf.extend(wrap_grup(b"WEAP", &rec));
+
+    let tmp = unique_temp_path("refs_hardcoded_precedence");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+
+    let mut db = Database::open(&tmp).expect("open db");
+    let target = resolve_sel(&mut db, &RecordSel::Edid("KillStreak".to_string()))
+        .expect("KillStreak should resolve");
+    assert_eq!(
+        target,
+        FormId(REAL_FORM_ID),
+        "the real WEAP record must win over the hardcoded table's same-named \
+         entry, not the hardcoded AVIF at 0x399"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
 // ── Helpers for building synthetic chain ESMs ────────────────────────────────
 
 const FORM_VERSION: u16 = 208;
