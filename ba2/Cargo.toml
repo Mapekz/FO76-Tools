@@ -28,3 +28,12 @@ tempfile = "3"
 [dev-dependencies]
 globset = "0.4"
 tempfile = "3"
+
+# Profile used by .github/workflows/release.yml to build the published binaries.
+# Kept separate from `release` so the local `cargo build --release` that backs
+# ~/.local/bin/ba2 keeps its symbols and its faster link step.  Mirrors the
+# [profile.dist] in esm/Cargo.toml — keep the two in step.
+[profile.dist]
+inherits = "release"
+strip = true
+lto = "thin"

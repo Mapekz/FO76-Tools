@@ -48,3 +48,13 @@ tower-http = { version = "0.7", features = ["trace"], optional = true }
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 ts-rs = "12.0.1"
+
+# Profile used by .github/workflows/release.yml to build the published binaries.
+# Kept separate from `release` so the local `cargo build --release` that backs
+# ~/.local/bin/esm keeps its symbols and its faster link step.  Applies
+# workspace-wide (this file is the workspace root); Cargo ignores [profile] in
+# the bindings/napi member.
+[profile.dist]
+inherits = "release"
+strip = true
+lto = "thin"

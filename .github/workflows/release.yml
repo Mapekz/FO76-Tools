@@ -1,0 +1,343 @@
+name: Release
+
+# `paths` gates the rolling channel only: GitHub does not evaluate path filters
+# for tag pushes, so `tags: ['v*']` fires unconditionally and a `v*` tag whose
+# commit touched no source still publishes.
+#
+# The path list is "anything that changes a shipped binary", which is wider than
+# src/: schema/ (fo76.json, fo76.ctda.json, hardcoded_fo76.json), static/
+# (server HTML) and skills/esm-cli/SKILL.md are all include_str!-embedded.
+# SKILL.md is markdown but load-bearing — do not add a blanket *.md exclusion.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'esm/src/**'
+      - 'esm/schema/**'
+      - 'esm/static/**'
+      - 'esm/skills/**'
+      - 'esm/Cargo.toml'
+      - 'esm/Cargo.lock'
+      - 'esm/rust-toolchain.toml'
+      - 'ba2/src/**'
+      - 'ba2/Cargo.toml'
+      - 'ba2/Cargo.lock'
+      - 'ba2/rust-toolchain.toml'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+# Least privilege: only `publish` escalates to write.
+permissions:
+  contents: read
+
+# One group per ref. Every push to main shares `release-refs/heads/main`, so a
+# newer push cancels an older in-flight run — two runs must never interleave
+# force-moving the `latest` tag and clobbering its assets. Each tag push gets
+# its own unique group AND evaluates cancel-in-progress to false, so a real
+# release build can never be cancelled.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+# windows-latest defaults to pwsh; force bash everywhere so the packaging steps
+# are one code path (Git Bash is on the image).
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ── Resolve channel/version once, so build and publish cannot disagree ─────
+  #
+  # A separate job rather than duplicated expressions: GitHub's expression
+  # language has no substring function for the short SHA.
+  meta:
+    name: resolve channel
+    runs-on: ubuntu-latest
+    outputs:
+      channel:      ${{ steps.m.outputs.channel }}
+      tag:          ${{ steps.m.outputs.tag }}
+      version:      ${{ steps.m.outputs.version }}
+      asset_prefix: ${{ steps.m.outputs.asset_prefix }}
+    steps:
+      - id: m
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            # Tagged: assets embed the version, so old download URLs keep working.
+            tag="$REF_NAME"
+            version="${REF_NAME#v}"
+            channel="release"
+            asset_prefix="fo76-tools-${REF_NAME}-"
+          else
+            # Rolling: assets are versionless so the download URL is stable
+            # (.../releases/download/latest/fo76-tools-<target>.tar.gz).
+            # The real version lives in BUILD_INFO.txt and the in-archive dir.
+            tag="latest"
+            version="latest-${GITHUB_SHA:0:7}"
+            channel="rolling"
+            asset_prefix="fo76-tools-"
+          fi
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "channel=$channel"
+            echo "asset_prefix=$asset_prefix"
+          } >> "$GITHUB_OUTPUT"
+          echo "**${channel}** -> tag \`${tag}\`, version \`${version}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Per-platform build + smoke + archive ──────────────────────────────────
+  build:
+    name: build (${{ matrix.target }})
+    needs: meta
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Surface both platforms' errors in one run; `publish` still needs the
+      # whole matrix green, so a half set can never be released.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            ext: ''
+            fmt: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: '.exe'
+            fmt: zip
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # rust-src-dir: esm makes the action read esm/rust-toolchain.toml and
+      # install 1.97.1 directly.  Without it the action installs `stable` and
+      # runs `rustup override set stable` at the repo root; builds would still
+      # work via rustup's proximity rule, but `rustc --version` would then
+      # report stable and BUILD_INFO.txt would lie.
+      #
+      # rustflags: "" is load-bearing — the action's default injects
+      # `-D warnings` into RUSTFLAGS, which would fail a release build on any
+      # new lint.  Linting is ci.yml's job, not this workflow's.
+      #
+      # Both crates are independent cargo projects with independent lockfiles,
+      # so both are listed as cache workspaces (target/dist/ is under target/).
+      - id: rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          rustflags: ''
+          rust-src-dir: esm
+          cache-workspaces: |
+            esm
+            ba2
+
+      # Only esm/rust-toolchain.toml is read above; if ba2 ever drifts, the two
+      # halves of a single release would be built by different compilers.
+      - name: assert pinned toolchains agree
+        run: diff <(grep '^channel' esm/rust-toolchain.toml) <(grep '^channel' ba2/rust-toolchain.toml)
+
+      # esm-server has required-features = ["server"], so --features server is
+      # load-bearing, not cosmetic: the esm CLI is daemon-backed by default and
+      # spawns esm-server from alongside its own executable.  -p esm keeps the
+      # bindings/napi workspace member out of the build.
+      - name: build esm + esm-server
+        working-directory: esm
+        run: cargo build --profile dist -p esm --features server --bin esm --bin esm-server
+
+      - name: build ba2
+        working-directory: ba2
+        run: cargo build --profile dist --bin ba2
+
+      # Neither CLI implements --version; --help is the only zero-exit probe.
+      - name: smoke test
+        env:
+          EXT: ${{ matrix.ext }}
+        run: |
+          set -euo pipefail
+          "esm/target/dist/esm${EXT}"        --help > /dev/null
+          "esm/target/dist/esm-server${EXT}" --help > /dev/null
+          "ba2/target/dist/ba2${EXT}"        --help > /dev/null
+
+      - name: stage archive contents
+        env:
+          VERSION:   ${{ needs.meta.outputs.version }}
+          CHANNEL:   ${{ needs.meta.outputs.channel }}
+          TARGET:    ${{ matrix.target }}
+          EXT:       ${{ matrix.ext }}
+          TOOLCHAIN: ${{ steps.rust.outputs.rustc-version }}
+        run: |
+          set -euo pipefail
+          name="fo76-tools-${VERSION}-${TARGET}"
+          mkdir -p "dist/${name}"
+          cp "esm/target/dist/esm${EXT}"        "dist/${name}/"
+          cp "esm/target/dist/esm-server${EXT}" "dist/${name}/"
+          cp "ba2/target/dist/ba2${EXT}"        "dist/${name}/"
+          cp LICENSE README.md                  "dist/${name}/"
+          {
+            echo "FO76-Tools"
+            echo "version:   ${VERSION}"
+            echo "channel:   ${CHANNEL}"
+            echo "target:    ${TARGET}"
+            echo "commit:    ${GITHUB_SHA}"
+            echo "ref:       ${GITHUB_REF}"
+            echo "built:     $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "toolchain: ${TOOLCHAIN}"
+            echo "run:       ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > "dist/${name}/BUILD_INFO.txt"
+          echo "STAGE_NAME=${name}" >> "$GITHUB_ENV"
+
+      # tar.gz on Linux specifically because it preserves the executable bit;
+      # zip does not carry it reliably and users would need chmod +x.
+      - name: archive (tar.gz)
+        if: runner.os == 'Linux'
+        env:
+          ASSET: ${{ needs.meta.outputs.asset_prefix }}${{ matrix.target }}.tar.gz
+        run: tar -C dist -czf "dist/${ASSET}" "$STAGE_NAME"
+
+      # 7-Zip is preinstalled on windows-latest; `zip` is not.
+      - name: archive (zip)
+        if: runner.os == 'Windows'
+        env:
+          ASSET: ${{ needs.meta.outputs.asset_prefix }}${{ matrix.target }}.zip
+        run: cd dist && 7z a -tzip -mx=9 "$ASSET" "$STAGE_NAME" > /dev/null
+
+      # upload-artifact v4+ no longer merges same-name artifacts, so the name is
+      # per-target.  compression-level 0: the payload is already compressed.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.target }}
+          path: dist/*.${{ matrix.fmt }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  # ── Single publish job: checksums + release, all on Linux ─────────────────
+  publish:
+    name: publish ${{ needs.meta.outputs.tag }}
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    # Guard so a test branch (temporarily added to `branches:`) can exercise the
+    # whole build matrix without publishing anything.
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO:  ${{ github.repository }}
+      TAG:      ${{ needs.meta.outputs.tag }}
+      VERSION:  ${{ needs.meta.outputs.version }}
+      CHANNEL:  ${{ needs.meta.outputs.channel }}
+
+    steps:
+      # No checkout: every operation below is gh/API only.
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
+
+      # Checksums are produced once, on Linux, over both platforms' archives —
+      # never per-platform, because Windows has no sha256sum and PowerShell's
+      # Get-FileHash emits a different format.
+      - name: SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd dist
+          ls -l
+          sha256sum ./*.tar.gz ./*.zip > SHA256SUMS
+          cat SHA256SUMS
+
+      # The commit message is attacker-controlled on a public repo, so it is
+      # passed through env and never interpolated into the script body.
+      - name: build release notes
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          subject="$(printf '%s\n' "${COMMIT_MSG:-}" | head -n1)"
+          linux_asset="$(cd dist && ls ./*linux-gnu.tar.gz | sed 's|^\./||')"
+          win_asset="$(cd dist && ls ./*windows-msvc.zip  | sed 's|^\./||')"
+          {
+            if [[ "$CHANNEL" == "rolling" ]]; then
+              echo "Rolling prerelease built from the tip of \`main\`."
+              echo
+              echo "- version: \`${VERSION}\`"
+              echo "- commit: \`${GITHUB_SHA}\`"
+              if [[ -n "$subject" ]]; then echo "- subject: ${subject}"; fi
+            else
+              echo "FO76-Tools \`${VERSION}\`"
+              echo
+              echo "- commit: \`${GITHUB_SHA}\`"
+            fi
+            echo "- built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo "### Downloads"
+            echo
+            echo "| Platform | Asset |"
+            echo "| --- | --- |"
+            echo "| Linux x86_64 (glibc) | \`${linux_asset}\` |"
+            echo "| Windows 10/11 x86_64 | \`${win_asset}\` |"
+            echo
+            echo "Each archive unpacks to \`fo76-tools-${VERSION}-<target>/\` containing"
+            echo "\`esm\`, \`esm-server\`, \`ba2\`, \`BUILD_INFO.txt\`, \`LICENSE\` and \`README.md\`."
+            echo "Keep \`esm-server\` beside \`esm\`: the CLI is daemon-backed by default and"
+            echo "spawns it from its own directory."
+            if [[ "$CHANNEL" == "rolling" ]]; then
+              echo
+              echo "> The \`latest\` tag and these assets are replaced in place on every"
+              echo "> qualifying push to \`main\`. Pin a \`v*\` release for a stable download."
+            fi
+            echo
+            echo "### SHA256"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } > notes.md
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: publish release
+        run: |
+          set -euo pipefail
+          if [[ "$CHANNEL" == "rolling" ]]; then
+            # Force-move (or create) the `latest` tag via the git-refs API rather
+            # than `git push -f`: no checkout is needed and a shallow clone can
+            # have its tag push rejected with "shallow update not allowed".
+            if gh api "repos/${GH_REPO}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+              gh api -X PATCH "repos/${GH_REPO}/git/refs/tags/${TAG}" \
+                -f sha="${GITHUB_SHA}" -F force=true >/dev/null
+            else
+              gh api -X POST "repos/${GH_REPO}/git/refs" \
+                -f ref="refs/tags/${TAG}" -f sha="${GITHUB_SHA}" >/dev/null
+            fi
+
+            # First run has no release yet; `gh release view` exits non-zero.
+            # `gh release edit` cannot move a tag, which is why the refs-API call
+            # above is a separate, mandatory step.
+            if gh release view "$TAG" >/dev/null 2>&1; then
+              gh release edit "$TAG" \
+                --title "Rolling build (${VERSION})" \
+                --notes-file notes.md \
+                --prerelease
+            else
+              gh release create "$TAG" \
+                --title "Rolling build (${VERSION})" \
+                --notes-file notes.md \
+                --prerelease \
+                --verify-tag
+            fi
+            gh release upload "$TAG" dist/* --clobber
+          else
+            # Assets passed to `create` upload while the release is still a draft
+            # and publish atomically.  No --latest: GitHub's automatic "Latest"
+            # selection already skips the `latest` prerelease.
+            # --notes-file content is prepended to the generated changelog.
+            gh release create "$TAG" \
+              --title "FO76-Tools ${VERSION}" \
+              --notes-file notes.md \
+              --generate-notes \
+              --verify-tag \
+              dist/*
+          fi
