@@ -1105,9 +1105,10 @@ fn build_perk_entry_points(form_id: u32, edid: &str, entry_points: &[u8]) -> Vec
 ///   10 CarrierA          — entry point 39 (Mod Percent Blocked)
 ///   11 CarrierB          — entry point 39 (Mod Percent Blocked)
 ///   12 OtherPerk         — entry point 40 (Mod Shield Deflect Arrow Chance)
-///   13 UnnamedPerk       — entry point 212 (outside the 212-entry name
-///                          table — real game data has exactly this case,
-///                          `mod_custom_V63-BERTHA_Perk`)
+///   13 UnnamedPerk       — entry point 213 (outside the 213-entry name
+///                          table; entry point 212 used to be this case in
+///                          real game data — `mod_custom_V63-BERTHA_Perk` —
+///                          until it was labeled "Mod Chain Damage Falloff")
 ///   14 MultiEffectPerk   — entry point 39 on *two* separate effects
 ///   15 GlobA             — entry point 41 (Mod Incoming Spell Magnitude)
 ///   16 GlobB             — entry point 42 (Mod Incoming Spell Duration)
@@ -1125,7 +1126,7 @@ fn make_entry_point_esm() -> Vec<u8> {
     let mut perk_group = build_perk_entry_points(10, "CarrierA", &[39]);
     perk_group.extend(build_perk_entry_points(11, "CarrierB", &[39]));
     perk_group.extend(build_perk_entry_points(12, "OtherPerk", &[40]));
-    perk_group.extend(build_perk_entry_points(13, "UnnamedPerk", &[212]));
+    perk_group.extend(build_perk_entry_points(13, "UnnamedPerk", &[213]));
     perk_group.extend(build_perk_entry_points(14, "MultiEffectPerk", &[39, 39]));
     perk_group.extend(build_perk_entry_points(15, "GlobA", &[41]));
     perk_group.extend(build_perk_entry_points(16, "GlobB", &[42]));
@@ -1281,7 +1282,7 @@ fn perks_by_entry_point_glob_matches_multiple_distinct_entry_points() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// An entry point id outside the schema's name table (212, one past the last
+/// An entry point id outside the schema's name table (213, one past the last
 /// named entry) is only reachable by its numeric id — never by name, since
 /// it has none.
 #[test]
@@ -1289,14 +1290,14 @@ fn perks_by_entry_point_reaches_unnamed_id_only_by_number() {
     let (path, mut db) = open_entry_point_db();
 
     let (label, seeds) = db
-        .perks_by_entry_point(&EntryPointSpec::Id(212))
+        .perks_by_entry_point(&EntryPointSpec::Id(213))
         .expect("perks_by_entry_point unnamed id");
     let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
     assert_eq!(seed_ids, vec![FormId(13)]);
     assert!(label.contains("unnamed"), "unexpected label: {label}");
 
     let (_, seeds_by_name) = db
-        .perks_by_entry_point(&EntryPointSpec::Name("Unknown 212".to_string()))
+        .perks_by_entry_point(&EntryPointSpec::Name("Unknown 213".to_string()))
         .expect("perks_by_entry_point unnamed by (nonexistent) name");
     assert!(
         seeds_by_name.is_empty(),

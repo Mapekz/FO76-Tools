@@ -282,6 +282,12 @@ KNOWN_UNION_DECIDERS: dict[str, dict] = {
 # Property index → name enums for wbObjectModPropertyToStr.
 # Selected at decode time via FieldValue on "Form Type" (WEAP/ARMO/NPC_).
 # Note: TES5Edit has a typo labelling ImpactDataSet as {50}; it is index 60.
+# Indices 115/116 are a local addition beyond upstream: wbWeaponPropertyEnum stops at
+# 114 (SneakAttackMult), but shipped data uses 116 as the WEAP-side perk-grant slot —
+# 47 rows / 38 OMODs in a full corpus sweep, always ADD / FormID,Int, always resolving
+# to a PERK. It is the analogue of ARMO's already-labeled index 18 "Perk" (same shape:
+# ADD / FormID,Int / Value 2 = 1, 33 rows / 19 distinct PERKs) — named to match. 115 is
+# never used but must be filled since this is a dense (positional) enum.
 _WEAPON_PROPERTIES: list[str] = [
     "Speed", "Reach", "MinRange", "MaxRange", "AttackDelaySec",
     "Unused 5", "OutOfRangeDamageMult", "SecondaryDamage", "CriticalChargeBonus",
@@ -314,6 +320,8 @@ _WEAPON_PROPERTIES: list[str] = [
     "DamageBonusMult", "AimAssistModel", "WeightMult", "AmmoConsumption",
     "Overheating", "OverheatRateUp", "OverheatRateDown", "SoundTagSet",
     "SneakAttackMult",
+    "Unknown 115",   # never used in shipped data
+    "Perk",          # 116 — local addition; upstream wbWeaponPropertyEnum stops at 114
 ]
 _ARMOR_PROPERTIES: list[str] = [
     "Enchantments", "Bash Impact Data Set", "Block Material", "Keywords",

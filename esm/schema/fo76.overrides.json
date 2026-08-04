@@ -607,7 +607,8 @@
                           "Mod NPC Normalized Level",
                           "Mod Ammo Spender Max Stack Count",
                           "Mod Ammo Spender Max Reload Stack Mult",
-                          "Unknown 211"
+                          "Mod Add Bullet To Clip Chance",
+                          "Mod Chain Damage Falloff"
                         ]
                       }
                     },

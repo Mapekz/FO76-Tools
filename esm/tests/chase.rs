@@ -136,7 +136,7 @@ fn fixture() -> FakeFetcher {
                     "Curve Table": null,
                 },
                 {
-                    "Property": {"value": 116, "name": "Perks"},
+                    "Property": {"value": 116, "name": "Perk"},
                     "Function Type": {"value": 2, "name": "ADD"},
                     "Value 1": {
                         "formid": PERK_FID,

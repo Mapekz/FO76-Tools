@@ -197,7 +197,7 @@ type.
   Damage`, `Mod Max Consecutive Hits Allowed`, `Mod Projectile Bounce Count`,
   `Apply Friendly/Combat Melee Hit Spell`) modify whatever damage instance is
   happening on the actor right now, not "this weapon's damage." A PERK
-  granted via an OMOD's `Property 116` (chase's "PERK grant") stays active
+  granted via an OMOD's `Property 116`/`Perk` (chase's "PERK grant") stays active
   while the granting item is equipped and applies to every simultaneous
   damage source — thrown grenades/mines, Pain Train, VATS crits, blocking.
   Example: `MedicalMalpractice_Perk` (0x0050D7FD) is an entry-point-167

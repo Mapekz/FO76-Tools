@@ -31,7 +31,7 @@ A `mod_Custom_*` OMOD implements its mechanic one of four ways:
 
 1. **Direct property** — ADD/SET on a weapon stat or actor value in `Data/Properties`. An AVIF's
    name is not its semantics: find its consumer (`refs --type SPEL|PERK --paths`).
-2. **Perk grant** — Property `116`/`Perks` ADD of a PERK. Item-granted perks have **no PCRD**;
+2. **Perk grant** — Property `116`/`Perk` ADD of a PERK. Item-granted perks have **no PCRD**;
    `unreferenced_perk_rank` is a false positive on them.
 3. **Keyword hook** — the OMOD only ADDs a `CustomItemName_*` / `dn_*` KYWD; the mechanic lives
    in a SPEL/PERK effect gated on `WornHasKeyword(<that keyword>)`. `refs --type SPEL --paths` on
@@ -134,8 +134,9 @@ comparable.
 
 - `MUL+ADD`: effective = base × (1 + Value1) + Value2. Standard FO4/76 convention, inferred from
   worked examples, not confirmed against engine code.
-- Known property IDs: `77` = `DamageTypeValues`, `80` = `OverrideProjectile`, `106` =
-  `DamageBonusMult`, `116` = `Perks`.
+- Property IDs worth recognizing on sight — all already resolve to these names in decoded
+  output, this is a quick-recall list for skimming raw diffs, not a manual lookup: `77` =
+  `DamageTypeValues`, `80` = `OverrideProjectile`, `106` = `DamageBonusMult`, `116` = `Perk`.
 - **A curve table on a property overrides Value2 as the magnitude source.** Curve removed + Value2
   changed = scaling replaced by a flat value. The x-axis on armor carry-weight-style curves is
   **item level** (break points 1/10/20/30/40/50).
@@ -247,7 +248,7 @@ EditorID search, not proven exhaustive).
 
 **Example:** Flatliner (`RD01_Mod_Custom_StrikeBreaker_CustomName`, 0x00793512) ADDs +1.0 Full
 Power Damage Mult (2.0→3.0, full-charge bonus +100%→+200%) and +0.5 Full Power Seconds (1.0→1.5s),
-replacing an ADD Perks 116 grant of `mod_weapon_penetrating`.
+replacing an ADD Perk 116 grant of `mod_weapon_penetrating`.
 *verified 2026-07-14 vs 20260710*
 
 ## Creature weapon damage curves are keyed on wielder level
