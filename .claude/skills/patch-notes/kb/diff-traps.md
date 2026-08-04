@@ -67,12 +67,17 @@ universal currency — never anything else observed. Not an economy story.
 This exact pair on `Material Swaps`-style OMOD-Properties / Object-Mod-Template-Item entries,
 appearing identically across dozens of unrelated records with no other content change, is the
 signature of a global serialization-format change from a form_version bump. Don't read the `1 → 3`
-as a real multiplier change without an independent live cross-check.
+as a real multiplier change without an independent live cross-check. A lone `Value 2` change with
+no `Step` field present (or in either direction, not just 1→3) is not automatically this artifact —
+pull every sibling record sharing that exact `Property` name; if they agree on one value and yours
+diverges, it's a real outlier worth an Unconfirmed flag, not noise to drop.
 
 **Example:** 20260710→20260717 across ARMO colour-palette swaps, Letterman's Jacket, Dirty Postman
 Uniform, Brotherhood Scribe Outfit, Laundered Dresses, Grafton Monsters Jacket, Keep Out Backpack,
-Vault 118 Jumpsuit, and OMOD Bowling Ball Launcher.
-*verified 2026-07-22 vs 20260717*
+Vault 118 Jumpsuit, and OMOD Bowling Ball Launcher. Counter-example 20260803: Gatling Gun's
+Irradiated Paint (0x007AE53F) `Value 2` 3→1 while all 13 sibling Irradiated/Gatling paint OMODs
+stayed at 3 — a genuine outlier, flagged Unconfirmed rather than dropped.
+*verified 2026-08-03 vs 20260803*
 
 ## The QUST schema-population cluster
 
@@ -221,6 +226,30 @@ The `zzz`-prefixed legacy duplicates were left on the old system, confirming the
 the ones being migrated.
 *verified 2026-07-22 vs 20260717*
 
+## A leveled list's newly-appended unconditional entry is a safety net, not a new tier
+
+When every existing entry in an LVLN/LVLI carries a `LocationHasKeyword`/tier condition and a new
+entry is appended with **no** Conditions, it's a catch-all so the list never returns nothing when
+no condition matches — not a new selectable tier or a stealth buff. Confirm by checking that every
+other entry keeps its own condition unchanged.
+
+**Example:** All eight Infestation (`HTO_`) per-faction boss LVLNs (e.g.
+`HTO_LChar_Faction_BloodEagle_Boss`, 0x0085A386) gained a `_T5_Fallback` NPC_ entry with no
+Conditions, appended after their five keyword-gated Tier 1–5 entries.
+*verified 2026-08-03 vs 20260803*
+
+## Two CNDFs testing mutually-exclusive GLOB states in one Conditions list can't both resolve true
+
+A flat `Conditions` array's AND/OR combination isn't reliably invertible by hand when two
+referenced CNDF forms require different values of the same GLOB. Report the named conditions and
+any unchanged baseline number, and flag the combined semantics Unconfirmed rather than asserting
+which branch wins.
+
+**Example:** `SDOW_DailyOps_LL_Rewards_RepeatTier` (0x008FCEA5) combines a 25% `GetRandomPercent`
+with `SDOW_DailyOps_SlasherForced_CNDF` (Selection_Index==1) and `SDOW_DailyOps_SlasherPref_CNDF`
+(Selection_Index==2), which can never both be true in the same evaluation.
+*verified 2026-08-03 vs 20260803*
+
 ---
 
 # Lint false positives
@@ -241,9 +270,12 @@ The rule reports "description changed but no numeric stat changed" when the only
 undecoded binary field — notably `Unknown CTRN / hex` on TACT/TERM records and `Unknown / hex`. No
 description is involved at all. 77 of 116 lints in one deep slice were this shape (68 CTRN, 9
 Unknown, plus 1 on STAT `Distant LOD` binary blobs). The rule should skip paths ending in `/ hex`
-or flagged `_raw`. Spot-verified on TACT `TEST_ENB_ModusSceneTerminal` (0x00006DB5), whose sole
-change is `Unknown CTRN / hex`.
-*verified 2026-07-24 vs 20260724*
+or flagged `_raw`. Also fires on a bare `Model / Model FileName` swap with no `Description` field
+on the record at all — same fix: check the record's actual description field before trusting the
+lint's premise. Spot-verified on TACT `TEST_ENB_ModusSceneTerminal` (0x00006DB5), whose sole change
+is `Unknown CTRN / hex`, and on `SDOW_MQ02_Graves_GraveActivator` (0x008F1672), a bare
+`GraveActivator01.nif` → `GraveActivator_NoSkeleton.nif` swap with no Description field.
+*verified 2026-08-03 vs 20260803*
 
 ## `unreferenced_perk_rank` on item-granted and Player-attached perks
 

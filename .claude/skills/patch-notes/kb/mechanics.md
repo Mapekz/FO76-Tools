@@ -331,6 +331,30 @@ command emotes (0x00916200–0x00916203) were added to FLST `ATX_HideFromStoreLi
 20260710. Distinct from the older `PETS_`-prefixed adoptable-companion quest system.
 *verified 2026-07-14 vs 20260710*
 
+## A legendary-combination `Attach Point Index` mismatched against sibling Includes is a mesh-attach fix, not a stat change
+
+Within `Object Template / Combinations[N].Combination.Object Mod Template Item.Includes[]`, every
+base-part mod normally shares `Attach Point Index: 0`; a legendary-mod row sitting at `1` while its
+siblings sit at `0` is a visual mesh-attachment outlier — correcting it to match is cosmetic
+plumbing, never a damage/stat change.
+
+**Example:** 20260803, seven base weapons (Hunting Rifle, Knuckles, Laser Gun, Sickle, .44,
+Sledgehammer, Pump Action Shotgun) each had one 1★-legendary Include's Attach Point Index corrected
+`1` → `0` to match its siblings.
+*verified 2026-08-03 vs 20260803*
+
+## An NPC_'s own stat curve override needs `Use Stats` off to take effect
+
+An NPC_ `Properties[]` entry keyed by an Actor Value (e.g. Health) carries its own Curve Table, but
+the engine only reads it when `Configuration / Template Flags` bit `0x2` ("Use Stats") is cleared —
+otherwise stats still come from the `Default Template` chain. A curve swap on a Properties entry
+with the flag still set is dead data; check the flag before reporting the curve as live.
+
+**Example:** Pint-Sized Phantom Ringleader (0x008E06D5) swapped its Health Properties curve
+`CT_Creatures_Health_Universal_Tier31` → `..._Tier33` (+41% tapering to +16%) in the same diff that
+cleared Template Flags bit `0x2`.
+*verified 2026-08-03 vs 20260803*
+
 ## Seasonal content converts by rename, not by adding records
 
 A seasonal one-off promoted to a permanent repeatable shows up as a QUST rename plus a
