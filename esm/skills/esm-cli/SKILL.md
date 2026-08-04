@@ -124,7 +124,9 @@ One rule: **read records with `walk`; `chase` is the machine contract.**
   keywords, …). `--depth` caps BFS chain-following (default 2; use 3 for
   OMOD → ENCH → MGEF → granted-perk); the root's mechanism slice renders at
   any depth. `--refs` appends grouped reverse references (see obtainability
-  below).
+  below). On an LVLI root, `walk` resolves the actual drop odds instead of
+  dumping raw entries — see "Drop-chance math" below; `--level N` (default
+  50) feeds Curve Table evaluation and Minimum Level filtering.
 
 **Worked example** (`mod_Legendary_Weapon1_DmgConsecutiveHits` / "Furious",
 `0x004F577D`, an ENCH property plus a KYWD-hook property — both mechanisms,
@@ -264,6 +266,15 @@ plus a cut orphaned spell.
 
 ## Drop-chance math (LVLI chains)
 
+**`esm walk <lvli-selector>` computes this automatically** (`src/lvli.rs`) —
+pool/`Use All`/`Use First Match` selection, flat-vs-GLOB-vs-Curve-Table
+chance-none, recursion through nested sublists to leaf items, all as one
+ranked table. Reach for it instead of hand-tracing a chain; the rules below
+are for reading its output (and for the handful of things it deliberately
+doesn't model — `Filter Keyword Chances`, `Epic Loot Chance`, list-level
+`Max Count`/`Max Global`/`Max Curve Table`, COED owner/rank gates — flagged
+as `unresolved` notes on the affected rows rather than silently guessed).
+
 - **A zero `Chance None Value` does not mean "guaranteed" — check the sibling
   `Chance None Global` on the same entry.** Each `Leveled List Entry` carries
   both a flat `Chance None Value` and an optional `Chance None Global` FormID;
@@ -272,23 +283,43 @@ plus a cut orphaned spell.
   makes gated rewards look like 100% drops: `TWZ07_LL_QuestReward_Event` reports
   flat `0.0` but points at `RA_Rewards_Activities_UniqueWeapon_DropRate_Cnone`
   = 85, i.e. a 15% drop. The list-level `Chance None Value` has no GLOB sibling
-  — that one really is flat.
-- **Flags decide how to combine entries, and `Use First Object That Matches All
-  Conditions` is not a 1/N pick.** `Use All` rolls every entry independently
-  (multiply the per-entry miss chances). No flag = pick one uniformly from the
-  entry count, then apply that entry's chance-none. `Use First Object That
-  Matches All Conditions` walks entries in order and takes the first whose
-  conditions pass — so an entry gated on `GetRandomPercent ≤ 10` is a flat 10%,
-  and dividing by the entry count instead is wrong. Later entries in such a list
-  are only reachable when the earlier gates fail, so their true probability is
-  the product of the preceding failures.
+  — that one really is flat. A `Chance None Curve Table` sibling, when present,
+  outranks both (see Curve tables below).
+- **Flags decide how to combine entries, and neither no-flag nor `Use First
+  Object That Matches All Conditions` is a 1/N pick.** `Use All` rolls every
+  entry independently (multiply the per-entry miss chances). **No flag is a
+  pool, not a uniform pick from the entry count**: every entry's own gate
+  rolls independently, the passing subset is pooled, and one member of *that
+  subset* is chosen uniformly — so an entry's real odds depend on how many
+  siblings are also passing at the same time, not just its own gate or a flat
+  `1/entry_count`. Confirmed against `SCORE_S22_Resources_Collector_
+  SoulSoupServer_Food` (0x008308D7): six entries on a descending
+  `GetRandomPercent ≥ {92,80,63,45,25}` ladder plus an unconditioned catch-all
+  read like a hand-authored 8/12/17/18/20/25% split, but the *actual* pool
+  odds are 2.20/5.66/10.96/17.19/25.22/38.77% — the rarest item is ~3.6×
+  rarer than the ladder implies, because it only wins when it's the *sole*
+  passing entry. `Use First Object That Matches All Conditions` walks entries
+  in order and takes the first whose conditions pass — so an entry gated on
+  `GetRandomPercent ≤ 10` genuinely is a flat 10%, and later entries are only
+  reachable when every earlier gate fails (their true probability is the
+  product of the preceding misses).
 - **Entry-level `Conditions` gate the roll too** — `GetRandomPercent ≤ N` (flat
   or GLOB comparison value) and `HasLearnedRecipe(...) == 0` are the common
   ones. The recipe check is why plan-then-weapon lists hand out the plan first:
   `RD01_LLS_Raids_Rewards_Enc01_Weapons_Valkyrie` is `Use First Match` with the
   BOOK at `rand ≤ 5` (while unlearned) ahead of the weapon LVLI at `rand ≤ 10`.
+  Any gate that isn't `GetRandomPercent` (`GetLevel`, `HasLearnedRecipe`, …) is
+  real but not a probability the tool can compute — it renders as a `gated:`
+  note (assume-pass by default; `--strict` isn't exposed on `walk` yet, only
+  used internally).
 - `Quantity: 0` on an entry means "use the sublist's own count", not "disabled" —
   creature death-item lists are full of them.
+- **A `Minimum Level`/`Minimum Level Global` above the assumed player level
+  (`--level`, default 50) excludes an entry outright.** Whether FO76 further
+  collapses multiple *qualifying* Minimum Level tiers down to just the highest
+  one when `Calculate from all levels <= player's level` is unset is
+  unverified here — `walk` shows every qualifying tier and flags the ambiguity
+  rather than picking a side.
 
 ## OMOD `Data.Includes[]` — inherited properties
 
@@ -384,6 +415,18 @@ still works for an id with no name at all.
   - `get --resolve stub --pretty` already inlines the `curve` points,
     `curve_path`, and keying `Actor Value` on the same effect — one call
     gives you everything above; don't quote a bare magnitude.
+  - **LVLI's own curve-table siblings don't all key on player level.** A
+    `Chance None Curve Table` or `Quantity Curve Table` on a `Leveled List
+    Entry` reads level-shaped in spot-checked data (`Container_Item2_
+    ChanceNone`: x 0-100, y falls 100→0; `CT_Creatures_Loot_WeaponUser_
+    Steel_Base`: x 1-50, y climbs 3→7) and `esm walk`'s drop-odds digest
+    (`src/lvli.rs`) evaluates both at `--level`. The `Minimim Level Curve
+    Table` sibling (schema typo, present as-is) does not — `MinLevel_Armor_
+    Metal_CT`'s points `(0,1)(1,10)(2,25)(3,35)(99,35)(100,100)` read as an
+    item-quality-tier index (0-3, with 99/100 sentinel rows), not a level.
+    `walk` deliberately does not evaluate it — treat any "min level curve"
+    finding the same way: check whether the x-domain actually looks
+    level-shaped before assuming it does.
 - Out-of-domain inputs clamp to the curve's own first/last point — no
   extrapolation, no implied zero. A zero floor is an authoring choice encoded
   as an explicit `{x:0, y:0}` point; some legitimate curves deliberately omit
