@@ -36,6 +36,16 @@
 //! named too, straight off the already-stub-resolved fields — zero extra
 //! fetches.
 //!
+//! **LVLI roots get resolved drop odds, not a raw field dump.** [`digest_node`]'s
+//! `"LVLI"` arm calls [`crate::lvli::drop_table`] (pool/`Use All`/`Use First
+//! Match` selection math, flat-vs-GLOB-vs-Curve-Table chance-none, recursion
+//! through nested sublists to leaf items) and renders one row per leaf item —
+//! see `crate::lvli`'s module docs for the mechanics and what isn't modeled.
+//! `--level` (default [`crate::lvli::DEFAULT_LEVEL`]) feeds Curve Table
+//! evaluation and Minimum Level filtering. A direct sublist entry is also
+//! enqueued as its own BFS node so an intermediate list stays inspectable,
+//! even though the aggregated table already flattens through it.
+//!
 //! Every record is fetched at [`ResolveDepth::Stub`], so every direct FormID
 //! reference on a fetched record's own fields already arrives pre-annotated
 //! as `{"formid", "editor_id", "record_type"}` (the same annotation
@@ -142,6 +152,10 @@ pub struct WalkOptions {
     /// [`CONSUMER_REF_LIMIT`], which bounds a *directly*-walked KYWD/AVIF
     /// root's own consumer digest and is deliberately left as-is.
     pub ref_limit: usize,
+    /// Player level assumed by an LVLI root's drop-odds digest (see
+    /// [`crate::lvli::DropOptions::level`]) — Minimum Level filtering and
+    /// Curve Table evaluation both key off it. Unused by every other digest.
+    pub level: f32,
 }
 
 impl Default for WalkOptions {
@@ -149,6 +163,7 @@ impl Default for WalkOptions {
         Self {
             depth: DEFAULT_DEPTH,
             ref_limit: crate::chase::DEFAULT_REF_LIMIT,
+            level: crate::lvli::DEFAULT_LEVEL,
         }
     }
 }
@@ -256,7 +271,7 @@ fn is_ref_stub(v: &Value) -> bool {
     matches!(v, Value::Object(map) if map.contains_key("formid"))
 }
 
-fn stub_formid(v: Option<&Value>) -> Option<FormId> {
+pub(crate) fn stub_formid(v: Option<&Value>) -> Option<FormId> {
     let obj = v?.as_object()?;
     let s = obj.get("formid")?.as_str()?;
     crate::parse_form_id_input(s).ok()
@@ -303,7 +318,7 @@ fn collect_ref_formids(v: &Value, out: &mut Vec<FormId>) {
     }
 }
 
-fn dedup_sorted(fids: &mut Vec<FormId>) {
+pub(crate) fn dedup_sorted(fids: &mut Vec<FormId>) {
     fids.sort_by_key(|f| f.0);
     fids.dedup();
 }
@@ -312,7 +327,7 @@ fn dedup_sorted(fids: &mut Vec<FormId>) {
 /// display-formid string (matches `BulkRecordEntry::sel` for a
 /// `RecordSel::FormId` selector — see `esm::chase`'s identical `by_sel`
 /// pattern).
-fn bulk_fetch_map(
+pub(crate) fn bulk_fetch_map(
     f: &mut impl ChaseFetcher,
     fids: &[FormId],
 ) -> anyhow::Result<HashMap<String, BulkRecordEntry>> {
@@ -398,8 +413,10 @@ fn fmt_curve(v: &Value) -> Option<String> {
 // ─── conditions ─────────────────────────────────────────────────────────────
 
 /// Pull the flat condition rows out of a SPEL/ENCH/ALCH/MGEF-style
-/// `Conditions` node (mirrors the TS original's `flattenConditionRows`).
-fn flatten_condition_rows(node: &Value) -> Vec<Value> {
+/// `Conditions` node (mirrors the TS original's `flattenConditionRows`). LVLI
+/// entries decode `Conditions` into this identical shape (see
+/// `crate::lvli`), so this is shared rather than duplicated.
+pub(crate) fn flatten_condition_rows(node: &Value) -> Vec<Value> {
     let mut out = Vec::new();
     let Some(conditions) = node.get("Conditions").and_then(Value::as_array) else {
         return out;
@@ -480,7 +497,7 @@ fn fmt_condition_row(row: &Value, by_sel: &HashMap<String, BulkRecordEntry>) -> 
 
 /// Collect every GLOB/other FormID reference nested inside `conditions_node`
 /// so callers can batch-prefetch GLOB `Value`s before rendering.
-fn collect_condition_refs(conditions_node: &Value, out: &mut Vec<FormId>) {
+pub(crate) fn collect_condition_refs(conditions_node: &Value, out: &mut Vec<FormId>) {
     collect_ref_formids(conditions_node, out);
 }
 
@@ -1391,6 +1408,140 @@ fn digest_expl(fields: &Value, lines: &mut Vec<String>) {
     render_explosion_detail_lines(&detail, lines, "");
 }
 
+/// Left-align each column to its widest cell, two-space-joined. A minimal,
+/// string-returning stand-in for `print_record_table` (`src/bin/cli.rs`,
+/// binary-crate-private and `println!`s directly rather than returning lines
+/// for `WalkNode::digest`) — not worth promoting/sharing for one caller.
+fn align_table(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
+    let cols = headers.len();
+    let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
+    for row in rows {
+        for (i, cell) in row.iter().enumerate().take(cols) {
+            widths[i] = widths[i].max(cell.chars().count());
+        }
+    }
+    let pad = |cells: &[String]| -> String {
+        cells
+            .iter()
+            .enumerate()
+            .take(cols)
+            .map(|(i, c)| format!("{c:<width$}", width = widths[i]))
+            .collect::<Vec<_>>()
+            .join("  ")
+            .trim_end()
+            .to_string()
+    };
+    let header_row: Vec<String> = headers.iter().map(|h| (*h).to_string()).collect();
+    let mut out = vec![pad(&header_row)];
+    out.extend(rows.iter().map(|r| pad(r)));
+    out
+}
+
+fn format_drop_notes(notes: &[crate::lvli::DropNote]) -> String {
+    use crate::lvli::DropNote;
+    notes
+        .iter()
+        .map(|n| match n {
+            DropNote::Gated { function } => format!("gated:{function}"),
+            DropNote::Cycle => "cycle".to_string(),
+            DropNote::DepthCapped => "depth-capped".to_string(),
+            DropNote::PoolCapped => "pool-capped".to_string(),
+            DropNote::QuantityOnSublist => "qty-on-sublist".to_string(),
+            DropNote::Unresolved { reason } => format!("unresolved: {reason}"),
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// Enqueue each entry's own *direct* sublist target (an entry whose
+/// `Reference`/legacy `Item` resolves to another LVLI) as its own BFS node,
+/// so `--depth` can drill into an intermediate list's own digest. The
+/// aggregated table [`digest_lvli`] renders already flattens the full
+/// recursive expansion down to leaf items regardless of `--depth` — this is
+/// purely so the intermediate list stays visible, not load-bearing for the
+/// odds themselves.
+fn lvli_direct_sublists(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) {
+    let Some(list) = fields.get("Leveled List Entries").and_then(Value::as_array) else {
+        return;
+    };
+    for item in list {
+        let Some(entry) = item.get("Leveled List Entry") else {
+            continue;
+        };
+        let target = entry
+            .get("Reference")
+            .or_else(|| entry.pointer("/Base Data/Item"));
+        let Some(target) = target else {
+            continue;
+        };
+        if target.get("record_type").and_then(Value::as_str) == Some("LVLI")
+            && let Some(fid) = stub_formid(Some(target))
+        {
+            enqueue.push((fid, "leveled list entry".to_string()));
+        }
+    }
+}
+
+/// LVLI: resolve full drop odds via [`crate::lvli::drop_table`] (pool/`Use
+/// All`/`Use First Match` selection, chance-none, Curve Table evaluation at
+/// `level`, recursion through nested sublists) and render one row per leaf
+/// item, sorted by expected count. Direct sublist targets are also enqueued
+/// as their own BFS nodes (see [`lvli_direct_sublists`]).
+fn digest_lvli(
+    f: &mut impl ChaseFetcher,
+    formid: FormId,
+    fields: &Value,
+    level: f32,
+    lines: &mut Vec<String>,
+    enqueue: &mut Vec<EnqueueTarget>,
+) -> anyhow::Result<()> {
+    let opts = crate::lvli::DropOptions {
+        level,
+        ..Default::default()
+    };
+    let table = crate::lvli::drop_table(f, formid, fields, &opts)?;
+
+    let model_name = match table.model {
+        crate::lvli::SelectionModel::Pool => "pool (pick one, weighted by passing subset)",
+        crate::lvli::SelectionModel::UseAll => "Use All (every passing entry dispensed)",
+        crate::lvli::SelectionModel::UseFirstMatch => "Use First Match (ordered cascade)",
+    };
+    lines.push(format!(
+        "drop odds  model {model_name}  level {}  p(nothing) {:.1}%{}",
+        table.level,
+        table.p_nothing * 100.0,
+        if table.truncated {
+            "  [approximated in places — see notes]"
+        } else {
+            ""
+        },
+    ));
+
+    if table.rows.is_empty() {
+        lines.push("  (no eligible entries at this level)".to_string());
+    } else {
+        let headers = ["item", "expected", "p(>=1)", "notes"];
+        let rows: Vec<Vec<String>> = table
+            .rows
+            .iter()
+            .map(|r| {
+                vec![
+                    format!("{} {} {}", r.record_type, r.formid, r.editor_id),
+                    format!("{:.4}", r.expected_count),
+                    format!("{:.2}%", r.p_at_least_one * 100.0),
+                    format_drop_notes(&r.notes),
+                ]
+            })
+            .collect();
+        for line in align_table(&headers, &rows) {
+            lines.push(format!("  {line}"));
+        }
+    }
+
+    lvli_direct_sublists(fields, enqueue);
+    Ok(())
+}
+
 // ─── refs digest (root-only, `--refs`) ──────────────────────────────────────
 
 /// Group an unfiltered reverse-`refs` row list by `record_type`, sorted by
@@ -1459,11 +1610,13 @@ fn digest_node(
     editor_id: &str,
     fields: &Value,
     ref_limit: usize,
+    level: f32,
 ) -> anyhow::Result<(Vec<String>, Vec<EnqueueTarget>)> {
     let mut lines = Vec::new();
     let mut enqueue = Vec::new();
     match sig {
         "GLOB" => digest_glob(fields, &mut lines),
+        "LVLI" => digest_lvli(f, formid, fields, level, &mut lines, &mut enqueue)?,
         "AVIF" => {
             digest_avif(fields, &mut lines);
             digest_keyword_or_av(f, formid, &mut lines)?;
@@ -1561,6 +1714,7 @@ pub fn walk(
             &editor_id,
             &fields,
             opts.ref_limit,
+            opts.level,
         )?;
 
         nodes.push(WalkNode {

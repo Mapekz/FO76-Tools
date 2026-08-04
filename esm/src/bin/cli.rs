@@ -321,6 +321,11 @@ enum Commands {
         /// root's keyword/AVIF mechanism consumer lookups.
         #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
         ref_limit: usize,
+        /// Player level assumed by an LVLI root's drop-odds digest (Curve
+        /// Table evaluation, Minimum Level filtering). Ignored by every
+        /// other record type.
+        #[arg(long, default_value_t = esm::lvli::DEFAULT_LEVEL)]
+        level: f32,
         /// Print the root record's grouped reverse-reference summary
         /// (obtainability signal) after the chain digest.
         #[arg(long)]
@@ -921,9 +926,10 @@ fn dispatch_command(
             selector,
             depth,
             ref_limit,
+            level,
             refs,
             json,
-        } => cmd_walk(backend, esm, &selector, depth, ref_limit, refs, json),
+        } => cmd_walk(backend, esm, &selector, depth, ref_limit, level, refs, json),
         Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
         Commands::Cache { .. } => unreachable!(),
@@ -1528,11 +1534,16 @@ fn cmd_walk(
     selector: &str,
     depth: usize,
     ref_limit: usize,
+    level: f32,
     want_refs: bool,
     json: bool,
 ) -> anyhow::Result<()> {
     let sel = RecordSel::from_input(selector)?;
-    let opts = esm::walk::WalkOptions { depth, ref_limit };
+    let opts = esm::walk::WalkOptions {
+        depth,
+        ref_limit,
+        level,
+    };
     let mut fetcher = BackendFetcher { backend, file };
     let mut result = esm::walk::walk(&mut fetcher, sel, &opts)?;
 

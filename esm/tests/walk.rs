@@ -960,6 +960,7 @@ fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
         &WalkOptions {
             depth: 0,
             ref_limit: 2,
+            ..WalkOptions::default()
         },
     )
     .unwrap();
@@ -1019,5 +1020,349 @@ fn omod_includes_stub_renders_include_line() {
             "include → OMOD {OMOD_PARENT_FID} mod_Legendary_Weapon1_Parent"
         )),
         "expected an include stub line, got:\n{text}"
+    );
+}
+
+// ─── LVLI digest ────────────────────────────────────────────────────────────
+//
+// The selection/probability math itself is unit-tested exhaustively in
+// `src/lvli.rs`'s own `#[cfg(test)]` module (pool/`Use All`/`Use First
+// Match`, chance-none flat-vs-GLOB, curve evaluation, cycle guard, pool cap).
+// These integration tests only cover the `walk()`/`digest_lvli` glue: that a
+// walked LVLI root actually renders the table, that `WalkOptions::level`
+// reaches `crate::lvli::drop_table`, and that a direct sublist entry gets
+// enqueued as its own BFS node.
+
+const LVLI_POOL_ROOT_FID: &str = "0x00700010";
+const LVLI_SUBLIST_ROOT_FID: &str = "0x00700020";
+const LVLI_SUBLIST_CHILD_FID: &str = "0x00700021";
+const LVLI_CURVE_ROOT_FID: &str = "0x00700030";
+const LVLI_FLAGS2_ROOT_FID: &str = "0x00700040";
+const LVLI_LEGACY_ROOT_FID: &str = "0x00700050";
+const LVLI_GATED_ROOT_FID: &str = "0x00700060";
+
+fn lvli_leaf(formid: &str, rt: &str, edid: &str) -> serde_json::Value {
+    json!({"formid": formid, "editor_id": edid, "record_type": rt})
+}
+
+fn lvli_entry_gated(target: serde_json::Value, operator: &str, cmp: f64) -> serde_json::Value {
+    json!({"Leveled List Entry": {
+        "Reference": target,
+        "Chance None Value": 0.0,
+        "Quantity": 1.0,
+        "Minimum Level": 1.0,
+        "Conditions": {"Conditions": [{"Condition": {"Condition Data": {
+            "Function": "GetRandomPercent",
+            "Operator": operator,
+            "Comparison Value": cmp,
+            "AND/OR": "AND",
+            "Run On": "Subject",
+        }}}]},
+    }})
+}
+
+fn lvli_entry(target: serde_json::Value) -> serde_json::Value {
+    json!({"Leveled List Entry": {
+        "Reference": target,
+        "Chance None Value": 0.0,
+        "Quantity": 1.0,
+        "Minimum Level": 1.0,
+    }})
+}
+
+/// Bundles every LVLI digest scenario into one fetcher, mirroring
+/// `perk_fixture`'s "one fixture per digest, many roots" shape.
+fn lvli_fixture() -> FakeFetcher {
+    let mut f = FakeFetcher::new();
+
+    // Pool render — a descending GetRandomPercent >= N ladder plus an
+    // unconditioned catch-all (the same shape as the real regression fixture
+    // this feature was built to answer, `0x008308D7`).
+    f.insert(
+        LVLI_POOL_ROOT_FID,
+        "LVLI",
+        "TestPoolRoot",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [
+                lvli_entry_gated(
+                    lvli_leaf("0x00700011", "ALCH", "RareSoup"),
+                    "Greater Than Or Equal To",
+                    92.0,
+                ),
+                lvli_entry(lvli_leaf("0x00700012", "ALCH", "CommonSoup")),
+            ],
+        }),
+    );
+
+    // Direct sublist entry → its own BFS node, on top of the aggregated
+    // table already flattening through it.
+    f.insert(
+        LVLI_SUBLIST_CHILD_FID,
+        "LVLI",
+        "TestSublistChild",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [lvli_entry(lvli_leaf("0x00700022", "WEAP", "NestedWeapon"))],
+        }),
+    );
+    f.insert(
+        LVLI_SUBLIST_ROOT_FID,
+        "LVLI",
+        "TestSublistRoot",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [lvli_entry(lvli_leaf(
+                LVLI_SUBLIST_CHILD_FID,
+                "LVLI",
+                "TestSublistChild",
+            ))],
+        }),
+    );
+
+    // Quantity Curve Table sibling — points climb 1 -> 5 over level 0 -> 100,
+    // so `--level` should move the rendered expected-count row.
+    f.insert(
+        LVLI_CURVE_ROOT_FID,
+        "LVLI",
+        "TestCurveRoot",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [{"Leveled List Entry": {
+                "Reference": lvli_leaf("0x00700031", "MISC", "ScalingJunk"),
+                "Chance None Value": 0.0,
+                "Minimum Level": 0.0,
+                "Quantity Curve Table": {
+                    "formid": "0x00700032",
+                    "editor_id": "TestQuantityCurve",
+                    "curve_path": "test/quantity.json",
+                    "curve": [{"x": 0.0, "y": 1.0}, {"x": 100.0, "y": 5.0}],
+                },
+            }}],
+        }),
+    );
+
+    // XALG/LVLF "Flags" key collision — "Item Dispenser" is a real flag name
+    // in both vocabularies, so only "Flags 2" (LVLF, present because XALG
+    // took "Flags" first) may be trusted for the selection model.
+    f.insert(
+        LVLI_FLAGS2_ROOT_FID,
+        "LVLI",
+        "TestFlags2Root",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x10", "flags": ["Item Dispenser"]},
+            "Flags 2": {"value": "0x4", "flags": ["Use All"]},
+            "Leveled List Entries": [
+                lvli_entry(lvli_leaf("0x00700041", "MISC", "AlwaysA")),
+                lvli_entry(lvli_leaf("0x00700042", "MISC", "AlwaysB")),
+            ],
+        }),
+    );
+
+    // Legacy (form_version < 174) entry shape — `Base Data.{Level,Item,Count,
+    // Chance None}` instead of the modern `Reference`/sibling fields.
+    f.insert(
+        LVLI_LEGACY_ROOT_FID,
+        "LVLI",
+        "TestLegacyRoot",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [{"Leveled List Entry": {
+                "Base Data": {
+                    "Level": 5,
+                    "Item": lvli_leaf("0x00700051", "MISC", "OldStyleItem"),
+                    "Count": 2,
+                    "Chance None": 20,
+                },
+            }}],
+        }),
+    );
+
+    // A Condition gate that isn't `GetRandomPercent` — a real gate this
+    // engine can't turn into a probability, so it must show up as a note
+    // rather than silently reading as always-pass with no caveat.
+    f.insert(
+        LVLI_GATED_ROOT_FID,
+        "LVLI",
+        "TestGatedRoot",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [{"Leveled List Entry": {
+                "Reference": lvli_leaf("0x00700061", "BOOK", "RecipeReward"),
+                "Chance None Value": 0.0,
+                "Quantity": 1.0,
+                "Minimum Level": 1.0,
+                "Conditions": {"Conditions": [{"Condition": {"Condition Data": {
+                    "Function": "HasLearnedRecipe",
+                    "Operator": "Equal To",
+                    "Comparison Value": 0.0,
+                    "AND/OR": "AND",
+                    "Run On": "Subject",
+                }}}]},
+            }}],
+        }),
+    );
+
+    f
+}
+
+#[test]
+fn lvli_pool_digest_renders_ranked_drop_table() {
+    let mut f = lvli_fixture();
+    let result = walk(
+        &mut f,
+        sel(LVLI_POOL_ROOT_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, LVLI_POOL_ROOT_FID).join("\n");
+    assert!(
+        text.contains("drop odds  model pool"),
+        "expected a pool-model header, got:\n{text}"
+    );
+    // RareSoup's own gate passes 8% of the time, but pool selection splits
+    // the "both pass" subset between the two entries too, so its actual odds
+    // are 4% (0.92*1 + 0.08*0.5), not a naive 8% — CommonSoup should still
+    // clearly outrank it.
+    let rare_pos = text.find("RareSoup").expect("RareSoup row missing");
+    let common_pos = text.find("CommonSoup").expect("CommonSoup row missing");
+    assert!(
+        common_pos < rare_pos,
+        "expected CommonSoup ranked above RareSoup, got:\n{text}"
+    );
+    assert!(
+        text.contains("4.00%"),
+        "expected RareSoup's 4% pool odds, got:\n{text}"
+    );
+}
+
+#[test]
+fn lvli_direct_sublist_entry_is_enqueued_as_its_own_bfs_node() {
+    let mut f = lvli_fixture();
+    let result = walk(
+        &mut f,
+        sel(LVLI_SUBLIST_ROOT_FID),
+        &WalkOptions {
+            depth: 1,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    // The aggregated root table already flattens through to the leaf...
+    let root_text = node_digest(&result, LVLI_SUBLIST_ROOT_FID).join("\n");
+    assert!(
+        root_text.contains("NestedWeapon"),
+        "root's own table should already show the flattened leaf, got:\n{root_text}"
+    );
+    // ...but the intermediate sublist should still be independently visited.
+    let child_text = node_digest(&result, LVLI_SUBLIST_CHILD_FID).join("\n");
+    assert!(
+        child_text.contains("NestedWeapon"),
+        "sublist's own digest should render its own entry, got:\n{child_text}"
+    );
+}
+
+#[test]
+fn lvli_level_option_moves_a_curve_driven_quantity() {
+    let mut f = lvli_fixture();
+    let low = walk(
+        &mut f,
+        sel(LVLI_CURVE_ROOT_FID),
+        &WalkOptions {
+            depth: 0,
+            level: 0.0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let mut f2 = lvli_fixture();
+    let high = walk(
+        &mut f2,
+        sel(LVLI_CURVE_ROOT_FID),
+        &WalkOptions {
+            depth: 0,
+            level: 100.0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let low_text = node_digest(&low, LVLI_CURVE_ROOT_FID).join("\n");
+    let high_text = node_digest(&high, LVLI_CURVE_ROOT_FID).join("\n");
+    assert!(
+        low_text.contains("1.0000") && !low_text.contains("5.0000"),
+        "level 0 should evaluate the curve to quantity 1, got:\n{low_text}"
+    );
+    assert!(
+        high_text.contains("5.0000") && !high_text.contains("1.0000"),
+        "level 100 should evaluate the curve to quantity 5, got:\n{high_text}"
+    );
+}
+
+#[test]
+fn lvli_flags_2_wins_selection_model_over_flags() {
+    let mut f = lvli_fixture();
+    let result = walk(
+        &mut f,
+        sel(LVLI_FLAGS2_ROOT_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, LVLI_FLAGS2_ROOT_FID).join("\n");
+    assert!(
+        text.contains("model Use All"),
+        "XALG's own \"Item Dispenser\" flag under \"Flags\" must not be read \
+         as LVLF's; \"Flags 2\" should win, got:\n{text}"
+    );
+}
+
+#[test]
+fn lvli_legacy_base_data_entry_renders() {
+    let mut f = lvli_fixture();
+    let result = walk(
+        &mut f,
+        sel(LVLI_LEGACY_ROOT_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, LVLI_LEGACY_ROOT_FID).join("\n");
+    assert!(
+        text.contains("OldStyleItem"),
+        "pre-174 Base Data entry should still resolve to its Item, got:\n{text}"
+    );
+}
+
+#[test]
+fn lvli_non_get_random_percent_gate_is_noted() {
+    let mut f = lvli_fixture();
+    let result = walk(
+        &mut f,
+        sel(LVLI_GATED_ROOT_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, LVLI_GATED_ROOT_FID).join("\n");
+    assert!(
+        text.contains("RecipeReward") && text.contains("gated:HasLearnedRecipe"),
+        "a non-GetRandomPercent gate must render as a caveat, not silently \
+         assume-pass with no trace, got:\n{text}"
     );
 }

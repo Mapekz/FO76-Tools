@@ -12,6 +12,7 @@ pub mod formid;
 pub mod hardcoded;
 pub mod index;
 pub mod ipc;
+pub mod lvli;
 pub mod progress;
 pub mod query;
 pub mod reader;
