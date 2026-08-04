@@ -1,7 +1,6 @@
 //! Multi-ESM registry: lazily opens and caches [`Database`] instances.
 
 use crate::Database;
-use anyhow::Context;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -85,11 +84,10 @@ impl Registry {
     ) -> anyhow::Result<(PathBuf, Arc<Mutex<Database>>)> {
         // Resolve folder → ESM before canonicalizing so the cache key and the
         // FileSig track the ESM file, not a directory.  Resolving a file input
-        // is idempotent and costs one `is_dir` stat.
-        let esm_path = crate::discover::resolve_sources(path, "en")?.esm;
-        let canonical = esm_path
-            .canonicalize()
-            .with_context(|| format!("canonicalize {}", esm_path.display()))?;
+        // is idempotent and costs one `is_dir` stat. `resolve_esm_path` is the
+        // one place this two-step resolution lives — `BuildLease`/`progress::read`
+        // callers must key off this exact same canonical path (see its doc comment).
+        let canonical = crate::discover::resolve_esm_path(path)?;
 
         // Check for a live, non-stale entry.
         if let Some(resident) = {

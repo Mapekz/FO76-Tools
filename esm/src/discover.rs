@@ -81,6 +81,29 @@ pub fn resolve_sources(input: &Path, locale: &str) -> Result<ResolvedSources> {
     })
 }
 
+/// Resolve `input` (an `.esm` file or its containing data folder) to the
+/// canonical path of the `.esm` file itself — the exact same two-step
+/// resolution [`crate::registry::Registry::get_or_open_with_key`] applies
+/// before opening a [`crate::Database`] (folder→ESM via [`resolve_sources`],
+/// then [`Path::canonicalize`]).
+///
+/// Every consumer of `esm_cache/`'s sidecar files — [`crate::index::Index`]'s
+/// build entry points via [`crate::progress::BuildLease`], and any external
+/// caller that wants to check on them via [`crate::progress::read`] or
+/// [`crate::index::cache_inventory`] — must key off this same canonical path,
+/// not the raw, possibly-relative-or-symlinked-or-folder input a user passed
+/// on the command line. `esm_cache/` is a sibling of the *canonical* ESM
+/// file, and a build lock/heartbeat is named from it; looking a build up by
+/// the raw input path instead is silently wrong whenever it differs from the
+/// canonical one (a data folder input, a relative path, a symlink) — the
+/// watcher would poll a location nothing ever writes to.
+pub fn resolve_esm_path(input: &Path) -> Result<PathBuf> {
+    let esm_path = resolve_sources(input, "en")?.esm;
+    esm_path
+        .canonicalize()
+        .with_context(|| format!("canonicalize {}", esm_path.display()))
+}
+
 fn find_single_esm(dir: &Path) -> Result<PathBuf> {
     let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
         .with_context(|| format!("reading directory {}", dir.display()))?

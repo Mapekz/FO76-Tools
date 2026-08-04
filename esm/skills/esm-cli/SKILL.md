@@ -13,8 +13,8 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 
 ## Invocation & path resolution
 
-- Subcommands: `daemon, info, get, list, search, refs, tree, diff, coverage,
-  chase, walk, skill`.
+- Subcommands: `daemon, cache, info, get, list, search, refs, tree, diff,
+  coverage, chase, walk, skill`.
 - ESM path comes from the global `--esm <PATH>` flag (long only; works before
   or after the subcommand) with `FO76_ESM_PATH` env fallback — a plain process
   env var, there is no `.env` parser. The path may be the `.esm` file or its
@@ -29,6 +29,17 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   respawns it automatically) — no manual step needed. Changing loose files
   next to the dump (strings/curvetables) does *not* self-heal: run
   `esm daemon stop` after adding or changing those.
+- A cold call against an ESM with no `esm_cache/` yet can take tens of
+  seconds to a couple of minutes (worst case: `refs`/`walk`/`chase` on a
+  first-ever query, which builds the `xref` index — a full schema decode of
+  every record). It shows live progress on stderr while waiting rather than
+  hanging silently, then still returns the real result — no flag needed. Use
+  `esm cache status [--json]` to check what's built/building without
+  triggering anything, or pass the global `--no-wait` flag to bail (exit 75)
+  instead of blocking when a build is already in flight — useful in a script
+  that would rather retry later. A second concurrent query against the same
+  ESM waits on (and reuses) whichever build is already running rather than
+  starting a redundant one.
 
 ## Fetching records
 

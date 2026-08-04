@@ -12,6 +12,7 @@ pub mod formid;
 pub mod hardcoded;
 pub mod index;
 pub mod ipc;
+pub mod progress;
 pub mod query;
 pub mod reader;
 pub mod registry;
@@ -36,7 +37,7 @@ pub use diff::{
     BodyDetail, DiffOptions, DiffResult, RecordDiff, RecordStub, RefName, apply_type_filter,
 };
 pub use formid::FormId;
-pub use index::SearchMeta;
+pub use index::{CacheInventory, SearchMeta, cache_inventory};
 pub use ipc::{
     BulkRecordEntry, CoverageReport, Markers, Op, RawRecordView, RawSubrecordView, RefList,
     RefPathNode, RefRow, Request, Response,

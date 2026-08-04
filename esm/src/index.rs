@@ -594,20 +594,48 @@ impl Index {
     /// Same write→drop→re-map protocol `9e7c160`/`018d7a8` established for
     /// `tree`/`forms`, just triggered lazily from here instead of eagerly
     /// from [`build_tree_and_forms`].
+    ///
+    /// Acquires a [`crate::progress::BuildLease`] before doing any real
+    /// work and re-checks `Section::map` immediately after — another
+    /// process may have built and published `edid` while this call was
+    /// blocked waiting for the lock, in which case the freshly-mapped
+    /// section is adopted directly and the loop below never runs.
     pub fn ensure_edid_index(&mut self, esm: &EsmFile) -> anyhow::Result<()> {
         if self.edid.is_mapped() {
             return Ok(());
         }
+        let sig = CacheSig::read(&esm.path)?;
+        let path = section_path_for(&esm.path, SectionKind::Edid)?;
+
+        let mut lease = crate::progress::BuildLease::acquire(
+            &esm.path,
+            crate::progress::BuildStage::Edid,
+            1,
+            1,
+            self.len() as u64,
+        )?;
+        let recheck = Section::<rkyv::Archived<EdidSection>>::map(
+            &path,
+            SectionKind::Edid,
+            sig,
+            CACHE_VERSION,
+            EDID_LAYOUT_FINGERPRINT,
+        )?;
+        if recheck.is_mapped() {
+            self.edid = recheck;
+            return Ok(());
+        }
+
         let mut edid_to_form: HashMap<String, u32> = HashMap::new();
-        for (form_id, meta) in self.iter_all() {
+        for (i, (form_id, meta)) in self.iter_all().enumerate() {
+            lease.tick(i as u64);
             let rec = esm.parse_record_at(meta.offset)?;
             if let Some(edid) = edid_from_subrecords(&rec.subrecords) {
                 edid_to_form.insert(edid, form_id.raw());
             }
         }
+        lease.writing();
 
-        let sig = CacheSig::read(&esm.path)?;
-        let path = section_path_for(&esm.path, SectionKind::Edid)?;
         let data = EdidSection { edid_to_form };
         write_section(
             &path,
@@ -640,6 +668,13 @@ impl Index {
     /// Walks every record, decodes it with `ResolveDepth::None` (so FormID
     /// fields come out as `"0x........"` hex strings), harvests those strings,
     /// and inverts them into a referencee→referencers map.
+    ///
+    /// Acquires a [`crate::progress::BuildLease`] before doing any real
+    /// work and re-checks `Section::map` immediately after — see
+    /// [`Self::ensure_edid_index`]'s doc comment for why. This is the most
+    /// expensive of the three lazy builds (a full schema decode of every
+    /// record, not just an EDID/name lookup), so this is the section a
+    /// second process is most likely to observe already in flight.
     pub fn ensure_xref_index(
         &mut self,
         esm: &EsmFile,
@@ -651,6 +686,28 @@ impl Index {
         if self.xref.is_mapped() {
             return Ok(());
         }
+        let sig = CacheSig::read(&esm.path)?;
+        let path = section_path_for(&esm.path, SectionKind::Xref)?;
+
+        let mut lease = crate::progress::BuildLease::acquire(
+            &esm.path,
+            crate::progress::BuildStage::Xref,
+            1,
+            1,
+            esm.data().len() as u64,
+        )?;
+        let recheck = Section::<rkyv::Archived<XrefSection>>::map(
+            &path,
+            SectionKind::Xref,
+            sig,
+            CACHE_VERSION,
+            XREF_LAYOUT_FINGERPRINT,
+        )?;
+        if recheck.is_mapped() {
+            self.xref = recheck;
+            return Ok(());
+        }
+
         // Reborrow immutably up front (same pattern the pre-section version
         // used for `form_index`) so the closure below can query the forms
         // section without conflicting with `self.xref = ...` after
@@ -658,6 +715,7 @@ impl Index {
         let index = &*self;
         let mut xref: HashMap<u32, Vec<u32>> = HashMap::new();
         esm.walk_records(|meta| {
+            lease.tick(meta.offset);
             let rec = match esm.parse_record_at(meta.offset) {
                 Ok(r) => r,
                 Err(_) => return Ok(()),
@@ -716,9 +774,8 @@ impl Index {
             }
             Ok(())
         })?;
+        lease.writing();
 
-        let sig = CacheSig::read(&esm.path)?;
-        let path = section_path_for(&esm.path, SectionKind::Xref)?;
         let data = XrefSection { refs: xref };
         write_section(
             &path,
@@ -793,12 +850,39 @@ impl Index {
     /// fields.  For **localized** ESMs the FULL and DESC lstring IDs are
     /// stored (resolved to text at query time).  For **non-localized** ESMs
     /// the inline string text is stored directly.
+    ///
+    /// Acquires a [`crate::progress::BuildLease`] before doing any real
+    /// work and re-checks `Section::map` immediately after — see
+    /// [`Self::ensure_edid_index`]'s doc comment for why.
     pub fn ensure_search_index(&mut self, esm: &EsmFile, is_localized: bool) -> anyhow::Result<()> {
         if self.search.is_mapped() {
             return Ok(());
         }
+        let sig = CacheSig::read(&esm.path)?;
+        let path = section_path_for(&esm.path, SectionKind::Search)?;
+
+        let mut lease = crate::progress::BuildLease::acquire(
+            &esm.path,
+            crate::progress::BuildStage::Search,
+            1,
+            1,
+            self.len() as u64,
+        )?;
+        let recheck = Section::<rkyv::Archived<SearchSection>>::map(
+            &path,
+            SectionKind::Search,
+            sig,
+            CACHE_VERSION,
+            SEARCH_LAYOUT_FINGERPRINT,
+        )?;
+        if recheck.is_mapped() {
+            self.search = recheck;
+            return Ok(());
+        }
+
         let mut entries: HashMap<u32, SearchMeta> = HashMap::new();
-        for (form_id, meta) in self.iter_all() {
+        for (i, (form_id, meta)) in self.iter_all().enumerate() {
+            lease.tick(i as u64);
             let rec = match esm.parse_record_at(meta.offset) {
                 Ok(r) => r,
                 Err(_) => continue,
@@ -838,9 +922,8 @@ impl Index {
                 );
             }
         }
+        lease.writing();
 
-        let sig = CacheSig::read(&esm.path)?;
-        let path = section_path_for(&esm.path, SectionKind::Search)?;
         let data = SearchSection { entries };
         write_section(
             &path,
@@ -918,21 +1001,66 @@ type TreeAndFormsSections = (
 /// current [`CacheSig`] (`sig`, computed once by the caller) — `tree`/`forms`
 /// are eager and all-or-nothing, so this always rebuilds and returns both
 /// together, never just one.
+///
+/// Acquires a [`crate::progress::BuildLease`] for the duration (see
+/// `Index::build`'s call site, which holds no lock of its own before
+/// calling in — the lock lives entirely inside this function so the common
+/// warm-path `Section::map` check in `Index::build` never pays for it).
+/// Re-checks both sections immediately after the lease is granted: another
+/// process may have finished building while this call was blocked waiting
+/// for the lock, in which case this returns the now-mapped sections without
+/// doing any real work.
 fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndFormsSections> {
+    let tree_path = section_path_for(&esm.path, SectionKind::Tree)?;
+    let forms_path = section_path_for(&esm.path, SectionKind::Forms)?;
+
+    let total = esm.data().len() as u64;
+    let mut lease = crate::progress::BuildLease::acquire(
+        &esm.path,
+        crate::progress::BuildStage::Forms,
+        1,
+        2,
+        total,
+    )?;
+
+    let tree_recheck = Section::<rkyv::Archived<TreeIndex>>::map(
+        &tree_path,
+        SectionKind::Tree,
+        sig,
+        CACHE_VERSION,
+        crate::tree::TREE_LAYOUT_FINGERPRINT,
+    )?;
+    let forms_recheck = Section::<rkyv::Archived<FormsSection>>::map(
+        &forms_path,
+        SectionKind::Forms,
+        sig,
+        CACHE_VERSION,
+        FORMS_LAYOUT_FINGERPRINT,
+    )?;
+    if tree_recheck.is_mapped() && forms_recheck.is_mapped() {
+        return Ok((tree_recheck, forms_recheck));
+    }
+
     let mut form_index = HashMap::new();
     esm.walk_records(|meta| {
         let data = esm.data();
         let rh = crate::format::RecordHeader::parse(&data[meta.offset as usize..])?;
         let form_id = FormId::new(rh.form_id);
         form_index.insert(form_id, meta);
+        lease.tick(meta.offset);
         Ok(())
     })?;
 
-    let tree = TreeIndex::build(esm)?;
+    lease.begin_stage(crate::progress::BuildStage::Tree, 2, total);
+    let tree = TreeIndex::build_with_tick(esm, |offset| lease.tick(offset))?;
     let type_index = build_type_index(&form_index);
 
-    let tree_path = section_path_for(&esm.path, SectionKind::Tree)?;
-    let forms_path = section_path_for(&esm.path, SectionKind::Forms)?;
+    // Both sections are written back-to-back below with no further counting
+    // pass in between — report the whole write phase as "writing" under the
+    // stage most recently active (`Tree`) rather than threading a third
+    // stage transition through a phase that's CPU/IO-bound, not iteration-
+    // counted, and short relative to the two walks above.
+    lease.writing();
 
     // Write the freshly-built tree to its own rkyv section, then drop the
     // owned value and map it straight back in — there is exactly one code
@@ -999,6 +1127,105 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     );
 
     Ok((tree_section, forms_section))
+}
+
+/// Which of the five rkyv cache sections are present and valid for
+/// `esm_path` — one bucket per [`crate::progress::BuildStage`] (the same
+/// five names as [`SectionKind`], see that type's doc comment).
+#[derive(Debug, Clone)]
+pub struct CacheInventory {
+    pub present: Vec<crate::progress::BuildStage>,
+    pub missing: Vec<crate::progress::BuildStage>,
+}
+
+impl CacheInventory {
+    pub fn is_empty(&self) -> bool {
+        self.present.is_empty()
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.missing.is_empty()
+    }
+}
+
+/// Inspect `esm_cache/`'s five sections for `esm_path` via the same O(1)
+/// header check [`Index::build`] uses (`Section::map`: magic/format/kind/
+/// cache_version/layout_fingerprint/ESM identity stamp) — but as a **pure
+/// read**, deliberately without `Index::build`'s `build_tree_and_forms`
+/// fallback. This must never trigger a build: `esm cache status` calls it
+/// while another process may hold the build lock, and it has to answer
+/// instantly regardless. Doesn't mmap the ESM itself — `CacheSig::read`
+/// only needs `fs::metadata`.
+pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInventory> {
+    let sig = CacheSig::read(esm_path)?;
+    let mut present = Vec::new();
+    let mut missing = Vec::new();
+
+    let mut bucket = |stage: crate::progress::BuildStage, mapped: bool| {
+        if mapped {
+            present.push(stage);
+        } else {
+            missing.push(stage);
+        }
+    };
+
+    bucket(
+        crate::progress::BuildStage::Forms,
+        Section::<rkyv::Archived<FormsSection>>::map(
+            &section_path_for(esm_path, SectionKind::Forms)?,
+            SectionKind::Forms,
+            sig,
+            CACHE_VERSION,
+            FORMS_LAYOUT_FINGERPRINT,
+        )?
+        .is_mapped(),
+    );
+    bucket(
+        crate::progress::BuildStage::Tree,
+        Section::<rkyv::Archived<TreeIndex>>::map(
+            &section_path_for(esm_path, SectionKind::Tree)?,
+            SectionKind::Tree,
+            sig,
+            CACHE_VERSION,
+            crate::tree::TREE_LAYOUT_FINGERPRINT,
+        )?
+        .is_mapped(),
+    );
+    bucket(
+        crate::progress::BuildStage::Edid,
+        Section::<rkyv::Archived<EdidSection>>::map(
+            &section_path_for(esm_path, SectionKind::Edid)?,
+            SectionKind::Edid,
+            sig,
+            CACHE_VERSION,
+            EDID_LAYOUT_FINGERPRINT,
+        )?
+        .is_mapped(),
+    );
+    bucket(
+        crate::progress::BuildStage::Search,
+        Section::<rkyv::Archived<SearchSection>>::map(
+            &section_path_for(esm_path, SectionKind::Search)?,
+            SectionKind::Search,
+            sig,
+            CACHE_VERSION,
+            SEARCH_LAYOUT_FINGERPRINT,
+        )?
+        .is_mapped(),
+    );
+    bucket(
+        crate::progress::BuildStage::Xref,
+        Section::<rkyv::Archived<XrefSection>>::map(
+            &section_path_for(esm_path, SectionKind::Xref)?,
+            SectionKind::Xref,
+            sig,
+            CACHE_VERSION,
+            XREF_LAYOUT_FINGERPRINT,
+        )?
+        .is_mapped(),
+    );
+
+    Ok(CacheInventory { present, missing })
 }
 
 pub fn full_name_for_record(esm: &EsmFile, meta: &RecordMeta) -> anyhow::Result<Option<u32>> {

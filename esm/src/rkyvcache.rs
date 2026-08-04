@@ -530,8 +530,10 @@ pub(crate) const fn fnv1a_u64(acc: u64, x: u64) -> u64 {
 /// so two in-flight writers (or two successive calls) never collide, and so
 /// a crash mid-write leaves debris under a random name nothing ever opens —
 /// see [`write_section`]'s doc comment for the full write/publish sequence
-/// this exists to support.
-fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
+/// this exists to support. `pub(crate)` (not private) because
+/// `crate::progress`'s heartbeat publish reuses the identical
+/// temp-file-then-atomic-rename pattern for the same reason.
+pub(crate) fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
     let mut bytes = [0u8; 8];
     getrandom::fill(&mut bytes)?;
     let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();

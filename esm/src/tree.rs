@@ -159,11 +159,27 @@ pub(crate) const TREE_LAYOUT_FINGERPRINT: u64 = {
 impl TreeIndex {
     /// Build the tree index from an ESM file via a structural scan.
     pub fn build(esm: &EsmFile) -> Result<TreeIndex> {
+        Self::build_with_tick(esm, |_offset| {})
+    }
+
+    /// Like [`Self::build`], but calls `tick` with the byte offset of every
+    /// structural event (`GroupStart`/`GroupEnd`/`Record`) as it's visited —
+    /// used by `index.rs`'s `build_tree_and_forms` to drive a
+    /// [`crate::progress::BuildLease`] during this pass. `build` itself
+    /// stays the public no-instrumentation entry point so the one other
+    /// caller (this module's own test) is unaffected.
+    pub(crate) fn build_with_tick(esm: &EsmFile, mut tick: impl FnMut(u64)) -> Result<TreeIndex> {
         let mut tree = TreeIndex::default();
         // Stack of arena indices of currently-open (entered but not yet exited) groups.
         let mut stack: Vec<usize> = Vec::new();
 
         esm.walk_structure(|event| {
+            let offset = match &event {
+                WalkEvent::GroupStart { offset, .. } => *offset,
+                WalkEvent::GroupEnd { offset } => *offset,
+                WalkEvent::Record(r) => r.offset,
+            };
+            tick(offset);
             match event {
                 WalkEvent::GroupStart {
                     offset,

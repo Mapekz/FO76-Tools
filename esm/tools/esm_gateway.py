@@ -60,6 +60,19 @@ HEALTH_POLL_MAX_SECS = 30.0
 #: Deadline for a full /op round-trip. Mirrors backend.rs::op_timeout()'s
 #: default (ESM_OP_TIMEOUT_SECS unset). The *first* op against a cold ESM can
 #: trigger a full index build, hence the generous default.
+#:
+#: On the Rust side (RemoteBackend::post_op) this is now an OVERALL retry
+#: budget, not a single HTTP call's deadline: a per-attempt timeout
+#: (op_attempt_timeout(), ESM_OP_ATTEMPT_TIMEOUT_SECS, default 20s) is
+#: retried -- not surfaced as an error -- for as long as progress::read shows
+#: a live, non-stalled build on the requested ESM, up to this overall budget.
+#: This module does NOT mirror that retry loop -- http.client.HTTPConnection's
+#: timeout is a single socket-level deadline, so a cold-build call here still
+#: fails outright at OP_TIMEOUT_SECS with an opaque timeout, the exact failure
+#: mode the Rust-side retry was added to avoid. Known parity gap, not fixed
+#: here: doing so would mean reading esm_cache/<esm>.build.lock/.build.json
+#: directly (see progress.rs) via fcntl.flock, which is a bigger, separable
+#: change from this constant's doc drift.
 OP_TIMEOUT_SECS = 300.0
 
 #: Reverse-reference walk depth cap. Mirrors ipc.rs::DEFAULT_MAX_DEPTH.

@@ -22,7 +22,7 @@ use std::thread;
 /// Per-request callback: given the parsed JSON body the client sent, return the JSON
 /// body to send back as the HTTP response (typically the full `{"status":"ok","data":
 /// ...}` envelope `RemoteBackend` expects — see `esm::ipc::Response`).
-type Handler = Box<dyn Fn(&serde_json::Value) -> serde_json::Value + Send + 'static>;
+type Handler = Box<dyn Fn(&serde_json::Value) -> serde_json::Value + Send + Sync + 'static>;
 
 /// Start a minimal HTTP/1.1 server on an OS-assigned loopback port, on a dedicated
 /// thread for the remainder of the test process (no shutdown handshake — the thread
@@ -88,6 +88,40 @@ fn write_json_response(stream: &mut TcpStream, body: &serde_json::Value) {
     let _ = stream.write_all(header.as_bytes());
     let _ = stream.write_all(&body);
     let _ = stream.flush();
+}
+
+/// Like [`spawn_stub_server`], but handles each accepted connection on its own thread
+/// rather than serially in one accept loop. Needed specifically for the
+/// timeout-then-retry tests below: a handler that sleeps past the client's per-attempt
+/// deadline on its first call must not block the server from accepting the client's
+/// *retry* connection while it sleeps — [`spawn_stub_server`]'s single accept-loop
+/// thread would otherwise serialize the retry behind the first (slow) handler call,
+/// making the retry's own short deadline flaky regardless of the server's actual
+/// behavior. Every other test in this file makes calls that complete quickly, so this
+/// distinction doesn't matter to them; kept as a separate helper rather than changing
+/// [`spawn_stub_server`] itself to avoid touching already-passing tests' behavior.
+fn spawn_stub_server_concurrent(handler: Handler) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind stub server");
+    let port = listener.local_addr().expect("local_addr").port();
+    let handler = Arc::new(handler);
+
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            let handler = Arc::clone(&handler);
+            thread::spawn(move || {
+                let Some(body) = read_request_body(&mut stream) else {
+                    return;
+                };
+                let req_json: serde_json::Value =
+                    serde_json::from_slice(&body).expect("stub server: request body is valid JSON");
+                let resp_json = handler(&req_json);
+                write_json_response(&mut stream, &resp_json);
+            });
+        }
+    });
+
+    port
 }
 
 /// The exact failure this issue reports: a response past ureq 3's hard-coded 10 MiB
@@ -194,4 +228,91 @@ fn remote_backend_does_not_chunk_below_threshold() {
         "500 selectors at chunk=512 must stay a single request"
     );
     assert_eq!(data.as_array().expect("data is an array").len(), 500);
+}
+
+/// A unique-per-test synthetic ESM path — `RemoteBackend`'s retry logic keys off
+/// `esm::progress::read(&req.esm)`, so each test needs its own path (no real file has
+/// to exist at it; only `esm_cache/` alongside it, which `BuildLease::acquire` creates).
+fn unique_esm_path(stem: &str) -> std::path::PathBuf {
+    let pid = std::process::id();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    std::env::temp_dir().join(format!("esm_backend_test_{stem}_{pid}_{nonce}.esm"))
+}
+
+/// The fix for the "opaque 300s timeout while the daemon keeps building" failure
+/// mode: a `/op` attempt that times out is retried — not surfaced as an error —
+/// for as long as a live [`esm::progress::BuildLease`] shows the requested ESM's
+/// cache build still in flight.
+#[test]
+fn remote_backend_retries_timeout_while_build_is_in_flight() {
+    let esm_path = unique_esm_path("retry_success");
+    // Held for the duration of the first (deliberately slow) attempt so
+    // `crate::progress::read` reports a live build — dropped at the end of the test.
+    let lease =
+        esm::progress::BuildLease::acquire(&esm_path, esm::progress::BuildStage::Xref, 1, 1, 100)
+            .expect("acquire build lease");
+
+    let call_count = Arc::new(Mutex::new(0u32));
+    let call_count_thread = Arc::clone(&call_count);
+    let port = spawn_stub_server_concurrent(Box::new(move |_req| {
+        let mut n = call_count_thread.lock().unwrap();
+        *n += 1;
+        if *n == 1 {
+            // Sleep well past the client's own per-attempt deadline (100ms below) —
+            // the client gives up locally before this ever writes a response, which
+            // is the whole point: this thread's eventual write goes to an abandoned
+            // connection and is ignored.
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+        serde_json::json!({ "status": "ok", "data": { "ok": true } })
+    }));
+
+    let mut backend = RemoteBackend::new("127.0.0.1", port, "token".to_string()).with_op_timeouts(
+        Some(std::time::Duration::from_millis(100)),
+        Some(std::time::Duration::from_secs(5)),
+    );
+
+    let data = backend.run(&esm_path, Op::FileInfo).expect(
+        "must retry past the first timed-out attempt and succeed once the build lease is visible",
+    );
+    assert_eq!(data["ok"], true);
+    assert!(
+        *call_count.lock().unwrap() >= 2,
+        "expected at least one retry after the first attempt timed out"
+    );
+
+    drop(lease);
+}
+
+/// With no live build to explain a timeout, `post_op` must fail fast on the first
+/// attempt rather than retrying blindly — a genuine daemon hang (or a target that was
+/// never going to answer) shouldn't masquerade as "still building."
+#[test]
+fn remote_backend_fails_fast_on_timeout_with_no_build_in_flight() {
+    let esm_path = unique_esm_path("no_build");
+    // No `BuildLease` held for this path — `progress::read` must report `None`.
+
+    let port = spawn_stub_server_concurrent(Box::new(|_req| {
+        // Never actually reached within the test's short deadline below — the
+        // server just needs to not answer in time.
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        serde_json::json!({ "status": "ok", "data": { "ok": true } })
+    }));
+
+    let mut backend = RemoteBackend::new("127.0.0.1", port, "token".to_string()).with_op_timeouts(
+        Some(std::time::Duration::from_millis(100)),
+        Some(std::time::Duration::from_secs(5)),
+    );
+
+    let err = backend
+        .run(&esm_path, Op::FileInfo)
+        .expect_err("a timeout with no live build to explain it must not retry indefinitely");
+    assert!(
+        err.to_string()
+            .contains("timed out waiting for daemon response"),
+        "unexpected error message: {err}"
+    );
 }

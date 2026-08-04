@@ -1,3 +1,6 @@
+#[path = "cli/progress_ui.rs"]
+mod progress_ui;
+
 use anyhow::Context as _;
 use clap::{Parser, Subcommand, ValueEnum};
 use esm::backend::{
@@ -6,8 +9,8 @@ use esm::backend::{
 };
 use esm::ipc::{Op, RecordSel};
 use esm::{
-    BodyDetail, CoverageReport, Database, DiffResult, Markers, RecordRow, RefList, ResolveDepth,
-    SearchField,
+    BodyDetail, CacheInventory, CoverageReport, Database, DiffResult, Markers, RecordRow, RefList,
+    ResolveDepth, SearchField,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -30,9 +33,22 @@ struct Cli {
     /// (neither needs an ESM at all).
     #[arg(long, global = true, env = "FO76_ESM_PATH")]
     esm: Option<PathBuf>,
+    /// If the index cache is already being built by another process, print
+    /// its status and exit immediately (status 75) instead of waiting for
+    /// it and then running this command's own query. Checked once, up
+    /// front, against whatever build is in flight at that moment — it does
+    /// not prevent this invocation's own query from triggering (and
+    /// blocking on) a *fresh* cold build if none was already running.
+    #[arg(long, global = true)]
+    no_wait: bool,
     #[command(subcommand)]
     command: Commands,
 }
+
+/// Exit code for `--no-wait` bailing out because a build is in flight —
+/// `EX_TEMPFAIL` (sysexits.h): the request is valid, but the resource
+/// (a warm cache) isn't ready yet and retrying later is the right move.
+const EXIT_BUILD_IN_PROGRESS: i32 = 75;
 
 const DEFAULT_LANG: &str = "en";
 
@@ -328,6 +344,14 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
+    /// Inspect the on-disk index cache directly — no daemon, no ESM open,
+    /// never triggers a build. Takes an ESM path (unlike `daemon`/`skill`)
+    /// but no backend: reads `esm_cache/`'s five section headers and the
+    /// build lock/heartbeat straight off disk.
+    Cache {
+        #[command(subcommand)]
+        action: CacheAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -335,6 +359,16 @@ enum DaemonAction {
     Start,
     Stop,
     Status,
+}
+
+#[derive(Subcommand)]
+enum CacheAction {
+    /// Print which of the five index-cache sections are present, plus a
+    /// live build's progress if one is currently in flight.
+    Status {
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -405,11 +439,26 @@ enum Backend {
 }
 
 impl QueryBackend for Backend {
+    /// Wraps every real query with a [`progress_ui::Watcher`] — this is the
+    /// one place all ~15 `cmd_*` functions' `backend.run(...)` calls funnel
+    /// through, and `watcher.stop()` (which blocks until any rendered line
+    /// is erased) runs synchronously before this returns, so whichever
+    /// `cmd_*` function is about to `println!`/`print_json` its result
+    /// never races a still-visible progress line. See `progress_ui`'s
+    /// module doc for why this site, not `dispatch_command`, is the right
+    /// one.
     fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
-        match self {
+        let mut watched = vec![progress_watch_path(esm)];
+        if let Op::Diff { b, .. } = &op {
+            watched.push(progress_watch_path(b));
+        }
+        let watcher = progress_ui::Watcher::spawn(watched);
+        let result = match self {
             Backend::Local(b) => b.run(esm, op),
             Backend::Remote(b) => b.run(esm, op),
-        }
+        };
+        watcher.stop();
+        result
     }
 }
 
@@ -428,6 +477,22 @@ fn make_backend(local: bool, addr: Option<&str>, port: Option<u16>) -> anyhow::R
 /// was set.
 fn resolve_esm(esm: Option<PathBuf>) -> anyhow::Result<PathBuf> {
     esm.ok_or_else(|| anyhow::anyhow!("no ESM path — pass --esm <PATH> or set FO76_ESM_PATH"))
+}
+
+/// Best-effort canonical ESM path for progress-watching purposes only (the
+/// [`progress_ui::Watcher`], `--no-wait`, `esm cache status`) — must match
+/// whatever path `Registry::get_or_open_with_key` (daemon and `--local`
+/// alike) actually canonicalizes to and keys `esm_cache/`'s sidecar files
+/// off, via [`esm::discover::resolve_esm_path`]. This can differ from the
+/// raw `--esm`/`file_b` input whenever it's a data folder, a relative path,
+/// or a symlink — looking a build up by the raw input instead would poll a
+/// location nothing ever writes to. Resolution failure (path doesn't exist
+/// yet, a folder with zero/multiple `.esm` files, …) degrades to the raw
+/// input rather than erroring here: the watcher then simply finds nothing to
+/// show, and the real error (if any) surfaces from `backend.run` itself with
+/// a clearer message than this helper could produce.
+fn progress_watch_path(esm: &Path) -> PathBuf {
+    esm::discover::resolve_esm_path(esm).unwrap_or_else(|_| esm.to_path_buf())
 }
 
 /// The `esm-cli` usage-knowledge skill doc, embedded at compile time (same
@@ -470,6 +535,74 @@ fn cmd_skill(install: bool, dir: Option<PathBuf>, force: bool) -> anyhow::Result
     }
     std::fs::write(&dest, SKILL_MD).with_context(|| format!("writing {}", dest.display()))?;
     println!("wrote {}", dest.display());
+    Ok(())
+}
+
+/// One-word summary of `esm cache status`'s overall state — the four
+/// states called out in the design: no cache at all, a build in flight
+/// (regardless of how much is already on disk), fully built, or partially
+/// built (the common steady state once a build has run but `xref`, say,
+/// has never been triggered).
+fn cache_state_label(inventory: &CacheInventory, building: bool) -> &'static str {
+    if building {
+        "building"
+    } else if inventory.is_empty() {
+        "empty"
+    } else if inventory.is_complete() {
+        "complete"
+    } else {
+        "partial"
+    }
+}
+
+fn cmd_cache_status(esm: &Path, as_json: bool) -> anyhow::Result<()> {
+    let inventory = esm::cache_inventory(esm)?;
+    let building = esm::progress::read(esm);
+    let state = cache_state_label(&inventory, building.is_some());
+
+    if as_json {
+        let sections: BTreeMap<&str, bool> = esm::progress::BuildStage::ALL
+            .iter()
+            .map(|s| (s.label(), inventory.present.contains(s)))
+            .collect();
+        let build = building.as_ref().map(|p| {
+            serde_json::json!({
+                "pid": p.pid,
+                "stage": p.stage.label(),
+                "stage_index": p.stage_index,
+                "stage_count": p.stage_count,
+                "percent": p.percent(),
+                "done": p.done,
+                "total": p.total,
+                "eta_secs": p.eta().map(|d| d.as_secs()),
+            })
+        });
+        print_json(
+            &serde_json::json!({
+                "esm": esm,
+                "state": state,
+                "sections": sections,
+                "build": build,
+            }),
+            true,
+        );
+        return Ok(());
+    }
+
+    println!("{}: {state}", esm.display());
+    if let Some(p) = &building {
+        println!("  {}", progress_ui::format_stage_summary(p));
+    }
+    print!("  sections:");
+    for stage in esm::progress::BuildStage::ALL {
+        let mark = if inventory.present.contains(&stage) {
+            "+"
+        } else {
+            "-"
+        };
+        print!(" {mark}{}", stage.label());
+    }
+    println!();
     Ok(())
 }
 
@@ -527,18 +660,54 @@ fn main() -> anyhow::Result<()> {
         return cmd_skill(install, dir, force);
     }
 
+    // `cache status` reads `esm_cache/` and the build lock/heartbeat
+    // straight off disk — it needs an ESM path (unlike `daemon`/`skill`)
+    // but must never construct a `Backend` or contact the daemon, since the
+    // whole point is answering instantly even while a build is in flight.
+    if let Commands::Cache { action } = cli.command {
+        let esm = resolve_esm(esm_opt.clone())?;
+        // Resolve folder→ESM and canonicalize here (not `progress_watch_path`'s
+        // silent-degrade variant): `cache_inventory`/`progress::read` must key
+        // off the exact same path `Registry` does, and if that resolution
+        // itself fails (bad path, ambiguous folder), that's a real error worth
+        // surfacing rather than reporting a misleading "empty" status.
+        let esm = esm::discover::resolve_esm_path(&esm)?;
+        return match action {
+            CacheAction::Status { json } => cmd_cache_status(&esm, json),
+        };
+    }
+
     // Every subcommand runs once and exits. Daemon-backed by default;
     // --local bypasses the daemon entirely (cold in-process open).
-    let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
-    let daemon_mode = matches!(backend, Backend::Remote(_));
-
     let cmd = cli.command;
     let esm = match &cmd {
         Commands::Diff(args) => args.file_a.clone(),
         Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
+        Commands::Cache { .. } => unreachable!(),
         _ => resolve_esm(esm_opt.clone())?,
     };
+
+    // `--no-wait` is checked client-side, purely from the build lock's
+    // filesystem state, before a `Backend` is even constructed — routing it
+    // through the daemon would defeat the point, since the daemon's own
+    // per-ESM mutex is exactly what's held for the whole build (see
+    // `esm::progress`'s module doc).
+    if cli.no_wait {
+        let mut watched = vec![progress_watch_path(&esm)];
+        if let Commands::Diff(args) = &cmd {
+            watched.push(progress_watch_path(&args.file_b));
+        }
+        if let Some(progress) = watched.iter().find_map(|p| esm::progress::read(p)) {
+            eprintln!("esm: index cache is being built by pid {}", progress.pid);
+            eprintln!("  {}", progress_ui::format_stage_summary(&progress));
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+            std::process::exit(EXIT_BUILD_IN_PROGRESS);
+        }
+    }
+
+    let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
+    let daemon_mode = matches!(backend, Backend::Remote(_));
     dispatch_command(&esm, &mut backend, cmd, DispatchOptions { daemon_mode })
 }
 
@@ -757,6 +926,7 @@ fn dispatch_command(
         } => cmd_walk(backend, esm, &selector, depth, ref_limit, refs, json),
         Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
+        Commands::Cache { .. } => unreachable!(),
     }
 }
 
@@ -2129,6 +2299,73 @@ mod tests {
         let walk = Cli::try_parse_from(["esm", "walk", "0x463F"])
             .expect("walk should parse through the top-level command enum");
         assert!(matches!(walk.command, Commands::Walk { .. }));
+    }
+
+    /// `--no-wait` is global (`--esm`'s existing precedent), defaults to
+    /// `false`, and parses both before and after the subcommand.
+    #[test]
+    fn no_wait_is_a_global_flag() {
+        let default = Cli::try_parse_from(["esm", "get", "0x463F"]).unwrap();
+        assert!(!default.no_wait);
+
+        let before = Cli::try_parse_from(["esm", "--no-wait", "get", "0x463F"]).unwrap();
+        assert!(before.no_wait);
+
+        let after = Cli::try_parse_from(["esm", "get", "0x463F", "--no-wait"]).unwrap();
+        assert!(after.no_wait);
+    }
+
+    /// `esm cache status [--json]` parses through the top-level command
+    /// enum and requires no ESM/backend at all to construct — it's a
+    /// third `main()` short-circuit alongside `daemon`/`skill`.
+    #[test]
+    fn cache_status_parses() {
+        let plain =
+            Cli::try_parse_from(["esm", "cache", "status"]).expect("cache status should parse");
+        assert!(matches!(
+            plain.command,
+            Commands::Cache {
+                action: CacheAction::Status { json: false }
+            }
+        ));
+
+        let json = Cli::try_parse_from(["esm", "cache", "status", "--json"])
+            .expect("cache status --json should parse");
+        assert!(matches!(
+            json.command,
+            Commands::Cache {
+                action: CacheAction::Status { json: true }
+            }
+        ));
+    }
+
+    #[test]
+    fn cache_state_label_covers_all_four_states() {
+        let empty = CacheInventory {
+            present: vec![],
+            missing: esm::progress::BuildStage::ALL.to_vec(),
+        };
+        assert_eq!(cache_state_label(&empty, false), "empty");
+        assert_eq!(cache_state_label(&empty, true), "building");
+
+        let partial = CacheInventory {
+            present: vec![
+                esm::progress::BuildStage::Forms,
+                esm::progress::BuildStage::Tree,
+            ],
+            missing: vec![
+                esm::progress::BuildStage::Edid,
+                esm::progress::BuildStage::Search,
+                esm::progress::BuildStage::Xref,
+            ],
+        };
+        assert_eq!(cache_state_label(&partial, false), "partial");
+
+        let complete = CacheInventory {
+            present: esm::progress::BuildStage::ALL.to_vec(),
+            missing: vec![],
+        };
+        assert_eq!(cache_state_label(&complete, false), "complete");
     }
 
     /// Bare `esm` used to silently enter a REPL (exit 0, empty stdout) —

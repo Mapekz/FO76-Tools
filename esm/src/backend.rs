@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 const DAEMON_FILENAME: &str = "esm-daemon.json";
 /// Fast 2 s deadline for `/health` and `/status` probes — a live daemon responds instantly.
@@ -18,14 +18,21 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const HEALTH_POLL_MAX: Duration = Duration::from_secs(30);
 
-/// Deadline for a full `/op` round-trip.
+/// Overall budget across retries for a full logical `/op` round-trip.
 ///
 /// Generous because the *first* `refs`/`list`/`search` against a cold daemon triggers a
 /// one-time whole-ESM index build (xref, edid, search) followed by writing that index's
-/// own `xref`/`edid`/`search` rkyv section — easily tens of seconds on a
-/// full FO76 ESM (the xref build in particular decodes every record in the file).
+/// own `xref`/`edid`/`search` rkyv section — easily tens of seconds, and on the largest FO76
+/// ESM snapshots comfortably past this budget's old single-attempt meaning (the xref build
+/// in particular decodes every record in the file).
 ///
-/// Override with `ESM_OP_TIMEOUT_SECS` (set to `0` for no deadline).
+/// No longer a single HTTP call's deadline — see [`post_op`]. Each individual attempt is
+/// bounded by [`op_attempt_timeout`] instead; an attempt that times out is retried, not
+/// surfaced as an error, for as long as `crate::progress::read` shows a build still making
+/// (non-stalled) progress on the requested ESM. This constant is the ceiling on how long
+/// that retrying continues before giving up with a clear "still building" error rather than
+/// ureq's opaque timeout. Override with `ESM_OP_TIMEOUT_SECS` (`0` = no ceiling — keep
+/// retrying indefinitely as long as the build keeps advancing).
 fn op_timeout() -> Option<Duration> {
     match std::env::var("ESM_OP_TIMEOUT_SECS")
         .ok()
@@ -35,6 +42,37 @@ fn op_timeout() -> Option<Duration> {
         Some(n) => Some(Duration::from_secs(n)),
         None => Some(Duration::from_secs(300)),
     }
+}
+
+/// Deadline for a SINGLE `/op` HTTP attempt (see [`post_op`]'s retry loop). Short relative
+/// to [`op_timeout`]'s overall budget, so a still-building daemon is detected and retried
+/// quickly rather than tying up one connection for the whole budget. Override with
+/// `ESM_OP_ATTEMPT_TIMEOUT_SECS` (`0` disables the per-attempt cap — not recommended, since
+/// it collapses back to one long wait with no chance to check `crate::progress::read` in
+/// between, reintroducing the opaque-timeout failure this two-tier scheme exists to avoid).
+fn op_attempt_timeout() -> Option<Duration> {
+    match std::env::var("ESM_OP_ATTEMPT_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+    {
+        Some(0) => None,
+        Some(n) => Some(Duration::from_secs(n)),
+        None => Some(Duration::from_secs(20)),
+    }
+}
+
+/// Which live build (if any) is the likely cause of `req` timing out: the request's own
+/// ESM, plus `Op::Diff`'s second path when present. Mirrors `cli.rs`'s `watched_paths` for
+/// the progress-watcher hook — kept as an independent copy since `backend.rs` has no
+/// dependency on the CLI binary crate.
+fn building_progress(req: &Request) -> Option<crate::progress::BuildProgress> {
+    if let Some(p) = crate::progress::read(&req.esm) {
+        return Some(p);
+    }
+    if let Op::Diff { b, .. } = &req.op {
+        return crate::progress::read(b);
+    }
+    None
 }
 
 /// Default selector-count threshold for splitting `Op::RecordBulk` into multiple
@@ -270,6 +308,8 @@ pub struct RemoteBackend {
     base_url: String,
     token: String,
     bulk_chunk: usize,
+    attempt_timeout: Option<Duration>,
+    overall_timeout: Option<Duration>,
 }
 
 impl RemoteBackend {
@@ -278,7 +318,22 @@ impl RemoteBackend {
             base_url: format!("http://{addr}:{port}"),
             token,
             bulk_chunk: bulk_chunk_default(),
+            attempt_timeout: op_attempt_timeout(),
+            overall_timeout: op_timeout(),
         }
+    }
+
+    /// Override [`post_op`]'s per-attempt and overall-budget deadlines. Exists so tests
+    /// (and any explicit caller) can pin both without mutating process-global env — same
+    /// reasoning as [`Self::with_bulk_chunk`]'s doc comment.
+    pub fn with_op_timeouts(
+        mut self,
+        attempt: Option<Duration>,
+        overall: Option<Duration>,
+    ) -> Self {
+        self.attempt_timeout = attempt;
+        self.overall_timeout = overall;
+        self
     }
 
     /// Override the selector-count threshold at which `Op::RecordBulk` requests are
@@ -375,17 +430,61 @@ impl RemoteBackend {
         Ok(())
     }
 
+    /// Post one `/op` request, retrying a per-attempt timeout ([`op_attempt_timeout`]) for
+    /// as long as [`building_progress`] shows a live, non-stalled build against the
+    /// requested ESM — up to [`op_timeout`]'s overall budget. Safe to retry unconditionally:
+    /// every op is read-only, and a retried request simply re-queues behind the daemon's
+    /// per-ESM `Mutex<Database>` (see `registry.rs`) rather than restarting or duplicating
+    /// the build itself, which keeps running server-side regardless of whether an earlier
+    /// attempt's connection was abandoned.
     fn post_op(&self, req: &Request) -> anyhow::Result<Response> {
         let url = format!("{}/op", self.base_url);
-        let request = ureq::post(&url)
-            .header("Authorization", &format!("Bearer {}", self.token))
-            .header("Content-Type", "application/json")
-            .config()
-            .timeout_global(op_timeout())
-            .build();
-        let mut resp = request.send_json(req).map_err(|e| anyhow::anyhow!("{e}"))?;
-        let response: Response = read_json_unlimited(resp.body_mut())?;
-        Ok(response)
+        let overall_deadline = self.overall_timeout.map(|d| Instant::now() + d);
+        loop {
+            let request = ureq::post(&url)
+                .header("Authorization", &format!("Bearer {}", self.token))
+                .header("Content-Type", "application/json")
+                .config()
+                .timeout_global(self.attempt_timeout)
+                .build();
+            match request.send_json(req) {
+                Ok(mut resp) => return read_json_unlimited(resp.body_mut()),
+                Err(ureq::Error::Timeout(_)) => {
+                    let Some(progress) = building_progress(req) else {
+                        bail!(
+                            "timed out waiting for daemon response ({})",
+                            req.esm.display()
+                        );
+                    };
+                    if progress.is_stalled() {
+                        bail!(
+                            "cache build for {} appears stalled (pid {}, last seen {:.0}% \
+                             through the {} stage, no heartbeat update in over a minute) — \
+                             not retrying further",
+                            req.esm.display(),
+                            progress.pid,
+                            progress.percent(),
+                            progress.stage.label(),
+                        );
+                    }
+                    if let Some(deadline) = overall_deadline
+                        && Instant::now() >= deadline
+                    {
+                        bail!(
+                            "timed out waiting for the cache build for {} to finish (pid {}, \
+                             {:.0}% through the {} stage at last check) — raise \
+                             ESM_OP_TIMEOUT_SECS or wait for the build to finish",
+                            req.esm.display(),
+                            progress.pid,
+                            progress.percent(),
+                            progress.stage.label(),
+                        );
+                    }
+                    // Still building and still advancing — retry.
+                }
+                Err(e) => return Err(anyhow::anyhow!("{e}")),
+            }
+        }
     }
 
     /// Split a large `Op::RecordBulk` across multiple `/op` round-trips of at most

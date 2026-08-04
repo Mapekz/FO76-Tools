@@ -59,6 +59,12 @@ Pass either a `.esm` file or a data folder. When given a folder, the tool auto-d
 
 The examples below assume `FO76_ESM_PATH` is set and omit `--esm`.
 
+If a query has to wait on a cold cache build (see
+[Cold-build progress and cross-process coordination](#cold-build-progress-and-cross-process-coordination)
+below), it shows live progress on stderr and still returns the real result once the cache is ready.
+Pass the global `--no-wait` flag to instead print the in-flight build's status and exit immediately
+(status 75) — useful for scripts that would rather retry later than block.
+
 ### `info` — TES4 header summary
 
 ```sh
@@ -185,6 +191,18 @@ esm daemon stop     # graceful shutdown
 ```
 
 The daemon is normally transparent: the first `esm` call auto-spawns it, subsequent calls use it as a fast HTTP backend, and it shuts itself down after 10 minutes of idle. Use these subcommands only when you need explicit control.
+
+### `cache status` — Inspect the on-disk index cache
+
+```sh
+esm cache status          # human-readable: state + which sections are present
+esm cache status --json   # same, as JSON — includes live build progress when building
+```
+
+Reads `esm_cache/`'s section headers and the build lock/heartbeat directly off disk — no ESM open,
+no daemon contact, so it answers instantly even while another process is mid-build. See
+[Cold-build progress and cross-process coordination](#cold-build-progress-and-cross-process-coordination)
+above.
 
 ## Server — `esm-server`
 
@@ -544,6 +562,30 @@ file degrades to "rebuild that section," never a crash. `CACHE_VERSION` (`src/in
 all five as a shared semantic-layout counter; bump it whenever a section's on-disk *meaning* changes.
 
 The whole `esm_cache/` directory is gitignored. Never commit it.
+
+### Cold-build progress and cross-process coordination
+
+Building any of the five sections above from scratch can take tens of seconds to a couple of
+minutes on the full FO76 ESM (the `xref` section in particular decodes every record). Rather than
+blocking silently, every builder — the daemon, a `--local` CLI call, or the N-API host — publishes
+a live heartbeat (`<esm file name>.build.json`) alongside an advisory lock
+(`<esm file name>.build.lock`) inside `esm_cache/`. Any process can read that state instantly, with
+no daemon round-trip:
+
+- The `esm` CLI shows a live progress line on stderr (stdout stays untouched) whenever a query it
+  issues has to wait on a build — a `\r`-updated bar on a TTY, one plain line every ~10s otherwise.
+  Pass `--no-wait` to print the build's status and exit immediately (status 75) instead of waiting.
+- `esm cache status [--json]` inspects `esm_cache/` and the build lock/heartbeat directly — no
+  ESM open, no daemon contact, answers instantly even mid-build. Reports one of `empty` / `building`
+  / `partial` (the common steady state — e.g. `tree`+`forms` built, `xref` never triggered) /
+  `complete`.
+- A second process that needs the same section a build is already producing waits on that same
+  build via the lock rather than starting a redundant one; once granted the lock it re-checks
+  whether the section now exists before doing any work.
+
+Set `ESM_NO_PROGRESS=1` to suppress heartbeat *publishing* (e.g. embedding contexts where a stray
+file write is unwanted) — the lock-based dedup keeps working regardless. See `src/progress.rs` and
+`docs/adr/0003-cache-build-progress-heartbeat.md`.
 
 ## Electron GUI
 
