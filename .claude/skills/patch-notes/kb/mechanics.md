@@ -355,6 +355,23 @@ with the flag still set is dead data; check the flag before reporting the curve 
 cleared Template Flags bit `0x2`.
 *verified 2026-08-03 vs 20260803*
 
+## Resolving a special-currency vendor's price and gate
+
+A BOOK/plan/item's own `Value` field is Caps-denominated by default even when the item actually
+sells for Gold Bullion or another special currency — don't call the price "unconfirmed" from that
+field alone. `refs <item>` to the vendor LVLI (tier) entry it sits in, up to the CONT/NPC selling
+it, to the FACT tied to that vendor, and read `Vendor Buy Currency` on the FACT for the real
+currency; the item's `Value` number is still the correct price magnitude, only the currency is
+overridden. A per-tier vendor LVLI entry's own `Conditions` (a `Rep_Tier_<Location>_N_<Rank>` CNDF
+against an AVIF like `Reputation_AV_Crater`) gives the named reputation gate to cite alongside it.
+
+**Example:** `Plan: Piercing Love` (BOOK 0x00930841, Value 1000/Caps001) → LVLI
+`W05_LLV_GoldVendor_Raider_Mortimer_6_Ally` → CONT `W05_Raiders_GoldVendorChest_Mortimer` → FACT
+`W05_Raider_Mortimer_GoldVendorFaction` (`Vendor Buy Currency = GoldBullion`), gated on
+`Reputation_AV_Crater >= 12000` ("Ally") → "Sold by Mortimer for 1000 Gold Bullion at Ally
+reputation with the Raiders."
+*verified 2026-08-04 vs 20260803*
+
 ## Seasonal content converts by rename, not by adding records
 
 A seasonal one-off promoted to a permanent repeatable shows up as a QUST rename plus a
