@@ -500,7 +500,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                     },
                     {
                         "name": "esm_refs",
-                        "description": "Walk the reverse-reference graph from a FormID or EditorID up to `depth` hops (default 1). depth=1 lists all records that directly reference the target (e.g. which leveled lists include an item, which NPCs carry a weapon). depth=2–8 follows referencers of referencers, useful for questions like 'where does this item ultimately drop?' or 'which quests reference X's leveled list?'. depth=0 requests an unbounded walk (no fixed hop cap) — combine with a generous `limit` or a `type` filter, since an unbounded walk over a hub-heavy graph (CELL/REFR nodes) can return hundreds of thousands of rows. Each result includes its hop distance and the intermediate-node path. Results are deduplicated; each node appears once at its shortest path. The caller decides what counts as a 'terminal source' — pass `type` to focus on containers, NPCs, quests, etc. (applied server-side, so `limit`/`depth` interact correctly with the filter). Pass `paths: true` to annotate each row with the JSON field path(s) inside it that reference its predecessor in the hop chain — avoids a follow-up esm_get_record just to find where the reference lives; costs a full decode per row, so it's off by default.",
+                        "description": "Walk the reverse-reference graph from a FormID, EditorID, PERK Entry Point, or OMOD property up to `depth` hops (default 1). Entry-point/property selectors emit every matched carrier as a depth-0 seed. depth=1 lists all records that directly reference the target (e.g. which leveled lists include an item, which NPCs carry a weapon). depth=2–8 follows referencers of referencers, useful for questions like 'where does this item ultimately drop?' or 'which quests reference X's leveled list?'. depth=0 requests an unbounded walk (no fixed hop cap) — combine with a generous `limit` or a `type` filter, since an unbounded walk over a hub-heavy graph (CELL/REFR nodes) can return hundreds of thousands of rows. Each result includes its hop distance and the intermediate-node path. Results are deduplicated; each node appears once at its shortest path. The caller decides what counts as a 'terminal source' — pass `type` to focus on containers, NPCs, quests, etc. (applied server-side, so `limit`/`depth` interact correctly with the filter). Pass `paths: true` to annotate each row with the JSON field path(s) inside it that reference its predecessor in the hop chain — avoids a follow-up esm_get_record just to find where the reference lives; costs a full decode per row, so it's off by default.",
                         "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
@@ -511,6 +511,14 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 },
                                 "formid": {"type": "string", "description": "FormID as hex or decimal."},
                                 "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "entry_point": {
+                                    "type": "string",
+                                    "description": "PERK Entry Point name or numeric id. Resolves every carrying PERK as a depth-0 seed; case-insensitive exact match, or `*` glob."
+                                },
+                                "property": {
+                                    "type": "string",
+                                    "description": "OMOD property name or scoped id (weap:/armo:/npc:). Resolves every declaring OMOD as a depth-0 seed; names ignore case and whitespace and may use `*` globs. Bare numeric ids are rejected."
+                                },
                                 "limit": {
                                     "type": "integer",
                                     "description": "Maximum rows to return (default 100)."
@@ -566,12 +574,37 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Parse `{"id"|"formid"|"edid": ...}` args into a `RecordSel`.
+/// Parse one direct or carrier-selector argument into a `RecordSel`.
 fn sel_from_args(args: &serde_json::Value) -> anyhow::Result<esm::ipc::RecordSel> {
     use esm::ipc::RecordSel;
     let formid = args.get("formid").and_then(|v| v.as_str());
     let edid = args.get("edid").and_then(|v| v.as_str());
     let id = args.get("id").and_then(|v| v.as_str());
+    let entry_point = args.get("entry_point").and_then(|v| v.as_str());
+    let property = args.get("property").and_then(|v| v.as_str());
+    let supplied: Vec<&str> = [
+        ("id", id),
+        ("formid", formid),
+        ("edid", edid),
+        ("entry_point", entry_point),
+        ("property", property),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.map(|_| name))
+    .collect();
+    if supplied.len() > 1 {
+        anyhow::bail!(
+            "selector arguments are mutually exclusive; specify only one of \
+             id, formid, edid, entry_point, or property (got {})",
+            supplied.join(", ")
+        );
+    }
+    if let Some(token) = entry_point {
+        return Ok(RecordSel::EntryPoint(token.to_string()));
+    }
+    if let Some(token) = property {
+        return Ok(RecordSel::OmodProperty(token.to_string()));
+    }
     RecordSel::from_parts(formid, edid, id)
 }
 

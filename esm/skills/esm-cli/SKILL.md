@@ -101,6 +101,47 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   shallower carrier. Caveat: carriers are emitted before referencers, so a
   broad glob at the default `--limit 100` may show only carrier rows — use
   `--limit 0` (or a larger limit) for EP walks when you need the referencers.
+- `--omod-property <[scope:]name-or-id>` (alias `--prop`) answers "which
+  OMODs declare this property?" — then walks refs from all of them at once.
+  Each matching OMOD is a `depth: 0` carrier row; a `PROP` column shows
+  `scope:id` (e.g. `weap:31`) when more than one distinct tag appears.
+  Syntax:
+  - **Scope-qualified** — `--prop weap:Speed` / `--prop weap:31` narrows to
+    one enum space (`weap` / `armo` / `npc`). Property ids are only
+    meaningful inside one space.
+  - **Bare name** — `--prop Keywords` matches across all three spaces;
+    each carrier is tagged with which space it came from, and a stderr
+    legend names every space that matched (same shape as a multi-match
+    `--ep` glob legend).
+  - **Bare numeric id is rejected** — `--prop 31` errors; write
+    `--prop weap:31`. An id alone is ambiguous across spaces.
+  Name matching is case-insensitive and whitespace-insensitive
+  (`ActorValues` and `'Actor Values'` both match). Cross-space name
+  collisions (same spelling, different ids per space) include at least:
+  `Keywords` (weap:31 / armo:3 / npc:0), `Enchantments` (weap:65 / armo:0 /
+  npc:3), `Perk` (weap:116 / armo:18), `ActorValues`/`Actor Values`, and
+  `Health`. Unlike `--ep`, `--prop` is **flag-only** — never auto-detected
+  from a bare positional (`Health` is also a real AVIF EditorID; a bare
+  `refs Health` must keep resolving to that AVIF). Caveat: carriers are
+  emitted before referencers, so a broad `--prop` (e.g. `Keywords`,
+  ~7,500+ carriers) at the default `--limit 100` may show only carrier
+  rows — use `--limit 0` (or a larger limit) when you need the referencers.
+
+**Worked example** (`Data.Includes[]` inheritance needs no special flag —
+`--paths` already labels the edges that include a Speed-declaring OMOD):
+
+```
+$ esm refs 0x00121D54 --depth 1 --paths          # mod_Minigun_Barrel_short, declares Speed
+FORMID      TYPE  EDID                                PATHS
+0x00188A08  COBJ  co_mod_Minigun_BarrelMinigun_short  Created Object
+0x001C6BC5  OMOD  modcol_Minigun_Barrels_Any          Data.Includes[1].Mod
+0x007AC747  WEAP  crMinigun                           Object Template.Combinations[8]....Includes[0].Mod
+```
+
+`esm refs --prop weap:Speed --depth 1 --paths` surfaces the same three edge
+kinds from every Speed carrier: a COBJ crafting recipe (`Created Object`),
+a `modcol_*`/`_PARENT_*` collection (`Data.Includes[N].Mod`), and a WEAP
+craftable-mod slot (`Object Template.Combinations[N]...Includes[0].Mod`).
 
 ## Mechanics digests: `walk` (interactive) and `chase` (pipeline JSON)
 

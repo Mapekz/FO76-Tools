@@ -153,9 +153,19 @@ esm refs 0x463F --json --pretty
 # Explicit flags still work and override the positional
 esm refs --edid AssaultRifle --limit 50
 esm refs --formid 0x463F --json --pretty
+
+# OMOD property carriers (flag-only — never auto-detected from a bare positional)
+esm refs --prop weap:Speed --depth 2 --type WEAP
+esm refs --omod-property Keywords --limit 0
 ```
 
 Find all records that reference a given FormID. Builds and caches an xref index on first run.
+
+`--prop`/`--omod-property <[scope:]name-or-id>` seeds the walk from every OMOD that declares
+the given property (e.g. `weap:Speed`, or a bare `Keywords` across all weap/armo/npc spaces).
+Unlike entry-point names, property names are not auto-detected from a bare positional — short
+generics like `Health` collide with real EditorIDs.
+<!-- Several other refs flags (--ep, --depth, --type, --paths, --sort, --to) are also undocumented here; see skills/esm-cli/SKILL.md. -->
 
 ### `tree` — Browse the GRUP hierarchy
 

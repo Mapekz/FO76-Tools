@@ -11,10 +11,11 @@ export type RefList = { target: string, rows: Array<RefRow>, total: number, capp
  */
 carrier_total?: number | null, 
 /**
- * Total distinct entry-point ids across all seeds. Set only for
- * entry-point walks; used by the CLI capped-output note.
+ * Total distinct tag ids across all seeds. Set only for carrier-seeded
+ * walks (e.g. entry-point); used by the CLI capped-output note. `None`
+ * for a plain single-target walk.
  */
-entry_point_total?: number | null, 
+tag_total?: number | null, 
 /**
  * The raw `depth` this walk was asked for, before clamping — lets a
  * caller detect that its request was silently adjusted. `0` means the

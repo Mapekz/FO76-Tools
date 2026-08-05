@@ -5,7 +5,7 @@ use esm::ipc::{
     Op, RecordSel, RefList, dispatch_op, find_ref_path, referenced_by_enriched,
     referenced_by_enriched_multi, resolve_sel,
 };
-use esm::{Database, EntryPointRef, EntryPointSpec, FormId};
+use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec};
 use std::io::Write;
 
 /// Verify that `Database::referenced_by` returns each referencing record
@@ -1143,9 +1143,19 @@ fn make_entry_point_esm() -> Vec<u8> {
 }
 
 /// Helper: wrap bare FormIDs as tagged seeds for [`referenced_by_enriched_multi`].
-fn seeds_with_ep(ids: &[(u32, u16)]) -> Vec<(FormId, Vec<EntryPointRef>)> {
+fn seeds_with_ep(ids: &[(u32, u16)]) -> Vec<(FormId, Vec<CarrierTag>)> {
     ids.iter()
-        .map(|&(fid, ep)| (FormId(fid), vec![EntryPointRef { id: ep, name: None }]))
+        .map(|&(fid, ep)| {
+            (
+                FormId(fid),
+                vec![CarrierTag {
+                    kind: CarrierKind::EntryPoint,
+                    id: ep,
+                    name: None,
+                    scope: None,
+                }],
+            )
+        })
         .collect()
 }
 
@@ -1339,8 +1349,8 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
     assert_eq!(carrier_a.form_id, FormId(10).display());
     assert_eq!(carrier_a.depth, 0);
     assert!(carrier_a.path.is_empty());
-    assert_eq!(carrier_a.entry_points.len(), 1);
-    assert_eq!(carrier_a.entry_points[0].id, 39);
+    assert_eq!(carrier_a.tags.len(), 1);
+    assert_eq!(carrier_a.tags[0].id, 39);
 
     let carrier_b = &list.rows[1];
     assert_eq!(carrier_b.form_id, FormId(11).display());
@@ -1365,7 +1375,7 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
         .unwrap();
     assert_eq!(ref_cont.path.len(), 1);
     assert_eq!(ref_cont.path[0].form_id, FormId(10).display());
-    assert_eq!(ref_cont.entry_points[0].id, 39);
+    assert_eq!(ref_cont.tags[0].id, 39);
 
     let _ = std::fs::remove_file(&path);
 }
@@ -1402,9 +1412,9 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
             .iter()
             .all(|r| r.record_type.as_deref() == Some("CONT"))
     );
-    // Legend still attributable via inherited entry_points even with no
+    // Legend still attributable via inherited tags even with no
     // depth-0 carrier rows.
-    assert!(list.rows.iter().all(|r| !r.entry_points.is_empty()));
+    assert!(list.rows.iter().all(|r| !r.tags.is_empty()));
 
     let _ = std::fs::remove_file(&path);
 }
@@ -1583,7 +1593,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         .find(|r| r.form_id == FormId(34).display())
         .expect("SharedGlob must appear");
     assert_eq!(shared.depth, 1);
-    let ids: Vec<u16> = shared.entry_points.iter().map(|e| e.id).collect();
+    let ids: Vec<u16> = shared.tags.iter().map(|e| e.id).collect();
     assert_eq!(
         ids,
         vec![41, 42],
@@ -1615,8 +1625,8 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         .find(|r| r.form_id == FormId(33).display())
         .expect("SharedDeep");
     assert_eq!(shared_deep.depth, 2);
-    assert_eq!(shared_deep.entry_points.len(), 1);
-    assert_eq!(shared_deep.entry_points[0].id, 39);
+    assert_eq!(shared_deep.tags.len(), 1);
+    assert_eq!(shared_deep.tags[0].id, 39);
     assert_eq!(
         shared_deep.path[0].form_id,
         FormId(10).display(),
@@ -1694,26 +1704,18 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
     );
     // Both still union to 41+42 regardless of order.
     assert_eq!(
-        fwd_shared
-            .entry_points
-            .iter()
-            .map(|e| e.id)
-            .collect::<Vec<_>>(),
+        fwd_shared.tags.iter().map(|e| e.id).collect::<Vec<_>>(),
         vec![41, 42]
     );
     assert_eq!(
-        rev_shared
-            .entry_points
-            .iter()
-            .map(|e| e.id)
-            .collect::<Vec<_>>(),
+        rev_shared.tags.iter().map(|e| e.id).collect::<Vec<_>>(),
         vec![41, 42]
     );
 
     let _ = std::fs::remove_file(&path);
 }
 
-/// A Direct (single-target) walk keeps empty `entry_points` and empty
+/// A Direct (single-target) walk keeps empty `tags` and empty
 /// depth-1 `path` — bit-compatible with pre-EP-attribution behavior.
 #[test]
 fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
@@ -1729,7 +1731,7 @@ fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
         esm::ipc::RefSort::Formid,
     )
     .expect("direct walk");
-    assert!(list.rows.iter().all(|r| r.entry_points.is_empty()));
+    assert!(list.rows.iter().all(|r| r.tags.is_empty()));
     assert!(
         list.rows
             .iter()
@@ -1738,7 +1740,328 @@ fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
         "Direct depth-1 rows must keep an empty path: {list:?}"
     );
     assert!(list.carrier_total.is_none());
-    assert!(list.entry_point_total.is_none());
+    assert!(list.tag_total.is_none());
+
+    let _ = std::fs::remove_file(&path);
+}
+
+// ── OMOD-property lookup (`refs --omod-property`/`--prop`) ───────────────────
+
+/// Build a minimal OMOD whose DATA targets `form_type` and declares each
+/// numeric property id in `properties`. Every row uses the simple integer
+/// value branch; only the form-type-selected Property enum is relevant here.
+fn build_omod_properties(
+    form_id: u32,
+    edid: &str,
+    form_type: &[u8; 4],
+    properties: &[u16],
+) -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(&0u32.to_le_bytes()); // Include Count
+    data.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    data.extend_from_slice(&[0, 0]); // Unknown Bool 1/2
+    data.extend_from_slice(form_type);
+    data.extend_from_slice(&[0, 0]); // Max Rank / Level Tier Scaled Offset
+    data.extend_from_slice(&0u32.to_le_bytes()); // Attach Point
+    data.extend_from_slice(&0u32.to_le_bytes()); // Attach Parent Slots count
+    data.extend_from_slice(&0u32.to_le_bytes()); // Items count
+    for &property in properties {
+        data.push(0); // Value Type = Int
+        data.extend_from_slice(&[0; 3]);
+        data.push(0); // Function Type = SET
+        data.extend_from_slice(&[0; 3]);
+        data.extend_from_slice(&property.to_le_bytes());
+        data.extend_from_slice(&0u16.to_le_bytes()); // unused
+        data.extend_from_slice(&0i32.to_le_bytes()); // Value 1
+        data.extend_from_slice(&0i32.to_le_bytes()); // Value 2
+        data.extend_from_slice(&0u32.to_le_bytes()); // Curve Table
+    }
+
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
+    append_subrecord(&mut subs, b"DATA", &data);
+    let mut rec = Vec::new();
+    append_record(&mut rec, b"OMOD", form_id, &subs);
+    rec
+}
+
+/// OMOD carriers spanning all three form-type property enum spaces:
+///   40 WeaponSpeed       — weap:0 Speed
+///   41 WeaponActorValues — weap:94 ActorValues
+///   42 ArmorActorValues  — armo:10 Actor Values, armo:0 Enchantments
+///   43 NpcEnchantments   — npc:3 Enchantments
+///   44 WeaponGlob        — weap:76 ReloadSpeed, weap:0 Speed (twice)
+///
+/// The repeated Speed row pins per-OMOD tag dedup. ActorValues/Actor Values
+/// pins whitespace-insensitive cross-space matching, while Enchantments pins
+/// the same-name/different-id collision documented by ADR 0004.
+fn make_omod_property_esm() -> Vec<u8> {
+    let mut buf = tes4_header();
+    let mut omod_group = build_omod_properties(40, "WeaponSpeed", b"WEAP", &[0]);
+    omod_group.extend(build_omod_properties(
+        41,
+        "WeaponActorValues",
+        b"WEAP",
+        &[94],
+    ));
+    omod_group.extend(build_omod_properties(
+        42,
+        "ArmorActorValues",
+        b"ARMO",
+        &[10, 0],
+    ));
+    omod_group.extend(build_omod_properties(43, "NpcEnchantments", b"NPC_", &[3]));
+    omod_group.extend(build_omod_properties(
+        44,
+        "WeaponGlob",
+        b"WEAP",
+        &[76, 0, 0],
+    ));
+    buf.extend(wrap_grup(b"OMOD", &omod_group));
+    buf
+}
+
+fn open_omod_property_db() -> (std::path::PathBuf, Database) {
+    let tmp = unique_temp_path("refs_omod_property");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp file");
+        f.write_all(&make_omod_property_esm()).expect("write");
+    }
+    let db = Database::open(&tmp).expect("open");
+    (tmp, db)
+}
+
+#[test]
+fn omod_property_spec_parses_scopes_names_ids_and_rejects_ambiguous_or_formid() {
+    OmodPropertySpec::parse("weap:Speed").expect("scope-qualified name");
+    OmodPropertySpec::parse("  WEAPON:Speed  ").expect("scope aliases are case-insensitive");
+    OmodPropertySpec::parse("weap:31").expect("scope-qualified id");
+    OmodPropertySpec::parse("Keywords").expect("bare name");
+    OmodPropertySpec::parse("future:Property").expect("unknown prefix stays an unscoped name");
+
+    let numeric = OmodPropertySpec::parse("31").expect_err("bare property id must be rejected");
+    assert!(
+        numeric.to_string().contains("per-form-type"),
+        "unexpected bare-id error: {numeric:#}"
+    );
+
+    let formid = OmodPropertySpec::parse("0x2043").expect_err("FormID-like token must be rejected");
+    assert!(
+        formid.to_string().contains("FormID") && formid.to_string().contains("positional target"),
+        "unexpected FormID error: {formid:#}"
+    );
+}
+
+/// Scope-qualified name/id matches stay in their requested enum space and a
+/// repeated property row produces one tag on its carrier.
+#[test]
+fn omods_by_property_scope_name_and_numeric_match_only_requested_space() {
+    let (path, mut db) = open_omod_property_db();
+
+    let (_, by_name) = db
+        .omods_by_property(&OmodPropertySpec::parse("weap:Speed").unwrap())
+        .expect("weap Speed");
+    assert_eq!(
+        by_name.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        vec![FormId(40), FormId(44)]
+    );
+    assert!(by_name.iter().all(|(_, tags)| tags.len() == 1));
+    assert!(by_name.iter().all(|(_, tags)| {
+        tags[0].id == 0
+            && tags[0].name.as_deref() == Some("Speed")
+            && tags[0].scope.as_deref() == Some("weap")
+    }));
+
+    let (_, by_id) = db
+        .omods_by_property(&OmodPropertySpec::parse("armo:10").unwrap())
+        .expect("armo property 10");
+    assert_eq!(by_id.len(), 1);
+    assert_eq!(by_id[0].0, FormId(42));
+    assert_eq!(by_id[0].1[0].name.as_deref(), Some("Actor Values"));
+    assert_eq!(by_id[0].1[0].scope.as_deref(), Some("armo"));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// Bare names fan out across form-type spaces, with whitespace ignored so
+/// weapon `ActorValues` and armor `Actor Values` are one logical query.
+#[test]
+fn omods_by_property_bare_name_spans_spaces_and_ignores_whitespace() {
+    let (path, mut db) = open_omod_property_db();
+
+    let (label, actor_values) = db
+        .omods_by_property(&OmodPropertySpec::parse("ActorValues").unwrap())
+        .expect("cross-space ActorValues");
+    assert_eq!(
+        actor_values.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        vec![FormId(42), FormId(41)],
+        "sorted by primary property id, then FormID"
+    );
+    assert!(label.contains("armo:10 Actor Values"), "label: {label}");
+    assert!(label.contains("weap:94 ActorValues"), "label: {label}");
+
+    let (_, spaced) = db
+        .omods_by_property(&OmodPropertySpec::parse("Actor Values").unwrap())
+        .expect("spaced cross-space name");
+    assert_eq!(spaced, actor_values);
+
+    let (enchantments_label, enchantments) = db
+        .omods_by_property(&OmodPropertySpec::parse("Enchantments").unwrap())
+        .expect("cross-space Enchantments");
+    assert_eq!(
+        enchantments.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        vec![FormId(42), FormId(43)]
+    );
+    assert!(
+        enchantments_label.contains("armo:0 Enchantments")
+            && enchantments_label.contains("npc:3 Enchantments"),
+        "label must distinguish same-name enum spaces: {enchantments_label}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn omods_by_property_no_match_and_glob_match_multiple_distinct_names() {
+    let (path, mut db) = open_omod_property_db();
+
+    let (label, none) = db
+        .omods_by_property(&OmodPropertySpec::parse("weap:NotAProperty").unwrap())
+        .expect("no match");
+    assert!(none.is_empty());
+    assert!(label.contains("no match"), "label: {label}");
+
+    let (label, globbed) = db
+        .omods_by_property(&OmodPropertySpec::parse("weap:*Speed").unwrap())
+        .expect("glob");
+    assert_eq!(
+        globbed.iter().map(|(fid, _)| *fid).collect::<Vec<_>>(),
+        vec![FormId(40), FormId(44)]
+    );
+    assert!(
+        label.contains("2 matched")
+            && label.contains("weap:0 Speed")
+            && label.contains("weap:76 ReloadSpeed"),
+        "glob legend must include both distinct names: {label}"
+    );
+    assert_eq!(
+        globbed
+            .iter()
+            .find(|(fid, _)| *fid == FormId(44))
+            .expect("WeaponGlob")
+            .1
+            .len(),
+        2,
+        "duplicate Speed rows dedup, while ReloadSpeed remains distinct"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn resolve_sel_rejects_omod_property_selector() {
+    let (path, mut db) = open_omod_property_db();
+
+    let err = resolve_sel(&mut db, &RecordSel::OmodProperty("weap:Speed".to_string()))
+        .expect_err("OMOD-property selector must not resolve to one FormId");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("refs") || msg.contains("ReferencedBy"),
+        "error should point at refs/ReferencedBy: {msg}"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
+    let (path, mut db) = open_omod_property_db();
+
+    let v = dispatch_op(
+        &mut db,
+        &Op::ReferencedBy {
+            sel: RecordSel::OmodProperty("Enchantments".to_string()),
+            limit: 0,
+            depth: 1,
+            type_filter: None,
+            paths: false,
+            sort: esm::ipc::RefSort::Formid,
+        },
+    )
+    .expect("dispatch_op");
+    let list: RefList = serde_json::from_value(v).expect("RefList");
+
+    assert!(list.target.contains("OMOD property"));
+    let carriers: Vec<_> = list.rows.iter().filter(|row| row.depth == 0).collect();
+    assert_eq!(carriers.len(), 2);
+    assert_eq!(carriers[0].form_id, FormId(42).display());
+    assert_eq!(carriers[0].tags[0].scope.as_deref(), Some("armo"));
+    assert_eq!(carriers[1].form_id, FormId(43).display());
+    assert_eq!(carriers[1].tags[0].scope.as_deref(), Some("npc"));
+    assert!(
+        carriers
+            .iter()
+            .flat_map(|row| &row.tags)
+            .all(|tag| tag.kind == CarrierKind::OmodProperty)
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// ADR 0004: `Health` is an engine-hardcoded AVIF EditorID, so Direct lookup
+/// must win even though Health is also an OMOD property name.
+#[test]
+fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
+    let (path, mut db) = open_omod_property_db();
+
+    let v = dispatch_op(
+        &mut db,
+        &Op::ReferencedBy {
+            sel: RecordSel::Edid("Health".to_string()),
+            limit: 0,
+            depth: 1,
+            type_filter: None,
+            paths: false,
+            sort: esm::ipc::RefSort::Formid,
+        },
+    )
+    .expect("Health must resolve as the hardcoded AVIF");
+    let list: RefList = serde_json::from_value(v).expect("RefList");
+
+    assert_eq!(list.target, FormId(0x0000_02D4).display());
+    assert!(list.rows.iter().all(|row| row.depth != 0));
+    assert!(list.carrier_total.is_none());
+    assert!(list.tag_total.is_none());
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// ADR 0004: an EditorID miss may auto-detect an entry point, but never an
+/// OMOD property. The fixture contains weap:Speed carriers, so successful
+/// dispatch here would prove that the forbidden fallback was added.
+#[test]
+fn dispatch_referenced_by_edid_miss_does_not_fallback_to_omod_property() {
+    let (path, mut db) = open_omod_property_db();
+
+    let err = dispatch_op(
+        &mut db,
+        &Op::ReferencedBy {
+            sel: RecordSel::Edid("Speed".to_string()),
+            limit: 0,
+            depth: 1,
+            type_filter: None,
+            paths: false,
+            sort: esm::ipc::RefSort::Formid,
+        },
+    )
+    .expect_err("Speed must not auto-detect as an OMOD property");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("EditorID"), "message: {msg}");
+    assert!(msg.contains("entry point"), "message: {msg}");
+    assert!(
+        !msg.contains("OMOD property"),
+        "property fallback must remain absent: {msg}"
+    );
 
     let _ = std::fs::remove_file(&path);
 }

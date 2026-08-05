@@ -441,21 +441,37 @@ pub enum EntryPointSpec {
     Name(String),
 }
 
-/// One entry point a carrier PERK matched under an [`EntryPointSpec`].
+/// Kind of virtual-seed selector that produced a [`CarrierTag`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub enum CarrierKind {
+    EntryPoint,
+    OmodProperty,
+}
+
+/// One tag a virtual-seed carrier matched under a selector (e.g. a PERK
+/// entry point under an [`EntryPointSpec`]).
 ///
-/// Carried on [`ipc::RefRow::entry_points`] so every reverse-ref row in an
-/// `--entry-point`/`--ep` walk can name which hook(s) it belongs to.
+/// Carried on [`ipc::RefRow::tags`] so every reverse-ref row in a
+/// carrier-seeded walk (such as `--entry-point`/`--ep`) can name which
+/// hook(s) it belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
-pub struct EntryPointRef {
+pub struct CarrierTag {
+    pub kind: CarrierKind,
     pub id: u16,
     pub name: Option<String>,
+    /// Enum-space qualifier for a kind that has one (OMOD property scope:
+    /// "weap"/"armo"/"npc"). `None` for `CarrierKind::EntryPoint`, which has
+    /// no scope concept.
+    pub scope: Option<String>,
 }
 
-/// Carrier PERKs from [`Database::perks_by_entry_point`], each tagged with
-/// the entry point(s) it matched.
-pub type EntryPointCarriers = Vec<(FormId, Vec<EntryPointRef>)>;
+/// Carrier records from a virtual selector (e.g. [`Database::perks_by_entry_point`]),
+/// each tagged with the match(es) that selected it.
+pub type Carriers = Vec<(FormId, Vec<CarrierTag>)>;
 
 impl EntryPointSpec {
     /// Parse a CLI/MCP token: an all-ASCII-digit token is a numeric id,
@@ -489,6 +505,112 @@ impl EntryPointSpec {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PropScope {
+    Weap,
+    Armo,
+    Npc,
+}
+
+impl PropScope {
+    /// The `Data.Form Type` enum name this scope's OMODs decode to.
+    fn form_type_name(self) -> &'static str {
+        match self {
+            PropScope::Weap => "Weapon",
+            PropScope::Armo => "Armor",
+            PropScope::Npc => "Non-player character",
+        }
+    }
+
+    fn tag_str(self) -> &'static str {
+        match self {
+            PropScope::Weap => "weap",
+            PropScope::Armo => "armo",
+            PropScope::Npc => "npc",
+        }
+    }
+
+    fn from_prefix(prefix: &str) -> Option<Self> {
+        if prefix.eq_ignore_ascii_case("weap") || prefix.eq_ignore_ascii_case("weapon") {
+            Some(PropScope::Weap)
+        } else if prefix.eq_ignore_ascii_case("armo") || prefix.eq_ignore_ascii_case("armor") {
+            Some(PropScope::Armo)
+        } else if prefix.eq_ignore_ascii_case("npc") || prefix.eq_ignore_ascii_case("npc_") {
+            Some(PropScope::Npc)
+        } else {
+            None
+        }
+    }
+
+    fn from_form_type_name(name: &str) -> Option<Self> {
+        [PropScope::Weap, PropScope::Armo, PropScope::Npc]
+            .into_iter()
+            .find(|scope| name == scope.form_type_name())
+    }
+}
+
+/// An OMOD Property selector for [`Database::omods_by_property`] — optionally
+/// scoped to the weapon, armor, or NPC property enum space, then selected by
+/// numeric id or name pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OmodPropertySpec {
+    scope: Option<PropScope>,
+    sel: OmodPropertySel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum OmodPropertySel {
+    Id(u16),
+    Name(String),
+}
+
+impl OmodPropertySpec {
+    /// Parse a CLI/MCP token. Numeric ids require a form-type scope because
+    /// each OMOD property enum space assigns different meanings to the same
+    /// number. Names may be scoped or may fan out across all three spaces.
+    pub fn parse(s: &str) -> anyhow::Result<OmodPropertySpec> {
+        let trimmed = s.trim();
+        if trimmed.starts_with("0x") || trimmed.starts_with("0X") {
+            bail!(
+                "'{trimmed}' looks like a FormID, not an OMOD property name or \
+                 numeric id; use the positional target or --formid for a FormID lookup"
+            );
+        }
+
+        let (scope, rest) = match trimmed.split_once(':') {
+            Some((prefix, rest)) => match PropScope::from_prefix(prefix) {
+                Some(scope) => (Some(scope), rest),
+                None => (None, trimmed),
+            },
+            None => (None, trimmed),
+        };
+        let sel = if !rest.is_empty()
+            && rest.bytes().all(|b| b.is_ascii_digit())
+            && let Ok(id) = rest.parse::<u16>()
+        {
+            if scope.is_none() {
+                bail!("property ids are per-form-type; use weap:<id>, armo:<id>, or npc:<id>");
+            }
+            OmodPropertySel::Id(id)
+        } else {
+            OmodPropertySel::Name(rest.to_string())
+        };
+
+        Ok(OmodPropertySpec { scope, sel })
+    }
+
+    fn display(&self) -> String {
+        match (self.scope, &self.sel) {
+            (Some(scope), OmodPropertySel::Id(id)) => format!("{}:{id}", scope.tag_str()),
+            (Some(scope), OmodPropertySel::Name(name)) => {
+                format!("{}:'{name}'", scope.tag_str())
+            }
+            (None, OmodPropertySel::Id(id)) => id.to_string(),
+            (None, OmodPropertySel::Name(name)) => format!("'{name}'"),
+        }
+    }
+}
+
 /// `true` if `name` satisfies `pattern` per [`EntryPointSpec::Name`]'s
 /// matching rule: exact case-insensitive unless `pattern` contains `*`.
 /// Deliberately not [`crate::wildcard::wildcard_match`] alone — that
@@ -503,11 +625,25 @@ fn entry_point_name_matches(pattern: &str, name: &str) -> bool {
     }
 }
 
-/// Extract `(numeric id, name)` from a decoded PERK effect's
-/// `Effect."Entry Point"."Entry Point"` value. Handles both the resolved
-/// `{value, name}` shape and the bare-int fallback `format_int` in
-/// `decode/mod.rs` emits when the id falls outside the enum's name table.
-fn entry_point_id_name(v: &Value) -> Option<(u16, Option<&str>)> {
+/// `true` if `name` satisfies `pattern` per [`OmodPropertySpec`]'s matching
+/// rule: exact case- and whitespace-insensitive unless `pattern` contains
+/// `*`, in which case the same glob rule applies to whitespace-stripped forms.
+/// Deliberately not [`crate::wildcard::wildcard_match`] alone — that matcher
+/// treats a `*`-free pattern as a substring search, which is wrong here too.
+fn omod_property_name_matches(pattern: &str, name: &str) -> bool {
+    let pattern: String = pattern.chars().filter(|c| !c.is_whitespace()).collect();
+    let name: String = name.chars().filter(|c| !c.is_whitespace()).collect();
+    if pattern.contains('*') {
+        wildcard_match(&pattern, &name)
+    } else {
+        pattern.eq_ignore_ascii_case(&name)
+    }
+}
+
+/// Extract `(numeric id, name)` from a decoded enum value. Handles both the
+/// resolved `{value, name}` shape and the bare-int fallback `format_int` in
+/// `decode/mod.rs` emits when an id falls outside its enum's name table.
+fn enum_id_name(v: &Value) -> Option<(u16, Option<&str>)> {
     match v {
         Value::Object(o) => {
             let id = o.get("value")?.as_u64()?;
@@ -1336,7 +1472,7 @@ impl Database {
     /// drives both the per-EP carrier grouping in table output and the
     /// BFS's first-reach attribution priority in
     /// `ipc::referenced_by_walk` (earlier seeds win equal-depth ties for
-    /// `path`/`VIA`; equal-depth `entry_points` are unioned).
+    /// `path`/`VIA`; equal-depth `tags` are unioned).
     ///
     /// Reuses the `ensure_filter_cache("PERK")` memoized decode (shared with
     /// [`Database::filter_type_records`]), so repeat lookups after the first
@@ -1350,25 +1486,25 @@ impl Database {
     pub fn perks_by_entry_point(
         &mut self,
         spec: &EntryPointSpec,
-    ) -> anyhow::Result<(String, EntryPointCarriers)> {
+    ) -> anyhow::Result<(String, Carriers)> {
         self.ensure_filter_cache("PERK")?;
         let (_, entries) = self
             .filter_cache
             .get("PERK")
             .expect("populated by ensure_filter_cache");
 
-        let mut seeds: EntryPointCarriers = Vec::new();
+        let mut seeds: Carriers = Vec::new();
         let mut matched: std::collections::BTreeSet<(u16, Option<String>)> = Default::default();
         for entry in entries {
             let Some(effects) = entry.fields.get("Effects").and_then(Value::as_array) else {
                 continue;
             };
-            let mut tags: Vec<EntryPointRef> = Vec::new();
+            let mut tags: Vec<CarrierTag> = Vec::new();
             for effect in effects {
                 let Some(ep) = effect.pointer("/Effect/Entry Point/Entry Point") else {
                     continue;
                 };
-                let Some((id, name)) = entry_point_id_name(ep) else {
+                let Some((id, name)) = enum_id_name(ep) else {
                     continue;
                 };
                 let is_match = match spec {
@@ -1380,7 +1516,12 @@ impl Database {
                 if is_match {
                     let name = name.map(str::to_string);
                     matched.insert((id, name.clone()));
-                    tags.push(EntryPointRef { id, name });
+                    tags.push(CarrierTag {
+                        kind: CarrierKind::EntryPoint,
+                        id,
+                        name,
+                        scope: None,
+                    });
                 }
             }
             if !tags.is_empty() {
@@ -1410,6 +1551,127 @@ impl Database {
                     .collect();
                 format!(
                     "entry point {} ({n} matched: {})",
+                    spec.display(),
+                    legend.join(", ")
+                )
+            }
+        };
+
+        Ok((label, seeds))
+    }
+
+    /// Carrier OMODs for a property (see [`OmodPropertySpec`]) — the reverse
+    /// of `get`/`walk`'s "what properties does this OMOD declare?". Deduped:
+    /// an OMOD with the same matched property row more than once appears once
+    /// with one copy of that tag.
+    ///
+    /// Seeds are sorted by `(primary property id, form_id)`, where "primary"
+    /// is the smallest matched id on that carrier. That order drives both the
+    /// per-property carrier grouping in table output and the BFS's first-reach
+    /// attribution priority in `ipc::referenced_by_walk` (earlier seeds win
+    /// equal-depth ties for `path`/`VIA`; equal-depth `tags` are unioned).
+    ///
+    /// Reuses the `ensure_filter_cache("OMOD")` memoized decode (shared with
+    /// [`Database::filter_type_records`]), so repeat lookups after the first
+    /// are effectively free.
+    ///
+    /// Returns `(label, seeds)`: `label` is a human-readable description of
+    /// what matched — e.g. `"OMOD property weap:0 (Speed)"` or
+    /// `"OMOD property 'Enchantments' (3 matched: weap:65 Enchantments, \
+    /// armo:0 Enchantments, npc:3 Enchantments)"` — meant for
+    /// [`ipc::RefList::target`]; `seeds` are `(FormId, tags)` pairs tagging
+    /// each carrier with the properties it matched.
+    pub fn omods_by_property(
+        &mut self,
+        spec: &OmodPropertySpec,
+    ) -> anyhow::Result<(String, Carriers)> {
+        self.ensure_filter_cache("OMOD")?;
+        let (_, entries) = self
+            .filter_cache
+            .get("OMOD")
+            .expect("populated by ensure_filter_cache");
+
+        let mut seeds: Carriers = Vec::new();
+        let mut matched: std::collections::BTreeSet<(PropScope, u16, Option<String>)> =
+            Default::default();
+        for entry in entries {
+            let Some(form_type_name) = entry
+                .fields
+                .pointer("/Data/Form Type/name")
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            let Some(scope) = PropScope::from_form_type_name(form_type_name) else {
+                continue;
+            };
+            if spec.scope.is_some_and(|want| want != scope) {
+                continue;
+            }
+            let Some(properties) = entry
+                .fields
+                .pointer("/Data/Properties")
+                .and_then(Value::as_array)
+            else {
+                continue;
+            };
+
+            let mut tags: Vec<CarrierTag> = Vec::new();
+            for property in properties {
+                let Some(value) = property.get("Property") else {
+                    continue;
+                };
+                let Some((id, name)) = enum_id_name(value) else {
+                    continue;
+                };
+                let is_match = match &spec.sel {
+                    OmodPropertySel::Id(want) => id == *want,
+                    OmodPropertySel::Name(pattern) => {
+                        name.is_some_and(|name| omod_property_name_matches(pattern, name))
+                    }
+                };
+                if is_match {
+                    let name = name.map(str::to_string);
+                    matched.insert((scope, id, name.clone()));
+                    tags.push(CarrierTag {
+                        kind: CarrierKind::OmodProperty,
+                        id,
+                        name,
+                        scope: Some(scope.tag_str().to_string()),
+                    });
+                }
+            }
+            if !tags.is_empty() {
+                tags.sort();
+                tags.dedup();
+                seeds.push((entry.form_id, tags));
+            }
+        }
+        seeds.sort_by_key(|(form_id, tags)| {
+            (tags.first().map(|tag| tag.id).unwrap_or(0), form_id.raw())
+        });
+
+        let label = match matched.len() {
+            0 => format!("OMOD property {} (no match)", spec.display()),
+            1 => {
+                let (scope, id, name) = matched.iter().next().expect("len == 1");
+                match name {
+                    Some(name) => {
+                        format!("OMOD property {}:{id} ({name})", scope.tag_str())
+                    }
+                    None => format!("OMOD property {}:{id} (unnamed)", scope.tag_str()),
+                }
+            }
+            n => {
+                let legend: Vec<String> = matched
+                    .iter()
+                    .map(|(scope, id, name)| match name {
+                        Some(name) => format!("{}:{id} {name}", scope.tag_str()),
+                        None => format!("{}:{id}", scope.tag_str()),
+                    })
+                    .collect();
+                format!(
+                    "OMOD property {} ({n} matched: {})",
                     spec.display(),
                     legend.join(", ")
                 )

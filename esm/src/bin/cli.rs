@@ -9,8 +9,8 @@ use esm::backend::{
 };
 use esm::ipc::{Op, RecordSel};
 use esm::{
-    BodyDetail, CacheInventory, CoverageReport, Database, DiffResult, Markers, RecordRow, RefList,
-    ResolveDepth, SearchField,
+    BodyDetail, CacheInventory, CarrierKind, CoverageReport, Database, DiffResult, Markers,
+    RecordRow, RefList, ResolveDepth, SearchField,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -208,14 +208,15 @@ enum Commands {
     },
     Refs {
         /// FormID, EditorID, or PERK entry-point name (auto-detected);
-        /// overridden by --formid/--edid/--entry-point. An entry-point name
-        /// only matches when it isn't also an EditorID — e.g. `Blocker01`
-        /// (a record) always wins over any same-named entry point.
-        #[arg(conflicts_with_all = ["formid", "edid", "entry_point"])]
+        /// overridden by --formid/--edid/--entry-point/--omod-property. An
+        /// entry-point name only matches when it isn't also an EditorID —
+        /// e.g. `Blocker01` (a record) always wins over any same-named entry
+        /// point.
+        #[arg(conflicts_with_all = ["formid", "edid", "entry_point", "omod_property"])]
         target: Option<String>,
-        #[arg(long, conflicts_with_all = ["edid", "entry_point"])]
+        #[arg(long, conflicts_with_all = ["edid", "entry_point", "omod_property"])]
         formid: Option<String>,
-        #[arg(long, conflicts_with_all = ["formid", "entry_point"])]
+        #[arg(long, conflicts_with_all = ["formid", "entry_point", "omod_property"])]
         edid: Option<String>,
         /// PERK "Entry Point" name or numeric id — resolves to every PERK
         /// carrying it (e.g. `39`, `'Mod Percent Blocked'`), each emitted as
@@ -224,8 +225,22 @@ enum Commands {
         /// globs (e.g. `'Mod VATS*'`). Multi-match globs print a legend of
         /// every matched id+name and an `EP` column attributing each row to
         /// its entry point(s); `VIA` starts at depth 1 naming the carrier.
-        #[arg(long = "entry-point", visible_alias = "ep", conflicts_with_all = ["formid", "edid"])]
+        #[arg(long = "entry-point", visible_alias = "ep", conflicts_with_all = ["formid", "edid", "omod_property"])]
         entry_point: Option<String>,
+        /// OMOD property name or numeric id, optionally scoped by form-type
+        /// (weap:/armo:/npc:) — resolves to every OMOD declaring it (e.g.
+        /// `weap:Speed`, `weap:31`, or a bare `Keywords` spanning all three
+        /// spaces), each emitted as a depth-0 carrier row, then walks refs from
+        /// all of them. A bare numeric id with no scope prefix is rejected —
+        /// ids are only meaningful within one form-type space. Name matching
+        /// is case- and whitespace-insensitive (`ActorValues`/`Actor Values`
+        /// both match); `*` globs. Multi-space bare-name matches print a
+        /// legend of every matched scope+id+name and a `PROP` column
+        /// attributing each row. Unlike --entry-point, never auto-detected
+        /// from a bare positional target (property names are short/generic and
+        /// collide with real EditorIDs — see docs/adr/0004).
+        #[arg(long = "omod-property", visible_alias = "prop", conflicts_with_all = ["formid", "edid", "entry_point", "to"])]
+        omod_property: Option<String>,
         /// FormID or EditorID of a second record — instead of walking the
         /// full reverse-reference graph, find one connecting chain of
         /// reverse-reference hops from the primary target to this one via a
@@ -236,10 +251,10 @@ enum Commands {
         /// no path is found, the two records may still be connected the
         /// other way (swap which one is the positional target vs --to).
         /// Incompatible with the closure-walk options
-        /// (--depth/--limit/--type/--sort/--entry-point) since there's no
-        /// "everything found" set to narrow or truncate — only the one
-        /// chain (if any).
-        #[arg(long, conflicts_with_all = ["entry_point", "limit", "depth", "record_type", "sort"])]
+        /// (--depth/--limit/--type/--sort/--entry-point/--omod-property)
+        /// since there's no "everything found" set to narrow or truncate —
+        /// only the one chain (if any).
+        #[arg(long, conflicts_with_all = ["entry_point", "omod_property", "limit", "depth", "record_type", "sort"])]
         to: Option<String>,
         /// Combined hop-count ceiling for --to's bidirectional search
         /// (default 12). Only meaningful with --to.
@@ -848,6 +863,7 @@ fn dispatch_command(
             formid,
             edid,
             entry_point,
+            omod_property,
             to,
             max_hops,
             limit,
@@ -876,6 +892,7 @@ fn dispatch_command(
                     edid,
                     target,
                     entry_point,
+                    omod_property,
                     limit,
                     depth,
                     record_type,
@@ -1141,6 +1158,7 @@ fn cmd_refs(
     edid: Option<String>,
     target: Option<String>,
     entry_point: Option<String>,
+    omod_property: Option<String>,
     limit: usize,
     depth: usize,
     record_type: Option<String>,
@@ -1163,12 +1181,15 @@ fn cmd_refs(
              (--type/--limit don't reduce the cost); Ctrl-C to abort."
         );
     }
-    // `--entry-point`/`--ep` bypasses `record_sel`'s FormID/EditorID parsing
-    // entirely — clap's `conflicts_with_all` on all four already guarantees
-    // at most one of formid/edid/target/entry_point is set.
-    let sel = match entry_point {
-        Some(token) => RecordSel::EntryPoint(token),
-        None => record_sel(formid, edid, target)?,
+    // Carrier selectors bypass `record_sel`'s FormID/EditorID parsing
+    // entirely — clap's `conflicts_with_all` guarantees mutual exclusion.
+    let sel = match (entry_point, omod_property) {
+        (Some(token), None) => RecordSel::EntryPoint(token),
+        (None, Some(token)) => RecordSel::OmodProperty(token),
+        (None, None) => record_sel(formid, edid, target)?,
+        (Some(_), Some(_)) => {
+            unreachable!("clap conflicts_with_all guarantees mutual exclusion")
+        }
     };
     if localization_ba2.is_some() || strings_dir.is_some() {
         if daemon_mode {
@@ -1210,34 +1231,47 @@ fn cmd_refs(
 }
 
 fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: bool) {
-    // Depth-0 rows only exist on the entry-point path (see
+    // Depth-0 rows only exist on carrier-selector paths (see
     // `referenced_by_enriched_multi`) — never on a plain FormID/EditorID
-    // `refs` lookup. `has_carriers` gates the `D` column; `has_entry_points`
+    // `refs` lookup. `has_carriers` gates the `D` column; `has_tags`
     // gates the target-label print so a type filter that suppresses every
-    // carrier row still shows the legend (BFS rows inherit `entry_points`).
+    // carrier row still shows the legend (BFS rows inherit `tags`).
     let has_carriers = ref_list.rows.iter().any(|r| r.depth == 0);
     // Show the D column whenever any printed row's depth is informative —
     // either a carrier (depth 0) or any hop beyond direct referencers
     // (depth 1 is the common case and would just repeat "1" on every row,
     // so it alone doesn't earn the column).
     let show_depth_column = has_carriers || ref_list.rows.iter().any(|r| r.depth > 1);
-    let has_entry_points = ref_list.rows.iter().any(|r| !r.entry_points.is_empty());
-    // Show an EP column only when more than one distinct id appears in the
-    // rows actually being printed — a single-id match is already named by
-    // the legend, so a constant column would add noise.
-    let distinct_ep_ids: std::collections::BTreeSet<u16> = ref_list
+    let has_tags = ref_list.rows.iter().any(|r| !r.tags.is_empty());
+    // Show a tag column only when more than one distinct (kind, scope, id)
+    // appears in the rows actually being printed — a single-id match is
+    // already named by the legend, so a constant column would add noise.
+    let distinct_tag_ids: std::collections::BTreeSet<_> = ref_list
         .rows
         .iter()
-        .flat_map(|r| r.entry_points.iter().map(|ep| ep.id))
+        .flat_map(|r| r.tags.iter().map(|t| (t.kind, t.scope.as_deref(), t.id)))
         .collect();
-    let has_ep_column = distinct_ep_ids.len() > 1;
+    let has_tag_column = distinct_tag_ids.len() > 1;
+    // In practice a `refs` invocation resolves through exactly one selector,
+    // so only one CarrierKind appears. Prefer PROP when OmodProperty tags
+    // are present; otherwise EP (EntryPoint, or empty).
+    let tag_kinds: std::collections::BTreeSet<CarrierKind> = ref_list
+        .rows
+        .iter()
+        .flat_map(|r| r.tags.iter().map(|t| t.kind))
+        .collect();
+    let tag_header = if tag_kinds.contains(&CarrierKind::OmodProperty) {
+        "PROP"
+    } else {
+        "EP"
+    };
     if json {
         print_json(&serde_json::to_value(&ref_list.rows).unwrap(), pretty);
     } else {
         if ref_list.rows.is_empty() {
             eprintln!("note: no records reference {}", ref_list.target);
         } else {
-            if has_entry_points {
+            if has_tags {
                 eprintln!("{}", ref_list.target);
             }
             // Include a VIA column only when at least one row has a multi-hop path,
@@ -1256,19 +1290,25 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
                         row.name.as_deref().unwrap_or("").to_string(),
                     ];
                     if show_depth_column {
-                        // depth 0 marks a carrier (the entry point's own
-                        // PERK) — `RefRow::depth`'s doc says 1 = direct
-                        // reference, so 0 is free as a "this is the walk's
-                        // starting point, not something it found" sentinel.
+                        // depth 0 marks a carrier — `RefRow::depth`'s doc
+                        // says 1 = direct reference, so 0 is free as a "this
+                        // is the walk's starting point, not something it
+                        // found" sentinel.
                         cells.push(row.depth.to_string());
                     }
-                    if has_ep_column {
-                        let eps: Vec<String> = row
-                            .entry_points
+                    if has_tag_column {
+                        let cells_tags: Vec<String> = row
+                            .tags
                             .iter()
-                            .map(|ep| ep.id.to_string())
+                            .map(|t| match t.kind {
+                                CarrierKind::EntryPoint => t.id.to_string(),
+                                CarrierKind::OmodProperty => match &t.scope {
+                                    Some(s) => format!("{s}:{}", t.id),
+                                    None => t.id.to_string(),
+                                },
+                            })
                             .collect();
-                        cells.push(eps.join(","));
+                        cells.push(cells_tags.join(","));
                     }
                     if has_via {
                         let via = if !row.path.is_empty() {
@@ -1295,8 +1335,8 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
             if show_depth_column {
                 headers.push("D");
             }
-            if has_ep_column {
-                headers.push("EP");
+            if has_tag_column {
+                headers.push(tag_header);
             }
             if has_via {
                 headers.push("VIA");
@@ -1344,13 +1384,18 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
                 esm::ipc::RefSort::Depth => "depth",
             }
         );
-        if let (Some(carrier_total), Some(ep_total)) =
-            (ref_list.carrier_total, ref_list.entry_point_total)
+        if let (Some(carrier_total), Some(tag_total)) = (ref_list.carrier_total, ref_list.tag_total)
         {
             let carriers_shown = ref_list.rows.iter().filter(|r| r.depth == 0).count();
-            let eps_shown = distinct_ep_ids.len();
+            let tags_shown = distinct_tag_ids.len();
+            let tag_noun = if tag_kinds.contains(&CarrierKind::OmodProperty) {
+                "properties"
+            } else {
+                "entry points"
+            };
             note.push_str(&format!(
-                " ({carriers_shown} of {carrier_total} carriers, {eps_shown} of {ep_total} entry points shown)"
+                " ({carriers_shown} of {carrier_total} carriers, \
+                 {tags_shown} of {tag_total} {tag_noun} shown)"
             ));
         }
         if !ref_list.per_depth_totals.is_empty() {

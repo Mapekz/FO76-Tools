@@ -49,6 +49,21 @@ A reverse reference from a player-facing source type (recipe, reward, legendary 
 quest, container, loot list) indicating a record is actually reachable in game.
 _Avoid_: treating any reverse reference as proof of obtainability
 
+**Carrier**:
+A record matched by a Carriers-shape `refs` seed selector, emitted as a `depth: 0` seed
+row tagged with what it matched (`RefRow.tags` / `CarrierTag`).
+_Avoid_: calling the Direct seed itself a carrier (Direct seeds are never emitted as rows)
+
+**Seed selector**:
+How `refs` resolves its starting FormID(s): **Direct** (one FormID/EditorID/hardcoded AVIF)
+or **Carriers** (zero or more matched records). See [`docs/adr/0004-refs-seed-selectors.md`](docs/adr/0004-refs-seed-selectors.md).
+_Avoid_: treating hardcoded AVIFs as a third selector kind
+
+**Enum space**:
+An OMOD property's Form-Type-keyed namespace — `weap`, `armo`, or `npc`. Property ids are
+only meaningful inside one space; the same id number names a different property in each.
+_Avoid_: treating a bare numeric property id as unambiguous across spaces
+
 ## Relationships
 
 - An **OMOD** implements its effect via one or more **Mechanisms**

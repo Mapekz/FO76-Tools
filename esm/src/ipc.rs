@@ -3,7 +3,8 @@
 use crate::diff::{DiffOptions, diff_databases_with};
 use crate::registry::Registry;
 use crate::{
-    Database, EntryPointRef, EntryPointSpec, FilterOp, FormId, RecordRow, ResolveDepth, SearchField,
+    CarrierTag, Database, EntryPointSpec, FilterOp, FormId, OmodPropertySpec, RecordRow,
+    ResolveDepth, SearchField,
 };
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -67,8 +68,18 @@ pub enum RecordSel {
     /// Only meaningful for [`Op::ReferencedBy`] (via [`resolve_ref_seeds`]) —
     /// `resolve_sel`, which every other `Op` uses, rejects it. Never produced
     /// by [`RecordSel::from_input`]/[`RecordSel::from_parts`]; constructed
-    /// only by the CLI's explicit `--entry-point`/`--ep` flag.
+    /// only by the CLI's explicit `--entry-point`/`--ep` flag or the MCP
+    /// `entry_point` argument.
     EntryPoint(String),
+    /// An OMOD Property name or scoped numeric id (see
+    /// [`OmodPropertySpec::parse`]), resolving to every OMOD that declares it
+    /// rather than a single record. Only meaningful for
+    /// [`Op::ReferencedBy`] (via [`resolve_ref_seeds`]) — `resolve_sel`,
+    /// which every other `Op` uses, rejects it. Never produced by
+    /// [`RecordSel::from_input`]/[`RecordSel::from_parts`]; constructed only
+    /// by the CLI's explicit `--omod-property`/`--prop` flag or the MCP
+    /// `property` argument.
+    OmodProperty(String),
 }
 
 impl RecordSel {
@@ -126,6 +137,7 @@ impl RecordSel {
             RecordSel::Edid(edid) => edid.clone(),
             RecordSel::Auto(token) => token.clone(),
             RecordSel::EntryPoint(token) => token.clone(),
+            RecordSel::OmodProperty(token) => token.clone(),
         }
     }
 }
@@ -320,12 +332,13 @@ pub struct RefRow {
     /// opt-in and left absent on the default fast walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field_paths: Option<Vec<String>>,
-    /// Entry points the originating carrier matched, when the walk was seeded
-    /// by an entry-point selector. On a `depth: 0` row these are the carrier's
-    /// own matches; on deeper rows they are inherited from the carrier the BFS
-    /// reached this record through (`path[0]`). Empty for a single-target walk.
+    /// Carrier tags the originating carrier matched, when the walk was seeded
+    /// by a virtual selector (e.g. entry-point). On a `depth: 0` row these are
+    /// the carrier's own matches; on deeper rows they are inherited from the
+    /// carrier the BFS reached this record through (`path[0]`). Empty for a
+    /// single-target walk.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entry_points: Vec<EntryPointRef>,
+    pub tags: Vec<CarrierTag>,
 }
 
 /// Referenced-by result with total count and optional cap flag.
@@ -341,10 +354,11 @@ pub struct RefList {
     /// entry-point (multi-seed) walks; used by the CLI capped-output note.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub carrier_total: Option<usize>,
-    /// Total distinct entry-point ids across all seeds. Set only for
-    /// entry-point walks; used by the CLI capped-output note.
+    /// Total distinct tag ids across all seeds. Set only for carrier-seeded
+    /// walks (e.g. entry-point); used by the CLI capped-output note. `None`
+    /// for a plain single-target walk.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entry_point_total: Option<usize>,
+    pub tag_total: Option<usize>,
     /// The raw `depth` this walk was asked for, before clamping — lets a
     /// caller detect that its request was silently adjusted. `0` means the
     /// caller asked for an unbounded walk (see [`DEFAULT_MAX_DEPTH`]).
@@ -698,6 +712,10 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
             "entry-point selector '{token}' is only valid for refs \
              (Op::ReferencedBy) — it doesn't resolve to a single record"
         ),
+        RecordSel::OmodProperty(token) => bail!(
+            "OMOD-property selector '{token}' is only valid for refs \
+             (Op::ReferencedBy) — it doesn't resolve to a single record"
+        ),
     }
 }
 
@@ -903,7 +921,7 @@ pub fn referenced_by_enriched(
         total: stats.total,
         capped: stats.capped,
         carrier_total: None,
-        entry_point_total: None,
+        tag_total: None,
         requested_depth: stats.requested_depth,
         effective_depth: stats.effective_depth,
         depth_capped: stats.depth_capped,
@@ -920,14 +938,13 @@ pub fn referenced_by_enriched(
 /// different seeds is still only emitted once. Used by [`resolve_ref_seeds`]'s
 /// entry-point path (see [`crate::EntryPointSpec`]).
 ///
-/// `seeds` carries per-carrier entry-point tags that are copied onto every
-/// descendant row (and unioned on equal-depth re-reaches). Caller order is
-/// preserved end-to-end — do not re-sort here; see
-/// [`Database::perks_by_entry_point`].
+/// `seeds` carries per-carrier tags that are copied onto every descendant
+/// row (and unioned on equal-depth re-reaches). Caller order is preserved
+/// end-to-end — do not re-sort here; see [`Database::perks_by_entry_point`].
 #[allow(clippy::too_many_arguments)]
 pub fn referenced_by_enriched_multi(
     db: &mut Database,
-    seeds: &[(FormId, Vec<EntryPointRef>)],
+    seeds: &[(FormId, Vec<CarrierTag>)],
     label: String,
     depth: usize,
     limit: usize,
@@ -935,9 +952,9 @@ pub fn referenced_by_enriched_multi(
     include_paths: bool,
     sort: RefSort,
 ) -> anyhow::Result<RefList> {
-    let entry_point_total = seeds
+    let tag_total = seeds
         .iter()
-        .flat_map(|(_, tags)| tags.iter().map(|ep| ep.id))
+        .flat_map(|(_, tags)| tags.iter().map(|t| (t.kind, t.scope.as_deref(), t.id)))
         .collect::<std::collections::BTreeSet<_>>()
         .len();
     let (rows, stats) = referenced_by_walk(
@@ -956,7 +973,7 @@ pub fn referenced_by_enriched_multi(
         total: stats.total,
         capped: stats.capped,
         carrier_total: Some(stats.carrier_total),
-        entry_point_total: Some(entry_point_total),
+        tag_total: Some(tag_total),
         requested_depth: stats.requested_depth,
         effective_depth: stats.effective_depth,
         depth_capped: stats.depth_capped,
@@ -968,7 +985,7 @@ pub fn referenced_by_enriched_multi(
 
 /// Shared BFS behind [`referenced_by_enriched`] / [`referenced_by_enriched_multi`].
 ///
-/// `seeds` are the BFS roots, optionally tagged with entry points. When
+/// `seeds` are the BFS roots, optionally tagged with carrier tags. When
 /// `emit_seeds` is true, each seed is also emitted as its own `depth: 0` row
 /// *before* the BFS-found referencer rows, and the queue is seeded with the
 /// carrier's own [`RefPathNode`] so descendants' `path`/`VIA` trace back to
@@ -983,7 +1000,7 @@ pub fn referenced_by_enriched_multi(
 #[allow(clippy::too_many_arguments)]
 fn referenced_by_walk(
     db: &mut Database,
-    seeds: &[(FormId, Vec<EntryPointRef>)],
+    seeds: &[(FormId, Vec<CarrierTag>)],
     emit_seeds: bool,
     depth: usize,
     limit: usize,
@@ -1018,12 +1035,12 @@ fn referenced_by_walk(
     // re-sort by form_id — caller order drives carrier display grouping and
     // BFS attribution priority.
     let mut seen_seed = HashSet::new();
-    let seeds: Vec<(FormId, Vec<EntryPointRef>)> = seeds
+    let seeds: Vec<(FormId, Vec<CarrierTag>)> = seeds
         .iter()
         .filter(|(f, _)| seen_seed.insert(*f))
         .cloned()
         .collect();
-    let seed_tags: HashMap<FormId, Vec<EntryPointRef>> =
+    let seed_tags: HashMap<FormId, Vec<CarrierTag>> =
         seeds.iter().map(|(f, tags)| (*f, tags.clone())).collect();
     let seed_ids: Vec<FormId> = seeds.iter().map(|(f, _)| *f).collect();
 
@@ -1060,7 +1077,7 @@ fn referenced_by_walk(
                     depth: 0,
                     path: Vec::new(),
                     field_paths: None,
-                    entry_points: seed_tags.get(&seed).cloned().unwrap_or_default(),
+                    tags: seed_tags.get(&seed).cloned().unwrap_or_default(),
                 });
             }
             // Type-filtered carriers still contribute a RefPathNode so their
@@ -1075,7 +1092,7 @@ fn referenced_by_walk(
 
     let carrier_total = seed_rows.len();
     let mut rows: Vec<RefRow> = Vec::new();
-    // FormId → index into `rows` for equal-depth entry-point tag unions.
+    // FormId → index into `rows` for equal-depth carrier-tag unions.
     let mut emitted: HashMap<FormId, usize> = HashMap::new();
     // Newly-discovered nodes at `max_depth` that were not expanded further —
     // the unexplored BFS frontier. See `RefList::depth_capped`.
@@ -1090,16 +1107,16 @@ fn referenced_by_walk(
             let hop_depth = path_here.len() + 1 - usize::from(emit_seeds);
 
             if !seen.insert(fid) {
-                // Equal-depth re-reach: union entry_points onto the already-
-                // emitted row without changing its path/VIA (first-reach wins
-                // for the path). Deeper re-reaches and seed self-hits are
-                // ignored as before.
+                // Equal-depth re-reach: union tags onto the already-emitted
+                // row without changing its path/VIA (first-reach wins for the
+                // path). Deeper re-reaches and seed self-hits are ignored as
+                // before.
                 if let Some(&idx) = emitted.get(&fid)
                     && rows[idx].depth == hop_depth
                     && let Some(origin_fid) = origin
                 {
-                    merge_entry_points(
-                        &mut rows[idx].entry_points,
+                    merge_tags(
+                        &mut rows[idx].tags,
                         seed_tags
                             .get(&origin_fid)
                             .map(|v| v.as_slice())
@@ -1120,7 +1137,7 @@ fn referenced_by_walk(
                 } else {
                     None
                 };
-                let entry_points = origin
+                let tags = origin
                     .and_then(|o| seed_tags.get(&o).cloned())
                     .unwrap_or_default();
                 let idx = rows.len();
@@ -1133,7 +1150,7 @@ fn referenced_by_walk(
                     depth: hop_depth,
                     path: path_here.clone(),
                     field_paths,
-                    entry_points,
+                    tags,
                 });
                 emitted.insert(fid, idx);
             }
@@ -1199,7 +1216,7 @@ fn referenced_by_walk(
 /// Non-row outcome of one [`referenced_by_walk`] call — the shared "how did
 /// this walk go" facts both [`referenced_by_enriched`] and
 /// [`referenced_by_enriched_multi`] copy into their own `RefList` (each adds
-/// its own `target`/`entry_point_total` on top).
+/// its own `target`/`tag_total` on top).
 struct WalkStats {
     total: usize,
     capped: bool,
@@ -1214,14 +1231,14 @@ struct WalkStats {
     shown_max_depth: usize,
 }
 
-/// Merge `incoming` into `dst` by entry-point id, keeping sorted+deduped.
-fn merge_entry_points(dst: &mut Vec<EntryPointRef>, incoming: &[EntryPointRef]) {
+/// Merge `incoming` into `dst` by `(kind, scope, id)`, keeping sorted+deduped.
+fn merge_tags(dst: &mut Vec<CarrierTag>, incoming: &[CarrierTag]) {
     if incoming.is_empty() {
         return;
     }
     dst.extend(incoming.iter().cloned());
     dst.sort();
-    dst.dedup_by(|a, b| a.id == b.id);
+    dst.dedup_by(|a, b| a.kind == b.kind && a.scope == b.scope && a.id == b.id);
 }
 
 /// Default `--max-hops` for [`find_ref_path`] when the caller passes 0.
@@ -1505,28 +1522,27 @@ fn ref_path_hop(
 }
 
 /// Seeds resolved from a [`RecordSel`] for [`Op::ReferencedBy`] — either a
-/// single direct target (today's behavior, unchanged) or every PERK carrying
-/// a matched entry point (see [`crate::EntryPointSpec`]).
+/// single direct target or every carrier matched by an entry-point or OMOD-
+/// property selector.
 enum RefSeeds {
     /// A resolved FormID/EditorID/Auto target. The target is only a BFS
     /// root — [`referenced_by_enriched`] never emits it as a row.
     Direct(FormId),
-    /// One or more PERK entry-point carriers, each emitted as its own
-    /// `depth: 0` row by [`referenced_by_enriched_multi`].
+    /// One or more carrier records matched by a virtual selector, each
+    /// emitted as its own `depth: 0` row by [`referenced_by_enriched_multi`].
     Carriers {
         label: String,
-        seeds: crate::EntryPointCarriers,
+        seeds: crate::Carriers,
     },
 }
 
 /// Resolve a [`RecordSel`] to BFS seeds for [`Op::ReferencedBy`] specifically
-/// — the one place [`RecordSel::EntryPoint`] is handled, and the one place
-/// an EditorID lookup miss falls back to an entry-point name match (so a
-/// bare positional token like `'Mod Percent Blocked'` — parsed as
-/// [`RecordSel::Edid`] by [`RecordSel::from_input`], since it isn't
-/// FormID-shaped — resolves without needing the explicit `--entry-point`
-/// flag). Every other `Op` uses [`resolve_sel`], which does not have this
-/// fallback and rejects `RecordSel::EntryPoint` outright.
+/// — the one place carrier selectors are handled, and the one place an
+/// EditorID lookup miss falls back to an entry-point name match (so a bare
+/// positional token like `'Mod Percent Blocked'` — parsed as
+/// [`RecordSel::Edid`] by [`RecordSel::from_input`], since it isn't FormID-
+/// shaped — resolves without needing the explicit `--entry-point` flag).
+/// Every other `Op` uses [`resolve_sel`], which rejects carrier selectors.
 fn resolve_ref_seeds(db: &mut Database, sel: &RecordSel) -> anyhow::Result<RefSeeds> {
     match sel {
         RecordSel::EntryPoint(token) => {
@@ -1534,9 +1550,18 @@ fn resolve_ref_seeds(db: &mut Database, sel: &RecordSel) -> anyhow::Result<RefSe
             let (label, seeds) = db.perks_by_entry_point(&spec)?;
             Ok(RefSeeds::Carriers { label, seeds })
         }
+        RecordSel::OmodProperty(token) => {
+            let spec = OmodPropertySpec::parse(token)?;
+            let (label, seeds) = db.omods_by_property(&spec)?;
+            Ok(RefSeeds::Carriers { label, seeds })
+        }
         RecordSel::Edid(edid) => match resolve_sel(db, sel) {
             Ok(fid) => Ok(RefSeeds::Direct(fid)),
             Err(edid_err) => {
+                // OMOD-property names are deliberately flag-only: short,
+                // generic names collide with real EditorIDs and hardcoded
+                // AVIF records (`Health` is both). Never add a property-name
+                // fallback here; see docs/adr/0004-refs-seed-selectors.md.
                 // Unlike the explicit `--entry-point` path above, a parse
                 // failure here (e.g. `edid` happens to look hex-prefixed,
                 // which `RecordSel::Edid` shouldn't produce in practice) is
