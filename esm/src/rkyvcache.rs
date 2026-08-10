@@ -102,33 +102,20 @@ impl CacheSig {
 
 /// Section kind discriminant stored in the header, so a `.tmp`-renamed file
 /// of the wrong kind is rejected rather than misinterpreted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
-pub(crate) enum SectionKind {
-    // Leave room for real variants to be added by later stages without
-    // renumbering existing ones.
-    Tree = 1,
-    Forms = 2,
-    Edid = 3,
-    Search = 4,
-    Xref = 5,
-}
-
-impl SectionKind {
-    /// File suffix for this section inside [`cache_dir_for`]'s directory
-    /// (see [`section_path_for`]). A `match`, not a lookup table, so adding
-    /// a variant without naming its suffix here is a compile error rather
-    /// than a silent gap.
-    const fn file_name(self) -> &'static str {
-        match self {
-            SectionKind::Tree => "tree",
-            SectionKind::Forms => "forms",
-            SectionKind::Edid => "edid",
-            SectionKind::Search => "search",
-            SectionKind::Xref => "xref",
-        }
-    }
-}
+///
+/// A crate-private alias for [`crate::progress::BuildStage`], not a second
+/// enum — before this, `SectionKind` and `BuildStage` were the same five
+/// variants declared twice in two files and paired up by hand at each of
+/// `index.rs`'s call sites (`cache_inventory` in particular). Adding a
+/// sixth section now only means adding one variant to `BuildStage` — every
+/// `match` over it (this module's `SectionSpec` impls, `BuildStage::label`/
+/// `unit`, `index.rs`'s `cache_inventory`) is exhaustive with no wildcard
+/// arm, so the compiler rejects a build until each one is updated, rather
+/// than silently leaving one unhandled the way the old two-enum split let
+/// happen. See `SectionKind`'s doc comment there for why the discriminant
+/// values themselves are load-bearing (this module's on-disk header) and
+/// were kept unchanged across the alias.
+pub(crate) use crate::progress::BuildStage as SectionKind;
 
 /// The shared rkyv cache directory, `esm_cache/`, a sibling of the ESM.
 /// Fixed name — does not vary with the ESM's own name — so every ESM in a
@@ -152,7 +139,7 @@ pub(crate) fn section_path_for(esm_path: &Path, kind: SectionKind) -> anyhow::Re
         .ok_or_else(|| anyhow::anyhow!("esm path has no file name: {}", esm_path.display()))?;
     let mut name = file_name.to_os_string();
     name.push(".");
-    name.push(kind.file_name());
+    name.push(kind.label());
     Ok(cache_dir_for(esm_path)?.join(name))
 }
 
@@ -171,6 +158,33 @@ pub(crate) enum Section<A> {
     },
 }
 
+/// Binds one archived section type to its [`SectionKind`] and layout
+/// fingerprint, in exactly one place: the `impl SectionSpec for
+/// rkyv::Archived<X>` block sitting next to `X`'s own definition (`tree.rs`
+/// for `TreeIndex`; `index.rs` for `FormsSection`/`EdidSection`/
+/// `SearchSection`/`XrefSection`).
+///
+/// This is what replaces the `(SectionKind, CACHE_VERSION,
+/// LAYOUT_FINGERPRINT)` triple that used to be spelled out by hand at every
+/// [`Section::map`]/[`write_section`] call site (~41 of them across
+/// `index.rs`/`tree.rs`) — [`Section::map`]/[`write_section`] now read
+/// `KIND`/`LAYOUT_FINGERPRINT` off the type parameter itself, so a call
+/// site can no longer pass the wrong fingerprint for the kind it's mapping:
+/// Rust's coherence rules guarantee at most one `SectionSpec` impl per
+/// archived type, so there is exactly one place in the whole crate where a
+/// type's kind+fingerprint pairing is chosen. The low-level
+/// [`Section::map_raw`]/[`write_section_raw`] still take an explicit
+/// `SectionKind` — kept for this module's own adversarial tests, which
+/// deliberately construct mismatched pairings to prove `Section::map`
+/// rejects them.
+pub(crate) trait SectionSpec:
+    rkyv::Portable
+    + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
+{
+    const KIND: SectionKind;
+    const LAYOUT_FINGERPRINT: u64;
+}
+
 impl<A> Section<A>
 where
     A: rkyv::Portable
@@ -185,7 +199,13 @@ where
     /// `Err` — a missing/corrupt cache is a routine "rebuild" condition, not
     /// a hard failure. Only genuine I/O errors (e.g. permission denied on
     /// `open`) are `Err`.
-    pub(crate) fn map(
+    ///
+    /// Low-level: takes `kind`/`layout_fingerprint` explicitly. Production
+    /// call sites should use [`Self::map`] instead, which derives both from
+    /// `A: `[`SectionSpec`] and so can't pass a mismatched pair; this stays
+    /// available for this module's adversarial tests, which need to
+    /// construct exactly such a mismatch on purpose.
+    pub(crate) fn map_raw(
         path: &Path,
         kind: SectionKind,
         sig: CacheSig,
@@ -375,6 +395,18 @@ where
                 Some(unsafe { rkyv::access_unchecked::<A>(&mmap[payload.clone()]) })
             }
         }
+    }
+}
+
+impl<A: SectionSpec> Section<A> {
+    /// Open and validate `path` as the section [`SectionSpec`] says `A` is —
+    /// `kind`/`layout_fingerprint` are read off `A::KIND`/
+    /// `A::LAYOUT_FINGERPRINT` rather than passed by the caller, so this
+    /// call can never pass a fingerprint that doesn't belong to `A`. The
+    /// production entry point; see [`Section::map_raw`] for the explicit-
+    /// parameter version this is built on.
+    pub(crate) fn map(path: &Path, sig: CacheSig, cache_version: u32) -> anyhow::Result<Self> {
+        Self::map_raw(path, A::KIND, sig, cache_version, A::LAYOUT_FINGERPRINT)
     }
 }
 
@@ -591,7 +623,11 @@ pub(crate) fn unique_tmp_path(base: &Path) -> anyhow::Result<PathBuf> {
 /// never happened (crash left only the doomed temp file behind, which
 /// nothing ever opens by its random name), or it did, in which case the
 /// header was written after the fully-synced payload and both are complete.
-pub(crate) fn write_section<T>(
+///
+/// Low-level: takes `kind`/`layout_fingerprint` explicitly — production call
+/// sites should use [`write_section`] instead, which derives both from
+/// `rkyv::Archived<T>: `[`SectionSpec`]. Kept for this module's own tests.
+pub(crate) fn write_section_raw<T>(
     path: &Path,
     kind: SectionKind,
     sig: CacheSig,
@@ -679,6 +715,83 @@ where
     }
 }
 
+/// Write `value` to the section [`SectionSpec`] says `T` archives to —
+/// `kind`/`layout_fingerprint` read off `rkyv::Archived<T>::KIND`/
+/// `LAYOUT_FINGERPRINT` rather than passed by the caller, mirroring
+/// [`Section::map`]'s relationship to [`Section::map_raw`]. The production
+/// entry point every real section (`tree`/`forms`/`edid`/`search`/`xref`)
+/// writes through.
+pub(crate) fn write_section<T>(
+    path: &Path,
+    sig: CacheSig,
+    cache_version: u32,
+    value: &T,
+) -> anyhow::Result<()>
+where
+    rkyv::Archived<T>: SectionSpec,
+    T: for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::ser::writer::IoWriter<BufWriter<fs::File>>,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
+{
+    write_section_raw(
+        path,
+        <rkyv::Archived<T> as SectionSpec>::KIND,
+        sig,
+        cache_version,
+        <rkyv::Archived<T> as SectionSpec>::LAYOUT_FINGERPRINT,
+        value,
+    )
+}
+
+/// The write→drop→re-map→ensure-mapped protocol every section build
+/// (`build_tree_and_forms`'s `tree`/`forms` pair, and each of the three lazy
+/// `ensure_*_index` builds) follows once it has a freshly-built in-memory
+/// value ready to persist: write it via [`write_section`], drop the owned
+/// value (there is exactly one code path for how a section is ever read
+/// afterwards — the archived, mmap'd form via [`Section::get`] — never a
+/// second one that keeps the owned value around), then map the just-written
+/// bytes straight back in. Collapses five near-identical copies of this
+/// sequence (`index.rs`'s `ensure_edid_index`/`ensure_search_index`/
+/// `ensure_xref_index`, plus `build_tree_and_forms`'s two writes) into one
+/// call each.
+///
+/// The final re-map "should never happen to fail" — `write_section` just
+/// synced these exact bytes to `path` — so a failure here is treated as a
+/// bug, not a routine degrade-to-absent condition like every other
+/// [`Section::map`] rejection reason.
+pub(crate) fn write_and_remap<T>(
+    path: &Path,
+    sig: CacheSig,
+    cache_version: u32,
+    value: T,
+) -> anyhow::Result<Section<rkyv::Archived<T>>>
+where
+    T: rkyv::Archive,
+    rkyv::Archived<T>: SectionSpec,
+    T: for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::ser::writer::IoWriter<BufWriter<fs::File>>,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
+{
+    write_section(path, sig, cache_version, &value)?;
+    drop(value);
+    let section = Section::<rkyv::Archived<T>>::map(path, sig, cache_version)?;
+    anyhow::ensure!(
+        section.is_mapped(),
+        "just-written {} section at {} failed to map back — this should never happen",
+        <rkyv::Archived<T> as SectionSpec>::KIND.label(),
+        path.display()
+    );
+    Ok(section)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -703,6 +816,16 @@ mod tests {
         );
         fnv1a_u64(acc, core::mem::align_of::<rkyv::Archived<Dummy>>() as u64)
     };
+
+    /// Wires `Dummy` into the real `SectionSpec` mechanism (matching
+    /// `TEST_KIND`/`TEST_LAYOUT_FINGERPRINT` above) so the handful of tests
+    /// below that exercise the generic `Section::map`/`write_section`
+    /// convenience wrappers — not just the explicit-parameter `_raw` forms —
+    /// have a type to do it with.
+    impl SectionSpec for rkyv::Archived<Dummy> {
+        const KIND: SectionKind = TEST_KIND;
+        const LAYOUT_FINGERPRINT: u64 = TEST_LAYOUT_FINGERPRINT;
+    }
 
     fn test_sig() -> CacheSig {
         CacheSig {
@@ -732,7 +855,7 @@ mod tests {
     }
 
     fn map_dummy(path: &Path, kind: SectionKind, sig: CacheSig) -> Section<rkyv::Archived<Dummy>> {
-        Section::map(path, kind, sig, TEST_CACHE_VERSION, TEST_LAYOUT_FINGERPRINT)
+        Section::map_raw(path, kind, sig, TEST_CACHE_VERSION, TEST_LAYOUT_FINGERPRINT)
             .expect("Section::map should never return Err for a readable file")
     }
 
@@ -742,7 +865,7 @@ mod tests {
     fn round_trip_checked_access() {
         let path = test_path("round_trip_checked");
         let sig = test_sig();
-        write_section(
+        write_section_raw(
             &path,
             TEST_KIND,
             sig,
@@ -779,7 +902,7 @@ mod tests {
     fn round_trip_unchecked_via_section() {
         let path = test_path("round_trip_unchecked");
         let sig = test_sig();
-        write_section(
+        write_section_raw(
             &path,
             TEST_KIND,
             sig,
@@ -1083,13 +1206,7 @@ mod tests {
     fn adversarial_nonexistent_path_is_absent_not_err() {
         let path = test_path("adv_does_not_exist_at_all");
         let _ = fs::remove_file(&path); // ensure it really doesn't exist
-        let section = Section::<rkyv::Archived<Dummy>>::map(
-            &path,
-            TEST_KIND,
-            test_sig(),
-            TEST_CACHE_VERSION,
-            TEST_LAYOUT_FINGERPRINT,
-        );
+        let section = Section::<rkyv::Archived<Dummy>>::map(&path, test_sig(), TEST_CACHE_VERSION);
         assert!(section.is_ok(), "missing cache file must not be an Err");
         assert!(!section.unwrap().is_mapped());
     }
@@ -1269,7 +1386,7 @@ mod tests {
         let path = test_path("successive_writes");
         let sig = test_sig();
 
-        write_section(
+        write_section_raw(
             &path,
             TEST_KIND,
             sig,
@@ -1288,7 +1405,7 @@ mod tests {
             b: "second".to_string(),
             c: vec![9],
         };
-        write_section(
+        write_section_raw(
             &path,
             TEST_KIND,
             sig,
@@ -1383,7 +1500,7 @@ mod tests {
 
         let path = section_path_for(&esm_path, TEST_KIND).unwrap();
         let sig = test_sig();
-        write_section(
+        write_section_raw(
             &path,
             TEST_KIND,
             sig,

@@ -670,7 +670,7 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
     match sel {
         RecordSel::FormId(fid) => Ok(*fid),
         RecordSel::Edid(edid) => {
-            db.index.ensure_edid_index(&db.esm)?;
+            db.ensure_edid_index()?;
             // Real ESM records take precedence — only consult the
             // engine-hardcoded table (`crate::hardcoded`) once the real
             // index has already missed, per its own fallback-only contract.
@@ -691,7 +691,7 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
             {
                 return Ok(fid);
             }
-            db.index.ensure_edid_index(&db.esm)?;
+            db.ensure_edid_index()?;
             if let Some(fid) = db.index.get_by_edid(token) {
                 return Ok(fid);
             }

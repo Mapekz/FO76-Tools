@@ -166,30 +166,24 @@ impl Registry {
         Ok((canonical, arc))
     }
 
+    /// Before Stage C, `ensure_xref_index` needed several of `Database`'s
+    /// OTHER fields (`esm`/`schema`/`is_localized`/`localization`/`curves`)
+    /// handed back in as parameters, which meant this function had to
+    /// destructure `Database` field-by-field to borrow `index` mutably
+    /// alongside the rest immutably. Now that the three `ensure_*_index`
+    /// methods live on `Database` itself (`lib.rs`) and take no extra
+    /// parameters, each call below is just `db.method()?` — no destructure
+    /// needed, since there's no longer a second field to borrow alongside
+    /// the one being built.
     fn warm_indexes(&self, db_arc: &Arc<Mutex<Database>>) -> anyhow::Result<()> {
         if !self.auto_warm && !self.warm_xref {
             return Ok(());
         }
         let mut db = db_arc.lock().unwrap();
-        let crate::Database {
-            esm,
-            index,
-            is_localized,
-            schema,
-            localization,
-            curves,
-            ..
-        } = &mut *db;
-        index.ensure_edid_index(esm)?;
-        index.ensure_search_index(esm, *is_localized)?;
+        db.ensure_edid_index()?;
+        db.ensure_search_index()?;
         if self.warm_xref {
-            index.ensure_xref_index(
-                esm,
-                schema,
-                *is_localized,
-                localization.as_ref(),
-                curves.as_ref(),
-            )?;
+            db.ensure_xref_index()?;
         }
         Ok(())
     }

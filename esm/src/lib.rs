@@ -60,16 +60,18 @@ pub use tree::{GroupChild, GroupLabel, GroupNode, RecordStub as TreeRecordStub, 
 /// Holds a memory-mapped ESM, a FormID/EditorID index, the embedded field
 /// schema, and an optional localization table loaded from the sibling BA2.
 pub struct Database {
-    pub esm: EsmFile,
-    pub index: Index,
-    pub schema: Schema,
-    /// Whether the ESM's TES4 header has the Localized flag set.
+    pub(crate) esm: EsmFile,
+    pub(crate) index: Index,
+    pub(crate) schema: Schema,
+    /// Whether the ESM's TES4 header has the Localized flag set. Stays
+    /// `pub` (unlike its siblings below) — `src/bin/cli.rs`'s `diff` command
+    /// reads it directly across the bin/lib crate boundary.
     pub is_localized: bool,
     /// Resolved string tables, if a localization BA2 was found or supplied.
-    pub localization: Option<Localization>,
+    pub(crate) localization: Option<Localization>,
     /// Optional curve index built from Startup BA2. When present, FormID fields
     /// whose `valid_refs` includes `"CURV"` have their curve data inlined.
-    pub curves: Option<crate::curves::CurveIndex>,
+    pub(crate) curves: Option<crate::curves::CurveIndex>,
     /// Per-record-type memoized decode, populated lazily by `filter_type_records`
     /// and `list_type_field_paths`. In-memory only — never persisted, no
     /// CACHE_VERSION bump (these are ephemeral, rebuilt each time the Database
@@ -162,6 +164,16 @@ pub enum FilterOp {
 /// `records_by_type` is FormID-sorted, so this is a stable, deterministic
 /// subset rather than an arbitrary truncation.
 const FILTER_SCAN_CAP: usize = 20_000;
+
+/// `limit == 0` means "unlimited" — the shared convention every `limit`
+/// parameter in this crate's public query API follows (`list_by_type`,
+/// `list_type_records`, `search`, `filter_type_records`), restated
+/// identically at each call site before this helper existed. Feed the
+/// result to `Iterator::take`/`Vec::truncate`: `usize::MAX` items is
+/// effectively "don't stop early" for any realistic in-memory collection.
+fn effective_take(limit: usize) -> usize {
+    if limit == 0 { usize::MAX } else { limit }
+}
 
 /// Evaluate a filter predicate against a decoded record's `fields` JSON body.
 ///
@@ -786,6 +798,211 @@ impl Database {
         Ok(info)
     }
 
+    // ── Lazy index builders ─────────────────────────────────────────────
+    //
+    // These three used to live on `Index` itself (`index.rs`), each taking
+    // several of `Database`'s OTHER fields back in as parameters (`esm`,
+    // `schema`, `is_localized`, `localization`, `curves` for
+    // `ensure_xref_index` alone) because building a section needs the mmap'd
+    // ESM (plus the schema/localization/curves for `xref`'s full decode)
+    // that only `Database` holds. That parameter-threading was also why
+    // `Registry::warm_indexes` used to destructure `Database` field-by-field
+    // to satisfy the borrow checker — a single `db.ensure_xref_index()` call
+    // has no such conflict to work around. `Index` keeps the data (the five
+    // `Section`s) and the pure reads over it; `Database` owns building it,
+    // since only `Database` has everything a build needs. The three
+    // functions actually reachable from index.rs are `build_edid_section`/
+    // `build_search_section`/`build_xref_section` — this crate-internal
+    // data/orchestration split keeps each section's construction logic
+    // colocated with its type in `index.rs`, while the shared
+    // acquire/recheck/write/publish protocol lives once, here.
+
+    /// Build the lazy EditorID index on first call, writing it to its own
+    /// `edid` section so a later call — in this process (the `is_mapped()`
+    /// early-return below) or a fresh one (see [`Index::build`]'s doc
+    /// comment) — reuses it rather than rebuilding.
+    ///
+    /// Uses [`progress::BuildLease::acquire_or_recheck`], which folds the
+    /// "did another process finish this while I waited for the lock"
+    /// recheck into the acquire call itself — there is no code path that
+    /// obtains a live [`progress::BuildLease`] without that recheck having
+    /// already run and found the section still missing.
+    pub fn ensure_edid_index(&mut self) -> anyhow::Result<()> {
+        if self.index.edid.is_mapped() {
+            return Ok(());
+        }
+        let sig = crate::rkyvcache::CacheSig::read(&self.esm.path)?;
+        let path = crate::rkyvcache::section_path_for(
+            &self.esm.path,
+            crate::rkyvcache::SectionKind::Edid,
+        )?;
+        let total = self.index.len() as u64;
+
+        let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
+            &self.esm.path,
+            crate::progress::BuildStage::Edid,
+            1,
+            1,
+            total,
+            || {
+                let section =
+                    crate::rkyvcache::Section::<rkyv::Archived<crate::index::EdidSection>>::map(
+                        &path,
+                        sig,
+                        crate::index::CACHE_VERSION,
+                    )?;
+                Ok(section.is_mapped().then_some(section))
+            },
+        )? {
+            crate::progress::Acquired::AlreadyBuilt(section) => {
+                self.index.edid = section;
+                return Ok(());
+            }
+            crate::progress::Acquired::NeedsBuild(lease) => lease,
+        };
+
+        let data = crate::index::build_edid_section(&self.index, &self.esm, &mut lease)?;
+        lease.writing();
+        self.index.edid =
+            crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)?;
+        Ok(())
+    }
+
+    /// Build the lazy search index (EditorID + name/description) on first
+    /// call, then cache it to its own `search` section. See
+    /// [`Self::ensure_edid_index`]'s doc comment for the acquire/recheck
+    /// protocol this shares.
+    pub fn ensure_search_index(&mut self) -> anyhow::Result<()> {
+        if self.index.search.is_mapped() {
+            return Ok(());
+        }
+        let sig = crate::rkyvcache::CacheSig::read(&self.esm.path)?;
+        let path = crate::rkyvcache::section_path_for(
+            &self.esm.path,
+            crate::rkyvcache::SectionKind::Search,
+        )?;
+        let total = self.index.len() as u64;
+
+        let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
+            &self.esm.path,
+            crate::progress::BuildStage::Search,
+            1,
+            1,
+            total,
+            || {
+                let section = crate::rkyvcache::Section::<
+                    rkyv::Archived<crate::index::SearchSection>,
+                >::map(&path, sig, crate::index::CACHE_VERSION)?;
+                Ok(section.is_mapped().then_some(section))
+            },
+        )? {
+            crate::progress::Acquired::AlreadyBuilt(section) => {
+                self.index.search = section;
+                return Ok(());
+            }
+            crate::progress::Acquired::NeedsBuild(lease) => lease,
+        };
+
+        let data = crate::index::build_search_section(
+            &self.index,
+            &self.esm,
+            self.is_localized,
+            &mut lease,
+        )?;
+        lease.writing();
+        self.index.search =
+            crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)?;
+        Ok(())
+    }
+
+    /// Build the reverse-reference (`xref`) index on first call, then cache
+    /// it to its own `xref` section. The most expensive of the three lazy
+    /// builds (a full schema decode of every record). See
+    /// [`Self::ensure_edid_index`]'s doc comment for the acquire/recheck
+    /// protocol this shares.
+    pub fn ensure_xref_index(&mut self) -> anyhow::Result<()> {
+        if self.index.xref.is_mapped() {
+            return Ok(());
+        }
+        let sig = crate::rkyvcache::CacheSig::read(&self.esm.path)?;
+        let path = crate::rkyvcache::section_path_for(
+            &self.esm.path,
+            crate::rkyvcache::SectionKind::Xref,
+        )?;
+        let total = self.esm.data().len() as u64;
+
+        let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
+            &self.esm.path,
+            crate::progress::BuildStage::Xref,
+            1,
+            1,
+            total,
+            || {
+                let section =
+                    crate::rkyvcache::Section::<rkyv::Archived<crate::index::XrefSection>>::map(
+                        &path,
+                        sig,
+                        crate::index::CACHE_VERSION,
+                    )?;
+                Ok(section.is_mapped().then_some(section))
+            },
+        )? {
+            crate::progress::Acquired::AlreadyBuilt(section) => {
+                self.index.xref = section;
+                return Ok(());
+            }
+            crate::progress::Acquired::NeedsBuild(lease) => lease,
+        };
+
+        let data = crate::index::build_xref_section(
+            &self.index,
+            &self.esm,
+            &self.schema,
+            self.is_localized,
+            self.localization.as_ref(),
+            self.curves.as_ref(),
+            &mut lease,
+        )?;
+        lease.writing();
+        self.index.xref =
+            crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)?;
+        Ok(())
+    }
+
+    // ── Ensure-then-get, collapsed to one call each ─────────────────────
+    //
+    // `Index::get_xref`/`iter_search`/`get_by_edid` silently return
+    // empty/`None` when their section hasn't been built yet — a real
+    // "no referencers"/"not found" answer is indistinguishable from "the
+    // index isn't built yet", so a caller that forgets the matching
+    // `ensure_*_index` call gets a wrong answer with no error. Rather than
+    // documenting "call ensure first" as a convention (the pre-Stage-C
+    // shape, enforced three different ways: an `assert!` after
+    // `ensure_search_index`, nothing at all before `get_xref`, and separate
+    // `.expect(...)` sites for the filter-cache trio below), those three
+    // Index accessors are `pub(crate)` and reachable only through the
+    // wrappers below, each of which ensures internally — there is no way to
+    // read a lazy index's data from within this crate without going through
+    // a call that guarantees it is built first.
+
+    /// Referencers of `form_id`, building the `xref` index first if needed.
+    /// Never silently answers "no referencers" for an index that just
+    /// hasn't been built yet — see the module note above.
+    fn xref_lookup(&mut self, form_id: FormId) -> anyhow::Result<Vec<FormId>> {
+        self.ensure_xref_index()?;
+        Ok(self.index.get_xref(form_id))
+    }
+
+    /// Resolve an EditorID to its FormID, building the `edid` index first if
+    /// needed. `Ok(None)` means "index built, EditorID genuinely absent" —
+    /// never conflated with "index not built yet" the way a bare
+    /// `Index::get_by_edid` call without an `ensure_edid_index` first would
+    /// be.
+    fn resolve_edid_indexed(&mut self, edid: &str) -> anyhow::Result<Option<FormId>> {
+        self.ensure_edid_index()?;
+        Ok(self.index.get_by_edid(edid))
+    }
+
     /// Resolve a FormID to its [`RecordMeta`] via the full `Index` HashMap.
     fn get_formid_meta(&self, form_id: FormId) -> anyhow::Result<RecordMeta> {
         self.index
@@ -799,10 +1016,8 @@ impl Database {
     }
 
     pub fn record_by_edid(&mut self, edid: &str) -> anyhow::Result<RecordResult> {
-        self.index.ensure_edid_index(&self.esm)?;
         let form_id = self
-            .index
-            .get_by_edid(edid)
+            .resolve_edid_indexed(edid)?
             .with_context(|| format!("EditorID '{}' not found", edid))?;
         self.record_by_formid(form_id)
     }
@@ -813,8 +1028,7 @@ impl Database {
         }
         let records = self.index.records_by_type(sig);
         let mut out = Vec::new();
-        // `limit == 0` means "no limit" (matches `search`/`filter_type_records`).
-        for (form_id, meta) in records.take(if limit == 0 { usize::MAX } else { limit }) {
+        for (form_id, meta) in records.take(effective_take(limit)) {
             let rec = self.esm.parse_record_at(meta.offset)?;
             let editor_id = edid_from_subrecords(&rec.subrecords);
             let full_lstring_id =
@@ -858,12 +1072,11 @@ impl Database {
         field: SearchField,
         limit: usize,
     ) -> anyhow::Result<Vec<RecordRow>> {
-        self.index
-            .ensure_search_index(&self.esm, self.is_localized)?;
-        assert!(
-            self.index.has_search_index(),
-            "search_index must be populated after ensure_search_index"
-        );
+        // No `assert!`-after-ensure needed here (unlike the pre-Stage-C
+        // shape this replaced): `ensure_search_index`'s only two return
+        // paths either propagate an `Err` or leave `search` mapped — see
+        // its doc comment.
+        self.ensure_search_index()?;
 
         let type_filter: Option<HashSet<&str>> = if types.is_empty() {
             None
@@ -970,9 +1183,7 @@ impl Database {
         matches.sort_by_key(|(raw, _)| *raw);
 
         let mut out: Vec<RecordRow> = matches.into_iter().map(|(_, row)| row).collect();
-        if limit > 0 && out.len() > limit {
-            out.truncate(limit);
-        }
+        out.truncate(effective_take(limit));
         Ok(out)
     }
 
@@ -989,12 +1200,11 @@ impl Database {
         if sig.len() != 4 {
             bail!("record type must be a 4-character signature");
         }
-        // `limit == 0` means "no limit" (matches `search`/`filter_type_records`).
         let records: Vec<(FormId, u64, String)> = self
             .index
             .records_by_type(sig)
             .skip(offset)
-            .take(if limit == 0 { usize::MAX } else { limit })
+            .take(effective_take(limit))
             .map(|(fid, meta)| (fid, meta.offset, meta.signature.as_str().to_owned()))
             .collect();
         let mut out = Vec::new();
@@ -1026,14 +1236,7 @@ impl Database {
     /// persisted to its own `xref` rkyv section so subsequent calls —
     /// in this process or a fresh one — are instant.
     pub fn referenced_by(&mut self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
-        self.index.ensure_xref_index(
-            &self.esm,
-            &self.schema,
-            self.is_localized,
-            self.localization.as_ref(),
-            self.curves.as_ref(),
-        )?;
-        let referencers: Vec<FormId> = self.index.get_xref(form_id);
+        let referencers = self.xref_lookup(form_id)?;
         let mut out = Vec::new();
         for referencer in referencers {
             if let Some(row) = self.record_row_for(referencer)? {
@@ -1280,10 +1483,8 @@ impl Database {
         edid: &str,
         depth: crate::decode::ResolveDepth,
     ) -> anyhow::Result<RecordResult> {
-        self.index.ensure_edid_index(&self.esm)?;
         let form_id = self
-            .index
-            .get_by_edid(edid)
+            .resolve_edid_indexed(edid)?
             .with_context(|| format!("EditorID '{}' not found", edid))?;
         self.record_by_formid_resolved(form_id, depth)
     }
@@ -1379,6 +1580,28 @@ impl Database {
         Ok(())
     }
 
+    /// [`Self::ensure_filter_cache`] for `sig`, then borrow the entry it
+    /// guarantees is now present — the same ensure-then-get shape
+    /// [`Self::xref_lookup`]/[`Self::resolve_edid_indexed`] use for the
+    /// lazy `Index` sections, applied here to the four call sites that used
+    /// to each repeat `self.ensure_filter_cache(&sig)?` followed by a
+    /// `self.filter_cache.get(&sig).expect("populated by
+    /// ensure_filter_cache")` — a panic (not a recoverable error) if that
+    /// invariant were ever violated. Folding both steps into one call still
+    /// can't silently skip the ensure, and turns what would be a process
+    /// crash into a normal propagated `Err` via `.context()`, matching this
+    /// crate's `anyhow::Result` convention instead of being the one
+    /// `.expect()`-shaped exception to it.
+    fn filter_cache_entries(
+        &mut self,
+        sig: &str,
+    ) -> anyhow::Result<&(usize, Vec<FilterCacheEntry>)> {
+        self.ensure_filter_cache(sig)?;
+        self.filter_cache.get(sig).with_context(|| {
+            format!("filter cache entry for '{sig}' missing immediately after ensure_filter_cache — this should never happen")
+        })
+    }
+
     /// Filter records of type `sig` by a predicate against their decoded
     /// `fields` JSON body. See [`FilterOp`] and [`predicate_matches`] for the
     /// path syntax and operator semantics.
@@ -1395,12 +1618,7 @@ impl Database {
         limit: usize,
     ) -> anyhow::Result<FilterResult> {
         let sig = sig.to_uppercase();
-        self.ensure_filter_cache(&sig)?;
-
-        let (total, entries) = self
-            .filter_cache
-            .get(&sig)
-            .expect("populated by ensure_filter_cache");
+        let (total, entries) = self.filter_cache_entries(&sig)?;
         let total = *total;
         let scanned = entries.len();
 
@@ -1412,10 +1630,9 @@ impl Database {
 
         let matched = matches.len();
         let capped = limit > 0 && matched > limit;
-        let take_n = if limit == 0 { matched } else { limit };
         let rows: Vec<RecordRow> = matches
             .into_iter()
-            .take(take_n)
+            .take(effective_take(limit))
             .map(|e| RecordRow {
                 form_id: e.form_id.display(),
                 record_type: Some(sig.clone()),
@@ -1444,11 +1661,7 @@ impl Database {
     pub fn list_type_field_paths(&mut self, sig: &str) -> anyhow::Result<Vec<String>> {
         const MAX_PATHS: usize = 5000;
         let sig = sig.to_uppercase();
-        self.ensure_filter_cache(&sig)?;
-        let (_, entries) = self
-            .filter_cache
-            .get(&sig)
-            .expect("populated by ensure_filter_cache");
+        let (_, entries) = self.filter_cache_entries(&sig)?;
 
         let mut paths: HashSet<String> = HashSet::new();
         for entry in entries {
@@ -1488,11 +1701,7 @@ impl Database {
         &mut self,
         spec: &EntryPointSpec,
     ) -> anyhow::Result<(String, Carriers)> {
-        self.ensure_filter_cache("PERK")?;
-        let (_, entries) = self
-            .filter_cache
-            .get("PERK")
-            .expect("populated by ensure_filter_cache");
+        let (_, entries) = self.filter_cache_entries("PERK")?;
 
         let mut seeds: Carriers = Vec::new();
         let mut matched: std::collections::BTreeSet<(u16, Option<String>)> = Default::default();
@@ -1586,11 +1795,7 @@ impl Database {
         &mut self,
         spec: &OmodPropertySpec,
     ) -> anyhow::Result<(String, Carriers)> {
-        self.ensure_filter_cache("OMOD")?;
-        let (_, entries) = self
-            .filter_cache
-            .get("OMOD")
-            .expect("populated by ensure_filter_cache");
+        let (_, entries) = self.filter_cache_entries("OMOD")?;
 
         let mut seeds: Carriers = Vec::new();
         let mut matched: std::collections::BTreeSet<(PropScope, u16, Option<String>)> =

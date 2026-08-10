@@ -71,16 +71,35 @@ fn op_attempt_timeout() -> Option<Duration> {
     }
 }
 
+/// Canonicalize `path` the same way [`crate::registry::Registry::get_or_open_with_key`]
+/// does before it keys `esm_cache/`'s sidecar files off it (via
+/// [`crate::discover::resolve_esm_path`]), falling back to the raw path if
+/// resolution fails — mirrors `cli.rs`'s `progress_watch_path`, which this
+/// function's doc comment used to (incorrectly) claim as its only sibling.
+/// Every `progress::read`/`progress::BuildLease` consumer MUST key off this
+/// canonical form, not a raw, possibly-relative-or-folder input — see
+/// `discover::resolve_esm_path`'s doc comment.
+fn watch_path(path: &Path) -> PathBuf {
+    crate::discover::resolve_esm_path(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
 /// Which live build (if any) is the likely cause of `req` timing out: the request's own
-/// ESM, plus `Op::Diff`'s second path when present. Mirrors `cli.rs`'s `watched_paths` for
-/// the progress-watcher hook — kept as an independent copy since `backend.rs` has no
+/// ESM, plus `Op::Diff`'s second path when present. Mirrors `cli.rs`'s `progress_watch_path`
+/// for the progress-watcher hook — kept as an independent copy since `backend.rs` has no
 /// dependency on the CLI binary crate.
+///
+/// Canonicalizes via [`watch_path`] before calling [`crate::progress::read`] — a raw,
+/// possibly-relative-or-folder `req.esm` would poll a location the daemon's build lease
+/// never writes to (it keys off the canonical path too), so a folder-shaped `--esm`
+/// against a cold daemon would see no build in flight here and the retry loop above
+/// would bail with an opaque "timed out waiting for daemon response" instead of
+/// showing progress and eventually succeeding.
 fn building_progress(req: &Request) -> Option<crate::progress::BuildProgress> {
-    if let Some(p) = crate::progress::read(&req.esm) {
+    if let Some(p) = crate::progress::read(&watch_path(&req.esm)) {
         return Some(p);
     }
     if let Op::Diff { b, .. } = &req.op {
-        return crate::progress::read(b);
+        return crate::progress::read(&watch_path(b));
     }
     None
 }
@@ -874,6 +893,83 @@ mod tests {
             exe_mtime_secs: dur.as_secs(),
             exe_mtime_nanos: dur.subsec_nanos(),
         }
+    }
+
+    /// Regression test for the `backend.rs:67`-shaped canonicalization bug
+    /// Stage C fixes: `building_progress` must find a live build keyed by
+    /// its canonical `.esm` path even when the request carries a raw,
+    /// uncanonicalized **folder** input — the documented-supported
+    /// `--esm <folder>` shape. Before the fix, `building_progress` called
+    /// `crate::progress::read(&req.esm)` directly on the raw folder path;
+    /// since `BuildLease`/`progress::read` are always keyed off
+    /// `discover::resolve_esm_path`'s canonicalized `.esm` file path (see
+    /// that function's doc comment), the daemon's real build — started
+    /// against the canonical path — would be invisible to a client polling
+    /// the raw folder, and `RemoteBackend::post_op`'s retry loop would bail
+    /// with an opaque "timed out waiting for daemon response" instead of
+    /// showing progress and eventually succeeding.
+    ///
+    /// This test proves the fix is real, not a no-op: it asserts BOTH that
+    /// `building_progress` (which now canonicalizes via `watch_path`) finds
+    /// the lease, AND that `crate::progress::read` on the raw, uncanonicalized
+    /// folder path directly does NOT — the exact call the old implementation
+    /// made — demonstrating this specific input would have failed before
+    /// this change.
+    #[test]
+    fn building_progress_finds_a_lease_keyed_by_the_canonical_path_from_a_raw_folder_input() {
+        let dir = std::env::temp_dir().join(format!(
+            "esm_backend_test_watch_path_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let esm_path = dir.join("SeventySix.esm");
+        // Minimal valid ESM: just the 24-byte TES4 header — enough for
+        // `discover::resolve_sources`'s folder scan (extension-only match)
+        // and for `progress`'s sidecar paths (derived from the file name,
+        // never opened as a real ESM by this test).
+        std::fs::write(&esm_path, [0u8; 24]).unwrap();
+        let canonical = esm_path.canonicalize().expect("canonicalize fixture esm");
+
+        // Simulate the daemon: a live build lease keyed off the CANONICAL
+        // path, exactly as `Index`'s build entry points (via `Database`'s
+        // `ensure_*_index` methods) acquire it.
+        let lease = crate::progress::BuildLease::acquire(
+            &canonical,
+            crate::progress::BuildStage::Xref,
+            1,
+            1,
+            100,
+        )
+        .expect("acquire build lease");
+
+        // The bug this test guards: reading progress off the RAW folder
+        // path directly (what the pre-fix `building_progress` did) sees
+        // nothing, because the lease is keyed off the canonical file path,
+        // not the folder.
+        assert!(
+            crate::progress::read(&dir).is_none(),
+            "sanity: progress::read on the raw, uncanonicalized folder input must \
+             see nothing — this is the exact bug backend.rs:67 had"
+        );
+
+        // The fix: a client request carrying that same raw folder as `esm`
+        // must still find the live build once canonicalized.
+        let req = Request {
+            esm: dir.clone(),
+            op: Op::FileInfo,
+        };
+        assert!(
+            building_progress(&req).is_some(),
+            "building_progress must canonicalize a folder-shaped req.esm before \
+             calling progress::read, so it finds the daemon's real build"
+        );
+
+        drop(lease);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

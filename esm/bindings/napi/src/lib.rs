@@ -13,15 +13,25 @@ pub struct EsmDatabase {
 #[napi]
 impl EsmDatabase {
     /// Open an ESM file asynchronously (blocks on mmap + index build).
+    ///
+    /// Goes through a throwaway [`esm::registry::Registry`] rather than
+    /// calling `Database::open` directly — `Registry::get_or_open` first
+    /// canonicalizes `path` via `discover::resolve_esm_path` (folder→ESM
+    /// resolution plus `Path::canonicalize`), which `Database::open` alone
+    /// does not do (see `discover::resolve_esm_path`'s doc comment on why
+    /// every `esm_cache/` consumer must key off that same canonical path).
+    /// A fresh, unshared `Registry` per call preserves today's behavior —
+    /// one independent `Database` per `open_database` call, no cross-call
+    /// caching — while still fixing the canonicalization gap.
     #[napi(factory)]
     pub async fn open_database(path: String) -> napi::Result<EsmDatabase> {
-        let db = tokio::task::spawn_blocking(move || Database::open(&path))
-            .await
-            .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        Ok(EsmDatabase {
-            inner: Arc::new(Mutex::new(db)),
+        let inner = tokio::task::spawn_blocking(move || {
+            esm::registry::Registry::new().get_or_open(std::path::Path::new(&path))
         })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+        .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        Ok(EsmDatabase { inner })
     }
 
     #[napi]

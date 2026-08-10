@@ -156,6 +156,16 @@ pub(crate) const TREE_LAYOUT_FINGERPRINT: u64 = {
     )
 };
 
+/// Binds the `tree` section's archived type to its kind and layout
+/// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment for why
+/// this one `impl` block, next to `TreeIndex`'s own definition, replaces
+/// hand-spelling `(SectionKind::Tree, CACHE_VERSION, TREE_LAYOUT_FINGERPRINT)`
+/// at every call site.
+impl crate::rkyvcache::SectionSpec for rkyv::Archived<TreeIndex> {
+    const KIND: crate::rkyvcache::SectionKind = crate::rkyvcache::SectionKind::Tree;
+    const LAYOUT_FINGERPRINT: u64 = TREE_LAYOUT_FINGERPRINT;
+}
+
 impl TreeIndex {
     /// Build the tree index from an ESM file via a structural scan.
     pub fn build(esm: &EsmFile) -> Result<TreeIndex> {
@@ -616,24 +626,11 @@ mod tests {
         );
 
         let sig = CacheSig::read(&esm_path).expect("read cache sig");
-        write_section(
-            &tree_path,
-            SectionKind::Tree,
-            sig,
-            TEST_CACHE_VERSION,
-            TREE_LAYOUT_FINGERPRINT,
-            &original,
-        )
-        .expect("write tree section");
+        write_section(&tree_path, sig, TEST_CACHE_VERSION, &original).expect("write tree section");
 
-        let section = Section::<rkyv::Archived<TreeIndex>>::map(
-            &tree_path,
-            SectionKind::Tree,
-            sig,
-            TEST_CACHE_VERSION,
-            TREE_LAYOUT_FINGERPRINT,
-        )
-        .expect("map tree section");
+        let section =
+            Section::<rkyv::Archived<TreeIndex>>::map(&tree_path, sig, TEST_CACHE_VERSION)
+                .expect("map tree section");
         assert!(section.is_mapped(), "freshly written section must map back");
 
         let view = TreeView::new(section.get());

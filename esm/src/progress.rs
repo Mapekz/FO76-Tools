@@ -78,19 +78,26 @@ fn progress_disabled() -> bool {
     std::env::var(NO_PROGRESS_ENV).as_deref() == Ok("1")
 }
 
-/// One phase of an `Index` cache rebuild. Doubles as a section identifier
-/// for [`crate::index::cache_inventory`] — these five variants name exactly
-/// the same five sections as [`crate::rkyvcache::SectionKind`] (that type
-/// stays crate-private; this one is the public-facing name for the same
-/// five things).
+/// One phase of an `Index` cache rebuild — the SAME five variants
+/// [`crate::rkyvcache::SectionKind`] uses (that name is a crate-private
+/// alias for this type, `pub(crate) use BuildStage as SectionKind` in
+/// `rkyvcache.rs`), so a section's on-disk kind discriminant, its
+/// `cache_inventory` bucket, and its build-progress heartbeat stage are all
+/// one enum rather than three hand-paired copies. `#[repr(u32)]` with
+/// explicit discriminants: this doubles as the on-disk `section_kind` field
+/// `rkyvcache`'s 64-byte header stores (see that module's layout table), so
+/// the numeric values are load-bearing on-disk identity, not just an
+/// internal implementation detail — kept at their pre-unification values
+/// (`Tree = 1` etc.) so this refactor doesn't force a cache rebuild.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u32)]
 pub enum BuildStage {
-    Forms,
-    Tree,
-    Edid,
-    Search,
-    Xref,
+    Tree = 1,
+    Forms = 2,
+    Edid = 3,
+    Search = 4,
+    Xref = 5,
 }
 
 impl BuildStage {
@@ -275,6 +282,25 @@ pub struct BuildLease {
     publish: bool,
 }
 
+/// Outcome of [`BuildLease::acquire_or_recheck`] — the enforced form of the
+/// acquire-then-recheck protocol [`BuildLease::acquire`]'s doc comment used
+/// to just ask callers to remember by hand (four call sites in `index.rs`
+/// did, identically, before this existed). Structured so the only way to
+/// obtain a live [`BuildLease`] at all is through the [`Self::NeedsBuild`]
+/// arm, which is only reachable once the caller-supplied recheck closure has
+/// already run and reported the section still missing — skipping the
+/// recheck is not merely discouraged, there is no code path that does.
+pub enum Acquired<T> {
+    /// Another process finished building and published the section while
+    /// this call was blocked waiting for the lock — here it is, already
+    /// mapped. The lease was acquired only long enough to run the recheck,
+    /// then dropped without this caller building anything.
+    AlreadyBuilt(T),
+    /// The section is still missing after the recheck; this caller holds
+    /// the lease and must build it.
+    NeedsBuild(BuildLease),
+}
+
 impl BuildLease {
     /// Block until the per-ESM build lock is ours, then start publishing a
     /// heartbeat for `stage` (the first of `stage_count` stages this build
@@ -286,11 +312,14 @@ impl BuildLease {
     /// and CPU for no real concurrency benefit, and this lock's job is
     /// dedup, not fine-grained parallelism.
     ///
-    /// **Every caller MUST re-check whether the section it wanted now
-    /// exists immediately after this returns** — another process may have
-    /// built and published it while this call was blocked waiting for the
-    /// lock. This function has no generic way to perform that check itself;
-    /// see `index.rs`'s four call sites for the pattern.
+    /// Low-level primitive — **every caller MUST re-check whether the
+    /// section it wanted now exists immediately after this returns**,
+    /// since another process may have built and published it while this
+    /// call was blocked waiting for the lock. Prefer
+    /// [`Self::acquire_or_recheck`], which makes that recheck structurally
+    /// impossible to skip instead of relying on this doc comment; this
+    /// method stays `pub` only because [`Self::acquire_or_recheck`] and this
+    /// module's own tests are built directly on it.
     pub fn acquire(
         esm_path: &Path,
         stage: BuildStage,
@@ -306,6 +335,29 @@ impl BuildLease {
             total,
             !progress_disabled(),
         )
+    }
+
+    /// [`Self::acquire`], plus the mandatory recheck fused into one call so
+    /// it cannot be forgotten: acquires the lock, then immediately runs
+    /// `recheck` (typically a `Section::map` against the just-acquired
+    /// lock's guarantee that no writer is mid-publish) and returns
+    /// [`Acquired::AlreadyBuilt`] if it now reports the section present —
+    /// dropping the lease without ever handing it to the caller — or
+    /// [`Acquired::NeedsBuild`] with the live lease if the caller must build
+    /// it after all.
+    pub fn acquire_or_recheck<T>(
+        esm_path: &Path,
+        stage: BuildStage,
+        stage_index: u8,
+        stage_count: u8,
+        total: u64,
+        recheck: impl FnOnce() -> anyhow::Result<Option<T>>,
+    ) -> anyhow::Result<Acquired<T>> {
+        let lease = Self::acquire(esm_path, stage, stage_index, stage_count, total)?;
+        if let Some(already) = recheck()? {
+            return Ok(Acquired::AlreadyBuilt(already));
+        }
+        Ok(Acquired::NeedsBuild(lease))
     }
 
     /// Like [`Self::acquire`], but pins whether the heartbeat is published

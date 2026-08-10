@@ -5,7 +5,9 @@ use crate::reader::{
     EsmFile, RecordMeta, edid_from_subrecords, inline_string_from_subrecords,
     lstring_id_from_subrecords,
 };
-use crate::rkyvcache::{CacheSig, Section, SectionKind, section_path_for, write_section};
+#[cfg(test)]
+use crate::rkyvcache::write_section;
+use crate::rkyvcache::{CacheSig, Section, SectionKind, section_path_for, write_and_remap};
 use crate::schema::Schema;
 use crate::strings::Localization;
 use crate::tree::TreeIndex;
@@ -103,7 +105,7 @@ use std::path::PathBuf;
 // (not just `xref`) since they share this one constant — accepted as the
 // simple, hard-to-get-wrong choice over threading a second, narrower
 // invalidation axis through just the xref section.
-const CACHE_VERSION: u32 = 15;
+pub(crate) const CACHE_VERSION: u32 = 15;
 
 /// Per-record data stored in the lazy search index.
 ///
@@ -138,7 +140,7 @@ pub struct SearchMeta {
 /// is built on, and `tree.rs`'s `TreeIndex` for the prior-stage type this
 /// one's plumbing mirrors.
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct FormsSection {
+pub(crate) struct FormsSection {
     /// Sorted ascending by `.0` (the raw FormID `u32`) — binary-searchable.
     /// A sorted `Vec`, not a `HashMap`: an `ArchivedHashMap<u32, RecordMeta>`
     /// measures ~37.7 B/entry (Swiss-table control bytes + empty slots) vs.
@@ -188,6 +190,13 @@ const FORMS_LAYOUT_FINGERPRINT: u64 = {
     )
 };
 
+/// Binds the `forms` section's archived type to its kind and layout
+/// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
+impl crate::rkyvcache::SectionSpec for rkyv::Archived<FormsSection> {
+    const KIND: crate::rkyvcache::SectionKind = crate::rkyvcache::SectionKind::Forms;
+    const LAYOUT_FINGERPRINT: u64 = FORMS_LAYOUT_FINGERPRINT;
+}
+
 /// One rkyv section: the EditorID → raw FormID map (`edid`). A thin
 /// named wrapper around the map, matching how `018d7a8` wrapped
 /// `records`/`types` in [`FormsSection`] rather than archiving a bare
@@ -201,7 +210,7 @@ const FORMS_LAYOUT_FINGERPRINT: u64 = {
 /// `&str` — no key-conversion step needed here, unlike [`XrefSection`]'s
 /// `u32` keys.
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct EdidSection {
+pub(crate) struct EdidSection {
     edid_to_form: HashMap<String, u32>,
 }
 
@@ -223,9 +232,16 @@ const EDID_LAYOUT_FINGERPRINT: u64 = {
     )
 };
 
+/// Binds the `edid` section's archived type to its kind and layout
+/// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
+impl crate::rkyvcache::SectionSpec for rkyv::Archived<EdidSection> {
+    const KIND: crate::rkyvcache::SectionKind = crate::rkyvcache::SectionKind::Edid;
+    const LAYOUT_FINGERPRINT: u64 = EDID_LAYOUT_FINGERPRINT;
+}
+
 /// One rkyv section: the raw FormID → [`SearchMeta`] map (`search`).
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct SearchSection {
+pub(crate) struct SearchSection {
     entries: HashMap<u32, SearchMeta>,
 }
 
@@ -256,6 +272,13 @@ const SEARCH_LAYOUT_FINGERPRINT: u64 = {
     )
 };
 
+/// Binds the `search` section's archived type to its kind and layout
+/// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
+impl crate::rkyvcache::SectionSpec for rkyv::Archived<SearchSection> {
+    const KIND: crate::rkyvcache::SectionKind = crate::rkyvcache::SectionKind::Search;
+    const LAYOUT_FINGERPRINT: u64 = SEARCH_LAYOUT_FINGERPRINT;
+}
+
 /// One rkyv section: the raw referencee FormID → raw referencing FormIDs map
 /// (`xref`).
 ///
@@ -267,7 +290,7 @@ const SEARCH_LAYOUT_FINGERPRINT: u64 = {
 /// `TreeView::group_idx_at_offset` already established for `offset_map`'s
 /// `u64` keys.
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
-struct XrefSection {
+pub(crate) struct XrefSection {
     refs: HashMap<u32, Vec<u32>>,
 }
 
@@ -289,6 +312,13 @@ const XREF_LAYOUT_FINGERPRINT: u64 = {
     )
 };
 
+/// Binds the `xref` section's archived type to its kind and layout
+/// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
+impl crate::rkyvcache::SectionSpec for rkyv::Archived<XrefSection> {
+    const KIND: crate::rkyvcache::SectionKind = crate::rkyvcache::SectionKind::Xref;
+    const LAYOUT_FINGERPRINT: u64 = XREF_LAYOUT_FINGERPRINT;
+}
+
 /// # Not `Clone`; `Debug` is hand-written
 ///
 /// Every field below is a [`Section`], which wraps a `Mmap` — `Mmap`
@@ -301,19 +331,22 @@ const XREF_LAYOUT_FINGERPRINT: u64 = {
 /// on a `Result<Index, _>`) need — rather than requiring `Section<A>: Debug`
 /// for all five.
 pub struct Index {
-    pub path: PathBuf,
+    pub(crate) path: PathBuf,
     /// Eager, all-or-nothing alongside `forms` — see [`Index::build`].
-    tree: Section<rkyv::Archived<TreeIndex>>,
+    pub(crate) tree: Section<rkyv::Archived<TreeIndex>>,
     /// Eager, all-or-nothing alongside `tree` — see [`Index::build`].
-    forms: Section<rkyv::Archived<FormsSection>>,
-    /// Lazy, independently optional — see [`Index::ensure_edid_index`] and
-    /// [`Index::build`]'s doc comment for the cross-process warm-reuse
-    /// property this field (and `search`/`xref` below) preserves.
-    edid: Section<rkyv::Archived<EdidSection>>,
-    /// Lazy, independently optional — see [`Index::ensure_search_index`].
-    search: Section<rkyv::Archived<SearchSection>>,
-    /// Lazy, independently optional — see [`Index::ensure_xref_index`].
-    xref: Section<rkyv::Archived<XrefSection>>,
+    pub(crate) forms: Section<rkyv::Archived<FormsSection>>,
+    /// Lazy, independently optional — see [`crate::Database::ensure_edid_index`]
+    /// and [`Index::build`]'s doc comment for the cross-process warm-reuse
+    /// property this field (and `search`/`xref` below) preserves. Building
+    /// it needs `Database`'s other fields (the mmap'd ESM), which is why
+    /// that method lives on `Database`, not here — `Index` only holds the
+    /// section once built.
+    pub(crate) edid: Section<rkyv::Archived<EdidSection>>,
+    /// Lazy, independently optional — see [`crate::Database::ensure_search_index`].
+    pub(crate) search: Section<rkyv::Archived<SearchSection>>,
+    /// Lazy, independently optional — see [`crate::Database::ensure_xref_index`].
+    pub(crate) xref: Section<rkyv::Archived<XrefSection>>,
 }
 
 impl std::fmt::Debug for Index {
@@ -356,20 +389,21 @@ impl Index {
     /// this crate its cross-process warm-reuse property for the three lazy
     /// indexes: before Stage 6, all three lived in the same bincode
     /// `CacheFile` blob as `form_index`/`tree`, so if process A called
-    /// `ensure_edid_index` (building it and persisting the whole blob),
-    /// process B starting later and loading that blob got `edid_index:
-    /// Some(...)` for free, purely because the whole blob decoded in one
-    /// shot. Now that each of the three lives in its own independent
-    /// section file (the whole point of sectioning — `ensure_edid_index`
-    /// only ever writes the `edid` section, never a shared blob), that property
-    /// has to be reconstructed explicitly: `Section::map` already degrades
-    /// a missing/stale/corrupt file to `Section::Absent` on its own (never
-    /// an `Err` for that reason), so mapping all three here — unconditionally,
-    /// no extra "is it there" branch — is sufficient. If process A already
-    /// called the matching `ensure_*_index` and its write landed on disk,
-    /// process B's `Index::build` (this function) picks up an already-`Mapped`
-    /// section here, and the matching `ensure_*_index` call later becomes a
-    /// no-op (its `is_mapped()` early-return). If not, the field is
+    /// `Database::ensure_edid_index` (building it and persisting the whole
+    /// blob), process B starting later and loading that blob got
+    /// `edid_index: Some(...)` for free, purely because the whole blob
+    /// decoded in one shot. Now that each of the three lives in its own
+    /// independent section file (the whole point of sectioning —
+    /// `ensure_edid_index` only ever writes the `edid` section, never a
+    /// shared blob), that property has to be reconstructed explicitly:
+    /// `Section::map` already degrades a missing/stale/corrupt file to
+    /// `Section::Absent` on its own (never an `Err` for that reason), so
+    /// mapping all three here — unconditionally, no extra "is it there"
+    /// branch — is sufficient. If process A already called the matching
+    /// `ensure_*_index` and its write landed on disk, process B's
+    /// `Index::build` (this function) picks up an already-`Mapped` section
+    /// here, and the matching `ensure_*_index` call later becomes a no-op
+    /// (its `is_mapped()` early-return). If not, the field is
     /// `Section::Absent`, exactly like `Index::empty`, ready for a later
     /// `ensure_*_index` call to build it. Any one of the three being absent
     /// never affects the other two, or `tree`/`forms`, or causes this
@@ -379,17 +413,13 @@ impl Index {
 
         let tree_section = Section::<rkyv::Archived<TreeIndex>>::map(
             &section_path_for(&esm.path, SectionKind::Tree)?,
-            SectionKind::Tree,
             sig,
             CACHE_VERSION,
-            crate::tree::TREE_LAYOUT_FINGERPRINT,
         )?;
         let forms_section = Section::<rkyv::Archived<FormsSection>>::map(
             &section_path_for(&esm.path, SectionKind::Forms)?,
-            SectionKind::Forms,
             sig,
             CACHE_VERSION,
-            FORMS_LAYOUT_FINGERPRINT,
         )?;
         let (tree_section, forms_section) = if tree_section.is_mapped() && forms_section.is_mapped()
         {
@@ -403,24 +433,18 @@ impl Index {
         // `Section::map` already IS that branch, uniformly, for all three.
         let edid_section = Section::<rkyv::Archived<EdidSection>>::map(
             &section_path_for(&esm.path, SectionKind::Edid)?,
-            SectionKind::Edid,
             sig,
             CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
         )?;
         let search_section = Section::<rkyv::Archived<SearchSection>>::map(
             &section_path_for(&esm.path, SectionKind::Search)?,
-            SectionKind::Search,
             sig,
             CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
         )?;
         let xref_section = Section::<rkyv::Archived<XrefSection>>::map(
             &section_path_for(&esm.path, SectionKind::Xref)?,
-            SectionKind::Xref,
             sig,
             CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
         )?;
 
         Ok(Index {
@@ -504,8 +528,8 @@ impl Index {
     }
 
     /// Iterate every `(FormId, RecordMeta)` pair, in on-disk (FormID-sorted)
-    /// order. Internal helper for [`Self::ensure_edid_index`]/
-    /// [`Self::ensure_search_index`], which — unlike [`Self::iter_form_ids`]
+    /// order. Internal helper for [`build_edid_section`]/
+    /// [`build_search_section`], which — unlike [`Self::iter_form_ids`]
     /// — need the full `RecordMeta` (specifically `.offset`) alongside each
     /// FormID to parse the record. Empty iterator if the forms section is
     /// absent, same degrade-gracefully contract as every other accessor
@@ -521,11 +545,19 @@ impl Index {
     }
 
     /// Resolve an EditorID to its FormID via the lazy EditorID index. `None`
-    /// if the index hasn't been built yet ([`Self::ensure_edid_index`]) or
-    /// `edid` isn't present. See [`EdidSection`]'s doc comment for why this
-    /// looks the key up directly with `&str` (no archived-key conversion
-    /// needed, unlike [`Self::get_xref`]).
-    pub fn get_by_edid(&self, edid: &str) -> Option<FormId> {
+    /// if the index hasn't been built yet ([`crate::Database::ensure_edid_index`])
+    /// or `edid` isn't present. See [`EdidSection`]'s doc comment for why
+    /// this looks the key up directly with `&str` (no archived-key
+    /// conversion needed, unlike [`Self::get_xref`]).
+    ///
+    /// `pub(crate)`, not `pub`: reachable only through
+    /// [`crate::Database`]'s own methods, which always call
+    /// `ensure_edid_index` first — see that method's doc comment for why
+    /// this and [`Self::get_xref`]/[`Self::iter_search`] are deliberately
+    /// not part of this crate's public surface (a caller reaching this
+    /// directly, without ensuring first, would silently read "not found"
+    /// for an EditorID that's actually present but just not indexed yet).
+    pub(crate) fn get_by_edid(&self, edid: &str) -> Option<FormId> {
         let section = self.edid.get()?;
         section
             .edid_to_form
@@ -587,225 +619,17 @@ impl Index {
         })
     }
 
-    /// Build the lazy EditorID index on first call, writing it to its own
-    /// `edid` section so a later call — in this process (the
-    /// `is_mapped()` early-return below) or a fresh one (see
-    /// [`Self::build`]'s doc comment) — reuses it rather than rebuilding.
-    /// Same write→drop→re-map protocol `9e7c160`/`018d7a8` established for
-    /// `tree`/`forms`, just triggered lazily from here instead of eagerly
-    /// from [`build_tree_and_forms`].
-    ///
-    /// Acquires a [`crate::progress::BuildLease`] before doing any real
-    /// work and re-checks `Section::map` immediately after — another
-    /// process may have built and published `edid` while this call was
-    /// blocked waiting for the lock, in which case the freshly-mapped
-    /// section is adopted directly and the loop below never runs.
-    pub fn ensure_edid_index(&mut self, esm: &EsmFile) -> anyhow::Result<()> {
-        if self.edid.is_mapped() {
-            return Ok(());
-        }
-        let sig = CacheSig::read(&esm.path)?;
-        let path = section_path_for(&esm.path, SectionKind::Edid)?;
-
-        let mut lease = crate::progress::BuildLease::acquire(
-            &esm.path,
-            crate::progress::BuildStage::Edid,
-            1,
-            1,
-            self.len() as u64,
-        )?;
-        let recheck = Section::<rkyv::Archived<EdidSection>>::map(
-            &path,
-            SectionKind::Edid,
-            sig,
-            CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
-        )?;
-        if recheck.is_mapped() {
-            self.edid = recheck;
-            return Ok(());
-        }
-
-        let mut edid_to_form: HashMap<String, u32> = HashMap::new();
-        for (i, (form_id, meta)) in self.iter_all().enumerate() {
-            lease.tick(i as u64);
-            let rec = esm.parse_record_at(meta.offset)?;
-            if let Some(edid) = edid_from_subrecords(&rec.subrecords) {
-                edid_to_form.insert(edid, form_id.raw());
-            }
-        }
-        lease.writing();
-
-        let data = EdidSection { edid_to_form };
-        write_section(
-            &path,
-            SectionKind::Edid,
-            sig,
-            CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
-            &data,
-        )?;
-        drop(data);
-        let section = Section::<rkyv::Archived<EdidSection>>::map(
-            &path,
-            SectionKind::Edid,
-            sig,
-            CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
-        )?;
-        anyhow::ensure!(
-            section.is_mapped(),
-            "just-written edid section at {} failed to map back — this should never happen",
-            path.display()
-        );
-        self.edid = section;
-        Ok(())
-    }
-
-    /// Build the reverse-reference index on first call, then cache it to its
-    /// own `xref` section.
-    ///
-    /// Walks every record, decodes it with `ResolveDepth::None` (so FormID
-    /// fields come out as `"0x........"` hex strings), harvests those strings,
-    /// and inverts them into a referencee→referencers map.
-    ///
-    /// Acquires a [`crate::progress::BuildLease`] before doing any real
-    /// work and re-checks `Section::map` immediately after — see
-    /// [`Self::ensure_edid_index`]'s doc comment for why. This is the most
-    /// expensive of the three lazy builds (a full schema decode of every
-    /// record, not just an EDID/name lookup), so this is the section a
-    /// second process is most likely to observe already in flight.
-    pub fn ensure_xref_index(
-        &mut self,
-        esm: &EsmFile,
-        schema: &Schema,
-        is_localized: bool,
-        localization: Option<&Localization>,
-        curves: Option<&crate::curves::CurveIndex>,
-    ) -> anyhow::Result<()> {
-        if self.xref.is_mapped() {
-            return Ok(());
-        }
-        let sig = CacheSig::read(&esm.path)?;
-        let path = section_path_for(&esm.path, SectionKind::Xref)?;
-
-        let mut lease = crate::progress::BuildLease::acquire(
-            &esm.path,
-            crate::progress::BuildStage::Xref,
-            1,
-            1,
-            esm.data().len() as u64,
-        )?;
-        let recheck = Section::<rkyv::Archived<XrefSection>>::map(
-            &path,
-            SectionKind::Xref,
-            sig,
-            CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
-        )?;
-        if recheck.is_mapped() {
-            self.xref = recheck;
-            return Ok(());
-        }
-
-        // Reborrow immutably up front (same pattern the pre-section version
-        // used for `form_index`) so the closure below can query the forms
-        // section without conflicting with `self.xref = ...` after
-        // `walk_records` returns.
-        let index = &*self;
-        let mut xref: HashMap<u32, Vec<u32>> = HashMap::new();
-        esm.walk_records(|meta| {
-            lease.tick(meta.offset);
-            let rec = match esm.parse_record_at(meta.offset) {
-                Ok(r) => r,
-                Err(_) => return Ok(()),
-            };
-            let referencer = rec.header.form_id;
-            if !index.contains(referencer) {
-                return Ok(());
-            }
-            let ctx = DecodeContext::for_record(
-                schema,
-                rec.header.form_version,
-                is_localized,
-                localization,
-                curves,
-                ResolveDepth::None,
-                None,
-            );
-            let fields = decode_record(&ctx, &rec.header.signature, &rec.subrecords);
-            let mut refs = Vec::new();
-            harvest_formids(&fields, &mut refs);
-            // Dedup within this record: a single record may reference the same
-            // target FormID multiple times (e.g. the same FormID in two
-            // separate subrecords, or repeated array entries).  We want each
-            // referencing record to appear exactly once per target, regardless
-            // of how many times it references it internally.
-            let mut seen = HashSet::new();
-            for target in refs {
-                // A target is kept if it's either a real indexed record or
-                // one of the ~228 engine-hardcoded FormIDs (`crate::hardcoded`,
-                // e.g. AVIF `DamageRecieved`/`KillStreak`) — hardcoded forms
-                // have no backing record by design, so without this fallback
-                // every real reference to one was silently dropped while the
-                // index was built (issue #27). `index.contains` still runs
-                // first and short-circuits for the overwhelming majority of
-                // targets, so the 228-entry binary search only fires on an
-                // index miss — matching `hardcoded::lookup`'s own "consult
-                // only as a fallback" contract.
-                //
-                // This is a bounded, curated allowlist, not a relaxation of
-                // the existence check itself: `harvest_formids` collects
-                // every `0x…`-shaped string in the decoded JSON, including
-                // values from misdecoded bytes, and `index.contains` is what
-                // keeps that garbage out. `0x0` (NULL) in particular appears
-                // dozens of times among PERK effects alone and stays
-                // correctly excluded — it is below the hardcoded table's
-                // `0x1A` floor. A few other harvested low FormIDs also fall
-                // outside both the index and the table (e.g. `0x14`, just
-                // under that floor, and a couple just above the table's
-                // `0x39B` ceiling); those stay dropped too — undocumented
-                // engine internals this table doesn't cover.
-                let target_exists =
-                    index.contains(target) || crate::hardcoded::lookup(target).is_some();
-                if target != referencer && target_exists && seen.insert(target) {
-                    xref.entry(target.raw()).or_default().push(referencer.raw());
-                }
-            }
-            Ok(())
-        })?;
-        lease.writing();
-
-        let data = XrefSection { refs: xref };
-        write_section(
-            &path,
-            SectionKind::Xref,
-            sig,
-            CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
-            &data,
-        )?;
-        drop(data);
-        let section = Section::<rkyv::Archived<XrefSection>>::map(
-            &path,
-            SectionKind::Xref,
-            sig,
-            CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
-        )?;
-        anyhow::ensure!(
-            section.is_mapped(),
-            "just-written xref section at {} failed to map back — this should never happen",
-            path.display()
-        );
-        self.xref = section;
-        Ok(())
-    }
-
     /// Return the list of FormIDs that reference the given FormID. Empty
     /// `Vec` if the xref section is absent (not yet built —
-    /// [`Self::ensure_xref_index`]) or `form_id` has no referencers.
-    pub fn get_xref(&self, form_id: FormId) -> Vec<FormId> {
+    /// [`crate::Database::ensure_xref_index`]) or `form_id` has no
+    /// referencers.
+    ///
+    /// `pub(crate)` — see [`Self::get_by_edid`]'s doc comment for why this
+    /// and [`Self::iter_search`] are not part of the public surface: every
+    /// real caller reaches this through [`crate::Database`]'s own
+    /// ensure-then-get wrapper, which can't forget the `ensure` half because
+    /// there's only one method to call.
+    pub(crate) fn get_xref(&self, form_id: FormId) -> Vec<FormId> {
         let Some(section) = self.xref.get() else {
             return Vec::new();
         };
@@ -819,14 +643,10 @@ impl Index {
             .unwrap_or_default()
     }
 
-    /// Whether the lazy search index has been built yet.
-    pub fn has_search_index(&self) -> bool {
-        self.search.is_mapped()
-    }
-
     /// Iterate the lazy search index (if already built) as borrowed
-    /// [`SearchRef`] views — empty iterator if not yet built.
-    pub fn iter_search(&self) -> impl Iterator<Item = (FormId, SearchRef<'_>)> + '_ {
+    /// [`SearchRef`] views — empty iterator if not yet built. `pub(crate)` —
+    /// see [`Self::get_by_edid`]'s doc comment.
+    pub(crate) fn iter_search(&self) -> impl Iterator<Item = (FormId, SearchRef<'_>)> + '_ {
         self.search.get().into_iter().flat_map(|s| {
             s.entries.iter().map(|(id, meta)| {
                 (
@@ -843,113 +663,6 @@ impl Index {
         })
     }
 
-    /// Build the search index on first call, then cache it to its own
-    /// `search` section.
-    ///
-    /// Iterates every record, extracting the EditorID and name/description
-    /// fields.  For **localized** ESMs the FULL and DESC lstring IDs are
-    /// stored (resolved to text at query time).  For **non-localized** ESMs
-    /// the inline string text is stored directly.
-    ///
-    /// Acquires a [`crate::progress::BuildLease`] before doing any real
-    /// work and re-checks `Section::map` immediately after — see
-    /// [`Self::ensure_edid_index`]'s doc comment for why.
-    pub fn ensure_search_index(&mut self, esm: &EsmFile, is_localized: bool) -> anyhow::Result<()> {
-        if self.search.is_mapped() {
-            return Ok(());
-        }
-        let sig = CacheSig::read(&esm.path)?;
-        let path = section_path_for(&esm.path, SectionKind::Search)?;
-
-        let mut lease = crate::progress::BuildLease::acquire(
-            &esm.path,
-            crate::progress::BuildStage::Search,
-            1,
-            1,
-            self.len() as u64,
-        )?;
-        let recheck = Section::<rkyv::Archived<SearchSection>>::map(
-            &path,
-            SectionKind::Search,
-            sig,
-            CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
-        )?;
-        if recheck.is_mapped() {
-            self.search = recheck;
-            return Ok(());
-        }
-
-        let mut entries: HashMap<u32, SearchMeta> = HashMap::new();
-        for (i, (form_id, meta)) in self.iter_all().enumerate() {
-            lease.tick(i as u64);
-            let rec = match esm.parse_record_at(meta.offset) {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-            let editor_id = edid_from_subrecords(&rec.subrecords);
-            let (full_id, full_text, desc_id, desc_text) = if is_localized {
-                (
-                    lstring_id_from_subrecords(&rec.subrecords, "FULL"),
-                    None,
-                    lstring_id_from_subrecords(&rec.subrecords, "DESC"),
-                    None,
-                )
-            } else {
-                (
-                    None,
-                    inline_string_from_subrecords(&rec.subrecords, "FULL"),
-                    None,
-                    inline_string_from_subrecords(&rec.subrecords, "DESC"),
-                )
-            };
-            // Only store records that have at least one searchable field.
-            if editor_id.is_some()
-                || full_id.is_some()
-                || full_text.is_some()
-                || desc_id.is_some()
-                || desc_text.is_some()
-            {
-                entries.insert(
-                    form_id.raw(),
-                    SearchMeta {
-                        editor_id,
-                        full_id,
-                        desc_id,
-                        full_text,
-                        desc_text,
-                    },
-                );
-            }
-        }
-        lease.writing();
-
-        let data = SearchSection { entries };
-        write_section(
-            &path,
-            SectionKind::Search,
-            sig,
-            CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
-            &data,
-        )?;
-        drop(data);
-        let section = Section::<rkyv::Archived<SearchSection>>::map(
-            &path,
-            SectionKind::Search,
-            sig,
-            CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
-        )?;
-        anyhow::ensure!(
-            section.is_mapped(),
-            "just-written search section at {} failed to map back — this should never happen",
-            path.display()
-        );
-        self.search = section;
-        Ok(())
-    }
-
     /// Borrowed view over the GRUP tree — replaces the removed `pub tree`
     /// field. See [`crate::tree::TreeView`]. `Section::get` already returns
     /// `Option<&Archived<TreeIndex>>`, exactly what `TreeView::new` expects —
@@ -959,6 +672,168 @@ impl Index {
     pub fn tree(&self) -> crate::tree::TreeView<'_> {
         crate::tree::TreeView::new(self.tree.get())
     }
+}
+
+/// Build the `edid` section's data (EditorID → FormID) by scanning every
+/// record's own EDID subrecord. The data-only half of
+/// [`crate::Database::ensure_edid_index`], which owns the surrounding
+/// acquire/recheck/write/publish protocol (via
+/// [`crate::rkyvcache::write_and_remap`]) — this only computes the map,
+/// ticking `lease` once per record scanned.
+pub(crate) fn build_edid_section(
+    index: &Index,
+    esm: &EsmFile,
+    lease: &mut crate::progress::BuildLease,
+) -> anyhow::Result<EdidSection> {
+    let mut edid_to_form: HashMap<String, u32> = HashMap::new();
+    for (i, (form_id, meta)) in index.iter_all().enumerate() {
+        lease.tick(i as u64);
+        let rec = esm.parse_record_at(meta.offset)?;
+        if let Some(edid) = edid_from_subrecords(&rec.subrecords) {
+            edid_to_form.insert(edid, form_id.raw());
+        }
+    }
+    Ok(EdidSection { edid_to_form })
+}
+
+/// Build the `search` section's data (EditorID/name/description per
+/// record) — the data-only half of [`crate::Database::ensure_search_index`];
+/// see [`build_edid_section`]'s doc comment for the split this mirrors.
+///
+/// For **localized** ESMs the FULL/DESC lstring IDs are stored (resolved to
+/// text at query time). For **non-localized** ESMs the inline string text
+/// is stored directly.
+pub(crate) fn build_search_section(
+    index: &Index,
+    esm: &EsmFile,
+    is_localized: bool,
+    lease: &mut crate::progress::BuildLease,
+) -> anyhow::Result<SearchSection> {
+    let mut entries: HashMap<u32, SearchMeta> = HashMap::new();
+    for (i, (form_id, meta)) in index.iter_all().enumerate() {
+        lease.tick(i as u64);
+        let rec = match esm.parse_record_at(meta.offset) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let editor_id = edid_from_subrecords(&rec.subrecords);
+        let (full_id, full_text, desc_id, desc_text) = if is_localized {
+            (
+                lstring_id_from_subrecords(&rec.subrecords, "FULL"),
+                None,
+                lstring_id_from_subrecords(&rec.subrecords, "DESC"),
+                None,
+            )
+        } else {
+            (
+                None,
+                inline_string_from_subrecords(&rec.subrecords, "FULL"),
+                None,
+                inline_string_from_subrecords(&rec.subrecords, "DESC"),
+            )
+        };
+        // Only store records that have at least one searchable field.
+        if editor_id.is_some()
+            || full_id.is_some()
+            || full_text.is_some()
+            || desc_id.is_some()
+            || desc_text.is_some()
+        {
+            entries.insert(
+                form_id.raw(),
+                SearchMeta {
+                    editor_id,
+                    full_id,
+                    desc_id,
+                    full_text,
+                    desc_text,
+                },
+            );
+        }
+    }
+    Ok(SearchSection { entries })
+}
+
+/// Build the `xref` section's data (referencee FormID → referencing
+/// FormIDs) — the data-only half of [`crate::Database::ensure_xref_index`];
+/// see [`build_edid_section`]'s doc comment for the split this mirrors.
+/// This is the most expensive of the three lazy builds (a full schema
+/// decode of every record, not just an EDID/name lookup).
+///
+/// Walks every record, decodes it with `ResolveDepth::None` (so FormID
+/// fields come out as `"0x........"` hex strings), harvests those strings,
+/// and inverts them into a referencee→referencers map.
+pub(crate) fn build_xref_section(
+    index: &Index,
+    esm: &EsmFile,
+    schema: &Schema,
+    is_localized: bool,
+    localization: Option<&Localization>,
+    curves: Option<&crate::curves::CurveIndex>,
+    lease: &mut crate::progress::BuildLease,
+) -> anyhow::Result<XrefSection> {
+    let mut xref: HashMap<u32, Vec<u32>> = HashMap::new();
+    esm.walk_records(|meta| {
+        lease.tick(meta.offset);
+        let rec = match esm.parse_record_at(meta.offset) {
+            Ok(r) => r,
+            Err(_) => return Ok(()),
+        };
+        let referencer = rec.header.form_id;
+        if !index.contains(referencer) {
+            return Ok(());
+        }
+        let ctx = DecodeContext::for_record(
+            schema,
+            rec.header.form_version,
+            is_localized,
+            localization,
+            curves,
+            ResolveDepth::None,
+            None,
+        );
+        let fields = decode_record(&ctx, &rec.header.signature, &rec.subrecords);
+        let mut refs = Vec::new();
+        harvest_formids(&fields, &mut refs);
+        // Dedup within this record: a single record may reference the same
+        // target FormID multiple times (e.g. the same FormID in two
+        // separate subrecords, or repeated array entries).  We want each
+        // referencing record to appear exactly once per target, regardless
+        // of how many times it references it internally.
+        let mut seen = HashSet::new();
+        for target in refs {
+            // A target is kept if it's either a real indexed record or
+            // one of the ~228 engine-hardcoded FormIDs (`crate::hardcoded`,
+            // e.g. AVIF `DamageRecieved`/`KillStreak`) — hardcoded forms
+            // have no backing record by design, so without this fallback
+            // every real reference to one was silently dropped while the
+            // index was built (issue #27). `index.contains` still runs
+            // first and short-circuits for the overwhelming majority of
+            // targets, so the 228-entry binary search only fires on an
+            // index miss — matching `hardcoded::lookup`'s own "consult
+            // only as a fallback" contract.
+            //
+            // This is a bounded, curated allowlist, not a relaxation of
+            // the existence check itself: `harvest_formids` collects
+            // every `0x…`-shaped string in the decoded JSON, including
+            // values from misdecoded bytes, and `index.contains` is what
+            // keeps that garbage out. `0x0` (NULL) in particular appears
+            // dozens of times among PERK effects alone and stays
+            // correctly excluded — it is below the hardcoded table's
+            // `0x1A` floor. A few other harvested low FormIDs also fall
+            // outside both the index and the table (e.g. `0x14`, just
+            // under that floor, and a couple just above the table's
+            // `0x39B` ceiling); those stay dropped too — undocumented
+            // engine internals this table doesn't cover.
+            let target_exists =
+                index.contains(target) || crate::hardcoded::lookup(target).is_some();
+            if target != referencer && target_exists && seen.insert(target) {
+                xref.entry(target.raw()).or_default().push(referencer.raw());
+            }
+        }
+        Ok(())
+    })?;
+    Ok(XrefSection { refs: xref })
 }
 
 fn build_type_index(form_index: &HashMap<FormId, RecordMeta>) -> HashMap<Signature, Vec<FormId>> {
@@ -1002,44 +877,40 @@ type TreeAndFormsSections = (
 /// are eager and all-or-nothing, so this always rebuilds and returns both
 /// together, never just one.
 ///
-/// Acquires a [`crate::progress::BuildLease`] for the duration (see
-/// `Index::build`'s call site, which holds no lock of its own before
-/// calling in — the lock lives entirely inside this function so the common
-/// warm-path `Section::map` check in `Index::build` never pays for it).
-/// Re-checks both sections immediately after the lease is granted: another
-/// process may have finished building while this call was blocked waiting
-/// for the lock, in which case this returns the now-mapped sections without
-/// doing any real work.
+/// Acquires a [`crate::progress::BuildLease`] for the duration via
+/// [`crate::progress::BuildLease::acquire_or_recheck`] (see `Index::build`'s
+/// call site, which holds no lock of its own before calling in — the lock
+/// lives entirely inside this function so the common warm-path
+/// `Section::map` check in `Index::build` never pays for it). The recheck
+/// closure re-maps both sections immediately after the lease is granted:
+/// another process may have finished building while this call was blocked
+/// waiting for the lock, in which case [`crate::progress::Acquired::AlreadyBuilt`]
+/// returns the now-mapped sections without this function doing any real
+/// work — structurally, not just by convention, since a [`crate::progress::BuildLease`]
+/// only exists in the [`crate::progress::Acquired::NeedsBuild`] arm below.
 fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndFormsSections> {
     let tree_path = section_path_for(&esm.path, SectionKind::Tree)?;
     let forms_path = section_path_for(&esm.path, SectionKind::Forms)?;
-
     let total = esm.data().len() as u64;
-    let mut lease = crate::progress::BuildLease::acquire(
+
+    let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
         &esm.path,
         crate::progress::BuildStage::Forms,
         1,
         2,
         total,
-    )?;
-
-    let tree_recheck = Section::<rkyv::Archived<TreeIndex>>::map(
-        &tree_path,
-        SectionKind::Tree,
-        sig,
-        CACHE_VERSION,
-        crate::tree::TREE_LAYOUT_FINGERPRINT,
-    )?;
-    let forms_recheck = Section::<rkyv::Archived<FormsSection>>::map(
-        &forms_path,
-        SectionKind::Forms,
-        sig,
-        CACHE_VERSION,
-        FORMS_LAYOUT_FINGERPRINT,
-    )?;
-    if tree_recheck.is_mapped() && forms_recheck.is_mapped() {
-        return Ok((tree_recheck, forms_recheck));
-    }
+        || {
+            let tree_recheck =
+                Section::<rkyv::Archived<TreeIndex>>::map(&tree_path, sig, CACHE_VERSION)?;
+            let forms_recheck =
+                Section::<rkyv::Archived<FormsSection>>::map(&forms_path, sig, CACHE_VERSION)?;
+            Ok((tree_recheck.is_mapped() && forms_recheck.is_mapped())
+                .then_some((tree_recheck, forms_recheck)))
+        },
+    )? {
+        crate::progress::Acquired::AlreadyBuilt(sections) => return Ok(sections),
+        crate::progress::Acquired::NeedsBuild(lease) => lease,
+    };
 
     let mut form_index = HashMap::new();
     esm.walk_records(|meta| {
@@ -1066,33 +937,16 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     // owned value and map it straight back in — there is exactly one code
     // path for how `Index` ever reads tree data afterwards (through the
     // archived section via `Index::tree()`), never a second one that keeps
-    // the owned `TreeIndex` around.
-    write_section(
-        &tree_path,
-        SectionKind::Tree,
-        sig,
-        CACHE_VERSION,
-        crate::tree::TREE_LAYOUT_FINGERPRINT,
-        &tree,
-    )?;
-    drop(tree);
-    let tree_section = Section::<rkyv::Archived<TreeIndex>>::map(
-        &tree_path,
-        SectionKind::Tree,
-        sig,
-        CACHE_VERSION,
-        crate::tree::TREE_LAYOUT_FINGERPRINT,
-    )?;
-    anyhow::ensure!(
-        tree_section.is_mapped(),
-        "just-written tree section at {} failed to map back — this should never happen",
-        tree_path.display()
-    );
+    // the owned `TreeIndex` around. `write_and_remap` is the one helper
+    // every section build (this one and the three lazy `ensure_*_index`
+    // builds in `lib.rs`) uses for this write→drop→re-map→ensure-mapped
+    // sequence.
+    let tree_section = write_and_remap(&tree_path, sig, CACHE_VERSION, tree)?;
 
     // Build the combined forms section (sorted FormID table + type
     // directory) from the local owned `form_index`/`type_index`, write it,
-    // drop the owned data, and map it straight back in — same
-    // write→drop→re-map protocol as `tree` above.
+    // drop the owned data, and map it straight back in — same protocol as
+    // `tree` above.
     let mut records: Vec<(u32, RecordMeta)> = form_index
         .iter()
         .map(|(id, meta)| (id.raw(), *meta))
@@ -1104,27 +958,7 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
         .collect();
     drop(form_index);
     let forms_data = FormsSection { records, types };
-    write_section(
-        &forms_path,
-        SectionKind::Forms,
-        sig,
-        CACHE_VERSION,
-        FORMS_LAYOUT_FINGERPRINT,
-        &forms_data,
-    )?;
-    drop(forms_data);
-    let forms_section = Section::<rkyv::Archived<FormsSection>>::map(
-        &forms_path,
-        SectionKind::Forms,
-        sig,
-        CACHE_VERSION,
-        FORMS_LAYOUT_FINGERPRINT,
-    )?;
-    anyhow::ensure!(
-        forms_section.is_mapped(),
-        "just-written forms section at {} failed to map back — this should never happen",
-        forms_path.display()
-    );
+    let forms_section = write_and_remap(&forms_path, sig, CACHE_VERSION, forms_data)?;
 
     Ok((tree_section, forms_section))
 }
@@ -1173,10 +1007,8 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
         crate::progress::BuildStage::Forms,
         Section::<rkyv::Archived<FormsSection>>::map(
             &section_path_for(esm_path, SectionKind::Forms)?,
-            SectionKind::Forms,
             sig,
             CACHE_VERSION,
-            FORMS_LAYOUT_FINGERPRINT,
         )?
         .is_mapped(),
     );
@@ -1184,10 +1016,8 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
         crate::progress::BuildStage::Tree,
         Section::<rkyv::Archived<TreeIndex>>::map(
             &section_path_for(esm_path, SectionKind::Tree)?,
-            SectionKind::Tree,
             sig,
             CACHE_VERSION,
-            crate::tree::TREE_LAYOUT_FINGERPRINT,
         )?
         .is_mapped(),
     );
@@ -1195,10 +1025,8 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
         crate::progress::BuildStage::Edid,
         Section::<rkyv::Archived<EdidSection>>::map(
             &section_path_for(esm_path, SectionKind::Edid)?,
-            SectionKind::Edid,
             sig,
             CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
         )?
         .is_mapped(),
     );
@@ -1206,10 +1034,8 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
         crate::progress::BuildStage::Search,
         Section::<rkyv::Archived<SearchSection>>::map(
             &section_path_for(esm_path, SectionKind::Search)?,
-            SectionKind::Search,
             sig,
             CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
         )?
         .is_mapped(),
     );
@@ -1217,15 +1043,34 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
         crate::progress::BuildStage::Xref,
         Section::<rkyv::Archived<XrefSection>>::map(
             &section_path_for(esm_path, SectionKind::Xref)?,
-            SectionKind::Xref,
             sig,
             CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
         )?
         .is_mapped(),
     );
 
     Ok(CacheInventory { present, missing })
+}
+
+/// Regression test for [`crate::rkyvcache::SectionSpec`]'s core promise:
+/// each of the five sections' `KIND`/`LAYOUT_FINGERPRINT` pairing, chosen
+/// once in the `impl SectionSpec` block next to that section's own type
+/// definition, actually matches the named `_LAYOUT_FINGERPRINT` constant and
+/// `SectionKind` variant this module's doc comments say it should. This
+/// `match` is exhaustive with no wildcard arm — adding a sixth
+/// [`crate::progress::BuildStage`] variant without a matching arm here (and
+/// in [`BuildStage::label`]/[`BuildStage::unit`] in `progress.rs`) is a
+/// compile error, not a silently-uncovered case.
+#[cfg(test)]
+fn section_spec_fingerprint_for(kind: SectionKind) -> u64 {
+    use crate::rkyvcache::SectionSpec;
+    match kind {
+        SectionKind::Tree => <rkyv::Archived<TreeIndex> as SectionSpec>::LAYOUT_FINGERPRINT,
+        SectionKind::Forms => <rkyv::Archived<FormsSection> as SectionSpec>::LAYOUT_FINGERPRINT,
+        SectionKind::Edid => <rkyv::Archived<EdidSection> as SectionSpec>::LAYOUT_FINGERPRINT,
+        SectionKind::Search => <rkyv::Archived<SearchSection> as SectionSpec>::LAYOUT_FINGERPRINT,
+        SectionKind::Xref => <rkyv::Archived<XrefSection> as SectionSpec>::LAYOUT_FINGERPRINT,
+    }
 }
 
 pub fn full_name_for_record(esm: &EsmFile, meta: &RecordMeta) -> anyhow::Result<Option<u32>> {
@@ -1265,6 +1110,58 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::Path;
+
+    /// Asserts the pairing [`crate::rkyvcache::SectionSpec`] binds — that
+    /// every section's `KIND`/`LAYOUT_FINGERPRINT` (chosen once, in the
+    /// `impl SectionSpec` block next to that section's own type) actually
+    /// matches this module's own `_LAYOUT_FINGERPRINT` constants — for all
+    /// five sections, via the exhaustive `match` in
+    /// [`section_spec_fingerprint_for`]. This is the direct regression test
+    /// for the bug class Stage C fixes: before `SectionSpec` existed, the
+    /// `(SectionKind, CACHE_VERSION, LAYOUT_FINGERPRINT)` triple was spelled
+    /// out by hand at ~41 call sites, and a wrong pairing compiled fine
+    /// while silently forcing that section to rebuild on every open. Now
+    /// there is exactly one place per section where the pairing is chosen,
+    /// and this test proves each of those five places agrees with the named
+    /// constant its own doc comments claim.
+    #[test]
+    fn section_spec_pairing_matches_named_fingerprint_constants() {
+        assert_eq!(
+            section_spec_fingerprint_for(SectionKind::Tree),
+            crate::tree::TREE_LAYOUT_FINGERPRINT
+        );
+        assert_eq!(
+            section_spec_fingerprint_for(SectionKind::Forms),
+            FORMS_LAYOUT_FINGERPRINT
+        );
+        assert_eq!(
+            section_spec_fingerprint_for(SectionKind::Edid),
+            EDID_LAYOUT_FINGERPRINT
+        );
+        assert_eq!(
+            section_spec_fingerprint_for(SectionKind::Search),
+            SEARCH_LAYOUT_FINGERPRINT
+        );
+        assert_eq!(
+            section_spec_fingerprint_for(SectionKind::Xref),
+            XREF_LAYOUT_FINGERPRINT
+        );
+
+        // All five discriminants distinct — a copy-paste that gave two
+        // sections the same `SectionKind` would let one section's on-disk
+        // file silently collide with (and be misread as) another's.
+        use crate::rkyvcache::SectionSpec;
+        let mut kinds = vec![
+            <rkyv::Archived<TreeIndex> as SectionSpec>::KIND,
+            <rkyv::Archived<FormsSection> as SectionSpec>::KIND,
+            <rkyv::Archived<EdidSection> as SectionSpec>::KIND,
+            <rkyv::Archived<SearchSection> as SectionSpec>::KIND,
+            <rkyv::Archived<XrefSection> as SectionSpec>::KIND,
+        ];
+        kinds.sort_by_key(|k| *k as u32);
+        kinds.dedup();
+        assert_eq!(kinds.len(), 5, "every section must have a distinct KIND");
+    }
 
     /// Arbitrary, test-only `cache_version` — these tests exercise the
     /// `write_section`/`Section::map` mechanics against real section types,
@@ -1312,23 +1209,9 @@ mod tests {
             mtime_secs: 1_700_000_000,
             mtime_nanos: 0,
         };
-        write_section(
-            path,
-            SectionKind::Forms,
-            sig,
-            TEST_CACHE_VERSION,
-            FORMS_LAYOUT_FINGERPRINT,
-            &data,
-        )
-        .expect("write forms section");
-        let section = Section::<rkyv::Archived<FormsSection>>::map(
-            path,
-            SectionKind::Forms,
-            sig,
-            TEST_CACHE_VERSION,
-            FORMS_LAYOUT_FINGERPRINT,
-        )
-        .expect("map forms section");
+        write_section(path, sig, TEST_CACHE_VERSION, &data).expect("write forms section");
+        let section = Section::<rkyv::Archived<FormsSection>>::map(path, sig, TEST_CACHE_VERSION)
+            .expect("map forms section");
         assert!(section.is_mapped(), "freshly written section must map back");
         section
     }
@@ -1348,23 +1231,9 @@ mod tests {
             mtime_secs: 1_700_000_000,
             mtime_nanos: 0,
         };
-        write_section(
-            path,
-            SectionKind::Edid,
-            sig,
-            TEST_CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
-            &data,
-        )
-        .expect("write edid section");
-        let section = Section::<rkyv::Archived<EdidSection>>::map(
-            path,
-            SectionKind::Edid,
-            sig,
-            TEST_CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
-        )
-        .expect("map edid section");
+        write_section(path, sig, TEST_CACHE_VERSION, &data).expect("write edid section");
+        let section = Section::<rkyv::Archived<EdidSection>>::map(path, sig, TEST_CACHE_VERSION)
+            .expect("map edid section");
         assert!(section.is_mapped(), "freshly written section must map back");
         section
     }
@@ -1384,23 +1253,9 @@ mod tests {
             mtime_secs: 1_700_000_000,
             mtime_nanos: 0,
         };
-        write_section(
-            path,
-            SectionKind::Search,
-            sig,
-            TEST_CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
-            &data,
-        )
-        .expect("write search section");
-        let section = Section::<rkyv::Archived<SearchSection>>::map(
-            path,
-            SectionKind::Search,
-            sig,
-            TEST_CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
-        )
-        .expect("map search section");
+        write_section(path, sig, TEST_CACHE_VERSION, &data).expect("write search section");
+        let section = Section::<rkyv::Archived<SearchSection>>::map(path, sig, TEST_CACHE_VERSION)
+            .expect("map search section");
         assert!(section.is_mapped(), "freshly written section must map back");
         section
     }
@@ -1417,23 +1272,9 @@ mod tests {
             mtime_secs: 1_700_000_000,
             mtime_nanos: 0,
         };
-        write_section(
-            path,
-            SectionKind::Xref,
-            sig,
-            TEST_CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
-            &data,
-        )
-        .expect("write xref section");
-        let section = Section::<rkyv::Archived<XrefSection>>::map(
-            path,
-            SectionKind::Xref,
-            sig,
-            TEST_CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
-        )
-        .expect("map xref section");
+        write_section(path, sig, TEST_CACHE_VERSION, &data).expect("write xref section");
+        let section = Section::<rkyv::Archived<XrefSection>>::map(path, sig, TEST_CACHE_VERSION)
+            .expect("map xref section");
         assert!(section.is_mapped(), "freshly written section must map back");
         section
     }
@@ -1796,7 +1637,7 @@ mod tests {
         .unwrap();
         let index = index_with_search(write_and_map_search(&entries, &path));
 
-        assert!(index.has_search_index());
+        assert!(index.search.is_mapped());
         let results: HashMap<FormId, SearchRef<'_>> = index.iter_search().collect();
         assert_eq!(results.len(), 2);
 
@@ -1824,7 +1665,7 @@ mod tests {
     #[test]
     fn search_absent_state_never_panics() {
         let index = Index::empty(PathBuf::from("/tmp/fo76_search_absent_test.esm"));
-        assert!(!index.has_search_index());
+        assert!(!index.search.is_mapped());
         assert_eq!(index.iter_search().count(), 0);
     }
 
@@ -1977,10 +1818,8 @@ mod tests {
         edid_to_form.insert("PrebuiltWeapon".to_string(), 0x0000_0001);
         write_section(
             &edid_path,
-            SectionKind::Edid,
             sig,
             CACHE_VERSION,
-            EDID_LAYOUT_FINGERPRINT,
             &EdidSection { edid_to_form },
         )
         .expect("write edid section");
@@ -1996,27 +1835,13 @@ mod tests {
                 desc_text: None,
             },
         );
-        write_section(
-            &search_path,
-            SectionKind::Search,
-            sig,
-            CACHE_VERSION,
-            SEARCH_LAYOUT_FINGERPRINT,
-            &SearchSection { entries },
-        )
-        .expect("write search section");
+        write_section(&search_path, sig, CACHE_VERSION, &SearchSection { entries })
+            .expect("write search section");
 
         let mut refs = HashMap::new();
         refs.insert(0x0000_0001, vec![0x0000_0099]);
-        write_section(
-            &xref_path,
-            SectionKind::Xref,
-            sig,
-            CACHE_VERSION,
-            XREF_LAYOUT_FINGERPRINT,
-            &XrefSection { refs },
-        )
-        .expect("write xref section");
+        write_section(&xref_path, sig, CACHE_VERSION, &XrefSection { refs })
+            .expect("write xref section");
 
         // "Process B": a BRAND NEW Index::build call for the same ESM. This
         // is the whole point of the test — it must see edid/search/xref
@@ -2044,7 +1869,7 @@ mod tests {
             Some(FormId::new(0x0000_0001)),
             "process B's get_by_edid must see process A's prebuilt mapping"
         );
-        assert!(second.has_search_index());
+        assert!(second.search.is_mapped());
         let found: Vec<_> = second
             .iter_search()
             .filter(|(id, _)| *id == FormId::new(0x0000_0001))
