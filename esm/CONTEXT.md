@@ -59,6 +59,11 @@ How `refs` resolves its starting FormID(s): **Direct** (one FormID/EditorID/hard
 or **Carriers** (zero or more matched records). See [`docs/adr/0004-refs-seed-selectors.md`](docs/adr/0004-refs-seed-selectors.md).
 _Avoid_: treating hardcoded AVIFs as a third selector kind
 
+**Reference graph**:
+The reverse-reference index plus the seed resolution, depth-bounded walk, and path search
+over it; `refs.rs` owns all three.
+_Avoid_: "xref" (that's the persisted index section, one input to the graph)
+
 **Enum space**:
 An OMOD property's Form-Type-keyed namespace — `weap`, `armo`, or `npc`. Property ids are
 only meaningful inside one space; the same id number names a different property in each.
@@ -91,6 +96,8 @@ unkeyed array's elements are fully present, just unpaired)
   a consumer — a **hub keyword/AV**'s consumers are why the slice exists
 - **Obtainability signals** are a subset of a record's reverse references
 - An **unkeyed array** is the array-diff outcome when no **element identity** applies
+- A **Seed selector** resolves into the BFS roots a **Reference graph** walk starts from;
+  a **Carrier** is one such root emitted as a row
 
 ## Example dialogue
 

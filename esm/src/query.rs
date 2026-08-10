@@ -76,7 +76,7 @@ pub fn filter_op(s: &str) -> anyhow::Result<FilterOp> {
 /// unbounded sentinel and clamping nonzero values to
 /// `[1, ipc::DEFAULT_MAX_DEPTH]`. Defaults to `1` when `None`.
 ///
-/// This is the same clamp [`crate::ipc::referenced_by_enriched`] performs
+/// This is the same clamp [`crate::refs::referenced_by_enriched`] performs
 /// internally (that one stays in place — it's the authoritative safety net
 /// applied right before the walk itself runs, regardless of what any caller
 /// passes it). This helper exists for callers that want to compute/display

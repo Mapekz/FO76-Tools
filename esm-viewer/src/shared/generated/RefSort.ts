@@ -2,7 +2,7 @@
 
 /**
  * Row ordering for a [`Op::ReferencedBy`] walk, applied server-side inside
- * [`referenced_by_walk`] before `limit` truncation (sorting after
+ * `refs::referenced_by_walk` before `limit` truncation (sorting after
  * truncation would be meaningless — the truncation has already happened).
  */
 export type RefSort = "formid" | "depth";

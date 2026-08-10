@@ -1441,12 +1441,12 @@ fn cmd_ref_path(
             paths,
         },
     )?;
-    let result: esm::ipc::RefPathResult = serde_json::from_value(v)?;
+    let result: esm::refs::RefPathResult = serde_json::from_value(v)?;
     print_ref_path(&result, json, pretty);
     Ok(())
 }
 
-fn print_ref_path(result: &esm::ipc::RefPathResult, json: bool, pretty: bool) {
+fn print_ref_path(result: &esm::refs::RefPathResult, json: bool, pretty: bool) {
     if json {
         print_json(&serde_json::to_value(result).unwrap(), pretty);
         return;
@@ -1468,7 +1468,7 @@ fn print_ref_path(result: &esm::ipc::RefPathResult, json: bool, pretty: bool) {
                  \"referenced\" one, also try swapping them: refs {} --to {}",
                 result.from,
                 result.to,
-                esm::ipc::DEFAULT_MAX_PATH_HOPS,
+                esm::refs::DEFAULT_MAX_PATH_HOPS,
                 result.to,
                 result.from
             );

@@ -1,10 +1,8 @@
 mod common;
 
 use common::{make_xref_esm, unique_temp_path};
-use esm::ipc::{
-    Op, RecordSel, RefList, dispatch_op, find_ref_path, referenced_by_enriched,
-    referenced_by_enriched_multi, resolve_sel,
-};
+use esm::ipc::{Op, RecordSel, RefList, dispatch_op, resolve_sel};
+use esm::refs::{find_ref_path, referenced_by_enriched, referenced_by_enriched_multi};
 use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec};
 use std::io::Write;
 

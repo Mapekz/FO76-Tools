@@ -16,6 +16,7 @@ pub mod lvli;
 pub mod progress;
 pub mod query;
 pub mod reader;
+pub mod refs;
 pub mod registry;
 mod rkyvcache;
 pub mod schema;
@@ -1045,7 +1046,7 @@ impl Database {
     /// Build a [`RecordRow`] (resolved type/EditorID/name) for an arbitrary
     /// FormID already present in the index — `None` if it isn't. Shared by
     /// [`Database::referenced_by`] (each referencer row) and
-    /// [`ipc::referenced_by_enriched`]'s carrier/seed rows.
+    /// [`refs::referenced_by_enriched`]'s carrier/seed rows.
     fn record_row_for(&mut self, form_id: FormId) -> anyhow::Result<Option<RecordRow>> {
         let Some(meta) = self.index.get_by_formid(form_id) else {
             return Ok(None);
@@ -1308,7 +1309,7 @@ impl Database {
 
     /// Decode `node` (no FormID resolver — plain hex output) and return every
     /// distinct FormID its body references, deduplicated and excluding
-    /// `node` itself. Backs [`ipc::find_ref_path`]'s forward-search
+    /// `node` itself. Backs [`refs::find_ref_path`]'s forward-search
     /// direction: unlike [`Database::referenced_by`] (which asks the reverse
     /// index "who points at `node`"), this walks `node`'s *own* outgoing
     /// references — cheap and bounded by `node`'s own field count, useful
@@ -1471,7 +1472,7 @@ impl Database {
     /// "primary" is the smallest matched id on that carrier. That order
     /// drives both the per-EP carrier grouping in table output and the
     /// BFS's first-reach attribution priority in
-    /// `ipc::referenced_by_walk` (earlier seeds win equal-depth ties for
+    /// `refs::referenced_by_walk` (earlier seeds win equal-depth ties for
     /// `path`/`VIA`; equal-depth `tags` are unioned).
     ///
     /// Reuses the `ensure_filter_cache("PERK")` memoized decode (shared with
@@ -1568,7 +1569,7 @@ impl Database {
     /// Seeds are sorted by `(primary property id, form_id)`, where "primary"
     /// is the smallest matched id on that carrier. That order drives both the
     /// per-property carrier grouping in table output and the BFS's first-reach
-    /// attribution priority in `ipc::referenced_by_walk` (earlier seeds win
+    /// attribution priority in `refs::referenced_by_walk` (earlier seeds win
     /// equal-depth ties for `path`/`VIA`; equal-depth `tags` are unioned).
     ///
     /// Reuses the `ensure_filter_cache("OMOD")` memoized decode (shared with

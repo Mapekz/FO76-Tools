@@ -50,3 +50,10 @@ EditorIDs first; only a clean namespace gets positional auto-detect.
   Direct/Carriers taxonomy and the positional auto-detect gate only.
 - Generalizing `CarrierTag` (one type, `tag_total`, dynamic `EP`/`PROP` column) means a future
   Carriers kind adds a `kind` variant, not new plumbing.
+
+Update (2026-08-10): `RefSeeds` and `resolve_ref_seeds` moved out of `src/ipc.rs` into the new
+`src/refs.rs` module, alongside the rest of the reverse-reference graph engine (the BFS walk and
+the bidirectional path search). `RefSeeds` is now `pub` (it was private to `ipc.rs` before). This
+is a relocation, not a change to the Direct/Carriers taxonomy or the positional auto-detect gate
+above — `ipc.rs` keeps the wire protocol (`Op`, `RefRow`, `RefList`, `dispatch_op`) and calls into
+`refs.rs` for the resolution this ADR describes.
