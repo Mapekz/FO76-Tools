@@ -9,7 +9,7 @@
 //! `RefList` keyed by `(target, type_filter)` — the exact two calls
 //! `chase()`'s reverse-chase makes (one per `CONSUMER_TYPES` entry).
 
-use esm::chase::{ChaseFetcher, ChaseOptions, EffectHopKind, HopKind, chase};
+use esm::chase::{ChaseFetcher, ChaseOptions, EffectHopKind, FetchDirection, HopKind, chase};
 use esm::ipc::RecordSel;
 use esm::reader::RecordHeaderInfo;
 use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
@@ -455,6 +455,133 @@ fn four_hops_classified_by_pattern() {
     assert_eq!(tree.hops[2].kind, HopKind::KeywordHook);
     assert_eq!(tree.hops[3].kind, HopKind::DirectProperty);
     assert!(tree.effect_hops.is_empty());
+}
+
+/// `Hop::resolution` (added in the walk/chase architecture-deepening pass)
+/// carries the forward-vs-reverse fetch direction `classify_property_row`
+/// actually resolved each hop by — the fact `HopKind::DirectProperty` alone
+/// can't express (see `CONTEXT.md`'s **Mechanism** entry). A bare-scalar
+/// property has no target at all, so no resolution either.
+#[test]
+fn hop_resolution_matches_fetch_direction() {
+    let mut f = fixture();
+    let tree = chase(&mut f, sel(OMOD_FID), &ChaseOptions::default()).unwrap();
+    assert_eq!(
+        tree.hops[0].resolution, None,
+        "bare scalar: nothing to chase"
+    );
+    assert_eq!(
+        tree.hops[1].resolution,
+        Some(FetchDirection::Forward),
+        "perk grant"
+    );
+    assert_eq!(
+        tree.hops[2].resolution,
+        Some(FetchDirection::Reverse),
+        "keyword hook"
+    );
+    assert_eq!(
+        tree.hops[3].resolution,
+        Some(FetchDirection::Forward),
+        "direct ENCH attachment"
+    );
+}
+
+/// An AVIF-typed `Data.Properties[]` row is reverse-chased exactly like a
+/// KYWD keyword hook (see `omod_chase`'s module docs), even though its
+/// `HopKind` stays `DirectProperty` — `hop.resolution` is what actually
+/// distinguishes it from a forward-fetched direct SPEL/ENCH/PROJ attachment.
+#[test]
+fn omod_avif_direct_property_is_reverse_resolved() {
+    const AVIF_OMOD_FID: &str = "0x00500091";
+    const HUB_AVIF_FID: &str = "0x00500092";
+    let mut records = HashMap::new();
+    records.insert(
+        AVIF_OMOD_FID.to_string(),
+        ok_entry(
+            AVIF_OMOD_FID,
+            header("OMOD", AVIF_OMOD_FID),
+            "mod_Custom_AvifTest",
+            json!({
+                "_record_type": "Object Modification",
+                "Data": {
+                    "Properties": [{
+                        "Property": {"value": 1, "name": "SomeAvProp"},
+                        "Function Type": {"value": 0, "name": "ADD"},
+                        "Value 1": {
+                            "formid": HUB_AVIF_FID,
+                            "editor_id": "TestHubAv",
+                            "record_type": "AVIF",
+                        },
+                        "Value 2": 5.0,
+                    }],
+                },
+            }),
+        ),
+    );
+    let mut f = FakeFetcher {
+        records,
+        refs_by_type: HashMap::new(),
+    };
+    let tree = chase(&mut f, sel(AVIF_OMOD_FID), &ChaseOptions::default()).unwrap();
+    assert_eq!(tree.hops.len(), 1);
+    let hop = &tree.hops[0];
+    assert_eq!(hop.kind, HopKind::DirectProperty);
+    assert_eq!(hop.resolution, Some(FetchDirection::Reverse));
+}
+
+/// A `KeywordHook` demoted to `TagKeyword` (successfully-fetched KYWD, but
+/// no SPEL/PERK consumer — see `omod_chase`'s "demote empty KeywordHooks"
+/// pass) must reset `resolution` to `None` alongside `kind`, not leave it
+/// stamped `Reverse` from the discarded reverse-chase attempt — the final
+/// hop's evidence is the synthetic tag evidence every other `TagKeyword`
+/// carries with `resolution: None`, so the two fields must agree.
+#[test]
+fn demoted_tag_keyword_resets_resolution() {
+    const UNTYPED_OMOD_FID: &str = "0x00500093";
+    const UNTYPED_KYWD_FID: &str = "0x00500094";
+    let mut records = HashMap::new();
+    records.insert(
+        UNTYPED_OMOD_FID.to_string(),
+        ok_entry(
+            UNTYPED_OMOD_FID,
+            header("OMOD", UNTYPED_OMOD_FID),
+            "mod_Custom_UntypedKywdTest",
+            json!({
+                "_record_type": "Object Modification",
+                "Data": {
+                    "Properties": [{
+                        "Property": {"value": 31, "name": "Keywords"},
+                        "Function Type": {"value": 2, "name": "ADD"},
+                        "Value 1": {
+                            "formid": UNTYPED_KYWD_FID,
+                            "editor_id": "if_tmp_UntypedTag",
+                            "record_type": "KYWD",
+                        },
+                        "Value 2": 0,
+                    }],
+                },
+            }),
+        ),
+    );
+    records.insert(
+        UNTYPED_KYWD_FID.to_string(),
+        ok_entry(
+            UNTYPED_KYWD_FID,
+            header("KYWD", UNTYPED_KYWD_FID),
+            "if_tmp_UntypedTag",
+            json!({"_record_type": "Keyword"}),
+        ),
+    );
+    let mut f = FakeFetcher {
+        records,
+        refs_by_type: HashMap::new(), // no SPEL/PERK consumer for either type
+    };
+    let tree = chase(&mut f, sel(UNTYPED_OMOD_FID), &ChaseOptions::default()).unwrap();
+    assert_eq!(tree.hops.len(), 1);
+    let hop = &tree.hops[0];
+    assert_eq!(hop.kind, HopKind::TagKeyword);
+    assert_eq!(hop.resolution, None);
 }
 
 #[test]

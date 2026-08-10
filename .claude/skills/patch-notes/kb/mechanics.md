@@ -30,7 +30,11 @@ hop through an MGEF's `Perk to Apply` / `Equip Ability`.
 A `mod_Custom_*` OMOD implements its mechanic one of four ways:
 
 1. **Direct property** — ADD/SET on a weapon stat or actor value in `Data/Properties`. An AVIF's
-   name is not its semantics: find its consumer (`refs --type SPEL|PERK --paths`).
+   name is not its semantics, but `chase`'s JSON already resolves the consumer for you (reverse
+   `refs --type SPEL|PERK --paths`, sliced to the gated `Effects[N]` row) — read `hop.resolution`
+   off the hop (`"reverse"` for an AV hook, `"forward"` for a plain SPEL/ENCH/PROJ attachment)
+   instead of re-deriving the distinction from `hop.target.record_type` or re-running `refs` by
+   hand.
 2. **Perk grant** — Property `116`/`Perk` ADD of a PERK. Item-granted perks have **no PCRD**;
    `unreferenced_perk_rank` is a false positive on them.
 3. **Keyword hook** — the OMOD only ADDs a `CustomItemName_*` / `dn_*` KYWD; the mechanic lives

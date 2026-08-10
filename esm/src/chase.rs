@@ -193,7 +193,7 @@ pub struct RootStub {
     pub formid: Option<String>,
     pub editor_id: Option<String>,
     /// Short record signature (e.g. `"OMOD"`, `"PERK"`) — same convention
-    /// `Hop.target`/`fmt_stub` use elsewhere in this module.
+    /// `Hop.target`/`esm::walk::render`'s `fmt_stub` use.
     pub record_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<Value>,
@@ -231,6 +231,22 @@ pub struct Hop {
     pub kind: HopKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<Value>,
+    /// Which direction `esm::chase` fetched this hop's evidence — forward
+    /// `get` (the target's own Description/Effects) or reverse `refs` (who
+    /// points at the target). `None` for a [`HopKind::TagKeyword`]
+    /// (synthetic tag evidence, no fetch) or a bare-scalar
+    /// `DirectProperty` (nothing to chase). This is the real fact that
+    /// distinguishes an AV hook (an AVIF `DirectProperty` resolved by
+    /// reverse chase, exactly like a `KeywordHook`) from a plain direct
+    /// SPEL/ENCH/PROJ attachment (forward-fetched) — both share
+    /// `HopKind::DirectProperty`, so `kind` alone can't tell them apart; see
+    /// `CONTEXT.md`'s **Mechanism** entry. Previously discarded after
+    /// [`classify_property_row`] computed it internally (as `FetchDest`),
+    /// forcing `esm::walk`'s renderer to re-derive the same fact by
+    /// string-matching `target.record_type == "AVIF"`. Additive to the
+    /// frozen chase JSON shape (ADR 0001's addendum).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<FetchDirection>,
     /// When this hop's property row was sourced from a `Data.Includes[]`
     /// target rather than the root OMOD itself — the included OMOD's stub.
     /// `None` for the root's own properties (additive to the frozen chase
@@ -238,6 +254,15 @@ pub struct Hop {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_omod: Option<Value>,
     pub evidence: Vec<Evidence>,
+}
+
+/// Which direction one classified property row's evidence was fetched — see
+/// [`Hop::resolution`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FetchDirection {
+    Forward,
+    Reverse,
 }
 
 /// How one `Effects[]` entry was classified — the Effects[]-array-side analog
@@ -288,7 +313,10 @@ pub struct Evidence {
 
 /// Extract the human name from a `{"value":.., "name":..}` schema enum
 /// object, or return the value unchanged if it isn't wrapped that way.
-fn named(field: Option<&Value>) -> Value {
+/// `pub(crate)` so `esm::walk::render`'s `summarize_effect` (moved out of
+/// this module — see the module docs) can reuse it rather than duplicating
+/// the same enum-unwrap logic.
+pub(crate) fn named(field: Option<&Value>) -> Value {
     match field {
         Some(Value::Object(map)) => map
             .get("name")
@@ -309,7 +337,8 @@ fn is_formid_stub(value: &Value) -> bool {
 
 /// Python-truthiness for a JSON value (`None`/`0`/`""`/`[]`/`{}`/`false` are
 /// falsy, matching the prototype's bare `if x:` checks throughout).
-fn is_truthy(v: Option<&Value>) -> bool {
+/// `pub(crate)` — same reuse reason as [`named`].
+pub(crate) fn is_truthy(v: Option<&Value>) -> bool {
     match v {
         None => false,
         Some(Value::Null) => false,
@@ -318,46 +347,6 @@ fn is_truthy(v: Option<&Value>) -> bool {
         Some(Value::String(s)) => !s.is_empty(),
         Some(Value::Array(a)) => !a.is_empty(),
         Some(Value::Object(o)) => !o.is_empty(),
-    }
-}
-
-/// Render a JSON value the way Python's `str()`/f-string interpolation would
-/// (unquoted strings, `None`/`True`/`False` for null/bool). Used for text
-/// rendering and condition summaries only — not for evidence-tree JSON output.
-fn pyish(v: &Value) -> String {
-    match v {
-        Value::Null => "None".to_string(),
-        Value::Bool(b) => {
-            if *b {
-                "True".to_string()
-            } else {
-                "False".to_string()
-            }
-        }
-        Value::String(s) => s.clone(),
-        Value::Number(n) => n.to_string(),
-        other => other.to_string(),
-    }
-}
-
-/// `a or b` (Python truthiness), rendered as text — used wherever the
-/// prototype does `x.get("editor_id") or x.get("formid")`.
-fn py_or_display(a: Option<&Value>, b: Option<&Value>) -> String {
-    if is_truthy(a) {
-        return pyish(a.unwrap());
-    }
-    if is_truthy(b) {
-        return pyish(b.unwrap());
-    }
-    "None".to_string()
-}
-
-fn truncate_json(v: &Value, max_chars: usize) -> String {
-    let s = serde_json::to_string(v).unwrap_or_default();
-    if s.chars().count() > max_chars {
-        s.chars().take(max_chars).collect()
-    } else {
-        s
     }
 }
 
@@ -424,158 +413,6 @@ fn walk_path<'v>(fields: &'v Value, path: &str) -> Option<&'v Value> {
 fn slice_effect<'v>(fields: &'v Value, path: &str) -> Option<&'v Value> {
     let container = first_array_container(path)?;
     walk_path(fields, &container)
-}
-
-/// Recursively find every `Condition Data`-shaped object (has both `Function`
-/// and `Operator`) inside `obj` and render it compactly. SPEL and PERK nest
-/// conditions differently (`Conditions.Conditions[]` vs `Perk
-/// Conditions[].Perk Condition.Conditions[]`) — this walks either.
-fn extract_conditions(obj: &Value, acc: &mut Vec<String>) {
-    match obj {
-        Value::Object(map) => {
-            if map.contains_key("Function") && map.contains_key("Operator") {
-                let fn_ = pyish(map.get("Function").unwrap_or(&Value::Null));
-                let op = pyish(map.get("Operator").unwrap_or(&Value::Null));
-                let val = pyish(map.get("Comparison Value").unwrap_or(&Value::Null));
-                let param = map.get("Parameter 1");
-                let line = match param {
-                    Some(Value::Object(pmap)) => {
-                        let param_txt = py_or_display(pmap.get("editor_id"), pmap.get("formid"));
-                        format!("{fn_}({param_txt}) {op} {val}")
-                    }
-                    Some(p) if !p.is_null() => format!("{fn_}({}) {op} {val}", pyish(p)),
-                    _ => format!("{fn_} {op} {val}"),
-                };
-                acc.push(line);
-            } else {
-                for v in map.values() {
-                    extract_conditions(v, acc);
-                }
-            }
-        }
-        Value::Array(arr) => {
-            for v in arr {
-                extract_conditions(v, acc);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Keys already surfaced explicitly by [`summarize_effect`] — anything else on
-/// the effect object is scanned generically so fields like PERK's "Function
-/// Parameter 3 (Actor Value)" (e.g. the AVIF a Kill-Streak-style perk reads)
-/// aren't silently dropped just because they're not one of the handful of
-/// well-known keys.
-const HANDLED_EFFECT_KEYS: &[&str] = &[
-    "Base Effect",
-    "Entry Point",
-    "Effect Item Data",
-    "Float",
-    "Conditions",
-    "Perk Conditions",
-    "Effect Header",
-    "Effect Flags",
-    "Cooldown Duration",
-    "Effect End",
-];
-
-/// Render one `Effects[]` element (`{"Effect": {...}}`, SPEL or PERK shape) as
-/// a single compact line: base effect / entry point, magnitude, duration, any
-/// other FormID reference on the effect, and any gating conditions found
-/// anywhere inside it.
-///
-/// `pub(crate)` so `esm::walk`'s OMOD mechanism slice can render the same
-/// compact one-line form for a forward-fetched or path-sliced `Effects[N]`
-/// row — this crate's one shared "what does this effect entry do" formatter.
-pub(crate) fn summarize_effect(effect_entry: &Value) -> String {
-    let inner = match effect_entry.as_object() {
-        Some(map) => map.get("Effect").unwrap_or(effect_entry),
-        None => return truncate_json(effect_entry, 200),
-    };
-    let Some(inner_map) = inner.as_object() else {
-        return truncate_json(effect_entry, 200);
-    };
-
-    let mut parts: Vec<String> = Vec::new();
-
-    if let Some(base) = inner_map.get("Base Effect").and_then(Value::as_object) {
-        parts.push(py_or_display(base.get("editor_id"), base.get("formid")));
-    }
-
-    if let Some(entry_point) = inner_map.get("Entry Point").and_then(Value::as_object) {
-        let ep_name = named(entry_point.get("Entry Point"));
-        let fn_name = named(entry_point.get("Function"));
-        if is_truthy(Some(&ep_name)) {
-            if is_truthy(Some(&fn_name)) {
-                parts.push(format!("{}/{}", pyish(&ep_name), pyish(&fn_name)));
-            } else {
-                parts.push(pyish(&ep_name));
-            }
-        }
-    }
-
-    if let Some(item_data) = inner_map.get("Effect Item Data").and_then(Value::as_object) {
-        if let Some(mag) = item_data.get("Magnitude")
-            && !mag.is_null()
-        {
-            parts.push(format!("Magnitude={}", pyish(mag)));
-        }
-        if is_truthy(item_data.get("Duration")) {
-            parts.push(format!(
-                "Duration={}",
-                pyish(item_data.get("Duration").unwrap())
-            ));
-        }
-    }
-
-    if let Some(f) = inner_map.get("Float") {
-        parts.push(format!("Float={}", pyish(f)));
-    }
-
-    // Generic pass: any other FormID-stub field on the effect itself (not
-    // nested under Conditions, handled separately below) — e.g. a PERK's
-    // "Function Parameter N (Actor Value)" pointing at an AVIF.
-    for (key, val) in inner_map {
-        if HANDLED_EFFECT_KEYS.contains(&key.as_str()) {
-            continue;
-        }
-        if let Some(obj) = val.as_object()
-            && obj.contains_key("formid")
-        {
-            parts.push(format!(
-                "{key}={}",
-                py_or_display(obj.get("editor_id"), obj.get("formid"))
-            ));
-        }
-    }
-
-    let mut text = parts.join("  ");
-    let conditions_src = inner_map
-        .get("Conditions")
-        .filter(|v| is_truthy(Some(*v)))
-        .or_else(|| {
-            inner_map
-                .get("Perk Conditions")
-                .filter(|v| is_truthy(Some(*v)))
-        });
-    if let Some(cs) = conditions_src {
-        let mut acc = Vec::new();
-        extract_conditions(cs, &mut acc);
-        if !acc.is_empty() {
-            if !text.is_empty() {
-                text.push_str("  ");
-            }
-            text.push_str("Conditions: ");
-            text.push_str(&acc.join("; "));
-        }
-    }
-
-    if text.is_empty() {
-        truncate_json(inner, 200)
-    } else {
-        text
-    }
 }
 
 /// Scan an `Effects[]` array for `Effect."Base Effect"` formid-stub targets
@@ -944,6 +781,7 @@ fn classify_property_row(
         curve_table,
         kind: HopKind::DirectProperty,
         target: None,
+        resolution: None,
         source_omod,
         evidence: Vec::new(),
     };
@@ -960,7 +798,7 @@ fn classify_property_row(
         .to_string();
     hop.target = Some(target.clone());
 
-    if rt == "KYWD" {
+    let dest = if rt == "KYWD" {
         let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
         if let Some(fields) = kywd_fields_from_map(kywd_by_sel, fid) {
             let type_name = named(fields.get("Type"));
@@ -971,24 +809,37 @@ fn classify_property_row(
             }
         }
         hop.kind = HopKind::KeywordHook;
-        (hop, Some(FetchDest::Reverse(target)))
+        Some(FetchDest::Reverse(target))
     } else if rt == "PERK" {
         hop.kind = HopKind::PerkGrant;
-        (hop, Some(FetchDest::Forward(target)))
+        Some(FetchDest::Forward(target))
     } else if FORWARD_FETCH_TYPES.contains(&rt.as_str()) || rt == "PROJ" {
         // PROJ joins the forward-fetch path alongside ENCH/SPEL, but is
         // deliberately kept out of FORWARD_FETCH_TYPES — that constant's
         // evidence builder assumes Effects/Description, which a PROJ lacks
         // (see projectile_evidence).
         hop.kind = HopKind::DirectProperty;
-        (hop, Some(FetchDest::Forward(target)))
+        Some(FetchDest::Forward(target))
     } else if rt == "AVIF" {
+        // The one case `HopKind` alone can't tell apart from a plain direct
+        // SPEL/ENCH/PROJ attachment — both are `DirectProperty`, but this
+        // target is resolved by *reverse* chase (like a KeywordHook) rather
+        // than forward-fetched. `hop.resolution` (set below) is what lets
+        // `esm::walk`'s renderer distinguish "AV hook" from "direct
+        // property" without string-matching `target.record_type`.
         hop.kind = HopKind::DirectProperty;
-        (hop, Some(FetchDest::Reverse(target)))
+        Some(FetchDest::Reverse(target))
     } else {
         hop.kind = HopKind::DirectProperty;
-        (hop, None)
-    }
+        None
+    };
+
+    hop.resolution = match &dest {
+        Some(FetchDest::Forward(_)) => Some(FetchDirection::Forward),
+        Some(FetchDest::Reverse(_)) => Some(FetchDirection::Reverse),
+        None => None,
+    };
+    (hop, dest)
 }
 
 /// Where a classified property row still needs a follow-up fetch.
@@ -1463,6 +1314,11 @@ pub(crate) fn omod_chase(
             continue;
         };
         hop.kind = HopKind::TagKeyword;
+        // Reset `resolution`: it still holds `Reverse` from the discarded
+        // KeywordHook reverse-chase attempt, but the hop's evidence below is
+        // now the synthetic tag evidence every other TagKeyword hop carries
+        // (`resolution: None`) — keep the two fields consistent.
+        hop.resolution = None;
         hop.evidence = vec![tag_keyword_evidence(&target, Some(fields), json!("None"))];
     }
 
@@ -1581,30 +1437,9 @@ fn effect_chase(
     })
 }
 
-// ─── rendering primitives (reused by `esm::walk`; no renderer of chase's own
-// remains — see the module docs and `docs/adr/0001`) ────────────────────────
-
-/// "record_type formid editor_id" — the universal stub rendering both this
-/// module's tests and `esm::walk`'s OMOD mechanism-slice digest use to name a
-/// classified hop's target or a reverse-chased consumer.
-pub(crate) fn fmt_stub(stub: &Value) -> String {
-    let rt = stub
-        .get("record_type")
-        .filter(|v| is_truthy(Some(*v)))
-        .map(pyish)
-        .unwrap_or_else(|| "?".to_string());
-    let fid = stub
-        .get("formid")
-        .filter(|v| is_truthy(Some(*v)))
-        .map(pyish)
-        .unwrap_or_else(|| "?".to_string());
-    let edid = stub
-        .get("editor_id")
-        .filter(|v| is_truthy(Some(*v)))
-        .map(pyish)
-        .unwrap_or_default();
-    format!("{rt} {fid} {edid}").trim_end().to_string()
-}
+// No rendering primitives remain in this module — `esm::walk::render` owns
+// all of them (`fmt_stub`, `summarize_effect`, ...), matching the module
+// docs' and ADR-0001's "chase has no human text renderer of its own".
 
 // ─── colocated unit tests for private helpers ───────────────────────────────
 // `first_array_container`/`walk_path`/`named`/`is_formid_stub`/`stub` are
@@ -1715,30 +1550,6 @@ mod tests {
         assert!(!is_truthy(Some(&json!({}))));
         assert!(is_truthy(Some(&json!(1))));
         assert!(is_truthy(Some(&json!("x"))));
-    }
-
-    #[test]
-    fn summarize_effect_renders_base_effect_magnitude_and_conditions() {
-        let effect = json!({
-            "Effect": {
-                "Base Effect": {"formid": "0x500031", "editor_id": "TestSpellEffect"},
-                "Effect Item Data": {"Magnitude": 25},
-                "Conditions": {
-                    "Conditions": [
-                        {
-                            "Function": "WornHasKeyword",
-                            "Operator": "EqualTo",
-                            "Comparison Value": 1.0,
-                            "Parameter 1": {"formid": "0x500010", "editor_id": "if_tmp_TestTag"},
-                        }
-                    ]
-                }
-            }
-        });
-        let text = summarize_effect(&effect);
-        assert!(text.contains("TestSpellEffect"));
-        assert!(text.contains("Magnitude=25"));
-        assert!(text.contains("Conditions: WornHasKeyword(if_tmp_TestTag) EqualTo 1"));
     }
 
     #[test]

@@ -149,16 +149,23 @@ One rule: **read records with `walk`; `chase` is the machine contract.**
 
 - `esm walk <selector> [--refs] [--depth N] [--ref-limit N] [--json]` —
   the interactive tool for *any* record type: one compact digest instead of
-  a chain of raw `get` dumps. Resolves AVs/GLOBs/keywords to editor ids,
-  prints curve points with the flat-wins rule applied, and falls back to a
-  search when the selector doesn't resolve. Walking a KYWD or AVIF root
-  reverse-chases its SPEL/PERK consumers instead of dumping the mostly-empty
-  record. On an OMOD root every mechanism is classified and rendered inline:
-  ENCH-typed properties are followed into the BFS as before; keyword/AVIF
-  hooks are resolved by a reverse walk and rendered as *path-sliced* evidence
-  rows (only the consumer's gated `Effects[N]` rows — a hub perk's dozen
-  unrelated effects never print); perk grants render the granted perk's
-  effect rows; and `Data.Includes[]` stubs are named so `_PARENT_*`
+  a chain of raw `get` dumps. `--json` serializes the same computed
+  [`Digest`](../../src/walk/mod.rs) values `walk` prints as text — one typed
+  shape per record type (FormID ref stubs, numbers, classified mechanism
+  hops), not the plain-text lines wrapped in JSON. Resolves AVs/GLOBs/
+  keywords to editor ids, prints curve points with the flat-wins rule
+  applied, and falls back to a search when the selector doesn't resolve.
+  Walking a KYWD or AVIF root reverse-chases its SPEL/PERK consumers instead
+  of dumping the mostly-empty record. On an OMOD root every mechanism is
+  classified and rendered inline: a directly-attached ENCH or PROJ property
+  is forward-fetched (`direct property → ENCH/PROJ …`) *and* followed into
+  the BFS; keyword/AVIF hooks are resolved by a reverse walk and rendered as
+  *path-sliced* evidence rows (only the consumer's gated `Effects[N]` rows —
+  a hub perk's dozen unrelated effects never print, and `AV hook → AVIF …`
+  is the same reverse-chase rendering, distinguished from a forward-fetched
+  direct property by the hop's typed `resolution` field, not by
+  eyeballing the target's record type); perk grants render the granted
+  perk's effect rows; and `Data.Includes[]` stubs are named so `_PARENT_*`
   empty-shell OMODs point at the include carrying the real mechanic.
   A hook keyword no SPEL/PERK condition references renders a `dead end`
   note instead (tag keywords: `FeaturedItem`, `NonDroppable`, naming
@@ -170,26 +177,35 @@ One rule: **read records with `walk`; `chase` is the machine contract.**
   50) feeds Curve Table evaluation and Minimum Level filtering.
 
 **Worked example** (`mod_Legendary_Weapon1_DmgConsecutiveHits` / "Furious",
-`0x004F577D`, an ENCH property plus a KYWD-hook property — both mechanisms,
-one call):
+`0x004F577D`, a directly-attached ENCH property plus a KYWD-hook property —
+both mechanisms, one call):
 
 ```
 $ esm walk mod_Legendary_Weapon1_DmgConsecutiveHits --depth 3
 ▸ OMOD 0x004F577D mod_Legendary_Weapon1_DmgConsecutiveHits "Furious"
-  enchantment → 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits
-  keyword hook → KYWD 0x001B3FAC FeaturedItem
-    (no SPEL/PERK condition references this — dead end; may be UI-only, native-engine-consumed, or a shared/common tag)
+  direct property → ENCH 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits
+    Effects[0] AbLegendary_Weapon_DmgConsecutiveHits  Magnitude=0  Actor Value=LGND_Furious
+    Perk to Apply → PERK 0x006C3175 Legendary_Weapon_DmgConsecutiveHits
+  tags
+      FeaturedItem
   keyword hook → KYWD 0x001EF480 HasLegendary_Weapon_DamageConsecutiveHits
     gates PERK 0x00578B06 LegendaryCommonWeaponPerkBACKUP
-      Effects[11] Set Damage on Consecutive Hits/Set Value  Float=10.0  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1.0
-      Effects[12] Mod Max Consecutive Hits Allowed/Set Value  Float=9.0  Conditions: …
-      Effects[13] Mod Damage on Consecutive Hits/Set Value  Float=0.05  Conditions: …
+      Effects[11] Set Damage on Consecutive Hits/Set Value  Float=10  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1
+      Effects[12] Mod Max Consecutive Hits Allowed/Set Value  Float=9  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1
+      Effects[13] Mod Damage on Consecutive Hits/Set Value  Float=0.05  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1
   include → OMOD 0x004519F4 _PARENT_mod_Legendary_Weapon_WEIGHTVALUE_1
+
 ▸▸ ENCH 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits  (via OMOD property)
   effect[0] → MGEF 0x006C3174 AbLegendary_Weapon_DmgConsecutiveHits (Script)
+    magnitude 0  duration 0
     Perk to Apply → 0x006C3175 Legendary_Weapon_DmgConsecutiveHits
+
+▸▸ OMOD 0x004519F4 _PARENT_mod_Legendary_Weapon_WEIGHTVALUE_1  (via include of mod_Legendary_Weapon1_DmgConsecutiveHits)
+
 ▸▸▸ PERK 0x006C3175 Legendary_Weapon_DmgConsecutiveHits  (via Perk to Apply)
+  ranks ?  playable False
   effect[0] Entry Point "Mod Max Consecutive Hits Allowed"  fn Add Value  value 9
+  effect[1] Entry Point "Mod Damage on Consecutive Hits"  fn Add Actor Value Mult  value 0.01  AV 0x006C3172 LGND_Furious
 ```
 
 Other mechanism headers you'll see: `perk grant → PERK …` (granted perk's

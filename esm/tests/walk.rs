@@ -5,7 +5,7 @@
 use esm::chase::ChaseFetcher;
 use esm::ipc::RecordSel;
 use esm::reader::RecordHeaderInfo;
-use esm::walk::{WalkOptions, WalkResult, build_refs_digest, render_text, walk};
+use esm::walk::{WalkOptions, WalkResult, build_refs_digest, render_digest, render_text, walk};
 use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use serde_json::json;
 use std::collections::HashMap;
@@ -104,13 +104,13 @@ fn sel(fid: &str) -> RecordSel {
     RecordSel::FormId(fid.parse().unwrap())
 }
 
-fn node_digest<'a>(result: &'a WalkResult, formid: &str) -> &'a [String] {
-    &result
+fn node_digest(result: &WalkResult, formid: &str) -> Vec<String> {
+    let node = result
         .nodes
         .iter()
         .find(|n| n.formid == formid)
-        .unwrap_or_else(|| panic!("node {formid} not visited; nodes = {:?}", result.nodes))
-        .digest
+        .unwrap_or_else(|| panic!("node {formid} not visited; nodes = {:?}", result.nodes));
+    render_digest(&node.digest)
 }
 
 // ─── PERK digest ────────────────────────────────────────────────────────────
@@ -650,7 +650,12 @@ fn render_text_shows_search_matches_when_present() {
     assert!(text.contains("0x00123456 ALCH Psycho Psycho"));
 }
 
-// ─── OMOD ENCH-follow ───────────────────────────────────────────────────────
+// ─── OMOD direct ENCH attachment ────────────────────────────────────────────
+//
+// A directly-attached ENCH property renders through the classifier's normal
+// `DirectProperty` path (`chase::FORWARD_FETCH_TYPES` includes ENCH) — same
+// as a direct SPEL/PROJ attachment, not a separate ench-follow re-scan (see
+// `omod_hops_enqueue`'s doc comment for why that pass was deleted).
 
 const OMOD_FID: &str = "0x00600050";
 const ENCH_PROP_FID: &str = "0x00600051";
@@ -692,7 +697,7 @@ fn omod_follows_ench_property_and_enqueues_it() {
     )
     .unwrap();
     let text = node_digest(&result, OMOD_FID).join("\n");
-    assert!(text.contains("enchantment →"));
+    assert!(text.contains("direct property → ENCH"));
     assert!(text.contains(ENCH_PROP_FID));
     assert!(text.contains("TestGrantedEnch"));
 
@@ -715,8 +720,10 @@ const GATING_PERK_FID: &str = "0x00600055";
 /// `keyword hook →` line naming the KYWD, a `gates <consumer>` line naming
 /// the reverse-chased SPEL/PERK that actually gates on it, and the exact
 /// path-sliced `Effects[N]` row that consumer gates — never the consumer's
-/// full digest — alongside the `enchantment →` line the ENCH property still
-/// gets via [`digest_omod_ench_follow`]. See `digest_node`'s `"OMOD"` arm.
+/// full digest — alongside the `direct property → ENCH` line the ENCH
+/// property gets from the same classified-hops list (a directly-attached
+/// ENCH is a plain `DirectProperty` forward attachment, same path as SPEL).
+/// See `digest_node`'s `"OMOD"` arm.
 #[test]
 fn omod_mixed_property_renders_keyword_hook_slice() {
     let mut f = FakeFetcher::new();
@@ -805,7 +812,7 @@ fn omod_mixed_property_renders_keyword_hook_slice() {
     .unwrap();
     let text = node_digest(&result, OMOD_MIXED_FID).join("\n");
 
-    assert!(text.contains("enchantment →"), "digest:\n{text}");
+    assert!(text.contains("direct property → ENCH"), "digest:\n{text}");
     assert!(
         text.contains(&format!(
             "keyword hook → KYWD {KYWD_HOOK_FID} TestKeywordHook"
@@ -822,10 +829,9 @@ fn omod_mixed_property_renders_keyword_hook_slice() {
     );
 }
 
-/// An ENCH-only OMOD (every FormID property target is ENCH-typed, so `walk`
-/// forward-follows all of them via `digest_omod_ench_follow`) should render
-/// no other mechanism-hook lines — there is nothing left for the classifier
-/// to surface.
+/// An ENCH-only OMOD (every FormID property target is ENCH-typed) should
+/// render its one `direct property → ENCH` line and no other mechanism-kind
+/// lines — there is nothing else for the classifier to surface.
 #[test]
 fn omod_with_only_ench_properties_renders_no_other_mechanism_lines() {
     let mut f = FakeFetcher::new();
@@ -863,14 +869,8 @@ fn omod_with_only_ench_properties_renders_no_other_mechanism_lines() {
     )
     .unwrap();
     let text = node_digest(&result, OMOD_ENCH_ONLY_FID).join("\n");
-    assert!(text.contains("enchantment →"), "digest:\n{text}");
-    for unexpected in [
-        "keyword hook →",
-        "perk grant →",
-        "AV hook →",
-        "direct property →",
-        "gates ",
-    ] {
+    assert!(text.contains("direct property → ENCH"), "digest:\n{text}");
+    for unexpected in ["keyword hook →", "perk grant →", "AV hook →", "gates "] {
         assert!(
             !text.contains(unexpected),
             "unexpected mechanism line {unexpected:?} in:\n{text}"

@@ -9,10 +9,13 @@ Read-only engine for explaining Fallout 76 ESM records: decoding, diffing, and a
 One of the four ways an OMOD implements its gameplay effect: direct property, perk grant,
 keyword hook, or projectile override. That four-way *domain* taxonomy is a different axis
 from `HopKind`'s *resolution* taxonomy (`DirectProperty` / `PerkGrant` / `KeywordHook`, plus
-`TagKeyword` for the non-mechanism case): `kind` describes *how* a mechanism is resolved
-(forward fetch vs reverse refs), not *what* it is. `OverrideProjectile` stays
-`DirectProperty` because the property name already names the specialization; `TagKeyword`
-is a real fourth kind because `KeywordHook` was actively wrong for it, not merely coarse.
+`TagKeyword` for the non-mechanism case): `kind` alone doesn't fully capture *how* a
+mechanism was resolved — an AV hook and a plain direct SPEL/ENCH/PROJ attachment are both
+`DirectProperty`. `Hop::resolution` (`FetchDirection::Forward`/`Reverse`) is the field that
+actually carries that fact: forward `get` (the target's own record) vs reverse `refs` (who
+points at the target). `OverrideProjectile` stays `DirectProperty` because the property name
+already names the specialization; `TagKeyword` is a real fourth kind because `KeywordHook`
+was actively wrong for it, not merely coarse.
 _Avoid_: effect (that's the record's outcome, not how it's wired), behavior
 
 **Chase pattern**:
@@ -32,8 +35,11 @@ by zero SPEL/PERK consumers after reverse chase; never rendered as a keyword hoo
 _Avoid_: keyword hook (a tag has no SPEL/PERK consumer; the dead-end caveat must not fire)
 
 **Digest**:
-A compact per-record-type rendering of a record's gameplay-relevant fields.
-_Avoid_: dump (a dump is the raw decoded record, exactly what a digest replaces)
+A compact per-record-type set of computed values (`walk::Digest`) — real data (FormID ref
+stubs, numbers, classified hops), not text. `walk::render` is the only place that turns one
+into printed lines or lets it serialize as-is for `--json`.
+_Avoid_: dump (a dump is the raw decoded record, exactly what a digest replaces); describing
+a digest as "rendered" text — that's what a renderer produces from it
 
 **Evidence slice**:
 Only the effect rows of a consumer record that are gated on the record under study,
