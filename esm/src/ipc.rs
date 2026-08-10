@@ -243,6 +243,45 @@ pub enum Op {
         #[serde(default)]
         paths: bool,
     },
+    /// Interactive record digest — the server-side counterpart to `esm walk`
+    /// (see [`crate::walk`]). The BFS and per-node digest computation run
+    /// entirely inside the process handling this op (daemon or `--local`),
+    /// one round trip regardless of how many nodes the walk visits — unlike
+    /// the old client-side driving loop, which called `Op::RecordBulk` once
+    /// per queue-pop. `want_refs` mirrors the CLI's `--refs` flag: when true
+    /// and the root resolved, one extra unfiltered reverse-reference walk
+    /// runs on the root and is folded into [`crate::walk::WalkResult::refs`].
+    /// When the root selector doesn't resolve, `not_found.matches` is filled
+    /// in by one in-process [`Database::search`] call — the "not-found ->
+    /// search fallback" this op used to require its caller to drive via a
+    /// second `Op::Search` (see `docs/adr/0001`'s dated amendment).
+    Walk {
+        sel: RecordSel,
+        depth: usize,
+        ref_limit: usize,
+        level: f32,
+        want_refs: bool,
+    },
+    /// Pipeline evidence contract — the server-side counterpart to
+    /// `esm chase` (see [`crate::chase`]). Always emits the classified
+    /// `ChaseTree`; hard-errors on a selector that doesn't resolve to one of
+    /// the five accepted root types (OMOD/PERK/SPEL/ALCH/ENCH).
+    Chase {
+        sel: RecordSel,
+        depth: usize,
+        ref_limit: usize,
+    },
+    /// LVLI drop-probability table — the server-side counterpart to
+    /// [`crate::lvli::drop_table`], reachable standalone (not only via
+    /// `Op::Walk`'s LVLI digest) for MCP/N-API callers that just want the
+    /// resolved odds. Hard-errors on a selector that doesn't resolve to an
+    /// LVLI record.
+    DropTable {
+        sel: RecordSel,
+        level: f32,
+        max_depth: usize,
+        strict: bool,
+    },
     ListGroups,
     ListTypeChildren {
         sig: String,
@@ -512,6 +551,53 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
     }
 }
 
+// ─── in-process ChaseFetcher adapter ────────────────────────────────────────
+
+/// In-process [`crate::chase::ChaseFetcher`] adapter over an already-open
+/// `Database` — the server-side counterpart to `cli.rs`'s (removed)
+/// `BackendFetcher`, which drove the same trait over `Op::RecordBulk`/
+/// `Op::ReferencedBy` HTTP round-trips. `Op::Walk`/`Op::Chase`/
+/// `Op::DropTable` use this so `crate::walk::walk`'s BFS and
+/// `crate::chase::chase`'s classifier run entirely inside the process
+/// already holding the lock on `db` — no serialization, no round-trip, and
+/// `walk`'s one-node-per-queue-pop `bulk_get` no longer costs an HTTP hop per
+/// BFS node.
+struct DbFetcher<'a> {
+    db: &'a mut Database,
+}
+
+impl crate::chase::ChaseFetcher for DbFetcher<'_> {
+    fn bulk_get(
+        &mut self,
+        sels: &[RecordSel],
+        depth: ResolveDepth,
+    ) -> anyhow::Result<Vec<BulkRecordEntry>> {
+        Ok(sels
+            .iter()
+            .map(|sel| bulk_record_entry(self.db, sel, depth))
+            .collect())
+    }
+
+    fn refs(
+        &mut self,
+        target: FormId,
+        depth: usize,
+        limit: usize,
+        type_filter: &str,
+        paths: bool,
+    ) -> anyhow::Result<RefList> {
+        crate::refs::referenced_by_enriched(
+            self.db,
+            target,
+            depth,
+            limit,
+            Some(type_filter),
+            paths,
+            RefSort::Formid,
+        )
+    }
+}
+
 /// Execute a single `Op` against an already-open `Database`.
 pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
     match op {
@@ -618,6 +704,80 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                 )?,
             };
             Ok(serde_json::to_value(&ref_list)?)
+        }
+        Op::Walk {
+            sel,
+            depth,
+            ref_limit,
+            level,
+            want_refs,
+        } => {
+            let opts = crate::walk::WalkOptions {
+                depth: *depth,
+                ref_limit: *ref_limit,
+                level: *level,
+            };
+            let mut result = {
+                let mut fetcher = DbFetcher { db: &mut *db };
+                crate::walk::walk(&mut fetcher, sel.clone(), &opts)?
+            };
+            if let Some(nf) = result.not_found.as_mut() {
+                nf.matches = db.search(&nf.target, &[], SearchField::Both, 10)?;
+            } else if *want_refs && let Some(root) = result.nodes.first() {
+                let root_fid = crate::parse_form_id_input(&root.formid)?;
+                let ref_list = crate::refs::referenced_by_enriched(
+                    db,
+                    root_fid,
+                    1,
+                    0,
+                    None,
+                    false,
+                    RefSort::Formid,
+                )?;
+                result.refs = Some(crate::walk::build_refs_digest(&ref_list.rows));
+            }
+            Ok(serde_json::to_value(&result)?)
+        }
+        Op::Chase {
+            sel,
+            depth,
+            ref_limit,
+        } => {
+            let opts = crate::chase::ChaseOptions {
+                depth: *depth,
+                ref_limit: *ref_limit,
+            };
+            let mut fetcher = DbFetcher { db: &mut *db };
+            let tree = crate::chase::chase(&mut fetcher, sel.clone(), &opts)?;
+            Ok(serde_json::to_value(&tree)?)
+        }
+        Op::DropTable {
+            sel,
+            level,
+            max_depth,
+            strict,
+        } => {
+            let result = record_resolved(db, sel, ResolveDepth::Stub)?;
+            if result.header.signature != "LVLI" {
+                bail!(
+                    "{:?} resolves to a {:?} record — drop-table only supports LVLI selectors",
+                    sel.display(),
+                    result.header.signature
+                );
+            }
+            let opts = crate::lvli::DropOptions {
+                level: *level,
+                max_depth: *max_depth,
+                strict: *strict,
+            };
+            let mut fetcher = DbFetcher { db: &mut *db };
+            let table = crate::lvli::drop_table(
+                &mut fetcher,
+                result.header.form_id,
+                &result.fields,
+                &opts,
+            )?;
+            Ok(serde_json::to_value(&table)?)
         }
         Op::RefPath {
             from,

@@ -24,5 +24,17 @@ console.log('listTypeRecords WEAP:', JSON.stringify(weaps).slice(0, 300));
 if (weaps.length > 0) {
   const rec = db.recordByFormid(weaps[0].form_id, 'stub');
   console.log('recordByFormid:', JSON.stringify(rec).slice(0, 200));
+  const walked = await db.walk(weaps[0].form_id);
+  console.log('walk:', JSON.stringify(walked).slice(0, 200));
+}
+const omods = db.listTypeRecords('OMOD', 0, 1);
+if (omods.length > 0) {
+  const chased = await db.chase(omods[0].form_id);
+  console.log('chase:', JSON.stringify(chased).slice(0, 200));
+}
+const lvlis = db.listTypeRecords('LVLI', 0, 1);
+if (lvlis.length > 0) {
+  const dropTable = await db.lvliDropTable(lvlis[0].form_id);
+  console.log('lvliDropTable:', JSON.stringify(dropTable).slice(0, 200));
 }
 console.log('SMOKE TEST PASSED');

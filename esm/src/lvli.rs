@@ -72,6 +72,8 @@ const USE_FIRST_MATCH: &str = "Use First Object That Matches All Conditions";
 
 /// How a node picks among its entries (see module docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub enum SelectionModel {
     Pool,
     UseAll,
@@ -82,6 +84,8 @@ pub enum SelectionModel {
 /// isn't fully modeled or is only approximate. Never silently dropped; see
 /// module docs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(tag = "kind")]
 pub enum DropNote {
     /// A Condition gate isn't `GetRandomPercent` (e.g. `GetLevel`,
@@ -111,6 +115,8 @@ pub enum DropNote {
 
 /// One leaf item's aggregated odds across every path that reaches it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct DropRow {
     pub formid: String,
     pub editor_id: String,
@@ -128,6 +134,8 @@ pub struct DropRow {
 /// The result of resolving one LVLI's odds, sorted by `expected_count`
 /// descending.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct DropTable {
     pub model: SelectionModel,
     pub level: f32,

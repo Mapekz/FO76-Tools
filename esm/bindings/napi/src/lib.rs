@@ -346,6 +346,112 @@ impl EsmDatabase {
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
     }
 
+    /// Interactive digest of a record and the chain it references (see
+    /// `esm::walk`) — computed server-side (in-process here) via `Op::Walk`,
+    /// the same op the daemon and MCP server dispatch. `depth`/`ref_limit`/
+    /// `level` default to `esm::walk::DEFAULT_DEPTH`/
+    /// `esm::chase::DEFAULT_REF_LIMIT`/`esm::lvli::DEFAULT_LEVEL` when
+    /// omitted; `want_refs` mirrors the CLI's `--refs` flag.
+    #[napi]
+    pub async fn walk(
+        &self,
+        id: String,
+        depth: Option<u32>,
+        ref_limit: Option<u32>,
+        level: Option<f64>,
+        want_refs: Option<bool>,
+    ) -> napi::Result<serde_json::Value> {
+        let inner = self.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            let sel = RecordSel::from_input(&id)
+                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+            let mut db = inner
+                .lock()
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let op = esm::ipc::Op::Walk {
+                sel,
+                depth: depth
+                    .map(|d| d as usize)
+                    .unwrap_or(esm::walk::DEFAULT_DEPTH),
+                ref_limit: ref_limit
+                    .map(|d| d as usize)
+                    .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),
+                level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
+                want_refs: want_refs.unwrap_or(false),
+            };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+    }
+
+    /// Pipeline evidence contract: the classified mechanism tree for an
+    /// OMOD/PERK/SPEL/ALCH/ENCH selector (see `esm::chase`), computed
+    /// server-side via `Op::Chase`. `depth`/`ref_limit` default to
+    /// `esm::chase::DEFAULT_DEPTH`/`esm::chase::DEFAULT_REF_LIMIT` when
+    /// omitted.
+    #[napi]
+    pub async fn chase(
+        &self,
+        id: String,
+        depth: Option<u32>,
+        ref_limit: Option<u32>,
+    ) -> napi::Result<serde_json::Value> {
+        let inner = self.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            let sel = RecordSel::from_input(&id)
+                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+            let mut db = inner
+                .lock()
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let op = esm::ipc::Op::Chase {
+                sel,
+                depth: depth
+                    .map(|d| d as usize)
+                    .unwrap_or(esm::chase::DEFAULT_DEPTH),
+                ref_limit: ref_limit
+                    .map(|d| d as usize)
+                    .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),
+            };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+    }
+
+    /// Resolved LVLI drop-probability table (see `esm::lvli::drop_table`),
+    /// computed server-side via `Op::DropTable`. Hard errors on a non-LVLI
+    /// selector. `level` defaults to `esm::lvli::DEFAULT_LEVEL`;
+    /// `max_depth`/`strict` default to `esm::lvli::DropOptions::default()`'s
+    /// values.
+    #[napi]
+    pub async fn lvli_drop_table(
+        &self,
+        id: String,
+        level: Option<f64>,
+    ) -> napi::Result<serde_json::Value> {
+        let inner = self.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            let sel = RecordSel::from_input(&id)
+                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+            let mut db = inner
+                .lock()
+                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let op = esm::ipc::Op::DropTable {
+                sel,
+                level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
+                max_depth: esm::lvli::MAX_RECURSION_DEPTH,
+                strict: false,
+            };
+            esm::ipc::dispatch_op(&mut db, &op)
+                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        })
+        .await
+        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+    }
+
     /// Compare this database (treated as the "old"/base snapshot) against
     /// `other` (the "new" snapshot). `record_type` (optional 4-char sig)
     /// restricts the diff to one type; `bodies` is "none"|"stub"|"full"

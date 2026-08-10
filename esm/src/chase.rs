@@ -178,6 +178,8 @@ impl Default for ChaseOptions {
 /// struct with two vectors (rather than an enum) so existing OMOD callers/
 /// tests don't need to match on a variant just to reach `.hops`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct ChaseTree {
     pub root: RootStub,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -189,6 +191,8 @@ pub struct ChaseTree {
 /// The chased record's own identity — mirrors the Python prototype's
 /// `omod_stub` dict, generalized to any root type [`chase`] accepts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RootStub {
     pub formid: Option<String>,
     pub editor_id: Option<String>,
@@ -196,8 +200,10 @@ pub struct RootStub {
     /// `Hop.target`/`esm::walk::render`'s `fmt_stub` use.
     pub record_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub name: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub description: Option<Value>,
 }
 
@@ -209,6 +215,8 @@ pub struct RootStub {
 /// stays [`DirectProperty`]; tag keywords that are not SPEL/PERK gates are
 /// [`TagKeyword`] rather than a misclassified [`KeywordHook`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum HopKind {
     DirectProperty,
@@ -220,16 +228,24 @@ pub enum HopKind {
 /// One classified `Data.Properties[]` row plus whatever evidence the chase
 /// found to explain what it does downstream.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct Hop {
     pub property_index: usize,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub property: Value,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub function: Value,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub value1: Value,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub value2: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub curve_table: Option<Value>,
     pub kind: HopKind,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub target: Option<Value>,
     /// Which direction `esm::chase` fetched this hop's evidence — forward
     /// `get` (the target's own Description/Effects) or reverse `refs` (who
@@ -252,6 +268,7 @@ pub struct Hop {
     /// `None` for the root's own properties (additive to the frozen chase
     /// JSON shape; see ADR 0001).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub source_omod: Option<Value>,
     pub evidence: Vec<Evidence>,
 }
@@ -259,6 +276,8 @@ pub struct Hop {
 /// Which direction one classified property row's evidence was fetched — see
 /// [`Hop::resolution`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum FetchDirection {
     Forward,
@@ -269,6 +288,8 @@ pub enum FetchDirection {
 /// of [`HopKind`]. Kept as a separate enum (rather than widening `HopKind`)
 /// because the two field shapes genuinely don't overlap: see the module docs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum EffectHopKind {
     /// SPEL/ALCH/ENCH-shaped entry: `Effect."Base Effect"` -> MGEF.
@@ -283,13 +304,17 @@ pub enum EffectHopKind {
 /// One classified `Effects[]` entry from a PERK/SPEL/ALCH/ENCH root — the
 /// Effects[]-array-side analog of [`Hop`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct EffectHop {
     pub effect_index: usize,
     pub kind: EffectHopKind,
     /// The raw `{"Effect": {...}}` entry — feeds `summarize_effect` for
     /// rendering and is included verbatim in JSON output.
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub effect: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub target: Option<Value>,
     pub evidence: Vec<Evidence>,
 }
@@ -298,14 +323,19 @@ pub struct EffectHop {
 /// Description/Effects, a reverse-chased consumer's gated `Effects[N]` entry,
 /// or an MGEF pass-through's `Perk to Apply`/`Equip Ability`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct Evidence {
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub source: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub via: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub detail: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hop_depth: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub path_chain: Option<Value>,
 }
 

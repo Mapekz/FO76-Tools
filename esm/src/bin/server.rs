@@ -353,6 +353,8 @@ esm-server gotchas (run `esm skill` for the full usage-knowledge doc):
 - Bulk esm_get_record (ids: [...]) returns one entry per selector tagged with its 'sel'; a bad \
 selector yields a per-entry error instead of failing the whole call.
 - esm_refs's \"output capped\" note goes to the CLI's stderr only — stdout/tool results stay valid JSON.
+- esm_walk is the primary \"what does this do\" tool; esm_chase/esm_lvli_drop_table return the same \
+classified data as fixed-shape JSON for programmatic use, not interactive reading.
 - `esm skill` prints this crate's full usage-knowledge doc; `esm skill --install` writes it into a \
 consumer repo's .claude/skills/esm-cli/.
 ";
@@ -539,6 +541,82 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                     "type": "string",
                                     "enum": ["formid", "depth"],
                                     "description": "Result ordering (default \"formid\", ascending). \"depth\" sorts by (depth, form_id) — under `limit`, this yields a breadth-first prefix of the walk instead of a FormID-lexical slice."
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "esm_walk",
+                        "description": "Interactive digest of a record and the chain it references — the primary tool for \"what does this record actually do in game\". Computes a compact per-record-type summary (never a raw field dump): GLOB values, AVIF/KYWD reverse-chased consumers, MGEF archetype/pass-through, SPEL/ENCH/ALCH effect rows, PERK ranks/effects, WEAP damage-relevant fields, PROJ/EXPL payload, LVLI resolved drop odds (pool/UseAll/UseFirstMatch math, Curve Table evaluation at 'level'), and OMOD mechanisms. On an OMOD root, each Data.Properties[] row is classified (direct property, perk grant, keyword hook, or AV hook) and shown as path-sliced evidence — the exact gated Effects[N] row a keyword/AVIF hook triggers, never a hub SPEL/PERK's full digest. Follows references breadth-first up to 'depth' hops, computing a digest for every visited node.",
+                        "annotations": {"readOnlyHint": true},
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                },
+                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "depth": {
+                                    "type": "integer",
+                                    "description": "BFS depth cap (default 2). 0 = digest just the root, no chain-following. Only governs which referenced records get their own digest — an OMOD root's own mechanisms are always classified regardless."
+                                },
+                                "ref_limit": {
+                                    "type": "integer",
+                                    "description": "Cap on reverse-reference rows fetched per record-type filter for an OMOD root's keyword/AV-hook consumer lookups (default 25)."
+                                },
+                                "level": {
+                                    "type": "number",
+                                    "description": "Player level assumed by an LVLI root's drop-odds digest — feeds Curve Table evaluation and Minimum Level filtering (default 50). Ignored by every other record type."
+                                },
+                                "refs": {
+                                    "type": "boolean",
+                                    "description": "Also return the root's grouped reverse-reference summary (an obtainability signal: which COBJ/quest/leveled-list/etc. records lead here) alongside the chain digest (default false)."
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "esm_chase",
+                        "description": "Pipeline evidence contract: the classified mechanism tree for an OMOD/PERK/SPEL/ALCH/ENCH selector, as machine-facing JSON (hard error on any other record type). Prefer esm_walk for interactive reading — this returns the same underlying classification but as a fixed, uniform tree shape (root stub, hops[] for an OMOD's Data.Properties[] rows or effect_hops[] for a PERK/SPEL/ALCH/ENCH's own Effects[]), meant for programmatic consumption rather than direct reading.",
+                        "annotations": {"readOnlyHint": true},
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "OMOD/PERK/SPEL/ALCH/ENCH FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                },
+                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "depth": {
+                                    "type": "integer",
+                                    "description": "Reverse-ref walk depth for keyword/AV-hook consumer lookups (default 2). OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH."
+                                },
+                                "ref_limit": {
+                                    "type": "integer",
+                                    "description": "Cap on reverse-reference rows fetched per record-type filter (default 25). OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH."
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "esm_lvli_drop_table",
+                        "description": "Resolved drop-probability table for an LVLI (leveled item list) — expected copy count and probability-of-at-least-one for every leaf item the list can yield, given a player level. Models pool/Use-All/Use-First-Match selection, flat/GLOB/Curve-Table chance resolution, and recursion through nested sublists; anything unmodeled (filter-keyword chances, epic-loot chance, list-level max counts) surfaces as a note on the affected row rather than being silently ignored. Hard error on a non-LVLI selector — use esm_walk for other record types (an LVLI root's walk digest embeds this same table).",
+                        "annotations": {"readOnlyHint": true},
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "LVLI FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                },
+                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "level": {
+                                    "type": "number",
+                                    "description": "Player level assumed for Curve Table evaluation and Minimum Level filtering (default 50)."
                                 }
                             }
                         }
@@ -732,6 +810,76 @@ fn call_tool_proxy(
                     type_filter,
                     paths,
                     sort,
+                },
+            )?;
+            Ok(serde_json::to_string_pretty(&v)?)
+        }
+        "esm_walk" => {
+            let sel = sel_from_args(args)?;
+            let depth = args
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .map(|d| d as usize)
+                .unwrap_or(esm::walk::DEFAULT_DEPTH);
+            let ref_limit = args
+                .get("ref_limit")
+                .and_then(|v| v.as_u64())
+                .map(|d| d as usize)
+                .unwrap_or(esm::chase::DEFAULT_REF_LIMIT);
+            let level = args
+                .get("level")
+                .and_then(|v| v.as_f64())
+                .map(|l| l as f32)
+                .unwrap_or(esm::lvli::DEFAULT_LEVEL);
+            let want_refs = args.get("refs").and_then(|v| v.as_bool()).unwrap_or(false);
+            let v = backend.run(
+                esm_path,
+                Op::Walk {
+                    sel,
+                    depth,
+                    ref_limit,
+                    level,
+                    want_refs,
+                },
+            )?;
+            Ok(serde_json::to_string_pretty(&v)?)
+        }
+        "esm_chase" => {
+            let sel = sel_from_args(args)?;
+            let depth = args
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .map(|d| d as usize)
+                .unwrap_or(esm::chase::DEFAULT_DEPTH);
+            let ref_limit = args
+                .get("ref_limit")
+                .and_then(|v| v.as_u64())
+                .map(|d| d as usize)
+                .unwrap_or(esm::chase::DEFAULT_REF_LIMIT);
+            let v = backend.run(
+                esm_path,
+                Op::Chase {
+                    sel,
+                    depth,
+                    ref_limit,
+                },
+            )?;
+            Ok(serde_json::to_string_pretty(&v)?)
+        }
+        "esm_lvli_drop_table" => {
+            let sel = sel_from_args(args)?;
+            let level = args
+                .get("level")
+                .and_then(|v| v.as_f64())
+                .map(|l| l as f32)
+                .unwrap_or(esm::lvli::DEFAULT_LEVEL);
+            let v = backend.run(
+                esm_path,
+                Op::DropTable {
+                    sel,
+                    level,
+                    max_depth: esm::lvli::MAX_RECURSION_DEPTH,
+                    strict: false,
                 },
             )?;
             Ok(serde_json::to_string_pretty(&v)?)

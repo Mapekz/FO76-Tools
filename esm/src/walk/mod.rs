@@ -180,6 +180,8 @@ impl Default for WalkOptions {
 /// enum) so `--json` output stays a single flat object — see `esm::chase`'s
 /// `ChaseTree` for the same convention.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct WalkResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub not_found: Option<NotFound>,
@@ -191,9 +193,11 @@ pub struct WalkResult {
 
 /// Set instead of `nodes` when the root selector's initial `bulk_get` came
 /// back with an error entry. `matches` starts empty — [`walk`] itself never
-/// searches (see module docs); the CLI driver fills it in via one `Op::Search`
-/// call before rendering/serializing.
+/// searches (see module docs); `Op::Walk`'s dispatch (or, pre-D4, the CLI
+/// driver) fills it in via one search call before rendering/serializing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct NotFound {
     pub target: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -207,6 +211,8 @@ pub struct NotFound {
 /// two-space-indented relative to the node header (matching the TS
 /// original's `emit(2, ...)` sub-bullets) — see [`render::render_text`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct WalkNode {
     pub depth: usize,
     pub sig: String,
@@ -221,6 +227,8 @@ pub struct WalkNode {
 
 /// One record-type group in the `--refs` summary (see [`build_refs_digest`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RefsDigestGroup {
     pub record_type: String,
     pub count: usize,
@@ -232,6 +240,8 @@ pub struct RefsDigestGroup {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct RefsDigest {
     pub groups: Vec<RefsDigestGroup>,
 }
@@ -245,6 +255,8 @@ pub struct RefsDigest {
 // only place that turns one of these into printed text.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Digest {
     Glob(GlobDigest),
@@ -266,13 +278,18 @@ pub enum Digest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct GlobDigest {
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub value: Option<Value>,
 }
 
 /// One record-type group of reverse-chased KYWD/AVIF consumers (shared by
 /// [`AvifDigest`] and [`KywdDigest`] — see [`digest_keyword_or_av`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct ConsumerGroup {
     pub record_type: String,
     /// Every consumer fetched, bounded by [`CONSUMER_REF_LIMIT`].
@@ -283,6 +300,8 @@ pub struct ConsumerGroup {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct ConsumerRow {
     pub formid: String,
     pub editor_id: String,
@@ -292,25 +311,37 @@ pub struct ConsumerRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct AvifDigest {
     pub abbreviation: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub default_value: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub maximum_value: Option<Value>,
     pub consumers: Vec<ConsumerGroup>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct KywdDigest {
     pub consumers: Vec<ConsumerGroup>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct MgefDigest {
     pub archetype: Option<String>,
     pub casting_type: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub target_av: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub resist_av: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub perk_to_apply: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub equip_ability: Option<Value>,
     pub description: Option<String>,
 }
@@ -319,63 +350,85 @@ pub struct MgefDigest {
 /// identical shape). `conditions` rows are already GLOB-resolved (see
 /// [`resolve_condition_row`]) so `render` needs no fetcher of its own.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct MagicEffectRow {
     pub index: usize,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub base_effect: Option<Value>,
     pub archetype: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub actor_value: Option<Value>,
     /// `Effect Item Data.Magnitude`, raw (defaults to `0` when absent).
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub magnitude: Value,
     /// `Effect Item Data.Duration`, raw (defaults to `0` when absent).
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub duration: Value,
     /// A sibling top-level `Magnitude` GLOB reference, if present — distinct
     /// from `magnitude` above (see module docs on the two "Magnitude"
     /// fields). GLOB-resolved (carries `"resolved_value"` when the ref is a
     /// GLOB) via [`resolve_glob_ref`].
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub magnitude_glob: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub duration_glob: Option<Value>,
     /// The raw `Curve Table` field (points + `curve_path`), if present.
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub curve_table: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub curve_input_av: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub conditions: Vec<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub perk_to_apply: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub equip_ability: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct MagicItemDigest {
     pub effects: Vec<MagicEffectRow>,
 }
 
 /// One classified `Effects[]` entry of a [`PerkDigest`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PerkEffectRow {
     Ability {
         index: usize,
+        #[cfg_attr(test, ts(type = "unknown"))]
         target: Value,
     },
     EntryPoint {
         index: usize,
         entry_point_name: Option<String>,
         function_name: Option<String>,
+        #[cfg_attr(test, ts(type = "unknown"))]
         float_value: Option<Value>,
+        #[cfg_attr(test, ts(type = "unknown"))]
         actor_value: Option<Value>,
+        #[cfg_attr(test, ts(type = "unknown"))]
         conditions: Vec<Value>,
     },
     /// An effect type neither `Ability` nor `Entry Point` names — rendered
     /// bare (mirrors the TS original's catch-all).
-    Other {
-        index: usize,
-        type_name: String,
-    },
+    Other { index: usize, type_name: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct PerkDigest {
     pub description: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub num_ranks: Option<Value>,
     pub playable: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub next_perk: Option<Value>,
     /// `None` when the record has no `Effects[]` array at all — the bonus is
     /// engine/script-side (description only).
@@ -383,40 +436,57 @@ pub struct PerkDigest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct WeapDigest {
     /// `WeaponType*`/`HasLegendary*`/`ma_*`-prefixed keywords only (mirrors
     /// the TS original's damage-relevant keyword filter).
     pub relevant_keywords: Vec<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub ap_cost: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub speed: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub reload_speed: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub eligible_levels: Vec<Value>,
     pub attach_slots: usize,
     pub has_object_template: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct ProjDigest {
     pub proj_type: Option<String>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub speed: Option<Value>,
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub explosion: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct ExplDigest {
     /// `chase::summarize_explosion_detail`'s already-structured output
     /// (radius/force/stagger/impact/chain/damage) — reused verbatim rather
     /// than recomputed, the same detail an OMOD's PROJ mechanism evidence
     /// carries.
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub detail: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct LvliDigest {
     pub table: crate::lvli::DropTable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct OmodDigest {
     /// Classified `Data.Properties[]` rows from `esm::chase`'s mechanism
     /// classifier — the same [`Hop`] type `esm chase`'s `ChaseTree` JSON
@@ -426,13 +496,17 @@ pub struct OmodDigest {
     /// [`omod_hops_enqueue`].
     pub hops: Vec<Hop>,
     /// `Data.Includes[]` targets, capped at [`OMOD_INCLUDE_ENQUEUE_CAP`].
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub includes: Vec<Value>,
     /// Pre-cap count of valid `Data.Includes[]` rows.
     pub includes_total: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 pub struct GenericDigest {
+    #[cfg_attr(test, ts(type = "unknown"))]
     pub trimmed: Value,
 }
 

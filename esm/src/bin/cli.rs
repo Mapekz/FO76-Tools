@@ -622,6 +622,24 @@ fn sample_ops() -> Vec<Op> {
             max_hops: 0,
             paths: false,
         },
+        Op::Walk {
+            sel: RecordSel::FormId(FormId::new(0)),
+            depth: 0,
+            ref_limit: 0,
+            level: 0.0,
+            want_refs: false,
+        },
+        Op::Chase {
+            sel: RecordSel::FormId(FormId::new(0)),
+            depth: 0,
+            ref_limit: 0,
+        },
+        Op::DropTable {
+            sel: RecordSel::FormId(FormId::new(0)),
+            level: 0.0,
+            max_depth: 0,
+            strict: false,
+        },
         Op::ListGroups,
         Op::ListTypeChildren {
             sig: String::new(),
@@ -668,6 +686,9 @@ fn assert_op_variant_covered(op: &Op) {
         Op::Search { .. } => {}
         Op::ReferencedBy { .. } => {}
         Op::RefPath { .. } => {}
+        Op::Walk { .. } => {}
+        Op::Chase { .. } => {}
+        Op::DropTable { .. } => {}
         Op::ListGroups => {}
         Op::ListTypeChildren { .. } => {}
         Op::ListGroupChildren { .. } => {}
@@ -1690,57 +1711,11 @@ fn print_ref_path(result: &esm::refs::RefPathResult, json: bool, pretty: bool) {
     }
 }
 
-/// [`esm::chase::ChaseFetcher`] implementation that composes `chase`'s two
-/// primitive ops (`Op::RecordBulk`, `Op::ReferencedBy`) over an existing
-/// `Backend` — the warm daemon by default, a cold in-process open under
-/// `--local`. Holds the `&Path` to the ESM being queried so
-/// `esm::chase::chase` itself only deals in selectors/FormIDs.
-struct BackendFetcher<'a> {
-    backend: &'a mut Backend,
-    file: &'a Path,
-}
-
-impl esm::chase::ChaseFetcher for BackendFetcher<'_> {
-    fn bulk_get(
-        &mut self,
-        sels: &[RecordSel],
-        depth: ResolveDepth,
-    ) -> anyhow::Result<Vec<esm::BulkRecordEntry>> {
-        let v = self.backend.run(
-            self.file,
-            Op::RecordBulk {
-                sels: sels.to_vec(),
-                depth,
-            },
-        )?;
-        Ok(serde_json::from_value(v)?)
-    }
-
-    fn refs(
-        &mut self,
-        target: esm::FormId,
-        depth: usize,
-        limit: usize,
-        type_filter: &str,
-        paths: bool,
-    ) -> anyhow::Result<RefList> {
-        let v = self.backend.run(
-            self.file,
-            Op::ReferencedBy {
-                sel: RecordSel::FormId(target),
-                limit,
-                depth,
-                type_filter: Some(type_filter.to_string()),
-                paths,
-                sort: esm::ipc::RefSort::Formid,
-            },
-        )?;
-        Ok(serde_json::from_value(v)?)
-    }
-}
-
 /// `chase` is JSON-only — a pipeline evidence contract, not something meant
 /// to be read directly (see `esm::chase`'s module docs and `docs/adr/0001`).
+/// The classifier itself runs server-side (`Op::Chase`, dispatched inside the
+/// daemon or `--local`'s in-process `Database` — see `esm::ipc::dispatch_op`);
+/// this is now just one wire call and a pretty-print.
 fn cmd_chase(
     backend: &mut Backend,
     file: &Path,
@@ -1749,20 +1724,26 @@ fn cmd_chase(
     ref_limit: usize,
 ) -> anyhow::Result<()> {
     let sel = RecordSel::from_input(selector)?;
-    let opts = esm::chase::ChaseOptions { depth, ref_limit };
-    let mut fetcher = BackendFetcher { backend, file };
-    let tree = esm::chase::chase(&mut fetcher, sel, &opts)?;
-    println!("{}", serde_json::to_string_pretty(&tree)?);
+    let v = backend.run(
+        file,
+        Op::Chase {
+            sel,
+            depth,
+            ref_limit,
+        },
+    )?;
+    println!("{}", serde_json::to_string_pretty(&v)?);
     Ok(())
 }
 
-/// Beyond `esm::walk::walk`'s two `ChaseFetcher` primitives (bulk_get/refs
-/// with a mandatory type filter), this driver makes two more raw `Backend`
-/// calls neither fits through that seam — see `esm::walk`'s module docs:
-/// - not-found → `Op::Search` (fills in `WalkResult::not_found.matches`).
-/// - `--refs` → one *unfiltered* `Op::ReferencedBy` (every referencing record
-///   type, not just SPEL/PERK), reduced client-side by
-///   `esm::walk::build_refs_digest`.
+/// Interactive digest driver. The BFS, per-node digest computation, the
+/// not-found search fallback, and the `--refs` reverse-reference summary all
+/// run server-side in one `Op::Walk` call (`esm::ipc::dispatch_op`) — this
+/// only resolves the CLI's own flags into the request and renders the
+/// result, matching `--json` vs plain text either way (see `esm::walk`'s
+/// module docs: only the *computation* moved server-side, `render.rs` is
+/// still the sole place a `Digest`/`WalkResult` becomes text, so `--local`
+/// and daemon output stay byte-identical).
 #[allow(clippy::too_many_arguments)]
 fn cmd_walk(
     backend: &mut Backend,
@@ -1775,41 +1756,17 @@ fn cmd_walk(
     json: bool,
 ) -> anyhow::Result<()> {
     let sel = RecordSel::from_input(selector)?;
-    let opts = esm::walk::WalkOptions {
-        depth,
-        ref_limit,
-        level,
-    };
-    let mut fetcher = BackendFetcher { backend, file };
-    let mut result = esm::walk::walk(&mut fetcher, sel, &opts)?;
-
-    if let Some(nf) = result.not_found.as_mut() {
-        let v = fetcher.backend.run(
-            fetcher.file,
-            Op::Search {
-                pattern: nf.target.clone(),
-                types: Vec::new(),
-                field: SearchField::Both,
-                limit: 10,
-            },
-        )?;
-        nf.matches = serde_json::from_value(v)?;
-    } else if want_refs && let Some(root) = result.nodes.first() {
-        let root_fid = esm::parse_form_id_input(&root.formid)?;
-        let v = fetcher.backend.run(
-            fetcher.file,
-            Op::ReferencedBy {
-                sel: RecordSel::FormId(root_fid),
-                limit: 0,
-                depth: 1,
-                type_filter: None,
-                paths: false,
-                sort: esm::ipc::RefSort::Formid,
-            },
-        )?;
-        let ref_list: RefList = serde_json::from_value(v)?;
-        result.refs = Some(esm::walk::build_refs_digest(&ref_list.rows));
-    }
+    let v = backend.run(
+        file,
+        Op::Walk {
+            sel,
+            depth,
+            ref_limit,
+            level,
+            want_refs,
+        },
+    )?;
+    let result: esm::walk::WalkResult = serde_json::from_value(v)?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&result)?);
