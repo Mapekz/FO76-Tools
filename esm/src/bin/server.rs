@@ -534,6 +534,11 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 "paths": {
                                     "type": "boolean",
                                     "description": "Annotate each row with the JSON field path(s) where it references its predecessor in the hop chain (default false)."
+                                },
+                                "sort": {
+                                    "type": "string",
+                                    "enum": ["formid", "depth"],
+                                    "description": "Result ordering (default \"formid\", ascending). \"depth\" sorts by (depth, form_id) — under `limit`, this yields a breadth-first prefix of the walk instead of a FormID-lexical slice."
                                 }
                             }
                         }
@@ -619,8 +624,8 @@ fn call_tool_proxy(
 
     match name {
         "esm_file_info" => {
-            let info = backend.file_info(esm_path)?;
-            Ok(serde_json::to_string_pretty(&info)?)
+            let v = backend.run(esm_path, Op::FileInfo)?;
+            Ok(serde_json::to_string_pretty(&v)?)
         }
         "esm_get_record" => {
             use esm::ipc::RecordSel;
@@ -661,8 +666,14 @@ fn call_tool_proxy(
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("'type' argument is required"))?;
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
-            let entries = backend.list_by_type(esm_path, sig, limit.min(500))?;
-            Ok(serde_json::to_string_pretty(&entries)?)
+            let v = backend.run(
+                esm_path,
+                Op::ListByType {
+                    sig: sig.to_string(),
+                    limit: limit.min(500),
+                },
+            )?;
+            Ok(serde_json::to_string_pretty(&v)?)
         }
         "esm_search" => {
             let pattern = args
@@ -679,10 +690,20 @@ fn call_tool_proxy(
                 })
                 .unwrap_or_default();
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
-            let results = backend.search(esm_path, pattern, types, SearchField::Both, limit)?;
-            Ok(serde_json::to_string_pretty(&results)?)
+            let v = backend.run(
+                esm_path,
+                Op::Search {
+                    pattern: pattern.to_string(),
+                    types,
+                    field: SearchField::Both,
+                    limit,
+                },
+            )?;
+            Ok(serde_json::to_string_pretty(&v)?)
         }
         "esm_refs" => {
+            use esm::ipc::RefSort;
+
             let sel = sel_from_args(args)?;
             let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
             let depth = esm::query::clamp_ref_depth(
@@ -695,8 +716,25 @@ fn call_tool_proxy(
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             let paths = args.get("paths").and_then(|v| v.as_bool()).unwrap_or(false);
-            let refs = backend.referenced_by(esm_path, sel, limit, depth, type_filter, paths)?;
-            Ok(serde_json::to_string_pretty(&refs)?)
+            let sort = match args.get("sort").and_then(|v| v.as_str()) {
+                None | Some("formid") => RefSort::Formid,
+                Some("depth") => RefSort::Depth,
+                Some(other) => {
+                    anyhow::bail!("'sort' must be \"formid\" or \"depth\" (got \"{other}\")")
+                }
+            };
+            let v = backend.run(
+                esm_path,
+                Op::ReferencedBy {
+                    sel,
+                    limit,
+                    depth,
+                    type_filter,
+                    paths,
+                    sort,
+                },
+            )?;
+            Ok(serde_json::to_string_pretty(&v)?)
         }
         _ => anyhow::bail!("unknown tool: {}", name),
     }

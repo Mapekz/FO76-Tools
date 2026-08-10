@@ -1,6 +1,5 @@
 //! Query backends: in-process (`LocalBackend`) and HTTP daemon client (`RemoteBackend`).
 
-use crate::SearchField;
 use crate::ipc::{self, Op, RecordSel, Request, Response};
 use crate::registry::Registry;
 use anyhow::{Context, bail};
@@ -183,92 +182,19 @@ pub fn daemon_fresh(info: &DaemonInfo) -> bool {
         && dur.subsec_nanos() == info.exe_mtime_nanos
 }
 
-/// Trait implemented by local and remote query backends.
+/// Trait implemented by local and remote query backends. `run` is the whole
+/// interface — callers build an [`Op`] and read the typed result back out of
+/// the returned [`Value`] with `serde_json::from_value`, the same idiom
+/// `cli.rs` already uses at every one of its call sites. (Previously this
+/// trait also carried five convenience methods mirroring individual `Op`
+/// variants; they were a `server.rs`-private helper set on a public trait —
+/// one, `diff`, had zero callers, and `referenced_by` silently hardcoded
+/// `sort: RefSort::Formid`, so MCP's `esm_refs` tool could never request
+/// depth-ordering. Deleted rather than fixed: a narrower mirror of `Op` will
+/// always eventually drop the next field `Op` gains the way it dropped
+/// `sort`.)
 pub trait QueryBackend {
     fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value>;
-
-    fn file_info(&mut self, esm: &Path) -> anyhow::Result<crate::reader::FileInfo> {
-        let v = self.run(esm, Op::FileInfo)?;
-        Ok(serde_json::from_value(v)?)
-    }
-
-    fn search(
-        &mut self,
-        esm: &Path,
-        pattern: &str,
-        types: Vec<String>,
-        field: SearchField,
-        limit: usize,
-    ) -> anyhow::Result<Vec<crate::RecordRow>> {
-        let v = self.run(
-            esm,
-            Op::Search {
-                pattern: pattern.to_string(),
-                types,
-                field,
-                limit,
-            },
-        )?;
-        Ok(serde_json::from_value(v)?)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn referenced_by(
-        &mut self,
-        esm: &Path,
-        sel: ipc::RecordSel,
-        limit: usize,
-        depth: usize,
-        type_filter: Option<String>,
-        paths: bool,
-    ) -> anyhow::Result<ipc::RefList> {
-        let v = self.run(
-            esm,
-            Op::ReferencedBy {
-                sel,
-                limit,
-                depth,
-                type_filter,
-                paths,
-                sort: ipc::RefSort::Formid,
-            },
-        )?;
-        Ok(serde_json::from_value(v)?)
-    }
-
-    fn list_by_type(
-        &mut self,
-        esm: &Path,
-        sig: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<crate::ListEntry>> {
-        let v = self.run(
-            esm,
-            Op::ListByType {
-                sig: sig.to_string(),
-                limit,
-            },
-        )?;
-        Ok(serde_json::from_value(v)?)
-    }
-
-    fn diff(
-        &mut self,
-        esm_a: &Path,
-        esm_b: &Path,
-        record_type: Option<String>,
-        options: crate::diff::DiffOptions,
-    ) -> anyhow::Result<crate::DiffResult> {
-        let v = self.run(
-            esm_a,
-            Op::Diff {
-                b: esm_b.to_path_buf(),
-                record_type,
-                options,
-            },
-        )?;
-        Ok(serde_json::from_value(v)?)
-    }
 }
 
 /// In-process backend backed by a [`Registry`].
