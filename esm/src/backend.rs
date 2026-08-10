@@ -11,11 +11,22 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-const DAEMON_FILENAME: &str = "esm-daemon.json";
+// `pub`, not private: `tools/esm_gateway.py` hand-mirrors these four (see
+// its own module docstring) plus `OP_TIMEOUT_DEFAULT_SECS` below, and
+// `cmd_dump_wire_constants` in `bin/cli.rs` — a separate crate (the `esm`
+// binary) that only sees this library's public surface — reads them by
+// name (not a re-typed literal) so `tools/wire_constants.py`'s regen, and
+// the CI drift guard over it, actually observe this source of truth
+// instead of a copy of it.
+pub const DAEMON_FILENAME: &str = "esm-daemon.json";
 /// Fast 2 s deadline for `/health` and `/status` probes — a live daemon responds instantly.
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const HEALTH_POLL_MAX: Duration = Duration::from_secs(30);
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+pub const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(100);
+pub const HEALTH_POLL_MAX: Duration = Duration::from_secs(30);
+/// Default `op_timeout()` when `ESM_OP_TIMEOUT_SECS` is unset — named (not
+/// an inline literal in `op_timeout` below) purely so `cmd_dump_wire_constants`
+/// can read the exact same constant `op_timeout` uses, env-independently.
+pub const OP_TIMEOUT_DEFAULT_SECS: u64 = 300;
 
 /// Overall budget across retries for a full logical `/op` round-trip.
 ///
@@ -39,7 +50,7 @@ fn op_timeout() -> Option<Duration> {
     {
         Some(0) => None,
         Some(n) => Some(Duration::from_secs(n)),
-        None => Some(Duration::from_secs(300)),
+        None => Some(Duration::from_secs(OP_TIMEOUT_DEFAULT_SECS)),
     }
 }
 
