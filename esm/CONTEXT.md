@@ -64,6 +64,24 @@ An OMOD property's Form-Type-keyed namespace — `weap`, `armo`, or `npc`. Prope
 only meaningful inside one space; the same id number names a different property in each.
 _Avoid_: treating a bare numeric property id as unambiguous across spaces
 
+**Element identity**:
+The field(s) that identify one element of a decoded rarray across two snapshots, so a diff
+can pair old/new elements instead of reporting the whole array wholesale. Owned solely by
+`diff.rs::element_key_spec` — `patchnotes_lib.py` normalizes and renders whatever Rust
+decided, it does not decide identity itself. See
+[`docs/adr/0005-element-identity-owned-by-rust.md`](docs/adr/0005-element-identity-owned-by-rust.md).
+_Avoid_: "array key" (the identity is a domain fact about the record shape, not a diff
+implementation detail)
+
+**Unkeyed array**:
+An array whose elements have no stable element identity, so a diff reports the two whole
+element lists (`removed`/`added`) rather than pairing them. CTDA `Conditions[]` is the
+canonical case: a condition's position is semantic (`AND`/`OR` chaining across the whole
+list), so keying it would pair unrelated rows and report false mutations — it is
+*deliberately* unkeyed, not a gap to be closed by adding a key spec.
+_Avoid_: "opaque array" (the old pre-issue name implied the contents were unavailable; an
+unkeyed array's elements are fully present, just unpaired)
+
 ## Relationships
 
 - An **OMOD** implements its effect via one or more **Mechanisms**
@@ -72,6 +90,7 @@ _Avoid_: treating a bare numeric property id as unambiguous across spaces
 - A **Digest** renders one record; an **Evidence slice** renders only the gated rows of
   a consumer — a **hub keyword/AV**'s consumers are why the slice exists
 - **Obtainability signals** are a subset of a record's reverse references
+- An **unkeyed array** is the array-diff outcome when no **element identity** applies
 
 ## Example dialogue
 

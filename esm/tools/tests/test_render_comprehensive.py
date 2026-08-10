@@ -80,6 +80,96 @@ class TestExcludedTypes(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# `unkeyed` _array_diff rendering — the producer/consumer join
+#
+# Regression coverage for a real production defect: `diff.rs` emitting a
+# bare `{"from": [...], "to": [...]}` leaf for an unkeyable array (CTDA
+# `Conditions[]` is the canonical case — position is semantic AND/OR
+# chaining, so it deliberately has no element_key_spec entry) rendered as a
+# content-free `- **Conditions / Conditions:**` bullet, because
+# `_render_change_bullet`'s `kind == "array"` branch had no fallback for an
+# empty array block. Measured on a real run: 54 of 1579 array changes,
+# 26 of them Conditions. `diff.rs` now wraps the fallback as an `unkeyed`
+# `_array_diff` strategy (whole element lists under `removed`/`added`); this
+# is the round-trip test that would have caught the original defect — the
+# Rust side (`array_diff_unkeyed_ctda_conditions_length_mismatch` in
+# `esm/tests/diff.rs`) and the Python side were each well tested against
+# their own idea of the contract, but nothing tested the join.
+# ---------------------------------------------------------------------------
+
+
+def _unkeyed_conditions_diff():
+    return {
+        "added": [], "removed": [],
+        "changed": [{
+            "stub": {
+                "form_id": "0x00200001", "editor_id": "TestRecipeCond",
+                "record_type": "COBJ", "offset": 1,
+            },
+            "field_changes": {
+                "Conditions": {
+                    "_array_diff": {
+                        "strategy": "unkeyed",
+                        "count_from": 1,
+                        "count_to": 2,
+                        "removed": [
+                            {"Condition": {"Condition Data": {
+                                "Function": "HasEntitlement", "Operator": "Equal To",
+                                "Comparison Value": 1.0,
+                            }}},
+                        ],
+                        "added": [
+                            {"Condition": {"Condition Data": {
+                                "Function": "HasEntitlement", "Operator": "Equal To",
+                                "Comparison Value": 1.0,
+                            }}},
+                            {"Condition": {"Condition Data": {
+                                "Function": "HasLearnedRecipe", "Operator": "Equal To",
+                                "Comparison Value": 1.0,
+                            }}},
+                        ],
+                    }
+                }
+            },
+        }],
+        "ref_names": {},
+    }
+
+
+class TestUnkeyedArrayRendering(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.diff = _unkeyed_conditions_diff()
+        cls.comp = rc.build_comprehensive(cls.diff, generated_at="X")
+        cls.md = rc.render_markdown(cls.comp)
+
+    def test_change_entry_carries_normalized_array_shape(self):
+        changes = self.comp["records"]["0x00200001"]["changes"]
+        self.assertEqual(len(changes), 1)
+        arr = changes[0]["array"]
+        self.assertEqual(arr["strategy"], "unkeyed")
+        self.assertEqual(len(arr["removed"]), 1)
+        self.assertEqual(len(arr["added"]), 2)
+
+    def test_markdown_bullet_is_not_content_free(self):
+        # The defect this guards against: a bullet with a header and nothing
+        # else. `_render_change_bullet` must reach the added/removed loops.
+        self.assertIn("**Conditions:**", self.md)
+        idx = self.md.index("**Conditions:**")
+        # The next ~5 lines must contain the actual condition content, not
+        # just the header followed by the next section.
+        following = self.md[idx : idx + 500]
+        self.assertIn("HasLearnedRecipe", following)
+        self.assertIn("HasEntitlement", following)
+
+    def test_markdown_unwraps_condition_wrapper_to_readable_fields(self):
+        # Without the _struct_display wrapper-unwrap, added/removed elements
+        # would render as the useless `Condition=`(struct: Condition Data)``.
+        self.assertIn("Function=`HasLearnedRecipe`", self.md)
+        self.assertNotIn("(struct:", self.md)
+
+
+# ---------------------------------------------------------------------------
 # refs_out population per status
 # ---------------------------------------------------------------------------
 

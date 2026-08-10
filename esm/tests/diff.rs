@@ -545,7 +545,7 @@ fn array_diff_positional_fallback_same_length() {
 }
 
 #[test]
-fn array_diff_opaque_fallback_unkeyable_length_mismatch() {
+fn array_diff_unkeyed_fallback_unkeyable_length_mismatch() {
     let a = json!({"Pairs": [
         {"A": "0x00000001", "B": "0x00000002"},
     ]});
@@ -554,9 +554,60 @@ fn array_diff_opaque_fallback_unkeyable_length_mismatch() {
         {"A": "0x00000009", "B": "0x00000004"},
     ]});
     let d = json_diff(&a, &b);
-    assert!(d["Pairs"].get("_array_diff").is_none());
-    assert_eq!(d["Pairs"]["from"].as_array().unwrap().len(), 1);
-    assert_eq!(d["Pairs"]["to"].as_array().unwrap().len(), 2);
+    let ad = &d["Pairs"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("unkeyed"));
+    assert_eq!(ad["count_from"], json!(1));
+    assert_eq!(ad["count_to"], json!(2));
+    assert_eq!(
+        ad["removed"],
+        json!([{"A": "0x00000001", "B": "0x00000002"}])
+    );
+    assert_eq!(
+        ad["added"],
+        json!([
+            {"A": "0x00000001", "B": "0x00000002"},
+            {"A": "0x00000009", "B": "0x00000004"},
+        ])
+    );
+}
+
+#[test]
+fn array_diff_unkeyed_ctda_conditions_length_mismatch() {
+    // CTDA `Conditions[]` is the canonical unkeyed case: a condition's
+    // position is semantic (AND/OR chaining across the whole list), so it
+    // deliberately has no `element_key_spec` entry — keying it would pair
+    // unrelated rows and report false mutations. Regression for the real
+    // production defect this strategy exists to fix: before it, this whole
+    // list was reported as a bare `{"from": a, "to": b}` leaf that every
+    // downstream `_array_diff` reader silently skipped (54 of 1579 array
+    // changes in a real run rendered content-free, 26 of them Conditions).
+    let a = json!({"Conditions": [
+        {"Condition": {"Condition Data": {
+            "Function": "GetGlobalValue", "Operator": "Not Equal To",
+            "Comparison Value": 10.0, "AND/OR": "AND",
+        }}},
+        {"Condition": {"Condition Data": {
+            "Function": "GetGlobalValue", "Operator": "Not Equal To",
+            "Comparison Value": 7.0, "AND/OR": "AND",
+        }}},
+    ]});
+    let b = json!({"Conditions": [
+        {"Condition": {"Condition Data": {
+            "Function": "GetGlobalValue", "Operator": "Equal To",
+            "Comparison Value": 0.0, "AND/OR": "AND",
+        }}},
+    ]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Conditions"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("unkeyed"));
+    assert_eq!(ad["count_from"], json!(2));
+    assert_eq!(ad["count_to"], json!(1));
+    assert_eq!(ad["removed"].as_array().unwrap().len(), 2);
+    assert_eq!(ad["added"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        ad["added"][0]["Condition"]["Condition Data"]["Function"],
+        json!("GetGlobalValue")
+    );
 }
 
 #[test]

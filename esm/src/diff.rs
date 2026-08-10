@@ -1409,8 +1409,8 @@ fn apply_restamp_calibrated_suppression(
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.
 /// Arrays get per-element treatment via [`array_diff`]: a `keyed` diff when
 /// elements have a recognizable identity field, `positional` when lengths
-/// match but no key is available, `set` for arrays of primitives, and the
-/// legacy opaque `{ "from": a, "to": b }` only as a last resort.
+/// match but no key is available, `set` for arrays of primitives, and
+/// `unkeyed` (whole old/new element lists) only as a last resort.
 pub fn json_diff(a: &Value, b: &Value) -> Value {
     match (a, b) {
         (Value::Object(ao), Value::Object(bo)) => {
@@ -1486,11 +1486,37 @@ fn is_empty_diff(v: &Value) -> bool {
     matches!(v, Value::Object(m) if m.is_empty())
 }
 
-/// The legacy opaque array diff — whole old/new arrays under `from`/`to`.
-/// Used when array elements can't be paired meaningfully: heterogeneous
-/// element shapes, or an unkeyable object shape with mismatched lengths.
-fn opaque_array_diff(a: &[Value], b: &[Value]) -> Value {
-    serde_json::json!({"from": Value::Array(a.to_vec()), "to": Value::Array(b.to_vec())})
+/// The `unkeyed` array-diff strategy — whole old/new element lists under
+/// `removed`/`added`, wrapped in the ordinary `_array_diff` envelope. Used
+/// when array elements can't be paired meaningfully: heterogeneous element
+/// shapes, or an unkeyable object shape with mismatched lengths.
+///
+/// This is a deliberate classification, not a fallback of last resort — CTDA
+/// `Conditions[]` is the canonical case. A condition's position is semantic
+/// (`AND`/`OR` chaining), so a synthetic key would pair unrelated rows and
+/// report false mutations; "unkeyed" reports the two whole lists instead,
+/// which is what every downstream reader (the patch-notes renderer, the
+/// tier-assessor summary) needs to describe what actually changed. See
+/// `docs/adr/0005-element-identity-owned-by-rust.md`.
+///
+/// Before this strategy existed, this fallback returned a bare `{"from": a,
+/// "to": b}` leaf indistinguishable from an ordinary scalar leaf whose
+/// values happened to be lists — every downstream `_array_diff` reader
+/// skipped it, silently discarding the element list (issue: 54 of 1579
+/// array changes in a real run rendered as a content-free header, 26 of
+/// them `Conditions[]`).
+fn unkeyed_array_diff(a: &[Value], b: &[Value]) -> Value {
+    let mut out = serde_json::Map::new();
+    out.insert("strategy".to_string(), Value::String("unkeyed".to_string()));
+    out.insert("count_from".to_string(), serde_json::json!(a.len()));
+    out.insert("count_to".to_string(), serde_json::json!(b.len()));
+    if !a.is_empty() {
+        out.insert("removed".to_string(), Value::Array(a.to_vec()));
+    }
+    if !b.is_empty() {
+        out.insert("added".to_string(), Value::Array(b.to_vec()));
+    }
+    wrap_array_diff(out)
 }
 
 /// Wrap a populated array-diff body in the `{"_array_diff": {...}}` envelope.
@@ -1532,7 +1558,7 @@ fn is_formid_shaped(v: &Value) -> bool {
 /// first object found on either side), per a hardcoded table of known
 /// rarray element shapes, falling back to generic heuristics. Returns `None`
 /// when nothing applies — the caller then falls back to positional pairing
-/// (equal lengths) or an opaque diff.
+/// (equal lengths) or an unkeyed diff.
 fn element_key_spec(sample: &serde_json::Map<String, Value>) -> Option<KeySpec> {
     let (wrapper, body) = unwrap_wrapper(sample);
 
@@ -1866,7 +1892,7 @@ fn keyed_diff(a: &[Value], b: &[Value], spec: &KeySpec) -> Value {
 }
 
 /// Per-element array diff, used by `json_diff`'s array arm. Classifies the
-/// element shape into one of three pairing strategies:
+/// element shape into one of four pairing strategies:
 ///
 /// - **keyed** — elements are rstructs with a recognizable identity field
 ///   ([`element_key_spec`]); paired by canonical key value regardless of
@@ -1874,12 +1900,15 @@ fn keyed_diff(a: &[Value], b: &[Value], spec: &KeySpec) -> Value {
 /// - **positional** — same length, no usable key; paired index-for-index.
 /// - **set** — uniform JSON primitives (e.g. a FormID keyword list); paired
 ///   as a multiset (order-insensitive, duplicate-aware).
+/// - **unkeyed** — elements have no stable per-element identity at all
+///   (heterogeneous shapes, or an unkeyable object shape with mismatched
+///   lengths — CTDA `Conditions[]` is the canonical case, see
+///   [`unkeyed_array_diff`]); the two whole element lists are reported as
+///   `removed`/`added` rather than paired.
 ///
-/// Falls back to the legacy opaque `{"from": a, "to": b}` leaf when nothing
-/// applies (heterogeneous shapes, or an unkeyable object shape with
-/// mismatched lengths). Returns an empty object when the chosen strategy
-/// finds no differences — e.g. a reorder-only keyed array — matching
-/// `json_diff`'s convention of omitting unchanged fields entirely.
+/// Returns an empty object when the chosen strategy finds no differences —
+/// e.g. a reorder-only keyed array — matching `json_diff`'s convention of
+/// omitting unchanged fields entirely.
 fn array_diff(a: &[Value], b: &[Value]) -> Value {
     if a == b {
         return Value::Object(serde_json::Map::new());
@@ -1901,21 +1930,21 @@ fn array_diff(a: &[Value], b: &[Value]) -> Value {
 
     if !a.iter().chain(b.iter()).all(Value::is_object) {
         // Heterogeneous element shapes (mixed primitive/object, nested
-        // arrays of differing length, …) aren't classifiable — keep the
-        // legacy opaque form.
-        return opaque_array_diff(a, b);
+        // arrays of differing length, …) aren't classifiable — report the
+        // two whole lists unkeyed.
+        return unkeyed_array_diff(a, b);
     }
 
     let Some(sample) = a.iter().chain(b.iter()).find_map(Value::as_object) else {
         // Unreachable in practice (all-object + not `a == b` implies at
         // least one element exists), kept as a defensive fallback.
-        return opaque_array_diff(a, b);
+        return unkeyed_array_diff(a, b);
     };
 
     match element_key_spec(sample) {
         Some(spec) => keyed_diff(a, b, &spec),
         None if a.len() == b.len() => positional_diff(a, b),
-        None => opaque_array_diff(a, b),
+        None => unkeyed_array_diff(a, b),
     }
 }
 
@@ -1987,6 +2016,98 @@ mod tests {
                 {"key": {"name": "a"}, "changes": {"Magnitude": {"from": 10, "to": 20}}}
             ]}
         })));
+    }
+
+    #[test]
+    fn appearance_rejects_unkeyed_structural_array_changes() {
+        // Same rule as `appearance_rejects_structural_array_changes`, for the
+        // `unkeyed` strategy (`unkeyed_array_diff` — CTDA `Conditions[]` is
+        // the canonical producer). `added`/`removed` here are the *whole*
+        // element lists, not per-element diffs, but the same "never an
+        // appearance" rule applies: a real element count change must never
+        // be suppressed as if it were a form-version-driven default flip.
+        assert!(!is_pure_appearance(&json!({
+            "_array_diff": {"strategy": "unkeyed", "count_from": 2, "count_to": 1,
+                "removed": [{"Condition": {"Function": "A"}}, {"Condition": {"Function": "B"}}],
+                "added": [{"Condition": {"Function": "C"}}]}
+        })));
+        assert!(!is_pure_disappearance(&json!({
+            "_array_diff": {"strategy": "unkeyed", "count_from": 1, "count_to": 0,
+                "removed": [{"Condition": {"Function": "A"}}]}
+        })));
+    }
+
+    #[test]
+    fn restamp_leaves_unkeyed_array_diff_untouched() {
+        // `strip_restamp_array_diff` only walks `changed[]`; an `unkeyed`
+        // envelope never has one (see `unkeyed_array_diff`), so the whole
+        // element lists must survive a restamp pass completely intact —
+        // confirms the A2 review finding by construction, not just reading.
+        let mut fc = json!({
+            "Conditions": {
+                "_array_diff": {
+                    "strategy": "unkeyed",
+                    "count_from": 2,
+                    "count_to": 1,
+                    "removed": [
+                        {"Condition": {"Function": "GetGlobalValue", "Comparison Value": 10.0}},
+                        {"Condition": {"Function": "GetGlobalValue", "Comparison Value": 7.0}},
+                    ],
+                    "added": [
+                        {"Condition": {"Function": "GetGlobalValue", "Comparison Value": 0.0}},
+                    ],
+                }
+            }
+        });
+        let before = fc.clone();
+        strip_restamp_appearances(&mut fc, "INFO");
+        assert_eq!(fc, before);
+    }
+
+    #[test]
+    fn padding_zeroed_leaves_unkeyed_array_diff_untouched() {
+        // Same shape check for the padding-zero pass: `changed[]` is where
+        // `_raw` hex leaves live, and an `unkeyed` envelope never has one.
+        let mut fc = json!({
+            "Conditions": {
+                "_array_diff": {
+                    "strategy": "unkeyed",
+                    "count_from": 1,
+                    "count_to": 2,
+                    "removed": [{"Condition": {"Function": "A"}}],
+                    "added": [{"Condition": {"Function": "B"}}, {"Condition": {"Function": "C"}}],
+                }
+            }
+        });
+        let before = fc.clone();
+        let stripped = strip_padding_zeroed(&mut fc);
+        assert_eq!(stripped, 0);
+        assert_eq!(fc, before);
+    }
+
+    #[test]
+    fn calibrated_leaves_unkeyed_array_diff_untouched() {
+        // Same shape check for the calibrated-appearance-default pass:
+        // `strip_calibrated_array_diff` only walks `changed[].changes`,
+        // never `added`/`removed`.
+        let mut ad = json!({
+            "strategy": "unkeyed",
+            "count_from": 1,
+            "count_to": 2,
+            "removed": [{"Condition": {"Function": "A"}}],
+            "added": [{"Condition": {"Function": "B"}}, {"Condition": {"Function": "C"}}],
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        let before = ad.clone();
+        let suppressible: HashSet<DefaultKey> = HashSet::new();
+        let dropped = strip_calibrated_array_diff(&mut ad, "Conditions", &suppressible);
+        assert!(
+            !dropped,
+            "added/removed present — envelope is not noise-free"
+        );
+        assert_eq!(ad, before);
     }
 
     #[test]

@@ -905,6 +905,33 @@ class TestAmbiguousDigest(unittest.TestCase):
         self.assertLessEqual(len(summary), 50)
         self.assertTrue(summary.endswith("…"))
 
+    def test_unkeyed_array_change_summary_is_not_falsely_zero(self):
+        # Regression: `diff.rs`'s `unkeyed` _array_diff strategy (CTDA
+        # Conditions[] is the canonical producer) reports the two whole
+        # element lists as `removed`/`added` — a real 2->1 condition swap
+        # must summarize as "+1 -2 ~0", not "+0 -0 ~0". Before the fix, the
+        # legacy opaque {"from":[...], "to":[...]} leaf carried no
+        # `array.added`/`array.removed` at all, so a real structural change
+        # summarized identically to "nothing happened" — misleading the
+        # tier-assessor agent into a DROP verdict for a live combat-mechanics
+        # change (measured on a real run: the PiercingLove COBJ recipe
+        # gaining a HasLearnedRecipe gate).
+        ce = make_change(
+            "Conditions / Conditions",
+            kind="array",
+            array={
+                "strategy": "unkeyed",
+                "count_from": 2,
+                "count_to": 1,
+                "removed": [{"Function": "A"}, {"Function": "B"}],
+                "added": [{"Function": "C"}],
+                "changed": [],
+            },
+        )
+        summary = tb.summarize_change(ce, 200)
+        self.assertNotIn("+0 -0 ~0", summary)
+        self.assertIn("+1 -2 ~0", summary)
+
     def test_bundle_digest_capped_and_marked_truncated(self):
         many_changes = [make_change(f"Field {i}", "x" * 50, "y" * 50) for i in range(50)]
         records = {"0x01": make_record("0x01", "MISC", "Mystery", changes=many_changes)}

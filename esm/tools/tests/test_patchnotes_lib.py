@@ -404,6 +404,44 @@ class TestStructDisplay(unittest.TestCase):
         self.assertIn("WEAP", out)
         self.assertIn("Foo", out)
 
+    def test_unwraps_ctda_condition_wrapper_to_real_fields(self):
+        # An `unkeyed` array_diff element for CTDA Conditions[] decodes as a
+        # two-level single-key wrapper. Before unwrapping this rendered as
+        # the useless `Condition=`(struct: Condition Data)`` — the wrapper
+        # object has no sibling keys, so format_scalar's dict branch can only
+        # name its one key, not the fields inside it.
+        elem = {
+            "Condition": {
+                "Condition Data": {
+                    "Function": "GetGlobalValue",
+                    "Operator": "Not Equal To",
+                    "Comparison Value": 10.0,
+                }
+            }
+        }
+        out = pl._struct_display(elem, {})
+        self.assertIn("Function=`GetGlobalValue`", out)
+        self.assertIn("Operator=`Not Equal To`", out)
+        self.assertIn("Comparison Value=`10.0`", out)
+        self.assertNotIn("(struct:", out)
+
+    def test_unwrap_stops_at_max_depth(self):
+        # A three-level single-key nest only unwraps two levels, matching
+        # diff.rs::unwrap_wrapper's one-level intent plus one extra hop for
+        # the Condition/Condition Data shape specifically — deeper nests
+        # degrade to a labeled struct rather than unwrapping indefinitely.
+        elem = {"A": {"B": {"C": {"D": 1, "E": 2}}}}
+        out = pl._unwrap_element_wrapper(elem)
+        self.assertEqual(out, {"C": {"D": 1, "E": 2}})
+
+    def test_unwrap_leaves_multi_key_elements_untouched(self):
+        elem = {"Function Type": {"value": 1, "name": "MUL+ADD"}, "Property": {"value": 2}}
+        self.assertEqual(pl._unwrap_element_wrapper(elem), elem)
+
+    def test_unwrap_stops_at_non_dict_inner_value(self):
+        elem = {"Leveled Item": "0x00000001"}
+        self.assertEqual(pl._unwrap_element_wrapper(elem), elem)
+
 
 class TestKeyDictDisplay(unittest.TestCase):
     def test_enum_object_values_render_as_names(self):

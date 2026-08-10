@@ -902,6 +902,27 @@ def smart_array_diff(from_list, to_list, ref_names=None):
 
 
 _STRUCT_DISPLAY_MAX_FIELDS = 6
+_STRUCT_DISPLAY_UNWRAP_MAX_DEPTH = 2
+
+
+def _unwrap_element_wrapper(elem, max_depth=_STRUCT_DISPLAY_UNWRAP_MAX_DEPTH):
+    """Unwrap the single-member "rstruct" wrapper rarray elements are often
+    decoded into (e.g. a CTDA `Conditions[]` element,
+    `{"Condition": {"Condition Data": {...}}}`) down to the first object
+    carrying real fields, mirroring `diff.rs::unwrap_wrapper`. Stops at the
+    first object with more than one key, a non-dict value, or after
+    `max_depth` unwraps — whichever comes first. Elements that aren't
+    wrapper-shaped (e.g. an already-flat OMOD property, or a resolved
+    FormID stub with sibling `editor_id`/`record_type` keys) are returned
+    unchanged, since `len(elem) == 1` never matches them."""
+    depth = 0
+    while depth < max_depth and isinstance(elem, dict) and len(elem) == 1:
+        ((_, inner),) = elem.items()
+        if not isinstance(inner, dict):
+            break
+        elem = inner
+        depth += 1
+    return elem
 
 
 def _struct_display(elem, ref_names):
@@ -913,6 +934,7 @@ def _struct_display(elem, ref_names):
     knows how to turn those into a name/annotated reference — rather than
     being dropped; only list values and null/None are skipped, since those
     don't have a useful one-line rendering here."""
+    elem = _unwrap_element_wrapper(elem)
     if "formid" in elem and ("editor_id" in elem or "record_type" in elem):
         return annotate_ref(elem, ref_names)
     if is_curve(elem):
