@@ -7,3 +7,9 @@ ignore = ["E501"]
 
 [tool.ty.environment]
 python-version = "3.14"
+# tools/tests/fake_gateway.py is imported from three production call sites
+# (make_patch_notes.py/build_bundles.py/run_lints.py's `--offline` branches,
+# via a runtime sys.path.insert -- see fake_gateway.py's own docstring for
+# why) that ty can't see across the tools/ -> tools/tests/ directory
+# boundary without this declared too.
+extra-paths = ["tools/tests"]

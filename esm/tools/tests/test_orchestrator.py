@@ -342,7 +342,10 @@ class TestOrchestratorEndToEnd(unittest.TestCase):
         )
         narrative = manifest["stages"]["narrative"]
         self.assertIsNone(narrative["completed_at"])
-        self.assertEqual(narrative["categories"], [])
+        # schema_version 2 (the LIVE shape update_manifest.py fills in) --
+        # not the retired per-category shape ("categories": []).
+        self.assertEqual(narrative["schema_version"], 2)
+        self.assertNotIn("categories", narrative)
         self.assertEqual(narrative["max_chunk_chars"], 2000)
 
     def test_default_out_dir_used_when_not_given(self):

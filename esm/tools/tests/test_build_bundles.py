@@ -31,7 +31,7 @@ Covers:
     smoke test).
 
 No real daemon or ESM is touched -- everything runs against
-esm_gateway.FakeGateway and the checked-in fixtures.
+FakeGateway and the checked-in fixtures.
 """
 
 from __future__ import annotations
@@ -44,9 +44,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build_bundles as bb  # noqa: E402
 import esm_gateway  # noqa: E402
+from fake_gateway import FakeGateway  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "build_bundles.py"
@@ -717,7 +719,7 @@ class TestModForOmodBundleRegression(unittest.TestCase):
             "ref_names": {},
         }
 
-        client = esm_gateway.FakeGateway(refs_fixture)
+        client = FakeGateway(refs_fixture)
         cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm", cls.config)
 
     def test_single_bundle_anchored_on_the_omod(self):
@@ -753,7 +755,7 @@ class TestFullPipelineOffline(unittest.TestCase):
     def setUpClass(cls):
         cls.comp = load_json(COMPREHENSIVE_MINI_PATH)
         cls.config = load_json(CATEGORIES_PATH)
-        cls.client = esm_gateway.FakeGateway(REFS_FIXTURE_PATH)
+        cls.client = FakeGateway(REFS_FIXTURE_PATH)
         cls.result = bb.build_bundles(cls.comp, cls.client, "OLD.esm", "NEW.esm", cls.config)
 
     def _bundle_containing(self, form_id):
@@ -856,7 +858,7 @@ class TestFullPipelineOffline(unittest.TestCase):
             def record(self, esm, formid, *, resolve="stub"):
                 return self.inner.record(esm, formid, resolve=resolve)
 
-        spy = _SpyClient(esm_gateway.FakeGateway(REFS_FIXTURE_PATH))
+        spy = _SpyClient(FakeGateway(REFS_FIXTURE_PATH))
         bb.build_bundles(self.comp, spy, "OLD.esm", "NEW.esm", self.config)
 
         removed_calls = [c for c in spy.calls if c[1] == "0x00300001"]  # ALCH_TestChem, status=removed
@@ -868,7 +870,7 @@ class TestFullPipelineOffline(unittest.TestCase):
         self.assertTrue(all(esm == "NEW.esm" for esm, _fid in changed_calls))
 
     def test_deterministic_ids_across_two_runs(self):
-        client2 = esm_gateway.FakeGateway(REFS_FIXTURE_PATH)
+        client2 = FakeGateway(REFS_FIXTURE_PATH)
         result2 = bb.build_bundles(self.comp, client2, "OLD.esm", "NEW.esm", self.config)
         ids1 = [(b["id"], b["category"], b["anchor"]["form_id"]) for b in self.result["bundles"]]
         ids2 = [(b["id"], b["category"], b["anchor"]["form_id"]) for b in result2["bundles"]]
@@ -891,7 +893,7 @@ class TestBundleShapeContract(unittest.TestCase):
     def setUpClass(cls):
         comp = load_json(COMPREHENSIVE_MINI_PATH)
         config = load_json(CATEGORIES_PATH)
-        client = esm_gateway.FakeGateway(REFS_FIXTURE_PATH)
+        client = FakeGateway(REFS_FIXTURE_PATH)
         cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm", config)
         cls.categories = config["categories"]
 

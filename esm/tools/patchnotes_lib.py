@@ -32,9 +32,14 @@ from __future__ import annotations
 import json
 import re
 import struct
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict, cast
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import layout  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Pipeline wire shapes (comprehensive.json / bundles.json / triage / lints)
@@ -124,11 +129,49 @@ class RolloutShape(TypedDict):
     record_count: int
     example_form_ids: list[str]
 
+
+class RuleContext(TypedDict):
+    """The `ctx` dict every `run_lints.py` rule function (`rule_name(ctx) ->
+    Iterable[dict]`) receives -- built once per run by `run_lints.
+    build_context` and threaded read-only through every rule except
+    `_notes`, a mutable out-parameter accumulator: rules (and
+    `_RuleRecordTally.append_note`) `.append()` a one-line summary there
+    when they swallow a per-record/per-check error, and `run_lints.run_lints`
+    folds it into `lints.json`'s `meta.notes` afterward.
+
+    `client` is an `esm_gateway.EsmGateway | esm_gateway.FakeGateway`-shaped
+    object (duck-typed as `Any` here -- this module is a dependency-free
+    leaf imported by every pipeline stage, including ones with no reason to
+    also import esm_gateway.py, so it does not import that sibling module
+    just to spell this one field's type)."""
+
+    records: dict[str, Any]
+    ref_names: dict[str, Any]
+    bundles: list[Bundle]
+    client: Any
+    new_esm: str | None
+    old_esm: str | None
+    settings: dict[str, Any]
+    _notes: list[str]
+
+
 # --------------------------------------------------------------------------
 # Constants
 # --------------------------------------------------------------------------
 
 SCHEMA_VERSION = 1
+
+#: `manifest.json`'s `stages.narrative` section's own schema version
+#: (independent of SCHEMA_VERSION above, which covers diff/comprehensive/
+#: bundles/lints shapes). Version 2 is the current "flat" shape written by
+#: `update_manifest.py::build_narrative_stage` -- a single
+#: `patch_summary_md` path, a flat `discord/` chunk list, and triage tier
+#: counts. Version 1 (retired, no longer produced) was the pipeline's older
+#: per-category shape: `categories: [{id, label, notes_md, discord_dir,
+#: chunk_count, chunks}, ...]`, one `notes/<slug>.md` + `discord/<slug>/`
+#: per category. `new_manifest` below seeds a fresh v2-shaped placeholder so
+#: the mechanical stage never writes the retired v1 shape.
+NARRATIVE_SCHEMA_VERSION = 2
 
 # Record-type descriptions (used for section headers downstream).
 TYPE_DESC = {
@@ -1609,7 +1652,7 @@ def validate_comprehensive_payload(value: object, *, label: str = "comprehensive
 
 def load_manifest(out_dir):
     """Load `<out_dir>/manifest.json`, or None if it doesn't exist yet."""
-    path = Path(out_dir) / "manifest.json"
+    path = layout.manifest_json(out_dir)
     if not path.exists():
         return None
     with path.open(encoding="utf-8") as f:
@@ -1621,7 +1664,7 @@ def write_manifest(out_dir, manifest):
     creating `out_dir` if needed."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "manifest.json"
+    path = layout.manifest_json(out_dir)
     with path.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
         f.write("\n")
@@ -1633,8 +1676,17 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
         {"schema_version": 1, "patch_date": ..., "inputs": {...},
          "counts": {...},
          "stages": {"mechanical": {"completed_at": None, "files": {}},
-                    "narrative": {"completed_at": None,
-                                  "max_chunk_chars": 2000, "categories": []}}}
+                    "narrative": {"schema_version": 2, "completed_at": None,
+                                  "patch_summary_md": None,
+                                  "discord_dir": "discord", "chunk_count": 0,
+                                  "chunks": [], "max_chunk_chars": 2000,
+                                  "triage": None}}}
+
+    `stages.narrative`'s placeholder shape here matches the LIVE shape
+    `update_manifest.py::build_narrative_stage` writes once the narrative
+    stage actually runs (schema_version NARRATIVE_SCHEMA_VERSION == 2), not
+    the retired per-category shape -- see NARRATIVE_SCHEMA_VERSION's
+    docstring above.
     """
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1653,9 +1705,14 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
                 "files": {},
             },
             "narrative": {
+                "schema_version": NARRATIVE_SCHEMA_VERSION,
                 "completed_at": None,
+                "patch_summary_md": None,
+                "discord_dir": layout.DISCORD_DIRNAME,
+                "chunk_count": 0,
+                "chunks": [],
                 "max_chunk_chars": 2000,
-                "categories": [],
+                "triage": None,
             },
         },
     }

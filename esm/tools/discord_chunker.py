@@ -22,6 +22,12 @@ Usage: python3 tools/discord_chunker.py <input.md> [output_dir]
 import os
 import re
 import sys
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import layout  # noqa: E402
 
 MAX_CHARS = 1900
 
@@ -358,7 +364,12 @@ def main():
         sys.exit(1)
 
     input_path = sys.argv[1]
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else "discord_chunks"
+    # Defaults to the same dirname update_manifest.py looks for
+    # (layout.DISCORD_DIRNAME) -- previously a separately-hardcoded
+    # "discord_chunks" here disagreed with update_manifest.py's "discord",
+    # so an invocation relying on this default silently wrote to the wrong
+    # place and update_manifest.py reported zero chunks.
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else layout.DISCORD_DIRNAME
 
     with open(input_path) as f:
         text = f.read()

@@ -87,10 +87,8 @@ Python 3, stdlib only (uses esm_gateway.py from this directory).
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import re
-import subprocess
 import sys
 from itertools import combinations
 from pathlib import Path
@@ -130,16 +128,15 @@ def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 
-def list_lvli_form_ids(esm_bin: Path, esm_path: Path) -> list[str]:
-    """Every LVLI FormID in the ESM, via `esm list --type LVLI --limit 0
-    --json` (already daemon-backed, so this is one warm round-trip)."""
-    out = subprocess.run(
-        [str(esm_bin), "--esm", str(esm_path), "list", "--type", "LVLI", "--limit", "0", "--json"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return [row["form_id"] for row in json.loads(out.stdout)]
+def list_lvli_form_ids(client: esm_gateway.EsmGateway, esm_path: Path) -> list[str]:
+    """Every LVLI FormID in the ESM, via `EsmGateway.list_type` (`Op::
+    ListTypeRecords`, the same op `esm list --type LVLI --json` sends) --
+    one warm round-trip through the daemon, no subprocess. Routing through
+    the gateway (rather than shelling out to `esm list` directly, as this
+    used to) is what lets `esm_gateway.py` claim to be the one seam
+    everything in `tools/` reaches `esm` through -- see its module
+    docstring."""
+    return [row["form_id"] for row in client.list_type(str(esm_path), "LVLI", limit=0)]
 
 
 def entry_conditions(entry: dict) -> list[dict]:
@@ -353,7 +350,7 @@ def check_overlap_ladder(entries: list[dict], flags: set[str], glob_values: dict
     if len(gated_indices) < 2:
         return None
 
-    same_function = len({gates[i]["function"] for i in gated_indices}) == 1
+    same_function = len({g["function"] for g in gates if g is not None}) == 1
 
     odds = None
     if len(entries) <= MAX_EXACT_ODDS_ENTRIES:
@@ -369,16 +366,16 @@ def check_overlap_ladder(entries: list[dict], flags: set[str], glob_values: dict
                 "reference": entry_reference_text(e),
                 "gate": (
                     describe_condition(
-                        {"Function": gates[i]["function"], "Operator": gates[i]["operator"], "Comparison Value": gates[i]["comparison_value"]},
+                        {"Function": g["function"], "Operator": g["operator"], "Comparison Value": g["comparison_value"]},
                         glob_values,
                     )
-                    if gates[i]
+                    if g is not None
                     else None
                 ),
                 "pool_odds": odds["pool"][i] if odds else None,
                 "naive_cascade_odds": odds["naive_cascade"][i] if odds else None,
             }
-            for i, e in enumerate(entries)
+            for i, (e, g) in enumerate(zip(entries, gates))
         ],
     }
 
@@ -655,11 +652,11 @@ def main(argv=None) -> int:
 
     esm_path = Path(args.esm)
 
-    form_ids = list_lvli_form_ids(esm_bin, esm_path)
-    eprint(f"found {len(form_ids)} LVLI records; fetching...")
-
     client = esm_gateway.ensure_daemon(esm_bin, esm_path)
     try:
+        form_ids = list_lvli_form_ids(client, esm_path)
+        eprint(f"found {len(form_ids)} LVLI records; fetching...")
+
         records = client.bulk_get(str(esm_path), form_ids, resolve="stub")
 
         glob_refs = collect_glob_refs(records)

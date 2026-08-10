@@ -44,6 +44,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import esm_gateway  # noqa: E402
+import layout  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -293,7 +294,7 @@ def _matches_any(edid, patterns):
     return any(fnmatch.fnmatchcase(edid, pat) for pat in patterns)
 
 
-def _unique_keyword_patterns(ctx):
+def _unique_keyword_patterns(ctx: pl.RuleContext):
     patterns = (ctx.get("settings") or {}).get("unique_keyword_patterns")
     return patterns if patterns else DEFAULT_UNIQUE_KEYWORD_PATTERNS
 
@@ -340,7 +341,7 @@ class _RuleRecordTally:
         if self._first_exc is None:
             self._first_exc = exc
 
-    def append_note(self, ctx):
+    def append_note(self, ctx: pl.RuleContext):
         if not self.failures:
             return
         exc = self._first_exc
@@ -372,7 +373,7 @@ def _has_live_referencer(client, esm, fid, *, depth, tally=None):
 # --------------------------------------------------------------------------
 
 
-def rule_lvli_blocked_entry(ctx):
+def rule_lvli_blocked_entry(ctx: pl.RuleContext):
     records = ctx["records"]
     ref_names = ctx["ref_names"]
     lints = []
@@ -525,7 +526,7 @@ def rule_lvli_blocked_entry(ctx):
 # --------------------------------------------------------------------------
 
 
-def rule_dangling_ref(ctx):
+def rule_dangling_ref(ctx: pl.RuleContext):
     records = ctx["records"]
     ref_names = ctx["ref_names"]
     client = ctx["client"]
@@ -615,7 +616,7 @@ def rule_dangling_ref(ctx):
 # --------------------------------------------------------------------------
 
 
-def rule_orphaned_unique(ctx):
+def rule_orphaned_unique(ctx: pl.RuleContext):
     records = ctx["records"]
     ref_names = ctx["ref_names"]
     client = ctx["client"]
@@ -700,7 +701,7 @@ def rule_orphaned_unique(ctx):
 # --------------------------------------------------------------------------
 
 
-def rule_unreferenced_perk_rank(ctx):
+def rule_unreferenced_perk_rank(ctx: pl.RuleContext):
     records = ctx["records"]
     client = ctx["client"]
     new_esm = ctx.get("new_esm")
@@ -750,7 +751,7 @@ def rule_unreferenced_perk_rank(ctx):
 # --------------------------------------------------------------------------
 
 
-def rule_desc_changed_stats_same(ctx):
+def rule_desc_changed_stats_same(ctx: pl.RuleContext):
     records = ctx["records"]
     lints = []
     tally = _RuleRecordTally("desc_changed_stats_same")
@@ -804,7 +805,7 @@ def rule_desc_changed_stats_same(ctx):
 # --------------------------------------------------------------------------
 
 
-def rule_stats_changed_desc_same(ctx):
+def rule_stats_changed_desc_same(ctx: pl.RuleContext):
     records = ctx["records"]
     lints = []
     tally = _RuleRecordTally("stats_changed_desc_same")
@@ -867,7 +868,7 @@ def rule_stats_changed_desc_same(ctx):
 # --------------------------------------------------------------------------
 
 
-def rule_cut_newly_deprecated(ctx):
+def rule_cut_newly_deprecated(ctx: pl.RuleContext):
     records = ctx["records"]
     lints = []
 
@@ -928,7 +929,7 @@ RULE_ORDER = [
 # --------------------------------------------------------------------------
 
 
-def build_context(comprehensive, bundles, client, new_esm=None, old_esm=None, settings=None):
+def build_context(comprehensive, bundles, client, new_esm=None, old_esm=None, settings=None) -> pl.RuleContext:
     """Build the `ctx` dict every rule function receives."""
     return {
         "records": (comprehensive or {}).get("records", {}) or {},
@@ -1065,17 +1066,28 @@ def run_lints(comp, bundles, client, new_esm=None, old_esm=None, settings=None, 
 def load_settings(categories_path):
     """Load rule tunables from a `--categories` config file. Accepts either
     `{"settings": {...}}` or a flat dict directly containing tunable keys
-    (e.g. `unique_keyword_patterns`). Missing/unreadable/malformed file ->
-    empty settings (rules fall back to their defaults)."""
+    (e.g. `unique_keyword_patterns`).
+
+    `categories_path` falsy (no `--categories` flag given -- there is no
+    implicit default file to fail on) -> empty settings, silently, so rules
+    fall back to their defaults exactly like before.
+
+    `categories_path` given but missing/unreadable/malformed -> raises
+    (`OSError`, `json.JSONDecodeError`, or `ValueError` for a non-dict
+    top-level shape) instead of silently degrading to empty settings. A
+    typo'd `--categories` path used to silently change lint behavior by
+    falling back to defaults with no indication anything was wrong; the
+    caller (`main`, below) turns this into a clean CLI error instead of a
+    bare traceback."""
     if not categories_path:
         return {}
-    try:
-        with open(categories_path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return {}
+    with open(categories_path, encoding="utf-8") as f:
+        data = json.load(f)
     if not isinstance(data, dict):
-        return {}
+        raise ValueError(
+            f"--categories {categories_path}: expected a JSON object at the top level, "
+            f"got {type(data).__name__}"
+        )
     settings = data.get("settings")
     return settings if isinstance(settings, dict) else data
 
@@ -1116,7 +1128,7 @@ def build_arg_parser():
     )
     ap.add_argument("--categories", help="Config file supplying rule tunables (e.g. unique_keyword_patterns).")
     ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeGateway instead of a real daemon.")
-    ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see esm_gateway.FakeGateway).")
+    ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see tools/tests/fake_gateway.FakeGateway).")
     ap.add_argument("--rules", help="Comma-separated subset of rules to run (default: all).")
     return ap
 
@@ -1126,15 +1138,21 @@ def main(argv=None):
     out_dir = Path(args.out_dir)
 
     try:
-        with open(out_dir / "comprehensive.json", encoding="utf-8") as f:
-            comp = json.load(f)
-        with open(out_dir / "bundles.json", encoding="utf-8") as f:
-            bundles = json.load(f)
-    except (OSError, json.JSONDecodeError) as exc:
+        comprehensive_path = layout.comprehensive_json(out_dir)
+        with open(comprehensive_path, encoding="utf-8") as f:
+            comp = pl.validate_comprehensive_payload(json.load(f), label=str(comprehensive_path))
+        bundles_path = layout.bundles_json(out_dir)
+        with open(bundles_path, encoding="utf-8") as f:
+            bundles = pl.validate_bundles_payload(json.load(f), label=str(bundles_path))
+    except (OSError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
         print(f"error: failed to read pipeline output from {out_dir}: {exc}", file=sys.stderr)
         return 1
 
-    settings = load_settings(args.categories)
+    try:
+        settings = load_settings(args.categories)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"error: failed to load --categories {args.categories}: {exc}", file=sys.stderr)
+        return 1
 
     rule_names = None
     if args.rules:
@@ -1149,7 +1167,13 @@ def main(argv=None):
             if not args.refs_fixture:
                 print("error: --offline requires --refs-fixture", file=sys.stderr)
                 return 1
-            client = esm_gateway.FakeGateway(args.refs_fixture)
+            # FakeGateway is a test double (tools/tests/fake_gateway.py, not
+            # tools/) -- lazily imported only on this opt-in path so a
+            # normal (non---offline) run never touches tools/tests/.
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "tests"))
+            from fake_gateway import FakeGateway  # noqa: E402
+
+            client = FakeGateway(args.refs_fixture)
             new_esm = args.new_esm or "new.esm"
             old_esm = args.old_esm or "old.esm"
         else:
@@ -1167,10 +1191,10 @@ def main(argv=None):
         if client is not None:
             client.close()
 
-    with open(out_dir / "lints.json", "w", encoding="utf-8") as f:
+    with open(layout.lints_json(out_dir), "w", encoding="utf-8") as f:
         json.dump(lints_payload, f, indent=2)
         f.write("\n")
-    with open(out_dir / "bundles.json", "w", encoding="utf-8") as f:
+    with open(layout.bundles_json(out_dir), "w", encoding="utf-8") as f:
         json.dump(updated_bundles, f, indent=2)
         f.write("\n")
 

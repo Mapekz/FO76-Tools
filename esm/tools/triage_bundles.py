@@ -70,6 +70,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import layout  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 import slice_bundles as sb  # noqa: E402
 
@@ -107,11 +108,11 @@ def load_json(path):
 
 
 def load_bundles(out_dir):
-    return pl.validate_bundles_payload(load_json(Path(out_dir) / "bundles.json"))
+    return pl.validate_bundles_payload(load_json(layout.bundles_json(out_dir)))
 
 
 def load_comprehensive(out_dir):
-    return pl.validate_comprehensive_payload(load_json(Path(out_dir) / "comprehensive.json"))
+    return pl.validate_comprehensive_payload(load_json(layout.comprehensive_json(out_dir)))
 
 
 def load_tiers_config(path):
@@ -875,13 +876,12 @@ def _write_json(path, payload):
 
 
 def write_outputs(out_dir, result):
-    work_dir = Path(out_dir) / "work"
-    work_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(work_dir / "triage.json", result["triage"])
-    _write_json(work_dir / "deep-slice.json", result["deep_slice"])
-    _write_json(work_dir / "ambiguous.json", result["ambiguous"])
-    (work_dir / "brief-lines.md").write_text(result["brief_lines_md"], encoding="utf-8")
-    (work_dir / "rollouts.md").write_text(result["rollouts_md"], encoding="utf-8")
+    layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
+    _write_json(layout.work_triage_json(out_dir), result["triage"])
+    _write_json(layout.work_deep_slice_json(out_dir), result["deep_slice"])
+    _write_json(layout.work_ambiguous_json(out_dir), result["ambiguous"])
+    layout.work_brief_lines_md(out_dir).write_text(result["brief_lines_md"], encoding="utf-8")
+    layout.work_rollouts_md(out_dir).write_text(result["rollouts_md"], encoding="utf-8")
 
 
 def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):

@@ -40,6 +40,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+import layout
 import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
@@ -781,8 +782,8 @@ def main(argv=None):
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    json_path = out_dir / "comprehensive.json"
-    md_path = out_dir / "comprehensive.md"
+    json_path = layout.comprehensive_json(out_dir)
+    md_path = layout.comprehensive_md(out_dir)
 
     with json_path.open("w", encoding="utf-8") as f:
         json.dump(comp, f, indent=2, ensure_ascii=False)

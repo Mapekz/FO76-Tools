@@ -34,7 +34,7 @@ Algorithm (see module docstring sections below for each step):
 library entry point; `main()` is a thin CLI wrapper. `client` is anything
 implementing `esm_gateway.EsmGateway`'s `refs()`/`record()` surface —
 normally a live warm-daemon `EsmGateway` (see `esm_gateway.ensure_daemon`),
-or `esm_gateway.FakeGateway` for `--offline` / tests.
+or `tools/tests/fake_gateway.FakeGateway` for `--offline` / tests.
 
 Python 3, stdlib only.
 """
@@ -1029,7 +1029,7 @@ def build_arg_parser():
     ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live daemon mode only).")
     ap.add_argument(
         "--offline", action="store_true",
-        help="Use esm_gateway.FakeGateway (--refs-fixture) instead of a live warm daemon.",
+        help="Use a fixture-backed FakeGateway (--refs-fixture) instead of a live warm daemon.",
     )
     ap.add_argument("--refs-fixture", default=None, help="FakeGateway fixture JSON (required with --offline).")
     return ap
@@ -1044,8 +1044,8 @@ def main(argv=None):
 
     try:
         with open(args.comprehensive_json, encoding="utf-8") as f:
-            comp = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
+            comp = pl.validate_comprehensive_payload(json.load(f), label=args.comprehensive_json)
+    except (OSError, json.JSONDecodeError, TypeError, KeyError, ValueError) as e:
         eprint(f"error: failed to load {args.comprehensive_json}: {e}")
         return 1
 
@@ -1067,7 +1067,13 @@ def main(argv=None):
     config = {**config, "settings": settings}
 
     if args.offline:
-        client = esm_gateway.FakeGateway(args.refs_fixture)
+        # FakeGateway is a test double (tools/tests/fake_gateway.py, not
+        # tools/) -- lazily imported only on this opt-in path so a normal
+        # (non---offline) run never touches tools/tests/.
+        sys.path.insert(0, str(SCRIPT_DIR / "tests"))
+        from fake_gateway import FakeGateway  # noqa: E402
+
+        client = FakeGateway(args.refs_fixture)
     else:
         try:
             esm_bin = esm_gateway.find_esm_binary(args.esm_bin)

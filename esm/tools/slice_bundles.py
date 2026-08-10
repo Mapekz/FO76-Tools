@@ -20,6 +20,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import layout  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -160,7 +161,7 @@ def run_extract(out_dir, formids):
     some/all requested formids were missing — 1 on hard errors) and prints
     the resulting JSON object to stdout on success.
     """
-    path = Path(out_dir) / "comprehensive.json"
+    path = layout.comprehensive_json(out_dir)
     if not path.exists():
         print(f"error: {path} not found", file=sys.stderr)
         return 1

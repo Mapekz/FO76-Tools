@@ -17,10 +17,11 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import patchnotes_lib as pnl  # noqa: E402
 import run_lints as rl  # noqa: E402
-from esm_gateway import FakeGateway  # noqa: E402
+from fake_gateway import FakeGateway  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 REFS_GRAPH_FIXTURE = FIXTURES_DIR / "refs_graph.json"
@@ -63,15 +64,21 @@ def make_comp(records, ref_names=None):
 
 
 def make_bundle(bundle_id, category, anchor_fid, anchor_type, members=None, edges=None, **extra):
+    # Field set/shape mirrors patchnotes_lib.Bundle exactly (role "primary"
+    # isn't a real MemberRole -- "anchor"/"satellite"/"context" are -- and
+    # "status"/"category_rule" are required-but-nullable keys) so this
+    # round-trips through pl.validate_bundles_payload() unchanged, which
+    # TestEndToEndCli exercises via run_lints.main()'s bundles.json read.
     b = {
         "id": bundle_id,
         "category": category,
         "category_label": category,
+        "category_rule": None,
         "title": f"Bundle {bundle_id}",
-        "anchor": {"form_id": anchor_fid, "record_type": anchor_type},
+        "anchor": {"form_id": anchor_fid, "record_type": anchor_type, "status": "changed"},
         "members": members
         if members is not None
-        else [{"form_id": anchor_fid, "record_type": anchor_type, "role": "primary"}],
+        else [{"form_id": anchor_fid, "record_type": anchor_type, "status": "changed", "role": "anchor"}],
         "edges": edges or [],
         "bug_watch": False,
         "lint_ids": [],
@@ -762,7 +769,9 @@ class TestInjection(unittest.TestCase):
         self.assertEqual(by_id["B0002"]["lint_ids"], [])
         self.assertFalse(by_id["B0002"]["bug_watch"])
         self.assertEqual(by_id["B0002"]["category"], "weapons")
-        self.assertEqual(by_id["B0002"]["anchor"], {"form_id": "0x09999999", "record_type": "WEAP"})
+        self.assertEqual(
+            by_id["B0002"]["anchor"], {"form_id": "0x09999999", "record_type": "WEAP", "status": "changed"}
+        )
 
         self.assertEqual(updated["lints"], lints_payload["lints"])
 

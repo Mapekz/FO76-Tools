@@ -9,11 +9,20 @@ daemon instead of paying the ~280 MiB cold-index cost per call.
 Historically this module (`esm_daemon.py`, `class DaemonClient`) only covered
 single-record `get`/`refs`/`search`. It has since been promoted to a full
 gateway: `bulk_get` (`Op::RecordBulk`, one round-trip for N selectors),
+`list_type` (`Op::ListTypeRecords`, the `esm list --type SIG` op),
 `refs(..., paths=True, type_filter=...)` (the `--paths`/`--type` refs
 capabilities), `diff` (the two-ESM `esm --local diff` subprocess), and the one
 canonical `find_esm_binary` (previously copy-pasted in `make_patch_notes.py`
 and `build_bundles.py`) all live here now, so nothing else in `tools/` needs
-to shell out to `esm` directly.
+to shell out to `esm` directly (`lvli_audit.py`/`extractor/hardcoded.py`
+route their `esm list --type SIG` calls through `list_type` for exactly this
+reason).
+
+`FakeGateway`, the fixture-backed test double that used to live in this
+file, has moved to `tools/tests/fake_gateway.py` -- it is a test double, not
+a wire client, so it does not belong in the "one seam" module itself. See
+that module's docstring for why `--offline` mode still reaches it from
+production code (`make_patch_notes.py`/`build_bundles.py`/`run_lints.py`).
 
 Wire format mirrors, exactly, the following Rust sources (re-verify there if
 this file and the Rust side ever drift):
@@ -25,6 +34,15 @@ this file and the Rust side ever drift):
     src/bin/cli.rs    -- cmd_diff's --local/force-local rule (see `diff`'s
                          own docstring for why it stays subprocess-based)
 
+The constants below (timeouts, `DEFAULT_MAX_DEPTH`) and the `Op`
+discriminant strings / `diff` flag names used elsewhere in this file are no
+longer hand-copied -- they're imported from `wire_constants.py`, a
+"# GENERATED" module `tools/regen_wire_constants.py` (re)writes from the
+Rust source of truth itself (`esm dump-wire-constants`). CI regenerates and
+`git diff --exit-code`s it, so a Rust-side rename/value change that isn't
+matched here fails the build instead of silently drifting -- see
+`regen_wire_constants.py`'s own docstring.
+
 Python 3, stdlib only -- no third-party dependencies.
 """
 
@@ -35,48 +53,23 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
-from collections import deque
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, Union
 
-# ─── Constants (mirror backend.rs) ──────────────────────────────────────────
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-DAEMON_FILENAME = "esm-daemon.json"
-
-#: Fast deadline for /health probes -- a live daemon responds instantly.
-#: Mirrors backend.rs::CONNECT_TIMEOUT.
-CONNECT_TIMEOUT_SECS = 2.0
-
-#: Poll cadence while waiting for a freshly spawned daemon to come up.
-#: Mirrors backend.rs::HEALTH_POLL_INTERVAL.
-HEALTH_POLL_INTERVAL_SECS = 0.1
-
-#: Max time to wait for a freshly spawned daemon. Mirrors
-#: backend.rs::HEALTH_POLL_MAX.
-HEALTH_POLL_MAX_SECS = 30.0
-
-#: Deadline for a full /op round-trip. Mirrors backend.rs::op_timeout()'s
-#: default (ESM_OP_TIMEOUT_SECS unset). The *first* op against a cold ESM can
-#: trigger a full index build, hence the generous default.
-#:
-#: On the Rust side (RemoteBackend::post_op) this is now an OVERALL retry
-#: budget, not a single HTTP call's deadline: a per-attempt timeout
-#: (op_attempt_timeout(), ESM_OP_ATTEMPT_TIMEOUT_SECS, default 20s) is
-#: retried -- not surfaced as an error -- for as long as progress::read shows
-#: a live, non-stalled build on the requested ESM, up to this overall budget.
-#: This module does NOT mirror that retry loop -- http.client.HTTPConnection's
-#: timeout is a single socket-level deadline, so a cold-build call here still
-#: fails outright at OP_TIMEOUT_SECS with an opaque timeout, the exact failure
-#: mode the Rust-side retry was added to avoid. Known parity gap, not fixed
-#: here: doing so would mean reading esm_cache/<esm>.build.lock/.build.json
-#: directly (see progress.rs) via fcntl.flock, which is a bigger, separable
-#: change from this constant's doc drift.
-OP_TIMEOUT_SECS = 300.0
-
-#: Reverse-reference walk depth cap. Mirrors ipc.rs::DEFAULT_MAX_DEPTH.
-DEFAULT_MAX_DEPTH = 6
+from wire_constants import (  # noqa: E402
+    CONNECT_TIMEOUT_SECS,
+    DAEMON_FILENAME,
+    DIFF_FLAGS,
+    HEALTH_POLL_INTERVAL_SECS,
+    HEALTH_POLL_MAX_SECS,
+    OP_NAMES,
+    OP_TIMEOUT_SECS,
+)
 
 FormIdLike = Union[int, str]
 
@@ -140,6 +133,10 @@ def _sel_for_input(value: FormIdLike) -> dict:
     if isinstance(value, int):
         return _sel_for_formid(value)
     return _sel_for_formid(value) if _looks_like_formid(value) else _sel_for_edid(value)
+
+
+def _sel_kind(sel: Mapping[str, Any]) -> tuple[str, Any]:
+    return sel["kind"], sel["value"]
 
 
 def _sel_display(sel: Mapping[str, Any]) -> str:
@@ -414,6 +411,23 @@ def build_diff_cmd(
         cmd += ["--startup-ba2", str(startup_ba2)]
     elif curves_dir:
         cmd += ["--curves-dir", str(curves_dir)]
+
+    # Defensive check against wire_constants.DIFF_FLAGS (generated from
+    # DiffArgs, cli.rs): every long flag built above must be one `esm
+    # --local diff` actually accepts today, so a typo'd or Rust-renamed
+    # flag name fails immediately here instead of as an opaque clap error
+    # from the subprocess. `--local`/`diff` aren't DiffArgs' own flags (the
+    # former is a top-level Cli flag, the latter the subcommand name) so
+    # they're allowed alongside DIFF_FLAGS. A heuristic, not a real argv
+    # parser: assumes no flag VALUE (a path, a lang code) ever itself
+    # starts with "--", true for every value this function ever builds.
+    known = DIFF_FLAGS | {"--local"}
+    for token in cmd[2:]:  # skip [esm_bin, "--local"]; "diff" is next but doesn't start with "--"
+        if token.startswith("--") and token not in known:
+            raise DaemonError(
+                f"build_diff_cmd emitted {token!r}, not in wire_constants.DIFF_FLAGS -- "
+                "regenerate tools/wire_constants.py or fix the flag name"
+            )
     return cmd
 
 
@@ -515,8 +529,15 @@ class EsmGateway:
         Raises `DaemonError` for an `{"status":"err","error":...}` envelope,
         for a non-2xx HTTP response (e.g. 401 from `check_auth`, whose body
         is the differently-shaped `{"error": "..."}` from `ApiError`, not the
-        `Response` envelope), or for an unparsable body.
+        `Response` envelope), or for an unparsable body. Also raises
+        `DaemonError` client-side, before ever making the request, if
+        `op["op"]` isn't one of `wire_constants.OP_NAMES` -- a typo'd or
+        stale (renamed on the Rust side) op string would otherwise reach the
+        server as an opaque unrecognized-op error.
         """
+        kind = op.get("op")
+        if kind not in OP_NAMES:
+            raise DaemonError(f"unknown Op discriminant {kind!r} (not in wire_constants.OP_NAMES)")
         body = json.dumps({"esm": esm, "op": op}).encode("utf-8")
         status, data = self._request("POST", "/op", body)
 
@@ -603,6 +624,21 @@ class EsmGateway:
             },
         )
 
+    def list_type(self, esm: str, sig: str, *, offset: int = 0, limit: int = 0) -> list[dict]:
+        """`Op::ListTypeRecords { sig, offset, limit }` -- the wire op behind
+        `esm list --type SIG --limit N --json` (see cli.rs's `cmd_list`,
+        which sends this exact op for the non-BA2-override case). Returns a
+        list of `RecordRow`-shaped dicts: `{"form_id", "record_type",
+        "editor_id", "name", "offset"}`. `limit=0` means unlimited, matching
+        the CLI's own convention.
+
+        This is the seam `lvli_audit.py`/`extractor/hardcoded.py` route
+        their `esm list --type SIG` calls through instead of shelling out to
+        the `esm` binary directly -- see this module's docstring's "one
+        seam" claim.
+        """
+        return self.op(esm, {"op": "list_type_records", "sig": sig, "offset": offset, "limit": limit})
+
     def refs(
         self,
         esm: str,
@@ -614,9 +650,17 @@ class EsmGateway:
         paths: bool = False,
     ) -> dict:
         """`Op::ReferencedBy { sel: FormId, limit, depth, type_filter, paths }`.
-        `limit=0` means unlimited; `depth` is clamped server-side to
-        `[1, DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict:
-        `{target, rows, total, capped}`.
+        `limit=0` means unlimited; `depth=0` requests an UNBOUNDED walk (no
+        fixed hop cap), any other value clamps server-side to `[1,
+        DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict: `{target, rows,
+        total, capped, requested_depth, effective_depth, depth_capped,
+        frontier_remaining, per_depth_totals, shown_max_depth}` (see
+        `RefList` in ipc.rs for each field's exact meaning; `effective_depth`
+        is `None` when `requested_depth == 0`). `carrier_total`/`tag_total`
+        are also part of the wire struct but only populated for
+        entry-point/carrier-seeded walks, which this single-target method
+        never produces -- they're omitted from a plain `refs()` response,
+        same as the server's own `skip_serializing_if` omission.
 
         `type_filter`, if given, must be a 4-character record-type signature
         (case-insensitive, e.g. `"OMOD"`) -- only referencing records of that
@@ -746,299 +790,3 @@ class EsmGateway:
             ) from exc
 
         return DiffResult(data=data, raw_json=raw_output, cmd=cmd, stderr=result.stderr)
-
-
-# ─── FakeGateway: fixture-backed stand-in, no daemon/ESM required ───────────
-
-
-def _sel_kind(sel: Mapping[str, Any]) -> tuple[str, Any]:
-    return sel["kind"], sel["value"]
-
-
-class FakeGateway:
-    """In-memory stand-in for `EsmGateway`, backed by a JSON fixture.
-
-    Exposes the same public surface (`op`, `refs`, `record`, `record_by_edid`,
-    `bulk_get`, `search`, `file_info`, `exists`, `close`, context-manager) so
-    tests can swap it in for `EsmGateway` without branching. No `diff()` --
-    nothing in `tools/` calls `.diff()` on an injected client (it's a
-    `@staticmethod` invoked directly, see `EsmGateway.diff`), so there's
-    nothing to fake.
-
-    Fixture shape::
-
-        {
-          "records": {
-            "0x00ABCDEF": {
-              "record_type": "WEAP", "editor_id": "...", "name": "...",
-              "fields": {...}                 # optional; needed only by
-                                               # bulk_get() consumers that
-                                               # inspect decoded fields
-            },
-            ...
-          },
-          "refs": {
-            "0x00ABCDEF": [
-              {"form_id": "0x...", "record_type": "...", "editor_id": "...",
-               "name": ..., "depth": 1, "path": [],
-               "field_paths": [...]}           # optional; only consulted
-                                                # when refs(..., paths=True)
-              ...
-            ],
-            ...
-          }
-        }
-
-    `refs[X]` lists only the *direct* (depth-1) referencers of `X` -- exactly
-    what `Database::referenced_by` returns for one node in the real backend.
-    `FakeGateway.refs()` performs the same breadth-first walk that
-    `ipc::referenced_by_enriched` performs server-side: expanding one hop at
-    a time up to the requested depth, visiting each node at most once
-    (cycle-safe), and recording the intermediate-node `path` and hop `depth`
-    exactly as the real `RefRow`/`RefPathNode` structs do. Final ordering
-    also matches: rows are sorted by ascending numeric FormID (not by depth
-    or discovery order), matching `referenced_by_enriched`'s `sort_by_key`.
-    `type_filter` narrows *emission* only (the walk still traverses through
-    non-matching nodes), and `paths=True` passes each matching adjacency
-    row's own `field_paths` entry straight through -- there's no real record
-    body to decode a path from in a fixture, so it's fixture-authored data,
-    not a computed one, unlike the real daemon's `Database.formid_reference_paths`.
-    """
-
-    def __init__(self, fixture: Union[dict, str, Path]):
-        data: dict = (
-            json.loads(Path(fixture).read_text())
-            if isinstance(fixture, (str, Path))
-            else fixture
-        )
-        self.records: dict[str, dict] = dict(data.get("records", {}))
-        self.refs_adj: dict[str, list[dict]] = dict(data.get("refs", {}))
-
-    # ---- generic op() for interface parity with EsmGateway ----
-
-    def op(self, esm: str, op: Mapping[str, Any]) -> Any:
-        kind = op.get("op")
-        if kind == "referenced_by":
-            fid = self._resolve_sel(op["sel"])
-            return self._referenced_by(
-                fid,
-                depth=op.get("depth", 1),
-                limit=op.get("limit", 0),
-                type_filter=op.get("type_filter"),
-                include_paths=op.get("paths", False),
-            )
-        if kind == "record":
-            return self._record(op["sel"])
-        if kind == "record_bulk":
-            return self._bulk_record_entries(op.get("sels") or [])
-        if kind == "file_info":
-            return self.file_info(esm)
-        if kind == "search":
-            raise DaemonError("FakeGateway does not support op 'search' (no search index in fixture)")
-        raise DaemonError(f"FakeGateway does not support op {kind!r}")
-
-    def record(self, esm: str, formid: FormIdLike, *, resolve: str = "stub") -> dict:
-        return self.op(esm, {"op": "record", "sel": _sel_for_formid(formid), "depth": resolve})
-
-    def record_by_edid(self, esm: str, edid: str, *, resolve: str = "stub") -> dict:
-        return self.op(esm, {"op": "record", "sel": _sel_for_edid(edid), "depth": resolve})
-
-    def bulk_get(
-        self, esm: str, sels: Iterable[FormIdLike], *, resolve: str = "stub"
-    ) -> list[dict]:
-        """Fixture-backed counterpart to `EsmGateway.bulk_get`: resolves each
-        selector against `self.records`, isolating a lookup failure to its
-        own `{"sel", "error"}` entry exactly like the real `Op::RecordBulk`
-        dispatch does (see ipc.rs's `bulk_record_entry`)."""
-        wire_sels = [_sel_for_input(s) for s in sels]
-        return self.op(esm, {"op": "record_bulk", "sels": wire_sels, "depth": resolve})
-
-    def refs(
-        self,
-        esm: str,
-        formid: FormIdLike,
-        *,
-        depth: int = 2,
-        limit: int = 0,
-        type_filter: str | None = None,
-        paths: bool = False,
-    ) -> dict:
-        return self.op(
-            esm,
-            {
-                "op": "referenced_by",
-                "sel": _sel_for_formid(formid),
-                "depth": depth,
-                "limit": limit,
-                "type_filter": type_filter,
-                "paths": paths,
-            },
-        )
-
-    def search(
-        self,
-        esm: str,
-        pattern: str,
-        *,
-        record_type: str | None = None,
-        types: Sequence[str] | None = None,
-        field: str = "both",
-        limit: int = 100,
-    ) -> list:
-        raise DaemonError(
-            "FakeGateway does not support 'search' (fixture has no search index): "
-            f"esm={esm!r} pattern={pattern!r} record_type={record_type!r} "
-            f"types={types!r} field={field!r} limit={limit!r}"
-        )
-
-    def file_info(self, esm: str) -> dict:
-        raise DaemonError(
-            f"FakeGateway does not support 'file_info' (fixture has no header data): esm={esm!r}"
-        )
-
-    def exists(self, esm: str, formid: FormIdLike) -> bool:
-        """True iff `formid` resolves to a record, via a cheap `resolve=none`
-        lookup -- mirrors `EsmGateway.exists`."""
-        try:
-            self.record(esm, formid, resolve="none")
-            return True
-        except DaemonError:
-            return False
-
-    def close(self) -> None:
-        pass
-
-    def __enter__(self) -> "FakeGateway":
-        return self
-
-    def __exit__(self, *_exc: object) -> None:
-        del _exc
-        self.close()
-
-    # ---- internals ----
-
-    def _resolve_sel(self, sel: Mapping[str, Any]) -> int:
-        kind, value = _sel_kind(sel)
-        if kind == "form_id":
-            return formid_to_int(value)
-        if kind == "edid":
-            for key, meta in self.records.items():
-                if meta.get("editor_id") == value:
-                    return formid_to_int(key)
-            raise DaemonError(f"EditorID '{value}' not found")
-        raise DaemonError(f"unknown RecordSel kind {kind!r}")
-
-    def _record(self, sel: Mapping[str, Any]) -> dict:
-        fid = self._resolve_sel(sel)
-        key = formid_to_hex(fid)
-        rec = self.records.get(key)
-        if rec is None:
-            raise DaemonError(f"FormID {key} not found")
-        return rec
-
-    def _bulk_record_entries(self, wire_sels: Sequence[Mapping[str, Any]]) -> list[dict]:
-        """Shared by `bulk_get()` and `op()`'s `record_bulk` dispatch --
-        mirrors `bulk_record_entry` in ipc.rs: one bad selector becomes an
-        isolated `error` entry, never aborting the whole batch."""
-        entries = []
-        for sel in wire_sels:
-            display = _sel_display(sel)
-            try:
-                rec = self._record(sel)
-            except DaemonError as exc:
-                entries.append({"sel": display, "error": str(exc)})
-                continue
-            entries.append(
-                {
-                    "sel": display,
-                    "header": rec.get("header"),
-                    "editor_id": rec.get("editor_id"),
-                    "fields": rec.get("fields"),
-                }
-            )
-        return entries
-
-    def _referenced_by(
-        self,
-        target: int,
-        *,
-        depth: int,
-        limit: int,
-        type_filter: str | None = None,
-        include_paths: bool = False,
-    ) -> dict:
-        # Mirror ipc.rs::referenced_by_enriched's clamp: 0 (or any value < 1)
-        # is treated as 1; values above DEFAULT_MAX_DEPTH are capped.
-        max_depth = max(1, min(depth, DEFAULT_MAX_DEPTH))
-        target_hex = formid_to_hex(target)
-        type_filter_upper = type_filter.upper() if type_filter else None
-
-        seen: set[int] = {target}
-        # Queue entries: (node_to_expand, path_of_intermediate_hops_leading_to_it).
-        queue: deque[tuple[int, list[dict]]] = deque([(target, [])])
-        rows: list[dict] = []
-
-        while queue:
-            current, path_here = queue.popleft()
-            current_hex = formid_to_hex(current)
-            for row in self.refs_adj.get(current_hex, []):
-                fid = formid_to_int(row["form_id"])
-                if fid in seen:
-                    continue  # already emitted via a shorter or equal-length path
-                seen.add(fid)
-
-                fid_hex = formid_to_hex(fid)
-                meta = self.records.get(fid_hex, {})
-                record_type = meta.get("record_type", row.get("record_type"))
-                editor_id = meta.get("editor_id", row.get("editor_id"))
-                name = meta.get("name", row.get("name"))
-                hop_depth = len(path_here) + 1
-
-                # `type_filter` narrows *emission* only -- the walk below still
-                # expands through a non-matching node so a matching node
-                # further away stays reachable (mirrors
-                # ipc.rs::referenced_by_enriched's `type_matches` gate).
-                type_matches = type_filter_upper is None or (
-                    (record_type or "").upper() == type_filter_upper
-                )
-                if type_matches:
-                    out_row: dict[str, Any] = {
-                        "form_id": fid_hex,
-                        "record_type": record_type,
-                        "editor_id": editor_id,
-                        "name": name,
-                        "offset": row.get("offset", 0),
-                        "depth": hop_depth,
-                    }
-                    # RefRow's `path` is `#[serde(skip_serializing_if =
-                    # "Vec::is_empty")]` on the wire -- omit the key entirely
-                    # at depth 1, same as the real daemon's JSON.
-                    if path_here:
-                        out_row["path"] = list(path_here)
-                    if include_paths:
-                        # Fixture-authored, not computed -- see class docstring.
-                        out_row["field_paths"] = row.get("field_paths", [])
-                    rows.append(out_row)
-
-                if hop_depth < max_depth:
-                    new_path = path_here + [
-                        {
-                            "form_id": fid_hex,
-                            "record_type": record_type,
-                            "editor_id": editor_id,
-                        }
-                    ]
-                    queue.append((fid, new_path))
-
-        rows.sort(key=lambda r: formid_to_int(r["form_id"]))
-
-        total = len(rows)
-        capped = limit > 0 and total > limit
-        limited = rows[:limit] if limit > 0 else rows
-
-        return {
-            "target": target_hex,
-            "rows": limited,
-            "total": total,
-            "capped": capped,
-        }

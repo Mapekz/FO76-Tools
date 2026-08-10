@@ -38,15 +38,19 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import layout  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 
 #: stages.narrative's own schema version (independent of the pipeline-wide
 #: pl.SCHEMA_VERSION, which covers diff/comprehensive/bundles/lints shapes
-#: this script doesn't touch).
-NARRATIVE_SCHEMA_VERSION = 2
+#: this script doesn't touch). Single source of truth in patchnotes_lib.py,
+#: since new_manifest() seeds a fresh stages.narrative in this same shape.
+NARRATIVE_SCHEMA_VERSION = pl.NARRATIVE_SCHEMA_VERSION
 
-PATCH_SUMMARY_FILENAME = "patch-summary.md"
-DISCORD_DIRNAME = "discord"
+#: Bare filename, kept for the human-readable print_summary()/warning
+#: strings below -- the actual path is always layout.patch_summary_md(out_dir).
+PATCH_SUMMARY_FILENAME = layout.patch_summary_md(Path("")).name
+DISCORD_DIRNAME = layout.DISCORD_DIRNAME
 
 
 def eprint(*args, **kwargs):
@@ -60,7 +64,7 @@ def _now_iso():
 def discover_patch_summary(out_dir: Path) -> str | None:
     """Relative path to `<out_dir>/patch-summary.md`, or None if it doesn't
     exist yet (never raises)."""
-    path = out_dir / PATCH_SUMMARY_FILENAME
+    path = layout.patch_summary_md(out_dir)
     return PATCH_SUMMARY_FILENAME if path.is_file() else None
 
 
@@ -69,7 +73,7 @@ def discover_discord_chunks(out_dir: Path) -> list[str]:
     flat directory now (one merged patch-summary.md, not one per category),
     filenames are zero-padded (chunk_001.md, ...) so a plain name sort is
     already numeric order."""
-    chunk_dir = out_dir / DISCORD_DIRNAME
+    chunk_dir = layout.discord_dir(out_dir)
     if not chunk_dir.is_dir():
         return []
     paths = sorted(p for p in chunk_dir.glob("chunk_*.md") if p.is_file())
@@ -81,7 +85,7 @@ def load_triage_stats(out_dir: Path) -> dict | None:
     "resolved_by_assessor"}` sourced from `<out_dir>/work/triage.json`
     (triage_bundles.py's output), or None if that file doesn't exist / is
     unreadable / malformed (never raises)."""
-    path = out_dir / "work" / "triage.json"
+    path = layout.work_triage_json(out_dir)
     if not path.is_file():
         return None
     try:
@@ -171,7 +175,7 @@ def main(argv=None):
     if narrative["patch_summary_md"] is None:
         eprint(f"warning: no {PATCH_SUMMARY_FILENAME} found in {out_dir}")
     if narrative["chunk_count"] == 0:
-        eprint(f"warning: zero Discord chunks found under {out_dir / DISCORD_DIRNAME}")
+        eprint(f"warning: zero Discord chunks found under {layout.discord_dir(out_dir)}")
     eprint(f"\nwrote {out_dir / 'manifest.json'}")
     return 0
 

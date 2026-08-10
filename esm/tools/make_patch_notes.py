@@ -51,7 +51,7 @@ Options:
                           BFS depth.
     --skip-bundles        Skip bundles.json (and, necessarily, lints.json).
     --skip-lints          Skip lints.json (bundles.json is still built).
-    --offline             Use esm_gateway.FakeGateway instead of a live warm daemon
+    --offline             Use a fixture-backed FakeGateway (tools/tests/fake_gateway.py) instead of a live warm daemon
                           for the bundles/lints stages (requires --refs-fixture).
     --refs-fixture F      FakeGateway fixture JSON (required with --offline).
     -v, --verbose         Show full diff command + esm output.
@@ -100,6 +100,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import build_bundles as bb  # noqa: E402
 import esm_gateway as eg  # noqa: E402
+import layout  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 import render_comprehensive as rc  # noqa: E402
 import run_lints as rl  # noqa: E402
@@ -559,7 +560,7 @@ def main(argv=None):
     config = {**config, "settings": settings}
 
     # ---- Step 2: esm diff ---------------------------------------------------
-    diff_json_path = out_dir / "diff.json"
+    diff_json_path = layout.diff_json(out_dir)
     diff_data = run_esm_diff(
         esm_bin, esm_a, esm_b,
         strings_dir_a=strings_dir_a,
@@ -574,7 +575,7 @@ def main(argv=None):
         startup_ba2=startup_ba2,
         curves_dir=curves_dir,
     )
-    files_written["diff"] = "diff.json"
+    files_written["diff"] = diff_json_path.name
 
     # ---- Step 3: comprehensive.json / comprehensive.md ----------------------
     banner("Step 3: Building comprehensive.json / comprehensive.md")
@@ -590,8 +591,8 @@ def main(argv=None):
         )
         md = rc.render_markdown(comp)
 
-        comp_json_path = out_dir / "comprehensive.json"
-        comp_md_path = out_dir / "comprehensive.md"
+        comp_json_path = layout.comprehensive_json(out_dir)
+        comp_md_path = layout.comprehensive_md(out_dir)
         with comp_json_path.open("w", encoding="utf-8") as f:
             json.dump(comp, f, indent=2, ensure_ascii=False)
             f.write("\n")
@@ -599,8 +600,8 @@ def main(argv=None):
             f.write(md)
     except Exception as e:
         die(3, f"building comprehensive.json/.md failed: {e}")
-    files_written["comprehensive_json"] = "comprehensive.json"
-    files_written["comprehensive_md"] = "comprehensive.md"
+    files_written["comprehensive_json"] = comp_json_path.name
+    files_written["comprehensive_md"] = comp_md_path.name
 
     counts = dict(comp["meta"]["counts"])
     eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
@@ -619,17 +620,23 @@ def main(argv=None):
             t_start = time.time()
             try:
                 if args.offline:
-                    client = eg.FakeGateway(args.refs_fixture)
+                    # FakeGateway is a test double (tools/tests/fake_gateway.py,
+                    # not tools/) -- lazily imported only on this opt-in path so
+                    # a normal (non---offline) run never touches tools/tests/.
+                    sys.path.insert(0, str(SCRIPT_DIR / "tests"))
+                    from fake_gateway import FakeGateway  # noqa: E402
+
+                    client = FakeGateway(args.refs_fixture)
                 else:
                     client = eg.ensure_daemon(esm_bin, esm_b)
                 bundles_result = bb.build_bundles(comp, client, str(esm_a), str(esm_b), config)
-                bundles_json_path = out_dir / "bundles.json"
+                bundles_json_path = layout.bundles_json(out_dir)
                 with bundles_json_path.open("w", encoding="utf-8") as f:
                     json.dump(bundles_result, f, indent=2, ensure_ascii=False)
                     f.write("\n")
             except Exception as e:
                 die(3, f"building bundles.json failed: {e}")
-            files_written["bundles"] = "bundles.json"
+            files_written["bundles"] = bundles_json_path.name
             bc = bundles_result["meta"]["counts"]
             eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
                    f"({bc['bundles']} bundles, {bc['singletons']} singletons, "
@@ -646,15 +653,16 @@ def main(argv=None):
                         new_esm=str(esm_b), old_esm=str(esm_a),
                         settings=config.get("settings"),
                     )
-                    with (out_dir / "lints.json").open("w", encoding="utf-8") as f:
+                    lints_json_path = layout.lints_json(out_dir)
+                    with lints_json_path.open("w", encoding="utf-8") as f:
                         json.dump(lints_payload, f, indent=2)
                         f.write("\n")
-                    with (out_dir / "bundles.json").open("w", encoding="utf-8") as f:
+                    with layout.bundles_json(out_dir).open("w", encoding="utf-8") as f:
                         json.dump(updated_bundles, f, indent=2)
                         f.write("\n")
                 except Exception as e:
                     die(3, f"running lint checks failed: {e}")
-                files_written["lints"] = "lints.json"
+                files_written["lints"] = lints_json_path.name
                 lc = lints_payload["meta"]["counts"]
                 eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
                        f"(error={lc['error']} warn={lc['warn']} info={lc['info']})")
@@ -683,8 +691,8 @@ def main(argv=None):
     manifest["stages"]["mechanical"]["completed_at"] = _now_iso()
     manifest["stages"]["mechanical"]["files"] = dict(files_written)
     pl.write_manifest(out_dir, manifest)
-    files_written["manifest"] = "manifest.json"
-    eprint(f"  wrote {out_dir / 'manifest.json'}")
+    files_written["manifest"] = layout.manifest_json(out_dir).name
+    eprint(f"  wrote {layout.manifest_json(out_dir)}")
 
     # ---- Step 7: summary -------------------------------------------------
     t_total = time.time() - t0

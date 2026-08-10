@@ -8,9 +8,13 @@ record in the ESM. xEdit ships these as a pseudo-plugin at
 ``Core/Hardcoded/Fallout76.esp`` inside the TES5Edit checkout, purely so it has
 something to resolve those FormIDs against.
 
-This script shells out to the ``esm`` CLI (the same reader as ``src/reader.rs``,
-including the XXXX oversized-subrecord rule) to list every record in that
-pseudo-plugin and emit a small lookup table of ``{formid, type, editor_id}``
+This script shells out to the ``esm`` CLI ``--local`` (the same reader as
+``src/reader.rs``, including the XXXX oversized-subrecord rule) for ``tree``
+and ``get`` -- a cold one-shot open is the right call for this tiny
+pseudo-plugin, no daemon worth keeping warm. ``list`` goes through
+``esm_gateway.EsmGateway.list_type`` (a warm-daemon round-trip) instead of
+its own subprocess call, per that module's "one seam" property -- see its
+docstring. Emits a small lookup table of ``{formid, type, editor_id}``
 entries, checked in at ``schema/hardcoded_fo76.json`` since the TES5Edit
 checkout is not always present (same rationale as ``schema/fo76.json``).
 """
@@ -23,6 +27,11 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+
+import esm_gateway  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 TES5 = ROOT.parent / "TES5Edit"
@@ -91,7 +100,7 @@ def extract_full(record: dict[str, Any]) -> str | None:
     return None
 
 
-def extract(esp_path: Path, esm_bin: str) -> list[dict]:
+def extract(esp_path: Path, esm_bin: str, client: esm_gateway.EsmGateway) -> list[dict]:
     # ``tree`` always emits JSON (no ``--json`` flag on this subcommand).
     tree = run_esm(esm_bin, esp_path, "tree", "--limit", "0")
     if not isinstance(tree, list):
@@ -103,14 +112,9 @@ def extract(esp_path: Path, esm_bin: str) -> list[dict]:
         sig = label.get("sig")
         if not isinstance(sig, str) or not sig:
             continue
-        listed = run_esm(
-            esm_bin, esp_path, "list", "--type", sig, "--limit", "0", "--json"
-        )
-        if not isinstance(listed, list):
-            raise RuntimeError(
-                f"expected list JSON array for type {sig}, got {type(listed).__name__}"
-            )
-        rows.extend(listed)
+        # `Op::ListTypeRecords` -- the same op `esm list --type SIG --json`
+        # sends -- via the warm-daemon gateway instead of its own subprocess.
+        rows.extend(client.list_type(str(esp_path), sig, limit=0))
 
     if not rows:
         return []
@@ -162,10 +166,17 @@ def main() -> None:
         )
         sys.exit(1)
     try:
-        entries = extract(HARDCODED_ESP, esm_bin)
+        client = esm_gateway.ensure_daemon(esm_bin, HARDCODED_ESP)
+    except esm_gateway.DaemonError as exc:
+        print(f"failed to reach the esm daemon for `list`: {exc}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        entries = extract(HARDCODED_ESP, esm_bin, client)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
+    finally:
+        client.close()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {OUT} ({len(entries)} entries)", file=sys.stderr)
