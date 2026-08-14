@@ -108,7 +108,7 @@ import run_lints as rl  # noqa: E402
 build_diff_cmd = eg.build_diff_cmd
 
 # Orchestrator default for --exclude-type: world-placement/positional records
-# that are noisy and not meaningfully decoded (mirrors patchnotes_lib.EXCLUDED_TYPES'
+# that are noisy and not meaningfully decoded (mirrors change_entries.EXCLUDED_TYPES'
 # WRLD/CELL exclusion, but applied at the Rust diff level to shrink diff.json
 # itself rather than filtering after the fact).
 DEFAULT_EXCLUDE_TYPE = "LAND,NAVM"

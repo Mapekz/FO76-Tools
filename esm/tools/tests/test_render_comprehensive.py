@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import change_entries  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 import render_comprehensive as rc  # noqa: E402
 
@@ -72,7 +73,7 @@ class TestExcludedTypes(unittest.TestCase):
         self.assertEqual(self.comp["meta"]["counts"], {"added": 1, "removed": 0, "changed": 1})
 
     def test_excluded_types_meta_field(self):
-        self.assertEqual(self.comp["meta"]["excluded_types"], sorted(pl.EXCLUDED_TYPES))
+        self.assertEqual(self.comp["meta"]["excluded_types"], sorted(change_entries.EXCLUDED_TYPES))
 
     def test_no_excluded_types_means_empty_counts_excluded(self):
         comp = rc.build_comprehensive({"added": [], "removed": [], "changed": [], "ref_names": {}}, generated_at="X")
@@ -543,7 +544,7 @@ class TestLabelDerivation(unittest.TestCase):
 class TestCliArgParsing(unittest.TestCase):
     def test_common_threshold_default_and_type(self):
         args = rc.build_arg_parser().parse_args(["diff.json", "--out-dir", "out"])
-        self.assertEqual(args.common_threshold, pl.DEFAULT_COMMON_THRESHOLD)
+        self.assertEqual(args.common_threshold, change_entries.DEFAULT_COMMON_THRESHOLD)
         self.assertIsInstance(args.common_threshold, int)
 
     def test_common_threshold_override(self):

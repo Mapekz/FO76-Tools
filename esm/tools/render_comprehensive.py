@@ -40,6 +40,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+import change_entries
 import layout
 import patchnotes_lib as pl
 
@@ -149,7 +150,7 @@ def _strip_flags_values(value):
 
     A 32-bit flags bitmask is formatted as an 8-hex-digit `0x...` string —
     byte-for-byte identical in shape to a genuine FormID — which would
-    otherwise cause patchnotes_lib.collect_refs_out()'s generic dict walk to
+    otherwise cause change_entries.collect_refs_out()'s generic dict walk to
     mis-harvest it as a dangling FormID reference (it isn't; it's just a
     bitmask). This is the one documented decoded-value shape where that
     false positive reliably occurs, so it's worth pre-filtering before
@@ -167,7 +168,7 @@ def _strip_flags_values(value):
 def _collect_refs_out(tree):
     """collect_refs_out(), guarded against the flags-bitmask false positive
     described in _strip_flags_values()."""
-    return pl.collect_refs_out(_strip_flags_values(tree))
+    return change_entries.collect_refs_out(_strip_flags_values(tree))
 
 
 def _merge_refs(*ref_lists):
@@ -187,7 +188,7 @@ def _refs_out_for_changes(changes):
     Harvest FormID references from only the to-side (new/current state) of
     a changed record's ChangeEntry list — the record's outgoing references
     *after* this patch, not what it used to reference. Delegates the actual
-    FormID-shape detection to patchnotes_lib.collect_refs_out() (wrapping
+    FormID-shape detection to change_entries.collect_refs_out() (wrapping
     each value in a single-key dict so the path prefix survives), so this
     stays in sync with the library's own ref-walking rules.
 
@@ -210,7 +211,7 @@ def _refs_out_for_changes(changes):
                 collected.append(_refs_out_for_changes(c.get("changes") or []))
         elif kind == "vmad" and entry.get("vmad"):
             # NOTE: sorted() here isn't just cosmetic — decode_vmad_props()
-            # dicts are built from a `set` union upstream (patchnotes_lib
+            # dicts are built from a `set` union upstream (change_entries
             # diff_vmad), whose iteration order is affected by Python's
             # per-process hash randomization. Sorting keeps refs_out order
             # (and, via _render_change_bullet, the MD prop listing) stable
@@ -255,13 +256,13 @@ def build_comprehensive(
     old_label=None,
     new_label=None,
     patch_date=None,
-    common_threshold=pl.DEFAULT_COMMON_THRESHOLD,
+    common_threshold=change_entries.DEFAULT_COMMON_THRESHOLD,
     generated_at=None,
 ):
     """
     Normalize a raw `esm diff --json` dict into the comprehensive.json shape
     (see module docstring / CLAUDE-facing contract). Records whose
-    `record_type` is in patchnotes_lib.EXCLUDED_TYPES (CELL/WRLD) are
+    `record_type` is in change_entries.EXCLUDED_TYPES (CELL/WRLD) are
     dropped from the returned `records` dict but tallied in
     `meta.counts_excluded`. Mutates nothing on `diff` itself.
     """
@@ -272,14 +273,14 @@ def build_comprehensive(
 
     for stub in diff.get("added") or []:
         rtype = stub.get("record_type")
-        if rtype in pl.EXCLUDED_TYPES:
+        if rtype in change_entries.EXCLUDED_TYPES:
             counts_excluded[rtype] += 1
             continue
         fid = stub.get("form_id")
         fields = stub.get("fields")
         records[fid] = _record_entry(
             fid, rtype, stub.get("editor_id"), stub.get("name"), stub.get("description"),
-            "added", None, pl.annotate_cut(stub), fields,
+            "added", None, change_entries.annotate_cut(stub), fields,
             _collect_refs_out(fields) if fields is not None else [],
             [],
         )
@@ -287,14 +288,14 @@ def build_comprehensive(
 
     for stub in diff.get("removed") or []:
         rtype = stub.get("record_type")
-        if rtype in pl.EXCLUDED_TYPES:
+        if rtype in change_entries.EXCLUDED_TYPES:
             counts_excluded[rtype] += 1
             continue
         fid = stub.get("form_id")
         fields = stub.get("fields")
         records[fid] = _record_entry(
             fid, rtype, stub.get("editor_id"), stub.get("name"), stub.get("description"),
-            "removed", None, pl.annotate_cut(stub), fields,
+            "removed", None, change_entries.annotate_cut(stub), fields,
             _collect_refs_out(fields) if fields is not None else [],
             [],
         )
@@ -303,20 +304,20 @@ def build_comprehensive(
     for rec in diff.get("changed") or []:
         stub = rec.get("stub") or {}
         rtype = stub.get("record_type")
-        if rtype in pl.EXCLUDED_TYPES:
+        if rtype in change_entries.EXCLUDED_TYPES:
             counts_excluded[rtype] += 1
             continue
         fid = stub.get("form_id")
         field_changes = rec.get("field_changes") or {}
-        changes = pl.extract_changes(field_changes, ref_names)
-        pl.mark_redundant_counts(changes)
+        changes = change_entries.extract_changes(field_changes, ref_names)
+        change_entries.mark_redundant_counts(changes)
         fields = stub.get("fields")
         refs_out = _refs_out_for_changes(changes)
         if fields is not None:
             refs_out = _merge_refs(refs_out, _collect_refs_out(fields))
         records[fid] = _record_entry(
             fid, rtype, stub.get("editor_id"), stub.get("name"), stub.get("description"),
-            "changed", rec.get("prev_editor_id"), pl.annotate_cut(rec), fields,
+            "changed", rec.get("prev_editor_id"), change_entries.annotate_cut(rec), fields,
             refs_out, changes,
         )
         counts["changed"] += 1
@@ -325,7 +326,7 @@ def build_comprehensive(
     # each record and mutates the ChangeEntry dicts in place (tagging
     # "common_group") — the same dicts held in `records`, so the JSON output
     # picks up the tag too.
-    common_changes = pl.compute_common_changes(records, threshold=common_threshold)
+    common_changes = change_entries.compute_common_changes(records, threshold=common_threshold)
 
     meta = {
         "old_esm": str(Path(old_esm).resolve()) if old_esm else "",
@@ -334,7 +335,7 @@ def build_comprehensive(
         "new_label": new_label or "",
         "patch_date": patch_date or "",
         "generated_at": generated_at or _iso_now(),
-        "excluded_types": sorted(pl.EXCLUDED_TYPES),
+        "excluded_types": sorted(change_entries.EXCLUDED_TYPES),
         "counts_excluded": dict(counts_excluded),
         "suppressed_counts": diff.get("suppressed_counts") or {},
         "counts": counts,
@@ -596,7 +597,7 @@ def _render_common_change_bullet(cc, records):
 
 
 def _type_heading(rtype, count):
-    desc = pl.TYPE_DESC.get(rtype, rtype)
+    desc = change_entries.TYPE_DESC.get(rtype, rtype)
     return f"### `{rtype}` — {desc} ({count})"
 
 
@@ -747,9 +748,9 @@ def build_arg_parser():
     ap.add_argument("--new-label", help="Display label for the new side (default: basename of --new-esm).")
     ap.add_argument("--patch-date", help="Patch date YYYY-MM-DD (default: derived from filenames).")
     ap.add_argument(
-        "--common-threshold", type=int, default=pl.DEFAULT_COMMON_THRESHOLD,
+        "--common-threshold", type=int, default=change_entries.DEFAULT_COMMON_THRESHOLD,
         help=f"Min number of changed records sharing a delta before it collapses into a "
-             f"Common Change (default: {pl.DEFAULT_COMMON_THRESHOLD}).",
+             f"Common Change (default: {change_entries.DEFAULT_COMMON_THRESHOLD}).",
     )
     return ap
 

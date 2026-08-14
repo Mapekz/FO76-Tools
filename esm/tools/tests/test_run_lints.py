@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import patchnotes_lib as pnl  # noqa: E402
+import change_entries  # noqa: E402
 import run_lints as rl  # noqa: E402
 from fake_gateway import FakeGateway  # noqa: E402
 
@@ -260,7 +260,7 @@ class TestLvliBlockedEntry(TestRunLintsBase):
 
     def _changed_lvli_record(self, form_id, from_list, to_list, ref_names=None):
         field_changes = {"Entries": {"from": from_list, "to": to_list}}
-        changes = pnl.extract_changes(field_changes, ref_names or {})
+        changes = change_entries.extract_changes(field_changes, ref_names or {})
         return make_record(form_id, "LVLI", "changed", editor_id="LVLI_Changed", changes=changes)
 
     def test_changed_lvli_new_added_entry_blocked(self):

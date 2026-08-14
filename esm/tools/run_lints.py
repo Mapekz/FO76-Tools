@@ -4,7 +4,7 @@ run_lints.py — Tool 3 of the FO76 patch-notes pipeline: automated lint checks
 over the mechanical diff output.
 
 Reads `<out_dir>/comprehensive.json` (full per-record detail, keyed by
-FormID — see `patchnotes_lib.py` for the `ChangeEntry` shape each record's
+FormID — see `change_entries.py` for the `ChangeEntry` shape each record's
 `changes` list is made of) and `<out_dir>/bundles.json` (per-bundle
 groupings), runs a fixed registry of rule functions against them (optionally
 consulting a live/fake `esm` daemon client for reference-graph checks), and

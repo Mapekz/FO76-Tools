@@ -252,7 +252,7 @@ class TestIsNumericChangeEntry(unittest.TestCase):
 
     def test_array_entry_with_numeric_changed_row_is_numeric(self):
         # Normalized shape: array.changed[].changes is a proper ChangeEntry
-        # list (as patchnotes_lib.extract_changes() produces).
+        # list (as change_entries.extract_changes() produces).
         arr = {
             "strategy": "keyed", "count_from": 1, "count_to": 1,
             "added": [], "removed": [],
@@ -1314,7 +1314,7 @@ class TestRealConfig(unittest.TestCase):
         # Every array-kind ChangeEntry below sets BOTH "to" and "array" to
         # the same normalized structure, matching how the real pipeline
         # always populates "array" (see _make_leaf_entry/_make_array_diff_
-        # entry in patchnotes_lib.py) -- is_numeric_change_entry reads
+        # entry in change_entries.py) -- is_numeric_change_entry reads
         # "array" specifically, never "to", for array-kind dispatch.
         inner_curve_array = {
             "strategy": "positional", "count_from": 50, "count_to": 50,
