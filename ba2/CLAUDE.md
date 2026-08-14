@@ -37,6 +37,10 @@ Clean layering — edit at the right level:
 
 Public API re-exported from `lib.rs`: `ArchiveKind`, `Codec`, `Ba2Archive`, `Ba2Entry`, `EntryData`, `TextureInfo`, `extract_all`, `extract_one`, `ExtractOptions`, `write_ba2`, `WriteOptions`, plus the `dds` module.
 
+Sibling repo `esm/src/ba2.rs` independently reimplements a minimal read-only slice of this crate
+(BTDX header, GNRL record layout, LZ4 decompress) rather than depending on `ba2` — this is a
+deliberate decision, not an oversight; see `esm/docs/adr/0009-ba2-duplication-is-deliberate.md`.
+
 ## Conventions to Follow
 
 - **Error handling**: `anyhow` everywhere — `Result<T>` (no `Box<dyn Error>`), `bail!` for validation failures, `.context()`/`.with_context()` to attach path/operation info. **No custom error enum** — do not add one.

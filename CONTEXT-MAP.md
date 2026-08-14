@@ -14,5 +14,8 @@ has one so far.
 
 - **esm → esm-viewer**: esm-viewer consumes esm's N-API addon (`esm/bindings/napi`); they
   share esm's record/decode vocabulary
-- **ba2 ↔ esm**: esm reads strings/curve tables out of BA2 archives via the ba2 reader;
-  otherwise the two share no vocabulary
+- **ba2 ↔ esm**: esm reads strings/curve tables out of BA2 archives via its own independent,
+  minimal, read-only reader (`esm/src/ba2.rs`), not the `ba2` crate — a deliberate decision to
+  avoid pulling `ba2`'s write-side dependencies and `Codec::Auto` zlib-tolerance into esm's build,
+  recorded in `esm/docs/adr/0009-ba2-duplication-is-deliberate.md`; otherwise the two share no
+  vocabulary
