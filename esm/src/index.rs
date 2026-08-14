@@ -2,7 +2,7 @@ use crate::decode::{DecodeContext, ResolveDepth, decode_record};
 use crate::format::Signature;
 use crate::formid::{FormId, parse_formid};
 use crate::reader::{
-    EsmFile, RecordMeta, edid_from_subrecords, inline_string_from_subrecords,
+    EsmFile, RecordMeta, WalkEvent, edid_from_subrecords, inline_string_from_subrecords,
     lstring_id_from_subrecords,
 };
 #[cfg(test)]
@@ -893,11 +893,17 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     let forms_path = section_path_for(&esm.path, SectionKind::Forms)?;
     let total = esm.data().len() as u64;
 
+    // Single stage, not two: `tree`/`forms` used to be built by two
+    // independent full-file walks (`walk_records` for forms, then
+    // `TreeIndex::build_with_tick` -> `walk_structure` for tree), reported
+    // as sequential "forms" then "tree" stages. They're now derived from one
+    // shared `walk_structure` pass below, so there is only one counting
+    // stage to report — see the E1 architecture-deepening note.
     let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
         &esm.path,
         crate::progress::BuildStage::Forms,
         1,
-        2,
+        1,
         total,
         || {
             let tree_recheck =
@@ -912,25 +918,45 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
         crate::progress::Acquired::NeedsBuild(lease) => lease,
     };
 
+    // One structural walk feeds both builders inline: each `WalkEvent`
+    // updates the tree arena (`TreeBuilder`, the same per-event state
+    // machine `TreeIndex::build_with_tick` drives on its own) and, for
+    // `WalkEvent::Record`, also inserts a `RecordMeta` into the forms table
+    // — derived straight from the event's own fields, no second header parse
+    // needed (the pre-unification version above re-parsed each record's
+    // header a second time here just to recover `form_id`, since
+    // `walk_records`'s `RecordMeta` didn't carry it).
     let mut form_index = HashMap::new();
-    esm.walk_records(|meta| {
-        let data = esm.data();
-        let rh = crate::format::RecordHeader::parse(&data[meta.offset as usize..])?;
-        let form_id = FormId::new(rh.form_id);
-        form_index.insert(form_id, meta);
-        lease.tick(meta.offset);
+    let mut tree_builder = crate::tree::TreeBuilder::new();
+    esm.walk_structure(|event| {
+        let offset = match &event {
+            WalkEvent::GroupStart { offset, .. } => *offset,
+            WalkEvent::GroupEnd { offset } => *offset,
+            WalkEvent::Record(r) => r.offset,
+        };
+        lease.tick(offset);
+        if let WalkEvent::Record(sr) = &event {
+            form_index.insert(
+                sr.form_id,
+                RecordMeta {
+                    offset: sr.offset,
+                    signature: sr.signature,
+                    flags: sr.flags,
+                    form_version: sr.form_version,
+                },
+            );
+        }
+        tree_builder.push_event(&event);
         Ok(())
     })?;
-
-    lease.begin_stage(crate::progress::BuildStage::Tree, 2, total);
-    let tree = TreeIndex::build_with_tick(esm, |offset| lease.tick(offset))?;
+    let tree = tree_builder.finish();
     let type_index = build_type_index(&form_index);
 
     // Both sections are written back-to-back below with no further counting
-    // pass in between — report the whole write phase as "writing" under the
-    // stage most recently active (`Tree`) rather than threading a third
-    // stage transition through a phase that's CPU/IO-bound, not iteration-
-    // counted, and short relative to the two walks above.
+    // pass in between — report the whole write phase as "writing" rather
+    // than threading a further stage transition through a phase that's
+    // CPU/IO-bound, not iteration-counted, and short relative to the walk
+    // above.
     lease.writing();
 
     // Write the freshly-built tree to its own rkyv section, then drop the

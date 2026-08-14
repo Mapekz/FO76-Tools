@@ -1442,31 +1442,51 @@ fn cmd_refs(
     Ok(())
 }
 
-fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: bool) {
-    // Depth-0 rows only exist on carrier-selector paths (see
-    // `referenced_by_enriched_multi`) — never on a plain FormID/EditorID
-    // `refs` lookup. `has_carriers` gates the `D` column; `has_tags`
-    // gates the target-label print so a type filter that suppresses every
-    // carrier row still shows the legend (BFS rows inherit `tags`).
+/// Which columns/lines [`print_refs`] should render for a given [`RefList`],
+/// computed once from the data about to be printed — pulled out of
+/// `print_refs` itself so this decision logic is unit-testable without
+/// capturing stdout (see this module's test module: coverage for
+/// carrier-only rows, depth>1 rows, and a plain flat list).
+#[derive(Debug, PartialEq, Eq)]
+struct RefColumns {
+    /// Print the `{target}` legend line above the table — true whenever any
+    /// row carries a tag (a virtual-seed carrier walk), so a type filter
+    /// that suppresses every carrier row still shows it (BFS rows inherit
+    /// `tags`).
+    show_target_line: bool,
+    /// Show the D(epth) column: true when depth is informative on at least
+    /// one row — a carrier row (depth 0), or any hop beyond a direct
+    /// reference (depth 1 alone would just repeat "1" on every row).
+    show_depth: bool,
+    show_via: bool,
+    show_paths: bool,
+    /// Distinct (kind, scope, id) tags matched across all rows. The tag
+    /// column is shown iff this is > 1 — a single id is already named by
+    /// the legend line, so a constant column would add noise.
+    distinct_tag_count: usize,
+    /// "PROP" when any matched tag is `CarrierKind::OmodProperty`, else
+    /// "EP" — used both as the tag column's header (when shown) and, in the
+    /// capped-output note, to pick the "properties"/"entry points" noun. In
+    /// practice a `refs` invocation resolves through exactly one selector,
+    /// so only one `CarrierKind` ever appears.
+    tag_header: &'static str,
+}
+
+impl RefColumns {
+    fn show_tag_column(&self) -> bool {
+        self.distinct_tag_count > 1
+    }
+}
+
+fn ref_columns(ref_list: &RefList) -> RefColumns {
     let has_carriers = ref_list.rows.iter().any(|r| r.depth == 0);
-    // Show the D column whenever any printed row's depth is informative —
-    // either a carrier (depth 0) or any hop beyond direct referencers
-    // (depth 1 is the common case and would just repeat "1" on every row,
-    // so it alone doesn't earn the column).
-    let show_depth_column = has_carriers || ref_list.rows.iter().any(|r| r.depth > 1);
-    let has_tags = ref_list.rows.iter().any(|r| !r.tags.is_empty());
-    // Show a tag column only when more than one distinct (kind, scope, id)
-    // appears in the rows actually being printed — a single-id match is
-    // already named by the legend, so a constant column would add noise.
-    let distinct_tag_ids: std::collections::BTreeSet<_> = ref_list
+    let show_depth = has_carriers || ref_list.rows.iter().any(|r| r.depth > 1);
+    let show_target_line = ref_list.rows.iter().any(|r| !r.tags.is_empty());
+    let distinct_tag_count: std::collections::BTreeSet<_> = ref_list
         .rows
         .iter()
         .flat_map(|r| r.tags.iter().map(|t| (t.kind, t.scope.as_deref(), t.id)))
         .collect();
-    let has_tag_column = distinct_tag_ids.len() > 1;
-    // In practice a `refs` invocation resolves through exactly one selector,
-    // so only one CarrierKind appears. Prefer PROP when OmodProperty tags
-    // are present; otherwise EP (EntryPoint, or empty).
     let tag_kinds: std::collections::BTreeSet<CarrierKind> = ref_list
         .rows
         .iter()
@@ -1477,20 +1497,32 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
     } else {
         "EP"
     };
+    let show_via = ref_list.rows.iter().any(|r| !r.path.is_empty());
+    let show_paths = ref_list.rows.iter().any(|r| r.field_paths.is_some());
+    RefColumns {
+        show_target_line,
+        show_depth,
+        show_via,
+        show_paths,
+        distinct_tag_count: distinct_tag_count.len(),
+        tag_header,
+    }
+}
+
+fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: bool) {
+    let columns = ref_columns(ref_list);
     if json {
         print_json(&serde_json::to_value(&ref_list.rows).unwrap(), pretty);
     } else {
         if ref_list.rows.is_empty() {
             eprintln!("note: no records reference {}", ref_list.target);
         } else {
-            if has_tags {
+            if columns.show_target_line {
                 eprintln!("{}", ref_list.target);
             }
-            // Include a VIA column only when at least one row has a multi-hop path,
-            // and a PATHS column only when --paths was requested (field_paths is
+            // VIA is shown only when at least one row has a multi-hop path,
+            // and PATHS only when --paths was requested (field_paths is
             // Some(...) on every row in that case, even if the inner Vec is empty).
-            let has_via = ref_list.rows.iter().any(|r| !r.path.is_empty());
-            let has_paths = ref_list.rows.iter().any(|r| r.field_paths.is_some());
             let table_rows: Vec<Vec<String>> = ref_list
                 .rows
                 .iter()
@@ -1501,14 +1533,14 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
                         row.editor_id.as_deref().unwrap_or("").to_string(),
                         row.name.as_deref().unwrap_or("").to_string(),
                     ];
-                    if show_depth_column {
+                    if columns.show_depth {
                         // depth 0 marks a carrier — `RefRow::depth`'s doc
                         // says 1 = direct reference, so 0 is free as a "this
                         // is the walk's starting point, not something it
                         // found" sentinel.
                         cells.push(row.depth.to_string());
                     }
-                    if has_tag_column {
+                    if columns.show_tag_column() {
                         let cells_tags: Vec<String> = row
                             .tags
                             .iter()
@@ -1522,7 +1554,7 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
                             .collect();
                         cells.push(cells_tags.join(","));
                     }
-                    if has_via {
+                    if columns.show_via {
                         let via = if !row.path.is_empty() {
                             let chain: Vec<_> =
                                 row.path.iter().map(|n| n.form_id.as_str()).collect();
@@ -1532,7 +1564,7 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
                         };
                         cells.push(via);
                     }
-                    if has_paths {
+                    if columns.show_paths {
                         let paths = row
                             .field_paths
                             .as_deref()
@@ -1544,16 +1576,16 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
                 })
                 .collect();
             let mut headers = vec!["FORMID", "TYPE", "EDID", "NAME"];
-            if show_depth_column {
+            if columns.show_depth {
                 headers.push("D");
             }
-            if has_tag_column {
-                headers.push(tag_header);
+            if columns.show_tag_column() {
+                headers.push(columns.tag_header);
             }
-            if has_via {
+            if columns.show_via {
                 headers.push("VIA");
             }
-            if has_paths {
+            if columns.show_paths {
                 headers.push("PATHS");
             }
             print_record_table(&headers, &table_rows);
@@ -1599,8 +1631,8 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
         if let (Some(carrier_total), Some(tag_total)) = (ref_list.carrier_total, ref_list.tag_total)
         {
             let carriers_shown = ref_list.rows.iter().filter(|r| r.depth == 0).count();
-            let tags_shown = distinct_tag_ids.len();
-            let tag_noun = if tag_kinds.contains(&CarrierKind::OmodProperty) {
+            let tags_shown = columns.distinct_tag_count;
+            let tag_noun = if columns.tag_header == "PROP" {
                 "properties"
             } else {
                 "entry points"
@@ -2223,6 +2255,117 @@ fn print_field_changes(changes: &Value, indent: &str) {
     }
 }
 
+/// Typed form of an `_array_diff` envelope's `"strategy"` field (see
+/// `diff.rs`'s `array_diff`/`unkeyed_array_diff`/`keyed_array_diff` etc. for
+/// the four cases this crate's diff pipeline actually produces — `keyed`,
+/// `positional`, `set`, `unkeyed`, per `esm/CLAUDE.md`'s `diff.rs` entry).
+/// `diff.rs` itself never keeps a Rust-side enum for this — every strategy
+/// is written straight to an untyped `serde_json::Value` string at the point
+/// it's decided, so this is CLI-local: a named, testable home for the
+/// dispatch that used to be an inline string match inside `print_array_diff`.
+/// `Other` covers a future/unrecognized strategy string rather than
+/// panicking or dropping it silently.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ArrayDiffStrategy {
+    Keyed { key_fields: Vec<String> },
+    Positional,
+    Set,
+    Unkeyed,
+    Other(String),
+}
+
+impl ArrayDiffStrategy {
+    fn parse(array_diff: &serde_json::Map<String, Value>) -> Self {
+        match array_diff.get("strategy").and_then(Value::as_str) {
+            Some("keyed") => {
+                let key_fields = array_diff
+                    .get("key_fields")
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                ArrayDiffStrategy::Keyed { key_fields }
+            }
+            Some("positional") => ArrayDiffStrategy::Positional,
+            Some("set") => ArrayDiffStrategy::Set,
+            Some("unkeyed") => ArrayDiffStrategy::Unkeyed,
+            Some(other) => ArrayDiffStrategy::Other(other.to_string()),
+            None => ArrayDiffStrategy::Other("?".to_string()),
+        }
+    }
+
+    /// Human-readable description used in the summary line's parenthetical,
+    /// e.g. "keyed by Reference, Minimum Level" / "positional" / "unkeyed".
+    fn describe(&self) -> String {
+        match self {
+            ArrayDiffStrategy::Keyed { key_fields } if !key_fields.is_empty() => {
+                format!("keyed by {}", key_fields.join(", "))
+            }
+            ArrayDiffStrategy::Keyed { .. } => "keyed".to_string(),
+            ArrayDiffStrategy::Positional => "positional".to_string(),
+            ArrayDiffStrategy::Set => "set".to_string(),
+            ArrayDiffStrategy::Unkeyed => "unkeyed".to_string(),
+            ArrayDiffStrategy::Other(s) => s.clone(),
+        }
+    }
+}
+
+/// The decided contents of an `_array_diff` envelope's one-line summary —
+/// pulled out of `print_array_diff` so the bucket-counting/strategy-dispatch
+/// logic is unit-testable without capturing stdout.
+#[derive(Debug, PartialEq, Eq)]
+struct ArrayDiffSummary {
+    /// "+3 −1 ~2" (only non-zero buckets, space-joined) or "no changes".
+    counts: String,
+    strategy_desc: String,
+    count_from: Option<u64>,
+    count_to: Option<u64>,
+}
+
+fn summarize_array_diff(array_diff: &serde_json::Map<String, Value>) -> ArrayDiffSummary {
+    let added_count = array_diff
+        .get("added")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let removed_count = array_diff
+        .get("removed")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let changed_count = array_diff
+        .get("changed")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+
+    let mut buckets = Vec::new();
+    if added_count > 0 {
+        buckets.push(format!("+{added_count}"));
+    }
+    if removed_count > 0 {
+        buckets.push(format!("\u{2212}{removed_count}"));
+    }
+    if changed_count > 0 {
+        buckets.push(format!("~{changed_count}"));
+    }
+    let counts = if buckets.is_empty() {
+        "no changes".to_string()
+    } else {
+        buckets.join(" ")
+    };
+
+    ArrayDiffSummary {
+        counts,
+        strategy_desc: ArrayDiffStrategy::parse(array_diff).describe(),
+        count_from: array_diff.get("count_from").and_then(Value::as_u64),
+        count_to: array_diff.get("count_to").and_then(Value::as_u64),
+    }
+}
+
 /// Render one `{"_array_diff": {...}}` envelope (see `json_diff`/`array_diff`
 /// in `diff.rs`) as a one-line summary plus compact per-element detail lines,
 /// e.g.:
@@ -2235,77 +2378,31 @@ fn print_field_changes(changes: &Value, indent: &str) {
 ///         Count: 1 → 2
 /// ```
 fn print_array_diff(field: &str, array_diff: &serde_json::Map<String, Value>, indent: &str) {
-    let strategy = array_diff
-        .get("strategy")
-        .and_then(Value::as_str)
-        .unwrap_or("?");
-    let count_from = array_diff.get("count_from").and_then(Value::as_u64);
-    let count_to = array_diff.get("count_to").and_then(Value::as_u64);
-    let added = array_diff.get("added").and_then(Value::as_array);
-    let removed = array_diff.get("removed").and_then(Value::as_array);
-    let changed = array_diff.get("changed").and_then(Value::as_array);
+    let summary = summarize_array_diff(array_diff);
 
-    let added_count = added.map(Vec::len).unwrap_or(0);
-    let removed_count = removed.map(Vec::len).unwrap_or(0);
-    let changed_count = changed.map(Vec::len).unwrap_or(0);
-
-    let mut buckets = Vec::new();
-    if added_count > 0 {
-        buckets.push(format!("+{added_count}"));
-    }
-    if removed_count > 0 {
-        buckets.push(format!("\u{2212}{removed_count}"));
-    }
-    if changed_count > 0 {
-        buckets.push(format!("~{changed_count}"));
-    }
-    let summary = if buckets.is_empty() {
-        "no changes".to_string()
-    } else {
-        buckets.join(" ")
-    };
-
-    let strategy_desc = match strategy {
-        "keyed" => {
-            let key_fields: Vec<String> = array_diff
-                .get("key_fields")
-                .and_then(Value::as_array)
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            if key_fields.is_empty() {
-                "keyed".to_string()
-            } else {
-                format!("keyed by {}", key_fields.join(", "))
-            }
-        }
-        "positional" => "positional".to_string(),
-        "set" => "set".to_string(),
-        other => other.to_string(),
-    };
-
-    match (count_from, count_to) {
-        (Some(from), Some(to)) => {
-            println!("{indent}  {field}: {summary} entries ({from} \u{2192} {to}, {strategy_desc})")
-        }
-        _ => println!("{indent}  {field}: {summary} entries ({strategy_desc})"),
+    match (summary.count_from, summary.count_to) {
+        (Some(from), Some(to)) => println!(
+            "{indent}  {field}: {} entries ({from} \u{2192} {to}, {})",
+            summary.counts, summary.strategy_desc
+        ),
+        _ => println!(
+            "{indent}  {field}: {} entries ({})",
+            summary.counts, summary.strategy_desc
+        ),
     }
 
     let elem_indent = format!("{indent}    ");
-    if let Some(added) = added {
+    if let Some(added) = array_diff.get("added").and_then(Value::as_array) {
         for elem in added {
             println!("{elem_indent}+ {}", compact_value(elem));
         }
     }
-    if let Some(removed) = removed {
+    if let Some(removed) = array_diff.get("removed").and_then(Value::as_array) {
         for elem in removed {
             println!("{elem_indent}- {}", compact_value(elem));
         }
     }
-    if let Some(changed) = changed {
+    if let Some(changed) = array_diff.get("changed").and_then(Value::as_array) {
         for entry in changed {
             let key = entry.get("key").cloned().unwrap_or(Value::Null);
             println!("{elem_indent}~ {}", format_key(&key));
@@ -2464,6 +2561,7 @@ fn cmd_coverage(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use esm::RefRow;
 
     /// `esm skill --install` writes to `<dir>/.claude/skills/esm-cli/SKILL.md`.
     #[test]
@@ -2590,6 +2688,232 @@ mod tests {
             Err(e) => e,
         };
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    // ── ref_columns: print_refs's column-visibility decisions ───────────
+
+    fn ref_row(depth: usize) -> RefRow {
+        RefRow {
+            depth,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn ref_columns_carrier_only_rows_show_depth_but_no_other_columns() {
+        let list = RefList {
+            rows: vec![ref_row(0), ref_row(0)],
+            ..Default::default()
+        };
+        let columns = ref_columns(&list);
+        assert!(columns.show_depth, "a carrier (depth 0) row must show D");
+        assert!(!columns.show_target_line, "no tags on any row");
+        assert!(!columns.show_via, "no row has a path");
+        assert!(!columns.show_paths, "no row has field_paths");
+        assert!(!columns.show_tag_column());
+    }
+
+    #[test]
+    fn ref_columns_depth_beyond_one_shows_depth_and_via() {
+        let deep_row = RefRow {
+            depth: 2,
+            path: vec![esm::ipc::RefPathNode {
+                form_id: "0x00001234".to_string(),
+                record_type: Some("WEAP".to_string()),
+                editor_id: None,
+            }],
+            ..Default::default()
+        };
+        let list = RefList {
+            rows: vec![ref_row(1), deep_row],
+            ..Default::default()
+        };
+        let columns = ref_columns(&list);
+        assert!(columns.show_depth, "a depth > 1 row must show D");
+        assert!(
+            columns.show_via,
+            "a row with a non-empty path must show VIA"
+        );
+        assert!(!columns.show_target_line, "no tags on any row");
+        assert!(!columns.show_paths, "no row has field_paths");
+    }
+
+    #[test]
+    fn ref_columns_plain_flat_list_shows_no_optional_columns() {
+        // The common case: every row a direct (depth 1) reference, no tags,
+        // no multi-hop path, `--paths` not requested.
+        let list = RefList {
+            rows: vec![ref_row(1), ref_row(1), ref_row(1)],
+            ..Default::default()
+        };
+        let columns = ref_columns(&list);
+        assert!(
+            !columns.show_depth,
+            "depth 1 alone would just repeat \"1\" on every row"
+        );
+        assert!(!columns.show_target_line);
+        assert!(!columns.show_via);
+        assert!(!columns.show_paths);
+        assert!(!columns.show_tag_column());
+    }
+
+    #[test]
+    fn ref_columns_multiple_omod_property_tags_show_prop_column() {
+        let tag = |id: u16| esm::CarrierTag {
+            kind: CarrierKind::OmodProperty,
+            id,
+            name: None,
+            scope: Some("weap".to_string()),
+        };
+        let list = RefList {
+            rows: vec![
+                RefRow {
+                    depth: 0,
+                    tags: vec![tag(1)],
+                    ..Default::default()
+                },
+                RefRow {
+                    depth: 1,
+                    tags: vec![tag(2)],
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let columns = ref_columns(&list);
+        assert!(
+            columns.show_target_line,
+            "a tagged row must show the legend line"
+        );
+        assert_eq!(columns.tag_header, "PROP");
+        assert_eq!(columns.distinct_tag_count, 2);
+        assert!(columns.show_tag_column());
+    }
+
+    #[test]
+    fn ref_columns_single_tag_id_does_not_earn_a_column() {
+        // A single distinct tag id is already named by the legend line, so
+        // a constant-valued column would add noise.
+        let tag = esm::CarrierTag {
+            kind: CarrierKind::EntryPoint,
+            id: 7,
+            name: None,
+            scope: None,
+        };
+        let list = RefList {
+            rows: vec![RefRow {
+                depth: 0,
+                tags: vec![tag],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let columns = ref_columns(&list);
+        assert!(columns.show_target_line);
+        assert_eq!(columns.distinct_tag_count, 1);
+        assert!(!columns.show_tag_column());
+        assert_eq!(columns.tag_header, "EP");
+    }
+
+    // ── ArrayDiffStrategy / summarize_array_diff: the four `_array_diff`
+    // strategies `diff.rs` produces ───────────────────────────────────────
+
+    fn array_diff_obj(json: Value) -> serde_json::Map<String, Value> {
+        json.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn array_diff_strategy_keyed_with_key_fields() {
+        let ad = array_diff_obj(serde_json::json!({
+            "strategy": "keyed",
+            "key_fields": ["Reference", "Minimum Level"],
+        }));
+        let strategy = ArrayDiffStrategy::parse(&ad);
+        assert_eq!(
+            strategy,
+            ArrayDiffStrategy::Keyed {
+                key_fields: vec!["Reference".to_string(), "Minimum Level".to_string()]
+            }
+        );
+        assert_eq!(strategy.describe(), "keyed by Reference, Minimum Level");
+    }
+
+    #[test]
+    fn array_diff_strategy_keyed_without_key_fields_describes_bare() {
+        let ad = array_diff_obj(serde_json::json!({ "strategy": "keyed" }));
+        let strategy = ArrayDiffStrategy::parse(&ad);
+        assert_eq!(strategy, ArrayDiffStrategy::Keyed { key_fields: vec![] });
+        assert_eq!(strategy.describe(), "keyed");
+    }
+
+    #[test]
+    fn array_diff_strategy_positional() {
+        let ad = array_diff_obj(serde_json::json!({ "strategy": "positional" }));
+        let strategy = ArrayDiffStrategy::parse(&ad);
+        assert_eq!(strategy, ArrayDiffStrategy::Positional);
+        assert_eq!(strategy.describe(), "positional");
+    }
+
+    #[test]
+    fn array_diff_strategy_set() {
+        let ad = array_diff_obj(serde_json::json!({ "strategy": "set" }));
+        let strategy = ArrayDiffStrategy::parse(&ad);
+        assert_eq!(strategy, ArrayDiffStrategy::Set);
+        assert_eq!(strategy.describe(), "set");
+    }
+
+    #[test]
+    fn array_diff_strategy_unkeyed() {
+        let ad = array_diff_obj(serde_json::json!({
+            "strategy": "unkeyed",
+            "count_from": 2,
+            "count_to": 1,
+        }));
+        let strategy = ArrayDiffStrategy::parse(&ad);
+        assert_eq!(strategy, ArrayDiffStrategy::Unkeyed);
+        assert_eq!(strategy.describe(), "unkeyed");
+    }
+
+    #[test]
+    fn array_diff_strategy_unrecognized_falls_back_to_raw_string() {
+        let ad = array_diff_obj(serde_json::json!({ "strategy": "future_strategy" }));
+        let strategy = ArrayDiffStrategy::parse(&ad);
+        assert_eq!(
+            strategy,
+            ArrayDiffStrategy::Other("future_strategy".to_string())
+        );
+        assert_eq!(strategy.describe(), "future_strategy");
+    }
+
+    #[test]
+    fn summarize_array_diff_reports_buckets_and_counts() {
+        let ad = array_diff_obj(serde_json::json!({
+            "strategy": "keyed",
+            "key_fields": ["Reference"],
+            "count_from": 12,
+            "count_to": 13,
+            "added": [{"x": 1}, {"x": 2}, {"x": 3}],
+            "removed": [{"x": 4}],
+            "changed": [
+                {"key": {"Reference": "0x1"}, "changes": {}},
+                {"key": {}, "changes": {}},
+            ],
+        }));
+        let summary = summarize_array_diff(&ad);
+        assert_eq!(summary.counts, "+3 \u{2212}1 ~2");
+        assert_eq!(summary.strategy_desc, "keyed by Reference");
+        assert_eq!(summary.count_from, Some(12));
+        assert_eq!(summary.count_to, Some(13));
+    }
+
+    #[test]
+    fn summarize_array_diff_no_changes_when_all_buckets_empty() {
+        let ad = array_diff_obj(serde_json::json!({ "strategy": "set" }));
+        let summary = summarize_array_diff(&ad);
+        assert_eq!(summary.counts, "no changes");
+        assert_eq!(summary.strategy_desc, "set");
+        assert_eq!(summary.count_from, None);
+        assert_eq!(summary.count_to, None);
     }
 
     #[test]

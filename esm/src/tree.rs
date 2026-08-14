@@ -166,6 +166,85 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<TreeIndex> {
     const LAYOUT_FINGERPRINT: u64 = TREE_LAYOUT_FINGERPRINT;
 }
 
+/// Incremental builder driving [`TreeIndex`] construction from a stream of
+/// [`WalkEvent`]s, factored out of what used to be [`TreeIndex::build_with_tick`]'s
+/// closure body so `index.rs`'s `build_tree_and_forms` can feed it events
+/// from a single shared `walk_structure` pass — alongside its own
+/// `RecordMeta`/forms-table bookkeeping — instead of making a second,
+/// dedicated walk just for the tree (see the E1 architecture-deepening
+/// note). [`TreeIndex::build_with_tick`] itself still drives one of these
+/// internally, so it and [`TreeIndex::build`] keep working unchanged for
+/// their one remaining caller (this module's own test).
+#[derive(Default)]
+pub(crate) struct TreeBuilder {
+    tree: TreeIndex,
+    /// Arena indices of currently-open (entered but not yet exited) groups.
+    stack: Vec<usize>,
+}
+
+impl TreeBuilder {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// Fold one structural event into the arena being built.
+    pub(crate) fn push_event(&mut self, event: &WalkEvent) {
+        match *event {
+            WalkEvent::GroupStart {
+                offset,
+                group_type,
+                label,
+                group_size,
+            } => {
+                let depth = self.stack.len() as u32;
+                let parent = self.stack.last().copied();
+                let idx = self.tree.groups.len();
+                self.tree.groups.push(GroupEntry {
+                    group_type,
+                    label,
+                    start: offset,
+                    end: offset + group_size as u64,
+                    depth,
+                    // Arena-internal, just-computed index — `as u32` is
+                    // infallible in practice (see `GroupEntry`'s doc
+                    // comment) and matches this function's existing style
+                    // (`depth` above).
+                    parent: parent.map(|p| p as u32),
+                    children: Vec::new(),
+                });
+                self.tree.offset_map.insert(offset, idx as u32);
+                // Link as child of parent or as a root
+                if let Some(parent_idx) = parent {
+                    self.tree.groups[parent_idx]
+                        .children
+                        .push(ChildRef::Group(idx as u32));
+                } else {
+                    self.tree.roots.push(idx as u32);
+                }
+                self.stack.push(idx);
+            }
+            WalkEvent::GroupEnd { .. } => {
+                self.stack.pop();
+            }
+            WalkEvent::Record(meta) => {
+                if let Some(&parent_idx) = self.stack.last() {
+                    self.tree.groups[parent_idx]
+                        .children
+                        .push(ChildRef::Record {
+                            form_id: meta.form_id.0,
+                            offset: meta.offset,
+                            sig: meta.signature.0,
+                        });
+                }
+            }
+        }
+    }
+
+    pub(crate) fn finish(self) -> TreeIndex {
+        self.tree
+    }
+}
+
 impl TreeIndex {
     /// Build the tree index from an ESM file via a structural scan.
     pub fn build(esm: &EsmFile) -> Result<TreeIndex> {
@@ -179,9 +258,7 @@ impl TreeIndex {
     /// stays the public no-instrumentation entry point so the one other
     /// caller (this module's own test) is unaffected.
     pub(crate) fn build_with_tick(esm: &EsmFile, mut tick: impl FnMut(u64)) -> Result<TreeIndex> {
-        let mut tree = TreeIndex::default();
-        // Stack of arena indices of currently-open (entered but not yet exited) groups.
-        let mut stack: Vec<usize> = Vec::new();
+        let mut builder = TreeBuilder::new();
 
         esm.walk_structure(|event| {
             let offset = match &event {
@@ -190,62 +267,11 @@ impl TreeIndex {
                 WalkEvent::Record(r) => r.offset,
             };
             tick(offset);
-            match event {
-                WalkEvent::GroupStart {
-                    offset,
-                    group_type,
-                    label,
-                    group_size,
-                } => {
-                    let depth = stack.len() as u32;
-                    let parent = stack.last().copied();
-                    let idx = tree.groups.len();
-                    tree.groups.push(GroupEntry {
-                        group_type,
-                        label,
-                        start: offset,
-                        end: offset + group_size as u64,
-                        depth,
-                        // Arena-internal, just-computed index — `as u32` is
-                        // infallible in practice (see `GroupEntry`'s doc
-                        // comment) and matches this function's existing style
-                        // (`depth` above).
-                        parent: parent.map(|p| p as u32),
-                        children: Vec::new(),
-                    });
-                    tree.offset_map.insert(offset, idx as u32);
-                    // Link as child of parent or as a root
-                    if let Some(parent_idx) = parent {
-                        tree.groups[parent_idx]
-                            .children
-                            .push(ChildRef::Group(idx as u32));
-                    } else {
-                        tree.roots.push(idx as u32);
-                    }
-                    stack.push(idx);
-                }
-                WalkEvent::GroupEnd { .. } => {
-                    stack.pop();
-                }
-                WalkEvent::Record(meta) => {
-                    if let Some(&parent_idx) = stack.last() {
-                        // Convert the record_type string back to a 4-byte sig array
-                        let sig_bytes = meta.record_type.as_bytes();
-                        let mut sig = [0u8; 4];
-                        let copy_len = sig_bytes.len().min(4);
-                        sig[..copy_len].copy_from_slice(&sig_bytes[..copy_len]);
-                        tree.groups[parent_idx].children.push(ChildRef::Record {
-                            form_id: meta.form_id.0,
-                            offset: meta.offset,
-                            sig,
-                        });
-                    }
-                }
-            }
+            builder.push_event(&event);
             Ok(())
         })?;
 
-        Ok(tree)
+        Ok(builder.finish())
     }
 
     /// Decode a raw `group_type` + `label` into a [`GroupLabel`].

@@ -30,7 +30,7 @@ fn walk_structure_events_sequence() {
                 events.push("GroupEnd".to_string());
             }
             WalkEvent::Record(r) => {
-                events.push(format!("Record({},{})", r.record_type, r.form_id.0));
+                events.push(format!("Record({},{})", r.signature, r.form_id.0));
             }
         }
         Ok(())

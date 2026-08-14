@@ -11,10 +11,22 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 /// A record reference emitted by [`EsmFile::walk_structure`].
-#[derive(Debug, Clone)]
+///
+/// Carries the same fields [`RecordMeta`] does (`flags`/`form_version`, in
+/// addition to `form_id`/`offset`) so `index.rs`'s `build_tree_and_forms` can
+/// derive a `RecordMeta` from this event directly — see the E1
+/// architecture-deepening note on `walk_container`/`walk_structure_container`
+/// unifying into one traversal. `signature` stays the real `[u8; 4]`
+/// [`Signature`] type throughout, never a `String` — a per-record `String`
+/// allocation here was previously converted straight back to `[u8; 4]` at
+/// this event's one consumer (`tree.rs`), for every one of the ESM's ~5-6M
+/// records.
+#[derive(Debug, Clone, Copy)]
 pub struct StructuralRecord {
     pub form_id: FormId,
-    pub record_type: String,
+    pub signature: Signature,
+    pub flags: u32,
+    pub form_version: u16,
     pub offset: u64,
 }
 
@@ -173,6 +185,12 @@ impl EsmFile {
         }
     }
 
+    /// Walk the file's flat record stream, emitting one [`RecordMeta`] per
+    /// non-GRUP record (GRUP boundaries are transparent to this method — see
+    /// [`Self::walk_structure`] for the GRUP-aware event stream). Implemented
+    /// as a thin filter over the same traversal core `walk_structure` uses
+    /// ([`walk_container_core`]), so both public methods share one bounds
+    /// policy — see that function's doc comment.
     pub fn walk_records<F>(&self, mut f: F) -> anyhow::Result<()>
     where
         F: FnMut(RecordMeta) -> anyhow::Result<()>,
@@ -186,17 +204,25 @@ impl EsmFile {
             bail!("expected TES4 record at start");
         }
         let tes4 = RecordHeader::parse(&data[0..HEADER_SIZE as usize])?;
-        let start = HEADER_SIZE + tes4.data_size as u64;
-        let end = data.len() as u64;
-        walk_container(data, start, end, &mut f)
+        let start = HEADER_SIZE as usize + tes4.data_size as usize;
+        let end = data.len();
+        walk_container_core(data, start, end, &mut |event| {
+            if let WalkEvent::Record(sr) = event {
+                f(RecordMeta {
+                    offset: sr.offset,
+                    signature: sr.signature,
+                    flags: sr.flags,
+                    form_version: sr.form_version,
+                })?;
+            }
+            Ok(())
+        })
     }
 
     /// Walk the GRUP/record tree emitting [`WalkEvent`]s.
     ///
     /// Skips the TES4 file header record and begins from the first top-level
-    /// GRUP. Does not modify or call into the existing [`walk_records`] path.
-    ///
-    /// [`walk_records`]: EsmFile::walk_records
+    /// GRUP.
     pub fn walk_structure<F>(&self, mut f: F) -> anyhow::Result<()>
     where
         F: FnMut(WalkEvent) -> anyhow::Result<()>,
@@ -208,87 +234,68 @@ impl EsmFile {
         let tes4 = RecordHeader::parse(&data[0..HEADER_SIZE as usize])?;
         let start = HEADER_SIZE as usize + tes4.data_size as usize;
         let end = data.len();
-        self.walk_structure_container(data, start, end, &mut f)
-    }
-
-    fn walk_structure_container<F>(
-        &self,
-        data: &[u8],
-        mut pos: usize,
-        end: usize,
-        f: &mut F,
-    ) -> anyhow::Result<()>
-    where
-        F: FnMut(WalkEvent) -> anyhow::Result<()>,
-    {
-        while pos + HEADER_SIZE as usize <= end {
-            // Need at least 4 bytes to identify GRUP vs record
-            if pos + 4 > data.len() {
-                break;
-            }
-            if data[pos..pos + 4] == GRUP_SIG {
-                // GRUP header: sig(4) + group_size(4) + label(4) + group_type(4) + stamp(4) + unknown(4)
-                let gh = GroupHeader::parse(&data[pos..])?;
-                let group_size = gh.group_size as usize;
-                // group_size includes the 24-byte header itself
-                let group_end = pos.saturating_add(group_size);
-                if group_end > end {
-                    bail!("GRUP extends beyond container at offset {}", pos);
-                }
-                f(WalkEvent::GroupStart {
-                    offset: pos as u64,
-                    group_type: gh.group_type,
-                    label: gh.label,
-                    group_size: gh.group_size,
-                })?;
-                // Walk children (after the 24-byte GRUP header)
-                self.walk_structure_container(data, pos + HEADER_SIZE as usize, group_end, f)?;
-                f(WalkEvent::GroupEnd { offset: pos as u64 })?;
-                pos = group_end;
-            } else {
-                // Regular record header
-                let rh = RecordHeader::parse(&data[pos..])?;
-                let record_end = pos
-                    .saturating_add(HEADER_SIZE as usize)
-                    .saturating_add(rh.data_size as usize);
-                if record_end > end {
-                    break;
-                }
-                f(WalkEvent::Record(StructuralRecord {
-                    form_id: FormId::new(rh.form_id),
-                    record_type: rh.signature.to_string(),
-                    offset: pos as u64,
-                }))?;
-                pos = record_end;
-            }
-        }
-        Ok(())
+        walk_container_core(data, start, end, &mut f)
     }
 }
 
-fn walk_container<F>(data: &[u8], mut pos: u64, end: u64, f: &mut F) -> anyhow::Result<()>
+/// The single GRUP/record descent both [`EsmFile::walk_records`] and
+/// [`EsmFile::walk_structure`] are built on (this crate previously
+/// re-implemented this same descent twice — `walk_container` for
+/// `walk_records`, `walk_structure_container` for `walk_structure` — and the
+/// two diverged on bounds checking; see the E1 architecture-deepening note).
+///
+/// On an oversized/malformed trailing record (`record_end > end`, e.g. a
+/// truncated or corrupt file) this stops cleanly rather than erroring or
+/// reading past the intended container boundary — the policy the old
+/// `walk_structure_container` already had and `walk_container` lacked. A
+/// GRUP whose declared `group_size` extends past `end` is still a hard
+/// error (`bail!`): unlike a trailing record, there is no safe "stop here"
+/// reading for a GRUP header that lies about its own body size.
+fn walk_container_core<F>(data: &[u8], mut pos: usize, end: usize, f: &mut F) -> anyhow::Result<()>
 where
-    F: FnMut(RecordMeta) -> anyhow::Result<()>,
+    F: FnMut(WalkEvent) -> anyhow::Result<()>,
 {
-    while pos + HEADER_SIZE <= end {
-        let slice = &data[pos as usize..];
-        if slice.starts_with(&GRUP_SIG) {
-            let gh = GroupHeader::parse(&slice[..HEADER_SIZE as usize])?;
-            let group_end = pos + gh.group_size as u64;
+    while pos + HEADER_SIZE as usize <= end {
+        // Need at least 4 bytes to identify GRUP vs record
+        if pos + 4 > data.len() {
+            break;
+        }
+        if data[pos..pos + 4] == GRUP_SIG {
+            // GRUP header: sig(4) + group_size(4) + label(4) + group_type(4) + stamp(4) + unknown(4)
+            let gh = GroupHeader::parse(&data[pos..])?;
+            let group_size = gh.group_size as usize;
+            // group_size includes the 24-byte header itself
+            let group_end = pos.saturating_add(group_size);
             if group_end > end {
-                bail!("group extends past container");
+                bail!("GRUP extends beyond container at offset {}", pos);
             }
-            walk_container(data, pos + HEADER_SIZE, group_end, f)?;
+            f(WalkEvent::GroupStart {
+                offset: pos as u64,
+                group_type: gh.group_type,
+                label: gh.label,
+                group_size: gh.group_size,
+            })?;
+            // Walk children (after the 24-byte GRUP header)
+            walk_container_core(data, pos + HEADER_SIZE as usize, group_end, f)?;
+            f(WalkEvent::GroupEnd { offset: pos as u64 })?;
             pos = group_end;
         } else {
-            let rh = RecordHeader::parse(&slice[..HEADER_SIZE as usize])?;
-            f(RecordMeta {
-                offset: pos,
+            // Regular record header
+            let rh = RecordHeader::parse(&data[pos..])?;
+            let record_end = pos
+                .saturating_add(HEADER_SIZE as usize)
+                .saturating_add(rh.data_size as usize);
+            if record_end > end {
+                break;
+            }
+            f(WalkEvent::Record(StructuralRecord {
+                form_id: FormId::new(rh.form_id),
                 signature: rh.signature,
                 flags: rh.flags,
                 form_version: rh.form_version,
-            })?;
-            pos += rh.total_size();
+                offset: pos as u64,
+            }))?;
+            pos = record_end;
         }
     }
     Ok(())
