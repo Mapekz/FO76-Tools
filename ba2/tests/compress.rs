@@ -1,8 +1,8 @@
 //! Integration tests for `ba2::compress` — codec dispatch, round-trips, sniffing.
 
 use ba2::compress::{
-    Codec, compress_entry, compress_lz4, compress_zlib, decompress, decompress_lz4,
-    decompress_zlib, is_zlib,
+    Codec, MAX_DECOMP_SIZE, compress_entry, compress_lz4, compress_zlib, decompress,
+    decompress_lz4, decompress_zlib, is_zlib,
 };
 
 fn sample() -> Vec<u8> {
@@ -27,6 +27,58 @@ fn zlib_round_trip() {
     let compressed = compress_zlib(&data).unwrap();
     let decompressed = decompress_zlib(&compressed, data.len()).unwrap();
     assert_eq!(decompressed, data);
+}
+
+// ── Decompression-bomb cap ────────────────────────────────────────────────
+
+/// A crafted, oversized declared output size must be rejected before any
+/// large allocation is attempted, for both codecs.
+#[test]
+fn decompress_lz4_rejects_oversized_expected_size() {
+    let result = decompress_lz4(b"", MAX_DECOMP_SIZE + 1);
+    assert!(
+        result.is_err(),
+        "expected error for oversized expected_size"
+    );
+    let msg = format!("{}", result.unwrap_err());
+    assert!(
+        msg.contains("exceeds limit"),
+        "unexpected error message: {msg}"
+    );
+}
+
+#[test]
+fn decompress_zlib_rejects_oversized_expected_size() {
+    let result = decompress_zlib(b"", MAX_DECOMP_SIZE + 1);
+    assert!(
+        result.is_err(),
+        "expected error for oversized expected_size"
+    );
+    let msg = format!("{}", result.unwrap_err());
+    assert!(
+        msg.contains("exceeds limit"),
+        "unexpected error message: {msg}"
+    );
+}
+
+/// The cap applies through the real dispatch path a corrupt/malicious archive
+/// would hit — `decompress()` with an attacker-controlled `unpacked_size`
+/// (the on-disk field), not just the two codec helpers directly.
+#[test]
+fn decompress_rejects_oversized_unpacked_size_via_dispatch() {
+    let oversized = (MAX_DECOMP_SIZE + 1) as u32;
+    for codec in [Codec::Lz4, Codec::Zlib] {
+        let result = decompress(b"", oversized, codec);
+        assert!(
+            result.is_err(),
+            "{codec:?} dispatch must reject oversized unpacked_size"
+        );
+        let msg = format!("{}", result.unwrap_err());
+        assert!(
+            msg.contains("exceeds limit"),
+            "{codec:?}: unexpected error message: {msg}"
+        );
+    }
 }
 
 // ── Codec::Store ─────────────────────────────────────────────────────────

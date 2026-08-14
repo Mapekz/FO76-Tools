@@ -8,6 +8,14 @@ use anyhow::{Context, Result};
 use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use std::io::{Read, Write};
 
+/// Hard upper bound on any single decompressed output buffer.
+///
+/// Both LZ4 and zlib decompress calls reject declared output sizes above this
+/// limit before allocating, so a malformed or malicious archive with an
+/// unreasonably large declared `unpacked_size` cannot cause an unbounded
+/// allocation (a classic decompression-bomb vector).
+pub const MAX_DECOMP_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
+
 /// Compression codec for BA2 data blobs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Codec {
@@ -28,12 +36,26 @@ pub enum Codec {
 ///
 /// FO76 BA2 blobs use `lz4_flex::decompress` (raw block, no size prefix).
 pub fn decompress_lz4(compressed: &[u8], expected_size: usize) -> Result<Vec<u8>> {
+    if expected_size > MAX_DECOMP_SIZE {
+        anyhow::bail!(
+            "LZ4 declared output size {} exceeds limit of {} bytes",
+            expected_size,
+            MAX_DECOMP_SIZE
+        );
+    }
     lz4_flex::decompress(compressed, expected_size)
         .map_err(|e| anyhow::anyhow!("LZ4 decompress: {}", e))
 }
 
 /// Decompress a zlib-wrapped buffer to approximately `expected_size` bytes.
 pub fn decompress_zlib(compressed: &[u8], expected_size: usize) -> Result<Vec<u8>> {
+    if expected_size > MAX_DECOMP_SIZE {
+        anyhow::bail!(
+            "zlib declared output size {} exceeds limit of {} bytes",
+            expected_size,
+            MAX_DECOMP_SIZE
+        );
+    }
     let mut decoder = ZlibDecoder::new(compressed);
     let mut out = Vec::with_capacity(expected_size);
     decoder

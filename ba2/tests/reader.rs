@@ -3,7 +3,9 @@
 
 mod common;
 
-use ba2::compress::Codec;
+use ba2::compress::{Codec, MAX_DECOMP_SIZE};
+use ba2::format::{RECORD_FLAGS, Record, write_header, write_record};
+use ba2::hash::hash_path;
 use ba2::reader::Ba2Archive;
 use ba2::{ArchiveKind, WriteOptions, write_ba2};
 use common::TestTexture;
@@ -95,6 +97,59 @@ fn read_zlib_compressed_entry() {
 
     let out_data = archive.read("data/payload.bin", Codec::Auto).unwrap();
     assert_eq!(out_data, data);
+}
+
+// ── Decompression-bomb cap (real read path) ───────────────────────────────
+
+/// A crafted GNRL record with a tiny compressed blob but a declared
+/// `unpacked_size` past `MAX_DECOMP_SIZE` — the shape a corrupt or malicious
+/// archive would use to trigger an unbounded allocation on decompress.
+/// `Ba2Archive::read` must error instead of attempting the allocation.
+#[test]
+fn read_rejects_oversized_declared_unpacked_size() {
+    let path = "data/bomb.bin";
+    let (name_hash, dir_hash, ext) = hash_path(path);
+    // Small "compressed" payload — irrelevant, since the size cap must fire
+    // before any decompressor call is made.
+    let payload: &[u8] = b"tiny";
+
+    let data_start = 24u64 + 36; // header + one record
+    let name_table_offset = data_start + payload.len() as u64;
+
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&write_header(1, ArchiveKind::Gnrl, 1, name_table_offset));
+    let record = Record {
+        name_hash,
+        ext,
+        dir_hash,
+        flags: RECORD_FLAGS,
+        data_offset: data_start,
+        packed_size: payload.len() as u32, // nonzero => compressed, decompress path taken
+        unpacked_size: (MAX_DECOMP_SIZE + 1) as u32, // crafted oversized declared size
+    };
+    buf.extend_from_slice(&write_record(&record));
+    buf.extend_from_slice(payload);
+    let name = path.to_lowercase();
+    buf.extend_from_slice(&(name.len() as u16).to_le_bytes());
+    buf.extend_from_slice(name.as_bytes());
+
+    let tmp = NamedTempFile::new().unwrap();
+    {
+        let mut f = tmp.reopen().unwrap();
+        f.write_all(&buf).unwrap();
+    }
+
+    let archive = Ba2Archive::open(tmp.path()).unwrap();
+    let result = archive.read(path, Codec::Lz4);
+    let err = result.expect_err(
+        "expected the decompression-bomb cap to reject a crafted oversized unpacked_size",
+    );
+    // `read`'s top-level error wraps the cap error with `.with_context(...)` —
+    // check the full cause chain, not just the outermost Display.
+    assert!(
+        err.chain().any(|c| c.to_string().contains("exceeds limit")),
+        "expected 'exceeds limit' somewhere in the error chain, got: {err:?}"
+    );
 }
 
 // ── Error branches on open ────────────────────────────────────────────────
