@@ -40,6 +40,7 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import layout  # noqa: E402
+import lvli_entry  # noqa: E402
 
 # --------------------------------------------------------------------------
 # Pipeline wire shapes (comprehensive.json / bundles.json / triage / lints)
@@ -700,47 +701,45 @@ def diff_omod_properties(from_list, to_list, ref_names=None):
 
 
 # ---- Leveled list entries --------------------------------------------------
-
-
-def _lvli_unwrap(e):
-    return e.get("Leveled List Entry", e) if isinstance(e, dict) else {}
-
-
-def _lvli_ref(ue):
-    return ue.get("Reference") or ue.get("Item")
-
-
-def _lvli_qty(ue):
-    return ue.get("Quantity", ue.get("Count", 1))
+#
+# unwrap/reference/quantity reading now lives in lvli_entry.py (the single
+# owner shared with run_lints.py / lvli_audit.py) — see that module's
+# docstring for the canonical behavior on each axis, including why
+# entry_quantity() defaults to None rather than fabricating 1.
 
 
 def _lvli_key(e):
-    ue = _lvli_unwrap(e)
-    ref = _lvli_ref(ue)
+    ue = lvli_entry.unwrap_entry(e)
+    ref = lvli_entry.entry_reference(ue)
     lvl = ue.get("Minimum Level", ue.get("Level"))
     fid = ref.get("formid") if isinstance(ref, dict) else ref
     return (fid, lvl)
 
 
 def _lvli_display(e, ref_names):
-    ue = _lvli_unwrap(e)
-    ref = _lvli_ref(ue)
+    ue = lvli_entry.unwrap_entry(e)
+    ref = lvli_entry.entry_reference(ue)
     lvl = ue.get("Minimum Level", ue.get("Level"))
-    qty = _lvli_qty(ue)
-    return f"{format_scalar(ref, ref_names)} (min lvl {fmt_num(lvl)}, ×{fmt_num(qty)})"
+    qty = lvli_entry.entry_quantity(ue)
+    qty_clause = f", ×{fmt_num(qty)}" if qty is not None else ""
+    return f"{format_scalar(ref, ref_names)} (min lvl {fmt_num(lvl)}{qty_clause})"
 
 
 def diff_lvli_entries(from_list, to_list, ref_names=None):
     """Per-entry diff of a leveled list's entries — added/removed items and
-    quantity changes, keyed by (referenced item, minimum level)."""
+    quantity changes, keyed by (referenced item, minimum level). A missing
+    Quantity on both sides (lvli_entry.entry_quantity() -> None on both o
+    and n) never emits a spurious ("Quantity", None, None) row: _fields_diff
+    filters on `ov != nv`, and `None != None` is False, so this falls out
+    for free rather than needing a special case here."""
     ref_names = ref_names or {}
     return _keyed_array_diff(
         from_list,
         to_list,
         ["Reference", "Minimum Level"],
         _lvli_key,
-        _lvli_unwrap,
-        lambda o, n: [("Quantity", _lvli_qty(o), _lvli_qty(n))],
+        lvli_entry.unwrap_entry,
+        lambda o, n: [("Quantity", lvli_entry.entry_quantity(o), lvli_entry.entry_quantity(n))],
         _lvli_display,
         ref_names,
     )

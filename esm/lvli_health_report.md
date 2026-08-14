@@ -1,9 +1,10 @@
 # LVLI Leveled-List Health Sweep
 
-Scanned **10959** LVLI records.
+Scanned **10962** LVLI records.
 - Rule A (Use-First-Match order-starvation): **26**
 - Rule B (bundle-name uniform-pick): **27**
 - Rule C (suspected level-tier starvation, UNVERIFIED): **165**
+- Rule D (overlapping-gate reward ladder, no Use All/First): **28**
 
 ## Rule A — Use-First-Match order-starvation (confirmed mechanism)
 
@@ -382,3 +383,305 @@ Multi-entry list with neither `Use All` nor `Use First Match` set — the engine
 - `Burn_LL_GunVendor_Weapon_Boss_Ranged_Any` (0x0084C567) — Minimum Levels: 1.0, 5.0
 - `Burn_LL_GunVendor_Weapon_Boss_Melee_Any` (0x0084C56D) — Minimum Levels: 11.0, 15.0, 17.0, 22.0, 24.0, 26.0
 - `LLD_Creature_Scorchbeast_PartyCrasher` (0x0089740A) — Minimum Levels: 1.0, 30.0, 50.0
+
+## Rule D — overlapping-gate reward ladder (no Use All / Use First)
+
+Two or more entries carry a one-sided range Condition (>=, >, <=, or < with no complementary bound in the same entry) and neither `Use All` nor `Use First Match` is set. Under the confirmed no-flag algorithm the engine builds the pool of entries whose Conditions currently pass and picks ONE uniformly at random — since eligibility isn't mutually exclusive, entries can overlap on a given roll instead of partitioning it the way an ordered rarity ladder usually implies. Not a confirmed bug: some hits are shared-threshold alternate pairs, or level/need-gated variety pools where overlap is the intended mechanic — `same-function` marks the shape most likely to be a mistake (every gated entry uses the identical Condition function, the classic hand-authored tier-ladder look). Odds are computed exactly only when every gate is `GetRandomPercent` with a resolved threshold and the entry count is <= 16.
+
+### `LPI_Food_Prepared` (0x003A81B3) — same-function ladder
+- entry 0 (`LL_Food_Prepared_Rare`) — GetRandomPercent Less Than Or Equal To LPI_Chance_Food_Prepared (=50) — naive Use-First read 50.0%, actual pool odds 37.5%
+- entry 1 (`LL_Food_Prepared_Generic`) — GetRandomPercent Less Than Or Equal To LPI_Chance_Food_Prepared (=50) — naive Use-First read 25.0%, actual pool odds 37.5%
+### `Test_LPI_FloraFern01` (0x003E0CB5) — mixed-function overlap
+- entry 0 (`FloraRadFlashFern01`) — GetRandomPercent Less Than Or Equal To NukeFlora_SwapPercent_General_ECON (=10)
+- entry 1 (`UseLPI_FloraFern01`) — GetLevel Greater Than 20.0
+### `LLS_Festive_Rewards_Currency_Scrip` (0x0059CAC4) — same-function ladder
+- entry 0 (`LegendaryTokens`) — GetRandomPercent Less Than Or Equal To 10.0 — naive Use-First read 10.0%, actual pool odds 3.8%
+- entry 1 (`LegendaryTokens`) — GetRandomPercent Less Than Or Equal To 30.0 — naive Use-First read 27.0%, actual pool odds 12.1%
+- entry 2 (`LegendaryTokens`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 31.5%, actual pool odds 21.8%
+- entry 3 (`LegendaryTokens`) — (unconditioned) — naive Use-First read 31.5%, actual pool odds 62.3%
+### `LLS_Festive_Rewards_Currency_Caps` (0x0059CAC5) — same-function ladder
+- entry 0 (`Caps001`) — GetRandomPercent Less Than Or Equal To 5.0 — naive Use-First read 5.0%, actual pool odds 1.7%
+- entry 1 (`Caps001`) — GetRandomPercent Less Than Or Equal To 20.0 — naive Use-First read 19.0%, actual pool odds 7.2%
+- entry 2 (`Caps001`) — GetRandomPercent Less Than Or Equal To 80.0 — naive Use-First read 60.8%, actual pool odds 36.7%
+- entry 3 (`Caps001`) — (unconditioned) — naive Use-First read 15.2%, actual pool odds 54.3%
+### `LLS_Systemic_Rewards_Weapons_Plans` (0x0059CAF4) — same-function ladder
+- entry 0 (`Recipe_Tinkers_GrenadePlasma`) — (unconditioned)
+- entry 1 (`Recipe_Tinkers_MinePlasma`) — (unconditioned)
+- entry 2 (`recipe_mod_melee_DeathclawGauntlet_Hook`) — GetLevel Greater Than Or Equal To 30.0
+- entry 3 (`Recipe_Weapon_Melee_GrognaksAxe`) — GetLevel Greater Than Or Equal To 30.0
+- entry 4 (`Recipe_Weapon_Thrown_Tomahawk`) — (unconditioned)
+- entry 5 (`Recipe_Weapon_Melee_PoleHook`) — GetLevel Greater Than Or Equal To 10.0
+- entry 6 (`Recipe_Weapon_Melee_LeadPipe`) — GetLevel Greater Than Or Equal To 1.0
+- entry 7 (`Recipe_Weapon_Melee_GuitarSword`) — GetLevel Greater Than Or Equal To 15.0
+- entry 8 (`Recipe_Weapon_Melee_MoleMinerGauntlet`) — GetLevel Greater Than Or Equal To 20.0
+- entry 9 (`Recipe_Weapon_Ranged_Broadsider`) — GetLevel Greater Than Or Equal To 25.0
+- entry 10 (`Recipe_Weapon_Mod_Ranged_LaserGun_SCOPE_MediumScope_Base`) — GetLevel Greater Than Or Equal To 5.0
+- entry 11 (`Recipe_Weapon_Mod_Ranged_PipeGun_receiver_automatic_base`) — GetLevel Greater Than Or Equal To 1.0
+- entry 12 (`Recipe_Weapon_Ranged_Ultracite_GatlingLaser`) — GetLevel Greater Than Or Equal To 35.0
+- entry 13 (`Recipe_Weapon_Melee_BaseballBat`) — GetLevel Greater Than Or Equal To 1.0
+- entry 14 (`Recipe_Weapon_Melee_Baton`) — GetLevel Greater Than Or Equal To 5.0
+- entry 15 (`Recipe_Weapon_Ranged_Fatman`) — GetLevel Greater Than Or Equal To 25.0
+- entry 16 (`Recipe_Weapon_Ranged_GammaGun`) — GetLevel Greater Than Or Equal To 15.0
+- entry 17 (`Recipe_Weapon_Ranged_LaserGun`) — GetLevel Greater Than Or Equal To 5.0
+- entry 18 (`Recipe_Weapon_Melee_BoxingGlove`) — GetLevel Greater Than Or Equal To 5.0
+- entry 19 (`Recipe_Weapon_Ranged_HarpoonGun`) — GetLevel Greater Than Or Equal To 30.0
+- entry 20 (`Recipe_Weapon_Ranged_PumpActionShotgun`) — GetLevel Greater Than Or Equal To 5.0
+- entry 21 (`recipe_mod_melee_DeathclawGauntlet_Hook`) — GetLevel Greater Than Or Equal To 30.0
+### `LLS_Systemic_Rewards_Armor_Plans` (0x0059CAF5) — same-function ladder
+- entry 0 (`Recipe_Armor_Metal_Torso_Heavy`) — GetLevel Greater Than Or Equal To 10.0
+- entry 1 (`Recipe_Armor_Metal_Torso_Medium`) — GetLevel Greater Than Or Equal To 10.0
+- entry 2 (`Recipe_Armor_Metal_Legs_Medium`) — GetLevel Greater Than Or Equal To 10.0
+- entry 3 (`Recipe_Armor_Metal_Legs_Heavy`) — GetLevel Greater Than Or Equal To 10.0
+- entry 4 (`Recipe_Armor_Metal_Arms_Heavy`) — GetLevel Greater Than Or Equal To 10.0
+- entry 5 (`Recipe_Armor_Metal_Arms_Medium`) — GetLevel Greater Than Or Equal To 10.0
+- entry 6 (`Recipe_Armor_Metal_Torso_Light`) — GetLevel Greater Than Or Equal To 10.0
+- entry 7 (`Recipe_Armor_Metal_Arms_Light`) — GetLevel Greater Than Or Equal To 10.0
+- entry 8 (`Recipe_Armor_Metal_Legs_Light`) — GetLevel Greater Than Or Equal To 10.0
+- entry 9 (`Recipe_Armor_Robot_Torso_Heavy`) — GetLevel Greater Than Or Equal To 10.0
+- entry 10 (`Recipe_Armor_Robot_Torso_Medium`) — GetLevel Greater Than Or Equal To 10.0
+- entry 11 (`Recipe_Armor_Robot_Arms_Medium`) — GetLevel Greater Than Or Equal To 10.0
+- entry 12 (`Recipe_Armor_Robot_Legs_Heavy`) — GetLevel Greater Than Or Equal To 10.0
+- entry 13 (`Recipe_Armor_Robot_Legs_Medium`) — GetLevel Greater Than Or Equal To 10.0
+- entry 14 (`Recipe_Armor_Robot_Arms_Heavy`) — GetLevel Greater Than Or Equal To 10.0
+- entry 15 (`Recipe_Armor_Robot_Torso_Light`) — GetLevel Greater Than Or Equal To 10.0
+- entry 16 (`Recipe_Armor_Robot_Arms_Light`) — GetLevel Greater Than Or Equal To 10.0
+- entry 17 (`Recipe_Armor_Robot_Legs_Light`) — GetLevel Greater Than Or Equal To 10.0
+- entry 18 (`Recipe_Armor_Combat_Torso_Heavy`) — GetLevel Greater Than Or Equal To 20.0
+- entry 19 (`Recipe_Armor_Combat_Torso_Medium`) — GetLevel Greater Than Or Equal To 20.0
+- entry 20 (`Recipe_Armor_Combat_Arms_Heavy`) — GetLevel Greater Than Or Equal To 20.0
+- entry 21 (`Recipe_Armor_Combat_Legs_Heavy`) — GetLevel Greater Than Or Equal To 20.0
+- entry 22 (`Recipe_Armor_Combat_Legs_Medium`) — GetLevel Greater Than Or Equal To 20.0
+- entry 23 (`Recipe_Armor_Combat_Arms_Medium`) — GetLevel Greater Than Or Equal To 20.0
+- entry 24 (`Recipe_Armor_Combat_Torso_Light`) — GetLevel Greater Than Or Equal To 20.0
+- entry 25 (`Recipe_Armor_Combat_Arms_Light`) — GetLevel Greater Than Or Equal To 20.0
+- entry 26 (`Recipe_Armor_Combat_Legs_Light`) — GetLevel Greater Than Or Equal To 20.0
+- entry 27 (`Recipe_Armor_Raider_Torso_Heavy`) — GetLevel Greater Than Or Equal To 5.0
+- entry 28 (`Recipe_Armor_Raider_Torso_Light`) — GetLevel Greater Than Or Equal To 5.0
+- entry 29 (`Recipe_Armor_Raider_Legs_Heavy`) — GetLevel Greater Than Or Equal To 5.0
+- entry 30 (`Recipe_Armor_Raider_Arms_Heavy`) — GetLevel Greater Than Or Equal To 5.0
+- entry 31 (`Recipe_Armor_Raider_Legs_Light`) — GetLevel Greater Than Or Equal To 5.0
+- entry 32 (`Recipe_Armor_Raider_Arms_Light`) — GetLevel Greater Than Or Equal To 5.0
+- entry 33 (`Recipe_Armor_Raider_Torso_Medium`) — GetLevel Greater Than Or Equal To 5.0
+- entry 34 (`Recipe_Armor_Raider_Arms_Medium`) — GetLevel Greater Than Or Equal To 5.0
+- entry 35 (`Recipe_Armor_Raider_Legs_Medium`) — GetLevel Greater Than Or Equal To 5.0
+### `LLS_Systemic_Rewards_Armor_Mods` (0x0059CAF6) — same-function ladder
+- entry 0 (`recipe_mod_armor_Combat_Lining_Torso_Explosion2`) — GetLevel Greater Than Or Equal To 20.0
+- entry 1 (`recipe_mod_armor_Leather_Lining_Torso_Explosion2`) — GetLevel Greater Than Or Equal To 1.0
+- entry 2 (`recipe_mod_armor_RaiderMod_Lining_Torso_Explosion2`) — GetLevel Greater Than Or Equal To 5.0
+- entry 3 (`recipe_mod_armor_Robot_Lining_Torso_Explosion2`) — GetLevel Greater Than Or Equal To 10.0
+- entry 4 (`recipe_mod_armor_Metal_Lining_Torso_Explosion2`) — GetLevel Greater Than Or Equal To 10.0
+- entry 5 (`recipe_mod_armor_Robot_Lining_Torso_ImprovedCarryCapacity`) — GetLevel Greater Than Or Equal To 10.0
+- entry 6 (`recipe_mod_armor_Robot_Lining_Limb_ImprovedCarryCapacity`) — GetLevel Greater Than Or Equal To 10.0
+- entry 7 (`recipe_mod_armor_RaiderMod_Lining_Limb_ImprovedCarryCapacity`) — GetLevel Greater Than Or Equal To 5.0
+- entry 8 (`recipe_mod_armor_RaiderMod_Lining_Torso_ImprovedCarryCapacity`) — GetLevel Greater Than Or Equal To 5.0
+- entry 9 (`recipe_mod_armor_Trapper_Lining_Limb_ImprovedCarryCapacity`) — GetLevel Greater Than Or Equal To 15.0
+- entry 10 (`recipe_mod_armor_Trapper_Lining_Torso_ImprovedCarryCapacity`) — GetLevel Greater Than Or Equal To 15.0
+- entry 11 (`recipe_mod_armor_Trapper_Lining_Torso_Lighter2`) — GetLevel Greater Than Or Equal To 15.0
+- entry 12 (`recipe_mod_armor_Trapper_Lining_Limb_Lighter2`) — GetLevel Greater Than Or Equal To 15.0
+- entry 13 (`recipe_mod_armor_RaiderMod_Lining_Torso_Lighter2`) — GetLevel Greater Than Or Equal To 5.0
+- entry 14 (`recipe_mod_armor_RaiderMod_Lining_Limb_Lighter2`) — GetLevel Greater Than Or Equal To 5.0
+- entry 15 (`recipe_mod_armor_Combat_Lining_Limb_Lighter2`) — GetLevel Greater Than Or Equal To 10.0
+- entry 16 (`recipe_mod_armor_Robot_Lining_Torso_Lighter2`) — GetLevel Greater Than Or Equal To 10.0
+- entry 17 (`recipe_mod_armor_Leather_Lining_Limb_Lighter2`) — GetLevel Greater Than Or Equal To 1.0
+- entry 18 (`recipe_mod_armor_Leather_Lining_Torso_Lighter2`) — GetLevel Greater Than Or Equal To 1.0
+- entry 19 (`recipe_mod_armor_Robot_Lining_Limb_Lighter2`) — GetLevel Greater Than Or Equal To 10.0
+- entry 20 (`recipe_mod_armor_Metal_Lining_Torso_Lighter2`) — GetLevel Greater Than Or Equal To 10.0
+- entry 21 (`recipe_mod_armor_Metal_Lining_Limb_Lighter2`) — GetLevel Greater Than Or Equal To 10.0
+### `LLS_Systemic_Rewards_PowerArmor_Plans` (0x0059CAF7) — same-function ladder
+- entry 0 (`recipe_Armor_PowerArmor_T45_ArmLeft`) — GetLevel Greater Than Or Equal To 25.0
+- entry 1 (`recipe_Armor_PowerArmor_T45_ArmRight`) — GetLevel Greater Than Or Equal To 25.0
+- entry 2 (`recipe_Armor_PowerArmor_T45_Helmet`) — GetLevel Greater Than Or Equal To 25.0
+- entry 3 (`recipe_Armor_PowerArmor_T45_LegLeft`) — GetLevel Greater Than Or Equal To 25.0
+- entry 4 (`recipe_Armor_PowerArmor_T45_LegRight`) — GetLevel Greater Than Or Equal To 25.0
+- entry 5 (`recipe_Armor_PowerArmor_T45_Torso`) — GetLevel Greater Than Or Equal To 25.0
+- entry 6 (`recipe_Armor_PowerArmor_Raider_ArmLeft`) — GetLevel Greater Than Or Equal To 15.0
+- entry 7 (`recipe_Armor_PowerArmor_Raider_ArmRight`) — GetLevel Greater Than Or Equal To 15.0
+- entry 8 (`recipe_Armor_PowerArmor_Raider_Helmet`) — GetLevel Greater Than Or Equal To 15.0
+- entry 9 (`recipe_Armor_PowerArmor_Raider_LegLeft`) — GetLevel Greater Than Or Equal To 15.0
+- entry 10 (`recipe_Armor_PowerArmor_Raider_LegRight`) — GetLevel Greater Than Or Equal To 15.0
+- entry 11 (`recipe_Armor_PowerArmor_Raider_Torso`) — GetLevel Greater Than Or Equal To 15.0
+- entry 12 (`recipe_Armor_PowerArmor_T51_ArmLeft`) — GetLevel Greater Than Or Equal To 30.0
+- entry 13 (`recipe_Armor_PowerArmor_T51_ArmRight`) — GetLevel Greater Than Or Equal To 30.0
+- entry 14 (`recipe_Armor_PowerArmor_T51_Helmet`) — GetLevel Greater Than Or Equal To 30.0
+- entry 15 (`recipe_Armor_PowerArmor_T51_LegLeft`) — GetLevel Greater Than Or Equal To 30.0
+- entry 16 (`recipe_Armor_PowerArmor_T51_LegRight`) — GetLevel Greater Than Or Equal To 30.0
+- entry 17 (`recipe_Armor_PowerArmor_T51_Torso`) — GetLevel Greater Than Or Equal To 30.0
+### `LLS_Systemic_Rewards_PowerArmor_Mods` (0x0059CAF8) — same-function ladder
+- entry 0 (`LLS_Recipes_Mods_PowerArmor_Raider_Tier1`) — GetLevel Greater Than Or Equal To 15.0
+- entry 1 (`LLS_Recipes_Mods_PowerArmor_Raider_Tier2`) — GetLevel Greater Than Or Equal To 15.0
+- entry 2 (`LLS_Recipes_Mods_PowerArmor_Raider_Tier3`) — GetLevel Greater Than Or Equal To 15.0
+- entry 3 (`LLS_Recipes_Mods_PowerArmor_T45_Tier1`) — GetLevel Greater Than Or Equal To 25.0
+- entry 4 (`LLS_Recipes_Mods_PowerArmor_T45_Tier2`) — GetLevel Greater Than Or Equal To 25.0
+- entry 5 (`LLS_Recipes_Mods_PowerArmor_T45_Tier3`) — GetLevel Greater Than Or Equal To 25.0
+- entry 6 (`LLS_Recipes_Mods_PowerArmor_T51_Tier1`) — GetLevel Greater Than Or Equal To 30.0
+- entry 7 (`LLS_Recipes_Mods_PowerArmor_T51_Tier2`) — GetLevel Greater Than Or Equal To 30.0
+- entry 8 (`LLS_Recipes_Mods_PowerArmor_T51_Tier3`) — GetLevel Greater Than Or Equal To 30.0
+### `LLS_Creature_WorldBoss_Currency_Caps` (0x005A405D) — same-function ladder
+- entry 0 (`Caps001`) — GetRandomPercent Less Than Or Equal To 20.0 — naive Use-First read 20.0%, actual pool odds 6.5%
+- entry 1 (`Caps001`) — GetRandomPercent Less Than Or Equal To 40.0 — naive Use-First read 32.0%, actual pool odds 13.9%
+- entry 2 (`Caps001`) — GetRandomPercent Less Than Or Equal To 80.0 — naive Use-First read 38.4%, actual pool odds 32.5%
+- entry 3 (`Caps001`) — (unconditioned) — naive Use-First read 9.6%, actual pool odds 47.1%
+### `LLS_Generic_Rewards_Currency_Caps_25-500` (0x005A70BE) — same-function ladder
+- entry 0 (`Caps001`) — GetRandomPercent Less Than Or Equal To 5.0 — naive Use-First read 5.0%, actual pool odds 1.6%
+- entry 1 (`Caps001`) — GetRandomPercent Less Than Or Equal To 40.0 — naive Use-First read 38.0%, actual pool odds 14.6%
+- entry 2 (`Caps001`) — GetRandomPercent Less Than Or Equal To 80.0 — naive Use-First read 45.6%, actual pool odds 34.4%
+- entry 3 (`Caps001`) — GetRandomPercent Less Than Or Equal To 99.0 — naive Use-First read 11.3%, actual pool odds 49.3%
+### `ATX_Resources_Collectron_Gold_Scrap` (0x005F0D28) — same-function ladder
+- entry 0 (`ATX_Resources_Collectron_Gold`) — GetRandomPercent Greater Than Or Equal To 0.95 — naive Use-First read 99.0%, actual pool odds 24.9%
+- entry 1 (`ATX_Resources_Collectron_Scrap_Uncommon`) — GetRandomPercent Greater Than Or Equal To 0.82 — naive Use-First read 0.9%, actual pool odds 24.9%
+- entry 2 (`ATX_Resources_Collectron_Scrap_Common`) — GetRandomPercent Greater Than Or Equal To 0.65 — naive Use-First read 0.0%, actual pool odds 25.0%
+- entry 3 (`ATX_Resources_Collectron_Scrap_SuperCommon`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 25.2%
+### `RESTRICTED_LL_LegendaryModule_2-4` (0x006135A2) — same-function ladder
+- entry 0 (`LegendaryModule`) — GetRandomPercent Less Than Or Equal To 20.0 — naive Use-First read 20.0%, actual pool odds 8.7%
+- entry 1 (`LegendaryModule`) — GetRandomPercent Less Than Or Equal To 40.0 — naive Use-First read 32.0%, actual pool odds 18.7%
+- entry 2 (`LegendaryModule`) — (unconditioned) — naive Use-First read 48.0%, actual pool odds 72.7%
+### `ATX_Resources_Collectron_Silver_Scrap` (0x0064A14A) — same-function ladder
+- entry 0 (`ATX_Resources_Collectron_Silver`) — GetRandomPercent Greater Than Or Equal To 0.95 — naive Use-First read 99.0%, actual pool odds 24.9%
+- entry 1 (`ATX_Resources_Collectron_Scrap_Uncommon`) — GetRandomPercent Greater Than Or Equal To 0.82 — naive Use-First read 0.9%, actual pool odds 24.9%
+- entry 2 (`ATX_Resources_Collectron_Scrap_Common`) — GetRandomPercent Greater Than Or Equal To 0.65 — naive Use-First read 0.0%, actual pool odds 25.0%
+- entry 3 (`ATX_Resources_Collectron_Scrap_SuperCommon`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 25.2%
+### `E09D_Weapons` (0x00668F1D) — same-function ladder
+- entry 0 (`LL_Weapon_Ranged_SingleActionRevolver_GunthersRevolver`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 50.0%, actual pool odds 37.5%
+- entry 1 (`LL_Weapon_Ranged_LeverGun_WesternSpirit`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 25.0%, actual pool odds 37.5%
+### `ATX_LL_NukaColaMysteryMachine` (0x0067A293) — same-function ladder
+- entry 0 (`ATX_LL_NukaColaMysteryMachine_Rare`) — GetRandomPercent Greater Than Or Equal To 90.0 — naive Use-First read 10.0%, actual pool odds 4.5%
+- entry 1 (`ATX_LL_NukaColaMysteryMachine_Uncommon`) — GetRandomPercent Greater Than Or Equal To 70.0 — naive Use-First read 27.0%, actual pool odds 14.5%
+- entry 2 (`ATX_LL_NukaColaMysteryMachine_Common`) — (unconditioned) — naive Use-First read 63.0%, actual pool odds 81.0%
+### `MOON_LL_TreasuryNotes` (0x006B4187) — same-function ladder
+- entry 0 (`Treasury_Note`) — (unconditioned) — naive Use-First read 100.0%, actual pool odds 61.0%
+- entry 1 (`Treasury_Note`) — GetRandomPercent Greater Than 40.0 — naive Use-First read 0.0%, actual pool odds 27.0%
+- entry 2 (`Treasury_Note`) — GetRandomPercent Greater Than 70.0 — naive Use-First read 0.0%, actual pool odds 12.0%
+### `RNG_Storm_Flora_Firecap` (0x006D9C59) — same-function ladder
+- entry 0 (`FloraRadFireCap01`) — GetRandomPercent Less Than Or Equal To NukeFlora_SwapPercent_Red_ECON (=100) — naive Use-First read 100.0%, actual pool odds 39.2%
+- entry 1 (`UseLPI_FloraFireCap01`) — GetRandomPercent Less Than Or Equal To LPI_Chance_Flora_FireCap (=65) — naive Use-First read 0.0%, actual pool odds 21.7%
+- entry 2 (`UseLPI_FloraFireCap01_Harvested`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 39.2%
+### `LL_WeaponUser_Junk_Bones` (0x007B31D8) — same-function ladder
+- entry 0 (`BonesFemur`) — (unconditioned)
+- entry 1 (`BonesFemurSnapped01`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 2 (`BonesFemurSnapped02`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 3 (`BonesHandLeft`) — (unconditioned)
+- entry 4 (`BonesHandRight`) — (unconditioned)
+- entry 5 (`BonesLeftArm`) — (unconditioned)
+- entry 6 (`BonesLeftFoot`) — (unconditioned)
+- entry 7 (`BonesLeftLeg`) — (unconditioned)
+- entry 8 (`BonesPelvis`) — (unconditioned)
+- entry 9 (`BonesRibCage`) — (unconditioned)
+- entry 10 (`BonesRibCage02`) — (unconditioned)
+- entry 11 (`BonesRibCagePelvis`) — (unconditioned)
+- entry 12 (`BonesRightArm`) — (unconditioned)
+- entry 13 (`BonesRightFoot`) — (unconditioned)
+- entry 14 (`BonesRightLeg`) — (unconditioned)
+- entry 15 (`BonesSkull`) — (unconditioned)
+- entry 16 (`BonesSkullFragments01`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 17 (`BonesSkullFragments02`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 18 (`BonesSkullFragments03`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 19 (`BonesSkullFragments04`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 20 (`BonesSkullFragments05`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 21 (`BonesSkullFragments06`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 22 (`BonesSkullUpper`) — (unconditioned)
+- entry 23 (`BonesSpine`) — (unconditioned)
+- entry 24 (`BonesTibia`) — (unconditioned)
+### `LL_WeaponUser_Junk_Plastic` (0x007B31E8) — same-function ladder
+- entry 0 (`BloodPack_Empty`) — GetRandomPercent Less Than Or Equal To 25.0 — naive Use-First read 25.0%, actual pool odds 2.8%
+- entry 1 (`CafeteriaTray`) — (unconditioned) — naive Use-First read 75.0%, actual pool odds 12.3%
+- entry 2 (`CatBowl`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 12.3%
+- entry 3 (`Coolant_Empty01`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 12.3%
+- entry 4 (`DogBowl`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 12.3%
+- entry 5 (`Doll_Arm`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 12.3%
+- entry 6 (`Hairbrush_01`) — GetRandomPercent Less Than Or Equal To 25.0 — naive Use-First read 0.0%, actual pool odds 2.8%
+- entry 7 (`Knife_01_Plastic`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 12.3%
+- entry 8 (`Pen01`) — GetRandomPercent Less Than Or Equal To 25.0 — naive Use-First read 0.0%, actual pool odds 2.8%
+- entry 9 (`Spoon_01_Plastic`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 12.3%
+- entry 10 (`Toothbrush`) — GetRandomPercent Less Than Or Equal To 25.0 — naive Use-First read 0.0%, actual pool odds 2.8%
+- entry 11 (`Toothpaste`) — GetRandomPercent Less Than Or Equal To 25.0 — naive Use-First read 0.0%, actual pool odds 2.8%
+### `LL_WeaponUser_Junk_Screws` (0x007B31E9) — same-function ladder
+- entry 0 (`Handcuffs`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 50.0%, actual pool odds 9.9%
+- entry 1 (`ToyCar`) — (unconditioned) — naive Use-First read 50.0%, actual pool odds 22.4%
+- entry 2 (`ToyTruck01`) — GetRandomPercent Less Than Or Equal To 75.0 — naive Use-First read 0.0%, actual pool odds 15.7%
+- entry 3 (`c_Screws_scrap`) — (unconditioned) — naive Use-First read 0.0%, actual pool odds 22.4%
+- entry 4 (`PlayerHouse_Ruin_PepperMill01`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 0.0%, actual pool odds 9.9%
+- entry 5 (`SilverLocket`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 0.0%, actual pool odds 9.9%
+- entry 6 (`Clipboard_Prewar01_Clean`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 0.0%, actual pool odds 9.9%
+### `LL_WeaponUser_Junk_Steel` (0x007B31EB) — same-function ladder
+- entry 0 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 1 (`Bonesaw`) — GetRandomPercent Less Than Or Equal To 25.0
+- entry 2 (`CoffeePot01`) — (unconditioned)
+- entry 3 (`Colander`) — (unconditioned)
+- entry 4 (`CookingPan01`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 5 (`CookingPot01`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 6 (`AutoPart04`) — (unconditioned)
+- entry 7 (`EnamelBucket01`) — (unconditioned)
+- entry 8 (`Hammer01`) — (unconditioned)
+- entry 9 (`Handcuffs`) — (unconditioned)
+- entry 10 (`Ladle`) — (unconditioned)
+- entry 11 (`Lighter`) — (unconditioned)
+- entry 12 (`OilCan01`) — (unconditioned)
+- entry 13 (`PaintCanEmpty`) — GetRandomPercent Less Than Or Equal To 50.0
+- entry 14 (`Plate_02_Dinner`) — (unconditioned)
+- entry 15 (`Scalpel`) — (unconditioned)
+- entry 16 (`Scissors`) — (unconditioned)
+- entry 17 (`ScrewDriver01`) — (unconditioned)
+- entry 18 (`ShoppingBasket`) — (unconditioned)
+- entry 19 (`OilCan01`) — (unconditioned)
+- entry 20 (`CookingPot01`) — (unconditioned)
+- entry 21 (`c_Steel_scrap`) — (unconditioned)
+- entry 22 (`TinCan01`) — (unconditioned)
+- entry 23 (`TinCan01`) — (unconditioned)
+- entry 24 (`TinCan01`) — (unconditioned)
+- entry 25 (`TinCan03`) — (unconditioned)
+- entry 26 (`TinCan03`) — (unconditioned)
+- entry 27 (`TinCan03`) — (unconditioned)
+- entry 28 (`ToyTruck01`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 29 (`Wrench01`) — (unconditioned)
+- entry 30 (`Wrench02`) — (unconditioned)
+- entry 31 (`Wrench03`) — (unconditioned)
+- entry 32 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 33 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 34 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 35 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 36 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 37 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+- entry 38 (`c_Steel_scrap`) — GetRandomPercent Less Than Or Equal To 75.0
+### `P62_LLS_Drifter_Rewards_LegendaryShards_Fallback` (0x00802171) — same-function ladder
+- entry 0 (`P62_LegendaryItems_Drifter_Rank4`) — GetRandomPercent Less Than Or Equal To 25.0 — naive Use-First read 25.0%, actual pool odds 8.1%
+- entry 1 (`P62_LegendaryItems_Drifter_Rank3`) — GetRandomPercent Less Than Or Equal To 50.0 — naive Use-First read 37.5%, actual pool odds 17.4%
+- entry 2 (`P62_LegendaryItems_Drifter_Rank2`) — GetRandomPercent Less Than Or Equal To 75.0 — naive Use-First read 28.1%, actual pool odds 28.9%
+- entry 3 (`P62_LegendaryItems_Drifter_Rank1`) — (unconditioned) — naive Use-First read 9.4%, actual pool odds 45.6%
+### `SCORE_S22_Resources_Collector_SoulSoupServer_Food` (0x008308D7) — same-function ladder
+- entry 0 (`BrainFungusVegetableCookedSoup`) — GetRandomPercent Greater Than Or Equal To 92.0 — naive Use-First read 8.0%, actual pool odds 2.2%
+- entry 1 (`SiltBeanVegetableCookedSoup`) — GetRandomPercent Greater Than Or Equal To 80.0 — naive Use-First read 18.4%, actual pool odds 5.7%
+- entry 2 (`SwampPlantTastyTofuSoup`) — GetRandomPercent Greater Than Or Equal To 63.0 — naive Use-First read 27.2%, actual pool odds 11.0%
+- entry 3 (`PumpkinVegetableCookedSoup`) — GetRandomPercent Greater Than Or Equal To 45.0 — naive Use-First read 25.5%, actual pool odds 17.2%
+- entry 4 (`CornVegetableCookedSoup`) — GetRandomPercent Greater Than Or Equal To 25.0 — naive Use-First read 15.6%, actual pool odds 25.2%
+- entry 5 (`FirecapCookedSoup`) — (unconditioned) — naive Use-First read 5.2%, actual pool odds 38.8%
+### `LL_ChemMysteryMachine` (0x00853D35) — same-function ladder
+- entry 0 (`SCORE_S23_LL_ChemMysteryMachine_Common`) — (unconditioned) — naive Use-First read 100.0%, actual pool odds 72.7%
+- entry 1 (`SCORE_S23_LL_ChemMysteryMachine_Uncommon`) — GetRandomPercent Greater Than Or Equal To 60.0 — naive Use-First read 0.0%, actual pool odds 18.7%
+- entry 2 (`SCORE_S23_LL_ChemMysteryMachine_Rare`) — GetRandomPercent Greater Than Or Equal To 80.0 — naive Use-First read 0.0%, actual pool odds 8.7%
+### `RA_LL_Rewards_General_AidItems_Rare_Need` (0x0086A8C7) — same-function ladder
+- entry 0 (`BerryMentats`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 1 (`GrapeMentats`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 2 (`OrangeMentats`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 3 (`Bufftats`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 4 (`Psychobuff`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 5 (`Psychotats`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 6 (`DaddyO`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 7 (`DayTripper`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 8 (`Fury`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 9 (`Calmex`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 10 (`Overdrive`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 11 (`XCell`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 12 (`SuperStimpak`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 13 (`Addictol`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+### `RA_LL_Rewards_General_AidItems_Common_Need` (0x0086A8C8) — same-function ladder
+- entry 0 (`Buffout`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 1 (`MedX`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 2 (`Mentats`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 3 (`Psycho`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 4 (`Stimpak`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 5 (`RadAway`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 6 (`RadX`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+- entry 7 (`SURV_DiseaseCure_HerbalMedicine`) — GetItemCount Less Than Or Equal To RA_ChemNeedsAmount (unresolved)
+### `SDOW_MQ02_Graves_LL_QuestRelatedItems` (0x008F2AFD) — same-function ladder
+- entry 0 (`SDOW_MQ02_Graves_LL_FirstJournalPage`) — GetValue Less Than Or Equal To 0.0
+- entry 1 (`SDOW_MQ02_Graves_LL_JournalPages`) — GetValue Greater Than Or Equal To 1.0

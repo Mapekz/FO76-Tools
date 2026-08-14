@@ -97,6 +97,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import esm_gateway  # noqa: E402
+import lvli_entry  # noqa: E402
 
 CALC_ALL_LEVELS_FLAG = "Calculate from all levels <= player's level"
 USE_ALL_FLAG = "Use All"
@@ -238,9 +239,11 @@ def describe_condition(c: dict, glob_values: dict[str, float]) -> str:
 
 
 def entry_reference_text(entry: dict) -> str:
-    ref = entry.get("Reference")
+    ref = lvli_entry.entry_reference(entry)
     if isinstance(ref, dict):
         return ref.get("editor_id") or ref.get("formid") or "?"
+    if isinstance(ref, str) and ref:
+        return ref
     return "?"
 
 
@@ -455,7 +458,7 @@ def collect_glob_refs(records: list[dict]) -> set[str]:
         fields = rec.get("fields") or {}
         raw_entries = fields.get("Leveled List Entries") or []
         for raw in raw_entries:
-            entry = raw.get("Leveled List Entry") or {}
+            entry = lvli_entry.unwrap_entry(raw)
             for c in entry_conditions(entry):
                 if c.get("Function") != "GetRandomPercent":
                     continue
@@ -475,7 +478,7 @@ def analyze_record(rec: dict, threshold: float, glob_values: dict[str, float]) -
     fields = rec.get("fields") or {}
     flags = set((fields.get("Flags") or {}).get("flags") or [])
     raw_entries = fields.get("Leveled List Entries") or []
-    entries = [e.get("Leveled List Entry") or {} for e in raw_entries]
+    entries = [lvli_entry.unwrap_entry(e) for e in raw_entries]
     editor_id = rec.get("editor_id") or "?"
     name = fields.get("Override Name")
     name_text = f"{editor_id} {name or ''}"

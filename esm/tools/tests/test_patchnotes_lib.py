@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import lvli_entry  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -519,6 +520,51 @@ class TestLegacyArrayFallback(unittest.TestCase):
         self.assertEqual(result["count_to"], 1)
         self.assertEqual(result["added"], [])
         self.assertEqual(result["removed"], [])
+
+
+# ---------------------------------------------------------------------------
+# lvli_entry.py consolidation (Stage H): patchnotes_lib.py now delegates its
+# unwrap/reference/quantity reading to lvli_entry.py instead of keeping its
+# own copies -- these tests lock in the delegation's observable behavior,
+# in particular the honest-None quantity default (never fabricated as 1).
+# ---------------------------------------------------------------------------
+
+
+class TestLvliEntryConsolidation(unittest.TestCase):
+    def test_entry_quantity_defaults_to_none_not_one(self):
+        self.assertIsNone(lvli_entry.entry_quantity({}))
+        self.assertIsNone(lvli_entry.entry_quantity({"Reference": "0x00AA0001"}))
+
+    def test_unwrap_entry_passes_through_already_unwrapped_dict(self):
+        # The bug lvli_audit.py had (`raw.get("Leveled List Entry") or {}`)
+        # silently dropped an already-unwrapped entry to `{}`. The canonical
+        # behavior (`e.get("Leveled List Entry", e)`) must not do that.
+        entry = {"Reference": "0x00AA0001", "Minimum Level": 5}
+        self.assertEqual(lvli_entry.unwrap_entry(entry), entry)
+
+    def test_entry_reference_falls_back_to_item(self):
+        self.assertEqual(lvli_entry.entry_reference({"Item": "0x00AA0002"}), "0x00AA0002")
+        self.assertEqual(lvli_entry.entry_reference({"Reference": "0x00AA0001", "Item": "0x00AA0002"}), "0x00AA0001")
+
+    def test_lvli_display_omits_quantity_clause_when_missing(self):
+        elem = {"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5}}
+        out = pl._lvli_display(elem, {})
+        self.assertNotIn("×None", out)
+        self.assertNotIn("×", out)
+        self.assertIn("min lvl 5", out)
+
+    def test_lvli_display_still_shows_quantity_when_present(self):
+        elem = {"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5, "Quantity": 3}}
+        out = pl._lvli_display(elem, {})
+        self.assertIn("×3", out)
+
+    def test_diff_lvli_entries_no_spurious_quantity_row_when_both_missing(self):
+        # Both sides lack Quantity entirely -- must not synthesize a
+        # ("Quantity", None, None) no-op change row.
+        from_list = [{"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5}}]
+        to_list = [{"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5}}]
+        result = pl.diff_lvli_entries(from_list, to_list, {})
+        self.assertEqual(result["changed"], [])
 
 
 # ---------------------------------------------------------------------------

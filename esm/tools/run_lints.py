@@ -45,6 +45,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import esm_gateway  # noqa: E402
 import layout  # noqa: E402
+import lvli_entry  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -111,23 +112,6 @@ def _looks_like_chance_100(v):
     return False
 
 
-def _lvli_unwrap_entry(e):
-    """Mirror patchnotes_lib._lvli_unwrap: some shapes wrap the entry's
-    fields in a `{"Leveled List Entry": {...}}` container, others don't."""
-    if not isinstance(e, dict):
-        return {}
-    inner = e.get("Leveled List Entry", e)
-    return inner if isinstance(inner, dict) else {}
-
-
-def _lvli_entry_qty(ue):
-    return ue.get("Quantity", ue.get("Count"))
-
-
-def _lvli_entry_ref(ue):
-    return ue.get("Reference") or ue.get("Item")
-
-
 def _lvli_entry_level(ue):
     return ue.get("Minimum Level", ue.get("Level"))
 
@@ -148,7 +132,7 @@ def _ref_formid(ref):
 def _entry_is_blocked(ue):
     """(blocked: bool, reason: 'quantity_zero'|'chance_none_100'|None) for a
     leveled-list entry's unwrapped inner dict."""
-    qty = _lvli_entry_qty(ue)
+    qty = lvli_entry.entry_quantity(ue)
     if _is_real_number(qty) and float(qty) == 0.0:
         return True, "quantity_zero"
     if "ChanceNone" in ue and _looks_like_chance_100(ue.get("ChanceNone")):
@@ -397,13 +381,13 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
 
                 blocked = []
                 for e in valid_entries:
-                    ue = _lvli_unwrap_entry(e)
+                    ue = lvli_entry.unwrap_entry(e)
                     is_blocked, reason = _entry_is_blocked(ue)
                     if is_blocked:
                         blocked.append((ue, reason))
 
                 for ue, reason in blocked:
-                    ref = _lvli_entry_ref(ue)
+                    ref = lvli_entry.entry_reference(ue)
                     label = pl.annotate_ref(ref, ref_names)
                     level = _lvli_entry_level(ue)
                     lints.append(
@@ -419,7 +403,7 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
                                 "status": "added",
                                 "reason": reason,
                                 "item": _ref_formid(ref),
-                                "quantity": _lvli_entry_qty(ue),
+                                "quantity": lvli_entry.entry_quantity(ue),
                                 "minimum_level": level,
                             },
                         }
@@ -449,11 +433,11 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
                     for item in arr.get("added") or []:
                         if not isinstance(item, dict):
                             continue
-                        ue = _lvli_unwrap_entry(item.get("raw"))
+                        ue = lvli_entry.unwrap_entry(item.get("raw"))
                         is_blocked, reason = _entry_is_blocked(ue)
                         if not is_blocked:
                             continue
-                        ref = _lvli_entry_ref(ue)
+                        ref = lvli_entry.entry_reference(ue)
                         label = pl.annotate_ref(ref, ref_names) if ref is not None else item.get(
                             "key_display", "?"
                         )
@@ -472,7 +456,7 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
                                     "status": "changed",
                                     "reason": reason,
                                     "item": _ref_formid(ref),
-                                    "quantity": _lvli_entry_qty(ue),
+                                    "quantity": lvli_entry.entry_quantity(ue),
                                     "minimum_level": level,
                                 },
                             }
