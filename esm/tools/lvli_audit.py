@@ -129,14 +129,18 @@ def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 
-def list_lvli_form_ids(client: esm_gateway.EsmGateway, esm_path: Path) -> list[str]:
+def list_lvli_form_ids(client, esm_path: Path) -> list[str]:
     """Every LVLI FormID in the ESM, via `EsmGateway.list_type` (`Op::
     ListTypeRecords`, the same op `esm list --type LVLI --json` sends) --
     one warm round-trip through the daemon, no subprocess. Routing through
     the gateway (rather than shelling out to `esm list` directly, as this
     used to) is what lets `esm_gateway.py` claim to be the one seam
     everything in `tools/` reaches `esm` through -- see its module
-    docstring."""
+    docstring. `client` is untyped (any object exposing `list_type`),
+    matching how `build_bundles.py`/`run_lints.py`'s client-consuming
+    functions stay untyped -- both the real `EsmGateway` and tests' fixture-
+    backed `FakeGateway` (see `tools/tests/fake_gateway.py`) are passed
+    here."""
     return [row["form_id"] for row in client.list_type(str(esm_path), "LVLI", limit=0)]
 
 
