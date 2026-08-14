@@ -1226,6 +1226,30 @@ fn apply_strings_override(
     }
 }
 
+/// Bails when source-override flags were passed while daemon mode is active.
+///
+/// Source-override flags (`--localization-ba2`/`--strings-dir`/`--startup-ba2`/
+/// `--curves-dir`, including `diff`'s per-side `_a`/`_b` variants) are
+/// deliberately CLI-only — see `docs/adr/0008-source-overrides-cli-only.md`. The
+/// daemon's `Registry` caches exactly one warm `Database` per canonical ESM
+/// path, shared across every client; a per-request source override can't be
+/// warmed into that shared cache, so there is no `Op` this could ever dispatch
+/// to. Each call site computes `has_overrides` itself — a single flag-presence
+/// check for `list`/`get`/`search`, an 8-way `_a`/`_b` coalesce for `diff` — and
+/// passes the flag names to mention in the error.
+fn bail_if_daemon_mode_overrides(
+    has_overrides: bool,
+    daemon_mode: bool,
+    flags: &str,
+) -> anyhow::Result<()> {
+    if has_overrides && daemon_mode {
+        anyhow::bail!(
+            "{flags} are not supported in daemon mode; use --local to open the ESM directly"
+        );
+    }
+    Ok(())
+}
+
 fn parse_resolve(s: &str) -> anyhow::Result<ResolveDepth> {
     esm::query::resolve_depth(Some(s), ResolveDepth::None)
 }
@@ -1285,12 +1309,11 @@ fn cmd_get(
     }
     let target = targets.into_iter().next();
 
-    if has_overrides && daemon_mode {
-        anyhow::bail!(
-            "--localization-ba2/--strings-dir/--startup-ba2 are not supported in daemon mode; \
-             use --local to open the ESM directly"
-        );
-    }
+    bail_if_daemon_mode_overrides(
+        has_overrides,
+        daemon_mode,
+        "--localization-ba2/--strings-dir/--startup-ba2",
+    )?;
     if has_overrides {
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
@@ -1335,13 +1358,13 @@ fn cmd_list(
     lang: &str,
     daemon_mode: bool,
 ) -> anyhow::Result<()> {
-    if localization_ba2.is_some() || strings_dir.is_some() {
-        if daemon_mode {
-            anyhow::bail!(
-                "--localization-ba2/--strings-dir are not supported in daemon mode; \
-                 use --local to open the ESM directly"
-            );
-        }
+    let has_overrides = localization_ba2.is_some() || strings_dir.is_some();
+    if has_overrides {
+        bail_if_daemon_mode_overrides(
+            has_overrides,
+            daemon_mode,
+            "--localization-ba2/--strings-dir",
+        )?;
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
@@ -1829,13 +1852,13 @@ fn cmd_search(
         SearchInArg::Both => SearchField::Both,
     };
 
-    if localization_ba2.is_some() || strings_dir.is_some() {
-        if daemon_mode {
-            anyhow::bail!(
-                "--localization-ba2/--strings-dir are not supported in daemon mode; \
-                 use --local to open the ESM directly"
-            );
-        }
+    let has_overrides = localization_ba2.is_some() || strings_dir.is_some();
+    if has_overrides {
+        bail_if_daemon_mode_overrides(
+            has_overrides,
+            daemon_mode,
+            "--localization-ba2/--strings-dir",
+        )?;
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
@@ -2054,12 +2077,11 @@ fn cmd_diff(
         || cd_b.is_some();
 
     if force_local {
-        if daemon_mode {
-            anyhow::bail!(
-                "--localization-ba2*/--strings-dir*/--startup-ba2*/--curves-dir* are not \
-                 supported in daemon mode for diff; use --local to open the ESM files directly"
-            );
-        }
+        bail_if_daemon_mode_overrides(
+            force_local,
+            daemon_mode,
+            "--localization-ba2*/--strings-dir*/--startup-ba2*/--curves-dir*",
+        )?;
 
         // Resolve folder → ESM so that esm_string_prefix/resolve_localization_or_bail
         // receive the actual .esm path (not a folder).

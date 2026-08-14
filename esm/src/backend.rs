@@ -317,20 +317,7 @@ impl RemoteBackend {
     /// Connect with optional address/port override (skips discovery file for addr).
     /// `--port` alone defaults to `127.0.0.1`.
     pub fn connect_with_override(addr: Option<&str>, port: Option<u16>) -> anyhow::Result<Self> {
-        if let Some(p) = port {
-            let a = addr.unwrap_or("127.0.0.1");
-            let info = read_daemon_info().ok();
-            let token = info
-                .as_ref()
-                .filter(|i| i.port == p)
-                .map(|i| i.token.clone())
-                .unwrap_or_default();
-            if health_check(a, p, &token).is_ok() {
-                return Ok(Self::new(a, p, token));
-            }
-            bail!("no daemon listening on {}:{}", a, p);
-        }
-        Self::connect_or_spawn()
+        connect_with_override_with(&RealHost, addr, port)
     }
 
     /// Connect to an already-running daemon without auto-spawning one.
@@ -339,26 +326,7 @@ impl RemoteBackend {
         addr: Option<&str>,
         port: Option<u16>,
     ) -> anyhow::Result<Self> {
-        if let Some(p) = port {
-            let a = addr.unwrap_or("127.0.0.1");
-            let info = read_daemon_info().ok();
-            let token = info
-                .as_ref()
-                .filter(|i| i.port == p)
-                .map(|i| i.token.clone())
-                .unwrap_or_default();
-            if health_check(a, p, &token).is_ok() {
-                return Ok(Self::new(a, p, token));
-            }
-            bail!("no daemon listening on {}:{}", a, p);
-        }
-
-        let info = read_daemon_info().context("daemon is not running")?;
-        if daemon_alive(&info) {
-            Ok(Self::from_daemon_info(&info))
-        } else {
-            bail!("daemon is not running");
-        }
+        connect_existing_with_override_with(&RealHost, addr, port)
     }
 
     pub fn health(&self) -> anyhow::Result<()> {
@@ -567,10 +535,6 @@ pub fn generate_token() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-fn daemon_alive(info: &DaemonInfo) -> bool {
-    health_check("127.0.0.1", info.port, &info.token).is_ok()
-}
-
 fn health_check(addr: &str, port: u16, token: &str) -> anyhow::Result<()> {
     health_check_url(&format!("http://{addr}:{port}"), token)
 }
@@ -631,7 +595,9 @@ trait DaemonHost {
     fn lock_exclusive(&self) -> anyhow::Result<Self::LockGuard>;
     fn read_info(&self) -> anyhow::Result<DaemonInfo>;
     fn remove_info(&self) -> anyhow::Result<()>;
-    fn health_check(&self, port: u16, token: &str) -> anyhow::Result<()>;
+    /// Health-check `addr:port` (not assumed to be `127.0.0.1` — `--addr` lets a
+    /// caller point at a daemon on a different host).
+    fn health_check(&self, addr: &str, port: u16, token: &str) -> anyhow::Result<()>;
     /// Request a graceful `/op` shutdown from a running daemon.
     fn request_shutdown(&self, port: u16, token: &str) -> anyhow::Result<()>;
     /// Spawn the daemon process; returns a handle for [`Self::kill`] / pid checks.
@@ -673,8 +639,8 @@ impl DaemonHost for RealHost {
         remove_daemon_info()
     }
 
-    fn health_check(&self, port: u16, token: &str) -> anyhow::Result<()> {
-        health_check("127.0.0.1", port, token)
+    fn health_check(&self, addr: &str, port: u16, token: &str) -> anyhow::Result<()> {
+        health_check(addr, port, token)
     }
 
     fn request_shutdown(&self, port: u16, token: &str) -> anyhow::Result<()> {
@@ -726,7 +692,11 @@ impl DaemonHost for RealHost {
 /// Return a healthy, binary-fresh daemon if one is already running.
 fn existing_fresh_daemon<H: DaemonHost>(host: &H) -> Option<DaemonInfo> {
     let info = host.read_info().ok()?;
-    if host.health_check(info.port, &info.token).is_ok() && daemon_fresh(&info) {
+    if host
+        .health_check("127.0.0.1", info.port, &info.token)
+        .is_ok()
+        && daemon_fresh(&info)
+    {
         Some(info)
     } else {
         None
@@ -742,6 +712,68 @@ fn connect_or_spawn_with<H: DaemonHost>(host: &H) -> anyhow::Result<RemoteBacken
         .read_info()
         .context("daemon started but discovery file missing")?;
     Ok(RemoteBackend::from_daemon_info(&info))
+}
+
+/// Testable body of [`RemoteBackend::connect_with_override`]. When `port` is
+/// given, this is the whole override path — reading discovery info for its
+/// token (best-effort) and health-checking `addr:port` directly, both
+/// through `host` rather than the free `read_daemon_info()`/`health_check()`
+/// functions, so the branch is exercisable against a [`FakeHost`] the same
+/// way [`connect_or_spawn_with`] already is. With no `port`, this falls
+/// through to that same seamed spawn-or-connect path.
+fn connect_with_override_with<H: DaemonHost>(
+    host: &H,
+    addr: Option<&str>,
+    port: Option<u16>,
+) -> anyhow::Result<RemoteBackend> {
+    if let Some(p) = port {
+        let a = addr.unwrap_or("127.0.0.1");
+        let info = host.read_info().ok();
+        let token = info
+            .as_ref()
+            .filter(|i| i.port == p)
+            .map(|i| i.token.clone())
+            .unwrap_or_default();
+        if host.health_check(a, p, &token).is_ok() {
+            return Ok(RemoteBackend::new(a, p, token));
+        }
+        bail!("no daemon listening on {}:{}", a, p);
+    }
+    connect_or_spawn_with(host)
+}
+
+/// Testable body of [`RemoteBackend::connect_existing_with_override`] — same
+/// `--port`-present override branch as [`connect_with_override_with`], plus
+/// (when no `port` is given) a no-spawn "must already be running" check
+/// against the discovery file, both routed through `host`.
+fn connect_existing_with_override_with<H: DaemonHost>(
+    host: &H,
+    addr: Option<&str>,
+    port: Option<u16>,
+) -> anyhow::Result<RemoteBackend> {
+    if let Some(p) = port {
+        let a = addr.unwrap_or("127.0.0.1");
+        let info = host.read_info().ok();
+        let token = info
+            .as_ref()
+            .filter(|i| i.port == p)
+            .map(|i| i.token.clone())
+            .unwrap_or_default();
+        if host.health_check(a, p, &token).is_ok() {
+            return Ok(RemoteBackend::new(a, p, token));
+        }
+        bail!("no daemon listening on {}:{}", a, p);
+    }
+
+    let info = host.read_info().context("daemon is not running")?;
+    if host
+        .health_check("127.0.0.1", info.port, &info.token)
+        .is_ok()
+    {
+        Ok(RemoteBackend::from_daemon_info(&info))
+    } else {
+        bail!("daemon is not running");
+    }
 }
 
 /// Spawn `esm-server --daemon` detached and poll until `/health` succeeds.
@@ -766,7 +798,9 @@ fn spawn_daemon_and_wait_with<H: DaemonHost>(host: &H) -> anyhow::Result<()> {
     // Re-check: another process may have won the race while we waited for the
     // lock.
     if let Ok(info) = host.read_info()
-        && host.health_check(info.port, &info.token).is_ok()
+        && host
+            .health_check("127.0.0.1", info.port, &info.token)
+            .is_ok()
     {
         if daemon_fresh(&info) {
             return Ok(());
@@ -784,7 +818,9 @@ fn spawn_daemon_and_wait_with<H: DaemonHost>(host: &H) -> anyhow::Result<()> {
     let deadline = host.now() + HEALTH_POLL_MAX;
     while host.now() < deadline {
         if let Ok(info) = host.read_info()
-            && host.health_check(info.port, &info.token).is_ok()
+            && host
+                .health_check("127.0.0.1", info.port, &info.token)
+                .is_ok()
         {
             return Ok(());
         }
@@ -826,7 +862,10 @@ fn stop_running_daemon_with<H: DaemonHost>(host: &H, info: &DaemonInfo) {
 pub fn stop_daemon() -> anyhow::Result<()> {
     let host = RealHost;
     if let Ok(info) = host.read_info() {
-        if host.health_check(info.port, &info.token).is_ok() {
+        if host
+            .health_check("127.0.0.1", info.port, &info.token)
+            .is_ok()
+        {
             stop_running_daemon_with(&host, &info);
         }
         let _ = host.remove_info();
@@ -1211,7 +1250,7 @@ mod tests {
             Ok(())
         }
 
-        fn health_check(&self, _port: u16, _token: &str) -> anyhow::Result<()> {
+        fn health_check(&self, _addr: &str, _port: u16, _token: &str) -> anyhow::Result<()> {
             let mut s = self.state.borrow_mut();
             match s.health_results.pop_front() {
                 Some(Ok(())) => Ok(()),
@@ -1372,5 +1411,129 @@ mod tests {
             wall_elapsed < Duration::from_secs(2),
             "timeout path slept for real time ({wall_elapsed:?}); clock not faked"
         );
+    }
+
+    // ─── `--port`/`--addr` override constructors, routed through DaemonHost ────
+
+    #[test]
+    fn connect_with_override_uses_given_addr_and_port_when_healthy() {
+        let host = FakeHost::new();
+        host.queue_health_ok(1);
+        let backend = connect_with_override_with(&host, Some("10.0.0.5"), Some(4242)).unwrap();
+        assert_eq!(backend.base_url, "http://10.0.0.5:4242");
+        assert_eq!(
+            host.spawn_count(),
+            0,
+            "a --port override must never trigger a spawn"
+        );
+    }
+
+    #[test]
+    fn connect_with_override_reuses_discovery_token_when_port_matches() {
+        let host = FakeHost::new();
+        let (info, path) = fresh_info(4242, 51);
+        host.set_info(info.clone());
+        host.queue_health_ok(1);
+        let backend = connect_with_override_with(&host, None, Some(4242)).unwrap();
+        assert_eq!(backend.token, info.token);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn connect_with_override_errors_when_port_unhealthy() {
+        // Empty health_results queue: the fake's health_check always fails.
+        let host = FakeHost::new();
+        let err = connect_with_override_with(&host, None, Some(4242))
+            .err()
+            .unwrap();
+        assert!(
+            err.to_string()
+                .contains("no daemon listening on 127.0.0.1:4242"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn connect_with_override_with_no_port_falls_through_to_connect_or_spawn() {
+        let host = FakeHost::new();
+        let (info, path) = fresh_info(9010, 50);
+        host.set_info(info);
+        // existing_fresh_daemon's health probe.
+        host.queue_health_ok(1);
+        let backend = connect_with_override_with(&host, None, None).unwrap();
+        assert_eq!(backend.base_url, "http://127.0.0.1:9010");
+        assert_eq!(
+            host.spawn_count(),
+            0,
+            "an already-healthy daemon must not be respawned"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn connect_existing_with_override_uses_given_addr_and_port_when_healthy() {
+        let host = FakeHost::new();
+        host.queue_health_ok(1);
+        let backend =
+            connect_existing_with_override_with(&host, Some("192.168.1.2"), Some(5555)).unwrap();
+        assert_eq!(backend.base_url, "http://192.168.1.2:5555");
+    }
+
+    #[test]
+    fn connect_existing_with_override_errors_when_port_unhealthy() {
+        let host = FakeHost::new();
+        let err = connect_existing_with_override_with(&host, None, Some(5555))
+            .err()
+            .unwrap();
+        assert!(
+            err.to_string()
+                .contains("no daemon listening on 127.0.0.1:5555"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn connect_existing_with_override_no_port_uses_running_daemon() {
+        let host = FakeHost::new();
+        let (info, path) = fresh_info(9020, 60);
+        host.set_info(info);
+        host.queue_health_ok(1);
+        let backend = connect_existing_with_override_with(&host, None, None).unwrap();
+        assert_eq!(backend.base_url, "http://127.0.0.1:9020");
+        assert_eq!(
+            host.spawn_count(),
+            0,
+            "connect_existing must never spawn a daemon"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn connect_existing_with_override_no_port_errors_when_no_daemon_registered() {
+        let host = FakeHost::new(); // no discovery info set at all
+        let err = connect_existing_with_override_with(&host, None, None)
+            .err()
+            .unwrap();
+        assert!(
+            err.to_string().contains("daemon is not running"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn connect_existing_with_override_no_port_errors_when_daemon_unhealthy() {
+        let host = FakeHost::new();
+        let (info, path) = fresh_info(9021, 61);
+        host.set_info(info);
+        // No health result queued: the fake's health_check fails, so the
+        // registered daemon must be treated as not running.
+        let err = connect_existing_with_override_with(&host, None, None)
+            .err()
+            .unwrap();
+        assert!(
+            err.to_string().contains("daemon is not running"),
+            "unexpected error: {err}"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 }

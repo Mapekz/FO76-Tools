@@ -518,7 +518,7 @@ esm search "*Rifle*" --type WEAP --pretty   # name/EditorID wildcard
 esm refs 0x463F --limit 100 --pretty        # reverse FormID lookup
 ```
 
-**Gotcha:** `--localization-ba2`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open (the daemon doesn't accept per-call source overrides). Pass a data folder or place the Localization/Startup BA2 files (or `strings/`/`misc/curvetables/` directories) next to the ESM so the daemon auto-loads them on open, and drop per-call flags in sweeps.
+**Gotcha:** `--localization-ba2`, `--strings-dir`, and `--startup-ba2` on `get` force a cold open by design — the daemon's cache holds one warm `Database` shared across every client per ESM path, and a per-call source override can't be warmed into that shared instance (see `docs/adr/0008-source-overrides-cli-only.md`). Pass a data folder or place the Localization/Startup BA2 files (or `strings/`/`misc/curvetables/` directories) next to the ESM so the daemon auto-loads them on open, and drop per-call flags in sweeps.
 
 ### MCP opt-in
 

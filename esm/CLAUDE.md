@@ -165,9 +165,9 @@ A bare positional selector with no `0x` prefix that still *looks* like a FormID 
 
 `list`, `search`, and `refs` print a `note: output capped at N of M results; use --limit 0 to show all` line when the result count hits `--limit` — always to **stderr**, never stdout, so `--json` output stays valid, parseable JSON even when the result was capped. Pass `--limit 0` when you need the uncapped result instead of relying on stderr to notice truncation.
 
-### Gotcha: `--localization-ba2` / `--startup-ba2` bypass the daemon
+### Gotcha: `--localization-ba2` / `--startup-ba2` are CLI-only by design
 
-Passing `--localization-ba2`, `--strings-dir`, or `--startup-ba2` to `get` forces a cold in-process open (the daemon doesn't load BA2 args from per-call flags). For sweeps that need localized strings, place the Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a `misc/curvetables/` folder) next to the ESM — the daemon auto-loads them on open, and warm lookups return localized output without per-call BA2 flags.
+Passing `--localization-ba2`, `--strings-dir`, or `--startup-ba2` to `get` forces a cold in-process open instead of using the daemon — this is deliberate, not a missing feature (see `docs/adr/0008-source-overrides-cli-only.md`). The daemon's shared cache holds exactly one warm `Database` per canonical ESM path, reused across every client; a per-call source override can't be warmed into that shared instance, so routing it through the daemon would only add a network hop around the same cold, unshared open `--local` already does directly. For sweeps that need localized strings, place the Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a `misc/curvetables/` folder) next to the ESM — the daemon auto-loads them on open, and warm lookups return localized output without per-call BA2 flags.
 
 ### MCP opt-in (for AI clients that support it)
 
