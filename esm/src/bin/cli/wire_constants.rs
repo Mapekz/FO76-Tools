@@ -2,6 +2,10 @@
 //! hand-mirrors, printed as JSON. See `cmd_dump_wire_constants`'s doc and
 //! `tools/regen_wire_constants.py`, which consumes this to (re)write the
 //! checked-in `tools/wire_constants.py`.
+//!
+//! Two guards keep that checked-in mirror honest: this module's `tests` fail
+//! under plain `cargo test` when it no longer matches what the Rust side
+//! emits, and CI regenerates it and fails on any `git diff`.
 
 use clap::Args as _;
 use esm::backend::{
@@ -181,11 +185,10 @@ fn diff_flag_names() -> Vec<String> {
     names
 }
 
-/// `esm dump-wire-constants` — prints the Rust-side facts
-/// `tools/esm_gateway.py` hand-mirrors as JSON. See that module's docstring
-/// and `tools/regen_wire_constants.py`, which consumes this to (re)write
-/// the checked-in `tools/wire_constants.py`.
-pub(crate) fn cmd_dump_wire_constants() -> anyhow::Result<()> {
+/// The whole wire-constants payload as JSON — the single value both
+/// [`cmd_dump_wire_constants`] and the drift test below read, so neither can
+/// check a different set of facts than the other emits.
+fn wire_constants_json() -> serde_json::Value {
     // Worked examples of FormId::display()'s "0x{:08X}" format, keyed by the
     // raw u32 (as a decimal string, since JSON object keys must be strings)
     // -- lets the Python side assert its own hex formatting against real
@@ -195,7 +198,7 @@ pub(crate) fn cmd_dump_wire_constants() -> anyhow::Result<()> {
         form_id_display_examples.insert(raw.to_string(), FormId::new(raw).display().into());
     }
 
-    let out = serde_json::json!({
+    serde_json::json!({
         "daemon_filename": DAEMON_FILENAME,
         "connect_timeout_secs": CONNECT_TIMEOUT.as_secs_f64(),
         "health_poll_interval_secs": HEALTH_POLL_INTERVAL.as_secs_f64(),
@@ -205,7 +208,145 @@ pub(crate) fn cmd_dump_wire_constants() -> anyhow::Result<()> {
         "op_names": op_wire_names(),
         "form_id_display_examples": form_id_display_examples,
         "diff_flags": diff_flag_names(),
-    });
-    println!("{}", serde_json::to_string_pretty(&out)?);
+    })
+}
+
+/// `esm dump-wire-constants` — prints the Rust-side facts
+/// `tools/esm_gateway.py` hand-mirrors as JSON. See that module's docstring
+/// and `tools/regen_wire_constants.py`, which consumes this to (re)write
+/// the checked-in `tools/wire_constants.py`.
+pub(crate) fn cmd_dump_wire_constants() -> anyhow::Result<()> {
+    println!("{}", serde_json::to_string_pretty(&wire_constants_json())?);
     Ok(())
+}
+
+/// Drift guard on the checked-in `tools/wire_constants.py`: it must already
+/// say what [`wire_constants_json`] currently emits, so a new `Op` variant or
+/// `DiffArgs` flag fails `cargo test` here rather than only in CI's
+/// regen-and-`git diff` step. Lives in this module because `op_wire_names`,
+/// `diff_flag_names`, and `DiffArgs` are private to the `esm` binary and
+/// unreachable from `tests/`. Reads the file directly instead of re-rendering
+/// it, so the Python renderer's exact formatting stays Python's business.
+#[cfg(test)]
+mod tests {
+    use super::wire_constants_json;
+
+    const STALE: &str =
+        "tools/wire_constants.py is stale -- run `python3 tools/regen_wire_constants.py`";
+
+    fn source() -> String {
+        std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tools/wire_constants.py"
+        ))
+        .expect("checked-in tools/wire_constants.py is readable")
+    }
+
+    /// The text after `= ` on the `NAME: ty = <value>` line `render()` writes.
+    fn scalar<'a>(src: &'a str, name: &str) -> &'a str {
+        src.lines()
+            .find(|line| line.starts_with(name) && line.contains(" = "))
+            .unwrap_or_else(|| panic!("{name} missing from wire_constants.py -- {STALE}"))
+            .split_once(" = ")
+            .expect("line was matched on \" = \"")
+            .1
+    }
+
+    /// The one-per-line items `render()` writes between a collection's opening
+    /// line and its closing brace, trailing comma stripped but quotes left on
+    /// so callers compare against the literal Python spelling.
+    fn entries(src: &str, open: &str, close: &str) -> Vec<String> {
+        let body = src
+            .split_once(open)
+            .unwrap_or_else(|| panic!("{open} missing from wire_constants.py -- {STALE}"))
+            .1;
+        let body = body
+            .split_once(close)
+            .unwrap_or_else(|| panic!("unterminated {open} in wire_constants.py"))
+            .0;
+        body.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(|line| line.trim_end_matches(',').to_string())
+            .collect()
+    }
+
+    /// Scalars compare numerically, never as text: Python's `repr()` renders
+    /// `2.0` where Rust's `Display` renders `2`, and replicating that spelling
+    /// would test the formatting rather than the value.
+    #[test]
+    fn scalars_match_the_rust_source() {
+        let json = wire_constants_json();
+        let src = source();
+
+        assert_eq!(
+            scalar(&src, "DAEMON_FILENAME").trim_matches('\''),
+            json["daemon_filename"].as_str().unwrap(),
+            "{STALE}"
+        );
+
+        for (py_name, json_key) in [
+            ("CONNECT_TIMEOUT_SECS", "connect_timeout_secs"),
+            ("HEALTH_POLL_INTERVAL_SECS", "health_poll_interval_secs"),
+            ("HEALTH_POLL_MAX_SECS", "health_poll_max_secs"),
+            ("OP_TIMEOUT_SECS", "op_timeout_secs"),
+        ] {
+            let got: f64 = scalar(&src, py_name)
+                .parse()
+                .unwrap_or_else(|_| panic!("{py_name} is not a float literal -- {STALE}"));
+            assert_eq!(got, json[json_key].as_f64().unwrap(), "{py_name}: {STALE}");
+        }
+
+        let depth: u64 = scalar(&src, "DEFAULT_MAX_DEPTH")
+            .parse()
+            .unwrap_or_else(|_| panic!("DEFAULT_MAX_DEPTH is not an int literal -- {STALE}"));
+        assert_eq!(
+            depth,
+            json["default_max_depth"].as_u64().unwrap(),
+            "{STALE}"
+        );
+    }
+
+    /// Order matters as well as membership: `render()` emits these in the
+    /// order the Rust side produces them, so CI's `git diff --exit-code`
+    /// fails on a reordering too.
+    #[test]
+    fn collections_match_the_rust_source() {
+        let json = wire_constants_json();
+        let src = source();
+
+        // Quoted the way Python's repr() spells these -- every value here is
+        // an ASCII identifier or flag, so single quotes and no escaping.
+        let expect_strs = |key: &str| -> Vec<String> {
+            json[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| format!("'{}'", v.as_str().unwrap()))
+                .collect()
+        };
+
+        assert_eq!(
+            entries(&src, "OP_NAMES: frozenset[str] = frozenset({", "})"),
+            expect_strs("op_names"),
+            "OP_NAMES: {STALE}"
+        );
+        assert_eq!(
+            entries(&src, "DIFF_FLAGS: frozenset[str] = frozenset({", "})"),
+            expect_strs("diff_flags"),
+            "DIFF_FLAGS: {STALE}"
+        );
+
+        let examples: Vec<String> = json["form_id_display_examples"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(raw, shown)| format!("'{raw}': '{}'", shown.as_str().unwrap()))
+            .collect();
+        assert_eq!(
+            entries(&src, "FORM_ID_DISPLAY_EXAMPLES: dict[str, str] = {", "\n}"),
+            examples,
+            "FORM_ID_DISPLAY_EXAMPLES: {STALE}"
+        );
+    }
 }

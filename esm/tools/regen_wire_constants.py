@@ -15,7 +15,10 @@ mirroring the shape of
 built `esm` binary, then `git diff --exit-code` it in CI -- see
 `.github/workflows/ci.yml`'s "regen wire_constants.py drift guard" step in
 the `audit` job) and `just gen-types` (same shape for the N-API TypeScript
-DTOs).
+DTOs). `src/bin/cli/wire_constants.rs`'s own `tests` module is the earlier
+half of the same guard: it reads the checked-in file and fails under plain
+`cargo test` when it no longer matches what the Rust side emits, so drift
+surfaces before a push rather than only in CI.
 
 Usage:
     cargo build --release          # from esm/ -- builds the dump source
