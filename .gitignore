@@ -3,3 +3,6 @@
 
 # pyenv version file
 .python-version
+
+# Session research scratch (kept out of version control)
+/scratch/
