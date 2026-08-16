@@ -1,14 +1,12 @@
-//! BA2 archive reader for Fallout 76/FO4 General (GNRL) and DX10 (texture)
-//! archives.
+//! Memory-mapped BA2 archive reading for Fallout 76/FO4 General (GNRL) and
+//! DX10 (texture) archives.
 //!
-//! Ported and extended from `esm-parser/src/ba2.rs`.  Changes vs. the original:
-//! - `Ba2Entry` exposes `name_hash`, `dir_hash`, `ext`, and per-kind data for
-//!   display.
-//! - `read()` is codec-aware: it sniffs the first two bytes to detect zlib vs
-//!   LZ4, and accepts an explicit `Codec` override.
-//! - DX10 texture archives are read and their entries' DDS headers
-//!   synthesized on `read()`; see [`crate::dds`].
-//! - Version != 1 causes an error rather than a warning.
+//! `Ba2Archive` memory-maps the file and indexes entries by name. Each
+//! `Ba2Entry` exposes its name/dir hashes, extension, and per-kind data
+//! (`EntryData::Gnrl` or `EntryData::Texture`). `read()` sniffs the first two
+//! bytes to detect zlib vs LZ4 and also accepts an explicit `Codec` override.
+//! DX10 entries come back from `read()` as complete synthesized `.dds` files
+//! — see [`crate::dds`]. Unsupported archive versions are a hard error.
 
 use crate::compress::{Codec, decompress};
 use crate::dds;
