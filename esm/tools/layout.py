@@ -37,13 +37,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-#: Discord-chunk output dirname, relative to `out_dir`. Single owner for what
-#: were previously two independently-hardcoded copies: `discord_chunker.py`'s
-#: CLI default (`argv[2]`, formerly `"discord_chunks"`) and
-#: `update_manifest.py`'s `DISCORD_DIRNAME` (`"discord"`) -- a chunker
-#: invocation that relied on the CLI default silently wrote to the wrong
-#: directory, and `update_manifest.py` then reported zero chunks. Both now
-#: import this constant instead of restating the string.
+#: Discord-chunk output dirname, relative to `out_dir`. Single owner shared by
+#: `discord_chunker.py`'s CLI default and `update_manifest.py`'s
+#: `DISCORD_DIRNAME` reference -- both import this constant instead of
+#: restating the string, so a chunker invocation and manifest update always
+#: agree on the directory.
 DISCORD_DIRNAME = "discord"
 
 

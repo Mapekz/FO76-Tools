@@ -6,23 +6,20 @@ same wire protocol the Rust CLI/N-API/MCP clients use so external tooling
 (patch-notes generators, clustering scripts, ...) can reuse the resident
 daemon instead of paying the ~280 MiB cold-index cost per call.
 
-Historically this module (`esm_daemon.py`, `class DaemonClient`) only covered
-single-record `get`/`refs`/`search`. It has since been promoted to a full
-gateway: `bulk_get` (`Op::RecordBulk`, one round-trip for N selectors),
-`list_type` (`Op::ListTypeRecords`, the `esm list --type SIG` op),
-`refs(..., paths=True, type_filter=...)` (the `--paths`/`--type` refs
-capabilities), `diff` (the two-ESM `esm --local diff` subprocess), and the one
-canonical `find_esm_binary` (previously copy-pasted in `make_patch_notes.py`
-and `build_bundles.py`) all live here now, so nothing else in `tools/` needs
-to shell out to `esm` directly (`lvli_audit.py`/`extractor/hardcoded.py`
-route their `esm list --type SIG` calls through `list_type` for exactly this
-reason).
+A full gateway, not just single-record lookups: `bulk_get` (`Op::RecordBulk`,
+one round-trip for N selectors), `list_type` (`Op::ListTypeRecords`, the
+`esm list --type SIG` op), `refs(..., paths=True, type_filter=...)` (the
+`--paths`/`--type` refs capabilities), `diff` (the two-ESM `esm --local
+diff` subprocess), and the one canonical `find_esm_binary` all live here, so
+nothing else in `tools/` needs to shell out to `esm` directly
+(`lvli_audit.py`/`extractor/hardcoded.py` route their `esm list --type SIG`
+calls through `list_type` for exactly this reason).
 
-`FakeGateway`, the fixture-backed test double that used to live in this
-file, has moved to `tools/tests/fake_gateway.py` -- it is a test double, not
-a wire client, so it does not belong in the "one seam" module itself. See
-that module's docstring for why `--offline` mode still reaches it from
-production code (`make_patch_notes.py`/`build_bundles.py`/`run_lints.py`).
+`FakeGateway`, the fixture-backed test double, lives in
+`tools/tests/fake_gateway.py` -- it is a test double, not a wire client, so
+it does not belong in the "one seam" module itself. See that module's
+docstring for why `--offline` mode still reaches it from production code
+(`make_patch_notes.py`/`build_bundles.py`/`run_lints.py`).
 
 Wire format mirrors, exactly, the following Rust sources (re-verify there if
 this file and the Rust side ever drift):
@@ -147,8 +144,8 @@ def _sel_display(sel: Mapping[str, Any]) -> str:
     return formid_to_hex(value) if kind == "form_id" else value
 
 
-# ─── esm binary discovery (mirrors make_patch_notes.py/build_bundles.py's ───
-# ─── formerly-copy-pasted find_esm_binary; the one copy now lives here) ─────
+# ─── esm binary discovery (the one find_esm_binary, shared by ─────────────
+# ─── make_patch_notes.py/build_bundles.py) ─────────────────────────────────
 
 #: esm/ workspace root -- this file lives at esm/tools/esm_gateway.py.
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
@@ -698,7 +695,7 @@ class EsmGateway:
         except DaemonError:
             return False
 
-    # ---- diff() : cold two-ESM subprocess, deliberately not the /op route ----
+    # ---- diff() : cold two-ESM subprocess, not the /op route ----
 
     @staticmethod
     def diff(

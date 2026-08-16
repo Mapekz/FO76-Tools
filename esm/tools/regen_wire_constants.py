@@ -8,9 +8,9 @@ from the Rust source of truth, via `esm dump-wire-constants` (see
 "exactly": daemon-discovery timeout constants (`backend.rs`), the `Op`
 discriminant strings and `RefList` walk-depth default (`ipc.rs`), the
 `FormId` display format (`formid.rs`), and every `esm --local diff` flag
-name (`cli.rs`'s `DiffArgs`). Those facts used to be hand-copied into
-Python with no drift protection -- this script + the checked-in
-`wire_constants.py` it writes are that protection, mirroring the shape of
+name (`cli.rs`'s `DiffArgs`). This script + the checked-in
+`wire_constants.py` it writes are the drift protection for those facts,
+mirroring the shape of
 `tools/extractor/hardcoded.py` (regenerate a checked-in artifact from the
 built `esm` binary, then `git diff --exit-code` it in CI -- see
 `.github/workflows/ci.yml`'s "regen wire_constants.py drift guard" step in

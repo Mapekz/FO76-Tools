@@ -845,9 +845,9 @@ class Extractor:
         # before any hand-written override below can overwrite them. audit.py
         # diffs this against the final self.vars to catch a hand override that
         # silently downgrades a real Pascal definition to an opaque byte stub
-        # (see EILV/IBSD/PHST history — these were introduced pre-stubbed and
-        # went undetected because the audit previously re-ran this same
-        # extractor to build its "expected" side, so the stub matched itself).
+        # -- comparing against a fresh extractor run instead would just
+        # reproduce the same stub on the "expected" side too, matching itself
+        # (see EILV/IBSD/PHST, introduced pre-stubbed).
         self._auto_vars: dict[str, str] = dict(self.vars)
         # Skip common.pas — helpers are injected below.
         self._inject_builtin_helpers()
@@ -2259,8 +2259,8 @@ def _dedup_field_names(members: list) -> None:
     Bakes `insert_unique`'s runtime disambiguation (e.g. MGEF's twin
     wbActorValue slots → "Actor Value 2") into the schema so output keys
     are declared rather than patched at decode time. Union `variants` are
-    deliberately NOT deduped — only one variant decodes per record, so
-    same-named variants never collide.
+    NOT deduped — only one variant decodes per record, so same-named
+    variants never collide.
     """
     if not members:
         return

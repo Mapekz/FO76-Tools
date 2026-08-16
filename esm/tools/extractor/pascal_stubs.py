@@ -1158,8 +1158,8 @@ CALL_EXPANSIONS: dict[str, str | Callable[[str, ExpandContext], str | None]] = {
     "wbTintTemplateGroups": _expand_wbTintTemplateGroups,
     "wbIMADMultAddCount": _expand_wbIMADMultAddCount,
     "wbTimeInterpolators": _expand_wbTimeInterpolators,
-    # wbTimeInterpolatorsMultAdd is deliberately absent: it builds and caches
-    # a pre-parsed schema dict via Extractor._inline_members/_inline_counter
+    # wbTimeInterpolatorsMultAdd is absent: it builds and caches a
+    # pre-parsed schema dict via Extractor._inline_members/_inline_counter
     # (state this table's plain str | None contract can't carry), so it
     # stays a coded special case in Extractor.expand_call.
 }

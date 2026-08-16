@@ -364,11 +364,9 @@ def main():
         sys.exit(1)
 
     input_path = sys.argv[1]
-    # Defaults to the same dirname update_manifest.py looks for
-    # (layout.DISCORD_DIRNAME) -- previously a separately-hardcoded
-    # "discord_chunks" here disagreed with update_manifest.py's "discord",
-    # so an invocation relying on this default silently wrote to the wrong
-    # place and update_manifest.py reported zero chunks.
+    # Defaults to layout.DISCORD_DIRNAME so this agrees with the dirname
+    # update_manifest.py looks for; a mismatch here makes it silently write
+    # to the wrong place and update_manifest.py report zero chunks.
     output_dir = sys.argv[2] if len(sys.argv) > 2 else layout.DISCORD_DIRNAME
 
     with open(input_path) as f:

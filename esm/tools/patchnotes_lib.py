@@ -24,14 +24,13 @@ Owns:
   - Patch manifest read/write (`load_manifest`/`write_manifest`/
     `new_manifest`).
 
-Everything else that used to live here — cut/deprecation detection, VMAD
-raw-hex decoding, the generic keyed-array pairing engine, `_array_diff`
-normalization, `ChangeEntry` construction (`extract_changes`), redundant-
-count suppression, common-change collapsing, and FormID reference
-harvesting — was read by exactly one consumer, `render_comprehensive.py`,
-and moved to the sibling `change_entries.py` module (which imports this
-module as `pl` for the shared pieces above; this module does not import it
-back).
+`change_entries.py` owns cut/deprecation detection, VMAD raw-hex decoding,
+the generic keyed-array pairing engine, `_array_diff` normalization,
+`ChangeEntry` construction (`extract_changes`), redundant-count
+suppression, common-change collapsing, and FormID reference harvesting —
+logic read by exactly one consumer, `render_comprehensive.py` (which
+imports this module as `pl` for the shared pieces above; this module does
+not import it back).
 
 Consumes the raw `esm diff --json` output (`DiffResult` in `src/diff.rs`):
 `{"added": [RecordStub], "removed": [RecordStub],
@@ -180,14 +179,14 @@ SCHEMA_VERSION = 1
 
 #: `manifest.json`'s `stages.narrative` section's own schema version
 #: (independent of SCHEMA_VERSION above, which covers diff/comprehensive/
-#: bundles/lints shapes). Version 2 is the current "flat" shape written by
-#: `update_manifest.py::build_narrative_stage` -- a single
+#: bundles/lints shapes). Version 2 is the "flat" shape
+#: `update_manifest.py::build_narrative_stage` writes -- a single
 #: `patch_summary_md` path, a flat `discord/` chunk list, and triage tier
-#: counts. Version 1 (retired, no longer produced) was the pipeline's older
-#: per-category shape: `categories: [{id, label, notes_md, discord_dir,
-#: chunk_count, chunks}, ...]`, one `notes/<slug>.md` + `discord/<slug>/`
-#: per category. `new_manifest` below seeds a fresh v2-shaped placeholder so
-#: the mechanical stage never writes the retired v1 shape.
+#: counts. Version 1 is the older per-category shape: `categories: [{id,
+#: label, notes_md, discord_dir, chunk_count, chunks}, ...]`, one
+#: `notes/<slug>.md` + `discord/<slug>/` per category -- no longer produced.
+#: `new_manifest` below seeds a fresh v2-shaped placeholder so the
+#: mechanical stage never writes the v1 shape.
 NARRATIVE_SCHEMA_VERSION = 2
 
 
@@ -494,8 +493,8 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
     `stages.narrative`'s placeholder shape here matches the LIVE shape
     `update_manifest.py::build_narrative_stage` writes once the narrative
     stage actually runs (schema_version NARRATIVE_SCHEMA_VERSION == 2), not
-    the retired per-category shape -- see NARRATIVE_SCHEMA_VERSION's
-    docstring above.
+    the v1 per-category shape -- see NARRATIVE_SCHEMA_VERSION's docstring
+    above.
     """
     return {
         "schema_version": SCHEMA_VERSION,

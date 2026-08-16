@@ -179,9 +179,9 @@ def _walk_for_formids(value, out=None):
 
 def _collect_to_side_refs(changes):
     """Harvest every to-side FormID reference from an already-flattened
-    `changes` (ChangeEntry list) — deliberately ignores from-side values,
-    since `dangling_ref` only cares about references that are newly
-    introduced or still present after the patch, not ones disappearing."""
+    `changes` (ChangeEntry list) — ignores from-side values, since
+    `dangling_ref` only cares about references that are newly introduced or
+    still present after the patch, not ones disappearing."""
     out = []
     for ce in changes or []:
         if not isinstance(ce, dict):
@@ -1054,15 +1054,14 @@ def load_settings(categories_path):
 
     `categories_path` falsy (no `--categories` flag given -- there is no
     implicit default file to fail on) -> empty settings, silently, so rules
-    fall back to their defaults exactly like before.
+    fall back to their defaults.
 
     `categories_path` given but missing/unreadable/malformed -> raises
     (`OSError`, `json.JSONDecodeError`, or `ValueError` for a non-dict
-    top-level shape) instead of silently degrading to empty settings. A
-    typo'd `--categories` path used to silently change lint behavior by
-    falling back to defaults with no indication anything was wrong; the
-    caller (`main`, below) turns this into a clean CLI error instead of a
-    bare traceback."""
+    top-level shape) instead of silently degrading to empty settings, so a
+    typo'd `--categories` path can't silently change lint behavior with no
+    indication anything was wrong; the caller (`main`, below) turns the
+    raised exception into a clean CLI error instead of a bare traceback."""
     if not categories_path:
         return {}
     with open(categories_path, encoding="utf-8") as f:

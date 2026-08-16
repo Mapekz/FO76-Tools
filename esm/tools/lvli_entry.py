@@ -1,39 +1,28 @@
 #!/usr/bin/env python3
 """
 lvli_entry.py — the single owner of "read one leveled-list (LVLI) entry",
-consumed by `patchnotes_lib.py`, `run_lints.py`, and `lvli_audit.py`. Before
-this module existed, all three carried independent copies that had already
-drifted on three axes:
+consumed by `patchnotes_lib.py`, `run_lints.py`, and `lvli_audit.py`. Encodes
+three rules every caller shares:
 
-  - **Unwrap**: `patchnotes_lib.py`/`run_lints.py` both used the safe
-    pass-through `e.get("Leveled List Entry", e)` — an already-unwrapped
-    entry (no wrapper key at all) passes through intact. `lvli_audit.py`
-    instead did `raw.get("Leveled List Entry") or {}`, which silently turns
-    an unwrapped entry, or one whose wrapper value is itself falsy, into
-    `{}` — dropping it from the audit entirely rather than merely
-    mis-defaulting it. `unwrap_entry` below is the safe pass-through; this
-    was a genuine bug in `lvli_audit.py`, not a style difference.
-  - **Reference key**: `patchnotes_lib.py`/`run_lints.py` both fell back to
-    `"Item"` when `"Reference"` was absent; `lvli_audit.py` read only
-    `"Reference"`. The `Reference`/`Item` fallback is kept — two known key
-    names for the same concept, not an omission worth narrowing.
-  - **Quantity default**: `patchnotes_lib.py` defaulted a missing
-    `Quantity`/`Count` to `1`; `run_lints.py` defaulted to `None`. `None` is
-    the canonical behavior here — never fabricate a value absent from the
-    data. A caller that needs a display value handles `None` explicitly
-    (e.g. `patchnotes_lib.fmt_num` already renders it as `"?"`).
+  - **Unwrap**: `unwrap_entry` is a safe pass-through —
+    `e.get("Leveled List Entry", e)` — so an already-unwrapped entry (no
+    wrapper key at all) passes through intact rather than being dropped.
+  - **Reference key**: falls back to `"Item"` when `"Reference"` is absent —
+    two known key names for the same concept, not an omission worth
+    narrowing.
+  - **Quantity default**: a missing `Quantity`/`Count` defaults to `None`,
+    never fabricated as `1`. A caller that needs a display value handles
+    `None` explicitly (e.g. `patchnotes_lib.fmt_num` renders it as `"?"`).
 
-Deferred, not fixed here: `lvli_audit.py`'s `resolve_min_level` also
-GLOB-resolves a `"Minimum Level Global"` field when present, falling back to
-a static `"Minimum Level"` otherwise; `patchnotes_lib.py`/`run_lints.py`'s
+`lvli_audit.py`'s `resolve_min_level` additionally GLOB-resolves a
+`"Minimum Level Global"` field when present, falling back to a static
+`"Minimum Level"` otherwise; `patchnotes_lib.py`/`run_lints.py`'s
 level-reading logic (`ue.get("Minimum Level", ue.get("Level"))`) does not
-attempt any GLOB resolution at all. Unifying that is deliberately out of
-scope for this module: it would require verifying whether GLOB values are
-even available at `patchnotes_lib.py`'s/`run_lints.py`'s point in the
-pipeline — they operate over an already-decoded `diff.json`/
-`comprehensive.json`, not a live ESM `Database`, so a GLOB reference may not
-carry a resolved value at all by the time it reaches them. That
-investigation hasn't happened yet; this is a known gap for a future pass.
+attempt any GLOB resolution. Unifying that is out of scope for this module:
+`patchnotes_lib.py`/`run_lints.py` operate over an already-decoded
+`diff.json`/`comprehensive.json`, not a live ESM `Database`, so whether a
+GLOB reference carries a resolved value at that point in the pipeline is
+unverified — a known gap for a future pass.
 
 Python 3, stdlib only.
 """

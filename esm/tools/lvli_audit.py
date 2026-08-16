@@ -133,10 +133,10 @@ def list_lvli_form_ids(client, esm_path: Path) -> list[str]:
     """Every LVLI FormID in the ESM, via `EsmGateway.list_type` (`Op::
     ListTypeRecords`, the same op `esm list --type LVLI --json` sends) --
     one warm round-trip through the daemon, no subprocess. Routing through
-    the gateway (rather than shelling out to `esm list` directly, as this
-    used to) is what lets `esm_gateway.py` claim to be the one seam
-    everything in `tools/` reaches `esm` through -- see its module
-    docstring. `client` is untyped (any object exposing `list_type`),
+    the gateway (rather than shelling out to `esm list` directly) is what
+    lets `esm_gateway.py` claim to be the one seam everything in `tools/`
+    reaches `esm` through -- see its module docstring. `client` is untyped
+    (any object exposing `list_type`),
     matching how `build_bundles.py`/`run_lints.py`'s client-consuming
     functions stay untyped -- both the real `EsmGateway` and tests' fixture-
     backed `FakeGateway` (see `tools/tests/fake_gateway.py`) are passed
@@ -197,8 +197,8 @@ def resolve_min_level(entry: dict, glob_values: dict[str, float]) -> float | Non
     """An entry's effective Minimum Level: its `Minimum Level Global` GLOB
     (see `_resolve_glob_ref`) when present, else its static `Minimum Level`
     field. `None` if a `Minimum Level Global` is present but unresolved —
-    deliberately not falling back to the (likely stale/placeholder) static
-    field in that case, since that would understate the true level."""
+    not falling back to the (likely stale/placeholder) static field in that
+    case, since that would understate the true level."""
     lvlg = entry.get("Minimum Level Global")
     if isinstance(lvlg, dict):
         return _resolve_glob_ref(lvlg, glob_values)

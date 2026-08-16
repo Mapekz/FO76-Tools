@@ -139,7 +139,7 @@ def _priority_rank(record_type, anchor_rank, unlisted_rank):
 # phrasing, since the wire schema's relation enum has no separate
 # "dropped_via" value.
 #
-# "mod_for" is deliberately listed in BOTH directions (OMOD -> WEAP/ARMO and
+# "mod_for" is listed in BOTH directions (OMOD -> WEAP/ARMO and
 # WEAP/ARMO -> OMOD): a WEAP/ARMO's own data forward-references its
 # compatible OMODs (e.g. via its Object Template), so when the OMOD is the
 # one in the diff universe and the WEAP/ARMO isn't, `client.refs()` on the
@@ -345,8 +345,7 @@ def compute_degrees(u, edges):
     hub" check. context_u_degree[fid]: for a context (non-U) node, count of
     distinct U neighbors specifically -- used for the "does this context
     node touch too many unrelated U records to safely bridge them" check
-    (these are deliberately different notions of degree, see
-    `union_find`)."""
+    (these are different notions of degree, see `union_find`)."""
     neighbors = defaultdict(set)
     for e in edges:
         a, b = e["from"], e["to"]

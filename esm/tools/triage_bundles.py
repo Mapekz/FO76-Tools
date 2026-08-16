@@ -35,8 +35,8 @@ drop_rules condition is DEEP, never DROP; and a bundle satisfying both
 drop_rules and brief_rules (e.g. an all-REFR bundle that happens to be
 all-"removed" status, which would otherwise look like brief_rules/
 all_removed) is DROP, never BRIEF -- drop_rules and deep_rules are the two
-"always" tiers (deliberately unconditional once matched); brief_rules is
-softer bucketing for whatever's left.
+"always" tiers (unconditional once matched); brief_rules is softer
+bucketing for whatever's left.
 
     python3 tools/triage_bundles.py <out_dir>
         Tier every bundle in <out_dir>/bundles.json, writing the five files
@@ -260,8 +260,8 @@ def _is_real_number(v):
 
 def _numeric_value(v):
     """`float(v)` if `v` is numeric-ish (a real number, or a plain decimal
-    numeric string), else None. Deliberately does NOT accept a
-    "0x..."-prefixed string: that shape covers both FormID references and
+    numeric string), else None. Does NOT accept a "0x..."-prefixed string:
+    that shape covers both FormID references and
     flags bitmasks (see render_comprehensive.py's `_strip_flags_values`),
     neither of which is a "numeric stat value" even though it's built from
     hex digits -- and `_NUMERIC_STRING_RE` (decimal digits only) already
@@ -307,8 +307,8 @@ def _contains_numeric_delta(value):
     array-diff bookkeeping that's never literally keyed "from"/"to" (e.g.
     "count_from"/"count_to", a row's "index_from"/"index_to") can never
     false-positive here -- contrast _raw_element_has_numeric_signal, the
-    deliberately more permissive scan reserved for already-decoded
-    added/removed array elements (see that function's docstring)."""
+    more permissive scan reserved for already-decoded added/removed array
+    elements (see that function's docstring)."""
     if _is_curve_like(value):
         return True
     if isinstance(value, dict):
@@ -344,7 +344,7 @@ def _raw_element_has_numeric_signal(value):
 def _array_entry_is_numeric(array_diff):
     """True if an array ChangeEntry's normalized `array` sub-structure
     carries a numeric delta anywhere in its added/removed/changed rows.
-    Deliberately reads ONLY those three keys -- never the sibling
+    Reads ONLY those three keys -- never the sibling
     strategy/key_fields/count_from/count_to bookkeeping -- so array-diff
     metadata can never be mistaken for a numeric leaf."""
     if not isinstance(array_diff, dict):
@@ -575,9 +575,10 @@ def build_triage_payload(bundles, tiers_by_id, rollout_shapes, extra_stats=None)
 # --------------------------------------------------------------------------
 
 #: The exact per-bundle key set the writer contract documents (see
-#: ../.claude/skills/patch-notes/deep-writer-prompt.md) -- deliberately drops
-#: category/category_label/category_rule, which are retired concepts for the
-#: DEEP tier (writers no longer work one category at a time).
+#: ../.claude/skills/patch-notes/deep-writer-prompt.md) -- drops
+#: category/category_label/category_rule: the DEEP tier has no per-category
+#: concept, since writers work across bundles rather than one category at a
+#: time.
 _DEEP_SLICE_BUNDLE_KEYS = ("id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids")
 
 
