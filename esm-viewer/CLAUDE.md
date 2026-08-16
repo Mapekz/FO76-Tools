@@ -7,6 +7,9 @@ searches, and displays decoded FO76 record data. It is **strictly read-only** �
 path exists, matching the `esm/` core invariant (see [`../esm/CLAUDE.md`](../esm/CLAUDE.md)).
 Do not add any feature that mutates an ESM file.
 
+See [`README.md`](README.md) for the human-facing overview (what this app is, requirements,
+build/run); this file covers agent-facing build/architecture detail instead.
+
 ## Commands
 
 ```sh
@@ -37,15 +40,15 @@ on the same machine fails identically, so this is not Bun-specific). `package.js
 `"postinstall": "bun node_modules/electron/install.js"` works around it by forcing the
 extraction to run under Bun's own runtime instead of whatever `node` is first on `PATH`. If
 `bun run dev`/`build` ever fails with an Electron binary error again, check
-`node_modules/electron/dist/version` exists before assuming the migration or a lockfile change
+`node_modules/electron/dist/version` exists before assuming a dependency or lockfile change
 broke something — rerun `bun run postinstall` (or `bun install`) first.
 
 ## Dependency on `esm/bindings/napi`
 
 This app depends on `@fo76/esm-napi` via `"file:../esm/bindings/napi"` in `package.json` —
-a symlinked local dependency, not a published package. It is a Rust workspace member of
-`esm/Cargo.toml`, so it cannot move into this directory; only the Electron app relocated
-(from `esm/app/` to repo-root `esm-viewer/`, via `git mv`, preserving history).
+a symlinked local dependency, not a published package. The addon is a Rust workspace member
+of `esm/Cargo.toml`, so it lives under `esm/` rather than in this directory, and this app
+consumes it via that `file:` symlink dependency.
 
 **After any Rust API change to `EsmDatabase` in `esm/bindings/napi/src/lib.rs`, rebuild the
 addon** (`bun run build:addon`, or just let `predev`/`prebuild` do it automatically). Most DTO
