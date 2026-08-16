@@ -17,6 +17,14 @@
 
 use anyhow::{Result, bail};
 
+/// Read a little-endian `u32` from `data` at byte offset `off`.
+///
+/// Callers are responsible for having already length-checked `data`; this
+/// panics via slice indexing exactly as the inlined `from_le_bytes` form did.
+fn read_u32(data: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
+}
+
 // ── DDS magic / flags / caps (legacy DDS_HEADER, per the DirectX spec) ──────
 
 const MAGIC_DDS: &[u8; 4] = b"DDS ";
@@ -376,36 +384,36 @@ pub fn parse_header(dds: &[u8]) -> Result<TextureMeta> {
     if &dds[0..4] != MAGIC_DDS {
         bail!("not a DDS file (bad magic {:?})", &dds[0..4]);
     }
-    let dw_size = u32::from_le_bytes(dds[4..8].try_into().unwrap());
+    let dw_size = read_u32(dds, 4);
     if dw_size != 124 {
         bail!("unexpected DDS_HEADER dwSize {} (expected 124)", dw_size);
     }
-    let height = u32::from_le_bytes(dds[12..16].try_into().unwrap());
-    let width = u32::from_le_bytes(dds[16..20].try_into().unwrap());
-    let mut mip_count = u32::from_le_bytes(dds[28..32].try_into().unwrap());
+    let height = read_u32(dds, 12);
+    let width = read_u32(dds, 16);
+    let mut mip_count = read_u32(dds, 28);
     if mip_count == 0 {
         mip_count = 1;
     }
-    let pf_flags = u32::from_le_bytes(dds[80..84].try_into().unwrap());
+    let pf_flags = read_u32(dds, 80);
     let mut fourcc = [0u8; 4];
     fourcc.copy_from_slice(&dds[84..88]);
-    let rgb_bit_count = u32::from_le_bytes(dds[88..92].try_into().unwrap());
-    let r_mask = u32::from_le_bytes(dds[92..96].try_into().unwrap());
-    let g_mask = u32::from_le_bytes(dds[96..100].try_into().unwrap());
-    let b_mask = u32::from_le_bytes(dds[100..104].try_into().unwrap());
-    let a_mask = u32::from_le_bytes(dds[104..108].try_into().unwrap());
-    let caps2 = u32::from_le_bytes(dds[112..116].try_into().unwrap());
+    let rgb_bit_count = read_u32(dds, 88);
+    let r_mask = read_u32(dds, 92);
+    let g_mask = read_u32(dds, 96);
+    let b_mask = read_u32(dds, 100);
+    let a_mask = read_u32(dds, 104);
+    let caps2 = read_u32(dds, 112);
 
     let (dxgi_format, header_len, ext_cubemap) =
         if pf_flags & DDPF_FOURCC != 0 && &fourcc == MAGIC_DX10 {
             if dds.len() < DDS_HEADER_SIZE + DDS_HEADER_DXT10_SIZE {
                 bail!("DDS file too small to contain the DXT10 extension header");
             }
-            let dxgi = u32::from_le_bytes(dds[128..132].try_into().unwrap());
+            let dxgi = read_u32(dds, 128);
             if dxgi > u8::MAX as u32 {
                 bail!("DXT10 dxgiFormat {} out of range", dxgi);
             }
-            let misc_flags = u32::from_le_bytes(dds[136..140].try_into().unwrap());
+            let misc_flags = read_u32(dds, 136);
             (
                 dxgi as u8,
                 DDS_HEADER_SIZE + DDS_HEADER_DXT10_SIZE,

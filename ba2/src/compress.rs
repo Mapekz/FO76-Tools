@@ -115,14 +115,10 @@ pub fn compress_zlib(data: &[u8]) -> Result<Vec<u8>> {
 /// - Otherwise `packed_size` is the compressed length and `blob` is the
 ///   compressed bytes.
 pub fn compress_entry(data: &[u8], codec: Codec, min_shrink_ratio: f32) -> Result<(Vec<u8>, u32)> {
-    if codec == Codec::Store || codec == Codec::Auto {
-        return Ok((data.to_vec(), 0));
-    }
-
     let compressed = match codec {
+        Codec::Store | Codec::Auto => return Ok((data.to_vec(), 0)),
         Codec::Lz4 => compress_lz4(data),
         Codec::Zlib => compress_zlib(data)?,
-        Codec::Store | Codec::Auto => unreachable!(),
     };
 
     let threshold = (data.len() as f32 * min_shrink_ratio) as usize;

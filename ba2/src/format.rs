@@ -7,6 +7,29 @@
 
 use anyhow::{Result, bail};
 
+// ── Little-endian field-read helpers ─────────────────────────────────────────
+//
+// Fixed-offset reads go through these so call sites are `read_u32(data, 8)`
+// instead of `u32::from_le_bytes(data[8..12].try_into().unwrap())`. Offsets
+// stay explicit literals at each call site; only the cast noise is removed.
+// Callers are responsible for having already length-checked `data` — these
+// helpers panic (via slice indexing) exactly as the inlined form did.
+
+/// Read a little-endian `u16` from `data` at byte offset `off`.
+fn read_u16(data: &[u8], off: usize) -> u16 {
+    u16::from_le_bytes(data[off..off + 2].try_into().unwrap())
+}
+
+/// Read a little-endian `u32` from `data` at byte offset `off`.
+fn read_u32(data: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes(data[off..off + 4].try_into().unwrap())
+}
+
+/// Read a little-endian `u64` from `data` at byte offset `off`.
+fn read_u64(data: &[u8], off: usize) -> u64 {
+    u64::from_le_bytes(data[off..off + 8].try_into().unwrap())
+}
+
 // ── Magic / type tags ────────────────────────────────────────────────────────
 
 pub const MAGIC: &[u8; 4] = b"BTDX";
@@ -91,11 +114,11 @@ pub fn read_header(data: &[u8]) -> Result<Header> {
     if &data[0..4] != MAGIC {
         bail!("not a BA2 archive (bad magic {:?})", &data[0..4]);
     }
-    let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+    let version = read_u32(data, 4);
     let mut archive_type = [0u8; 4];
     archive_type.copy_from_slice(&data[8..12]);
-    let file_count = u32::from_le_bytes(data[12..16].try_into().unwrap());
-    let name_table_offset = u64::from_le_bytes(data[16..24].try_into().unwrap());
+    let file_count = read_u32(data, 12);
+    let name_table_offset = read_u64(data, 16);
     Ok(Header {
         version,
         archive_type,
@@ -140,14 +163,14 @@ pub struct Record {
 ///
 /// The caller must guarantee `base + RECORD_SIZE <= data.len()` before calling.
 pub fn read_record(data: &[u8], base: usize) -> Record {
-    let name_hash = u32::from_le_bytes(data[base..base + 4].try_into().unwrap());
+    let name_hash = read_u32(data, base);
     let mut ext = [0u8; 4];
     ext.copy_from_slice(&data[base + 4..base + 8]);
-    let dir_hash = u32::from_le_bytes(data[base + 8..base + 12].try_into().unwrap());
-    let flags = u32::from_le_bytes(data[base + 12..base + 16].try_into().unwrap());
-    let data_offset = u64::from_le_bytes(data[base + 16..base + 24].try_into().unwrap());
-    let packed_size = u32::from_le_bytes(data[base + 24..base + 28].try_into().unwrap());
-    let unpacked_size = u32::from_le_bytes(data[base + 28..base + 32].try_into().unwrap());
+    let dir_hash = read_u32(data, base + 8);
+    let flags = read_u32(data, base + 12);
+    let data_offset = read_u64(data, base + 16);
+    let packed_size = read_u32(data, base + 24);
+    let unpacked_size = read_u32(data, base + 28);
     // data[base+32..base+36] is the 0xBAADF00D padding — read past it, don't store.
     Record {
         name_hash,
@@ -199,13 +222,13 @@ pub struct TexRecord {
 /// FO76 texture entry carries that value, and a mismatch means the record
 /// layout does not match our assumptions rather than a decodable variant.
 pub fn read_tex_record(data: &[u8], base: usize) -> Result<TexRecord> {
-    let name_hash = u32::from_le_bytes(data[base..base + 4].try_into().unwrap());
+    let name_hash = read_u32(data, base);
     let mut ext = [0u8; 4];
     ext.copy_from_slice(&data[base + 4..base + 8]);
-    let dir_hash = u32::from_le_bytes(data[base + 8..base + 12].try_into().unwrap());
+    let dir_hash = read_u32(data, base + 8);
     // data[base+12] is `unk8` — consumed, not stored (always 0 in observed data).
     let chunk_count = data[base + 13];
-    let chunk_header_size = u16::from_le_bytes(data[base + 14..base + 16].try_into().unwrap());
+    let chunk_header_size = read_u16(data, base + 14);
     if chunk_header_size != TEX_CHUNK_HEADER_SIZE {
         bail!(
             "unexpected DX10 chunk_header_size {} (expected {})",
@@ -213,8 +236,8 @@ pub fn read_tex_record(data: &[u8], base: usize) -> Result<TexRecord> {
             TEX_CHUNK_HEADER_SIZE
         );
     }
-    let height = u16::from_le_bytes(data[base + 16..base + 18].try_into().unwrap());
-    let width = u16::from_le_bytes(data[base + 18..base + 20].try_into().unwrap());
+    let height = read_u16(data, base + 16);
+    let width = read_u16(data, base + 18);
     let mip_count = data[base + 20];
     let dxgi_format = data[base + 21];
     let cubemap = data[base + 22] & TEX_FLAG_CUBEMAP != 0;
@@ -270,11 +293,11 @@ pub struct TexChunk {
 ///
 /// The caller must guarantee `base + TEX_CHUNK_SIZE <= data.len()` before calling.
 pub fn read_tex_chunk(data: &[u8], base: usize) -> TexChunk {
-    let data_offset = u64::from_le_bytes(data[base..base + 8].try_into().unwrap());
-    let packed_size = u32::from_le_bytes(data[base + 8..base + 12].try_into().unwrap());
-    let unpacked_size = u32::from_le_bytes(data[base + 12..base + 16].try_into().unwrap());
-    let mip_first = u16::from_le_bytes(data[base + 16..base + 18].try_into().unwrap());
-    let mip_last = u16::from_le_bytes(data[base + 18..base + 20].try_into().unwrap());
+    let data_offset = read_u64(data, base);
+    let packed_size = read_u32(data, base + 8);
+    let unpacked_size = read_u32(data, base + 12);
+    let mip_first = read_u16(data, base + 16);
+    let mip_last = read_u16(data, base + 18);
     // data[base+20..base+24] is the 0xBAADF00D sentinel — read past it, don't store.
     TexChunk {
         data_offset,

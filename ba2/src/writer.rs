@@ -75,6 +75,66 @@ pub fn write_ba2(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions
     }
 }
 
+// ── Two-pass write helpers (shared by write_gnrl and write_dx10) ────────────
+
+/// Create the Pass-1 temp blob file alongside `output` and a buffered writer
+/// over it.
+///
+/// Returns the `NamedTempFile` guard, its path, and the writer. The caller
+/// must keep the guard alive until Pass 2 has finished streaming the file
+/// back in — dropping it early deletes the file (its auto-cleanup). The
+/// writer is a `BufWriter` over a *cloned* file descriptor, so writing
+/// through it does not consume the guard.
+fn create_temp_blob_file(
+    output: &Path,
+) -> Result<(tempfile::NamedTempFile, PathBuf, BufWriter<File>)> {
+    let tmp_dir = output.parent().unwrap_or_else(|| Path::new("."));
+    let tmp_guard =
+        tempfile::NamedTempFile::new_in(tmp_dir).context("failed to create temporary data file")?;
+    let tmp_path = tmp_guard.path().to_path_buf();
+    let tmp_writer = BufWriter::new(
+        tmp_guard
+            .as_file()
+            .try_clone()
+            .context("failed to clone temp file descriptor")?,
+    );
+    Ok((tmp_guard, tmp_path, tmp_writer))
+}
+
+/// Create the output archive file and write its 24-byte header.
+fn create_output_with_header(
+    output: &Path,
+    kind: ArchiveKind,
+    file_count: u32,
+    name_table_offset: u64,
+) -> Result<BufWriter<File>> {
+    let out_file =
+        File::create(output).with_context(|| format!("failed to create '{}'", output.display()))?;
+    let mut out = BufWriter::new(out_file);
+    out.write_all(&write_header(1, kind, file_count, name_table_offset))
+        .context("failed to write BA2 header")?;
+    Ok(out)
+}
+
+/// Pass 2's "data blobs" step: stream the finished Pass-1 temp file into `out`.
+fn stream_temp_blobs(tmp_path: &Path, out: &mut BufWriter<File>) -> Result<()> {
+    let mut tmp_read = File::open(tmp_path).context("failed to re-open temporary data file")?;
+    std::io::copy(&mut tmp_read, out).context("failed to stream data blobs to output")?;
+    Ok(())
+}
+
+/// Write the trailing name table: one length-prefixed entry per archive path,
+/// in iteration order (matching the record order written in Pass 2).
+fn write_name_table<'a>(
+    out: &mut impl Write,
+    archive_paths: impl Iterator<Item = &'a str>,
+) -> Result<()> {
+    for path in archive_paths {
+        write_name(out, path)?;
+    }
+    Ok(())
+}
+
 // ── GNRL ─────────────────────────────────────────────────────────────────────
 
 /// Per-entry metadata recorded during GNRL Pass 1.
@@ -93,19 +153,8 @@ fn write_gnrl(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
     let file_count = files.len();
 
     // ── Pass 1: compress blobs into a temp file ──────────────────────────────
-    let tmp_dir = output.parent().unwrap_or_else(|| Path::new("."));
-    // Keep the NamedTempFile alive until we've finished reading it back.
-    // BufWriter gets a cloned file descriptor so the NamedTempFile (and its
-    // auto-cleanup) is not consumed.
-    let tmp_guard =
-        tempfile::NamedTempFile::new_in(tmp_dir).context("failed to create temporary data file")?;
-    let tmp_path = tmp_guard.path().to_path_buf();
-    let mut tmp_writer = BufWriter::new(
-        tmp_guard
-            .as_file()
-            .try_clone()
-            .context("failed to clone temp file descriptor")?,
-    );
+    // Keep `_tmp_guard` alive until we've finished reading `tmp_path` back.
+    let (_tmp_guard, tmp_path, mut tmp_writer) = create_temp_blob_file(output)?;
 
     let mut metas: Vec<GnrlEntryMeta> = Vec::with_capacity(file_count);
     let mut blob_cursor: u64 = 0;
@@ -178,18 +227,12 @@ fn write_gnrl(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
         .checked_add(blob_cursor)
         .ok_or_else(|| anyhow::anyhow!("name_table_offset overflow"))?;
 
-    let out_file =
-        File::create(output).with_context(|| format!("failed to create '{}'", output.display()))?;
-    let mut out = BufWriter::new(out_file);
-
-    // Header.
-    out.write_all(&write_header(
-        1,
+    let mut out = create_output_with_header(
+        output,
         ArchiveKind::Gnrl,
         file_count as u32,
         name_table_offset,
-    ))
-    .context("failed to write BA2 header")?;
+    )?;
 
     // Records (offsets resolved).
     for meta in &metas {
@@ -210,16 +253,10 @@ fn write_gnrl(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
     }
 
     // Data blobs (streamed from temp file).
-    {
-        let mut tmp_read =
-            File::open(&tmp_path).context("failed to re-open temporary data file")?;
-        std::io::copy(&mut tmp_read, &mut out).context("failed to stream data blobs to output")?;
-    }
+    stream_temp_blobs(&tmp_path, &mut out)?;
 
     // Name table.
-    for meta in &metas {
-        write_name(&mut out, &meta.archive_path)?;
-    }
+    write_name_table(&mut out, metas.iter().map(|m| m.archive_path.as_str()))?;
 
     out.flush().context("failed to flush output archive")?;
     Ok(())
@@ -265,16 +302,8 @@ struct Dx10EntryMeta {
 fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -> Result<()> {
     let file_count = files.len();
 
-    let tmp_dir = output.parent().unwrap_or_else(|| Path::new("."));
-    let tmp_guard =
-        tempfile::NamedTempFile::new_in(tmp_dir).context("failed to create temporary data file")?;
-    let tmp_path = tmp_guard.path().to_path_buf();
-    let mut tmp_writer = BufWriter::new(
-        tmp_guard
-            .as_file()
-            .try_clone()
-            .context("failed to clone temp file descriptor")?,
-    );
+    // Keep `_tmp_guard` alive until we've finished reading `tmp_path` back.
+    let (_tmp_guard, tmp_path, mut tmp_writer) = create_temp_blob_file(output)?;
 
     let mut metas: Vec<Dx10EntryMeta> = Vec::with_capacity(file_count);
     let mut blob_cursor: u64 = 0;
@@ -387,17 +416,12 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
         .checked_add(blob_cursor)
         .ok_or_else(|| anyhow::anyhow!("name_table_offset overflow"))?;
 
-    let out_file =
-        File::create(output).with_context(|| format!("failed to create '{}'", output.display()))?;
-    let mut out = BufWriter::new(out_file);
-
-    out.write_all(&write_header(
-        1,
+    let mut out = create_output_with_header(
+        output,
         ArchiveKind::Dx10,
         file_count as u32,
         name_table_offset,
-    ))
-    .context("failed to write BA2 header")?;
+    )?;
 
     for meta in &metas {
         out.write_all(&write_tex_record(&meta.tex))
@@ -418,15 +442,9 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
         }
     }
 
-    {
-        let mut tmp_read =
-            File::open(&tmp_path).context("failed to re-open temporary data file")?;
-        std::io::copy(&mut tmp_read, &mut out).context("failed to stream data blobs to output")?;
-    }
+    stream_temp_blobs(&tmp_path, &mut out)?;
 
-    for meta in &metas {
-        write_name(&mut out, &meta.archive_path)?;
-    }
+    write_name_table(&mut out, metas.iter().map(|m| m.archive_path.as_str()))?;
 
     out.flush().context("failed to flush output archive")?;
     Ok(())
