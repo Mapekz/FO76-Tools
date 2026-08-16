@@ -42,7 +42,7 @@ change; domain vocabulary lives in `../CONTEXT.md`, and design decisions are rec
 | Index & disk cache | `src/index.rs`, `src/rkyvcache.rs`, `src/progress.rs` |
 | Cross-process daemon path | `src/registry.rs`, `src/backend.rs`, `src/ipc.rs` |
 | CLI / HTTP+MCP server / N-API | `src/bin/cli/main.rs` (+ per-family handler modules), `src/bin/server.rs`, `bindings/napi/src/lib.rs` |
-| Diff / walk / chase / lvli / refs | `src/diff.rs`, `src/walk/`, `src/chase.rs`, `src/lvli.rs`, `src/refs.rs` |
+| Diff / walk / chase / lvli / refs | `src/diff/`, `src/walk/`, `src/chase.rs`, `src/lvli.rs`, `src/refs.rs` |
 | Python patch-notes pipeline (mechanical stage) | `tools/` |
 
 The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling

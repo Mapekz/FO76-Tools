@@ -25,8 +25,10 @@ serde_json::Value   — one JSON object per record
 
 `decode_record` looks up the record's shape in `ctx.schema` (`src/schema.rs`'s `Schema`,
 loaded once via `Schema::load_embedded()` from the compiled-in `schema/fo76.json`) and walks
-its `MemberDef` tree with `decode_member`/`decode_struct_fields`, dispatching per field kind:
-scalars and arrays inline in `decode/mod.rs`, `VMAD` script-attachment blobs to
+its `MemberDef` tree with `decode/walk.rs`'s `decode_member`/`decode_struct_fields` (one giant
+match per member kind, `RArray`/`Union` broken further into named `decode_*_member` helpers),
+dispatching per field kind: leaf scalar codecs (`json_f32`, `scalar_int`, …) in `decode/scalars.rs`,
+self-describing Model Information blobs in `decode/model_info.rs`, `VMAD` script-attachment blobs to
 `src/decode/vmad.rs` (`decode_vmad`, plus type-specific `decode_vmad_{qust,info,pack,perk,scen}`
 for each record type's Script Fragments tail), and `CTDA` condition blocks to `src/ctda.rs`'s
 `decode_ctda`, which looks up the condition function by index in a compiled-in table
@@ -168,19 +170,23 @@ per path, and a per-request override has no coherent way to join that shared ins
 Beyond record decode, five modules implement FO76-specific analysis over an already-open
 `Database`:
 
-**`src/diff.rs`** — `diff_databases_with(a, b, opts)` compares two `Database`s: a
+**`src/diff/`** — `diff_databases_with(a, b, opts)` (`mod.rs`) compares two `Database`s: a
 byte-equality fast path per record, then a sparse `{from, to}` JSON diff (`json_diff`) for
-records that changed. Every array field runs through `array_diff`, which picks one of four
-pairing strategies: `keyed` (paired by an identity `element_key_spec` proposes from a sample
-element — composing every FormID-shaped member, or a handful of named heuristics like quest
-alias IDs), `positional`, `set`, or `unkeyed` (an order-preserving LCS alignment,
-`lcs_align`, reporting only what falls outside it, plus an `unchanged_count`). A proposed key is
-never trusted on the sample's shape alone — `widen_key_spec_until_unique` appends further scalar
-fields until the key is actually unique on both sides, falling back to `unkeyed` if nothing
-achieves that (ADR 0005). Arrays with no stable per-element identity classify as `unkeyed`
-outright — CTDA `Conditions[]` is the canonical case, fenced by ADR 0005.
-`strip_noise_fields` suppresses placement-transform/CELL-precombine/Object-Bounds
-churn by default (`--keep-noise` on the CLI disables it).
+records that changed, split compute the same shape `decode/vmad.rs`/`walk/` use into two
+self-contained submodules. `array_diff.rs` is every array field's per-element treatment —
+`json_diff`'s array arm runs through `array_diff`, which picks one of four pairing strategies:
+`keyed` (paired by an identity `element_key_spec` proposes from a sample element — composing
+every FormID-shaped member, or a handful of named heuristics like quest alias IDs),
+`positional`, `set`, or `unkeyed` (an order-preserving LCS alignment, `lcs_align`, reporting only
+what falls outside it, plus an `unchanged_count`). A proposed key is never trusted on the
+sample's shape alone — `widen_key_spec_until_unique` appends further scalar fields until the key
+is actually unique on both sides, falling back to `unkeyed` if nothing achieves that (ADR 0005).
+Arrays with no stable per-element identity classify as `unkeyed` outright — CTDA `Conditions[]`
+is the canonical case, fenced by ADR 0005. `noise.rs` is the three sequential noise-suppression
+sub-stages `diff_databases_with` runs over a `changed` record's `field_changes` (unconditional
+`strip_noise_fields` — placement-transform/CELL-precombine/Object-Bounds churn, off via
+`--keep-noise` on the CLI — then schema-gated appearance/disappearance suppression, then the
+issue #18 and #22 restamp/calibrated-default passes); stage order is load-bearing.
 
 **`src/walk/`** — the sole interactive/human-readable surface (ADR 0001), split compute
 (`mod.rs`) from render (`render.rs`), the same shape `decode/vmad.rs` uses. `walk::walk` does a
@@ -268,10 +274,10 @@ final `patch-summary.md`, chunked for Discord by `tools/discord_chunker.py` and 
 
 | Want to... | Look in |
 |---|---|
-| Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py`, then `src/decode/mod.rs`'s `decode_member` / `src/decode/rules.rs` for any post-decode synthesis |
+| Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py`, then `src/decode/walk.rs`'s `decode_member` / `src/decode/rules.rs` for any post-decode synthesis |
 | Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `daemon.rs`, `inspect.rs`, …); add an `Op` variant in `src/ipc.rs` if it needs daemon/MCP/N-API reach too |
-| Change diff noise suppression | `src/diff.rs`'s `strip_noise_fields` / `DiffOptions` |
-| Change array-pairing behavior | `src/diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
+| Change diff noise suppression | `src/diff/noise.rs`'s `strip_noise_fields` / `DiffOptions` |
+| Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
 | Add a new patch-notes lint rule | `tools/run_lints.py`'s rule registry |
 | Change bundle clustering | `tools/build_bundles.py` |
 | Change tier assignment (DEEP/BRIEF/DROP) | `tools/patch_notes_tiers.json`, `tools/triage_bundles.py` |

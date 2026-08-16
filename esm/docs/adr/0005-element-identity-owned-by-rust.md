@@ -87,7 +87,7 @@ same `20260724 → 20260803` run this ADR's original numbers came from:
   32 rows of scrambled `Attack Event: A -> B` churn from `keyed_diff`'s FIFO-within-group pairing —
   silently, with no signal in the output that the key wasn't actually unique.
 
-`widen_key_spec_until_unique` (`src/diff.rs`) runs between `element_key_spec` and `keyed_diff`: if
+`widen_key_spec_until_unique` (`src/diff/array_diff.rs`) runs between `element_key_spec` and `keyed_diff`: if
 a proposed key isn't unique on both sides, it appends further scalar leaf fields (sorted,
 deterministic order) one at a time until it is, or falls back to `unkeyed_array_diff` if no
 widening achieves it. The widened key is visible in `diff.json` via the existing `key_fields`
@@ -107,7 +107,7 @@ former with no evidence; widening refuses to assume either, which is why it's th
 even though it changes previously-observed output for a case like this.
 
 `unkeyed_array_diff` was originally a whole-list dump (see above). It now runs the two lists
-through an order-preserving alignment (longest common subsequence — `lcs_align` in `src/diff.rs`)
+through an order-preserving alignment (longest common subsequence — `lcs_align` in `src/diff/array_diff.rs`)
 and reports only the elements outside that alignment, plus an `unchanged_count` member so a reader
 isn't left assuming the whole array turned over. **The alignment must stay order-preserving, not
 collapse to a multiset diff:** a multiset diff would report a pure reorder as no change at all,
