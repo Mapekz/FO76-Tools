@@ -14,10 +14,6 @@ A Rust CLI and library for reading, extracting, and creating Bethesda **BA2 / BT
 
 - Toolchain pinned to **Rust 1.97.1** via `rust-toolchain.toml` (rustup installs it automatically).
 - Edition **2024**.
-- `rust-version` in `Cargo.toml` tracks the pinned toolchain (**1.97**) rather than the true language
-  floor. Edition 2024 selects Cargo's MSRV-aware dependency resolver, which treats `rust-version` as
-  a ceiling on dependency selection — a lower value would silently hold dependencies back at older
-  releases. This crate has no external consumers, so there is nothing to gain from a low MSRV.
 
 ## Build
 
@@ -152,25 +148,9 @@ if let Some(t) = archive.list()[0].texture() {
 
 ## Tests
 
-~121 tests across `tests/` (integration, one file per module) and three inline
-`#[cfg(test)]` modules for private-symbol coverage:
-
-| File | What it covers |
-|---|---|
-| `tests/format.rs` | Header, GNRL record, and DX10 texture/chunk record (de)serialization, byte-layout pins |
-| `tests/dds.rs` | DDS header synthesis per format (legacy FourCC, RGB/luminance masks, DXT10 extension), `parse_header` round-trips |
-| `tests/hash.rs` | `beth_crc` golden value, `hash_path` vectors + edge cases |
-| `tests/compress.rs` | LZ4/zlib round-trips, `is_zlib` sniffing, store-fallback |
-| `tests/reader.rs` | Happy-path reads, compressed entries, all `open()` error branches, DX10 multi-chunk reassembly, cubemap flag, unknown-format and corrupt-chunk error paths |
-| `tests/writer.rs` | Codec round-trips, empty archive, mixed compress+store, DX10 create round-trips (small/multi-chunk/zlib/cubemap/DXT10-extension) |
-| `tests/extract.rs` | `extract_all`, `extract_one`, glob filter, DX10 texture entry extracted as `.dds` |
-| `src/extract.rs` (inline) | `safe_output_path` path-traversal hardening (private fn) |
-| `src/writer.rs` (inline) | `dx10_chunk_count` — the mip-chunking policy table (private fn) |
-| `src/bin/cli.rs` (inline) | `collect_from_dir/files/list`, `derive_archive_path` (binary-private) |
-
-All tests use synthetic in-memory data — no real BA2 archive file required (real DX10 archives are
-several GiB; changes touching `dds.rs`/`reader.rs`/`writer.rs`'s DX10 paths should also be spot-checked
-against a real archive via the CLI — see `ba2/CLAUDE.md`).
+~121 tests, all synthetic in-memory data — no real BA2 archive required. Run with `cargo test`.
+Real multi-GiB DX10 archives are spot-checked via the CLI when texture paths change (see
+`ba2/CLAUDE.md` for the file-by-file breakdown).
 
 ```sh
 cargo test
@@ -209,8 +189,8 @@ and `Ba2Archive::read` decompresses and concatenates the chunks after it in orde
 `create --type dx10` derives `chunk_count` from Archive2's own mip-chunking policy — start at 1
 chunk, add one per mip level while `chunk_count < 4` and the *current* mip's pixel area is still
 `>= 512x512` (cubemaps are never chunked) — ground-truthed against every DX10 archive shipped with
-FO76 (250,722 texture entries, 0 mismatches). This is an area rule; it deliberately diverges from
-xEdit's per-axis `width >= 512 && height >= 512` rule on non-square textures.
+FO76 (250,722 texture entries, 0 mismatches) — an area rule, diverging from xEdit's per-axis
+`width >= 512 && height >= 512` rule on non-square textures.
 
 Format coverage is restricted to the 15 `DXGI_FORMAT` values FO76 actually ships (verified against
 a live game install): `R16G16B16A16_FLOAT`/`_UNORM`, `R8G8B8A8_UNORM`/`_UNORM_SRGB`, `R8_UNORM`,

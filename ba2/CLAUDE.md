@@ -37,21 +37,21 @@ Clean layering — edit at the right level:
 
 Public API re-exported from `lib.rs`: `ArchiveKind`, `Codec`, `Ba2Archive`, `Ba2Entry`, `EntryData`, `TextureInfo`, `extract_all`, `extract_one`, `ExtractOptions`, `write_ba2`, `WriteOptions`, plus the `dds` module.
 
-Sibling repo `esm/src/ba2.rs` independently reimplements a minimal read-only slice of this crate
-(BTDX header, GNRL record layout, LZ4 decompress) rather than depending on `ba2` — this is a
-deliberate decision, not an oversight; see `esm/docs/adr/0009-ba2-duplication-is-deliberate.md`.
+esm maintains its own minimal read-only BA2 reader (BTDX header, GNRL record layout, LZ4
+decompress) instead of depending on this crate — see
+`../esm/docs/adr/0009-ba2-duplication-is-deliberate.md`. The two share no code.
 
 ## Conventions to Follow
 
 - **Error handling**: `anyhow` everywhere — `Result<T>` (no `Box<dyn Error>`), `bail!` for validation failures, `.context()`/`.with_context()` to attach path/operation info. **No custom error enum** — do not add one.
-- **Serialization**: explicit little-endian byte reads/writes (no `serde`, no `binrw`). This keeps the on-disk layout "crystal-clear and testable" — do not introduce derive-based serialization.
+- **Serialization**: explicit little-endian byte reads/writes (no `serde`, no `binrw`) — this keeps the on-disk layout clear and directly testable. Fixed-offset field reads go through the local `read_u16`/`read_u32` helpers in `format.rs`/`dds.rs` while offsets stay explicit. Do not introduce derive-based serialization.
 - **Documentation**: every module gets a `//!` module-level doc comment explaining purpose and design rationale; public items get `///` doc comments. Maintain this density when adding code.
 - **Tests**: most tests live in `tests/` (one file per module: `format`, `dds`, `hash`, `compress`, `reader`, `writer`, `extract`), plus shared helpers in `tests/common/mod.rs` (`make_test_archive` for GNRL, `make_test_texture_archive` for DX10).  Tests that exercise **private** symbols stay colocated as `#[cfg(test)]` blocks: `extract.rs` (`safe_output_path`), `writer.rs` (`dx10_chunk_count`), and `bin/cli.rs` (source collectors).  All tests use synthetic in-memory data — no real BA2 file required (real archives are several GiB; validate DX10 changes against them manually via the CLI, not in the test suite).  Run with `cargo test`.
 - **Style**: section-divider comments (`// ── ... ─`) used throughout — match existing style.
 
 ## Critical Invariants — Do Not Break
 
-- **GNRL and DX10 are both supported; other archive types are not**: `Ba2Archive::open` dispatches on `ArchiveKind::from_tag` and rejects anything else with an explicit error. Do not silently skip the type check. DX10 `create` is supported (unlike the earlier "GNRL only" stance, superseded by [#21](https://github.com/Mapekz/FO76-Tools/issues/21)) — the read/write paths are symmetric, so don't special-case one direction without the other.
+- **GNRL and DX10 are both supported for read and write; other archive types are not**: `Ba2Archive::open` dispatches on `ArchiveKind::from_tag` and rejects anything else with an explicit error. Do not silently skip the type check. The read/write paths are symmetric — don't special-case one direction without the other.
 - **`packed_size == 0` means stored uncompressed**: this is the on-disk sentinel (not a bug), for both a GNRL entry's blob and a DX10 chunk. `Ba2Entry::is_compressed()` and each `TexChunk` follow this. Do not change this convention.
 - **DX10 chunk sentinel and `chunk_header_size`**: every chunk record ends in the same `0xBAADF00D` sentinel as GNRL (`format::PADDING`), and every texture header's `chunk_header_size` field must read as `24` (`TEX_CHUNK_HEADER_SIZE`) — `read_tex_record` bails otherwise rather than trusting an unexpected value.
 - **DX10 mip-chunking policy is an area rule, not xEdit's `w>=512 && h>=512`**: `dx10_chunk_count` in `writer.rs` starts a texture at 1 chunk and adds one per mip level while `chunk_count < 4`, mips remain, and `width*height >= 512*512` (halving both after each step); cubemaps are never chunked. This was ground-truthed against all 250,722 texture entries shipped with FO76 (0 mismatches) — xEdit's per-axis rule diverges on non-square textures. Do not "simplify" this back to the per-axis rule.
