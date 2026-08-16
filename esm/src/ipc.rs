@@ -246,15 +246,15 @@ pub enum Op {
     /// Interactive record digest — the server-side counterpart to `esm walk`
     /// (see [`crate::walk`]). The BFS and per-node digest computation run
     /// entirely inside the process handling this op (daemon or `--local`),
-    /// one round trip regardless of how many nodes the walk visits — unlike
-    /// the old client-side driving loop, which called `Op::RecordBulk` once
-    /// per queue-pop. `want_refs` mirrors the CLI's `--refs` flag: when true
-    /// and the root resolved, one extra unfiltered reverse-reference walk
-    /// runs on the root and is folded into [`crate::walk::WalkResult::refs`].
-    /// When the root selector doesn't resolve, `not_found.matches` is filled
-    /// in by one in-process [`Database::search`] call — the "not-found ->
-    /// search fallback" this op used to require its caller to drive via a
-    /// second `Op::Search` (see `docs/adr/0001`'s dated amendment).
+    /// one round trip regardless of how many nodes the walk visits, not one
+    /// `Op::RecordBulk` call per queue-pop. `want_refs` mirrors the CLI's
+    /// `--refs` flag: when true and the root resolved, one extra unfiltered
+    /// reverse-reference walk runs on the root and is folded into
+    /// [`crate::walk::WalkResult::refs`]. When the root selector doesn't
+    /// resolve, `not_found.matches` is filled in by one in-process
+    /// [`Database::search`] call, folding the "not-found -> search fallback"
+    /// into this op rather than requiring the caller to drive a second
+    /// `Op::Search` (see `docs/adr/0001`'s dated amendment).
     Walk {
         sel: RecordSel,
         depth: usize,
@@ -554,14 +554,11 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
 // ─── in-process ChaseFetcher adapter ────────────────────────────────────────
 
 /// In-process [`crate::chase::ChaseFetcher`] adapter over an already-open
-/// `Database` — the server-side counterpart to `cli.rs`'s (removed)
-/// `BackendFetcher`, which drove the same trait over `Op::RecordBulk`/
-/// `Op::ReferencedBy` HTTP round-trips. `Op::Walk`/`Op::Chase`/
-/// `Op::DropTable` use this so `crate::walk::walk`'s BFS and
-/// `crate::chase::chase`'s classifier run entirely inside the process
-/// already holding the lock on `db` — no serialization, no round-trip, and
-/// `walk`'s one-node-per-queue-pop `bulk_get` no longer costs an HTTP hop per
-/// BFS node.
+/// `Database`. `Op::Walk`/`Op::Chase`/`Op::DropTable` use this so
+/// `crate::walk::walk`'s BFS and `crate::chase::chase`'s classifier run
+/// entirely inside the process already holding the lock on `db` — no
+/// serialization, no round-trip, and `walk`'s one-node-per-queue-pop
+/// `bulk_get` costs no HTTP hop per BFS node.
 struct DbFetcher<'a> {
     db: &'a mut Database,
 }

@@ -15,96 +15,14 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-// Bumped 9 -> 10: fixed the VMAD Object-property FormID offset (decode.rs
-// `read_scalar` base type 1) — it was reading the wrong 4 bytes of the 8-byte
-// union for the common `obj_format == 2` case, so xref edges sourced from
-// script properties (e.g. a MGEF's "apply effect" script pointing at its
-// SPEL) were silently dropped. Bump forces a rebuild so `refs` picks up the
-// now-correct FormIDs.
-//
-// Bumped 10 -> 11: TERM's VMAD (wbVMADFragmentedPERK per xEdit) was decoded
-// with the generic `decode_vmad`, which stops after the base scripts array
-// and never parses the fragment tail — so a terminal's prize `Form_*` script
-// properties (e.g. a prize terminal's shirt/weapon grants) were invisible to
-// `harvest_formids` and dropped from `refs`. Now dispatched to
-// `decode_vmad_perk`. Bump forces a rebuild so `refs` picks up the newly
-// decoded TERM tail FormIDs.
-//
-// Bumped 11 -> 12: no layout change, but the encoder did. bincode 1 -> 2 moved
-// the default integer encoding from fixed-width to varint, so a v11 file and a
-// v12 file with identical contents are different bytes. `try_load_cache`
-// already treats a decode error as "no usable cache", so this bump is
-// defence-in-depth: it rejects old files by version rather than relying on the
-// new decoder to fail on old bytes, which a dense binary format could
-// conceivably mis-parse without erroring.
-//
-// Bumped 12 -> 13: `TreeIndex` moved out of the bincode `CacheFile` blob into
-// its own rkyv-backed `.esm.tree` section (see `rkyvcache.rs` / `tree.rs`'s
-// `TreeView`) — `CacheFile` lost its `tree` field, changing the bincode byte
-// shape. `try_load_cache` already treats a decode error as "no usable cache",
-// but a removed field (rather than a changed type) is exactly the kind of
-// change a length-prefixed/varint format like bincode 2 could conceivably
-// mis-parse into a structurally different-but-plausible `CacheFile` without
-// erroring, so this bump rejects a pre-this-change `.esm.idx` by version
-// check rather than leaving that to chance. This section's own
-// `.esm.tree` file carries its own independent version/layout-fingerprint
-// check (see `Section::map`), gated on this same `CACHE_VERSION` constant —
-// see `Index::build`/`build_tree_and_forms` below.
-//
-// Bumped 13 -> 14: `form_index` (the FormID -> `RecordMeta` table) and the
-// derived type directory (previously `type_index`, rebuilt from
-// `form_index` on every single load via `build_type_index`) moved out of the
-// bincode `CacheFile` blob into their own combined rkyv-backed `.esm.forms`
-// section (see `rkyvcache.rs` / this file's `FormsSection`, `Index::build`,
-// `build_tree_and_forms`) — `CacheFile` lost its `form_index` field,
-// changing the bincode byte shape the same way Stage 4's `tree` removal did
-// above. `form_index` held ~5.64M entries and was the bulk of this crate's
-// cold-load cost; it and the type directory are now read zero-copy via
-// `rkyv::access_unchecked`, the same mechanism `tree` already used. This
-// section's own `.esm.forms` file carries its own independent
-// version/layout-fingerprint check (see `Section::map`), gated on this same
-// `CACHE_VERSION` constant — see `Index::build`/`build_tree_and_forms` below.
-//
-// NOT bumped for Stage 6: `edid_index`/`xref_index`/`search_index` moved out
-// of the bincode `CacheFile` blob (deleted entirely this stage, along with
-// `bincode` itself — see `deny.toml`'s now-removed RUSTSEC-2025-0141 ignore)
-// into their own independent rkyv-backed `.esm.edid`/`.esm.search`/
-// `.esm.xref` sections (see `EdidSection`/`SearchSection`/`XrefSection`
-// below). Unlike the two bumps above, this doesn't reinterpret any existing
-// bytes at an unchanged path: `.esm.idx` simply stops being read at all (the
-// code that would read it is gone), and the three new section files are
-// brand-new formats with their own fresh magic/version/fingerprint checks —
-// no pre-this-stage binary ever wrote them, so there is nothing stale for a
-// post-this-stage binary to misinterpret. `tree`/`forms`'s own on-disk
-// shape is completely unchanged by this stage, so a pre-existing
-// `.esm.tree`/`.esm.forms` pair built by the previous stage continues to
-// validate and load warm under this same `CACHE_VERSION` rather than being
-// forced through an expensive whole-ESM rebuild for no shape-related reason.
-//
-// NOT bumped for the flat-files -> `esm_cache/` directory move: all five
-// sections relocated from `<esm>.esm.{tree,forms,edid,search,xref}`
-// (siblings of the ESM) into a shared `esm_cache/` directory, one file per
-// ESM per section named `<esm file name>.<section>` — see
-// `rkyvcache::cache_dir_for`/`section_path_for`. This changes *where* each
-// section's bytes live, not what they mean: no on-disk shape, header
-// layout, or layout fingerprint changed, so a bump here would force a
-// needless full ESM rebuild. The relocation itself is sufficient
-// invalidation — `Index::build` simply never looks at the old flat paths
-// again, so a pre-move `.esm.forms` etc. is orphaned in place (not deleted;
-// this crate is read-only w.r.t. the ESM directory tree) and a fresh
-// `esm_cache/` entry is built the next time each section is needed.
-//
-// Bumped 14 -> 15 for `ensure_xref_index` gaining a hardcoded-target fallback
-// (issue #27): `xref` targets now include the ~228 engine-hardcoded FormIDs
-// in `crate::hardcoded`, not just real indexed records. This is a *content*
-// change to what `XrefSection`'s `HashMap<u32, Vec<u32>>` holds, not a
-// layout change — `XREF_LAYOUT_FINGERPRINT` only folds in `size_of`/
-// `align_of` of the archived type, both unchanged, so it can't catch this on
-// its own. A stale pre-bump `xref` section would silently keep missing these
-// edges forever without this bump. Forces a rebuild of all five sections
-// (not just `xref`) since they share this one constant — accepted as the
-// simple, hard-to-get-wrong choice over threading a second, narrower
-// invalidation axis through just the xref section.
+// Bump whenever any section's cached on-disk data changes, whether that's a
+// layout change (fields added/removed/reordered) or a content change (the
+// same fields now hold different derived values). Content changes are
+// invisible to `*_LAYOUT_FINGERPRINT`, which only folds in the archived
+// type's `size_of`/`align_of` — the version bump is the only thing that
+// catches those. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
+// share this one constant, so a bump rebuilds all five even when only one
+// changed.
 pub(crate) const CACHE_VERSION: u32 = 15;
 
 /// Per-record data stored in the lazy search index.
@@ -553,10 +471,10 @@ impl Index {
     /// `pub(crate)`, not `pub`: reachable only through
     /// [`crate::Database`]'s own methods, which always call
     /// `ensure_edid_index` first — see that method's doc comment for why
-    /// this and [`Self::get_xref`]/[`Self::iter_search`] are deliberately
-    /// not part of this crate's public surface (a caller reaching this
-    /// directly, without ensuring first, would silently read "not found"
-    /// for an EditorID that's actually present but just not indexed yet).
+    /// this and [`Self::get_xref`]/[`Self::iter_search`] are not part of
+    /// this crate's public surface (a caller reaching this directly,
+    /// without ensuring first, would silently read "not found" for an
+    /// EditorID that's actually present but just not indexed yet).
     pub(crate) fn get_by_edid(&self, edid: &str) -> Option<FormId> {
         let section = self.edid.get()?;
         section
@@ -893,12 +811,9 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     let forms_path = section_path_for(&esm.path, SectionKind::Forms)?;
     let total = esm.data().len() as u64;
 
-    // Single stage, not two: `tree`/`forms` used to be built by two
-    // independent full-file walks (`walk_records` for forms, then
-    // `TreeIndex::build_with_tick` -> `walk_structure` for tree), reported
-    // as sequential "forms" then "tree" stages. They're now derived from one
+    // Single stage, not two: `tree` and `forms` are both derived from one
     // shared `walk_structure` pass below, so there is only one counting
-    // stage to report — see the E1 architecture-deepening note.
+    // stage to report.
     let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
         &esm.path,
         crate::progress::BuildStage::Forms,
@@ -1142,11 +1057,9 @@ mod tests {
     /// `impl SectionSpec` block next to that section's own type) actually
     /// matches this module's own `_LAYOUT_FINGERPRINT` constants — for all
     /// five sections, via the exhaustive `match` in
-    /// [`section_spec_fingerprint_for`]. This is the direct regression test
-    /// for the bug class Stage C fixes: before `SectionSpec` existed, the
-    /// `(SectionKind, CACHE_VERSION, LAYOUT_FINGERPRINT)` triple was spelled
-    /// out by hand at ~41 call sites, and a wrong pairing compiled fine
-    /// while silently forcing that section to rebuild on every open. Now
+    /// [`section_spec_fingerprint_for`]. Guards against a wrong
+    /// `(SectionKind, CACHE_VERSION, LAYOUT_FINGERPRINT)` pairing compiling
+    /// fine while silently forcing a section to rebuild on every open:
     /// there is exactly one place per section where the pairing is chosen,
     /// and this test proves each of those five places agrees with the named
     /// constant its own doc comments claim.

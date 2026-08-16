@@ -24,17 +24,15 @@ use serde_json::Value;
 const CONSUMER_ROWS_SHOWN: usize = 10;
 
 /// Cap on pretty-printed lines in the generic fallback digest before a
-/// truncation trailer is emitted (mirrors the TS original's `MAX = 120`).
+/// truncation trailer is emitted.
 const GENERIC_DUMP_MAX_LINES: usize = 120;
 
 // ─── generic value formatting ───────────────────────────────────────────────
 
-/// Render a JSON value the way the TS original's template-literal
-/// interpolation would (unquoted strings, `None`/`True`/`False` for
-/// null/bool), with one deliberate improvement: whole-number floats print
-/// without a trailing `.0` (matching JS's own number-to-string behavior,
-/// which the TS original relies on implicitly) rather than Rust's
-/// `serde_json::Number::to_string()`, which always keeps the decimal point.
+/// Render a JSON value Python-ish (unquoted strings, `None`/`True`/`False`
+/// for null/bool). Whole-number floats print without a trailing `.0`
+/// rather than Rust's `serde_json::Number::to_string()`, which always keeps
+/// the decimal point.
 fn pyish(v: &Value) -> String {
     match v {
         Value::Null => "None".to_string(),
@@ -98,9 +96,8 @@ fn fmt_glob_annotation(v: &Value) -> String {
     format!("{edid}={value}")
 }
 
-/// "0xID<EditorID[=Value]>" — the inline condition-operand rendering
-/// (mirrors the TS original's `fmtConditionsResolved`). `v` is already
-/// GLOB-resolved (see `super::resolve_condition_row`).
+/// "0xID<EditorID[=Value]>" — the inline condition-operand rendering.
+/// `v` is already GLOB-resolved (see `super::resolve_condition_row`).
 fn fmt_condition_operand(v: Option<&Value>) -> String {
     match v {
         None | Some(Value::Null) => String::new(),
@@ -117,9 +114,8 @@ fn fmt_condition_operand(v: Option<&Value>) -> String {
 }
 
 /// `Function(Param1) Operator ComparisonValue[ on RunOn][ [OR]]` — the
-/// condition line format (mirrors the TS original's `fmtConditions` +
-/// `fmtConditionsResolved` combined into one pass). `row` is already
-/// GLOB-resolved (see `super::resolve_condition_row`).
+/// condition line format. `row` is already GLOB-resolved (see
+/// `super::resolve_condition_row`).
 fn fmt_condition_row(row: &Value) -> String {
     let function = row.get("Function").and_then(Value::as_str).unwrap_or("?");
     let operator = row.get("Operator").and_then(Value::as_str).unwrap_or("==");
@@ -1131,11 +1127,9 @@ mod tests {
         assert_eq!(fmt_condition_operand(Some(&v)), "0x1<SomeKywd>");
     }
 
-    /// Moved from `chase.rs`'s own `#[cfg(test)]` block along with
-    /// `summarize_effect` itself (see this module's doc comment) — this
-    /// function is private and not reachable from an external `tests/`
-    /// integration crate, so its test stays colocated (see esm/CLAUDE.md's
-    /// testing conventions).
+    /// `summarize_effect` is private and not reachable from an external
+    /// `tests/` integration crate, so its test stays colocated here (see
+    /// esm/CLAUDE.md's testing conventions).
     #[test]
     fn summarize_effect_renders_base_effect_magnitude_and_conditions() {
         let effect = serde_json::json!({

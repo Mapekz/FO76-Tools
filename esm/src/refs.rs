@@ -3,11 +3,11 @@
 //! `Index` builds (`ipc.rs`'s `Op::ReferencedBy`/`Op::RefPath` are thin
 //! dispatch wrappers around this module).
 //!
-//! Extracted out of `ipc.rs` (Stage A of the architecture-deepening plan):
-//! the wire protocol (`Op`, `dispatch`/`dispatch_op`, and the DTOs that cross
-//! the process boundary — `RefRow`, `RefList`, `RefSort`, `RefPathNode`)
-//! stays in `ipc.rs`; this module owns the seed-selector/walk/path-search
-//! *algorithm* those DTOs describe the result of. See
+//! The wire protocol (`Op`, `dispatch`/`dispatch_op`, and the DTOs that
+//! cross the process boundary — `RefRow`, `RefList`, `RefSort`,
+//! `RefPathNode`) stays in `ipc.rs`; this module owns the
+//! seed-selector/walk/path-search *algorithm* those DTOs describe the
+//! result of. See
 //! [`docs/adr/0004-refs-seed-selectors.md`](https://github.com/Mapekz/FO76-Tools/blob/main/esm/docs/adr/0004-refs-seed-selectors.md)
 //! for the Direct/Carriers seed-selector vocabulary ([`RefSeeds`] is that
 //! ADR's central type).
@@ -22,8 +22,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Walk reverse references from `target` up to `depth` hops using BFS.
 ///
-/// A `depth` of 1 (the default) returns the same set as the old single-level
-/// lookup.  Higher values follow the reverse-reference graph breadth-first,
+/// A `depth` of 1 (the default) returns direct reverse references only.
+/// Higher values follow the reverse-reference graph breadth-first,
 /// visiting each node at most once (cycle-safe).  `depth` is clamped to
 /// `[1, DEFAULT_MAX_DEPTH]`; `depth == 0` requests an unbounded walk instead
 /// (no fixed hop cap — see [`RefList::effective_depth`]).
@@ -705,10 +705,10 @@ pub(crate) fn resolve_ref_seeds(db: &mut Database, sel: &RecordSel) -> anyhow::R
         RecordSel::Edid(edid) => match resolve_sel(db, sel) {
             Ok(fid) => Ok(RefSeeds::Direct(fid)),
             Err(edid_err) => {
-                // OMOD-property names are deliberately flag-only: short,
-                // generic names collide with real EditorIDs and hardcoded
-                // AVIF records (`Health` is both). Never add a property-name
-                // fallback here; see docs/adr/0004-refs-seed-selectors.md.
+                // OMOD-property names are flag-only: short, generic names
+                // collide with real EditorIDs and hardcoded AVIF records
+                // (`Health` is both). Never add a property-name fallback
+                // here; see docs/adr/0004-refs-seed-selectors.md.
                 // Unlike the explicit `--entry-point` path above, a parse
                 // failure here (e.g. `edid` happens to look hex-prefixed,
                 // which `RecordSel::Edid` shouldn't produce in practice) is

@@ -266,7 +266,7 @@ enum Commands {
         /// Reverse-reference walk depth (1 = direct refs only, up to 8;
         /// 0 = unbounded — no fixed hop cap. An unbounded walk over a
         /// hub-heavy graph like CELL/REFR can return hundreds of thousands
-        /// of rows; combine with --limit 0 and a --type filter deliberately.
+        /// of rows; combine with --limit 0 and a --type filter.
         #[arg(long, default_value_t = 1, value_parser = parse_ref_depth)]
         depth: usize,
         /// Narrow rows to referencing records of this 4-character type
@@ -1230,7 +1230,7 @@ fn apply_strings_override(
 ///
 /// Source-override flags (`--localization-ba2`/`--strings-dir`/`--startup-ba2`/
 /// `--curves-dir`, including `diff`'s per-side `_a`/`_b` variants) are
-/// deliberately CLI-only — see `docs/adr/0008-source-overrides-cli-only.md`. The
+/// CLI-only — see `docs/adr/0008-source-overrides-cli-only.md`. The
 /// daemon's `Registry` caches exactly one warm `Database` per canonical ESM
 /// path, shared across every client; a per-request source override can't be
 /// warmed into that shared cache, so there is no `Op` this could ever dispatch
@@ -2284,9 +2284,9 @@ fn print_field_changes(changes: &Value, indent: &str) {
 /// `diff.rs` itself never keeps a Rust-side enum for this — every strategy
 /// is written straight to an untyped `serde_json::Value` string at the point
 /// it's decided, so this is CLI-local: a named, testable home for the
-/// dispatch that used to be an inline string match inside `print_array_diff`.
-/// `Other` covers a future/unrecognized strategy string rather than
-/// panicking or dropping it silently.
+/// strategy dispatch, kept out of `print_array_diff` itself. `Other` covers
+/// a future/unrecognized strategy string rather than panicking or dropping
+/// it silently.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ArrayDiffStrategy {
     Keyed { key_fields: Vec<String> },
@@ -2692,17 +2692,16 @@ mod tests {
         assert_eq!(cache_state_label(&complete, false), "complete");
     }
 
-    /// Bare `esm` used to silently enter a REPL (exit 0, empty stdout) —
-    /// the worst failure mode for a scripted caller. There is no REPL left
-    /// to fall into: a missing subcommand is now a usage error.
+    /// A missing subcommand is a usage error, never a silent no-op — the
+    /// worst failure mode for a scripted caller would be exiting 0 with
+    /// empty stdout.
     #[test]
     fn bare_invocation_is_a_usage_error_not_a_silent_no_op() {
         assert!(Cli::try_parse_from(["esm"]).is_err());
     }
 
-    /// `-p`/`--print` was a vestigial no-op (see git history: it stopped
-    /// gating anything once subcommands became always-one-shot) — removed
-    /// rather than left as dead surface area callers might still reach for.
+    /// `-p`/`--print` is not a recognized flag — removed as dead surface
+    /// area rather than left for callers to still reach for.
     #[test]
     fn dash_p_no_longer_exists() {
         let err = match Cli::try_parse_from(["esm", "-p", "get", "0x463F"]) {

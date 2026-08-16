@@ -1,16 +1,12 @@
 //! Canonical string→enum argument translation shared by the CLI, HTTP/MCP
 //! server, and N-API bindings.
 //!
-//! Each serving surface previously carried its own copy of these mappings
-//! (`parse_resolve` in `src/bin/cli.rs`, `parse_resolve_depth`/
-//! `parse_search_field`/`parse_body_detail`/`parse_filter_op` in
-//! `bindings/napi/src/lib.rs`, an inline match in `src/bin/server.rs`'s
-//! `esm_get_record` tool, and a duplicated ref-depth clamp in both `server.rs`
-//! and `bindings/napi`). This module is the one place the parsing logic lives;
-//! callers still choose their own **default** value for the "argument
-//! omitted" case — this deliberately does not unify defaults across surfaces
-//! (e.g. the CLI's `esm get` defaults to `ResolveDepth::None` while the MCP
-//! `esm_get_record` tool defaults to `ResolveDepth::Stub`).
+//! This module is the one place the parsing logic lives — no serving surface
+//! should carry its own copy of these mappings. Callers still choose their
+//! own **default** value for the "argument omitted" case; this module does
+//! not unify defaults across surfaces (e.g. the CLI's `esm get` defaults to
+//! `ResolveDepth::None` while the MCP `esm_get_record` tool defaults to
+//! `ResolveDepth::Stub`).
 
 use crate::diff::{BodyDetail, DiffOptions};
 use crate::{FilterOp, ResolveDepth, SearchField};

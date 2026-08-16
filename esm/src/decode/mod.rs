@@ -551,8 +551,8 @@ pub(crate) fn decode_member(
             // member's own `by_sig` pop bleed across element boundaries
             // (column-wise mixing).
             //
-            // This is deliberately a per-*iteration* fallback, not a
-            // whole-array strategy switch: a trailing sig-bearing `Empty` is
+            // This is a per-*iteration* fallback, not a whole-array
+            // strategy switch: a trailing sig-bearing `Empty` is
             // not always a true one-per-element terminator — e.g. MESG Menu
             // Button's trailing `MBNR` ("No Response") has the same shape
             // but is itself an optional per-element flag, present on only
@@ -914,8 +914,8 @@ pub(crate) fn decode_member(
         }
         MemberDef::Empty { sig, name, .. } => {
             if let Some(sig) = sig {
-                // Deliberately unscoped (`take_first`, not `take_first_in_scope`):
-                // QUST alias bodies close with an `Empty{sig:"ALED"}` ("Alias
+                // Unscoped (`take_first`, not `take_first_in_scope`): QUST
+                // alias bodies close with an `Empty{sig:"ALED"}` ("Alias
                 // End") member, and `rstruct_present_signature_scope` defines
                 // an alias's own scope_max as "up to but NOT including the
                 // next ALED" (see its doc comment) — i.e. exclusive of the
@@ -2348,16 +2348,16 @@ mod tests {
     }
 
     /// Regression test for the real `Serum_AdrenalReactionApplier` MGEF
-    /// (`0x0050A5D8`) bug: its VMAD script property `MutationSpell` (object
+    /// (`0x0050A5D8`): its VMAD script property `MutationSpell` (object
     /// format 2) carries the verbatim union bytes
     /// `00 00 ff ff 14 1f 4e 00` — Unused(u16)=0, Alias(s16)=-1,
     /// FormID(u32)=0x004E1F14 (the SPEL `Mutation_AdrenalReaction`).
     ///
-    /// The inverted offset (`if obj_format == 2 { 0 } else { 4 }`) used to read
-    /// the *first* 4 bytes instead — `00 00 ff ff` — producing the garbage
-    /// FormID `0xFFFF0000`, which doesn't exist in any ESM, so the real
-    /// mutation-SPEL reference silently vanished from both the decoded record
-    /// and the xref index.
+    /// The offset (`if obj_format == 2 { 0 } else { 4 }`) must read the
+    /// *last* 4 bytes: reading the first 4 (`00 00 ff ff`) instead produces
+    /// the garbage FormID `0xFFFF0000`, which doesn't exist in any ESM,
+    /// silently dropping the real mutation-SPEL reference from both the
+    /// decoded record and the xref index.
     #[test]
     fn vmad_object_property_decodes_real_serum_adrenal_reaction_bug_bytes() {
         let schema = empty_schema();

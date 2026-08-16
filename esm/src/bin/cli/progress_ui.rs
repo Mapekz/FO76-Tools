@@ -3,10 +3,10 @@
 //! `Backend::run` call is in flight, plus the pure formatting functions it
 //! (and `--no-wait`/`esm cache status`) share.
 //!
-//! Deliberately not part of the `esm` library: `esm::progress` is the
-//! domain module every process (daemon, `--local` CLI, N-API host) writes
-//! to and reads from via the filesystem; a stderr TTY renderer is
-//! CLI-presentation logic that those other consumers must never inherit.
+//! Not part of the `esm` library: `esm::progress` is the domain module every
+//! process (daemon, `--local` CLI, N-API host) writes to and reads from via
+//! the filesystem; a stderr TTY renderer is CLI-presentation logic that
+//! those other consumers must never inherit.
 //!
 //! # Where this hooks in
 //!
@@ -43,8 +43,8 @@ fn tty_poll_interval() -> Duration {
 }
 
 /// How often a non-TTY (piped/redirected) run emits a plain progress line —
-/// deliberately much coarser than the TTY refresh rate so captured logs
-/// (CI, `tools/esm_gateway.py`) stay readable rather than one line per poll.
+/// much coarser than the TTY refresh rate so captured logs (CI,
+/// `tools/esm_gateway.py`) stay readable rather than one line per poll.
 const PLAIN_LINE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Bar width in character cells, fixed rather than terminal-width-adaptive
@@ -332,8 +332,8 @@ mod tests {
     ) -> BuildProgress {
         // Round-trips through JSON so the test only depends on the public
         // `BuildProgress` shape, not any private constructor — `progress.rs`
-        // deliberately keeps its timestamp fields private, so this is the
-        // only way to build one from outside that module.
+        // keeps its timestamp fields private, so this is the only way to
+        // build one from outside that module.
         serde_json::from_value(serde_json::json!({
             "pid": 4242,
             "stage": stage,

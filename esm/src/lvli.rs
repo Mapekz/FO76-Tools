@@ -267,17 +267,14 @@ fn entry_chance_none(entry: &Value, level: f32, by_sel: &HashMap<String, BulkRec
 /// (modern shape), or `Base Data.Level` (legacy). `None` means no level gate.
 ///
 /// Unlike [`resolve_chance_none`]/[`resolve_quantity`], a `Minimim Level
-/// Curve Table` sibling (schema typo, preserved verbatim) is deliberately
-/// **not** evaluated here. Spot-checked against live data:
-/// `LL_Armor_Metal_ArmLeft`'s curve `MinLevel_Armor_Metal_CT` has points
-/// `(0,1)(1,10)(2,25)(3,35)(99,35)(100,100)` — an x-domain that reads as an
-/// item-quality-tier index (0-3, with 99/100 sentinel rows), not a player
-/// level, unlike the Quantity/Chance-None curve tables checked at the same
-/// time (`CT_Creatures_Loot_WeaponUser_Steel_Base`: `x` 1-50 with `y`
-/// climbing 3→7; `Container_Item2_ChanceNone`: `x` 0-100 with `y` falling
-/// 100→0), both of which read as genuinely level-shaped. Evaluating this one
-/// at `--level` would silently invent a number off an unconfirmed axis, so
-/// it's flagged instead of guessed.
+/// Curve Table` sibling (schema typo, preserved verbatim) is **not**
+/// evaluated here: its x-domain reads as an item-quality-tier index (0-3,
+/// with 99/100 sentinel rows), not player level, unlike the level-shaped
+/// Quantity/Chance-None curve tables (spot-checked via
+/// `LL_Armor_Metal_ArmLeft`'s `MinLevel_Armor_Metal_CT` curve against
+/// `CT_Creatures_Loot_WeaponUser_Steel_Base`/`Container_Item2_ChanceNone`).
+/// Evaluating it at `--level` would invent a number off an unconfirmed axis,
+/// so it's flagged instead of guessed.
 fn resolve_min_level(
     entry: &Value,
     by_sel: &HashMap<String, BulkRecordEntry>,

@@ -104,17 +104,14 @@ impl CacheSig {
 /// of the wrong kind is rejected rather than misinterpreted.
 ///
 /// A crate-private alias for [`crate::progress::BuildStage`], not a second
-/// enum — before this, `SectionKind` and `BuildStage` were the same five
-/// variants declared twice in two files and paired up by hand at each of
-/// `index.rs`'s call sites (`cache_inventory` in particular). Adding a
-/// sixth section now only means adding one variant to `BuildStage` — every
-/// `match` over it (this module's `SectionSpec` impls, `BuildStage::label`/
-/// `unit`, `index.rs`'s `cache_inventory`) is exhaustive with no wildcard
-/// arm, so the compiler rejects a build until each one is updated, rather
-/// than silently leaving one unhandled the way the old two-enum split let
-/// happen. See `SectionKind`'s doc comment there for why the discriminant
+/// enum: `SectionKind` and `BuildStage` are the same five variants declared
+/// once. Adding a sixth section only means adding one variant to
+/// `BuildStage` — every `match` over it (this module's `SectionSpec` impls,
+/// `BuildStage::label`/`unit`, `index.rs`'s `cache_inventory`) is exhaustive
+/// with no wildcard arm, so the compiler rejects a build until each one is
+/// updated. See `SectionKind`'s doc comment there for why the discriminant
 /// values themselves are load-bearing (this module's on-disk header) and
-/// were kept unchanged across the alias.
+/// stay unchanged across the alias.
 pub(crate) use crate::progress::BuildStage as SectionKind;
 
 /// The shared rkyv cache directory, `esm_cache/`, a sibling of the ESM.
@@ -164,19 +161,17 @@ pub(crate) enum Section<A> {
 /// for `TreeIndex`; `index.rs` for `FormsSection`/`EdidSection`/
 /// `SearchSection`/`XrefSection`).
 ///
-/// This is what replaces the `(SectionKind, CACHE_VERSION,
-/// LAYOUT_FINGERPRINT)` triple that used to be spelled out by hand at every
-/// [`Section::map`]/[`write_section`] call site (~41 of them across
-/// `index.rs`/`tree.rs`) — [`Section::map`]/[`write_section`] now read
-/// `KIND`/`LAYOUT_FINGERPRINT` off the type parameter itself, so a call
-/// site can no longer pass the wrong fingerprint for the kind it's mapping:
-/// Rust's coherence rules guarantee at most one `SectionSpec` impl per
-/// archived type, so there is exactly one place in the whole crate where a
-/// type's kind+fingerprint pairing is chosen. The low-level
+/// This replaces the `(SectionKind, CACHE_VERSION, LAYOUT_FINGERPRINT)`
+/// triple [`Section::map`]/[`write_section`] would otherwise need spelled
+/// out by hand at every call site (~41 of them across `index.rs`/`tree.rs`)
+/// — they instead read `KIND`/`LAYOUT_FINGERPRINT` off the type parameter
+/// itself, so a call site can never pass the wrong fingerprint for the kind
+/// it's mapping: Rust's coherence rules guarantee at most one `SectionSpec`
+/// impl per archived type, so there is exactly one place in the whole crate
+/// where a type's kind+fingerprint pairing is chosen. The low-level
 /// [`Section::map_raw`]/[`write_section_raw`] still take an explicit
 /// `SectionKind` — kept for this module's own adversarial tests, which
-/// deliberately construct mismatched pairings to prove `Section::map`
-/// rejects them.
+/// construct mismatched pairings to prove `Section::map` rejects them.
 pub(crate) trait SectionSpec:
     rkyv::Portable
     + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
@@ -309,8 +304,8 @@ where
         // 6. Optional full bytecheck pass, gated behind an env var so CI can
         // prove the writer's output is sound (see the tests below, which
         // already exercise this path directly) without paying the cost on
-        // the hot load-time path. Exact-match "1" only — deliberately not
-        // parsing "true"/"yes"/etc., per the spec for this module.
+        // the hot load-time path. Exact-match "1" only — not
+        // "true"/"yes"/etc., per the spec for this module.
         if std::env::var("ESM_CACHE_VERIFY").as_deref() == Ok("1")
             && let Err(e) = rkyv::access::<A, rkyv::rancor::Error>(&mmap[payload.clone()])
         {
@@ -1441,8 +1436,8 @@ mod tests {
     }
 
     /// The whole point of the fixed directory name: two different plugins in
-    /// the same directory share it (this is deliberate, not a bug —
-    /// [`section_path_for`] is what keeps their files from colliding).
+    /// the same directory share it — [`section_path_for`] is what keeps
+    /// their files from colliding, not directory separation.
     #[test]
     fn cache_dir_for_is_shared_across_different_esms_in_one_directory() {
         let a = cache_dir_for(Path::new("/data/SeventySix.esm")).unwrap();

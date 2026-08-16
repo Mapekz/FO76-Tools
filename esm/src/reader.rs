@@ -14,13 +14,11 @@ use std::path::{Path, PathBuf};
 ///
 /// Carries the same fields [`RecordMeta`] does (`flags`/`form_version`, in
 /// addition to `form_id`/`offset`) so `index.rs`'s `build_tree_and_forms` can
-/// derive a `RecordMeta` from this event directly — see the E1
-/// architecture-deepening note on `walk_container`/`walk_structure_container`
-/// unifying into one traversal. `signature` stays the real `[u8; 4]`
-/// [`Signature`] type throughout, never a `String` — a per-record `String`
-/// allocation here was previously converted straight back to `[u8; 4]` at
-/// this event's one consumer (`tree.rs`), for every one of the ESM's ~5-6M
-/// records.
+/// derive a `RecordMeta` from this event directly. `signature` stays the
+/// real `[u8; 4]` [`Signature`] type throughout, never a `String` — a
+/// per-record `String` allocation here would have to be converted straight
+/// back to `[u8; 4]` at this event's one consumer (`tree.rs`), for every one
+/// of the ESM's ~5-6M records.
 #[derive(Debug, Clone, Copy)]
 pub struct StructuralRecord {
     pub form_id: FormId,
@@ -239,18 +237,15 @@ impl EsmFile {
 }
 
 /// The single GRUP/record descent both [`EsmFile::walk_records`] and
-/// [`EsmFile::walk_structure`] are built on (this crate previously
-/// re-implemented this same descent twice — `walk_container` for
-/// `walk_records`, `walk_structure_container` for `walk_structure` — and the
-/// two diverged on bounds checking; see the E1 architecture-deepening note).
+/// [`EsmFile::walk_structure`] are built on, so the two can't diverge on
+/// bounds checking.
 ///
 /// On an oversized/malformed trailing record (`record_end > end`, e.g. a
 /// truncated or corrupt file) this stops cleanly rather than erroring or
-/// reading past the intended container boundary — the policy the old
-/// `walk_structure_container` already had and `walk_container` lacked. A
-/// GRUP whose declared `group_size` extends past `end` is still a hard
-/// error (`bail!`): unlike a trailing record, there is no safe "stop here"
-/// reading for a GRUP header that lies about its own body size.
+/// reading past the intended container boundary. A GRUP whose declared
+/// `group_size` extends past `end` is still a hard error (`bail!`): unlike a
+/// trailing record, there is no safe "stop here" reading for a GRUP header
+/// that lies about its own body size.
 fn walk_container_core<F>(data: &[u8], mut pos: usize, end: usize, f: &mut F) -> anyhow::Result<()>
 where
     F: FnMut(WalkEvent) -> anyhow::Result<()>,

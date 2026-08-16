@@ -166,15 +166,10 @@ impl Registry {
         Ok((canonical, arc))
     }
 
-    /// Before Stage C, `ensure_xref_index` needed several of `Database`'s
-    /// OTHER fields (`esm`/`schema`/`is_localized`/`localization`/`curves`)
-    /// handed back in as parameters, which meant this function had to
-    /// destructure `Database` field-by-field to borrow `index` mutably
-    /// alongside the rest immutably. Now that the three `ensure_*_index`
-    /// methods live on `Database` itself (`lib.rs`) and take no extra
-    /// parameters, each call below is just `db.method()?` — no destructure
-    /// needed, since there's no longer a second field to borrow alongside
-    /// the one being built.
+    /// Each `ensure_*_index` method lives on `Database` itself (`lib.rs`)
+    /// and takes no extra parameters, so each call below is just
+    /// `db.method()?` — no destructure needed to borrow `index` mutably
+    /// alongside the rest of `Database` immutably.
     fn warm_indexes(&self, db_arc: &Arc<Mutex<Database>>) -> anyhow::Result<()> {
         if !self.auto_warm && !self.warm_xref {
             return Ok(());
@@ -331,9 +326,8 @@ mod tests {
     // ─── Warm policy ────────────────────────────────────────────────────
     //
     // `Registry::new()` and `Registry::with_warm_xref(_)` imply two
-    // different implicit warming policies (see `warm_indexes`) with nothing
-    // previously asserting either — see the architecture review this seam
-    // was added for.
+    // different implicit warming policies (see `warm_indexes`); the tests
+    // below assert each one directly.
 
     #[test]
     fn new_registry_does_not_auto_warm() {
@@ -361,8 +355,9 @@ mod tests {
     // ─── Stale eviction ─────────────────────────────────────────────────
     //
     // The daemon's advertised "stale-evicts if the ESM changes on disk — no
-    // manual restart needed" behaviour (CLAUDE.md), previously untestable
-    // without a real ESM on disk, a real write, and mtime-granularity luck.
+    // manual restart needed" behaviour (CLAUDE.md). The `FakeHost` seam
+    // below tests it deterministically, without a real ESM on disk, a real
+    // write, or mtime-granularity luck.
 
     #[test]
     fn stale_signature_evicts_and_reopens_with_a_new_arc() {

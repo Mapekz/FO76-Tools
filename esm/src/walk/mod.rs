@@ -18,10 +18,10 @@
 //!
 //! [`walk`] does a breadth-first traversal (queue + visited set keyed on
 //! FormID, depth-capped) starting from one resolved record, computing a
-//! record-type-specific digest for each node and enqueueing whatever it
-//! references that the TS spec calls out as worth following one hop further
-//! (a magic effect's granted Perk/Equip Ability, a PERK's Ability SPEL, an
-//! OMOD's ENCH property, ...). It composes the same two primitives
+//! record-type-specific digest for each node and enqueueing whatever's
+//! worth following one hop further (a magic effect's granted Perk/Equip
+//! Ability, a PERK's Ability SPEL, an OMOD's ENCH property, ...). It
+//! composes the same two primitives
 //! `esm::chase`'s "chase pattern" uses — [`ChaseFetcher::bulk_get`] and
 //! [`ChaseFetcher::refs`] — no new trait, no new wire `Op`.
 //!
@@ -60,22 +60,20 @@
 //! Every record is fetched at [`ResolveDepth::Stub`], so every direct FormID
 //! reference on a fetched record's own fields already arrives pre-annotated
 //! as `{"formid", "editor_id", "record_type"}` (the same annotation
-//! `esm get --resolve stub` produces) — this is a deliberate improvement over
-//! the TS original, which shells out to a plain `esm get` (no `--resolve`)
-//! and resolves each reference with its own follow-up `client.get()` call
-//! (`ref()`/`resolveEdid()`). One exception remains: a GLOB *reference*'s own
-//! `Value` field isn't expanded by Stub resolution (which only annotates the
-//! *reference*, not the referenced record's fields), so magnitude/duration/
-//! condition GLOB annotations still require one batched extra `bulk_get`
-//! (see [`resolve_glob_ref`]) — mirroring the TS original's `globValue()`.
+//! `esm get --resolve stub` produces) — no follow-up per-reference fetch
+//! needed. One exception remains: a GLOB *reference*'s own `Value` field
+//! isn't expanded by Stub resolution (which only annotates the *reference*,
+//! not the referenced record's fields), so magnitude/duration/condition
+//! GLOB annotations still require one batched extra `bulk_get` (see
+//! [`resolve_glob_ref`]).
 //!
-//! Two things the TS original does that this module deliberately leaves to
-//! its caller (`cmd_walk` in `src/bin/cli.rs`), since neither fits through
-//! `ChaseFetcher`'s narrow bulk_get/refs-with-type-filter seam:
-//! - **not-found → search fallback** (TS `walk()` lines 307-316): when the
-//!   root selector doesn't resolve, [`walk`] returns a [`WalkResult`] with
-//!   [`WalkResult::not_found`] set and an empty `matches` list; the CLI
-//!   driver runs one `Op::Search` and fills `matches` in before rendering.
+//! Two responsibilities stay with the caller (`cmd_walk` in
+//! `src/bin/cli.rs`) rather than living in this module, since neither fits
+//! through `ChaseFetcher`'s narrow bulk_get/refs-with-type-filter seam:
+//! - **not-found → search fallback**: when the root selector doesn't
+//!   resolve, [`walk`] returns a [`WalkResult`] with [`WalkResult::not_found`]
+//!   set and an empty `matches` list; the CLI driver runs one `Op::Search`
+//!   and fills `matches` in before rendering.
 //! - **`--refs` reverse-reference summary**: needs an *unfiltered* reverse
 //!   `refs` walk (every referencing record type, not just SPEL/PERK), which
 //!   `ChaseFetcher::refs`'s mandatory type-filter parameter can't express.
@@ -98,25 +96,22 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-/// Default BFS depth cap (mirrors the TS original's `depth = 2` default).
+/// Default BFS depth cap.
 pub const DEFAULT_DEPTH: usize = 2;
 
-/// Reverse-ref walk depth/cap for the KYWD/AVIF "who gates on this?" digest
-/// (mirrors the TS original's `client.refs(formId, { depth: 1, type, paths:
-/// true })`). [`render::CONSUMER_ROWS_SHOWN`] (a *display* cap) further
+/// Reverse-ref walk depth/cap for the KYWD/AVIF "who gates on this?" digest.
+/// [`render::CONSUMER_ROWS_SHOWN`] (a *display* cap) further
 /// trims the fetched rows at render time; [`ConsumerGroup::total`] preserves
 /// the true count either way.
 const CONSUMER_REF_DEPTH: usize = 1;
 const CONSUMER_REF_LIMIT: usize = 10;
 
 /// Record types whose direct references to a target count as a "player-facing
-/// signal" in [`build_refs_digest`] (mirrors the TS original's
-/// `OBTAINABLE_TYPES`).
+/// signal" in [`build_refs_digest`].
 const OBTAINABLE_TYPES: [&str; 7] = ["COBJ", "GMRW", "LGDI", "QUST", "CONT", "MISC", "FLST"];
 
 /// Model/render/sound noise that never matters for damage or obtainability —
-/// dropped from the generic fallback digest (mirrors the TS original's
-/// `GENERIC_NOISE_KEYS`).
+/// dropped from the generic fallback digest.
 const GENERIC_NOISE_KEYS: &[&str] = &[
     "Object Bounds",
     "Model",
@@ -156,7 +151,7 @@ pub struct WalkOptions {
     /// `digest_omod_mechanisms`). Shares `esm::chase::DEFAULT_REF_LIMIT`
     /// rather than a duplicated constant. Unrelated to
     /// [`CONSUMER_REF_LIMIT`], which bounds a *directly*-walked KYWD/AVIF
-    /// root's own consumer digest and is deliberately left as-is.
+    /// root's own consumer digest and is left as-is.
     pub ref_limit: usize,
     /// Player level assumed by an LVLI root's drop-odds digest (see
     /// [`crate::lvli::DropOptions::level`]) — Minimum Level filtering and
@@ -416,7 +411,7 @@ pub enum PerkEffectRow {
         conditions: Vec<Value>,
     },
     /// An effect type neither `Ability` nor `Entry Point` names — rendered
-    /// bare (mirrors the TS original's catch-all).
+    /// bare.
     Other { index: usize, type_name: String },
 }
 
@@ -439,8 +434,7 @@ pub struct PerkDigest {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 pub struct WeapDigest {
-    /// `WeaponType*`/`HasLegendary*`/`ma_*`-prefixed keywords only (mirrors
-    /// the TS original's damage-relevant keyword filter).
+    /// `WeaponType*`/`HasLegendary*`/`ma_*`-prefixed keywords only.
     pub relevant_keywords: Vec<String>,
     #[cfg_attr(test, ts(type = "unknown"))]
     pub ap_cost: Option<Value>,
@@ -618,8 +612,7 @@ fn resolve_condition_row(by_sel: &HashMap<String, BulkRecordEntry>, row: &Value)
 // ─── conditions ─────────────────────────────────────────────────────────────
 
 /// Pull the flat condition rows out of a SPEL/ENCH/ALCH/MGEF-style
-/// `Conditions` node (mirrors the TS original's `flattenConditionRows`). LVLI
-/// entries decode `Conditions` into this identical shape (see
+/// `Conditions` node. LVLI entries decode `Conditions` into this identical shape (see
 /// `crate::lvli`), so this is shared rather than duplicated.
 pub(crate) fn flatten_condition_rows(node: &Value) -> Vec<Value> {
     let mut out = Vec::new();
@@ -636,7 +629,7 @@ pub(crate) fn flatten_condition_rows(node: &Value) -> Vec<Value> {
 
 /// Flatten a PERK "Perk Conditions" node (tabbed) into raw condition rows.
 /// Tab-index 2 conditions run on the target, so their `Run On` is forced to
-/// `"Target"` (mirrors the TS original's `flattenPerkConditionRows`).
+/// `"Target"`.
 fn flatten_perk_condition_rows(node: &Value) -> Vec<Value> {
     let mut out = Vec::new();
     let Some(tabs) = node.as_array() else {
@@ -707,8 +700,7 @@ fn digest_kywd(f: &mut impl ChaseFetcher, formid: FormId) -> anyhow::Result<Kywd
 
 /// KYWD/AVIF records carry no behavior themselves — they're read by whichever
 /// SPEL/PERK gates an effect on them. Reverse-`refs --type ... --paths` finds
-/// those consumers and the exact field path each one gates through (mirrors
-/// the TS original's `digestKeywordOrAv`).
+/// those consumers and the exact field path each one gates through.
 fn digest_keyword_or_av(
     f: &mut impl ChaseFetcher,
     formid: FormId,
@@ -798,8 +790,7 @@ fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
 /// Effect` -> MGEF, a flat `Effect Item Data.Magnitude`/`.Duration`, an
 /// optional sibling GLOB `Magnitude`/`Duration`, an optional `Curve Table` +
 /// `Actor Value` input axis, `Conditions`, and the MGEF's own one-hop
-/// `Perk to Apply`/`Equip Ability` (mirrors the TS original's
-/// `digestMagicItem`).
+/// `Perk to Apply`/`Equip Ability`.
 fn digest_magic_item(
     f: &mut impl ChaseFetcher,
     fields: &Value,
@@ -917,10 +908,8 @@ fn digest_magic_item(
 
 /// PERK: description; ranks/playable/next; per-effect Ability (enqueue) or
 /// Entry Point (fn/value/AV + perk conditions), or `NO effects` when the
-/// bonus is engine/script-side (mirrors the TS original's `digestPerk`). The
-/// TS original's `repairMisattributedPerkEntryFields` shim is deliberately
-/// NOT ported — the decode bug it worked around is already fixed upstream
-/// (commit 4031d96) and the shim itself is a verified no-op there.
+/// bonus is engine/script-side. Perk-entry field misattribution is already
+/// fixed upstream in the decoder, so no repair shim is needed here.
 fn digest_perk(
     f: &mut impl ChaseFetcher,
     fields: &Value,
@@ -1075,12 +1064,11 @@ fn has_raw_marker(v: &Value) -> bool {
 
 /// Trimmed field tree for any record type without a dedicated digest: drop
 /// null/empty values, the `Unknown`/`_record_type`/`Editor ID` keys, `_raw`-
-/// bearing objects, and [`GENERIC_NOISE_KEYS`] (mirrors the TS original's
-/// `digestGeneric`). Every FormID reference is already annotated by the
-/// Stub-resolved fetch (rather than the TS original's own per-reference
-/// `ref()` round-trip, bounded to the first ~40 to cap round-trips) — the
-/// trimmed tree is itself the computed [`GenericDigest`] payload; `render`
-/// owns turning it into a capped pretty-printed dump.
+/// bearing objects, and [`GENERIC_NOISE_KEYS`]. Every FormID reference is
+/// already annotated by the Stub-resolved fetch — no per-reference
+/// round-trip needed — so the trimmed tree is itself the computed
+/// [`GenericDigest`] payload; `render` owns turning it into a capped
+/// pretty-printed dump.
 fn trim_generic_fields(fields: &Value) -> Value {
     if is_ref_stub(fields) {
         return fields.clone();
@@ -1151,12 +1139,11 @@ fn digest_omod_mechanisms(
 /// Scan classified [`Hop`]s for the forward-fetched targets worth visiting as
 /// their own BFS node: a `DirectProperty` hop targeting a PROJ (a directly
 /// attached projectile override) or an ENCH (so an OMOD → ENCH → MGEF →
-/// granted-perk chain still lands in one `walk` call — this used to be a
-/// separate re-scan (`digest_omod_ench_follow`), duplicating what the
-/// classifier already knows via `chase::FORWARD_FETCH_TYPES`; deleted along
-/// with the two suppression guards it forced in `render`. Include-sourced
-/// hops (`source_omod.is_some()`) are skipped — walk enqueues includes as
-/// their own BFS nodes separately (see [`digest_omod_includes`]).
+/// granted-perk chain lands in one `walk` call, reusing what the classifier
+/// already knows via `chase::FORWARD_FETCH_TYPES` rather than a separate
+/// re-scan). Include-sourced hops (`source_omod.is_some()`) are skipped —
+/// walk enqueues includes as their own BFS nodes separately (see
+/// [`digest_omod_includes`]).
 fn omod_hops_enqueue(hops: &[Hop], enqueue: &mut Vec<EnqueueTarget>) {
     for hop in hops {
         if hop.source_omod.is_some() {
@@ -1293,7 +1280,7 @@ fn digest_lvli(
 
 /// Group an unfiltered reverse-`refs` row list by `record_type`, sorted by
 /// count descending, each with up to 5 sample EditorIDs (⚠NONPLAYABLE-flagged)
-/// and an obtainability tag (mirrors the TS original's `digestRefs`). Pure —
+/// and an obtainability tag. Pure —
 /// takes the raw rows from whatever unfiltered `Op::ReferencedBy` call the
 /// caller already made (see module docs); no fetcher involved, so this is
 /// directly unit-testable.

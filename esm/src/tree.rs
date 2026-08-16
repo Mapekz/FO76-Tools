@@ -167,14 +167,14 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<TreeIndex> {
 }
 
 /// Incremental builder driving [`TreeIndex`] construction from a stream of
-/// [`WalkEvent`]s, factored out of what used to be [`TreeIndex::build_with_tick`]'s
-/// closure body so `index.rs`'s `build_tree_and_forms` can feed it events
-/// from a single shared `walk_structure` pass — alongside its own
+/// [`WalkEvent`]s, factored out of [`TreeIndex::build_with_tick`]'s closure
+/// body so `index.rs`'s `build_tree_and_forms` can feed it events from a
+/// single shared `walk_structure` pass — alongside its own
 /// `RecordMeta`/forms-table bookkeeping — instead of making a second,
-/// dedicated walk just for the tree (see the E1 architecture-deepening
-/// note). [`TreeIndex::build_with_tick`] itself still drives one of these
-/// internally, so it and [`TreeIndex::build`] keep working unchanged for
-/// their one remaining caller (this module's own test).
+/// dedicated walk just for the tree. [`TreeIndex::build_with_tick`] itself
+/// still drives one of these internally, so it and [`TreeIndex::build`] keep
+/// working unchanged for their one remaining caller (this module's own
+/// test).
 #[derive(Default)]
 pub(crate) struct TreeBuilder {
     tree: TreeIndex,
@@ -733,7 +733,7 @@ mod tests {
                 }
             }
         }
-        // Pagination clamps rather than panicking, same as the pre-rkyv version.
+        // Pagination clamps rather than panicking.
         assert_eq!(view.children(0, 100, 5).len(), 0);
 
         let _ = std::fs::remove_file(&esm_path);
@@ -745,11 +745,10 @@ mod tests {
     /// Regression test: a `TreeView` over an absent section (no `tree` file
     /// written — `Index::empty`'s state, or a cache that hasn't been built
     /// yet) must answer every method with its empty-equivalent rather than
-    /// panicking. `group_node` is deliberately
-    /// not exercised here — see its doc comment: it is documented as
-    /// unreachable in this state via any of the other four methods' own
-    /// contracts, so it is not part of the "returns empty" surface being
-    /// guarded here.
+    /// panicking. `group_node` is not exercised here — see its doc comment:
+    /// it is documented as unreachable in this state via any of the other
+    /// four methods' own contracts, so it is not part of the "returns
+    /// empty" surface being guarded here.
     #[test]
     fn tree_view_absent_state_never_panics() {
         let view = TreeView::new(None);

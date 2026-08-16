@@ -58,19 +58,16 @@
 //! MGEF reached via a `Base Effect` reference sometimes itself carries a
 //! `"Perk to Apply"` (→ PERK) or `"Equip Ability"` (→ SPEL) field — the real
 //! mechanism behind several "tech-migrated" legendary effects (see the KB's
-//! "Severing's confirmed chase": `ENCH -> MGEF (Perk to Apply) -> PERK`,
-//! previously a manually-chased worked example). `mgef_pass_through` follows
-//! this one bounded extra hop and is shared by both walks — OMOD's
-//! forward-fetched ENCH/SPEL targets, and `effect_chase`'s own Base-Effect
-//! entries and forward-fetched PERK targets.
+//! "Severing's confirmed chase": `ENCH -> MGEF (Perk to Apply) -> PERK`).
+//! `mgef_pass_through` follows this one bounded extra hop and is shared by
+//! both walks — OMOD's forward-fetched ENCH/SPEL targets, and
+//! `effect_chase`'s own Base-Effect entries and forward-fetched PERK
+//! targets.
 //!
-//! This is a (no-longer-exactly-1:1, since generalized past the original
-//! scope) port of the retired Python prototype (`chase.py`), still sharing its
-//! output JSON shape for OMOD roots so the /patch-notes deep-writer agent
-//! keeps working unchanged. Composes the same operations (`Op::RecordBulk`,
-//! `Op::ReferencedBy`) in-process through the [`ChaseFetcher`] seam — no new
-//! `Op` variant, no daemon round-trip required by the trait itself (the CLI's
-//! concrete fetcher still goes through `Backend::run`, which may hit the warm
+//! Composes the same operations (`Op::RecordBulk`, `Op::ReferencedBy`)
+//! in-process through the [`ChaseFetcher`] seam — no new `Op` variant, no
+//! daemon round-trip required by the trait itself (the CLI's concrete
+//! fetcher still goes through `Backend::run`, which may hit the warm
 //! daemon, but the pure logic here doesn't know or care).
 
 use crate::ipc::RecordSel;
@@ -256,9 +253,9 @@ pub struct Hop {
     /// reverse chase, exactly like a `KeywordHook`) from a plain direct
     /// SPEL/ENCH/PROJ attachment (forward-fetched) — both share
     /// `HopKind::DirectProperty`, so `kind` alone can't tell them apart; see
-    /// `CONTEXT.md`'s **Mechanism** entry. Previously discarded after
-    /// [`classify_property_row`] computed it internally (as `FetchDest`),
-    /// forcing `esm::walk`'s renderer to re-derive the same fact by
+    /// `CONTEXT.md`'s **Mechanism** entry. Kept here (rather than only
+    /// inside [`classify_property_row`]'s internal `FetchDest`) so
+    /// `esm::walk`'s renderer doesn't have to re-derive the same fact by
     /// string-matching `target.record_type == "AVIF"`. Additive to the
     /// frozen chase JSON shape (ADR 0001's addendum).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -844,10 +841,10 @@ fn classify_property_row(
         hop.kind = HopKind::PerkGrant;
         Some(FetchDest::Forward(target))
     } else if FORWARD_FETCH_TYPES.contains(&rt.as_str()) || rt == "PROJ" {
-        // PROJ joins the forward-fetch path alongside ENCH/SPEL, but is
-        // deliberately kept out of FORWARD_FETCH_TYPES — that constant's
-        // evidence builder assumes Effects/Description, which a PROJ lacks
-        // (see projectile_evidence).
+        // PROJ joins the forward-fetch path alongside ENCH/SPEL, but stays
+        // out of FORWARD_FETCH_TYPES — that constant's evidence builder
+        // assumes Effects/Description, which a PROJ lacks (see
+        // projectile_evidence).
         hop.kind = HopKind::DirectProperty;
         Some(FetchDest::Forward(target))
     } else if rt == "AVIF" {

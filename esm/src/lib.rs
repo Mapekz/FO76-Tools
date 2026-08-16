@@ -626,10 +626,10 @@ impl OmodPropertySpec {
 
 /// `true` if `name` satisfies `pattern` per [`EntryPointSpec::Name`]'s
 /// matching rule: exact case-insensitive unless `pattern` contains `*`.
-/// Deliberately not [`crate::wildcard::wildcard_match`] alone — that
-/// matcher treats a `*`-free pattern as a *substring* search, which would
-/// make `--ep 'Mod Weapon Attack Damage'` also hit unrelated entry points
-/// like `Mod Weapon DMG Bonus Mult`-adjacent names sharing a prefix.
+/// Not [`crate::wildcard::wildcard_match`] alone — that matcher treats a
+/// `*`-free pattern as a *substring* search, which would make `--ep 'Mod
+/// Weapon Attack Damage'` also hit unrelated entry points like `Mod Weapon
+/// DMG Bonus Mult`-adjacent names sharing a prefix.
 fn entry_point_name_matches(pattern: &str, name: &str) -> bool {
     if pattern.contains('*') {
         wildcard_match(pattern, name)
@@ -641,8 +641,8 @@ fn entry_point_name_matches(pattern: &str, name: &str) -> bool {
 /// `true` if `name` satisfies `pattern` per [`OmodPropertySpec`]'s matching
 /// rule: exact case- and whitespace-insensitive unless `pattern` contains
 /// `*`, in which case the same glob rule applies to whitespace-stripped forms.
-/// Deliberately not [`crate::wildcard::wildcard_match`] alone — that matcher
-/// treats a `*`-free pattern as a substring search, which is wrong here too.
+/// Not [`crate::wildcard::wildcard_match`] alone — that matcher treats a
+/// `*`-free pattern as a substring search, which is wrong here too.
 fn omod_property_name_matches(pattern: &str, name: &str) -> bool {
     let pattern: String = pattern.chars().filter(|c| !c.is_whitespace()).collect();
     let name: String = name.chars().filter(|c| !c.is_whitespace()).collect();
@@ -800,22 +800,15 @@ impl Database {
 
     // ── Lazy index builders ─────────────────────────────────────────────
     //
-    // These three used to live on `Index` itself (`index.rs`), each taking
-    // several of `Database`'s OTHER fields back in as parameters (`esm`,
-    // `schema`, `is_localized`, `localization`, `curves` for
-    // `ensure_xref_index` alone) because building a section needs the mmap'd
-    // ESM (plus the schema/localization/curves for `xref`'s full decode)
-    // that only `Database` holds. That parameter-threading was also why
-    // `Registry::warm_indexes` used to destructure `Database` field-by-field
-    // to satisfy the borrow checker — a single `db.ensure_xref_index()` call
-    // has no such conflict to work around. `Index` keeps the data (the five
-    // `Section`s) and the pure reads over it; `Database` owns building it,
-    // since only `Database` has everything a build needs. The three
-    // functions actually reachable from index.rs are `build_edid_section`/
-    // `build_search_section`/`build_xref_section` — this crate-internal
-    // data/orchestration split keeps each section's construction logic
-    // colocated with its type in `index.rs`, while the shared
-    // acquire/recheck/write/publish protocol lives once, here.
+    // `Index` keeps the data (the five `Section`s) and the pure reads over
+    // it; `Database` owns building it, since building a section needs the
+    // mmap'd ESM (plus the schema/localization/curves for `xref`'s full
+    // decode) that only `Database` holds. The three functions actually
+    // reachable from index.rs are `build_edid_section`/`build_search_section`/
+    // `build_xref_section` — this crate-internal data/orchestration split
+    // keeps each section's construction logic colocated with its type in
+    // `index.rs`, while the shared acquire/recheck/write/publish protocol
+    // lives once, here.
 
     /// Build the lazy EditorID index on first call, writing it to its own
     /// `edid` section so a later call — in this process (the `is_mapped()`
@@ -1976,8 +1969,8 @@ pub fn parse_form_id_input(s: &str) -> anyhow::Result<FormId> {
 ///
 /// Used to auto-route ambiguous CLI/server input to the right lookup. Anything
 /// with non-hex characters, or longer than 8 hex digits, is treated as an
-/// EditorID. Note that short all-hex EditorIDs (e.g. `cafe`) are read as
-/// FormIDs; an explicit `--edid` flag disambiguates those cases.
+/// EditorID. Short all-hex EditorIDs (e.g. `cafe`) are read as FormIDs; an
+/// explicit `--edid` flag disambiguates those cases.
 pub fn looks_like_formid(s: &str) -> bool {
     let s = s.trim();
     let body = s

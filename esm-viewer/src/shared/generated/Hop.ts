@@ -18,9 +18,9 @@ export type Hop = { property_index: number, property: unknown, function: unknown
  * reverse chase, exactly like a `KeywordHook`) from a plain direct
  * SPEL/ENCH/PROJ attachment (forward-fetched) — both share
  * `HopKind::DirectProperty`, so `kind` alone can't tell them apart; see
- * `CONTEXT.md`'s **Mechanism** entry. Previously discarded after
- * [`classify_property_row`] computed it internally (as `FetchDest`),
- * forcing `esm::walk`'s renderer to re-derive the same fact by
+ * `CONTEXT.md`'s **Mechanism** entry. Kept here (rather than only
+ * inside [`classify_property_row`]'s internal `FetchDest`) so
+ * `esm::walk`'s renderer doesn't have to re-derive the same fact by
  * string-matching `target.record_type == "AVIF"`. Additive to the
  * frozen chase JSON shape (ADR 0001's addendum).
  */

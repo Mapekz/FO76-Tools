@@ -849,11 +849,11 @@ fn strip_version_gated_transitions(
 //
 // `strip_restamp_appearances` is a second, independent pass (schema-free —
 // unlike `strip_version_gated_transitions` it needs no `&Schema`, only the
-// record signature for rule (c)'s table lookup) that catches these. It is a
-// deliberately different traversal shape (arbitrary-depth recursion into
-// `_array_diff` elements and plain nested structs, with empty-parent
-// pruning) rather than an extension of `strip_version_gated_transitions`'s
-// one-level `retain` loop, so the two stay independently testable.
+// record signature for rule (c)'s table lookup) that catches these. It uses
+// a different traversal shape (arbitrary-depth recursion into `_array_diff`
+// elements and plain nested structs, with empty-parent pruning) rather than
+// an extension of `strip_version_gated_transitions`'s one-level `retain`
+// loop, so the two stay independently testable.
 
 /// `(record signature, top-level member name)` pairs whose `null -> X`
 /// appearance is known to be a subrecord the game's serializer now writes
@@ -1463,11 +1463,11 @@ pub fn json_diff(a: &Value, b: &Value) -> Value {
 //
 // Decoded rarray elements are almost always either uniform primitives (a
 // FormID list) or single-member "rstruct" wrappers (`{"Leveled List Entry":
-// {..}}`). Diffing them wholesale (the old opaque behavior) hides which
-// entries actually changed inside a 50-element leveled list. The strategy
-// below tries, in order: a schema-aware key (`element_key_spec`), positional
-// pairing (equal length, no key), or a primitive multiset diff — falling
-// back to the legacy opaque leaf only when none of those apply.
+// {..}}`). Diffing them wholesale hides which entries actually changed
+// inside a 50-element leveled list. The strategy below tries, in order: a
+// schema-aware key (`element_key_spec`), positional pairing (equal length,
+// no key), or a primitive multiset diff — falling back to the opaque leaf
+// only when none of those apply.
 
 /// A resolved per-element keying strategy for [`array_diff`]: each inner
 /// list gives the alternative field-name paths (dot-separated for one level
@@ -1500,20 +1500,12 @@ fn is_empty_diff(v: &Value) -> bool {
 /// tier-assessor summary) needs to describe what actually changed. See
 /// `docs/adr/0005-element-identity-owned-by-rust.md`.
 ///
-/// Before this strategy existed, this fallback returned a bare `{"from": a,
-/// "to": b}` leaf indistinguishable from an ordinary scalar leaf whose
-/// values happened to be lists — every downstream `_array_diff` reader
-/// skipped it, silently discarding the element list (issue: 54 of 1579
-/// array changes in a real run rendered as a content-free header, 26 of
-/// them `Conditions[]`).
-///
-/// Before LCS trimming, `removed`/`added` held the two lists in full even
-/// when nearly identical — measured on a real run, 87% of reported elements
-/// were byte-identical on both sides (one location's reference list reported
-/// −149/+145 where 145 pairs were the same reference, the real change 4
-/// removals). `unchanged_count` reports how many elements the trim dropped
-/// as identical, so a reader isn't left assuming the whole array turned
-/// over.
+/// `removed`/`added` hold only the LCS-trimmed difference, not the full two
+/// lists — reporting every element on both sides would bury a small real
+/// change (e.g. a handful of removed entries deep in a `Conditions[]`
+/// cascade) under a wall of byte-identical rows. `unchanged_count` reports
+/// how many elements the trim dropped as identical, so a reader isn't left
+/// assuming the whole array turned over.
 fn unkeyed_array_diff(a: &[Value], b: &[Value]) -> Value {
     let mut out = serde_json::Map::new();
     out.insert("strategy".to_string(), Value::String("unkeyed".to_string()));
@@ -1539,7 +1531,7 @@ fn unkeyed_array_diff(a: &[Value], b: &[Value]) -> Value {
 /// `removed`/`added` are exactly the elements *not* part of the alignment
 /// and `unchanged_count` is the alignment's length.
 ///
-/// Deliberately order-preserving rather than a multiset intersection — a
+/// Order-preserving rather than a multiset intersection — a
 /// multiset diff would report a pure reorder (e.g. two conditions in a
 /// `GetRandomPercent` cascade swapping position, where order changes
 /// behavior) as no change at all, which is worse than today's whole-list

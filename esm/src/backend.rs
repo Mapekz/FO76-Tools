@@ -32,13 +32,12 @@ pub const OP_TIMEOUT_DEFAULT_SECS: u64 = 300;
 ///
 /// Generous because the *first* `refs`/`list`/`search` against a cold daemon triggers a
 /// one-time whole-ESM index build (xref, edid, search) followed by writing that index's
-/// own `xref`/`edid`/`search` rkyv section — easily tens of seconds, and on the largest FO76
-/// ESM snapshots comfortably past this budget's old single-attempt meaning (the xref build
-/// in particular decodes every record in the file).
+/// own `xref`/`edid`/`search` rkyv section — easily tens of seconds on the largest FO76 ESM
+/// snapshots (the xref build in particular decodes every record in the file).
 ///
-/// No longer a single HTTP call's deadline — see [`post_op`]. Each individual attempt is
-/// bounded by [`op_attempt_timeout`] instead; an attempt that times out is retried, not
-/// surfaced as an error, for as long as `crate::progress::read` shows a build still making
+/// Not a single HTTP call's deadline — see [`post_op`]. Each individual attempt is bounded
+/// by [`op_attempt_timeout`] instead; an attempt that times out is retried, not surfaced as
+/// an error, for as long as `crate::progress::read` shows a build still making
 /// (non-stalled) progress on the requested ESM. This constant is the ceiling on how long
 /// that retrying continues before giving up with a clear "still building" error rather than
 /// ureq's opaque timeout. Override with `ESM_OP_TIMEOUT_SECS` (`0` = no ceiling — keep
@@ -74,9 +73,8 @@ fn op_attempt_timeout() -> Option<Duration> {
 /// Canonicalize `path` the same way [`crate::registry::Registry::get_or_open_with_key`]
 /// does before it keys `esm_cache/`'s sidecar files off it (via
 /// [`crate::discover::resolve_esm_path`]), falling back to the raw path if
-/// resolution fails — mirrors `cli.rs`'s `progress_watch_path`, which this
-/// function's doc comment used to (incorrectly) claim as its only sibling.
-/// Every `progress::read`/`progress::BuildLease` consumer MUST key off this
+/// resolution fails — mirrors `cli.rs`'s `progress_watch_path`. Every
+/// `progress::read`/`progress::BuildLease` consumer MUST key off this
 /// canonical form, not a raw, possibly-relative-or-folder input — see
 /// `discover::resolve_esm_path`'s doc comment.
 fn watch_path(path: &Path) -> PathBuf {
@@ -215,14 +213,11 @@ pub fn daemon_fresh(info: &DaemonInfo) -> bool {
 /// Trait implemented by local and remote query backends. `run` is the whole
 /// interface — callers build an [`Op`] and read the typed result back out of
 /// the returned [`Value`] with `serde_json::from_value`, the same idiom
-/// `cli.rs` already uses at every one of its call sites. (Previously this
-/// trait also carried five convenience methods mirroring individual `Op`
-/// variants; they were a `server.rs`-private helper set on a public trait —
-/// one, `diff`, had zero callers, and `referenced_by` silently hardcoded
-/// `sort: RefSort::Formid`, so MCP's `esm_refs` tool could never request
-/// depth-ordering. Deleted rather than fixed: a narrower mirror of `Op` will
-/// always eventually drop the next field `Op` gains the way it dropped
-/// `sort`.)
+/// `cli.rs` already uses at every one of its call sites. No convenience
+/// methods mirror individual `Op` variants: a narrower mirror of `Op`
+/// always eventually drops a field `Op` gains — e.g. `referenced_by` would
+/// silently hardcode `sort: RefSort::Formid`, leaving MCP's `esm_refs` tool
+/// unable to request depth-ordering.
 pub trait QueryBackend {
     fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value>;
 }
@@ -456,7 +451,7 @@ impl RemoteBackend {
 /// `serde_json::from_reader`, so lifting the ceiling adds no buffering step — it only
 /// stops refusing large-but-legitimate results.
 ///
-/// The response body deliberately stays one JSON document rather than moving to a
+/// The response body stays one JSON document rather than moving to a
 /// streamed/NDJSON shape: `dispatch_op` (`ipc.rs`) materializes a `serde_json::Value`
 /// for every op, and axum's `Json` responder serializes it in one `to_vec` — the daemon
 /// already holds two full in-memory copies before a byte goes out, so streaming the
@@ -934,26 +929,20 @@ mod tests {
         }
     }
 
-    /// Regression test for the `backend.rs:67`-shaped canonicalization bug
-    /// Stage C fixes: `building_progress` must find a live build keyed by
+    /// Regression test: `building_progress` must find a live build keyed by
     /// its canonical `.esm` path even when the request carries a raw,
     /// uncanonicalized **folder** input — the documented-supported
-    /// `--esm <folder>` shape. Before the fix, `building_progress` called
-    /// `crate::progress::read(&req.esm)` directly on the raw folder path;
-    /// since `BuildLease`/`progress::read` are always keyed off
-    /// `discover::resolve_esm_path`'s canonicalized `.esm` file path (see
-    /// that function's doc comment), the daemon's real build — started
-    /// against the canonical path — would be invisible to a client polling
-    /// the raw folder, and `RemoteBackend::post_op`'s retry loop would bail
-    /// with an opaque "timed out waiting for daemon response" instead of
-    /// showing progress and eventually succeeding.
+    /// `--esm <folder>` shape. `BuildLease`/`progress::read` are always
+    /// keyed off `discover::resolve_esm_path`'s canonicalized `.esm` file
+    /// path (see that function's doc comment), so a client polling the raw
+    /// folder directly would miss the daemon's real build, and
+    /// `RemoteBackend::post_op`'s retry loop would bail with an opaque
+    /// "timed out waiting for daemon response" instead of showing progress.
     ///
-    /// This test proves the fix is real, not a no-op: it asserts BOTH that
-    /// `building_progress` (which now canonicalizes via `watch_path`) finds
-    /// the lease, AND that `crate::progress::read` on the raw, uncanonicalized
-    /// folder path directly does NOT — the exact call the old implementation
-    /// made — demonstrating this specific input would have failed before
-    /// this change.
+    /// Asserts both directions: `building_progress` (via `watch_path`)
+    /// finds the lease, and `crate::progress::read` on the raw,
+    /// uncanonicalized folder path directly does NOT — proving the
+    /// canonicalization is load-bearing, not incidental.
     #[test]
     fn building_progress_finds_a_lease_keyed_by_the_canonical_path_from_a_raw_folder_input() {
         let dir = std::env::temp_dir().join(format!(

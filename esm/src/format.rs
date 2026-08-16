@@ -47,7 +47,7 @@ impl std::fmt::Display for Signature {
 /// cross a JSON API boundary as the plain 4-character ASCII string
 /// (`"WEAP"`) rather than `Signature`'s default derive.
 ///
-/// `Signature`'s own `#[derive(...)]` deliberately does not include
+/// `Signature`'s own `#[derive(...)]` does not include
 /// `Serialize`/`Deserialize` — a derive would serialize the raw `[u8; 4]`
 /// byte array (`[87,69,65,80]`), not the ASCII string. Apply this module
 /// instead, per-field, via `#[serde(with = "crate::format::serde_str")]`,

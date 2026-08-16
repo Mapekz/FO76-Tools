@@ -307,10 +307,10 @@ impl BuildLease {
     /// will run).
     ///
     /// The lock is per-ESM, not per-section: a builder mid-`xref` blocks a
-    /// second process that only wants `edid`. That's deliberate, not an
-    /// oversight — the two would otherwise fight over the same mmap'd ESM
-    /// and CPU for no real concurrency benefit, and this lock's job is
-    /// dedup, not fine-grained parallelism.
+    /// second process that only wants `edid`. This lock's job is dedup, not
+    /// fine-grained parallelism — per-section locking would let the two
+    /// fight over the same mmap'd ESM and CPU for no real concurrency
+    /// benefit.
     ///
     /// Low-level primitive — **every caller MUST re-check whether the
     /// section it wanted now exists immediately after this returns**,

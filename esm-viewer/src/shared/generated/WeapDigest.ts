@@ -2,7 +2,6 @@
 
 export type WeapDigest = { 
 /**
- * `WeaponType*`/`HasLegendary*`/`ma_*`-prefixed keywords only (mirrors
- * the TS original's damage-relevant keyword filter).
+ * `WeaponType*`/`HasLegendary*`/`ma_*`-prefixed keywords only.
  */
 relevant_keywords: Array<string>, ap_cost: unknown, speed: unknown, reload_speed: unknown, eligible_levels: unknown, attach_slots: number, has_object_template: boolean, };
