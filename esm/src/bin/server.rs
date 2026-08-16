@@ -14,8 +14,8 @@ use axum::{
 use clap::Parser;
 use esm::ResolveDepth;
 use esm::backend::{
-    DaemonInfo, QueryBackend, RemoteBackend, SharedRegistry, exe_sig, generate_token,
-    remove_daemon_info, shared_registry, write_daemon_info,
+    DaemonInfo, RemoteBackend, SharedRegistry, exe_sig, generate_token, remove_daemon_info,
+    shared_registry, write_daemon_info,
 };
 use esm::ipc::{Op, RecordSel, Request, Response as OpResponse, dispatch, dispatch_op};
 use std::net::SocketAddr;
@@ -360,7 +360,6 @@ consumer repo's .claude/skills/esm-cli/.
 ";
 
 async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
-    use esm::backend::QueryBackend;
     use esm::ipc::Op;
     use std::io::{BufRead, Write};
 

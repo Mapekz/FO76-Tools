@@ -45,7 +45,7 @@ doesn't help.
 
 CLI consumers (`src/bin/cli/progress_ui.rs`) build on `progress::read` alone:
 
-- Every `backend.run()` call (wrapped once, in `impl QueryBackend for Backend`, not scattered
+- Every `backend.run()` call (wrapped once, in `cli.rs`'s `Backend::run`, not scattered
   across each `cmd_*` function) spawns a watcher thread that renders the heartbeat to stderr — a
   `\r`-updated bar on a TTY, one throttled plain line otherwise — after a 500 ms grace period so a
   warm call never flickers anything. `stop()` blocks until any rendered line is erased,

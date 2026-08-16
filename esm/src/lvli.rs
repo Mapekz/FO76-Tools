@@ -286,10 +286,12 @@ fn resolve_min_level(
             .and_then(Value::as_f64)
             .map(|v| v as f32);
     }
-    if entry.get("Minimim Level Curve Table").is_some_and(|v| {
-        v.get("curve")
-            .is_some_and(|c| c.as_array().is_some_and(|a| !a.is_empty()))
-    }) {
+    let curve_table_nonempty = entry
+        .get("Minimim Level Curve Table")
+        .and_then(|v| v.get("curve"))
+        .and_then(Value::as_array)
+        .is_some_and(|a| !a.is_empty());
+    if curve_table_nonempty {
         notes.push(DropNote::Unresolved {
             reason: "Minimum Level Curve Table present — its input axis isn't confirmed to be \
                      player level (looks tier-indexed on spot-checked data), so it's not evaluated"

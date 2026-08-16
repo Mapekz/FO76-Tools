@@ -285,7 +285,7 @@ fn dispatch_diff_same_path_does_not_deadlock() {
 
 #[test]
 fn local_backend_parity_with_dispatch() {
-    use esm::backend::{LocalBackend, QueryBackend};
+    use esm::backend::LocalBackend;
 
     let (path, reg) = open_test_db();
     let mut local = LocalBackend::new();

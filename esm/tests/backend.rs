@@ -10,7 +10,7 @@
 //! cap) and its chunking complement in `RemoteBackend::run`.
 
 use esm::ResolveDepth;
-use esm::backend::{QueryBackend, RemoteBackend};
+use esm::backend::RemoteBackend;
 use esm::formid::FormId;
 use esm::ipc::{Op, RecordSel};
 use std::io::{BufRead, BufReader, Read, Write};

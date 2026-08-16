@@ -210,18 +210,6 @@ pub fn daemon_fresh(info: &DaemonInfo) -> bool {
         && dur.subsec_nanos() == info.exe_mtime_nanos
 }
 
-/// Trait implemented by local and remote query backends. `run` is the whole
-/// interface — callers build an [`Op`] and read the typed result back out of
-/// the returned [`Value`] with `serde_json::from_value`, the same idiom
-/// `cli.rs` already uses at every one of its call sites. No convenience
-/// methods mirror individual `Op` variants: a narrower mirror of `Op`
-/// always eventually drops a field `Op` gains — e.g. `referenced_by` would
-/// silently hardcode `sort: RefSort::Formid`, leaving MCP's `esm_refs` tool
-/// unable to request depth-ordering.
-pub trait QueryBackend {
-    fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value>;
-}
-
 /// In-process backend backed by a [`Registry`].
 pub struct LocalBackend {
     registry: Registry,
@@ -233,16 +221,15 @@ impl LocalBackend {
             registry: Registry::new(),
         }
     }
-}
 
-impl Default for LocalBackend {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl QueryBackend for LocalBackend {
-    fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
+    /// Run `op` against `esm`. Callers build an [`Op`] and read the typed
+    /// result back out of the returned [`Value`] with `serde_json::from_value`,
+    /// the same idiom `cli.rs` already uses at every one of its call sites. No
+    /// convenience methods mirror individual `Op` variants: a narrower mirror
+    /// of `Op` always eventually drops a field `Op` gains — e.g.
+    /// `referenced_by` would silently hardcode `sort: RefSort::Formid`,
+    /// leaving MCP's `esm_refs` tool unable to request depth-ordering.
+    pub fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
         let req = Request {
             esm: esm.to_path_buf(),
             op,
@@ -251,6 +238,12 @@ impl QueryBackend for LocalBackend {
             Response::Ok { data } => Ok(data),
             Response::Err { error } => bail!("{}", error),
         }
+    }
+}
+
+impl Default for LocalBackend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -463,8 +456,10 @@ fn read_json_unlimited<T: serde::de::DeserializeOwned>(body: &mut ureq::Body) ->
     Ok(body.with_config().read_json()?)
 }
 
-impl QueryBackend for RemoteBackend {
-    fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
+impl RemoteBackend {
+    /// Run `op` against `esm`. See [`LocalBackend::run`] for the shared
+    /// no-convenience-methods contract every `Op` caller relies on.
+    pub fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
         if let Op::RecordBulk { sels, depth } = &op
             && self.bulk_chunk > 0
             && sels.len() > self.bulk_chunk
@@ -478,6 +473,28 @@ impl QueryBackend for RemoteBackend {
         match self.post_op(&req)? {
             Response::Ok { data } => Ok(data),
             Response::Err { error } => bail!("{}", error),
+        }
+    }
+}
+
+/// The whole local-vs-remote query backend surface: a closed choice between
+/// [`LocalBackend`] (in-process, cold `Database::open`) and [`RemoteBackend`]
+/// (HTTP to a resident daemon), never a third kind. A plain enum match beats
+/// a one-method trait here — no trait object ever stores a `QueryBackend`,
+/// no generic bound is written against it, and the only "wrapper" impl
+/// (`cli.rs`'s progress-UI watcher) already knew at construction time which
+/// variant it held. See [`LocalBackend::run`]'s doc comment for the shared
+/// no-convenience-methods contract both variants honor.
+pub enum Backend {
+    Local(LocalBackend),
+    Remote(RemoteBackend),
+}
+
+impl Backend {
+    pub fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
+        match self {
+            Backend::Local(b) => b.run(esm, op),
+            Backend::Remote(b) => b.run(esm, op),
         }
     }
 }

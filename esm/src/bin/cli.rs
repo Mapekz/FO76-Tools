@@ -5,8 +5,8 @@ use anyhow::Context as _;
 use clap::{Args as _, Parser, Subcommand, ValueEnum};
 use esm::backend::{
     CONNECT_TIMEOUT, DAEMON_FILENAME, HEALTH_POLL_INTERVAL, HEALTH_POLL_MAX, LocalBackend,
-    OP_TIMEOUT_DEFAULT_SECS, QueryBackend, RemoteBackend, daemon_fresh, read_daemon_info,
-    start_daemon_process, stop_daemon,
+    OP_TIMEOUT_DEFAULT_SECS, RemoteBackend, daemon_fresh, read_daemon_info, start_daemon_process,
+    stop_daemon,
 };
 use esm::ipc::{DEFAULT_MAX_DEPTH, Op, RecordSel, RefSort};
 use esm::{
@@ -462,42 +462,41 @@ impl From<RefSortArg> for esm::ipc::RefSort {
     }
 }
 
-enum Backend {
-    Local(LocalBackend),
-    Remote(RemoteBackend),
-}
+/// CLI-side wrapper around `esm::backend::Backend` (the plain local/remote
+/// dispatch enum): every real query goes through [`Self::run`], which wraps
+/// the inner call with a [`progress_ui::Watcher`] — this is the one place
+/// all ~15 `cmd_*` functions' `backend.run(...)` calls funnel through, and
+/// `watcher.stop()` (which blocks until any rendered line is erased) runs
+/// synchronously before this returns, so whichever `cmd_*` function is
+/// about to `println!`/`print_json` its result never races a still-visible
+/// progress line. See `progress_ui`'s module doc for why this site, not
+/// `dispatch_command`, is the right one.
+struct Backend(esm::backend::Backend);
 
-impl QueryBackend for Backend {
-    /// Wraps every real query with a [`progress_ui::Watcher`] — this is the
-    /// one place all ~15 `cmd_*` functions' `backend.run(...)` calls funnel
-    /// through, and `watcher.stop()` (which blocks until any rendered line
-    /// is erased) runs synchronously before this returns, so whichever
-    /// `cmd_*` function is about to `println!`/`print_json` its result
-    /// never races a still-visible progress line. See `progress_ui`'s
-    /// module doc for why this site, not `dispatch_command`, is the right
-    /// one.
+impl Backend {
     fn run(&mut self, esm: &Path, op: Op) -> anyhow::Result<Value> {
         let mut watched = vec![progress_watch_path(esm)];
         if let Op::Diff { b, .. } = &op {
             watched.push(progress_watch_path(b));
         }
         let watcher = progress_ui::Watcher::spawn(watched);
-        let result = match self {
-            Backend::Local(b) => b.run(esm, op),
-            Backend::Remote(b) => b.run(esm, op),
-        };
+        let result = self.0.run(esm, op);
         watcher.stop();
         result
+    }
+
+    fn is_remote(&self) -> bool {
+        matches!(self.0, esm::backend::Backend::Remote(_))
     }
 }
 
 fn make_backend(local: bool, addr: Option<&str>, port: Option<u16>) -> anyhow::Result<Backend> {
     if local {
-        Ok(Backend::Local(LocalBackend::new()))
+        Ok(Backend(esm::backend::Backend::Local(LocalBackend::new())))
     } else {
-        Ok(Backend::Remote(RemoteBackend::connect_with_override(
-            addr, port,
-        )?))
+        Ok(Backend(esm::backend::Backend::Remote(
+            RemoteBackend::connect_with_override(addr, port)?,
+        )))
     }
 }
 
@@ -938,7 +937,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
-    let daemon_mode = matches!(backend, Backend::Remote(_));
+    let daemon_mode = backend.is_remote();
     dispatch_command(&esm, &mut backend, cmd, DispatchOptions { daemon_mode })
 }
 

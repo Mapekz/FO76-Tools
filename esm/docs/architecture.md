@@ -116,15 +116,18 @@ Four surfaces read the same engine through one dispatch point, `src/ipc.rs`'s `d
       ┌───────────────┬───────────┼────────────────┬──────────────────────┐
       ▼               ▼           ▼                 ▼                     ▼
  CLI (bin/cli.rs)  --local     daemon (bin/server.rs)   bindings/napi        tools/esm_gateway.py
-   QueryBackend::run  in-proc     HTTP + MCP-stdio       EsmDatabase           (HTTP client,
-   (Local/RemoteBackend)         Registry-backed         Arc<Mutex<Database>>  same wire format)
+   Backend::run       in-proc     HTTP + MCP-stdio       EsmDatabase           (HTTP client,
+   (Local/Remote)                Registry-backed         Arc<Mutex<Database>>  same wire format)
 ```
 
-`src/backend.rs`'s `QueryBackend` trait has one method, `run(esm, Op) -> Value` — every caller
-builds an `Op` and reads the result back with `serde_json::from_value`, so there's no
-convenience-method surface that can silently drop a field an `Op` variant carries. `LocalBackend`
-runs `dispatch_op` in-process against a cold `Database::open`; `RemoteBackend` posts the same
-`Op` as JSON to a daemon's `/op` endpoint.
+`src/backend.rs`'s `Backend` enum (`Local(LocalBackend)` / `Remote(RemoteBackend)`) has one
+method, `run(esm, Op) -> Value` — every caller builds an `Op` and reads the result back with
+`serde_json::from_value`, so there's no convenience-method surface that can silently drop a field
+an `Op` variant carries. A plain enum match, not a trait, since the two backends are a closed set
+with no trait-object or generic-bound caller. `LocalBackend` runs `dispatch_op` in-process against
+a cold `Database::open`; `RemoteBackend` posts the same `Op` as JSON to a daemon's `/op` endpoint.
+`src/bin/cli.rs` wraps this enum in its own `Backend` newtype to layer the progress-UI watcher
+around every call.
 
 `src/bin/cli.rs`'s `main()` decides which backend a subcommand gets purely from `--local` and
 the global `--esm`/`FO76_ESM_PATH`/`--addr`/`--port` flags (`make_backend`) — every subcommand

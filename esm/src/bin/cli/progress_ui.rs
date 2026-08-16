@@ -10,8 +10,8 @@
 //!
 //! # Where this hooks in
 //!
-//! [`Watcher::spawn`]/[`Watcher::stop`] wrap `impl QueryBackend for
-//! Backend`'s `run` method in `cli.rs` — not `dispatch_command` — because
+//! [`Watcher::spawn`]/[`Watcher::stop`] wrap `cli.rs`'s `Backend::run`
+//! method — not `dispatch_command` — because
 //! every `cmd_*` function prints its result immediately after its
 //! `backend.run(...)` call returns (see e.g. `cmd_info`). Wrapping `run`
 //! itself means `stop()` (which blocks until the in-progress render, if
