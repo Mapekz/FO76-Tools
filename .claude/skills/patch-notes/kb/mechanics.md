@@ -388,3 +388,18 @@ A seasonal one-off promoted to a permanent repeatable shows up as a QUST rename 
 (0x008F15C3), tracked by radio quest `SDOW_SQ_DebunkerRadio` (0x008EDF32) via `LCP_SDOW_*` GLOB
 toggles.
 *verified 2026-07-14 vs 20260710*
+
+## Diet mutations zero chem-keyworded effects on matching food — check the "Safe" perk, not just the doubler and nullifier
+
+Herbivore and Carnivore each grant three perks; the third ("Safe Veggies" 0x003C4059 / "Safe Meat")
+multiplies to 0 any effect keyworded `RadiationInjestion`, `SURV_EffectTypeDiseaseVector`, or
+`ChemEffect` on the matching item type (Vegetable|Herb|Fruit for Herbivore; Meat for Carnivore). A
+food/drink buff built on the chem MGEF pattern (`ChemEffect` + own Stack keyword +
+`ChemDispelEffects`) is therefore nullified by the *matching* diet mutation, while the doubler
+(×2/×2.5, requires `SURV_EffectTypeFood*` keywords) never touches it. Audit all three perks before
+declaring a buff mutation-proof.
+
+**Example:** Lucky-Leaf Tea (0x008FBA0C, `IngredientTypeHerb`): its base +1 LCK MGEF (0x008FBA0E)
+carries `ChemEffect`, so Herbivore zeroes it; Carnivore keeps it (its gates name only Vegetable and
+Meat). The perk-granted +1/teammate MGEF (0x00905315) has no keywords and survives both.
+*verified 2026-08-15 vs 20260814*

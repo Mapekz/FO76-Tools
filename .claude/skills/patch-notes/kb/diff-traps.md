@@ -79,6 +79,19 @@ Irradiated Paint (0x007AE53F) `Value 2` 3→1 while all 13 sibling Irradiated/Ga
 stayed at 3 — a genuine outlier, flagged Unconfirmed rather than dropped.
 *verified 2026-08-03 vs 20260803*
 
+## ARMO/ARMA `First Person Flags` converging to one value is schema population
+
+When unrelated ARMO/ARMA records' `Biped Body Template / First Person Flags` collapse from
+heterogeneous multi-flag sets to one identical value (e.g. `0x8000000`) in a single patch, it's
+schema population, not a per-item first-person clipping fix — heterogeneous "before" values
+converging on one "after" is the tell. The field's `dangling_ref` lint hits are also false
+positives: it renders like a FormID but is a bitfield (same shape as NPC_ `Attack Flags`).
+
+**Example:** 20260814 — Wading Jacket (0x0089A8B2) and Enclave Scientist Outfit (0x008D502D) both
+land on `0x8000000` from different values; ARMA 0x008D502C lands on `0x4900F838`, flagged
+`dangling_ref`.
+*verified 2026-08-15 vs 20260814*
+
 ## The QUST schema-population cluster
 
 Dozens of unrelated public-event-style QUSTs going from null to all-default on this exact cluster
@@ -147,11 +160,15 @@ Seconds When Hit", but its PERK → SPEL → MGEF chain was untouched and carrie
 
 A LVLI entry's `Chance None Value` / `Chance None Global` is the percent chance of getting
 **nothing** from that slot; the referenced item's own odds are `100 − Chance None`. A GLOB feeding
-`Chance None Global` going **up** is therefore a **nerf**.
+`Chance None Global` going **up** is therefore a **nerf**. Weighted variant: when sibling entries
+each carry their own `Chance None Global` and the list's `Use All` flag is cleared (replaced by an
+undecoded bit, e.g. `0x200`), the globals read as relative weights for one weighted pick — often
+summing to a round total like 1000 — not inverse percentages; treat them as a ratio (seen on
+`HTO_crLLS_Rewards_Legendary_Mob_Weapons_Melee` 0x008F2B1A, weights 470/330/200, in 20260814).
 
 **Example:** `UniqueWeaponSkinDropChance` (0x008FF251) 80.0 → 90.0 between 20260710 and 20260717 —
 a unique weapon-skin recipe's real odds fell 20% → 10%.
-*verified 2026-07-22 vs 20260717*
+*verified 2026-07-22 vs 20260717; weighted variant 2026-08-15 vs 20260814*
 
 ## A SPECIAL `Maximum Value` of float-max means uncapped, not missing data
 
@@ -204,15 +221,21 @@ EditorID/Description rename plus flipping its `Hidden` flag).
 
 ## A paint OMOD losing `ma_Melee_Appearance` is pool-scoping, not a stat change
 
-`ma_Melee_Appearance` (0x005117B1) is the generic "any melee weapon cosmetic" pool tag. A
-unique/quest-reward paint losing it — via a direct `Target OMOD Keywords` removal or a new `REM
-Keywords` property — likely scopes that paint to its own dedicated source instead of the shared
-random-cosmetic pool. Flag this shape (keyword removal with no other property change, on a
-unique-named paint) as a pool-scoping signal, not a numeric change; the downstream obtainability
-isn't provable from the diff alone.
+`ma_Melee_Appearance` (0x005117B1) is the generic "any melee weapon cosmetic" pool tag; guns use
+the analogous `ma_Gun_Appearance` (0x0037D0B2). A unique/quest-reward paint losing one — via a
+direct `Target OMOD Keywords` removal or a new `REM Keywords` property — likely scopes that paint
+to its own dedicated source instead of the shared random-cosmetic pool. Flag this shape (keyword
+removal with no other property change, on a unique-named paint) as a pool-scoping signal, not a
+numeric change; the downstream obtainability isn't provable from the diff alone. A `REM Keywords`
+can also target the *wrong* pool tag as a bug — a REM of `ma_Melee_Appearance` on a gun mod is a
+no-op, and a patch swapping it to `ma_Gun_Appearance` is the real pool-scoping event, not the
+REM's mere presence.
 
 **Example:** 20260717 — Blue Ridge Branding Iron Paint, Cultist Piercer Paint, Head Hunter Paint.
-*verified 2026-07-22 vs 20260717*
+Gun-side fix 20260814: `mod_custom_HolyFire_Effect` (0x006E06A3), `mod_custom_TheKabloom_Effect`
+(0x006E2242), `mod_custom_EldersMark_Effect` (0x006E2246) corrected `ma_Melee_Appearance` →
+`ma_Gun_Appearance`.
+*verified 2026-07-22 vs 20260717; gun analog 2026-08-15 vs 20260814*
 
 ## The Glowing-Creature leveling migration is not Scorched-exclusive
 
@@ -282,6 +305,17 @@ is `Unknown CTRN / hex`, and on `SDOW_MQ02_Graves_GraveActivator` (0x008F1672), 
 Perks granted by an OMOD/ENCH `Perks` property legitimately have no PCRD, and `STAT_BeneficialPerk`
 (0x0018ADAD) is attached directly to the Player NPC_ record (0x00000007). Verify the grant path
 with `refs <perk-id> --type PCRD --paths` instead of calling them orphaned. See `mechanics.md`.
+
+## `lvli_blocked_entry`'s `quantity_zero` reason is a false positive when the entry has a `Quantity Global`
+
+A `Leveled List Entry` with `Quantity: 0.0` is not dead when it also carries a `Quantity Global` —
+the engine reads the runtime quantity from that global; the flat `Quantity` field is a stale
+placeholder. Confirm by checking sibling entries in the same list for the identical
+zero-Quantity + nonzero-Global shape; if siblings are live, the flagged entry is too.
+
+**Example:** `HTO_crLLD_Mob` (0x0085CDB6)'s Scrap entry (0x00893F7D): Quantity 0.0 with
+`Quantity Global` = 3.0, same shape as its confirmed-live ContextualAmmo sibling.
+*verified 2026-08-15 vs 20260814*
 
 ## HAZD `Data / Flags` has an unmapped bit
 
