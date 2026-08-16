@@ -79,17 +79,25 @@ _Avoid_: treating a bare numeric property id as unambiguous across spaces
 The field(s) that identify one element of a decoded rarray across two snapshots, so a diff
 can pair old/new elements instead of reporting the whole array wholesale. Owned solely by
 `diff.rs::element_key_spec` — `patchnotes_lib.py` normalizes and renders whatever Rust
-decided, it does not decide identity itself. See
+decided, it does not decide identity itself. `element_key_spec` only *proposes* an identity
+from one sample element's shape; `widen_key_spec_until_unique` then validates it against the
+actual pair of arrays, widening with further scalar fields (or falling back to an **unkeyed
+array**) when the proposal turns out non-unique on either side — a key is not treated as
+identity until it's checked. See
 [`docs/adr/0005-element-identity-owned-by-rust.md`](docs/adr/0005-element-identity-owned-by-rust.md).
 _Avoid_: "array key" (the identity is a domain fact about the record shape, not a diff
 implementation detail)
 
 **Unkeyed array**:
-An array whose elements have no stable element identity, so a diff reports the two whole
-element lists (`removed`/`added`) rather than pairing them. CTDA `Conditions[]` is the
-canonical case: a condition's position is semantic (`AND`/`OR` chaining across the whole
-list), so keying it would pair unrelated rows and report false mutations — it is
-*deliberately* unkeyed, not a gap to be closed by adding a key spec.
+An array whose elements have no stable element identity, so a diff reports only the elements
+that don't survive an order-preserving alignment across the two sides (`removed`/`added`,
+plus an `unchanged_count`) rather than pairing them. CTDA `Conditions[]` is the canonical
+case: a condition's position is semantic (`AND`/`OR` chaining across the whole list), so
+keying it would pair unrelated rows and report false mutations — it is *deliberately*
+unkeyed, not a gap to be closed by adding a key spec. The alignment is order-preserving
+(not a multiset diff) so a pure reorder — order-significant for something like a
+`GetRandomPercent` cascade — still surfaces as a real change instead of cancelling to
+nothing.
 _Avoid_: "opaque array" (the old pre-issue name implied the contents were unavailable; an
 unkeyed array's elements are fully present, just unpaired)
 

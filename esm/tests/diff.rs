@@ -397,11 +397,24 @@ fn array_diff_lvli_alternate_field_names_canonicalize_to_same_key() {
 }
 
 #[test]
-fn array_diff_lvli_duplicate_keys_pair_positionally() {
+fn array_diff_lvli_duplicate_keys_widen_to_honest_add_remove() {
     // Two entries share the same (Reference, Minimum Level) key on both
-    // sides — duplicates must pair positionally within the group (1st with
-    // 1st, 2nd with 2nd), so only the entry that actually changed (Count
-    // 2 -> 9) shows up, not both.
+    // sides. Before key-uniqueness validation existed, this paired
+    // positionally within the group (1st with 1st, 2nd with 2nd) and
+    // reported a `changed` entry (Count 2 -> 9) — a guess with no evidence
+    // behind it: nothing about the data says the 2nd occurrence on the old
+    // side is "the same" leveled-list row as the 2nd occurrence on the new
+    // side, only that they happened to sort into the same list position.
+    //
+    // `widen_key_spec_until_unique` now detects the (Reference, Minimum
+    // Level) group isn't unique on either side and widens with the next
+    // available scalar field, `Count` — which makes every group unique, but
+    // also means `Count` is now part of the identity, so a genuine "this
+    // row's count changed" can no longer be expressed as a `changed` entry;
+    // it reports as the old Count=2 row removed and a new Count=9 row
+    // added. This is deliberately the more honest of the two readings: a
+    // stricter key can only turn an unsupported `changed` guess into an
+    // honest `added` + `removed`, never the reverse.
     let a = json!({"Entries": [
         {"Leveled List Entry": {"Reference": "0x00000010", "Minimum Level": 5, "Count": 1}},
         {"Leveled List Entry": {"Reference": "0x00000010", "Minimum Level": 5, "Count": 2}},
@@ -413,25 +426,144 @@ fn array_diff_lvli_duplicate_keys_pair_positionally() {
     let d = json_diff(&a, &b);
     let ad = &d["Entries"]["_array_diff"];
     assert_eq!(ad["strategy"], json!("keyed"));
-    assert_eq!(ad["key_fields"], json!(["Reference", "Minimum Level"]));
+    assert_eq!(
+        ad["key_fields"],
+        json!(["Reference", "Minimum Level", "Count"])
+    );
+    assert!(ad.get("changed").is_none());
+    assert_eq!(
+        ad["removed"],
+        json!([{"Leveled List Entry": {"Reference": "0x00000010", "Minimum Level": 5, "Count": 2}}])
+    );
+    assert_eq!(
+        ad["added"],
+        json!([{"Leveled List Entry": {"Reference": "0x00000010", "Minimum Level": 5, "Count": 9}}])
+    );
+}
+
+#[test]
+fn array_diff_location_reference_reshuffle_is_omitted_from_parent() {
+    // LCTN reference-list elements (`{"Loc Ref Type", "Ref", "World/Cell",
+    // "Grid X", "Grid Y"}`) have three FormID-shaped members, so heuristic
+    // 12 (exactly one) never applied before this composite key existed —
+    // without it, a reshuffle with no real edit fell to `positional`, and
+    // every element read as changed (measured: 81% of all array-diff
+    // envelopes in a real run, 68,067 flagged index rows, 91% of
+    // `comprehensive.md`'s line count). With `(Ref, Loc Ref Type)` keying,
+    // a pure reshuffle now diffs to nothing, same as any other keyed array.
+    let a = json!({"Refs": [
+        {"Loc Ref Type": "0x00000011", "Ref": "0x00000001", "World/Cell": "0x00000099", "Grid X": 7, "Grid Y": 36},
+        {"Loc Ref Type": "0x00000012", "Ref": "0x00000002", "World/Cell": "0x00000099", "Grid X": 8, "Grid Y": 40},
+    ]});
+    let b = json!({"Refs": [
+        {"Loc Ref Type": "0x00000012", "Ref": "0x00000002", "World/Cell": "0x00000099", "Grid X": 8, "Grid Y": 40},
+        {"Loc Ref Type": "0x00000011", "Ref": "0x00000001", "World/Cell": "0x00000099", "Grid X": 7, "Grid Y": 36},
+    ]});
+    let d = json_diff(&a, &b);
+    assert_eq!(
+        d,
+        json!({}),
+        "reorder-only location-reference array must be fully omitted from the parent diff"
+    );
+}
+
+#[test]
+fn array_diff_attacks_shape_duplicate_key_widens_to_the_field_that_actually_changed() {
+    // The measured production defect motivating key-uniqueness validation:
+    // `RACE`/`NPC_` `Attacks[]` entries key on heuristic 12 (the one
+    // FormID-shaped member, `Required Slot`), but many attacks legitimately
+    // share one slot — on a real run, 30 of 83 keyed envelopes (36%) had
+    // duplicate keys, `SheepsquatchRace/Attacks` alone producing 32 rows of
+    // scrambled `Attack Event: A -> B` churn from FIFO-within-group
+    // pairing. Widening onto `Attack Event` (the only other scalar leaf)
+    // disambiguates correctly here since the two attacks under the shared
+    // slot really are different attacks, not the same attack edited.
+    let a = json!({"Attacks": [
+        {"Attack": {"Attack Event": "meleeAttackStartForward_Power_B", "Description": "Forward"}, "Required Slot": "0x00136255"},
+        {"Attack": {"Attack Event": "meleeAttackStartLungeLeft", "Description": "Lunge"}, "Required Slot": "0x00136255"},
+    ]});
+    let b = json!({"Attacks": [
+        {"Attack": {"Attack Event": "meleeAttackStartForward_Power_B", "Description": "Forward"}, "Required Slot": "0x00136255"},
+        {"Attack": {"Attack Event": "meleeAttackStartLungeLeft", "Description": "Lunge, edited"}, "Required Slot": "0x00136255"},
+    ]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Attacks"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("keyed"));
+    assert_eq!(
+        ad["key_fields"],
+        json!(["Required Slot", "Attack.Attack Event"])
+    );
     assert!(ad.get("added").is_none());
     assert!(ad.get("removed").is_none());
+    let changed = ad["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1, "only the Lunge attack actually changed");
+    assert_eq!(
+        changed[0]["changes"]["Attack"]["Description"]["to"],
+        json!("Lunge, edited")
+    );
+}
+
+#[test]
+fn array_diff_attacks_shape_without_required_slot_keys_on_attack_event() {
+    // A second measured production gap, distinct from the one above: many
+    // RACE/NPC_ Attacks entries carry no `Required Slot` sibling at all
+    // (unconditional attacks) and decode as the single-key wrapper
+    // `{"Attack": {"Attack Data": ..., "Attack Event": ..., ...}}` —
+    // `unwrap_wrapper` strips it down to the inner struct, none of whose
+    // members are FormID-shaped, so heuristic 12's FormID-composite
+    // fallback can't reach it. On a real run this was the largest remaining
+    // source of pure-permutation noise after the FormID-composite fix (74
+    // of 78 remaining cases, e.g. `BloodbugRace`/`HumanRace`/`Attacks`,
+    // every one confirmed to have `Attack Event` unique across the whole
+    // array). Heuristic 7 keys this shape on `Attack Event` directly.
+    let a = json!({"Attacks": [
+        {"Attack": {"Attack Event": "meleeStart_1", "Description": "First"}},
+        {"Attack": {"Attack Event": "meleeStart_2", "Description": "Second"}},
+    ]});
+    let b = json!({"Attacks": [
+        {"Attack": {"Attack Event": "meleeStart_2", "Description": "Second, edited"}},
+        {"Attack": {"Attack Event": "meleeStart_1", "Description": "First"}},
+    ]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Attacks"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("keyed"));
+    assert_eq!(ad["key_fields"], json!(["Attack Event"]));
     let changed = ad["changed"].as_array().unwrap();
     assert_eq!(
         changed.len(),
         1,
-        "only the second duplicate-key pair actually changed (Count 2 -> 9)"
+        "reordering must not be flagged; only the real edit should show"
     );
+    assert_eq!(changed[0]["key"]["Attack Event"], json!("meleeStart_2"));
     assert_eq!(
-        changed[0]["changes"]["Leveled List Entry"]["Count"]["from"],
-        json!(2)
+        changed[0]["changes"]["Attack"]["Description"]["to"],
+        json!("Second, edited")
     );
-    assert_eq!(
-        changed[0]["changes"]["Leveled List Entry"]["Count"]["to"],
-        json!(9)
-    );
-    assert_eq!(changed[0]["key"]["Reference"], json!("0x00000010"));
-    assert_eq!(changed[0]["key"]["Minimum Level"], json!(5));
+}
+
+#[test]
+fn array_diff_key_that_cannot_be_widened_unique_falls_back_to_unkeyed() {
+    // Two fully byte-identical elements sharing a key can never be
+    // disambiguated by widening — every scalar leaf they have is equal by
+    // construction, so no candidate field breaks the tie. This must fall
+    // back to `unkeyed` (an honest "the lists differ by one element, not
+    // sure which") rather than `keyed_diff` silently pairing the duplicates
+    // FIFO with no signal that the key wasn't actually unique.
+    let a = json!({"Members": [
+        {"Faction": "0x00000010", "Rank": 1},
+        {"Faction": "0x00000010", "Rank": 1},
+    ]});
+    let b = json!({"Members": [
+        {"Faction": "0x00000010", "Rank": 1},
+        {"Faction": "0x00000010", "Rank": 1},
+        {"Faction": "0x00000010", "Rank": 1},
+    ]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Members"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("unkeyed"));
+    assert_eq!(ad["unchanged_count"], json!(2));
+    assert!(ad.get("removed").is_none());
+    assert_eq!(ad["added"], json!([{"Faction": "0x00000010", "Rank": 1}]));
 }
 
 #[test]
@@ -521,15 +653,16 @@ fn array_diff_heuristic_generic_index_suffix_member() {
 
 #[test]
 fn array_diff_positional_fallback_same_length() {
-    // Two FormID-shaped members ("A" and "B") — heuristic 9 requires exactly
-    // one, so no key applies; equal lengths fall back to positional pairing.
+    // No FormID-shaped members and no other heuristic match (no Index/name-
+    // type-value/Faction-Perk-Mod/etc. shape) — `element_key_spec` returns
+    // `None`; equal lengths fall back to positional pairing.
     let a = json!({"Pairs": [
-        {"A": "0x00000001", "B": "0x00000002"},
-        {"A": "0x00000003", "B": "0x00000004"},
+        {"X": 1, "Y": 2},
+        {"X": 3, "Y": 4},
     ]});
     let b = json!({"Pairs": [
-        {"A": "0x00000001", "B": "0x00000002"},
-        {"A": "0x00000009", "B": "0x00000004"},
+        {"X": 1, "Y": 2},
+        {"X": 9, "Y": 4},
     ]});
     let d = json_diff(&a, &b);
     let ad = &d["Pairs"]["_array_diff"];
@@ -541,13 +674,20 @@ fn array_diff_positional_fallback_same_length() {
     assert_eq!(changed[0]["key"], json!({"index": 1}));
     assert_eq!(changed[0]["index_from"], json!(1));
     assert_eq!(changed[0]["index_to"], json!(1));
-    assert_eq!(changed[0]["changes"]["A"]["to"], json!("0x00000009"));
+    assert_eq!(changed[0]["changes"]["X"]["to"], json!(9));
 }
 
 #[test]
-fn array_diff_unkeyed_fallback_unkeyable_length_mismatch() {
+fn array_diff_multiple_formid_members_compose_into_a_key() {
+    // Two FormID-shaped members ("A" and "B") with no other heuristic match:
+    // composed into a 2-field key rather than requiring exactly one — this
+    // is the LCTN reference-list fix generalized to a minimal fixture. A[1]
+    // changing means a[1]'s (A, B) group has no match in b — it must report
+    // as an honest added + removed, not a same-index "changed" guess (there
+    // is nothing in the data linking a[1] to b[1] specifically).
     let a = json!({"Pairs": [
         {"A": "0x00000001", "B": "0x00000002"},
+        {"A": "0x00000003", "B": "0x00000004"},
     ]});
     let b = json!({"Pairs": [
         {"A": "0x00000001", "B": "0x00000002"},
@@ -555,20 +695,96 @@ fn array_diff_unkeyed_fallback_unkeyable_length_mismatch() {
     ]});
     let d = json_diff(&a, &b);
     let ad = &d["Pairs"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("keyed"));
+    assert_eq!(ad["key_fields"], json!(["A", "B"]));
+    assert!(ad.get("changed").is_none());
+    assert_eq!(
+        ad["removed"],
+        json!([{"A": "0x00000003", "B": "0x00000004"}])
+    );
+    assert_eq!(ad["added"], json!([{"A": "0x00000009", "B": "0x00000004"}]));
+}
+
+#[test]
+fn array_diff_unkeyed_fallback_unkeyable_length_mismatch() {
+    // `{"X": int, "Y": int}` has no FormID-shaped members and matches no
+    // other heuristic, so no `element_key_spec` heuristic applies — this is
+    // a genuinely unkeyable shape, distinct from
+    // `array_diff_unkeyed_insertion_trims_to_the_real_delta` below, which is
+    // unkeyable only because widening exhausted its candidates. Both land
+    // on `unkeyed`; a and b share no element here, so there is nothing for
+    // the LCS trim to remove.
+    let a = json!({"Pairs": [
+        {"X": 1, "Y": 2},
+    ]});
+    let b = json!({"Pairs": [
+        {"X": 5, "Y": 6},
+        {"X": 9, "Y": 4},
+    ]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Pairs"]["_array_diff"];
     assert_eq!(ad["strategy"], json!("unkeyed"));
     assert_eq!(ad["count_from"], json!(1));
     assert_eq!(ad["count_to"], json!(2));
-    assert_eq!(
-        ad["removed"],
-        json!([{"A": "0x00000001", "B": "0x00000002"}])
-    );
+    assert_eq!(ad["unchanged_count"], json!(0));
+    assert_eq!(ad["removed"], json!([{"X": 1, "Y": 2}]));
     assert_eq!(
         ad["added"],
         json!([
-            {"A": "0x00000001", "B": "0x00000002"},
-            {"A": "0x00000009", "B": "0x00000004"},
+            {"X": 5, "Y": 6},
+            {"X": 9, "Y": 4},
         ])
     );
+}
+
+#[test]
+fn array_diff_unkeyed_insertion_trims_to_the_real_delta() {
+    // Same unkeyable `{"X", "Y"}` shape as above, but the new list is the
+    // old one plus one appended element. Before LCS trimming, `unkeyed`
+    // reported both whole lists — measured on a real run, 87% of elements
+    // reported this way were byte-identical on both sides. The trim must
+    // recognize the shared element and report only the real insertion.
+    let a = json!({"Pairs": [
+        {"X": 1, "Y": 2},
+    ]});
+    let b = json!({"Pairs": [
+        {"X": 1, "Y": 2},
+        {"X": 9, "Y": 4},
+    ]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Pairs"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("unkeyed"));
+    assert_eq!(ad["count_from"], json!(1));
+    assert_eq!(ad["count_to"], json!(2));
+    assert_eq!(ad["unchanged_count"], json!(1));
+    assert!(
+        ad.get("removed").is_none(),
+        "the shared element must not be reported as removed"
+    );
+    assert_eq!(ad["added"], json!([{"X": 9, "Y": 4}]));
+}
+
+#[test]
+fn array_diff_unkeyed_pure_reorder_still_reports_the_move() {
+    // A same-length, unkeyable reorder must NOT cancel to an empty diff —
+    // that would be multiset semantics, which is wrong for an
+    // order-significant array (a `GetRandomPercent` cascade in a
+    // first-match list is the motivating case: swapping two conditions
+    // changes behavior even though the set of conditions is unchanged). LCS
+    // keeps one copy aligned and reports the move as removed + added.
+    //
+    // Heterogeneous element shapes (mixed object/primitive) are unkeyed
+    // regardless of length, per `array_diff`'s dispatch — the simplest
+    // publicly-reachable route to a same-length `unkeyed` envelope, and
+    // exactly the same `unkeyed_array_diff` call every other route reaches.
+    let a = json!({"Pairs": [{"A": "0x00000001"}, "tag"]});
+    let b = json!({"Pairs": ["tag", {"A": "0x00000001"}]});
+    let d = json_diff(&a, &b);
+    let ad = &d["Pairs"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("unkeyed"));
+    assert_eq!(ad["unchanged_count"], json!(1));
+    assert_eq!(ad["removed"], json!([{"A": "0x00000001"}]));
+    assert_eq!(ad["added"], json!([{"A": "0x00000001"}]));
 }
 
 #[test]
