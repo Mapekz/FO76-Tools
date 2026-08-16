@@ -123,7 +123,35 @@ impl From<ArchiveKindArg> for ArchiveKind {
     }
 }
 
+/// Restores SIGPIPE's default disposition (kill the process) before any
+/// output is written. The Rust runtime sets `SIG_IGN` for SIGPIPE on
+/// startup so a panicking write doesn't take down the whole process by
+/// default; with `SIG_IGN` in effect, closing the read end of a pipe early
+/// (`ba2 info archive.ba2 | head -6`) makes the next `println!`/`writeln!`
+/// on stdout return an EPIPE `io::Error`, which every write site here
+/// propagates via `?` up to `main`'s `anyhow::Result` — `main`'s default
+/// error handler then prints "Error: Broken pipe (os error 32)" instead of
+/// dying quietly. Restoring `SIG_DFL` here makes the process die via the
+/// signal itself on the very first write to the closed pipe, matching
+/// `cat`/`rg`/`jq` (typically exit 141 under a shell, or `Killed by
+/// SIGPIPE` visible via the wait status) rather than printing an error.
+///
+/// SAFETY: `libc::signal` with `SIG_DFL` just restores the OS default
+/// handling for SIGPIPE; called once, synchronously, before any threads are
+/// spawned or any signal handlers installed, so there's no reentrancy or
+/// data-race hazard. No pointers are dereferenced other than the constant
+/// `SIG_DFL` sentinel value libc itself defines.
+#[cfg(unix)]
+fn reset_sigpipe_to_default() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> Result<()> {
+    #[cfg(unix)]
+    reset_sigpipe_to_default();
+
     let cli = Cli::parse();
     match cli.command {
         Commands::Info { archive } => cmd_info(&archive),

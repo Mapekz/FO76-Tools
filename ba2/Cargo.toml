@@ -25,6 +25,16 @@ walkdir = "2"
 globset = "0.4"
 tempfile = "3"
 
+# Unix-only: restores SIGPIPE's default disposition in the CLI binary's
+# main() (see src/bin/cli.rs) so writes to a closed stdout/stderr (piped
+# output closed early, e.g. `ba2 info archive.ba2 | head`) kill the process
+# via SIGPIPE like a normal Unix tool instead of surfacing as a panicking
+# `std::io::Error` from `println!`/`writeln!`. Already present transitively
+# (memmap2); promoted to a direct dependency here because the signal call
+# needs `use libc::...` in bin code.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 globset = "0.4"
 tempfile = "3"
