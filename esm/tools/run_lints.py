@@ -38,6 +38,7 @@ import json
 import re
 import sys
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -71,6 +72,10 @@ ORPHANED_UNIQUE_DEPTH = 4
 
 #: Hard cap on `dangling_ref` lints in one run.
 DANGLING_REF_CAP = 50
+
+#: Record status values several rules treat as "this patch touched or
+#: introduced the record" (as opposed to `"removed"`/`"unchanged"`).
+_ADDED_OR_CHANGED = ("added", "changed")
 
 _FORMID_RE = re.compile(r"^0x[0-9A-Fa-f]{8}$")
 _FORMID_IN_TEXT_RE = re.compile(r"0x[0-9A-Fa-f]{8}")
@@ -335,6 +340,18 @@ class _RuleRecordTally:
         )
 
 
+@contextmanager
+def _catch_record_error(tally: _RuleRecordTally):
+    """Wrap one record's worth of rule logic: on any exception, record it on
+    `tally` and swallow it (equivalent to the try/except-then-`continue`
+    block each per-record rule loop would otherwise repeat) rather than
+    aborting the whole rule."""
+    try:
+        yield
+    except Exception as exc:
+        tally.record_failure(exc)
+
+
 def _has_live_referencer(client, esm, fid, *, depth, tally=None):
     """True/False if the reverse-reference walk succeeded and did/didn't
     surface a "can actually reach a player" record type; None if the walk
@@ -367,12 +384,12 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
         if not isinstance(rec, dict) or rec.get("record_type") != "LVLI":
             continue
         status = rec.get("status")
-        if status not in ("added", "changed"):
+        if status not in _ADDED_OR_CHANGED:
             continue
         edid = rec.get("editor_id") or fid
         tally.examined()
 
-        try:
+        with _catch_record_error(tally):
             if status == "added":
                 entries = ((rec.get("fields") or {}).get("Entries")) or []
                 valid_entries = [e for e in entries if isinstance(e, dict)]
@@ -497,9 +514,6 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
                                 },
                             }
                         )
-        except Exception as exc:
-            tally.record_failure(exc)
-            continue
 
     tally.append_note(ctx)
     return lints
@@ -613,12 +627,12 @@ def rule_orphaned_unique(ctx: pl.RuleContext):
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict):
             continue
-        if rec.get("status") not in ("added", "changed"):
+        if rec.get("status") not in _ADDED_OR_CHANGED:
             continue
         rtype = rec.get("record_type")
         tally.examined()
 
-        try:
+        with _catch_record_error(tally):
             if rtype == "KYWD":
                 edid = rec.get("editor_id")
                 if not _matches_any(edid, patterns):
@@ -672,9 +686,6 @@ def rule_orphaned_unique(ctx: pl.RuleContext):
                         },
                     }
                 )
-        except Exception as exc:
-            tally.record_failure(exc)
-            continue
 
     tally.append_note(ctx)
     return lints
@@ -695,7 +706,7 @@ def rule_unreferenced_perk_rank(ctx: pl.RuleContext):
     for fid, rec in sorted(records.items()):
         if not isinstance(rec, dict) or rec.get("record_type") != "PERK":
             continue
-        if rec.get("status") not in ("added", "changed"):
+        if rec.get("status") not in _ADDED_OR_CHANGED:
             continue
         if rec.get("cut"):
             continue
@@ -745,7 +756,7 @@ def rule_desc_changed_stats_same(ctx: pl.RuleContext):
             continue
         tally.examined()
 
-        try:
+        with _catch_record_error(tally):
             desc_entries = []
             numeric_entries = []
             for ce in rec.get("changes") or []:
@@ -776,9 +787,6 @@ def rule_desc_changed_stats_same(ctx: pl.RuleContext):
                     "data": {"paths": [ce.get("path") for ce in desc_entries]},
                 }
             )
-        except Exception as exc:
-            tally.record_failure(exc)
-            continue
 
     tally.append_note(ctx)
     return lints
@@ -801,7 +809,7 @@ def rule_stats_changed_desc_same(ctx: pl.RuleContext):
             continue
         tally.examined()
 
-        try:
+        with _catch_record_error(tally):
             desc = rec.get("description")
             if not isinstance(desc, str) or not desc.strip():
                 continue
@@ -839,9 +847,6 @@ def rule_stats_changed_desc_same(ctx: pl.RuleContext):
                         "data": {"matched_number": fv, "path": ce.get("path")},
                     }
                 )
-        except Exception as exc:
-            tally.record_failure(exc)
-            continue
 
     tally.append_note(ctx)
     return lints
