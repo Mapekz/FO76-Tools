@@ -26,11 +26,11 @@ export function OpenFilesPanel() {
   }
 
   async function handleOpen() {
-    handleOpenPath(await window.api.openFileDialog())
+    void handleOpenPath(await window.api.openFileDialog())
   }
 
   async function handleOpenFolder() {
-    handleOpenPath(await window.api.openFolderDialog())
+    void handleOpenPath(await window.api.openFolderDialog())
   }
 
   async function handleClose(id: string) {

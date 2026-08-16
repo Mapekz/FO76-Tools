@@ -2,15 +2,20 @@ import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { CoverageReport, Markers } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
+import { listRecordTypeSigs } from '../lib/sigLists'
 
 const DEFAULT_SAMPLE = 200
 const ALL_TYPES = ''
 
-/** Mirrors Rust `Markers::total()` — the CLI's own gap-count definition
- * (unknown_record + raw_fallback + unmapped + unresolved; `records` is NOT
- * part of the sum). Kept in lockstep with `esm/src/ipc.rs`'s `Markers::total`. */
+/** Sums every `Markers` field except `records` — that field is the sample
+ * count, not a gap counter. Deriving the sum this way (rather than naming
+ * each gap field) means a newly added marker field joins the total for
+ * free. Mirrors Rust `Markers::total()` in `esm/src/ipc.rs`, which excludes
+ * `records` from its own sum the same way. */
 function totalGaps(m: Markers): number {
-  return m.unknown_record + m.raw_fallback + m.unmapped + m.unresolved
+  return (Object.entries(m) as [keyof Markers, number][])
+    .filter(([key]) => key !== 'records')
+    .reduce((sum, [, value]) => sum + value, 0)
 }
 
 export function CoveragePanel() {
@@ -28,16 +33,8 @@ export function CoveragePanel() {
       setSigs([])
       return
     }
-    window.api
-      .listGroups(activeDbId)
-      .then((groups) => {
-        const list = groups
-          .filter((g) => g.label.kind === 'record_type' && g.child_count > 0)
-          .map((g) => (g.label.kind === 'record_type' ? g.label.sig : ''))
-          .filter((s) => s.length > 0)
-          .toSorted()
-        setSigs(list)
-      })
+    listRecordTypeSigs(window.api, activeDbId)
+      .then((list) => setSigs(list))
       .catch(console.error)
   }, [activeDbId])
 

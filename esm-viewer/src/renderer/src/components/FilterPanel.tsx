@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { FilterOp, FilterResult, RecordRow } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
+import { listRecordTypeSigs } from '../lib/sigLists'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -36,14 +37,8 @@ export function FilterPanel({ onNavigate }: Props) {
       setSigs([])
       return
     }
-    window.api
-      .listGroups(activeDbId)
-      .then((groups) => {
-        const list = groups
-          .filter((g) => g.label.kind === 'record_type' && g.child_count > 0)
-          .map((g) => (g.label.kind === 'record_type' ? g.label.sig : ''))
-          .filter((s) => s.length > 0)
-          .toSorted()
+    listRecordTypeSigs(window.api, activeDbId)
+      .then((list) => {
         setSigs(list)
         setSig((prev) => prev || list[0] || '')
       })

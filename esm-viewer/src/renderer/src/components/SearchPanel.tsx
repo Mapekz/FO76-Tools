@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useStore } from '../store'
 import type { RecordRow } from '../../../shared/api-types'
+import { parseSigList } from '../lib/sigLists'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -21,10 +22,7 @@ export function SearchPanel({ onNavigate }: Props) {
 
   async function runSearch() {
     if (!activeDbId) return
-    const types = typesText
-      .split(',')
-      .map((t) => t.trim().toUpperCase())
-      .filter((t) => t.length > 0)
+    const types = parseSigList(typesText)
     setLoading(true)
     setError(null)
     try {

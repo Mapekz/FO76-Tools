@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { DiffResult, RecordStubDiff, RecordChangeDiff } from '../../../shared/api-types'
+import { parseSigList } from '../lib/sigLists'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -146,10 +147,7 @@ export function DiffPanel({ onNavigate }: Props) {
     setLoading(true)
     setError(null)
     try {
-      const excludeList = excludeTypes
-        .split(',')
-        .map((s) => s.trim().toUpperCase())
-        .filter((s) => s.length > 0)
+      const excludeList = parseSigList(excludeTypes)
       const res = await window.api.diff(
         oldId,
         newId,

@@ -14,6 +14,14 @@ import { fetchReferencedBy } from './lib/referencedBy'
 
 type LeftView = 'tree' | 'search' | 'filter' | 'coverage' | 'diff'
 
+const LEFT_VIEW_LABELS: Record<LeftView, string> = {
+  tree: 'Tree',
+  search: 'Search',
+  filter: 'Filter',
+  coverage: 'Coverage',
+  diff: 'Diff',
+}
+
 export function App() {
   const {
     setActiveRecord,
@@ -168,15 +176,7 @@ export function App() {
                 cursor: 'pointer',
               }}
             >
-              {v === 'tree'
-                ? 'Tree'
-                : v === 'search'
-                  ? 'Search'
-                  : v === 'filter'
-                    ? 'Filter'
-                    : v === 'coverage'
-                      ? 'Coverage'
-                      : 'Diff'}
+              {LEFT_VIEW_LABELS[v]}
             </button>
           ))}
         </div>

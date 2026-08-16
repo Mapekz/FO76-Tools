@@ -18,8 +18,6 @@ export type { RefPathNode } from './generated/RefPathNode'
 export type { RefRow } from './generated/RefRow'
 /** Full envelope returned by a recursive refs walk — generated Rust name is `RefList`. */
 export type { RefList as RefListResult } from './generated/RefList'
-export type { FormIdStub } from './generated/FormIdStub'
-export type { RecordHeaderInfo } from './generated/RecordHeaderInfo'
 export type { RecordResult } from './generated/RecordResult'
 export type { FilterResult } from './generated/FilterResult'
 export type { RawSubrecordView } from './generated/RawSubrecordView'
@@ -31,8 +29,6 @@ export type { CoverageReport } from './generated/CoverageReport'
 export type { RecordStub as RecordStubDiff } from './generated/RecordStub'
 /** One record present in both snapshots whose decoded fields differ — generated Rust name is `RecordDiff`. */
 export type { RecordDiff as RecordChangeDiff } from './generated/RecordDiff'
-/** Resolved display info for a FormID referenced in a diff — generated Rust name is `RefName`. */
-export type { RefName as RefNameEntry } from './generated/RefName'
 export type { DiffResult } from './generated/DiffResult'
 export type { ResolveDepth } from './generated/ResolveDepth'
 
@@ -51,8 +47,7 @@ import { CONTRACT } from './ipc-contract'
 
 // Non-registry-keyed / bespoke-logic channels — these have no place in
 // `ipc-contract.ts`'s uniform table (see that file's header comment for why),
-// so their channel names stay hand-written here, same as before this table
-// existed.
+// so their channel names are hand-written here.
 const SPECIAL_CH = {
   openFileDialog: 'open-file-dialog',
   openFolderDialog: 'open-folder-dialog',
@@ -71,11 +66,10 @@ const SPECIAL_CH = {
  * even though it's present at runtime. */
 type TableMethod = Exclude<keyof Fo76Api, keyof typeof SPECIAL_CH>
 
-/** Electron IPC channel-name constants. The uniform DB-method channels are
- * derived from `ipc-contract.ts`'s `CONTRACT` table (their one source of
- * truth); `SPECIAL_CH` above hand-writes the rest. External shape/usage
- * (`CH.someMethod`) is unchanged by this — only the declaration site of the
- * table-driven half moved. */
+/** Electron IPC channel-name constants. The uniform DB-method channels
+ * (`CH.recordByFormid` etc.) are derived from `ipc-contract.ts`'s `CONTRACT`
+ * table, their single source of truth; `SPECIAL_CH` above hand-writes the
+ * rest. Both halves are accessed identically as `CH.someMethod`. */
 export const CH = {
   ...SPECIAL_CH,
   ...(Object.fromEntries(CONTRACT.map((entry) => [entry.method, entry.channel])) as Record<
