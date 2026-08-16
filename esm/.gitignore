@@ -7,7 +7,6 @@ esm_cache/
 Data/
 
 # Local usage notes (machine-specific paths)
-USAGE.local.md
 *.local.md
 
 # napi binding build output (platform-specific binary)

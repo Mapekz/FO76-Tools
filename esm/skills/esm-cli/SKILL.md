@@ -25,6 +25,14 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   after printing. There is no interactive mode — a missing subcommand is a
   usage error, not a REPL. `--local` runs cold in-process (seconds per open —
   never use it for bulk work).
+- The daemon self-manages, so bulk/sweep work never needs manual lifecycle
+  handling: it auto-spawns on the first call, stale-evicts and reopens when
+  the ESM changes on disk, and auto-shuts-down after 10 minutes idle
+  (`ESM_DAEMON_IDLE_SECS=0` disables that). An advisory spawn-lock keeps
+  concurrent callers from double-spawning, so multiple agents safely share
+  one warm instance. `/op` responses carry no size ceiling — a bulk `get`
+  over `ESM_BULK_CHUNK` selectors (default 512, `0` disables) is
+  transparently split across multiple round-trips and reassembled.
 - Rebuilding the binary self-heals the daemon (a size+mtime fingerprint check
   respawns it automatically) — no manual step needed. Changing loose files
   next to the dump (strings/curvetables) does *not* self-heal: run
@@ -39,7 +47,21 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   instead of blocking when a build is already in flight — useful in a script
   that would rather retry later. A second concurrent query against the same
   ESM waits on (and reuses) whichever build is already running rather than
-  starting a redundant one.
+  starting a redundant one. Set `ESM_NO_PROGRESS=1` to suppress heartbeat
+  *publishing* only (e.g. in an embedding context where a stray file write is
+  unwanted) — lock-based dedup between concurrent builders keeps working
+  regardless.
+
+## MCP (for AI clients that support it)
+
+`esm-server --mcp-stdio` speaks JSON-RPC 2.0 over stdin/stdout, proxying the same warm daemon
+the CLI uses, so the warm-index benefit applies automatically. It exposes nine read-only tools:
+`esm_file_info`, `esm_search`, `esm_get_record` (`resolve=none|stub|full`, default `stub`),
+`esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse-reference walk,
+default depth 1, up to 8, `0` = unbounded), `esm_walk`, `esm_chase`, `esm_lvli_drop_table`. Wire
+it into an MCP client config with `command` pointing at the built `esm-server` binary and
+`args: ["--mcp-stdio", "<esm-or-data-path>"]`; keep that config out of version control — it
+hardcodes a non-redistributable, machine-local ESM path.
 
 ## Fetching records
 
@@ -53,9 +75,26 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 - `get --resolve none|stub|full` inlines FormID references — `stub` gives
   `{formid, editor_id, record_type}` per ref (cheap); `full` recursively
   inlines the record. A CURV record always inlines its own curve points.
+  Default to `--resolve stub` for reference-heavy records (recipes, NPCs,
+  leveled lists, quests) to avoid N follow-up `get` calls; reach for
+  `--resolve full` only when the complete nested record body is needed; bare
+  `get` (no resolve) is fine when raw FormID values are specifically wanted.
 - `list` never returns display names — use `search --in name` or `get`.
   `search` needs `"*"` to match all (`""` matches nothing).
-- `--limit 0` means unlimited for `list`, `search`, and `refs`.
+- `--limit 0` means unlimited for `list`, `search`, and `refs`. All three
+  print a `note: output capped at N of M results; use --limit 0 to show all`
+  line to **stderr** (never stdout) when the result hits the default limit,
+  so `--json` output stays valid, parseable JSON even when capped.
+- `--localization-ba2`/`--strings-dir`/`--startup-ba2` on `get`/`list`/
+  `search`/`diff` are CLI-only (ADR 0008): passing one forces a cold
+  in-process open instead of using the daemon. The daemon's shared cache
+  holds exactly one warm `Database` per canonical ESM path reused across
+  every client, and a per-call source override has no coherent way to join
+  that shared instance. For sweeps that need localized strings, place the
+  Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a
+  `misc/curvetables/` folder) next to the ESM instead — the daemon
+  auto-loads them on open, and warm lookups return localized output with no
+  per-call flags.
 
 ## Reverse references (`refs`)
 
@@ -69,9 +108,8 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 - `--paths` annotates each row with the JSON field path(s) from referrer to
   target (e.g. `Effects[2].Conditions[0].Parameter 1`). It decodes every
   emitted row, so it's opt-in.
-- The default `--limit 100` truncates popular targets. The "output capped"
-  note goes to **stderr** — stdout stays valid JSON under `--json`. Pass
-  `--limit 0` when you need everything.
+- The default `--limit 100` truncates popular targets (see the stderr capped-
+  output note above) — pass `--limit 0` when you need everything.
 - `--entry-point <name|id>` (alias `--ep`) answers "what uses this hook?" —
   the reverse of reading a PERK's own Entry Point off `get`/`walk`. It
   resolves to every PERK carrying that entry point, each emitted as its own
@@ -320,6 +358,41 @@ engine-attached-looking orphaned spells. Cross-check any rank or orphaned spell 
 (and `refs` the spell to see whether a live rank references it) before treating a record-graph tier
 as live. Confirmed via the "Lock and Load" family: PCRD lists 1 rank against a 3-rank record chain
 plus a cut orphaned spell.
+
+**Authoritative check for perks specifically: does any `PCRD` reference it?** A `PERK` rank is
+only reachable by a player if some `PCRD`'s `Perks` array lists it — verify with
+`esm refs <perk-formid> --limit 20` (look for a `PCRD` in the results), then
+`esm get <pcrd-formid> --resolve stub --pretty` (inspect `Perks[].Perk["Male Perk"]` — only these
+ranks are live). A `PERK` with no referencing `PCRD` (e.g. `Deadeye01/02`, `Bandito01`) is
+orphaned — it decodes fine and may even carry `Playable: true`, but nothing in the game ever
+grants it to a player. A `PCRD` whose `Perks` array stops at rank N means ranks N+1 onward (even
+if unprefixed, even if not `CUT_`) are dead.
+
+## Interpreting game data: live vs. cut/deferred content
+
+This is guidance about the game data itself, not the tooling — it matters whenever a query is
+answering "what does X do in the current game."
+
+FO76's EditorIDs use informal prefixes to mark content that isn't part of the live game:
+
+- **`zzz_`** — deprioritized/superseded. Usually an older implementation of a perk/effect that's
+  been reworked; the unprefixed sibling (if any) is the live one.
+- **`CUT_`**, **`DEL_`**, **`deprecated_`** (or similar) — cut content, never shipped or removed.
+- **`POST_`** — deferred/not-yet-released content (future update material sitting in the current
+  ESM).
+- **`zzz_Babylon_*`** — an internal test-branch duplicate, not the live record.
+
+Treat these as a heuristic for historical/comparative tasks (diffing snapshots, tracing how a
+mechanic evolved, investigating cut content on request) — not as ground truth for "what does the
+game currently do."
+
+**The prefix is a heuristic, not proof — the naming convention is inconsistent.** Several
+currently-dead PERK ranks have *no* prefix at all (e.g. `BearArms02`/`BearArms03`,
+`TankKiller03` — plain names, but orphaned). Conversely, some unprefixed records are simply
+broken/vestigial (e.g. `BearArms01` has a description string copy-pasted from an unrelated perk
+and carries no `Conditions`/`Effects` at all). Naming alone doesn't confirm a record is live —
+the PCRD check above is the reliable signal for perks specifically; other record types don't have
+as clean an authoritative signal, so flag uncertainty rather than asserting liveness.
 
 ## Drop-chance math (LVLI chains)
 
