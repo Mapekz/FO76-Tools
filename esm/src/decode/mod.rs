@@ -1826,12 +1826,10 @@ fn lstring_table_to_kind(
     record_sig: Option<&str>,
     subrecord_sig: &str,
 ) -> StringKind {
-    if !matches!(table, LStringTable::Strings) {
-        return match table {
-            LStringTable::Strings => StringKind::Strings,
-            LStringTable::Dlstrings => StringKind::DlStrings,
-            LStringTable::Ilstrings => StringKind::IlStrings,
-        };
+    match table {
+        LStringTable::Dlstrings => return StringKind::DlStrings,
+        LStringTable::Ilstrings => return StringKind::IlStrings,
+        LStringTable::Strings => {}
     }
     match (record_sig, subrecord_sig) {
         (Some(rec), "DESC") if rec != "LSCR" => StringKind::DlStrings, // DESC always dlstrings except LSCR
