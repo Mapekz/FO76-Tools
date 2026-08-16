@@ -19,7 +19,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "esm"
-path = "src/bin/cli.rs"
+path = "src/bin/cli/main.rs"
 
 [[bin]]
 name = "esm-server"

@@ -115,7 +115,7 @@ Four surfaces read the same engine through one dispatch point, `src/ipc.rs`'s `d
                                    │
       ┌───────────────┬───────────┼────────────────┬──────────────────────┐
       ▼               ▼           ▼                 ▼                     ▼
- CLI (bin/cli.rs)  --local     daemon (bin/server.rs)   bindings/napi        tools/esm_gateway.py
+ CLI (bin/cli/)    --local     daemon (bin/server.rs)   bindings/napi        tools/esm_gateway.py
    Backend::run       in-proc     HTTP + MCP-stdio       EsmDatabase           (HTTP client,
    (Local/Remote)                Registry-backed         Arc<Mutex<Database>>  same wire format)
 ```
@@ -126,10 +126,10 @@ method, `run(esm, Op) -> Value` — every caller builds an `Op` and reads the re
 an `Op` variant carries. A plain enum match, not a trait, since the two backends are a closed set
 with no trait-object or generic-bound caller. `LocalBackend` runs `dispatch_op` in-process against
 a cold `Database::open`; `RemoteBackend` posts the same `Op` as JSON to a daemon's `/op` endpoint.
-`src/bin/cli.rs` wraps this enum in its own `Backend` newtype to layer the progress-UI watcher
+`src/bin/cli/main.rs` wraps this enum in its own `Backend` newtype to layer the progress-UI watcher
 around every call.
 
-`src/bin/cli.rs`'s `main()` decides which backend a subcommand gets purely from `--local` and
+`src/bin/cli/main.rs`'s `main()` decides which backend a subcommand gets purely from `--local` and
 the global `--esm`/`FO76_ESM_PATH`/`--addr`/`--port` flags (`make_backend`) — every subcommand
 except `diff` (two positional ESM paths), and `skill`/`daemon`/`cache` (need no `Backend` at
 all), resolves one ESM path and one backend, then calls `dispatch_command`. Daemon mode is the
@@ -269,7 +269,7 @@ final `patch-summary.md`, chunked for Discord by `tools/discord_chunker.py` and 
 | Want to... | Look in |
 |---|---|
 | Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py`, then `src/decode/mod.rs`'s `decode_member` / `src/decode/rules.rs` for any post-decode synthesis |
-| Add a new CLI subcommand | `src/bin/cli.rs` (`Commands` enum + `dispatch_command`); add an `Op` variant in `src/ipc.rs` if it needs daemon/MCP/N-API reach too |
+| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `daemon.rs`, `inspect.rs`, …); add an `Op` variant in `src/ipc.rs` if it needs daemon/MCP/N-API reach too |
 | Change diff noise suppression | `src/diff.rs`'s `strip_noise_fields` / `DiffOptions` |
 | Change array-pairing behavior | `src/diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
 | Add a new patch-notes lint rule | `tools/run_lints.py`'s rule registry |
