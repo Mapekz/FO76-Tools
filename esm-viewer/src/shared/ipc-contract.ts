@@ -74,9 +74,8 @@ export const CONTRACT: readonly ContractEntry[] = [
   {
     channel: 'referenced-by-id',
     method: 'referencedById',
-    // `depth` is intentionally NOT run through `validateUint` here — this
-    // mirrors the pre-existing (loose) behavior: a non-number `depth` clamps
-    // to `NaN` via `Math.max`/`Math.min`, same as before this refactor.
+    // `depth` deliberately skips `validateUint`: a non-number `depth` clamps
+    // to `NaN` via `Math.max`/`Math.min`, which the addon treats as default depth.
     validate: ([target, depth]) => [
       validateTarget(target),
       Math.max(1, Math.min((depth as number) ?? 1, 6)),

@@ -20,8 +20,7 @@ const ROW_HEIGHT = 22
 const MAX_VISIBLE_ROWS = 15
 /** Auto-load-all fetch chunk size. `listTypeRecords` blocks Electron's main
  * process for the duration of each call, so this must stay small enough that
- * one call doesn't freeze the app — bigger than old PAGE_SIZE=100 is fine since
- * nothing renders per-page anymore. Tune against real large record types. */
+ * one call doesn't freeze the app. Tune against real large record types. */
 const CHUNK_SIZE = 2000
 
 interface Props {

@@ -5,9 +5,8 @@ import { CH } from '../shared/api-types'
 import { CONTRACT } from '../shared/ipc-contract'
 import { validateOptionalText, validateBodies, validateSigArray } from './ipc-validators'
 
-// Re-export the validators so existing/external importers of `./ipc` keep
-// working, and so `ipc-validators.test.ts` (and `../shared/ipc-contract.ts`)
-// have one canonical module to pull them from.
+// `./ipc` re-exports the validators as the canonical import point for
+// `ipc-validators.test.ts` and `../shared/ipc-contract.ts`.
 export * from './ipc-validators'
 
 function wrap(fn: () => unknown) {
@@ -53,12 +52,10 @@ export function registerIpc(): void {
     return wrap(() => napi.parseFormId(s))
   })
 
-  // Table-driven: the ~14 uniform "look up one db by id, validate the rest of
-  // the args, call one method on it" handlers, collapsed from one hand-written
-  // near-identical block per method into a single loop over the shared
-  // descriptor table (`../shared/ipc-contract.ts`). Each does exactly what
-  // every hand-written block above/below still does explicitly: registry
-  // lookup + not-found guard + validate + wrap() + the addon call.
+  // Table-driven: registers one handler per entry in the shared descriptor
+  // table (`../shared/ipc-contract.ts`). Each handler does the same thing the
+  // hand-written blocks above/below do explicitly: registry lookup +
+  // not-found guard + validate + wrap() + the addon call.
   for (const entry of CONTRACT) {
     ipcMain.handle(entry.channel, (_e, id: string, ...rawArgs: unknown[]) => {
       const dbEntry = registry.get(id)

@@ -131,7 +131,7 @@ export function RecordDetail({ onNavigate }: Props) {
   return (
     // Decoded mode: flex column with overflow hidden, so RecordTable's inner
     // scroll region gets a constrained height and its sticky <thead> works.
-    // Raw mode: plain scrolling container, as before.
+    // Raw mode: plain scrolling container.
     <div
       style={{
         padding: 8,

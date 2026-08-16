@@ -45,11 +45,10 @@ const api: Fo76Api = {
 }
 
 // Table forwards are unconditional pass-throughs; these three additionally
-// default a missing/undefined `resolve` to `'stub'` before invoking, same as
-// before this refactor — preserved here as a thin wrapper over the table
-// entry rather than folded into the shared (main+preload) contract, since the
-// default is preload-only sugar (main's own validators apply the identical
-// default independently either way).
+// default a missing/undefined `resolve` to `'stub'` before invoking. The
+// default is preload-only sugar — main's own validators independently apply
+// the same default — so these stay thin wrappers over the table entry rather
+// than folding the default into the shared (main+preload) contract.
 api.recordByFormid = (id, formid, resolve) =>
   ipcRenderer.invoke(CH.recordByFormid, id, formid, resolve ?? 'stub')
 api.recordByEdid = (id, edid, resolve) =>
