@@ -808,157 +808,139 @@ impl Database {
     // `build_xref_section` — this crate-internal data/orchestration split
     // keeps each section's construction logic colocated with its type in
     // `index.rs`, while the shared acquire/recheck/write/publish protocol
-    // lives once, here.
+    // lives once, in `build_lazy_section` below.
 
-    /// Build the lazy EditorID index on first call, writing it to its own
-    /// `edid` section so a later call — in this process (the `is_mapped()`
-    /// early-return below) or a fresh one (see [`Index::build`]'s doc
-    /// comment) — reuses it rather than rebuilding.
+    /// The acquire/recheck/build/publish skeleton shared by all three lazy
+    /// single-section builds (`ensure_edid_index`/`ensure_search_index`/
+    /// `ensure_xref_index`) — each call site differs only in *what* it
+    /// builds (a `build_*_section` closure over `&self.index`/`&self.esm`
+    /// plus whatever else that section's build needs) and the tick-count
+    /// `total` that closure's progress reporting is denominated in; the
+    /// surrounding protocol is identical and lives here once.
     ///
-    /// Uses [`progress::BuildLease::acquire_or_recheck`], which folds the
-    /// "did another process finish this while I waited for the lock"
-    /// recheck into the acquire call itself — there is no code path that
-    /// obtains a live [`progress::BuildLease`] without that recheck having
-    /// already run and found the section still missing.
-    pub fn ensure_edid_index(&mut self) -> anyhow::Result<()> {
-        if self.index.edid.is_mapped() {
-            return Ok(());
-        }
+    /// `T`'s archived type is the section itself: [`crate::rkyvcache::SectionSpec`]
+    /// (ADR 0007) supplies both the on-disk file
+    /// ([`crate::rkyvcache::section_path_for_spec`]) and the
+    /// [`crate::progress::BuildStage`] this call's progress heartbeat
+    /// reports under, so — unlike the pre-Stage-C shape this replaced, where
+    /// `section_path_for`'s explicit [`crate::rkyvcache::SectionKind`]
+    /// argument and the generic `Section<Archived<_>>` type parameter were
+    /// two independently-suppliable values that had to be kept in sync by
+    /// convention — there is only one place a caller can go wrong: passing
+    /// the wrong `T`.
+    ///
+    /// Uses [`crate::progress::BuildLease::acquire_or_recheck`], which folds
+    /// the "did another process finish this while I waited for the lock"
+    /// recheck into the acquire call itself. That recheck's
+    /// [`crate::rkyvcache::map_section_if_present`] call is a SECOND
+    /// on-disk validation of the same section this method's caller already
+    /// checked once via the cheap in-memory `is_mapped()` early return
+    /// (`ensure_edid_index` etc., before calling in here) — not a redundant
+    /// repeat of that check, but the one that closes the TOCTOU window
+    /// between "found not yet mapped in this process's `Index`" and
+    /// "actually acquired the advisory build lock": another process (or a
+    /// concurrent call in this one) can finish the exact same build in that
+    /// gap, and this recheck is what lets that caller return the
+    /// just-finished section instead of racing a second build of the same
+    /// data. There is no code path that obtains a live
+    /// [`crate::progress::BuildLease`] without this recheck having already
+    /// run and found the section still missing.
+    fn build_lazy_section<T>(
+        &self,
+        total: u64,
+        build: impl FnOnce(&mut crate::progress::BuildLease) -> anyhow::Result<T>,
+    ) -> anyhow::Result<crate::rkyvcache::Section<rkyv::Archived<T>>>
+    where
+        T: rkyv::Archive,
+        rkyv::Archived<T>: crate::rkyvcache::SectionSpec,
+        T: for<'a> rkyv::Serialize<
+                rkyv::api::high::HighSerializer<
+                    rkyv::ser::writer::IoWriter<std::io::BufWriter<std::fs::File>>,
+                    rkyv::ser::allocator::ArenaHandle<'a>,
+                    rkyv::rancor::Error,
+                >,
+            >,
+    {
+        let stage = <rkyv::Archived<T> as crate::rkyvcache::SectionSpec>::KIND;
         let sig = crate::rkyvcache::CacheSig::read(&self.esm.path)?;
-        let path = crate::rkyvcache::section_path_for(
-            &self.esm.path,
-            crate::rkyvcache::SectionKind::Edid,
-        )?;
-        let total = self.index.len() as u64;
+        let path = crate::rkyvcache::section_path_for_spec::<rkyv::Archived<T>>(&self.esm.path)?;
 
         let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
             &self.esm.path,
-            crate::progress::BuildStage::Edid,
+            stage,
             1,
             1,
             total,
             || {
-                let section =
-                    crate::rkyvcache::Section::<rkyv::Archived<crate::index::EdidSection>>::map(
-                        &path,
-                        sig,
-                        crate::index::CACHE_VERSION,
-                    )?;
-                Ok(section.is_mapped().then_some(section))
+                crate::rkyvcache::map_section_if_present::<rkyv::Archived<T>>(
+                    &path,
+                    sig,
+                    crate::index::CACHE_VERSION,
+                )
             },
         )? {
-            crate::progress::Acquired::AlreadyBuilt(section) => {
-                self.index.edid = section;
-                return Ok(());
-            }
+            crate::progress::Acquired::AlreadyBuilt(section) => return Ok(section),
             crate::progress::Acquired::NeedsBuild(lease) => lease,
         };
 
-        let data = crate::index::build_edid_section(&self.index, &self.esm, &mut lease)?;
+        let data = build(&mut lease)?;
         lease.writing();
-        self.index.edid =
-            crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)?;
+        crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)
+    }
+
+    /// Build the lazy EditorID index on first call, writing it to its own
+    /// `edid` section so a later call — in this process (the `is_mapped()`
+    /// early-return below) or a fresh one (see [`Index::build`]'s doc
+    /// comment) — reuses it rather than rebuilding. See
+    /// [`Self::build_lazy_section`] for the shared acquire/recheck/publish
+    /// protocol this and its two siblings below delegate to.
+    pub fn ensure_edid_index(&mut self) -> anyhow::Result<()> {
+        if self.index.edid.is_mapped() {
+            return Ok(());
+        }
+        let total = self.index.len() as u64;
+        self.index.edid = self.build_lazy_section(total, |lease| {
+            crate::index::build_edid_section(&self.index, &self.esm, lease)
+        })?;
         Ok(())
     }
 
     /// Build the lazy search index (EditorID + name/description) on first
     /// call, then cache it to its own `search` section. See
-    /// [`Self::ensure_edid_index`]'s doc comment for the acquire/recheck
-    /// protocol this shares.
+    /// [`Self::build_lazy_section`] for the acquire/recheck protocol this
+    /// shares.
     pub fn ensure_search_index(&mut self) -> anyhow::Result<()> {
         if self.index.search.is_mapped() {
             return Ok(());
         }
-        let sig = crate::rkyvcache::CacheSig::read(&self.esm.path)?;
-        let path = crate::rkyvcache::section_path_for(
-            &self.esm.path,
-            crate::rkyvcache::SectionKind::Search,
-        )?;
         let total = self.index.len() as u64;
-
-        let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
-            &self.esm.path,
-            crate::progress::BuildStage::Search,
-            1,
-            1,
-            total,
-            || {
-                let section = crate::rkyvcache::Section::<
-                    rkyv::Archived<crate::index::SearchSection>,
-                >::map(&path, sig, crate::index::CACHE_VERSION)?;
-                Ok(section.is_mapped().then_some(section))
-            },
-        )? {
-            crate::progress::Acquired::AlreadyBuilt(section) => {
-                self.index.search = section;
-                return Ok(());
-            }
-            crate::progress::Acquired::NeedsBuild(lease) => lease,
-        };
-
-        let data = crate::index::build_search_section(
-            &self.index,
-            &self.esm,
-            self.is_localized,
-            &mut lease,
-        )?;
-        lease.writing();
-        self.index.search =
-            crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)?;
+        self.index.search = self.build_lazy_section(total, |lease| {
+            crate::index::build_search_section(&self.index, &self.esm, self.is_localized, lease)
+        })?;
         Ok(())
     }
 
     /// Build the reverse-reference (`xref`) index on first call, then cache
     /// it to its own `xref` section. The most expensive of the three lazy
     /// builds (a full schema decode of every record). See
-    /// [`Self::ensure_edid_index`]'s doc comment for the acquire/recheck
-    /// protocol this shares.
+    /// [`Self::build_lazy_section`] for the acquire/recheck protocol this
+    /// shares.
     pub fn ensure_xref_index(&mut self) -> anyhow::Result<()> {
         if self.index.xref.is_mapped() {
             return Ok(());
         }
-        let sig = crate::rkyvcache::CacheSig::read(&self.esm.path)?;
-        let path = crate::rkyvcache::section_path_for(
-            &self.esm.path,
-            crate::rkyvcache::SectionKind::Xref,
-        )?;
         let total = self.esm.data().len() as u64;
-
-        let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
-            &self.esm.path,
-            crate::progress::BuildStage::Xref,
-            1,
-            1,
-            total,
-            || {
-                let section =
-                    crate::rkyvcache::Section::<rkyv::Archived<crate::index::XrefSection>>::map(
-                        &path,
-                        sig,
-                        crate::index::CACHE_VERSION,
-                    )?;
-                Ok(section.is_mapped().then_some(section))
-            },
-        )? {
-            crate::progress::Acquired::AlreadyBuilt(section) => {
-                self.index.xref = section;
-                return Ok(());
-            }
-            crate::progress::Acquired::NeedsBuild(lease) => lease,
-        };
-
-        let data = crate::index::build_xref_section(
-            &self.index,
-            &self.esm,
-            &self.schema,
-            self.is_localized,
-            self.localization.as_ref(),
-            self.curves.as_ref(),
-            &mut lease,
-        )?;
-        lease.writing();
-        self.index.xref =
-            crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)?;
+        self.index.xref = self.build_lazy_section(total, |lease| {
+            crate::index::build_xref_section(
+                &self.index,
+                &self.esm,
+                &self.schema,
+                self.is_localized,
+                self.localization.as_ref(),
+                self.curves.as_ref(),
+                lease,
+            )
+        })?;
         Ok(())
     }
 

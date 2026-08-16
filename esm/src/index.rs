@@ -7,7 +7,16 @@ use crate::reader::{
 };
 #[cfg(test)]
 use crate::rkyvcache::write_section;
-use crate::rkyvcache::{CacheSig, Section, SectionKind, section_path_for, write_and_remap};
+use crate::rkyvcache::{
+    CacheSig, Section, map_section_if_present, section_path_for_spec, write_and_remap,
+};
+// `SectionKind`/`section_path_for` (the explicit-kind form `section_path_for_spec`
+// replaces at every production call site — see that function's doc comment)
+// are only still needed by this module's own tests, which build paths for a
+// kind that deliberately doesn't match the type being mapped, to prove
+// `Section::map` rejects the mismatch.
+#[cfg(test)]
+use crate::rkyvcache::{SectionKind, section_path_for};
 use crate::schema::Schema;
 use crate::strings::Localization;
 use crate::tree::TreeIndex;
@@ -330,12 +339,12 @@ impl Index {
         let sig = CacheSig::read(&esm.path)?;
 
         let tree_section = Section::<rkyv::Archived<TreeIndex>>::map(
-            &section_path_for(&esm.path, SectionKind::Tree)?,
+            &section_path_for_spec::<rkyv::Archived<TreeIndex>>(&esm.path)?,
             sig,
             CACHE_VERSION,
         )?;
         let forms_section = Section::<rkyv::Archived<FormsSection>>::map(
-            &section_path_for(&esm.path, SectionKind::Forms)?,
+            &section_path_for_spec::<rkyv::Archived<FormsSection>>(&esm.path)?,
             sig,
             CACHE_VERSION,
         )?;
@@ -350,17 +359,17 @@ impl Index {
         // comment above for why no extra "leave absent" branch is needed:
         // `Section::map` already IS that branch, uniformly, for all three.
         let edid_section = Section::<rkyv::Archived<EdidSection>>::map(
-            &section_path_for(&esm.path, SectionKind::Edid)?,
+            &section_path_for_spec::<rkyv::Archived<EdidSection>>(&esm.path)?,
             sig,
             CACHE_VERSION,
         )?;
         let search_section = Section::<rkyv::Archived<SearchSection>>::map(
-            &section_path_for(&esm.path, SectionKind::Search)?,
+            &section_path_for_spec::<rkyv::Archived<SearchSection>>(&esm.path)?,
             sig,
             CACHE_VERSION,
         )?;
         let xref_section = Section::<rkyv::Archived<XrefSection>>::map(
-            &section_path_for(&esm.path, SectionKind::Xref)?,
+            &section_path_for_spec::<rkyv::Archived<XrefSection>>(&esm.path)?,
             sig,
             CACHE_VERSION,
         )?;
@@ -807,13 +816,25 @@ type TreeAndFormsSections = (
 /// work — structurally, not just by convention, since a [`crate::progress::BuildLease`]
 /// only exists in the [`crate::progress::Acquired::NeedsBuild`] arm below.
 fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndFormsSections> {
-    let tree_path = section_path_for(&esm.path, SectionKind::Tree)?;
-    let forms_path = section_path_for(&esm.path, SectionKind::Forms)?;
+    let tree_path = section_path_for_spec::<rkyv::Archived<TreeIndex>>(&esm.path)?;
+    let forms_path = section_path_for_spec::<rkyv::Archived<FormsSection>>(&esm.path)?;
     let total = esm.data().len() as u64;
 
     // Single stage, not two: `tree` and `forms` are both derived from one
     // shared `walk_structure` pass below, so there is only one counting
     // stage to report.
+    //
+    // The `map_section_if_present` pair below is a SECOND on-disk check of
+    // the exact two files `Index::build`'s caller already mapped once, just
+    // above, before deciding both weren't mapped and calling in here — not
+    // a redundant repeat of that check, but the one that closes the TOCTOU
+    // window between that first check and this call actually acquiring the
+    // advisory build lock: another process can finish building both
+    // sections in that gap, and this recheck is what lets this call return
+    // the just-finished sections (`Acquired::AlreadyBuilt`) instead of
+    // racing a second walk of the whole ESM. See `crate::Database::
+    // build_lazy_section`'s doc comment for the same shape on the three lazy
+    // single-section builds.
     let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
         &esm.path,
         crate::progress::BuildStage::Forms,
@@ -821,12 +842,17 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
         1,
         total,
         || {
-            let tree_recheck =
-                Section::<rkyv::Archived<TreeIndex>>::map(&tree_path, sig, CACHE_VERSION)?;
-            let forms_recheck =
-                Section::<rkyv::Archived<FormsSection>>::map(&forms_path, sig, CACHE_VERSION)?;
-            Ok((tree_recheck.is_mapped() && forms_recheck.is_mapped())
-                .then_some((tree_recheck, forms_recheck)))
+            let tree_recheck = map_section_if_present::<rkyv::Archived<TreeIndex>>(
+                &tree_path,
+                sig,
+                CACHE_VERSION,
+            )?;
+            let forms_recheck = map_section_if_present::<rkyv::Archived<FormsSection>>(
+                &forms_path,
+                sig,
+                CACHE_VERSION,
+            )?;
+            Ok(tree_recheck.zip(forms_recheck))
         },
     )? {
         crate::progress::Acquired::AlreadyBuilt(sections) => return Ok(sections),
@@ -947,7 +973,7 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
     bucket(
         crate::progress::BuildStage::Forms,
         Section::<rkyv::Archived<FormsSection>>::map(
-            &section_path_for(esm_path, SectionKind::Forms)?,
+            &section_path_for_spec::<rkyv::Archived<FormsSection>>(esm_path)?,
             sig,
             CACHE_VERSION,
         )?
@@ -956,7 +982,7 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
     bucket(
         crate::progress::BuildStage::Tree,
         Section::<rkyv::Archived<TreeIndex>>::map(
-            &section_path_for(esm_path, SectionKind::Tree)?,
+            &section_path_for_spec::<rkyv::Archived<TreeIndex>>(esm_path)?,
             sig,
             CACHE_VERSION,
         )?
@@ -965,7 +991,7 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
     bucket(
         crate::progress::BuildStage::Edid,
         Section::<rkyv::Archived<EdidSection>>::map(
-            &section_path_for(esm_path, SectionKind::Edid)?,
+            &section_path_for_spec::<rkyv::Archived<EdidSection>>(esm_path)?,
             sig,
             CACHE_VERSION,
         )?
@@ -974,7 +1000,7 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
     bucket(
         crate::progress::BuildStage::Search,
         Section::<rkyv::Archived<SearchSection>>::map(
-            &section_path_for(esm_path, SectionKind::Search)?,
+            &section_path_for_spec::<rkyv::Archived<SearchSection>>(esm_path)?,
             sig,
             CACHE_VERSION,
         )?
@@ -983,7 +1009,7 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
     bucket(
         crate::progress::BuildStage::Xref,
         Section::<rkyv::Archived<XrefSection>>::map(
-            &section_path_for(esm_path, SectionKind::Xref)?,
+            &section_path_for_spec::<rkyv::Archived<XrefSection>>(esm_path)?,
             sig,
             CACHE_VERSION,
         )?

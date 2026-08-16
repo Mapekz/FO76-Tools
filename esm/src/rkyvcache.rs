@@ -140,6 +140,43 @@ pub(crate) fn section_path_for(esm_path: &Path, kind: SectionKind) -> anyhow::Re
     Ok(cache_dir_for(esm_path)?.join(name))
 }
 
+/// [`section_path_for`], with `kind` read off `A::KIND` instead of passed by
+/// the caller — the same relationship [`Section::map`] has to
+/// [`Section::map_raw`]. Every production call site that already has a
+/// spec-bound archived type in hand (i.e. is about to call
+/// [`Section::map`]/[`write_section`] with that same `A`/`T`) should go
+/// through this instead of spelling out the matching [`SectionKind`]
+/// separately: two arguments that must always agree but are independently
+/// suppliable is exactly the class of bug [`SectionSpec`] exists to close
+/// (see its doc comment), and `section_path_for`'s explicit-`kind` form
+/// re-opened one narrow instance of it at every one of its call sites. The
+/// explicit-`kind` [`section_path_for`] itself stays — this module's own
+/// tests need to build paths for a kind that deliberately doesn't match the
+/// type they're about to map, to prove [`Section::map`] rejects the
+/// mismatch.
+pub(crate) fn section_path_for_spec<A: SectionSpec>(esm_path: &Path) -> anyhow::Result<PathBuf> {
+    section_path_for(esm_path, A::KIND)
+}
+
+/// [`Section::map`], reduced to `Option<Section<A>>` — `Some` iff the file at
+/// `path` mapped successfully, `None` for any absent/rejected reason
+/// [`Section::map`] itself already treats as "not present" (missing, stale,
+/// wrong kind, corrupt, …). This is the exact two-line "map, then fold
+/// `is_mapped()` into an `Option`" shape every
+/// [`crate::progress::BuildLease::acquire_or_recheck`] recheck closure in
+/// this crate needs — `acquire_or_recheck` treats `Some` as "another process
+/// already finished this build" and `None` as "still needs building" (see
+/// that function's doc comment) — factored out once so a future section
+/// doesn't re-derive it by hand.
+pub(crate) fn map_section_if_present<A: SectionSpec>(
+    path: &Path,
+    sig: CacheSig,
+    cache_version: u32,
+) -> anyhow::Result<Option<Section<A>>> {
+    let section = Section::<A>::map(path, sig, cache_version)?;
+    Ok(section.is_mapped().then_some(section))
+}
+
 /// One memory-mapped rkyv section: a fixed header followed immediately by
 /// an rkyv archive whose root is at the END of the payload (this is how
 /// rkyv lays out archives — see [`Section::get`]'s SAFETY comment).
