@@ -24,6 +24,9 @@ use rules::{PostDecodeTarget, apply_post_decode_rules};
 // scalar/leaf toolbox and core interpreter moved out to `scalars.rs`/`walk.rs`.
 use scalars::field_int_value;
 pub(crate) use scalars::json_f32;
+#[cfg(test)]
+pub(crate) use scalars::member_version_bounds;
+pub(crate) use scalars::member_version_ok;
 pub use vmad::decode_vmad;
 #[cfg(test)]
 use vmad::{

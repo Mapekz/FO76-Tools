@@ -322,56 +322,55 @@ pub(super) fn choose_union_variant(
     }
 }
 
-pub(super) fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
-    let (from_v, below_v) = match member {
+/// Form-version activation bounds `(from_version, below_version)` for the
+/// member kinds that carry them. The single source both the decoder
+/// ([`member_version_ok`]) and `diff`'s version-gated-transition stripping
+/// read (issue #29): active iff `fv >= from` (when set) and `fv < below`
+/// (when set, strict).
+pub(crate) fn member_version_bounds(member: &MemberDef) -> (Option<u16>, Option<u16>) {
+    match member {
         MemberDef::Struct {
             from_version,
             below_version,
             ..
-        } => (*from_version, *below_version),
-        MemberDef::Integer {
+        }
+        | MemberDef::Integer {
             from_version,
             below_version,
             ..
-        } => (*from_version, *below_version),
-        MemberDef::Float {
+        }
+        | MemberDef::Float {
             from_version,
             below_version,
             ..
-        } => (*from_version, *below_version),
-        MemberDef::Unused {
+        }
+        | MemberDef::Unused {
             from_version,
             below_version,
             ..
-        } => (*from_version, *below_version),
-        MemberDef::Empty {
+        }
+        | MemberDef::Empty {
             from_version,
             below_version,
             ..
-        } => (*from_version, *below_version),
-        MemberDef::Bytes {
+        }
+        | MemberDef::Bytes {
             from_version,
             below_version,
             ..
-        } => (*from_version, *below_version),
-        MemberDef::FormId {
+        }
+        | MemberDef::FormId {
             from_version,
             below_version,
             ..
         } => (*from_version, *below_version),
         _ => (None, None),
-    };
-    if let Some(v) = from_v
-        && form_version < v
-    {
-        return false;
     }
-    if let Some(v) = below_v
-        && form_version >= v
-    {
-        return false;
-    }
-    true
+}
+
+pub(crate) fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {
+    let (from_v, below_v) = member_version_bounds(member);
+    from_v.is_none_or(|v| form_version >= v) && below_v.is_none_or(|v| form_version < v)
 }
 
 /// `wbFromSize(N, value)` gate. `data_len` must be the length of the `data`

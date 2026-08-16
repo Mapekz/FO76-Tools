@@ -19,6 +19,9 @@
 
 use super::array_diff::is_empty_diff;
 use super::{RecordDiff, SuppressedDefault};
+#[cfg(test)]
+use crate::decode::member_version_bounds;
+use crate::decode::member_version_ok;
 use crate::schema::{MemberDef, Schema};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -125,54 +128,6 @@ fn is_pure_disappearance(v: &Value) -> bool {
     is_pure_transition(v, "to")
 }
 
-/// Return the form-version activation bounds used by `decode::member_version_ok`.
-fn member_version_bounds(member: &MemberDef) -> (Option<u16>, Option<u16>) {
-    match member {
-        MemberDef::Struct {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Integer {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Float {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Unused {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Empty {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Bytes {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::FormId {
-            from_version,
-            below_version,
-            ..
-        } => (*from_version, *below_version),
-        _ => (None, None),
-    }
-}
-
-/// Mirror `decode::member_version_ok`, including the strict below-version bound.
-fn member_version_active(member: &MemberDef, form_version: u16) -> bool {
-    let (from_version, below_version) = member_version_bounds(member);
-    from_version.is_none_or(|v| form_version >= v) && below_version.is_none_or(|v| form_version < v)
-}
-
 fn member_name(member: &MemberDef) -> Option<&str> {
     match member {
         MemberDef::Struct { name, .. }
@@ -206,9 +161,7 @@ fn member_subtree_crosses_gate(
     active_a: bool,
     active_b: bool,
 ) -> bool {
-    if member_version_active(member, fv_a) == active_a
-        && member_version_active(member, fv_b) == active_b
-    {
+    if member_version_ok(fv_a, member) == active_a && member_version_ok(fv_b, member) == active_b {
         return true;
     }
 
