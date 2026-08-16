@@ -33,17 +33,17 @@ coherent — either the override poisons the shared instance for every other cal
 would need to cold-open and hold a second, unshared `Database` just for that request.
 
 That second option — proxy the override through the daemon, which cold-opens an unshared
-`Database` server-side and answers from it — is not a hypothetical improvement being left on the
-table. It is strictly worse than what `--local` already does today: it still cold-opens (nothing
-was warmed), it is still unshared (thrown away after the one response), and it now pays for an
+`Database` server-side and answers from it — is strictly worse than what `--local` already does
+today: it still cold-opens (nothing was warmed), it is still unshared (thrown away after the one
+response), and it now pays for an
 HTTP round-trip and JSON (de)serialization on top of the same open-then-query work `--local`
 already does in-process. Wiring source overrides through the daemon would add `Op`-level surface
 across four commands — a new field on `Op::ListTypeRecords`/`Op::Record`/`Op::Search`/`Op::Diff`,
 plus `RegistryHost`-side handling for something the `Registry`'s caching model has nothing to offer
 — in exchange for a code path that is slower than the direct open it would replace, not faster.
 
-So today's shape — bail in daemon mode, else open in-process — is not a workaround pending a
-proper fix. It is the correct, and only sensible, place for this to live.
+Today's shape — bail in daemon mode, else open in-process — is the correct place for this to
+live.
 
 ## Consequences
 

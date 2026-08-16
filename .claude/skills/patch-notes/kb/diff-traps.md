@@ -109,8 +109,7 @@ form_version schema population **unless a field in it carries a non-default valu
 `Animation Fire Seconds` are animation-asset timing metadata, decoupled from the DPS-affecting
 stats. Live-checking Combat Knife and Hunting Rifle across 20260710→20260717 showed `Speed`,
 `Reload Speed` and `Melee Speed` byte-for-byte unchanged while the `Animation *` family moved (many
-melee weapons converging on exactly 1.1388938) across a large batch of starter weapons. Same trap
-shape as the WSAM sneak-attack-multiplier default pickup. Related: a `RGW2`/`FNAM` → `RGW3` struct
+melee weapons converging on exactly 1.1388938) across a large batch of starter weapons. Related: a `RGW2`/`FNAM` → `RGW3` struct
 rename rides along with this churn — a naming shuffle, not new data.
 *verified 2026-07-22 vs 20260717*
 

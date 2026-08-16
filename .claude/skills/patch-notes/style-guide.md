@@ -3,7 +3,7 @@
 Read this before writing a single line. It applies to the deep writers and the orchestrator's
 assembled summary alike.
 
-## Audience & scope (standing decisions, 2026-07-14)
+## Audience & scope
 
 - **Primary audience: build-crafters.** Theorycrafters who need exact old → new numbers,
   mechanic semantics, and undocumented changes — and who must be able to act without
@@ -34,16 +34,10 @@ assembled summary alike.
 - EditorIDs in backticks only when they add real value (e.g. disambiguating two
   similarly-named items). FormIDs never appear in narrative prose — only in Evidence lines.
 - No filler. "Various improvements," "general polish," "quality of life updates" are banned.
-- Never write a bare "+X% damage" — name the mechanism, using this standard terminology
+- Never write a bare "+X% damage" — identify which of the three mechanisms it is and name it:
+  **"additive damage bonus" (DBM)**, **"base damage increase"**, or **"damage multiplier"**
   (`kb/mechanics.md`, "A '+X% damage' is one of three distinct mechanisms", has the data-side
-  signatures):
-  - **"additive damage bonus" (DBM)** — damage-bonus-multiplier pool contributions
-    (`STAT_DmgMult*` / conditional `STAT_DmgVs*` AVs, OMOD `DamageBonusMult`, "Mod Weapon
-    DMG Bonus Mult" perk entries); stacks additively with other damage bonuses.
-  - **"base damage increase"** — `AttackDamage` / `DamageTypeValues` changes on the weapon
-    itself; multiplies through everything downstream.
-  - **"damage multiplier"** — effects multiplying total damage (power attack, body-part /
-    weakpoint mults, Taking One for the Team, Follow Through, …).
+  signatures for telling them apart).
 - Enemy-only items: say "the boss attacks with it." Write "drops" / "can roll legendary
   mods" only if the item is actually in the death-item/reward LVLI chain — combat inventory
   is not loot. Quote enemy-weapon damage at the wielder's actual level(s) (fixed level and

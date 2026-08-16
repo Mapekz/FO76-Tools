@@ -22,10 +22,10 @@ blocks: it takes a non-blocking `try_lock_exclusive` on the lock file, so "is a 
 one syscall, answerable even while the daemon's own per-ESM `Mutex<Database>` (`registry.rs`) is
 held for the whole build.
 
-This is deliberately **not** a daemon HTTP endpoint. An endpoint would only cover the daemon path —
-`--local`, the N-API/Electron host, and `tools/esm_gateway.py` would stay blind, and a second
-`--local` process couldn't dedup against a building daemon at all. One filesystem protocol covers
-every caller uniformly with no IPC.
+This protocol lives on the filesystem, **not** a daemon HTTP endpoint: an endpoint would only cover
+the daemon path — `--local`, the N-API/Electron host, and `tools/esm_gateway.py` would stay blind,
+and a second `--local` process couldn't dedup against a building daemon at all. One filesystem
+protocol covers every caller uniformly with no IPC.
 
 Each of `Index`'s four build entry points (`Index::build`'s `build_tree_and_forms`,
 `ensure_edid_index`, `ensure_search_index`, `ensure_xref_index`) acquires a `BuildLease` *before*
@@ -36,12 +36,12 @@ lock double as dedup, not just a coordination signal: a second process pays only
 waiting for the lock, never a redundant walk.
 
 The lock is **per-ESM, not per-section**. A builder mid-`xref` blocks a second process that only
-wants `edid`, even though the two don't share data dependencies in that specific case. Accepted
-deliberately: the two would otherwise fight over the same mmap'd ESM and CPU for no real
-concurrency benefit, and five independent locks (one per `SectionKind`) would be meaningfully more
-machinery for a benefit that mostly doesn't materialize in practice — builds against the same ESM
-cluster in time (a fresh snapshot gets queried repeatedly right after landing), so the common case
-is exactly the one this doesn't help.
+wants `edid`, even though the two don't share data dependencies in that specific case: the two
+would otherwise fight over the same mmap'd ESM and CPU for no real concurrency benefit, and five
+independent locks (one per `SectionKind`) would be meaningfully more machinery for a benefit that
+mostly doesn't materialize in practice — builds against the same ESM cluster in time (a fresh
+snapshot gets queried repeatedly right after landing), so the common case is exactly the one this
+doesn't help.
 
 CLI consumers (`src/bin/cli/progress_ui.rs`) build on `progress::read` alone:
 
@@ -52,8 +52,8 @@ CLI consumers (`src/bin/cli/progress_ui.rs`) build on `progress::read` alone:
   synchronously, before control returns to whichever `cmd_*` function is about to print its result,
   so a progress line can never race the real output.
 - `--no-wait` checks `progress::read` client-side, before a `Backend` is even constructed, and
-  exits immediately (status 75) if a build is already in flight — deliberately never routed through
-  the daemon, for the same reason `read` itself doesn't block.
+  exits immediately (status 75) if a build is already in flight; it never routes through the
+  daemon, for the same reason `read` itself doesn't block.
 - `esm cache status [--json]` combines `progress::read` with `index::cache_inventory` (the same
   O(1) `Section::map` header check `Index::build` uses, without its rebuild fallback) to report
   `empty`/`building`/`partial`/`complete` — a pure read that never opens the ESM or contacts the

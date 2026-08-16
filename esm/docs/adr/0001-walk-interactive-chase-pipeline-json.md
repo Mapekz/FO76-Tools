@@ -15,7 +15,9 @@ subcommands serve two *contracts*, not two capabilities:
 - **`chase`** is machine-facing only: it always emits the classified `ChaseTree` JSON,
   hard-errors on non-mechanism root types, and keeps all five root types so the
   patch-notes deep-writer gets one uniform call shape across its `unresolved[]` items.
-  Its JSON shape is a frozen contract; its human text renderer was deleted.
+  Its JSON shape is a frozen, additive-tolerant contract — new optional fields and new enum
+  variants only, never a rename or removal, unless a future ADR explicitly revisits it (extended
+  2026-08-01); its human text renderer was deleted.
 
 Both consume one classifier core in `src/chase.rs` — the verbs differ in contract
 (bounded/stable/fail-fast vs expansive/typo-tolerant), not in plumbing.
@@ -32,40 +34,20 @@ Both consume one classifier core in `src/chase.rs` — the verbs differ in contr
 - **Narrow chase back to OMOD-only**: rejected because the deep-writer fans out over
   changed records of all five types and would otherwise need to parse two output shapes.
 
-## Addendum (2026-08-01) — additive chase JSON tolerance
+## Where the walk/chase computation runs (extended 2026-08-10)
 
-The frozen `chase` JSON shape is additive-tolerant. The OMOD classifier work for issues
-#23/#24/#25 adds `HopKind::TagKeyword` and optional `Hop.source_omod` without renaming or
-removing existing fields or enum variants. Any future addition to the shape should follow
-the same rule — new optional fields and new enum variants only; no renames, no removals —
-unless a future ADR explicitly revisits the contract.
-
-## Update (2026-08-10) — a wire representation for both contracts, not a new one
-
-`walk` and `chase` gained `Op::Walk`/`Op::Chase` (plus `Op::DropTable` for
-`crate::lvli::drop_table`, previously only reachable through `walk`'s LVLI digest) in
-`src/ipc.rs`, dispatched against an already-open `Database` the same way every other `Op`
-variant is. This is a relocation, not a reversal of this ADR's decision: `walk` is still the
-only interactive surface (its digest/rendering split, OMOD mechanism slicing, and LVLI drop-odds
-wrapping are unchanged), and `chase` still always emits the same frozen `ChaseTree` JSON and
-hard-errors on non-mechanism root types. What changed is *where* the BFS and the classifier run.
-
-Before this update, both verbs' `ChaseFetcher` implementation lived in `src/bin/cli.rs`
-(`BackendFetcher`), which drove the walk/classify loop from the CLI process via repeated
-`Op::RecordBulk`/`Op::ReferencedBy` round-trips to whatever `Backend` it held — the warm daemon by
-default, or an in-process `Database` under `--local`. That meant `walk`'s BFS cost one HTTP
-round-trip per queue-pop over a daemon, and neither verb — nor the digest/evidence-slice/drop-table
-data either one computes — was reachable from the MCP server or `esm-viewer`'s N-API binding,
-since neither of those processes runs the CLI's client-side driving loop.
-
-`Op::Walk`/`Op::Chase`/`Op::DropTable` move the walk BFS and the chase classifier to run inside
-whatever process is already handling the op — the daemon, `--local`'s in-process `Database`, or
-the N-API addon's `EsmDatabase` — via a new in-process `ChaseFetcher` adapter (`ipc.rs`'s
-`DbFetcher`) that reads straight off the already-open `Database`, no serialization or round-trip
-per fetch. `BackendFetcher` and the CLI's client-side driving loop (including the not-found
-search fallback and the `--refs` reverse-reference summary, both previously stitched together by
-`cmd_walk` itself) were deleted; `cmd_walk`/`cmd_chase` now send one `Op::Walk`/`Op::Chase` and
-only render the result — `walk/render.rs` remains the sole place a `Digest`/`WalkResult` becomes
-text or `--json` output, so `--local` and daemon output stay byte-identical. The MCP server
-(`esm_walk`/`esm_chase`/`esm_lvli_drop_table`) and the N-API binding (`EsmDatabase::walk`/`chase`/
-`lvli_drop_table`) now reach the same computation the CLI always could.
+`walk`/`chase` run via `Op::Walk`/`Op::Chase` (plus `Op::DropTable` for
+`crate::lvli::drop_table`, reachable before this only through `walk`'s LVLI digest) in
+`src/ipc.rs`, dispatched against an already-open `Database` the same way every other `Op` variant
+is. The BFS and the classifier run inside whatever process is already handling the op — the
+daemon, `--local`'s in-process `Database`, or the N-API addon's `EsmDatabase` — via an in-process
+`ChaseFetcher` adapter (`ipc.rs`'s `DbFetcher`) that reads straight off the open `Database`, no
+serialization or round-trip per fetch. This is a relocation, not a reversal of this ADR's
+decision: `walk` is still the only interactive surface (its digest/rendering split, OMOD
+mechanism slicing, and LVLI drop-odds wrapping are unchanged), and `chase` still always emits the
+same frozen `ChaseTree` JSON and hard-errors on non-mechanism root types — only *where* the BFS
+and classifier run changed. `walk/render.rs` remains the sole place a `Digest`/`WalkResult`
+becomes text or `--json` output, so `--local` and daemon output stay byte-identical. The MCP
+server (`esm_walk`/`esm_chase`/`esm_lvli_drop_table`) and the N-API binding
+(`EsmDatabase::walk`/`chase`/`lvli_drop_table`) now reach the same computation the CLI always
+could.

@@ -35,8 +35,8 @@ A `mod_Custom_*` OMOD implements its mechanic one of four ways:
    off the hop (`"reverse"` for an AV hook, `"forward"` for a plain SPEL/ENCH/PROJ attachment)
    instead of re-deriving the distinction from `hop.target.record_type` or re-running `refs` by
    hand.
-2. **Perk grant** — Property `116`/`Perk` ADD of a PERK. Item-granted perks have **no PCRD**;
-   `unreferenced_perk_rank` is a false positive on them.
+2. **Perk grant** — Property `116`/`Perk` ADD of a PERK. Item-granted perks have **no PCRD** (see
+   `diff-traps.md`'s `unreferenced_perk_rank` entry — don't call them orphaned).
 3. **Keyword hook** — the OMOD only ADDs a `CustomItemName_*` / `dn_*` KYWD; the mechanic lives
    in a SPEL/PERK effect gated on `WornHasKeyword(<that keyword>)`. `refs --type SPEL --paths` on
    the keyword points straight at the gating `Effects[N].Conditions[...]`.
@@ -55,8 +55,8 @@ returns nothing useful on those; chase the include instead.
 ## A "+X% damage" is one of three distinct mechanisms
 
 Identify which before writing any number, and name it in prose — **never write a bare "+X%
-damage"**. The mechanism determines how the number stacks, which is exactly what build-crafter
-readers need.
+damage"**. The mechanism determines how the number stacks, which is what build-crafter readers
+need.
 
 1. **Additive damage bonus (DBM)** — a contribution to the damage-bonus-multiplier pool, stacking
    additively with every other bonus (so a build dilutes it). Sources: ADD to a `STAT_DmgMult*` AV
@@ -138,9 +138,9 @@ comparable.
 
 - `MUL+ADD`: effective = base × (1 + Value1) + Value2. Standard FO4/76 convention, inferred from
   worked examples, not confirmed against engine code.
-- Property IDs worth recognizing on sight — all already resolve to these names in decoded
-  output, this is a quick-recall list for skimming raw diffs, not a manual lookup: `77` =
-  `DamageTypeValues`, `80` = `OverrideProjectile`, `106` = `DamageBonusMult`, `116` = `Perk`.
+- Property IDs worth recognizing on sight, for skimming raw diffs (already resolved to these
+  names in decoded output): `77` = `DamageTypeValues`, `80` = `OverrideProjectile`, `106` =
+  `DamageBonusMult`, `116` = `Perk`.
 - **A curve table on a property overrides Value2 as the magnitude source.** Curve removed + Value2
   changed = scaling replaced by a flat value. The x-axis on armor carry-weight-style curves is
   **item level** (break points 1/10/20/30/40/50).

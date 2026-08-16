@@ -10,9 +10,9 @@ decompressor as the sibling `ba2` crate's `src/format.rs` + `src/reader.rs` + `s
 for "open this archive, read this named entry by path." `ba2/src/lib.rs`'s public
 `Ba2Archive::open`/`Ba2Archive::read` already cover that exact surface.
 
-This looks, on the surface, like an oversight: two crates in the same workspace-adjacent repo
-independently reimplementing the same binary format, with `esm` simply forgetting to add a
-`ba2 = { path = "../ba2" }` dependency. It is not — the duplication was evaluated and kept.
+Two crates in the same workspace-adjacent repo independently reimplement the same binary format —
+the duplication was evaluated and kept, not left by `esm` forgetting a
+`ba2 = { path = "../ba2" }` dependency.
 
 The duplication has already drifted once, which is the sharpest argument for *why* this needs to
 stay a recorded decision rather than an implicit assumption: `esm/src/compress.rs`'s
@@ -20,18 +20,16 @@ stay a recorded decision rather than an implicit assumption: `esm/src/compress.r
 `decompress_lz4`/`decompress_zlib` against a decompression bomb, with three colocated tests) had no
 equivalent in `ba2/src/compress.rs` until this same change set ported it over. Two independent
 copies of "decompress an LZ4 block to a declared size" silently diverged on a real security
-property for as long as they existed side by side. This ADR is not a plan to prevent that kind of
-drift from recurring — by design, keeping the crates separate means it *can* recur — it is naming
-the tradeoff so future changes to either copy's safety/behavior are made with eyes open, not
-assumed to be mirrored automatically.
+property for as long as they existed side by side. Keeping the crates separate means drift like
+this can recur; this ADR names the tradeoff so future changes to either copy's safety/behavior are
+made with eyes open, not assumed to be mirrored automatically.
 
 ## Decision
 
 `esm/src/ba2.rs` stays a separate, minimal copy. `esm` will not add a dependency on the `ba2`
 crate to replace it.
 
-Two concrete reasons, both real behavior/build-graph differences, not just "it would be a bigger
-refactor":
+Two concrete reasons, both real behavior/build-graph differences:
 
 - **`Codec` semantics differ, and the difference is exactly the kind of divergence you don't want
   silently swapped in.** `ba2::Ba2Archive::read` takes an explicit `Codec` parameter, including

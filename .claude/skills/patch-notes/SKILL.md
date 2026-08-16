@@ -144,7 +144,7 @@ set of top-level changed field paths)` — and any shape recurring at least
 them out of DEEP/BRIEF/AMBIGUOUS entirely. A bundle containing any added or removed
 record is never ROLLOUT: a genuinely new record is always a real story.
 
-This is load-bearing, not cosmetic. On the 20260710→20260717 pair it took AMBIGUOUS
+This is load-bearing: on the 20260710→20260717 pair it took AMBIGUOUS
 from 34,327 bundles to 546 — the difference between "one assessor agent" and
 "impossible".
 
@@ -169,8 +169,8 @@ python3 esm/tools/triage_bundles.py "$OUT" --merge-assessment "$OUT/work/assessm
 
 Sanity-check the final tier stats in `triage.json` — if DEEP exceeds ~40 bundles or DROP
 swallowed a record type you'd expect to matter (WEAP/PERK/OMOD), inspect `reasons` before
-proceeding; the config (`esm/tools/patch_notes_tiers.json`) may need a rule fix, and silent
-mis-tiering is exactly the failure mode this step exists to catch.
+proceeding; the config (`esm/tools/patch_notes_tiers.json`) may need a rule fix. Silent
+mis-tiering is the failure mode this step exists to catch.
 
 Sanity-check ROLLOUT the same way, in the opposite direction: skim `rollouts.md` and
 confirm each row really is uniform bulk churn. A shape that recurs often can still
@@ -227,12 +227,11 @@ Read every draft + report. Then, in order:
 4. **Merge `kb_proposals[]`** into the KB, routing by each proposal's `kind`: `mechanic` →
    `.claude/skills/patch-notes/kb/mechanics.md`, `trap` →
    `.claude/skills/patch-notes/kb/diff-traps.md`. These are the only files outside `$OUT` this
-   skill may write. Before appending, enforce the format (specified in `deep-writer-prompt.md`)
-   yourself — writers drift and the KB is re-read whole by every future run:
-   - **Rewrite, don't paste.** Cut it to ≤10 lines: a claim as the `##` heading, 2-4 sentences of
-     present-tense mechanics, exactly one `**Example:**`, one `*verified <date> vs <snapshot>*`.
-   - **Strip all history** — how it was found, what was believed first, when a tool or schema was
-     fixed, which run it came from. None of it changes what a future writer does.
+   skill may write. Before appending, enforce `mechanics.md`'s entry format yourself — writers
+   drift and the KB is re-read whole by every future run:
+   - **Rewrite, don't paste** into that format; strip all history — how it was found, what was
+     believed first, when a tool or schema was fixed, which run it came from. None of it changes
+     what a future writer does.
    - **Merge into the existing entry** when one already covers the topic (the writer may flag
      this as `refines: <heading>`). Never append a near-duplicate; a KB with two entries on one
      mechanic is worse than one stale entry.

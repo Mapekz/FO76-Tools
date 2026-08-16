@@ -49,11 +49,11 @@ every one to ground truth. Run all commands from the repo root.
    up) only for mechanics chase doesn't cover: resolve every PERK/ENCH/SPEL/AVIF/KYWD a changed
    property touches until you can state what the change does in player terms. An AVIF's name is
    not its semantics — find its consumer.
-2. **Plain language first, exact delta second**: "reload speed 5s → 3.75s (−25%)". Old → new
-   wherever the diff alone is ambiguous — batch every changed anchor's before-value into one
+2. **Plain language first, exact delta second** (style guide's voice rule) — old → new
+   wherever the diff alone is ambiguous: batch every changed anchor's before-value into one
    bulk `get` against the OLD esm rather than querying them one at a time. Never round, never
    estimate; every number comes from the slice, an extract, or a live call.
-3. **Hunt silent changes — this is the post's core value:**
+3. **Hunt silent changes — the post's core value:**
    - Any property change NOT reflected in the item's Description → `⚠️ Undocumented:` bullet.
    - Any Description claim contradicted by the numbers → `⚠️ Mismatch:` bullet.
    - Fetch every anchor's description in ONE bulk `get` call, then compare; assume nothing
@@ -61,9 +61,10 @@ every one to ground truth. Run all commands from the repo root.
 4. **Verify before asserting**: reproduce every lint on your bundles with live `get`s — batch
    all the affected FormIDs for a lint into one bulk call rather than looping — before writing
    it up (irreproducible lints go in the report's `lints_not_reproduced`, never the draft).
-   Check it against `{TRAPS_KB}`'s "Lint false positives" section first: item-granted perks have
-   no PCRD, so don't call them orphaned — verify the grant path via `refs "{NEW_ESM}" <perk-id>
-   --type PCRD --paths --pretty` instead. Never assert liveness from an EDID prefix alone
+   Check it against `{TRAPS_KB}`'s "Lint false positives" section first — e.g.
+   `unreferenced_perk_rank` on an item-granted perk — and verify the grant path via `refs
+   "{NEW_ESM}" <perk-id> --type PCRD --paths --pretty` before calling anything orphaned. Never
+   assert liveness from an EDID prefix alone
    (`zzz_`/`CUT_`/`DEL_`/`POST_` are heuristics); POST_ content goes only under the datamined
    section with the standing disclaimer.
 
@@ -97,18 +98,10 @@ orchestrator reconciles every deferral — an unlisted skip is a dropped story.
 ### `kb_proposals` entry format — follow exactly
 
 The KB is read whole by every writer each run, so an entry that sprawls costs every future run.
-Match this shape or the orchestrator will rewrite it:
-
-```
-## <The rule, stated as a claim — not a topic or a record name>
-<2-4 sentences: how it works and what to do with it. Present tense, no history.>
-**Example:** <ONE worked case, FormIDs inline, ≤4 lines>
-*verified <YYYY-MM-DD> vs <snapshot token>*
-```
-
-Hard limits: **≤10 lines total**, **exactly one** `**Example:**`. Do not write how you found it,
-what you first believed, when a tool or schema was fixed, or which prior run it came from — none
-of that changes what a future writer does. If your entry refines something already in the KB, say
-so in the `entry` text (`refines: <existing heading>`) instead of writing a near-duplicate.
+Match `{MECHANICS_KB}`'s entry format (its header) exactly, or the orchestrator will rewrite it:
+**≤10 lines total**, **exactly one** `**Example:**` (≤4 lines, FormIDs inline), present tense, no
+history of how you found it or what you first believed. If your entry refines something already
+in the KB, say so in the `entry` text (`refines: <existing heading>`) instead of writing a
+near-duplicate.
 
 Your final text reply: ≤10 lines — headline findings, unresolved count, deferred count.

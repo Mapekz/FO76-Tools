@@ -32,7 +32,7 @@ envelope (`strategy: "unkeyed"`, whole `removed`/`added` element lists, no `chan
 `run_lints`, `esm-viewer`'s `DiffPanel` — inherits real content for these arrays instead of a
 blob, without having to special-case a fifth shape.
 
-**`Conditions[]` staying unkeyed is not a gap — it is correct.** A condition's position in the
+**`Conditions[]` stays unkeyed because element order is semantic.** A condition's position in the
 array is semantic: consecutive rows chain via their own `AND/OR` field, so pairing element *i* of
 the old list against element *i* of the new list by any synthetic key would report false
 mutations whenever a condition is inserted, removed, or reordered anywhere but the tail. Reporting
@@ -95,10 +95,10 @@ member — nothing hides that the original proposal needed help.
 
 **Widening can only make a pairing more honest, never more wrong.** A stricter key turns an
 unsupported `changed` guess into an `added` + `removed` pair — it can't invent a false pairing the
-original (looser) key wasn't already risking. This has one real behavioral cost, worth stating
-plainly rather than only in a commit message: for an array whose duplicate-key elements really are
-the *same conceptual entry* with one mutable field (LVLI entries sharing `(Reference, Minimum
-Level)` but differing `Count` is the case a regression test covers), widening onto that mutable
+original (looser) key wasn't already risking. This has one real behavioral cost: for an array
+whose duplicate-key elements really are the *same conceptual entry* with one mutable field (LVLI
+entries sharing `(Reference, Minimum Level)` but differing `Count` is the case a regression test
+covers), widening onto that mutable
 field means a genuine "this entry's count changed" can no longer render as a `changed` row — it
 renders as the old-count row removed and the new-count row added. There is no way to tell, from the
 array data alone, whether two duplicate-key rows are "the same entity, edited" or "two different
@@ -109,10 +109,11 @@ even though it changes previously-observed output for a case like this.
 `unkeyed_array_diff` was originally a whole-list dump (see above). It now runs the two lists
 through an order-preserving alignment (longest common subsequence — `lcs_align` in `src/diff.rs`)
 and reports only the elements outside that alignment, plus an `unchanged_count` member so a reader
-isn't left assuming the whole array turned over. **Deliberately order-preserving, not a multiset
-diff**: a multiset diff would report a pure reorder as no change at all, which is exactly wrong for
-an order-significant unkeyed array — CTDA `Conditions[]`, this ADR's canonical case, or a
-`GetRandomPercent` cascade in a first-match list, where swapping two entries changes behavior even
+isn't left assuming the whole array turned over. **The alignment must stay order-preserving, not
+collapse to a multiset diff:** a multiset diff would report a pure reorder as no change at all,
+which is exactly wrong for an order-significant unkeyed array — CTDA `Conditions[]`, this ADR's
+canonical case, or a `GetRandomPercent` cascade in a first-match list, where swapping two entries
+changes behavior even
 though the set of entries is unchanged. LCS keeps one copy of a moved element aligned and reports
 the move as removed + added instead, so a reorder that matters stays visible. Measured on the same
 run: unkeyed elements reported dropped from 1,418 to roughly 838 (a plain insertion/removal trims
@@ -126,13 +127,13 @@ proposed key is now subject to the uniqueness check above. The original ten's fi
 unchanged; only the final catch-all was widened, and two new wrapper/domain-specific heuristics
 were added ahead of it.
 
-**A confirmed side effect, worth recording rather than only fixing silently: a `GMRW` example cited
-early in this work as a Part-A success story was itself a product of the bug this section fixes.**
+**A confirmed side effect: a `GMRW` example cited early in this work as a Part-A success story was
+itself a product of the bug this section fixes.**
 Before uniqueness validation existed, `GMRW`'s `Rewards List[]` keyed on `Quest Reward Currency
 Object` — a field mostly `null` — so two unrelated reward tiers paired FIFO-within-the-null-group
 and produced a plausible-looking single-field `Conditions` diff (old index 7 against new index 0).
 That looked like a clean, real gating change and was reported as one. After widening, the same
 record correctly reports the two reward tiers as removed + added instead, since nothing in the data
-actually links those two indices. This is the intended, more honest behavior, not a regression —
-but a concrete reminder that a diff which *looks* clean is not proof it's correctly paired; the
-`PiercingLove` `COBJ` example above (`HasLearnedRecipe`) is unaffected and remains accurate.
+actually links those two indices — the intended, more honest behavior, and a concrete reminder
+that a diff which *looks* clean is not proof it's correctly paired. The `PiercingLove` `COBJ`
+example above (`HasLearnedRecipe`) is unaffected and remains accurate.
