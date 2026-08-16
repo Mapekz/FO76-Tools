@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import type { FilterOp, FilterResult, RecordRow } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
 import { listRecordTypeSigs } from '../lib/sigLists'
+import { colors, panelStyle, inputStyle } from '../theme'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -79,16 +80,7 @@ export function FilterPanel({ onNavigate }: Props) {
   const rows: RecordRow[] = result?.rows ?? []
 
   return (
-    <div
-      style={{
-        padding: 8,
-        fontSize: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
+    <div style={panelStyle}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           Type:
@@ -107,14 +99,7 @@ export function FilterPanel({ onNavigate }: Props) {
           value={path}
           onChange={(e) => setPath(e.target.value)}
           placeholder="(leave blank to scan all fields)"
-          style={{
-            background: '#16213e',
-            color: '#e0e0e0',
-            border: '1px solid #444',
-            borderRadius: 3,
-            padding: '4px 6px',
-            fontFamily: 'monospace',
-          }}
+          style={inputStyle}
         />
         <datalist id="filter-field-paths">
           {fieldPaths.map((p) => (
@@ -143,13 +128,9 @@ export function FilterPanel({ onNavigate }: Props) {
             }}
             placeholder="value"
             style={{
+              ...inputStyle,
               flex: 1,
-              background: op === 'exists' ? '#222' : '#16213e',
-              color: '#e0e0e0',
-              border: '1px solid #444',
-              borderRadius: 3,
-              padding: '4px 6px',
-              fontFamily: 'monospace',
+              background: op === 'exists' ? colors.hairline : colors.panelSteel,
             }}
           />
         </div>
@@ -163,7 +144,7 @@ export function FilterPanel({ onNavigate }: Props) {
         </button>
       </div>
 
-      {error && <div style={{ color: '#e88', marginTop: 6 }}>{error}</div>}
+      {error && <div style={{ color: colors.faultRed, marginTop: 6 }}>{error}</div>}
 
       {result && (
         <div style={{ marginTop: 8 }}>
@@ -171,7 +152,7 @@ export function FilterPanel({ onNavigate }: Props) {
             {rows.length} of {result.matched} matches
           </div>
           {result.scan_capped && (
-            <div style={{ color: '#aaa', fontSize: 11 }}>
+            <div style={{ color: colors.dimReadout, fontSize: 11 }}>
               (scanned first {result.scanned} of {result.total} {sig} records)
             </div>
           )}
@@ -186,8 +167,8 @@ export function FilterPanel({ onNavigate }: Props) {
             style={{ cursor: 'pointer', padding: '2px 0' }}
             onClick={() => onNavigate(activeDbId, row.form_id)}
           >
-            <span style={{ fontFamily: 'monospace', color: '#7ec8e3' }}>{row.form_id}</span>{' '}
-            {row.editor_id && <span style={{ color: '#aaa' }}>[{row.editor_id}]</span>}{' '}
+            <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{row.form_id}</span>{' '}
+            {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
             {row.name && <span>{row.name}</span>}
           </div>
         ))}

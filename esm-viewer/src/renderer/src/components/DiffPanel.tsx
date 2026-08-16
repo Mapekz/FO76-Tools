@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { DiffResult, RecordStubDiff, RecordChangeDiff } from '../../../shared/api-types'
 import { parseSigList } from '../lib/sigLists'
+import { colors, panelStyle, inputStyle } from '../theme'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -33,9 +34,9 @@ function countFieldChanges(node: unknown): number {
 function StubRow({ row, onClick }: { row: RecordStubDiff; onClick: () => void }) {
   return (
     <div style={{ cursor: 'pointer', padding: '2px 0' }} onClick={onClick}>
-      <span style={{ fontFamily: 'monospace', color: '#7ec8e3' }}>{row.form_id}</span>{' '}
-      <span style={{ color: '#aaa' }}>[{row.record_type}]</span>{' '}
-      {row.editor_id && <span style={{ color: '#aaa' }}>[{row.editor_id}]</span>}{' '}
+      <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{row.form_id}</span>{' '}
+      <span style={{ color: colors.dimReadout }}>[{row.record_type}]</span>{' '}
+      {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
       {row.name && <span>{row.name}</span>}
     </div>
   )
@@ -45,19 +46,21 @@ function ChangedRow({ change, onClick }: { change: RecordChangeDiff; onClick: ()
   const { stub, field_changes, prev_editor_id } = change
   const changeCount = countFieldChanges(field_changes)
   return (
-    <div style={{ marginBottom: 4, borderBottom: '1px solid #222', paddingBottom: 4 }}>
+    <div
+      style={{ marginBottom: 4, borderBottom: `1px solid ${colors.hairline}`, paddingBottom: 4 }}
+    >
       <div style={{ cursor: 'pointer' }} onClick={onClick}>
-        <span style={{ fontFamily: 'monospace', color: '#7ec8e3' }}>{stub.form_id}</span>{' '}
-        <span style={{ color: '#aaa' }}>[{stub.record_type}]</span>{' '}
-        {stub.editor_id && <span style={{ color: '#aaa' }}>[{stub.editor_id}]</span>}{' '}
+        <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{stub.form_id}</span>{' '}
+        <span style={{ color: colors.dimReadout }}>[{stub.record_type}]</span>{' '}
+        {stub.editor_id && <span style={{ color: colors.dimReadout }}>[{stub.editor_id}]</span>}{' '}
         {stub.name && <span>{stub.name}</span>}
         {prev_editor_id && (
-          <span style={{ color: '#e8a838', marginLeft: 6, fontSize: 11 }}>
+          <span style={{ color: colors.gapAmber, marginLeft: 6, fontSize: 11 }}>
             renamed from &quot;{prev_editor_id}&quot;
           </span>
         )}
       </div>
-      <div style={{ color: '#aaa', fontSize: 11 }}>
+      <div style={{ color: colors.dimReadout, fontSize: 11 }}>
         {changeCount} {changeCount === 1 ? 'field' : 'fields'} changed
       </div>
     </div>
@@ -85,8 +88,8 @@ function Section({
           cursor: 'pointer',
           fontWeight: 'bold',
           padding: '4px 6px',
-          background: '#16213e',
-          borderBottom: '1px solid #333',
+          background: colors.panelSteel,
+          borderBottom: `1px solid ${colors.rule}`,
         }}
       >
         {expanded ? '▼' : '▶'} {title} ({count})
@@ -134,7 +137,9 @@ export function DiffPanel({ onNavigate }: Props) {
 
   if (openDbs.length < 2) {
     return (
-      <div style={{ padding: 16, color: '#666' }}>Open at least two ESM files to compare them.</div>
+      <div style={{ padding: 16, color: colors.ghostText }}>
+        Open at least two ESM files to compare them.
+      </div>
     )
   }
 
@@ -171,16 +176,7 @@ export function DiffPanel({ onNavigate }: Props) {
   const suppressedEntries = result ? Object.entries(result.suppressed_counts ?? {}) : []
 
   return (
-    <div
-      style={{
-        padding: 8,
-        fontSize: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
+    <div style={panelStyle}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           Old (base):
@@ -204,7 +200,7 @@ export function DiffPanel({ onNavigate }: Props) {
         </label>
 
         {oldId && newId && oldId === newId && (
-          <div style={{ color: '#e8a838', fontSize: 11 }}>
+          <div style={{ color: colors.gapAmber, fontSize: 11 }}>
             Old and New are the same database — this compares it to itself (expect empty results).
           </div>
         )}
@@ -216,15 +212,7 @@ export function DiffPanel({ onNavigate }: Props) {
             onChange={(e) => setRecordType(e.target.value.toUpperCase())}
             placeholder="Type (blank = all)"
             maxLength={4}
-            style={{
-              width: 130,
-              background: '#16213e',
-              color: '#e0e0e0',
-              border: '1px solid #444',
-              borderRadius: 3,
-              padding: '4px 6px',
-              fontFamily: 'monospace',
-            }}
+            style={{ ...inputStyle, width: 130 }}
           />
           <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <input
@@ -241,14 +229,7 @@ export function DiffPanel({ onNavigate }: Props) {
           value={excludeTypes}
           onChange={(e) => setExcludeTypes(e.target.value)}
           placeholder="Exclude types, comma-separated (e.g. LAND,NAVM)"
-          style={{
-            background: '#16213e',
-            color: '#e0e0e0',
-            border: '1px solid #444',
-            borderRadius: 3,
-            padding: '4px 6px',
-            fontFamily: 'monospace',
-          }}
+          style={inputStyle}
         />
 
         <button
@@ -260,12 +241,12 @@ export function DiffPanel({ onNavigate }: Props) {
         </button>
       </div>
 
-      {error && <div style={{ color: '#e88', marginTop: 6 }}>{error}</div>}
+      {error && <div style={{ color: colors.faultRed, marginTop: 6 }}>{error}</div>}
 
       {result && (
         <div style={{ overflowY: 'auto', flex: 1, marginTop: 8 }}>
           {suppressedEntries.length > 0 && (
-            <div style={{ color: '#aaa', fontSize: 11, marginBottom: 8 }}>
+            <div style={{ color: colors.dimReadout, fontSize: 11, marginBottom: 8 }}>
               Noise suppressed (hidden by default, not lost data):{' '}
               {suppressedEntries.map(([t, n]) => `${n} ${t}`).join(', ')}
             </div>

@@ -1,5 +1,6 @@
 import React from 'react'
 import { useStore } from '../store'
+import { colors } from '../theme'
 
 interface Props {
   onBack: () => void
@@ -10,7 +11,14 @@ export function NavHistory({ onBack, onForward }: Props) {
   const { nav } = useStore()
 
   return (
-    <div style={{ display: 'flex', gap: 4, padding: '4px 8px', borderBottom: '1px solid #444' }}>
+    <div
+      style={{
+        display: 'flex',
+        gap: 4,
+        padding: '4px 8px',
+        borderBottom: `1px solid ${colors.seam}`,
+      }}
+    >
       <button onClick={onBack} disabled={nav.index <= 0}>
         ← Back
       </button>

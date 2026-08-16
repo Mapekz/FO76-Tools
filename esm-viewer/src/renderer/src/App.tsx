@@ -11,6 +11,7 @@ import { DiffPanel } from './components/DiffPanel'
 import { useStore } from './store'
 import { buildRecordColumns } from './lib/recordColumns'
 import { fetchReferencedBy } from './lib/referencedBy'
+import { colors } from './theme'
 
 type LeftView = 'tree' | 'search' | 'filter' | 'coverage' | 'diff'
 
@@ -144,8 +145,8 @@ export function App() {
       style={{
         display: 'flex',
         height: '100vh',
-        background: '#1a1a2e',
-        color: '#e0e0e0',
+        background: colors.workbenchBlack,
+        color: colors.benchLight,
         fontFamily: 'sans-serif',
       }}
     >
@@ -153,14 +154,19 @@ export function App() {
       <div
         style={{
           width: 320,
-          borderRight: '1px solid #444',
+          borderRight: `1px solid ${colors.seam}`,
           display: 'flex',
           flexDirection: 'column',
         }}
       >
         <OpenFilesPanel />
         <div
-          style={{ display: 'flex', gap: 4, padding: '4px 8px', borderBottom: '1px solid #444' }}
+          style={{
+            display: 'flex',
+            gap: 4,
+            padding: '4px 8px',
+            borderBottom: `1px solid ${colors.seam}`,
+          }}
         >
           {(['tree', 'search', 'filter', 'coverage', 'diff'] as const).map((v) => (
             <button
@@ -169,9 +175,9 @@ export function App() {
               style={{
                 fontSize: 11,
                 padding: '3px 8px',
-                background: leftView === v ? '#33395a' : '#16213e',
-                color: '#e0e0e0',
-                border: '1px solid #444',
+                background: leftView === v ? colors.focusIndigo : colors.panelSteel,
+                color: colors.benchLight,
+                border: `1px solid ${colors.seam}`,
                 borderRadius: 3,
                 cursor: 'pointer',
               }}

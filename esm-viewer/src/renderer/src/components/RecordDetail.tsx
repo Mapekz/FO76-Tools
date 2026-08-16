@@ -3,13 +3,15 @@ import { useStore } from '../store'
 import { RecordTable } from './RecordTable'
 import { hasCoverageMarkers, isUnknownRecordType } from '../lib/alignedTree'
 import type { RawRecordView } from '../../../shared/api-types'
+import { colors } from '../theme'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
 }
 
-/** Amber/warning accent for undecoded content — distinct from the `#e88` error red used elsewhere. */
-const COVERAGE_COLOR = '#e8a838'
+/** Amber/warning accent for undecoded content — distinct from the Fault Red error color used
+ * elsewhere. */
+const COVERAGE_COLOR = colors.gapAmber
 
 /** Insert a space every 2 hex chars (byte boundary) and a line break every
  * 16 bytes — a plain hex-dump first pass with no ASCII sidebar or offset gutter. */
@@ -34,12 +36,12 @@ function RawRecordSection({
   loading: boolean
   error: string | null
 }) {
-  if (loading) return <div style={{ color: '#aaa' }}>Loading raw dump…</div>
-  if (error) return <div style={{ color: '#e88' }}>{error}</div>
-  if (!view) return <div style={{ color: '#666' }}>No raw data loaded.</div>
+  if (loading) return <div style={{ color: colors.dimReadout }}>Loading raw dump…</div>
+  if (error) return <div style={{ color: colors.faultRed }}>{error}</div>
+  if (!view) return <div style={{ color: colors.ghostText }}>No raw data loaded.</div>
   return (
     <div>
-      <div style={{ marginBottom: 8, color: '#aaa', fontSize: 11 }}>
+      <div style={{ marginBottom: 8, color: colors.dimReadout, fontSize: 11 }}>
         {view.subrecords.length} subrecords &middot; {view.header.data_size} data bytes @ offset{' '}
         {view.header.offset}
       </div>
@@ -48,15 +50,15 @@ function RawRecordSection({
         // oxlint-disable-next-line react/no-array-index-key
         <div key={i} style={{ marginBottom: 10 }}>
           <div>
-            <span style={{ color: '#82aaff', fontWeight: 'bold' }}>{sr.signature}</span>{' '}
-            <span style={{ color: '#aaa' }}>({sr.size} bytes)</span>
+            <span style={{ color: colors.signatureBlue, fontWeight: 'bold' }}>{sr.signature}</span>{' '}
+            <span style={{ color: colors.dimReadout }}>({sr.size} bytes)</span>
           </div>
           <pre
             style={{
               margin: '4px 0 0',
               padding: 6,
-              background: '#16213e',
-              border: '1px solid #333',
+              background: colors.panelSteel,
+              border: `1px solid ${colors.rule}`,
               borderRadius: 3,
               fontFamily: 'monospace',
               fontSize: 11,
@@ -123,7 +125,9 @@ export function RecordDetail({ onNavigate }: Props) {
   }
 
   if (!activeRecord || !activeDbId) {
-    return <div style={{ padding: 16, color: '#666' }}>Select a record to view details.</div>
+    return (
+      <div style={{ padding: 16, color: colors.ghostText }}>Select a record to view details.</div>
+    )
   }
 
   const { header, editor_id, fields } = activeRecord
@@ -146,7 +150,7 @@ export function RecordDetail({ onNavigate }: Props) {
       <div
         style={{
           marginBottom: 8,
-          borderBottom: '1px solid #444',
+          borderBottom: `1px solid ${colors.seam}`,
           paddingBottom: 4,
           display: 'flex',
           alignItems: 'center',
@@ -155,7 +159,7 @@ export function RecordDetail({ onNavigate }: Props) {
       >
         <strong>{header.signature}</strong>{' '}
         <span style={{ fontFamily: 'monospace' }}>{String(header.form_id)}</span>
-        {editor_id && <span style={{ color: '#aaa' }}> [{editor_id}]</span>}
+        {editor_id && <span style={{ color: colors.dimReadout }}> [{editor_id}]</span>}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
           {(['decoded', 'raw'] as const).map((m) => (
             <button
@@ -165,9 +169,9 @@ export function RecordDetail({ onNavigate }: Props) {
               style={{
                 fontSize: 11,
                 padding: '2px 8px',
-                background: mode === m ? '#33395a' : '#16213e',
-                color: '#e0e0e0',
-                border: '1px solid #444',
+                background: mode === m ? colors.focusIndigo : colors.panelSteel,
+                color: colors.benchLight,
+                border: `1px solid ${colors.seam}`,
                 borderRadius: 3,
                 cursor: 'pointer',
               }}

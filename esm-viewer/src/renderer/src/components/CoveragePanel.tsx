@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import type { CoverageReport, Markers } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
 import { listRecordTypeSigs } from '../lib/sigLists'
+import { colors, panelStyle, inputStyle } from '../theme'
 
 const DEFAULT_SAMPLE = 200
 const ALL_TYPES = ''
@@ -63,16 +64,7 @@ export function CoveragePanel() {
     : []
 
   return (
-    <div
-      style={{
-        padding: 8,
-        fontSize: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
+    <div style={panelStyle}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           Type:
@@ -96,13 +88,9 @@ export function CoveragePanel() {
               disabled={scanAll}
               onChange={(e) => setSample(Math.max(1, Number(e.target.value) || 1))}
               style={{
+                ...inputStyle,
                 width: 80,
-                background: scanAll ? '#222' : '#16213e',
-                color: '#e0e0e0',
-                border: '1px solid #444',
-                borderRadius: 3,
-                padding: '4px 6px',
-                fontFamily: 'monospace',
+                background: scanAll ? colors.hairline : colors.panelSteel,
               }}
             />
           </label>
@@ -125,7 +113,7 @@ export function CoveragePanel() {
         </button>
       </div>
 
-      {error && <div style={{ color: '#e88', marginTop: 6 }}>{error}</div>}
+      {error && <div style={{ color: colors.faultRed, marginTop: 6 }}>{error}</div>}
 
       {report && (
         <div style={{ overflow: 'auto', flex: 1, marginTop: 8 }}>
@@ -138,7 +126,7 @@ export function CoveragePanel() {
             }}
           >
             <thead>
-              <tr style={{ borderBottom: '1px solid #444', textAlign: 'right' }}>
+              <tr style={{ borderBottom: `1px solid ${colors.seam}`, textAlign: 'right' }}>
                 <th style={{ textAlign: 'left', padding: '2px 6px' }}>Type</th>
                 <th style={{ padding: '2px 6px' }}>Records</th>
                 <th style={{ padding: '2px 6px' }}>Unknown</th>
@@ -150,8 +138,13 @@ export function CoveragePanel() {
             </thead>
             <tbody>
               {rows.map(([typeSig, m]) => (
-                <tr key={typeSig} style={{ borderBottom: '1px solid #2a2a3a', textAlign: 'right' }}>
-                  <td style={{ textAlign: 'left', padding: '2px 6px', color: '#82aaff' }}>
+                <tr
+                  key={typeSig}
+                  style={{ borderBottom: `1px solid ${colors.hoverGraphite}`, textAlign: 'right' }}
+                >
+                  <td
+                    style={{ textAlign: 'left', padding: '2px 6px', color: colors.signatureBlue }}
+                  >
                     {typeSig}
                   </td>
                   <td style={{ padding: '2px 6px' }}>{m.records}</td>
@@ -163,7 +156,7 @@ export function CoveragePanel() {
                     style={{
                       padding: '2px 6px',
                       fontWeight: 'bold',
-                      color: totalGaps(m) > 0 ? '#e8a838' : '#c3e88d',
+                      color: totalGaps(m) > 0 ? colors.gapAmber : colors.completeGreen,
                     }}
                   >
                     {totalGaps(m)}
@@ -172,7 +165,13 @@ export function CoveragePanel() {
               ))}
             </tbody>
             <tfoot>
-              <tr style={{ borderTop: '2px solid #444', textAlign: 'right', fontWeight: 'bold' }}>
+              <tr
+                style={{
+                  borderTop: `2px solid ${colors.seam}`,
+                  textAlign: 'right',
+                  fontWeight: 'bold',
+                }}
+              >
                 <td style={{ textAlign: 'left', padding: '4px 6px' }}>TOTAL</td>
                 <td style={{ padding: '4px 6px' }}>{report.totals.records}</td>
                 <td style={{ padding: '4px 6px' }}>{report.totals.unknown_record}</td>

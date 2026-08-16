@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useStore } from '../store'
 import type { RecordRow } from '../../../shared/api-types'
 import { parseSigList } from '../lib/sigLists'
+import { colors, panelStyle, inputStyle } from '../theme'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -36,16 +37,7 @@ export function SearchPanel({ onNavigate }: Props) {
   }
 
   return (
-    <div
-      style={{
-        padding: 8,
-        fontSize: 12,
-        display: 'flex',
-        flexDirection: 'column',
-        flex: 1,
-        minHeight: 0,
-      }}
-    >
+    <div style={panelStyle}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <input
           type="text"
@@ -55,14 +47,7 @@ export function SearchPanel({ onNavigate }: Props) {
             if (e.key === 'Enter') void runSearch()
           }}
           placeholder="*Rifle*  (wildcard, case-insensitive)"
-          style={{
-            background: '#16213e',
-            color: '#e0e0e0',
-            border: '1px solid #444',
-            borderRadius: 3,
-            padding: '4px 6px',
-            fontFamily: 'monospace',
-          }}
+          style={inputStyle}
         />
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -85,14 +70,7 @@ export function SearchPanel({ onNavigate }: Props) {
             if (e.key === 'Enter') void runSearch()
           }}
           placeholder="Type signatures, comma-separated (e.g. WEAP,ARMO) — blank = all types"
-          style={{
-            background: '#16213e',
-            color: '#e0e0e0',
-            border: '1px solid #444',
-            borderRadius: 3,
-            padding: '4px 6px',
-            fontFamily: 'monospace',
-          }}
+          style={inputStyle}
         />
         <button
           onClick={() => void runSearch()}
@@ -103,7 +81,7 @@ export function SearchPanel({ onNavigate }: Props) {
         </button>
       </div>
 
-      {error && <div style={{ color: '#e88', marginTop: 6 }}>{error}</div>}
+      {error && <div style={{ color: colors.faultRed, marginTop: 6 }}>{error}</div>}
 
       <div style={{ marginTop: 8, fontWeight: 'bold' }}>
         {results.length} result{results.length === 1 ? '' : 's'}
@@ -118,9 +96,11 @@ export function SearchPanel({ onNavigate }: Props) {
             style={{ cursor: 'pointer', padding: '2px 0' }}
             onClick={() => onNavigate(activeDbId, row.form_id)}
           >
-            <span style={{ fontFamily: 'monospace', color: '#7ec8e3' }}>{row.form_id}</span>{' '}
-            {row.record_type && <span style={{ color: '#aaa' }}>({row.record_type})</span>}{' '}
-            {row.editor_id && <span style={{ color: '#aaa' }}>[{row.editor_id}]</span>}{' '}
+            <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{row.form_id}</span>{' '}
+            {row.record_type && (
+              <span style={{ color: colors.dimReadout }}>({row.record_type})</span>
+            )}{' '}
+            {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
             {row.name && <span>{row.name}</span>}
           </div>
         ))}

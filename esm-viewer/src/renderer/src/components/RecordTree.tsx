@@ -5,6 +5,7 @@ import type { RecordRow, GroupChild, GroupLabel } from '../../../shared/api-type
 import { formatRecordType } from '../recordTypeNames'
 import { sortRows, type SortColumn, type SortState } from '../lib/recordSort'
 import { loadAllTypeRecords, loadGroupChildrenPage, loadTypeChildrenPage } from '../lib/recordLoad'
+import { colors } from '../theme'
 
 const PAGE_SIZE = 100
 
@@ -70,8 +71,8 @@ function GroupChildNode({
         onClick={() => onNavigate(dbId, child.form_id)}
         style={{ padding: '2px 6px', cursor: 'pointer' }}
       >
-        <span style={{ fontFamily: 'monospace', color: '#7ec8e3' }}>{child.form_id}</span>{' '}
-        <span style={{ color: '#aaa' }}>[{child.record_type}]</span>{' '}
+        <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{child.form_id}</span>{' '}
+        <span style={{ color: colors.dimReadout }}>[{child.record_type}]</span>{' '}
         {child.editor_id && <span>{child.editor_id}</span>}
       </div>
     )
@@ -327,9 +328,9 @@ export function RecordTree({ onNavigate }: Props) {
               style={{
                 padding: '3px 8px',
                 cursor: 'pointer',
-                background: isFocused ? '#33395a' : '#1e1e2e',
-                borderLeft: isFocused ? '2px solid #7ec8e3' : '2px solid transparent',
-                borderBottom: '1px solid #333',
+                background: isFocused ? colors.focusIndigo : colors.rowSlate,
+                borderLeft: isFocused ? `2px solid ${colors.traceBlue}` : '2px solid transparent',
+                borderBottom: `1px solid ${colors.rule}`,
               }}
             >
               {expanded.has(g.sig) ? '▼' : '▶'} {formatRecordType(g.sig)} ({g.child_count})
@@ -443,7 +444,7 @@ function RecordTypeTable({
         style={{
           display: 'grid',
           gridTemplateColumns: COLUMN_TEMPLATE,
-          background: '#16213e',
+          background: colors.panelSteel,
         }}
       >
         <div style={HEADER_CELL_STYLE} onClick={() => onSortChange('form_id')}>
@@ -478,8 +479,8 @@ function RecordTypeTable({
                   display: 'grid',
                   gridTemplateColumns: COLUMN_TEMPLATE,
                   cursor: 'pointer',
-                  borderBottom: '1px solid #222',
-                  background: rowFocused ? '#33395a' : undefined,
+                  borderBottom: `1px solid ${colors.hairline}`,
+                  background: rowFocused ? colors.focusIndigo : undefined,
                 }}
               >
                 <div style={{ ...BODY_CELL_STYLE, fontFamily: 'monospace' }}>{row.form_id}</div>

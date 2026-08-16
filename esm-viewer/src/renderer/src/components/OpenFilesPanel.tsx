@@ -1,5 +1,6 @@
 import React from 'react'
 import { useStore } from '../store'
+import { colors } from '../theme'
 
 export function OpenFilesPanel() {
   const {
@@ -59,7 +60,7 @@ export function OpenFilesPanel() {
   }
 
   return (
-    <div style={{ padding: 8, borderBottom: '1px solid #444' }}>
+    <div style={{ padding: 8, borderBottom: `1px solid ${colors.seam}` }}>
       <button onClick={handleOpen}>Open ESM…</button>
       <button onClick={handleOpenFolder} style={{ marginLeft: 4 }}>
         Open Folder…
@@ -72,7 +73,7 @@ export function OpenFilesPanel() {
               display: 'flex',
               gap: 8,
               alignItems: 'center',
-              background: db.id === activeDbId ? '#2a2a3a' : 'transparent',
+              background: db.id === activeDbId ? colors.hoverGraphite : 'transparent',
               padding: '2px 4px',
               cursor: 'pointer',
             }}

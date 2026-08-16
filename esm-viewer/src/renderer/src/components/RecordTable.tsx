@@ -7,6 +7,7 @@ import {
   MISSING,
   type AlignedNode,
 } from '../lib/alignedTree'
+import { colors, missingTint, gapTint } from '../theme'
 
 interface Props {
   columns: RecordColumn[]
@@ -87,19 +88,19 @@ function ValueCell({
   // A conflicting row is amber-tinted as a whole (see RowNode); a MISSING cell
   // inside it gets an extra red-family tint so "absent here" reads differently
   // from "present but different" at a glance.
-  const missingTint = columnCount > 1 && node.conflict && value === MISSING
+  const cellMissingTint = columnCount > 1 && node.conflict && value === MISSING
   const tdStyle: React.CSSProperties = {
     padding: '2px 6px',
-    borderBottom: '1px solid #222',
-    borderLeft: '1px solid #222',
+    borderBottom: `1px solid ${colors.hairline}`,
+    borderLeft: `1px solid ${colors.hairline}`,
     verticalAlign: 'top',
-    background: missingTint ? 'rgba(238,136,136,0.10)' : undefined,
+    background: cellMissingTint ? missingTint : undefined,
   }
 
   if (value === MISSING) {
     return (
       <td style={tdStyle}>
-        <span style={{ color: '#666' }}>—</span>
+        <span style={{ color: colors.ghostText }}>—</span>
       </td>
     )
   }
@@ -113,9 +114,9 @@ function ValueCell({
         : ''
     return (
       <td style={tdStyle}>
-        <span style={{ color: '#aaa' }}>{summary}</span>
+        <span style={{ color: colors.dimReadout }}>{summary}</span>
         {badges.length > 0 && (
-          <span style={{ color: '#e8a838', marginLeft: 6 }}>
+          <span style={{ color: colors.gapAmber, marginLeft: 6 }}>
             {badges.map((b) => `[${b}]`).join(' ')}
           </span>
         )}
@@ -128,7 +129,7 @@ function ValueCell({
       <td style={tdStyle}>
         <span
           tabIndex={0}
-          style={{ color: '#7ec8e3', cursor: 'pointer', textDecoration: 'underline' }}
+          style={{ color: colors.traceBlue, cursor: 'pointer', textDecoration: 'underline' }}
           onClick={(e) => {
             if (e.ctrlKey || e.metaKey) onNavigate(column.dbId, value.formid)
           }}
@@ -155,7 +156,7 @@ function ValueCell({
     <td style={tdStyle}>
       <span
         style={{
-          color: isPlainScalar ? '#c3e88d' : '#aaa',
+          color: isPlainScalar ? colors.completeGreen : colors.dimReadout,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -187,7 +188,7 @@ function RowNode({
 }) {
   const hasChildren = !node.isLeaf && node.children.length > 0
   const expanded = hasChildren && isExpanded(node)
-  const rowTint = columns.length > 1 && node.conflict ? 'rgba(232,168,56,0.10)' : undefined
+  const rowTint = columns.length > 1 && node.conflict ? gapTint : undefined
 
   return (
     <>
@@ -196,7 +197,7 @@ function RowNode({
           style={{
             padding: '2px 6px',
             paddingLeft: 8 + depth * 14,
-            borderBottom: '1px solid #222',
+            borderBottom: `1px solid ${colors.hairline}`,
             cursor: hasChildren ? 'pointer' : undefined,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -207,7 +208,7 @@ function RowNode({
           {hasChildren && (
             <span style={{ display: 'inline-block', width: 12 }}>{expanded ? '▼' : '▶'}</span>
           )}
-          <span style={{ color: '#82aaff', fontWeight: 'bold' }}>{node.label}</span>
+          <span style={{ color: colors.signatureBlue, fontWeight: 'bold' }}>{node.label}</span>
         </td>
         {columns.map((col, i) => (
           <ValueCell
@@ -307,9 +308,15 @@ export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
               <col key={col.dbId} style={{ width: VALUE_COL_WIDTH }} />
             ))}
           </colgroup>
-          <thead style={{ position: 'sticky', top: 0, background: '#16213e', zIndex: 1 }}>
+          <thead style={{ position: 'sticky', top: 0, background: colors.panelSteel, zIndex: 1 }}>
             <tr>
-              <th style={{ textAlign: 'left', padding: '4px 6px', borderBottom: '1px solid #444' }}>
+              <th
+                style={{
+                  textAlign: 'left',
+                  padding: '4px 6px',
+                  borderBottom: `1px solid ${colors.seam}`,
+                }}
+              >
                 Property
               </th>
               {columns.map((col) => (
@@ -321,7 +328,10 @@ export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
                     textAlign: 'left',
                     padding: '4px 6px',
                     cursor: 'pointer',
-                    borderBottom: col.dbId === activeDbId ? '2px solid #7ec8e3' : '1px solid #444',
+                    borderBottom:
+                      col.dbId === activeDbId
+                        ? `2px solid ${colors.traceBlue}`
+                        : `1px solid ${colors.seam}`,
                   }}
                 >
                   <div
@@ -330,7 +340,7 @@ export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
                     {col.fileName}
                   </div>
                   {editorIdsDiffer && (
-                    <div style={{ fontWeight: 'normal', color: '#aaa', fontSize: 10 }}>
+                    <div style={{ fontWeight: 'normal', color: colors.dimReadout, fontSize: 10 }}>
                       {col.record?.editor_id ?? '—'}
                     </div>
                   )}

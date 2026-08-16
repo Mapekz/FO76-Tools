@@ -2,6 +2,7 @@ import React from 'react'
 import { useStore } from '../store'
 import { fetchReferencedBy } from '../lib/referencedBy'
 import type { RefPathNode, RefRow } from '../../../shared/api-types'
+import { colors } from '../theme'
 
 interface Props {
   onNavigate: (dbId: string, formid: string) => void
@@ -17,7 +18,7 @@ function HopChain({ row }: { row: RefRow }) {
   if (path.length === 0) return null
   const chain = [...path.map(pathLabel), row.editor_id ?? row.form_id]
   return (
-    <div style={{ fontSize: 10, color: '#888', paddingLeft: 2 }}>
+    <div style={{ fontSize: 10, color: colors.faintReadout, paddingLeft: 2 }}>
       {chain.join(' ← ')}
       {` (depth ${row.depth})`}
     </div>
@@ -56,7 +57,7 @@ export function ReferencedByPanel({ onNavigate }: Props) {
   }
 
   return (
-    <div style={{ borderTop: '1px solid #444', padding: 8, fontSize: 12 }}>
+    <div style={{ borderTop: `1px solid ${colors.seam}`, padding: 8, fontSize: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <strong>
           Referenced By ({referencedBy.length} of {referencedByTotal}
@@ -84,8 +85,10 @@ export function ReferencedByPanel({ onNavigate }: Props) {
             onClick={() => onNavigate(activeDbId, row.form_id)}
           >
             <HopChain row={row} />
-            <span style={{ fontFamily: 'monospace', color: '#7ec8e3' }}>{row.form_id}</span>{' '}
-            {row.editor_id && <span style={{ color: '#aaa' }}>[{row.editor_id}]</span>}{' '}
+            <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>
+              {row.form_id}
+            </span>{' '}
+            {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
             {row.name && <span>{row.name}</span>}
           </div>
         ))}
