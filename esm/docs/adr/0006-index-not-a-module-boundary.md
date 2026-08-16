@@ -38,7 +38,7 @@ write/publish protocol (`progress::BuildLease::acquire_or_recheck` +
 
 `Registry::warm_indexes` no longer destructures anything — `db.ensure_edid_index()?` is a single
 mutable borrow of `db`, nothing else to hold disjointly. `Database`'s fields dropped to `pub(crate)`
-except `is_localized` (read directly by `src/bin/cli.rs`'s `diff` command, across the bin/lib crate
+except `is_localized` (read directly by `src/bin/cli/diff.rs`'s `diff` command, across the bin/lib crate
 boundary, so it has to stay `pub`).
 
 The three "ensure, then get" idioms this crate had (an `assert!` after `ensure_search_index`, nothing

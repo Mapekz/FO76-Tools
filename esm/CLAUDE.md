@@ -38,10 +38,10 @@ change; domain vocabulary lives in `../CONTEXT.md`, and design decisions are rec
 | Area | Entry point |
 |---|---|
 | Binary parsing | `src/reader.rs`, `src/format.rs` |
-| Schema-driven decode | `src/decode.rs` (+ `decode/vmad.rs`, `src/ctda.rs`) |
+| Schema-driven decode | `src/decode/mod.rs` (+ `decode/vmad.rs`, `src/ctda.rs`) |
 | Index & disk cache | `src/index.rs`, `src/rkyvcache.rs`, `src/progress.rs` |
 | Cross-process daemon path | `src/registry.rs`, `src/backend.rs`, `src/ipc.rs` |
-| CLI / HTTP+MCP server / N-API | `src/bin/cli.rs`, `src/bin/server.rs`, `bindings/napi/src/lib.rs` |
+| CLI / HTTP+MCP server / N-API | `src/bin/cli/main.rs` (+ per-family handler modules), `src/bin/server.rs`, `bindings/napi/src/lib.rs` |
 | Diff / walk / chase / lvli / refs | `src/diff.rs`, `src/walk/`, `src/chase.rs`, `src/lvli.rs`, `src/refs.rs` |
 | Python patch-notes pipeline (mechanical stage) | `tools/` |
 
@@ -100,6 +100,6 @@ Drift subrecords newer than the TES5Edit reference are handled as follows:
 - **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`**, **STAT `SNAM`+`ANLD`**, **REFR `MCND`** — mapped in `schema/fo76.overrides.json` (GMRW XALG expands from `$pascal_var: wbXALG`, u64 legendary flags; REFR MCND is an rarray-of-unknown, in no TES5Edit definition at all).
 - **CTDA function table** — generated to `schema/fo76.ctda.json` from Pascal; loaded at runtime in `src/ctda.rs`.
 - **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `decode.rs`.
-- **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode.rs` handles Script Fragments + Aliases tail.
-- **INFO/PACK/PERK/SCEN `VMAD` (fragmented)** — `decode_vmad_{info,pack,perk,scen}` in `src/decode.rs` handle each record type's Script Fragments tail; dispatched by `ctx.record_signature`.
+- **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode/vmad.rs` handles Script Fragments + Aliases tail.
+- **INFO/PACK/PERK/SCEN `VMAD` (fragmented)** — `decode_vmad_{info,pack,perk,scen}` in `src/decode/vmad.rs` handle each record type's Script Fragments tail; dispatched by `ctx.record_signature`.
 - **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is now in `CLEAN_TYPES`.

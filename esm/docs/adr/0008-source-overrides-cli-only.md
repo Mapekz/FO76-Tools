@@ -48,7 +48,7 @@ live.
 ## Consequences
 
 - `list`/`get`/`search`/`diff` share one small helper (`bail_if_daemon_mode_overrides` in
-  `src/bin/cli.rs`) for the "overrides present + daemon mode → error" check, instead of repeating
+  `src/bin/cli/output.rs`) for the "overrides present + daemon mode → error" check, instead of repeating
   the same `if ... { if daemon_mode { bail!(...) } }` shape four times. The helper only owns the
   guard; each command still builds its own `Database::open` + override-application logic
   afterward, since that part genuinely differs per command (`diff`'s two-sided load is not a

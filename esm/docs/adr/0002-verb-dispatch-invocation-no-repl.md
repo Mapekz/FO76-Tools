@@ -9,7 +9,7 @@ actually fit and had already stopped working before anyone noticed:
 - `esm` is verb-dispatched (git/docker shape), not single-verb. `esm get 0x463F` has exactly one
   reading — the subcommand's presence already carries the "one-shot" bit. `-p` encoded the same
   bit a second time, on top of it.
-- The dispatch code (`src/bin/cli.rs`) had already drifted so that a subcommand always ran once
+- The dispatch code (`src/bin/cli/main.rs`) had already drifted so that a subcommand always ran once
   and exited regardless of `-p` — a fix for a real bug (a subcommand used to fall through into the
   REPL and write its `esm> ` prompt to **stdout** right after JSON output, breaking strict parsers;
   fixed by exiting after any subcommand and moving the prompt to stderr). After that fix, `-p`'s
@@ -37,7 +37,7 @@ Mode is decided by argv shape alone, with no separate flag or heuristic:
   silently-accepted no-op.
 
 Human record exploration lives entirely in `esm walk` (terse per-record-type digests, see
-`docs/adr/0001`) and in `esm-viewer`, not in a CLI session.
+`docs/adr/0001-walk-interactive-chase-pipeline-json.md`) and in `esm-viewer`, not in a CLI session.
 
 ## Considered options
 
