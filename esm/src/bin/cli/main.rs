@@ -525,7 +525,40 @@ struct DispatchOptions {
     daemon_mode: bool,
 }
 
+/// Restores SIGPIPE's default disposition (terminate the process) before any
+/// output is written.
+///
+/// Rust's runtime sets `SIG_IGN` for SIGPIPE at startup so that a spurious
+/// EPIPE surfaces as a normal `std::io::Error` instead of silently killing
+/// the process — reasonable for a library, wrong for a CLI whose whole
+/// contract is "pipe me into `head`/`less`/etc. like `cat`/`rg`/`jq`". With
+/// `SIG_IGN` in effect, closing the read end of a pipe early (`esm list ... |
+/// head -c 200`) makes the next `println!`/`writeln!` on stdout return an
+/// EPIPE `io::Error`, which every write site here propagates via `?` up to
+/// `main`'s `anyhow::Result` — `main`'s default error handler then prints
+/// "Error: Broken pipe (os error 32)" and, worse, some call sites (e.g.
+/// `progress_ui`) unwrap or otherwise assume stdout/stderr writes succeed,
+/// which panics instead. Restoring `SIG_DFL` here makes the process die via
+/// the signal itself on the very first write to the closed pipe, matching
+/// `cat`/`rg`/`jq` (typically exit 141 under a shell, or `Killed by SIGPIPE`
+/// visible via the wait status) rather than printing a panic or an error.
+///
+/// SAFETY: `libc::signal` with `SIG_DFL` just restores the OS default
+/// handling for SIGPIPE; called once, synchronously, before any threads are
+/// spawned or any signal handlers installed, so there's no reentrancy or
+/// data-race hazard. No pointers are dereferenced other than the constant
+/// `SIG_DFL` sentinel value libc itself defines.
+#[cfg(unix)]
+fn reset_sigpipe_to_default() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 fn main() -> anyhow::Result<()> {
+    #[cfg(unix)]
+    reset_sigpipe_to_default();
+
     let cli = Cli::parse();
     let esm_opt = cli.esm.clone();
 

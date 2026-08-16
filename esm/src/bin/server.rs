@@ -934,8 +934,37 @@ fn build_daemon_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Restores SIGPIPE's default disposition (terminate the process) before any
+/// output is written — same fix and same rationale as
+/// `src/bin/cli/main.rs::reset_sigpipe_to_default` (see its doc comment for
+/// the full explanation of why Rust's `SIG_IGN` default is wrong for a
+/// process that writes to stdout/stderr pipes).
+///
+/// Applies to every mode this binary can run in, but the one that actually
+/// exercises it is `--mcp-stdio`: it writes one JSON-RPC response per line to
+/// stdout (`run_mcp_stdio`'s `writeln!(stdout.lock(), ...)`), and a client
+/// that closes its end of that pipe early (or exits) hits the exact same
+/// closed-stdout-write EPIPE class as the CLI's `esm list ... | head`
+/// scenario. `--daemon` and legacy-UI mode only write to stdout/stderr via
+/// occasional `eprintln!` status lines (their real responses go out over an
+/// HTTP/TCP socket, which surfaces a closed peer as a normal connection-reset
+/// error inside axum/hyper, not a raw EPIPE on a Rust-owned fd) — resetting
+/// SIGPIPE here is a harmless no-op for them, not a targeted fix.
+///
+/// SAFETY: see `reset_sigpipe_to_default` in `src/bin/cli/main.rs` — same
+/// call, same single-threaded-at-startup justification.
+#[cfg(unix)]
+fn reset_sigpipe_to_default() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(unix)]
+    reset_sigpipe_to_default();
+
     let cli = Cli::parse();
 
     if cli.mcp_stdio {
