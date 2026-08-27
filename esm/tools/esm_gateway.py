@@ -81,11 +81,24 @@ class DaemonError(Exception):
 
 
 def formid_to_int(value: FormIdLike) -> int:
-    """Accept an int or a "0x..."/decimal string and return the raw u32."""
+    """Accept an int, a "0x..." hex string, or a bare hex-digit string, and
+    return the raw u32.
+
+    Mirrors `parse_formid` in src/formid.rs: a bare (`0x`-prefix-free) token
+    of at most 8 hex digits is read as hex first -- including one that is
+    also plain-decimal-looking, e.g. "00568635" is hex 0x00568635, not
+    decimal 568635. Only a token longer than 8 hex digits, or one that isn't
+    all hex digits, falls through to plain decimal, matching `parse_formid`'s
+    `else` branch. (Previously this had no bare-hex branch at all, so
+    `formid_to_int("463F")` raised where the Rust side already accepted it --
+    fixed to actually mirror src/formid.rs as documented.)
+    """
     if isinstance(value, int):
         return value
     s = value.strip()
     if s.lower().startswith("0x"):
+        return int(s, 16)
+    if s and len(s) <= 8 and all(c in "0123456789abcdefABCDEF" for c in s):
         return int(s, 16)
     return int(s)
 

@@ -243,6 +243,47 @@ fn dispatch_record_auto_sel_errors_naming_both_attempts_when_neither_resolves() 
     let _ = std::fs::remove_file(&path);
 }
 
+/// Regression guard: a bare all-digit token whose *hex* reading has no
+/// record must NOT implicitly fall back to its decimal reading — decimal is
+/// only ever reachable via an explicit `FormIdBase::Dec` selector
+/// (`--decimal`), never through `Auto`'s resolution chain. "00568635" is hex
+/// 0x00568635 (absent here); its decimal reading 0x0008AD3B is present, but
+/// must NOT be found by a plain, unflagged lookup.
+#[test]
+fn dispatch_record_auto_sel_never_implicitly_falls_back_to_decimal() {
+    let mut recs = Vec::new();
+    append_record(&mut recs, b"WEAP", 568_635, &[]); // 568_635 == 0x0008AD3B
+
+    let mut buf = tes4_header();
+    buf.extend(wrap_grup(b"WEAP", &recs));
+    let tmp = unique_temp_path("ipc_auto_no_implicit_decimal");
+    {
+        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
+        f.write_all(&buf).expect("write temp esm");
+    }
+    let reg = Registry::new();
+
+    let req = Request {
+        esm: tmp.clone(),
+        op: Op::Record {
+            sel: RecordSel::Auto("00568635".to_string()),
+            depth: ResolveDepth::None,
+        },
+    };
+    let Response::Err { error } = dispatch(&reg, &req) else {
+        panic!(
+            "expected Err — the decimal reading 0x0008AD3B exists, but must not be reached \
+             without an explicit --decimal"
+        );
+    };
+    assert!(
+        error.contains("0x00568635") && !error.contains("0x0008AD3B"),
+        "error must name only the hex attempt, never the decimal reading: {error}"
+    );
+
+    let _ = std::fs::remove_file(&tmp);
+}
+
 #[test]
 fn dispatch_list_groups() {
     let (path, reg) = open_test_db();
@@ -340,6 +381,48 @@ fn record_sel_from_input_auto_detects() {
     match RecordSel::from_input("AssaultRifle").unwrap() {
         RecordSel::Edid(e) => assert_eq!(e, "AssaultRifle"),
         other => panic!("expected Edid, got {other:?}"),
+    }
+}
+
+/// [`RecordSel::from_input_with`] under [`esm::FormIdBase::Dec`]: a bare
+/// all-digit token commits directly to its decimal-reading `FormId` rather
+/// than becoming `Auto` — see the doc comment on `from_input_with` for why
+/// (skipping the EditorID race `--decimal` exists to route around).
+/// `0x`-prefixed and letter-bearing tokens are unaffected by `base`.
+#[test]
+fn record_sel_from_input_with_dec_commits_bare_digits_to_decimal_formid() {
+    match RecordSel::from_input_with("18000", esm::FormIdBase::Dec).unwrap() {
+        RecordSel::FormId(f) => assert_eq!(f, esm::FormId(18000)),
+        other => panic!("expected FormId(18000), got {other:?}"),
+    }
+    // Explicit 0x prefix is always hex, regardless of base.
+    match RecordSel::from_input_with("0x463F", esm::FormIdBase::Dec).unwrap() {
+        RecordSel::FormId(f) => assert_eq!(f, esm::FormId(0x463F)),
+        other => panic!("expected FormId(0x463F), got {other:?}"),
+    }
+    // A letter-bearing token has no decimal reading — stays Auto either way.
+    match RecordSel::from_input_with("cafe", esm::FormIdBase::Dec).unwrap() {
+        RecordSel::Auto(s) => assert_eq!(s, "cafe"),
+        other => panic!("expected Auto, got {other:?}"),
+    }
+    // Hex base (the default) is unaffected — matches from_input exactly.
+    match RecordSel::from_input_with("18000", esm::FormIdBase::Hex).unwrap() {
+        RecordSel::Auto(s) => assert_eq!(s, "18000"),
+        other => panic!("expected Auto, got {other:?}"),
+    }
+}
+
+/// [`RecordSel::from_parts_with`]: the base applies to an explicit `--formid`
+/// value too, not just the bare positional target.
+#[test]
+fn record_sel_from_parts_with_dec_applies_to_explicit_formid_flag() {
+    match RecordSel::from_parts_with(Some("18000"), None, None, esm::FormIdBase::Dec).unwrap() {
+        RecordSel::FormId(f) => assert_eq!(f, esm::FormId(18000)),
+        other => panic!("expected FormId(18000), got {other:?}"),
+    }
+    match RecordSel::from_parts_with(Some("18000"), None, None, esm::FormIdBase::Hex).unwrap() {
+        RecordSel::FormId(f) => assert_eq!(f, esm::FormId(0x18000)),
+        other => panic!("expected FormId(0x18000), got {other:?}"),
     }
 }
 

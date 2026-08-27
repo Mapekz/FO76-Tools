@@ -4,9 +4,22 @@
 //! `esm_string_prefix`) and the daemon-mode override guard
 //! (`bail_if_daemon_mode_overrides`) that several handlers need identically.
 
-use esm::{Database, RecordRow};
+use esm::{Database, FormIdBase, RecordRow};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+
+/// Rewrite an already-rendered FormID string (`"0x0000463F"`, from
+/// `FormId::display()`) into `base`. Anything that doesn't parse as a
+/// FormID — an EditorID, a carrier-walk label, an empty string — is
+/// returned unchanged rather than erroring, since several callers pass a
+/// string that is *usually* but not always a FormID (e.g. `RefList::target`
+/// on a carrier-seeded walk is a text label, not a FormID).
+pub(crate) fn render_form_id(s: &str, base: FormIdBase) -> String {
+    match esm::parse_form_id_input(s) {
+        Ok(fid) => fid.display_base(base),
+        Err(_) => s.to_string(),
+    }
+}
 
 pub(crate) fn print_json(value: &Value, pretty: bool) {
     if pretty {
@@ -61,17 +74,32 @@ pub(crate) fn print_record_table(headers: &[&str], rows: &[Vec<String>]) {
 
 /// Render a `&[RecordRow]` as an aligned table (FORMID / TYPE / EDID / NAME columns).
 /// When `json` is true, emit the rows as JSON instead. `limit` is used only for
-/// the "capped" stderr note.
-pub(crate) fn print_record_rows(rows: &[RecordRow], limit: usize, json: bool, pretty: bool) {
+/// the "capped" stderr note. `base` controls how the identity FormID (the
+/// FORMID column / JSON `form_id` field) is rendered — see `--decimal`.
+pub(crate) fn print_record_rows(
+    rows: &[RecordRow],
+    limit: usize,
+    json: bool,
+    pretty: bool,
+    base: FormIdBase,
+) {
     let capped = limit > 0 && rows.len() == limit;
     if json {
-        print_json(&serde_json::to_value(rows).unwrap(), pretty);
+        let rows: Vec<RecordRow> = rows
+            .iter()
+            .cloned()
+            .map(|mut r| {
+                r.form_id = render_form_id(&r.form_id, base);
+                r
+            })
+            .collect();
+        print_json(&serde_json::to_value(&rows).unwrap(), pretty);
     } else {
         let table_rows: Vec<Vec<String>> = rows
             .iter()
             .map(|r| {
                 vec![
-                    r.form_id.clone(),
+                    render_form_id(&r.form_id, base),
                     r.record_type.as_deref().unwrap_or("").to_string(),
                     r.editor_id.as_deref().unwrap_or("").to_string(),
                     r.name.as_deref().unwrap_or("").to_string(),
@@ -88,8 +116,14 @@ pub(crate) fn print_record_rows(rows: &[RecordRow], limit: usize, json: bool, pr
     }
 }
 
-pub(crate) fn print_search_results(results: &[RecordRow], limit: usize, json: bool, pretty: bool) {
-    print_record_rows(results, limit, json, pretty);
+pub(crate) fn print_search_results(
+    results: &[RecordRow],
+    limit: usize,
+    json: bool,
+    pretty: bool,
+    base: FormIdBase,
+) {
+    print_record_rows(results, limit, json, pretty, base);
 }
 
 pub(crate) fn esm_string_prefix(esm_path: &Path) -> String {

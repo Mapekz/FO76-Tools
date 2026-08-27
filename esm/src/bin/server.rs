@@ -205,11 +205,33 @@ async fn info(State(state): State<AppState>) -> impl IntoResponse {
     }
 }
 
+/// Query-param sibling of every legacy HTTP record lookup: `?decimal=true`
+/// reads a bare (no `0x` prefix) all-digit FormID token as decimal instead
+/// of hex — the same escape hatch as the CLI's `--decimal` and the MCP tools'
+/// `decimal` argument. Input interpretation only; resolved records are
+/// still returned with hex FormIDs (see `docs/adr/0010-formid-input-base.md`).
+#[derive(serde::Deserialize, Default)]
+struct DecimalQuery {
+    #[serde(default)]
+    decimal: bool,
+}
+
+impl DecimalQuery {
+    fn base(&self) -> esm::FormIdBase {
+        if self.decimal {
+            esm::FormIdBase::Dec
+        } else {
+            esm::FormIdBase::Hex
+        }
+    }
+}
+
 async fn record_by_formid(
     State(state): State<AppState>,
     Path(formid): Path<String>,
+    Query(q): Query<DecimalQuery>,
 ) -> impl IntoResponse {
-    let sel = match RecordSel::from_input(&formid) {
+    let sel = match RecordSel::from_input_with(&formid, q.base()) {
         Ok(s) => s,
         Err(e) => return ApiError::bad_request(e).into_response(),
     };
@@ -233,14 +255,21 @@ struct RecordsQuery {
     edid: Option<String>,
     r#type: Option<String>,
     limit: Option<usize>,
+    #[serde(default)]
+    decimal: bool,
 }
 
 async fn records_query(
     State(state): State<AppState>,
     Query(params): Query<RecordsQuery>,
 ) -> impl IntoResponse {
+    let base = if params.decimal {
+        esm::FormIdBase::Dec
+    } else {
+        esm::FormIdBase::Hex
+    };
     let op = if let Some(id) = params.id {
-        match RecordSel::from_input(&id) {
+        match RecordSel::from_input_with(&id, base) {
             Ok(sel) => Op::Record {
                 sel,
                 depth: ResolveDepth::None,
@@ -450,11 +479,11 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format. Ignored if 'ids' is supplied."
+                                    "description": "FormID (hex e.g. 0x00463F, or a bare digit run — read as hex first, decimal only via the decimal argument) or EditorID — auto-detected by format. Ignored if 'ids' is supplied."
                                 },
                                 "formid": {
                                     "type": "string",
-                                    "description": "FormID as a hex string (e.g. \"0x00463F\") or decimal integer. Ignored if 'ids' is supplied."
+                                    "description": "FormID as a hex string (e.g. \"0x00463F\") or, via the decimal argument, a decimal integer. Ignored if 'ids' is supplied."
                                 },
                                 "edid": {
                                     "type": "string",
@@ -464,6 +493,10 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                     "type": "array",
                                     "items": {"type": "string"},
                                     "description": "Bulk mode: a list of FormIDs and/or EditorIDs (auto-detected per entry, mix freely). Returns a JSON array, one entry per selector in order, each tagged with the selector it was resolved from. Takes priority over 'id'/'formid'/'edid' when non-empty."
+                                },
+                                "decimal": {
+                                    "type": "boolean",
+                                    "description": "Read a bare (no `0x` prefix) all-digit FormID token — in 'id'/'formid', or any entry of 'ids' — as decimal instead of hex. Default false: FormIDs are conventionally hex, so a bare digit run is always read as hex (with no implicit decimal fallback on a miss); set this only when you specifically mean the decimal reading — in which case hex is never attempted. Input interpretation only — resolved records are still returned with hex FormIDs."
                                 },
                                 "resolve": {
                                     "type": "string",
@@ -508,10 +541,14 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                    "description": "FormID (hex e.g. 0x00463F, or a bare digit run — read as hex first, decimal only via the decimal argument) or EditorID — auto-detected by format."
                                 },
-                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "formid": {"type": "string", "description": "FormID as hex (default for a bare digit run) or decimal via the decimal argument."},
                                 "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "decimal": {
+                                    "type": "boolean",
+                                    "description": "Read a bare (no `0x` prefix) all-digit FormID token — in 'id'/'formid' — as decimal instead of hex. Default false: FormIDs are conventionally hex, so a bare digit run is always read as hex (with no implicit decimal fallback on a miss); set this only when you specifically mean the decimal reading — in which case hex is never attempted."
+                                },
                                 "entry_point": {
                                     "type": "string",
                                     "description": "PERK Entry Point name or numeric id. Resolves every carrying PERK as a depth-0 seed; case-insensitive exact match, or `*` glob."
@@ -553,10 +590,14 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                    "description": "FormID (hex e.g. 0x00463F, or a bare digit run — read as hex first, decimal only via the decimal argument) or EditorID — auto-detected by format."
                                 },
-                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "formid": {"type": "string", "description": "FormID as hex (default for a bare digit run) or decimal via the decimal argument."},
                                 "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "decimal": {
+                                    "type": "boolean",
+                                    "description": "Read a bare (no `0x` prefix) all-digit FormID token — in 'id'/'formid' — as decimal instead of hex. Default false: FormIDs are conventionally hex, so a bare digit run is always read as hex (with no implicit decimal fallback on a miss); set this only when you specifically mean the decimal reading — in which case hex is never attempted."
+                                },
                                 "depth": {
                                     "type": "integer",
                                     "description": "BFS depth cap (default 2). 0 = digest just the root, no chain-following. Only governs which referenced records get their own digest — an OMOD root's own mechanisms are always classified regardless."
@@ -585,10 +626,14 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "OMOD/PERK/SPEL/ALCH/ENCH FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                    "description": "OMOD/PERK/SPEL/ALCH/ENCH FormID (hex e.g. 0x00463F, or a bare digit run — read as hex first, decimal only via the decimal argument) or EditorID — auto-detected by format."
                                 },
-                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "formid": {"type": "string", "description": "FormID as hex (default for a bare digit run) or decimal via the decimal argument."},
                                 "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "decimal": {
+                                    "type": "boolean",
+                                    "description": "Read a bare (no `0x` prefix) all-digit FormID token — in 'id'/'formid' — as decimal instead of hex. Default false: FormIDs are conventionally hex, so a bare digit run is always read as hex (with no implicit decimal fallback on a miss); set this only when you specifically mean the decimal reading — in which case hex is never attempted."
+                                },
                                 "depth": {
                                     "type": "integer",
                                     "description": "Reverse-ref walk depth for keyword/AV-hook consumer lookups (default 2). OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH."
@@ -609,10 +654,14 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                             "properties": {
                                 "id": {
                                     "type": "string",
-                                    "description": "LVLI FormID (hex e.g. 0x00463F, or decimal) or EditorID — auto-detected by format."
+                                    "description": "LVLI FormID (hex e.g. 0x00463F, or a bare digit run — read as hex first, decimal only via the decimal argument) or EditorID — auto-detected by format."
                                 },
-                                "formid": {"type": "string", "description": "FormID as hex or decimal."},
+                                "formid": {"type": "string", "description": "FormID as hex (default for a bare digit run) or decimal via the decimal argument."},
                                 "edid": {"type": "string", "description": "EditorID string (exact match)."},
+                                "decimal": {
+                                    "type": "boolean",
+                                    "description": "Read a bare (no `0x` prefix) all-digit FormID token — in 'id'/'formid' — as decimal instead of hex. Default false: FormIDs are conventionally hex, so a bare digit run is always read as hex (with no implicit decimal fallback on a miss); set this only when you specifically mean the decimal reading — in which case hex is never attempted."
+                                },
                                 "level": {
                                     "type": "number",
                                     "description": "Player level assumed for Curve Table evaluation and Minimum Level filtering (default 50)."
@@ -657,6 +706,24 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
 }
 
 /// Parse one direct or carrier-selector argument into a `RecordSel`.
+/// The `decimal` tool argument, common to every tool that resolves a
+/// selector: reads a bare (no `0x` prefix) all-digit FormID token as decimal
+/// instead of hex — the same escape hatch as the CLI's `--decimal` (see
+/// `docs/adr/0010-formid-input-base.md`). Input interpretation only: unlike
+/// the CLI, these tools return `dispatch_op`'s JSON unmodified, so output
+/// FormIDs stay hex regardless of this argument.
+fn base_from_args(args: &serde_json::Value) -> esm::FormIdBase {
+    if args
+        .get("decimal")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        esm::FormIdBase::Dec
+    } else {
+        esm::FormIdBase::Hex
+    }
+}
+
 fn sel_from_args(args: &serde_json::Value) -> anyhow::Result<esm::ipc::RecordSel> {
     use esm::ipc::RecordSel;
     let formid = args.get("formid").and_then(|v| v.as_str());
@@ -687,7 +754,7 @@ fn sel_from_args(args: &serde_json::Value) -> anyhow::Result<esm::ipc::RecordSel
     if let Some(token) = property {
         return Ok(RecordSel::OmodProperty(token.to_string()));
     }
-    RecordSel::from_parts(formid, edid, id)
+    RecordSel::from_parts_with(formid, edid, id, base_from_args(args))
 }
 
 fn call_tool_proxy(
@@ -716,13 +783,14 @@ fn call_tool_proxy(
             // single-selector 'id'/'formid'/'edid' args.
             let ids = args.get("ids").and_then(|v| v.as_array());
             if let Some(ids) = ids.filter(|a| !a.is_empty()) {
+                let base = base_from_args(args);
                 let sels: Vec<RecordSel> = ids
                     .iter()
                     .map(|v| {
                         let s = v
                             .as_str()
                             .ok_or_else(|| anyhow::anyhow!("'ids' entries must be strings"))?;
-                        RecordSel::from_input(s)
+                        RecordSel::from_input_with(s, base)
                     })
                     .collect::<anyhow::Result<Vec<_>>>()?;
                 let v = backend.run(esm_path, Op::RecordBulk { sels, depth })?;

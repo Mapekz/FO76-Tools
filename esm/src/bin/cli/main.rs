@@ -39,6 +39,22 @@ struct Cli {
     /// blocking on) a *fresh* cold build if none was already running.
     #[arg(long, global = true)]
     no_wait: bool,
+    /// Read bare (no `0x` prefix) FormID input as decimal instead of hex,
+    /// and render identity FormIDs (a record's own FormID — the FORMID
+    /// column, `get`'s header, `refs`'/`diff`'s stubs) as decimal in output.
+    /// FormIDs *inside* decoded field bodies stay hex either way, and an
+    /// explicit `0x`-prefixed input is always hex regardless of this flag.
+    ///
+    /// Without this flag, a bare digit token is *always* read as hex, even
+    /// when that hex reading has no record — there is no implicit fallback
+    /// to decimal (see `docs/adr/0010-formid-input-base.md`). Pass this flag
+    /// when you specifically want the decimal reading instead; hex is never
+    /// attempted in that case. No effect on `daemon`, `skill`, `cache`,
+    /// `info`, or `coverage` (none take a FormID), and deliberately not
+    /// applied to `chase`'s JSON, which is a machine pipeline contract
+    /// requiring literal `0x########`.
+    #[arg(long, global = true)]
+    decimal: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -523,6 +539,8 @@ fn progress_watch_path(esm: &Path) -> PathBuf {
 #[derive(Clone, Copy)]
 struct DispatchOptions {
     daemon_mode: bool,
+    /// From `--decimal` — see `Cli::decimal`'s doc comment.
+    formid_base: esm::FormIdBase,
 }
 
 /// Restores SIGPIPE's default disposition (terminate the process) before any
@@ -635,7 +653,20 @@ fn main() -> anyhow::Result<()> {
 
     let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
     let daemon_mode = backend.is_remote();
-    dispatch_command(&esm, &mut backend, cmd, DispatchOptions { daemon_mode })
+    let formid_base = if cli.decimal {
+        esm::FormIdBase::Dec
+    } else {
+        esm::FormIdBase::Hex
+    };
+    dispatch_command(
+        &esm,
+        &mut backend,
+        cmd,
+        DispatchOptions {
+            daemon_mode,
+            formid_base,
+        },
+    )
 }
 
 fn dispatch_command(
@@ -679,6 +710,7 @@ fn dispatch_command(
             startup_ba2,
             resolve,
             options.daemon_mode,
+            options.formid_base,
         ),
         Commands::List {
             r#type,
@@ -702,6 +734,7 @@ fn dispatch_command(
             strings_dir,
             &lang,
             options.daemon_mode,
+            options.formid_base,
         ),
         Commands::Diff(args) => {
             let DiffArgs {
@@ -751,6 +784,7 @@ fn dispatch_command(
                 keep_noise,
                 exclude_type,
                 options.daemon_mode,
+                options.formid_base,
             )
         }
         Commands::Tree {
@@ -758,7 +792,15 @@ fn dispatch_command(
             offset,
             limit,
             pretty,
-        } => inspect::cmd_tree(backend, esm, record_type.as_deref(), offset, limit, pretty),
+        } => inspect::cmd_tree(
+            backend,
+            esm,
+            record_type.as_deref(),
+            offset,
+            limit,
+            pretty,
+            options.formid_base,
+        ),
         Commands::Coverage {
             record_type,
             sample,
@@ -789,7 +831,17 @@ fn dispatch_command(
         } => {
             if let Some(to) = to {
                 refs::cmd_ref_path(
-                    backend, esm, formid, edid, target, to, max_hops, paths, json, pretty,
+                    backend,
+                    esm,
+                    formid,
+                    edid,
+                    target,
+                    to,
+                    max_hops,
+                    paths,
+                    json,
+                    pretty,
+                    options.formid_base,
                 )
             } else {
                 refs::cmd_refs(
@@ -811,6 +863,7 @@ fn dispatch_command(
                     strings_dir,
                     &lang,
                     options.daemon_mode,
+                    options.formid_base,
                 )
             }
         }
@@ -840,12 +893,20 @@ fn dispatch_command(
             strings_dir,
             &lang,
             options.daemon_mode,
+            options.formid_base,
         ),
         Commands::Chase {
             selector,
             depth,
             ref_limit,
-        } => walk::cmd_chase(backend, esm, &selector, depth, ref_limit),
+        } => walk::cmd_chase(
+            backend,
+            esm,
+            &selector,
+            depth,
+            ref_limit,
+            options.formid_base,
+        ),
         Commands::Walk {
             selector,
             depth,
@@ -853,7 +914,17 @@ fn dispatch_command(
             level,
             refs,
             json,
-        } => walk::cmd_walk(backend, esm, &selector, depth, ref_limit, level, refs, json),
+        } => walk::cmd_walk(
+            backend,
+            esm,
+            &selector,
+            depth,
+            ref_limit,
+            level,
+            refs,
+            json,
+            options.formid_base,
+        ),
         Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
         Commands::Cache { .. } => unreachable!(),

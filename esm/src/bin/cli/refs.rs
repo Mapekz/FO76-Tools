@@ -2,12 +2,40 @@
 //! `--to` bidirectional path search), plus its table-rendering logic.
 
 use esm::ipc::{Op, RecordSel};
-use esm::{CarrierKind, Database, RefList};
+use esm::{CarrierKind, Database, FormIdBase, RefList};
 use std::path::{Path, PathBuf};
 
 use crate::Backend;
-use crate::output::{apply_strings_override, print_json, print_record_table};
-use crate::query::record_sel;
+use crate::output::{apply_strings_override, print_json, print_record_table, render_form_id};
+use crate::query::record_sel_with;
+
+/// Rewrite a [`RefList`]'s identity FormIDs into `base`, in place:
+/// `target` (the resolved lookup target's own FormID — a text label rather
+/// than a FormID on a carrier-seeded walk, in which case `render_form_id`
+/// leaves it untouched), every row's `form_id`, and every `path` node's
+/// `form_id` (the intermediate hop records' own identities). `tags`/`digest`
+/// fields are untouched — not FormIDs.
+fn convert_ref_list_form_ids(ref_list: &mut RefList, base: FormIdBase) {
+    ref_list.target = render_form_id(&ref_list.target, base);
+    for row in ref_list.rows.iter_mut() {
+        row.form_id = render_form_id(&row.form_id, base);
+        for node in row.path.iter_mut() {
+            node.form_id = render_form_id(&node.form_id, base);
+        }
+    }
+}
+
+/// [`convert_ref_list_form_ids`] for [`esm::refs::RefPathResult`]: `from`,
+/// `to`, and each chain hop's `form_id`.
+fn convert_ref_path_form_ids(result: &mut esm::refs::RefPathResult, base: FormIdBase) {
+    result.from = render_form_id(&result.from, base);
+    result.to = render_form_id(&result.to, base);
+    if let Some(chain) = result.chain.as_mut() {
+        for hop in chain.iter_mut() {
+            hop.form_id = render_form_id(&hop.form_id, base);
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_refs(
@@ -29,6 +57,7 @@ pub(crate) fn cmd_refs(
     strings_dir: Option<PathBuf>,
     lang: &str,
     daemon_mode: bool,
+    base: FormIdBase,
 ) -> anyhow::Result<()> {
     if depth == 0 {
         // Must warn *before* dispatching — an unbounded walk runs
@@ -45,7 +74,7 @@ pub(crate) fn cmd_refs(
     let sel = match (entry_point, omod_property) {
         (Some(token), None) => RecordSel::EntryPoint(token),
         (None, Some(token)) => RecordSel::OmodProperty(token),
-        (None, None) => record_sel(formid, edid, target)?,
+        (None, None) => record_sel_with(formid, edid, target, base)?,
         (Some(_), Some(_)) => {
             unreachable!("clap conflicts_with_all guarantees mutual exclusion")
         }
@@ -69,7 +98,8 @@ pub(crate) fn cmd_refs(
             sort,
         };
         let v = esm::ipc::dispatch_op(&mut db, &op)?;
-        let ref_list: RefList = serde_json::from_value(v)?;
+        let mut ref_list: RefList = serde_json::from_value(v)?;
+        convert_ref_list_form_ids(&mut ref_list, base);
         print_refs(&ref_list, sort, json, pretty);
         return Ok(());
     }
@@ -84,7 +114,8 @@ pub(crate) fn cmd_refs(
             sort,
         },
     )?;
-    let ref_list: RefList = serde_json::from_value(v)?;
+    let mut ref_list: RefList = serde_json::from_value(v)?;
+    convert_ref_list_form_ids(&mut ref_list, base);
     print_refs(&ref_list, sort, json, pretty);
     Ok(())
 }
@@ -320,9 +351,10 @@ pub(crate) fn cmd_ref_path(
     paths: bool,
     json: bool,
     pretty: bool,
+    base: FormIdBase,
 ) -> anyhow::Result<()> {
-    let from = record_sel(formid, edid, target)?;
-    let to = RecordSel::from_input(&to)?;
+    let from = record_sel_with(formid, edid, target, base)?;
+    let to = RecordSel::from_input_with(&to, base)?;
     let v = backend.run(
         file,
         Op::RefPath {
@@ -332,7 +364,8 @@ pub(crate) fn cmd_ref_path(
             paths,
         },
     )?;
-    let result: esm::refs::RefPathResult = serde_json::from_value(v)?;
+    let mut result: esm::refs::RefPathResult = serde_json::from_value(v)?;
+    convert_ref_path_form_ids(&mut result, base);
     print_ref_path(&result, json, pretty);
     Ok(())
 }

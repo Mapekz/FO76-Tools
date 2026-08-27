@@ -3,13 +3,27 @@
 
 use anyhow::Context as _;
 use esm::ipc::Op;
-use esm::{BodyDetail, Database, DiffResult};
+use esm::{BodyDetail, Database, DiffResult, FormIdBase};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::Backend;
-use crate::output::{bail_if_daemon_mode_overrides, esm_string_prefix, print_json};
+use crate::output::{bail_if_daemon_mode_overrides, esm_string_prefix, print_json, render_form_id};
+
+/// Rewrite every identity FormID in a `DiffResult` (the `added`/`removed`
+/// stubs' `form_id`, and each `changed` entry's `stub.form_id`) into `base`,
+/// in place. FormIDs inside `field_changes` are reference fields from
+/// decoded record bodies, not this record's own identity, and stay hex
+/// regardless of `--decimal` (see `docs/adr/0010-formid-input-base.md`).
+fn convert_diff_form_ids(result: &mut DiffResult, base: FormIdBase) {
+    for stub in result.added.iter_mut().chain(result.removed.iter_mut()) {
+        stub.form_id = render_form_id(&stub.form_id, base);
+    }
+    for d in result.changed.iter_mut() {
+        d.stub.form_id = render_form_id(&d.stub.form_id, base);
+    }
+}
 
 /// Resolve localization for one ESM side, or bail loudly if no string tables
 /// can be found.  Precedence:
@@ -108,6 +122,7 @@ pub(crate) fn cmd_diff(
     keep_noise: bool,
     exclude_type: Vec<String>,
     daemon_mode: bool,
+    base: FormIdBase,
 ) -> anyhow::Result<()> {
     let options = esm::query::diff_options(bodies, !keep_noise, &exclude_type);
 
@@ -192,6 +207,7 @@ pub(crate) fn cmd_diff(
         let record_type_owned = record_type.map(str::to_string);
         let v = esm::ipc::diff_locked(&db_a, &db_b, &options, &record_type_owned)?;
         let mut result: DiffResult = serde_json::from_value(v)?;
+        convert_diff_form_ids(&mut result, base);
 
         return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
     }
@@ -206,6 +222,7 @@ pub(crate) fn cmd_diff(
         },
     )?;
     let mut result: DiffResult = serde_json::from_value(v)?;
+    convert_diff_form_ids(&mut result, base);
     print_diff(file_a, file_b, &mut result, record_type, as_json, pretty)
 }
 

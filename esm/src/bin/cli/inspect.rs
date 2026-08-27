@@ -2,11 +2,35 @@
 //! commands that don't warrant their own module.
 
 use esm::ipc::Op;
-use esm::{CoverageReport, Markers};
+use esm::{CoverageReport, FormIdBase, Markers};
+use serde_json::Value;
 use std::path::Path;
 
 use crate::Backend;
-use crate::output::print_json;
+use crate::output::{print_json, render_form_id};
+
+/// Rewrite `tree`'s identity FormID labels into `base`, in place. `tree`'s
+/// JSON (`Op::ListGroups`/`Op::ListTypeChildren`) is always a flat array of
+/// `GroupNode`/`GroupChild` objects — never recursively nested (children are
+/// fetched per level, not embedded) — so one pass over the top-level array
+/// (plus each node's own `label` sub-object) covers every FormID:
+/// `GroupLabel::FormId.form_id`, `GroupLabel::CellChildren.cell`, and
+/// `GroupChild::Record`'s top-level `form_id`. See `src/tree.rs`.
+fn convert_tree_json(v: &mut Value, base: FormIdBase) {
+    let Value::Array(nodes) = v else { return };
+    for node in nodes.iter_mut() {
+        if let Some(Value::String(s)) = node.get_mut("form_id") {
+            *s = render_form_id(s, base);
+        }
+        if let Some(label) = node.get_mut("label").and_then(Value::as_object_mut) {
+            for key in ["form_id", "cell"] {
+                if let Some(Value::String(s)) = label.get_mut(key) {
+                    *s = render_form_id(s, base);
+                }
+            }
+        }
+    }
+}
 
 pub(crate) fn cmd_info(backend: &mut Backend, file: &Path) -> anyhow::Result<()> {
     let info: esm::reader::FileInfo = serde_json::from_value(backend.run(file, Op::FileInfo)?)?;
@@ -39,8 +63,9 @@ pub(crate) fn cmd_tree(
     offset: usize,
     limit: usize,
     pretty: bool,
+    base: FormIdBase,
 ) -> anyhow::Result<()> {
-    let v = if let Some(sig) = record_type {
+    let mut v = if let Some(sig) = record_type {
         backend.run(
             file,
             Op::ListTypeChildren {
@@ -52,6 +77,7 @@ pub(crate) fn cmd_tree(
     } else {
         backend.run(file, Op::ListGroups)?
     };
+    convert_tree_json(&mut v, base);
     print_json(&v, pretty);
     Ok(())
 }

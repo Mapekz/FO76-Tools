@@ -483,6 +483,21 @@ class FormIdHelperTests(unittest.TestCase):
     def test_formid_to_int_accepts_int(self):
         self.assertEqual(formid_to_int(0x463F), 0x463F)
 
+    def test_formid_to_int_reads_bare_all_digit_token_as_hex_first(self):
+        # Mirrors src/formid.rs's parse_formid: a bare token is hex first,
+        # even one that's also plain-decimal-looking. "00568635" is hex
+        # 0x00568635, not decimal 568635.
+        self.assertEqual(formid_to_int("00568635"), 0x00568635)
+        self.assertEqual(formid_to_int("18000"), 0x18000)
+
+    def test_formid_to_int_accepts_bare_hex_with_letters(self):
+        # Previously raised: formid_to_int had no bare-hex branch at all.
+        self.assertEqual(formid_to_int("463F"), 0x463F)
+        self.assertEqual(formid_to_int("DEADBEEF"), 0xDEADBEEF)
+
+    def test_formid_to_int_falls_through_to_decimal_past_8_digits(self):
+        self.assertEqual(formid_to_int("123456789"), 123456789)
+
     def test_formid_to_hex_matches_rust_display_format(self):
         # src/formid.rs: `format!("0x{:08X}", self.0)` -- uppercase, 8 digits.
         self.assertEqual(formid_to_hex(0x463F), "0x0000463F")

@@ -6,7 +6,7 @@ use crate::refs::{
     resolve_ref_seeds,
 };
 use crate::registry::Registry;
-use crate::{CarrierTag, Database, FilterOp, FormId, ResolveDepth, SearchField};
+use crate::{CarrierTag, Database, FilterOp, FormId, FormIdBase, ResolveDepth, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -83,46 +83,100 @@ pub enum RecordSel {
     OmodProperty(String),
 }
 
+/// The decimal reading of a bare (no `0x`/`0X` prefix), all-ASCII-digit
+/// token, e.g. for `--decimal`-mode selector construction. `None` for a
+/// `0x`-prefixed token, an empty string, or anything containing a
+/// non-digit character (a letter-bearing hex token, an EditorID) — those
+/// are never read as decimal regardless of mode.
+fn bare_decimal_formid(s: &str) -> Option<FormId> {
+    let t = s.trim();
+    let has_hex_prefix = t
+        .strip_prefix("0x")
+        .or_else(|| t.strip_prefix("0X"))
+        .is_some();
+    if has_hex_prefix || t.is_empty() || !t.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    t.parse::<u32>().ok().map(FormId::new)
+}
+
 impl RecordSel {
     /// Build a selector from a single user-supplied token, auto-detecting whether
     /// it denotes a FormID (numeric/hex) or an EditorID via [`crate::looks_like_formid`].
+    /// Equivalent to [`RecordSel::from_input_with`] under [`FormIdBase::Hex`].
     ///
     /// A bare (no `0x`/`0X` prefix) formid-looking token is ambiguous — it
     /// could be a real FormID or a numeric-looking EditorID — so it becomes
     /// [`RecordSel::Auto`] rather than eagerly committing to `FormId`; an
     /// explicit `0x`-prefixed token is unambiguous and stays `FormId`.
     pub fn from_input(s: &str) -> anyhow::Result<RecordSel> {
+        Self::from_input_with(s, FormIdBase::Hex)
+    }
+
+    /// [`RecordSel::from_input`], but under [`FormIdBase::Dec`] a bare
+    /// all-digit token (no `0x` prefix, no letters) commits directly to its
+    /// decimal reading as a concrete `FormId` rather than becoming
+    /// [`RecordSel::Auto`], and the hex reading is never attempted at all.
+    /// This is the only way to reach a decimal-reading FormID: without this
+    /// flag, [`resolve_sel`]'s `Auto` arm always reads a bare digit token as
+    /// hex, with no implicit decimal fallback on a miss (see
+    /// `docs/adr/0010-formid-input-base.md`). A `0x`-prefixed token, or one
+    /// containing a letter, is unaffected by `base` and resolves exactly as
+    /// under `Hex`.
+    pub fn from_input_with(s: &str, base: FormIdBase) -> anyhow::Result<RecordSel> {
         let trimmed = s.trim();
         let has_hex_prefix = trimmed
             .strip_prefix("0x")
             .or_else(|| trimmed.strip_prefix("0X"))
             .is_some();
-        if crate::looks_like_formid(s) {
-            if has_hex_prefix {
-                Ok(RecordSel::FormId(crate::parse_form_id_input(s)?))
-            } else {
-                Ok(RecordSel::Auto(s.to_string()))
-            }
-        } else {
-            Ok(RecordSel::Edid(s.to_string()))
+        if !crate::looks_like_formid(s) {
+            return Ok(RecordSel::Edid(s.to_string()));
         }
+        if has_hex_prefix {
+            return Ok(RecordSel::FormId(crate::parse_form_id_input(s)?));
+        }
+        if base == FormIdBase::Dec
+            && let Some(fid) = bare_decimal_formid(s)
+        {
+            return Ok(RecordSel::FormId(fid));
+        }
+        Ok(RecordSel::Auto(s.to_string()))
     }
 
     /// Build a selector from explicit `--formid`/`--edid` inputs, falling back to
     /// auto-detecting a single ambiguous token (a positional CLI arg, or an MCP
     /// `"id"` argument) via [`RecordSel::from_input`]. The one parser shared by
     /// the CLI's `record_sel` and the MCP server's `sel_from_args` call sites.
+    /// Equivalent to [`RecordSel::from_parts_with`] under [`FormIdBase::Hex`].
     pub fn from_parts(
         formid: Option<&str>,
         edid: Option<&str>,
         target: Option<&str>,
     ) -> anyhow::Result<RecordSel> {
+        Self::from_parts_with(formid, edid, target, FormIdBase::Hex)
+    }
+
+    /// [`RecordSel::from_parts`], base-aware — see [`RecordSel::from_input_with`]
+    /// for what `base` changes. Applies to both the explicit `--formid` value
+    /// and the bare positional `target` token.
+    pub fn from_parts_with(
+        formid: Option<&str>,
+        edid: Option<&str>,
+        target: Option<&str>,
+        base: FormIdBase,
+    ) -> anyhow::Result<RecordSel> {
         if let Some(fid) = formid {
-            Ok(RecordSel::FormId(crate::parse_form_id_input(fid)?))
+            if base == FormIdBase::Dec
+                && let Some(dec) = bare_decimal_formid(fid)
+            {
+                Ok(RecordSel::FormId(dec))
+            } else {
+                Ok(RecordSel::FormId(crate::parse_form_id_input(fid)?))
+            }
         } else if let Some(e) = edid {
             Ok(RecordSel::Edid(e.to_string()))
         } else if let Some(t) = target {
-            RecordSel::from_input(t)
+            RecordSel::from_input_with(t, base)
         } else {
             bail!("specify a FormID/EditorID, or --formid/--edid")
         }
@@ -842,6 +896,15 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
             // fall back to an EditorID lookup when that fails, so a real
             // FormID never gets silently redirected to an unrelated
             // same-named EditorID.
+            //
+            // A bare all-digit token is always read as hex here (see
+            // `parse_formid`) — never decimal. Decimal is available only via
+            // an explicit `FormIdBase::Dec` at selector-construction time
+            // (`RecordSel::from_input_with`/`from_parts_with`, the CLI's
+            // `--decimal` flag), which commits directly to a concrete
+            // `RecordSel::FormId` and never reaches this `Auto` arm at all.
+            // Deliberately no implicit decimal fallback on a hex miss: see
+            // `docs/adr/0010-formid-input-base.md`.
             let formid_attempt = crate::parse_form_id_input(token).ok();
             if let Some(fid) = formid_attempt
                 && db.get_formid_meta(fid).is_ok()

@@ -38,7 +38,7 @@ pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
 pub use diff::{
     BodyDetail, DiffOptions, DiffResult, RecordDiff, RecordStub, RefName, apply_type_filter,
 };
-pub use formid::FormId;
+pub use formid::{FormId, FormIdBase};
 pub use index::{CacheInventory, SearchMeta, cache_inventory};
 pub use ipc::{
     BulkRecordEntry, CoverageReport, Markers, Op, RawRecordView, RawSubrecordView, RefList,
@@ -1947,12 +1947,16 @@ pub fn parse_form_id_input(s: &str) -> anyhow::Result<FormId> {
 
 /// Heuristic: returns `true` if `s` looks like a FormID literal (a `0x`-prefixed
 /// hex value, or a bare run of only hex digits up to 8 chars — which also covers
-/// pure-decimal input like `18000`) rather than an EditorID.
+/// pure-decimal-looking input like `18000`, read as *hex* `0x18000` by
+/// `parse_formid`, not decimal) rather than an EditorID.
 ///
 /// Used to auto-route ambiguous CLI/server input to the right lookup. Anything
 /// with non-hex characters, or longer than 8 hex digits, is treated as an
 /// EditorID. Short all-hex EditorIDs (e.g. `cafe`) are read as FormIDs; an
-/// explicit `--edid` flag disambiguates those cases.
+/// explicit `--edid` flag disambiguates those cases. There is no implicit
+/// decimal fallback for a bare digit token — decimal is reachable only via
+/// an explicit `FormIdBase::Dec` (the CLI's `--decimal` flag), see
+/// `docs/adr/0010-formid-input-base.md`.
 pub fn looks_like_formid(s: &str) -> bool {
     let s = s.trim();
     let body = s

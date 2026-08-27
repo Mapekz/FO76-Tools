@@ -68,6 +68,17 @@ hardcodes a non-redistributable, machine-local ESM path.
 - Selectors are `0x...` formids or EditorIDs. Bare tokens that *look* numeric
   auto-resolve FormID-first with EditorID fallback; scripts should still pass
   explicit `--formid`/`--edid` where the flag exists to skip the ambiguity.
+- A bare (no `0x` prefix) FormID token is always read as **hex**, never
+  decimal — `esm get 00568635` means `0x00568635`, not decimal 568635. If
+  that hex reading has no record, resolution falls straight to EditorID (then
+  the engine-hardcoded table); there is no implicit decimal fallback. The
+  global `--decimal` flag is the explicit override: it reads a bare digit
+  token as decimal instead (hex is never even attempted in that case), and
+  renders identity FormIDs (the FORMID column, `get`'s header,
+  `refs`/`diff`/`tree`/`walk` stubs — never FormIDs *inside* decoded field
+  bodies) as decimal on output. Use it when you specifically know you want
+  the decimal reading; `chase`'s JSON is exempt from the output half (it's a
+  machine pipeline contract requiring literal `0x########`).
 - **Bulk get**: `esm get <sel1> <sel2> … --json` — one target returns the
   classic single object; 2+ return a JSON array in input order, each entry
   tagged with its own `sel`. A bad selector becomes `{"sel":…, "error":…}` in

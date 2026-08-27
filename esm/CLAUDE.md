@@ -48,7 +48,7 @@ change; domain vocabulary lives in `../CONTEXT.md`, and design decisions are rec
 The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling
 `../esm-viewer/` directory, not in this crate — see [`../esm-viewer/CLAUDE.md`](../esm-viewer/CLAUDE.md).
 
-Public API re-exported from `lib.rs`: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`, `RefList`, `RefRow`, `RefPathNode`, `EntryPointSpec`, `EntryPointRef`.
+Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`, `parse_form_id_input`, `RefList`, `RefRow`, `RefPathNode`, `EntryPointSpec`, `EntryPointRef`.
 
 ## Conventions to Follow
 

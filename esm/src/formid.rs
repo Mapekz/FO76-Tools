@@ -17,6 +17,30 @@ impl FormId {
     pub fn display(self) -> String {
         format!("0x{:08X}", self.0)
     }
+
+    /// Render in the given [`FormIdBase`]: hex is `display()`'s `0x########`,
+    /// decimal is the bare `u32` value. Used only where a caller (currently
+    /// just the CLI's `--decimal` flag) needs to switch rendering at
+    /// runtime — every other call site keeps using `display()` directly,
+    /// including the wire-format drift fixture in `wire_constants.rs`, which
+    /// pins `display()`'s exact output and must not change.
+    pub fn display_base(self, base: FormIdBase) -> String {
+        match base {
+            FormIdBase::Hex => self.display(),
+            FormIdBase::Dec => self.0.to_string(),
+        }
+    }
+}
+
+/// Which base a bare (non-`0x`-prefixed) FormID token is read as, and which
+/// base identity FormIDs are rendered in. `0x`-prefixed input is always hex
+/// regardless of this setting. See `--decimal` in the CLI and
+/// `docs/adr/0010-formid-input-base.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FormIdBase {
+    #[default]
+    Hex,
+    Dec,
 }
 
 impl fmt::Display for FormId {
@@ -37,12 +61,19 @@ pub fn parse_formid(s: &str) -> anyhow::Result<FormId> {
     let s = s.trim();
     let raw = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         u32::from_str_radix(hex, 16)?
-    } else if s.chars().all(|c| c.is_ascii_hexdigit())
-        && s.len() <= 8
-        && s.chars().any(|c| c.is_ascii_alphabetic())
-    {
+    } else if s.chars().all(|c| c.is_ascii_hexdigit()) && s.len() <= 8 {
+        // FormIDs are conventionally written in hex everywhere in this
+        // domain (xEdit, the wiki, this CLI's own `display()`), so a bare
+        // all-hex-digit token — including one that happens to be all decimal
+        // digits, e.g. "00568635" — is read as hex here. Decimal is never an
+        // implicit fallback: it's only available via an explicit
+        // `FormIdBase::Dec` at selector-construction time (the CLI's
+        // `--decimal` flag) — see `docs/adr/0010-formid-input-base.md`.
         u32::from_str_radix(s, 16)?
     } else {
+        // Falls through for anything not a bare ≤8-digit hex run: an
+        // explicit `--formid` value longer than 8 digits (e.g. a 9-digit
+        // decimal), or non-hex input that should error out below.
         s.parse::<u32>()?
     };
     Ok(FormId(raw))
@@ -74,5 +105,63 @@ pub mod hex_string {
     pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<FormId, D::Error> {
         let s = String::deserialize(deserializer)?;
         s.parse::<FormId>().map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_prefix_is_always_hex() {
+        assert_eq!(parse_formid("0x463F").unwrap().0, 0x463F);
+        assert_eq!(parse_formid("0X463F").unwrap().0, 0x463F);
+        assert_eq!(parse_formid("0x00568635").unwrap().0, 0x00568635);
+    }
+
+    #[test]
+    fn bare_all_digit_token_is_hex_first() {
+        // The reported bug: "00568635" must read as hex 0x00568635, not
+        // decimal 568635 (= 0x0008AD3B).
+        assert_eq!(parse_formid("00568635").unwrap().0, 0x00568635);
+        assert_eq!(parse_formid("18000").unwrap().0, 0x18000);
+    }
+
+    #[test]
+    fn bare_hex_with_letters_is_hex() {
+        assert_eq!(parse_formid("463F").unwrap().0, 0x463F);
+        assert_eq!(parse_formid("DEADBEEF").unwrap().0, 0xDEADBEEF);
+    }
+
+    #[test]
+    fn nine_plus_digit_decimal_falls_through() {
+        // Longer than 8 hex digits -> not a bare-hex candidate -> plain decimal.
+        assert_eq!(parse_formid("123456789").unwrap().0, 123_456_789);
+    }
+
+    #[test]
+    fn overflow_and_garbage_error() {
+        assert!(parse_formid("4294967296").is_err()); // u32::MAX + 1, decimal
+        assert!(parse_formid("0xFFFFFFFFF").is_err()); // too many hex digits
+        assert!(parse_formid("not-a-formid").is_err());
+        assert!(parse_formid("").is_err());
+    }
+
+    #[test]
+    fn display_base_hex_matches_display() {
+        let id = FormId::new(0x00568635);
+        assert_eq!(id.display_base(FormIdBase::Hex), id.display());
+        assert_eq!(id.display_base(FormIdBase::Hex), "0x00568635");
+    }
+
+    #[test]
+    fn display_base_dec_is_bare_decimal() {
+        let id = FormId::new(0x00568635);
+        assert_eq!(id.display_base(FormIdBase::Dec), "5670453");
+    }
+
+    #[test]
+    fn formid_base_default_is_hex() {
+        assert_eq!(FormIdBase::default(), FormIdBase::Hex);
     }
 }

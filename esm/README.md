@@ -61,6 +61,15 @@ the real result once the cache is ready. Pass the global `--no-wait` flag to ins
 in-flight build's status and exit immediately (status 75) — useful for scripts that would rather
 retry later than block.
 
+A bare (no `0x` prefix) FormID token is always read as hex, never decimal — `esm get 00568635`
+means `0x00568635`, not decimal 568635. If that hex reading has no record, resolution falls
+straight to EditorID; there is no implicit decimal fallback. The global `--decimal` flag is the
+explicit override for the rare case where the decimal reading is the one you actually want: a
+bare digit token is read as decimal instead (hex is never attempted), and identity FormIDs in
+output (the FORMID column, `get`'s header, `refs`/`diff`/`tree`/`walk` stubs) render as decimal —
+FormIDs inside decoded field bodies stay hex either way, and `chase`'s JSON is exempt (a machine
+pipeline contract requiring literal `0x########`).
+
 ## CLI — `esm`
 
 ```sh
@@ -83,9 +92,9 @@ esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 | `cache status [--json]` | Inspect the on-disk index cache without opening the ESM |
 | `skill [--install]` | Print (or install into another repo's `.claude/skills/`) the agent usage-knowledge doc |
 
-A bare positional `<target>` auto-detects FormID (`0x`-prefixed, decimal, or bare hex) vs
-EditorID; explicit `--formid`/`--edid` skip the ambiguity. `--limit 0` means unlimited on
-`list`/`search`/`refs`.
+A bare positional `<target>` auto-detects FormID (`0x`-prefixed or bare hex — see `--decimal`
+above for the decimal reading) vs EditorID; explicit `--formid`/`--edid` skip the ambiguity.
+`--limit 0` means unlimited on `list`/`search`/`refs`.
 
 For full per-flag depth, bulk-operation patterns, `refs` selector rules, and how to read a
 `walk`/`chase` digest, run `esm skill` or see [`skills/esm-cli/SKILL.md`](skills/esm-cli/SKILL.md)
