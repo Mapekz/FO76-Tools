@@ -85,7 +85,11 @@ hardcodes a non-redistributable, machine-local ESM path.
   the array instead of failing the call (the single-target form throws).
 - `get --resolve none|stub|full` inlines FormID references — `stub` gives
   `{formid, editor_id, record_type}` per ref (cheap); `full` recursively
-  inlines the record. A CURV record always inlines its own curve points.
+  inlines the record. A CURV reference always inlines its own curve points
+  (`curve_path`/`curve`, no `record_type`) at any resolve depth, including
+  bare `get`. A GLOB reference additionally carries its own `Value` at
+  `stub`/`full` — magnitudes, durations, required counts, condition
+  thresholds are readable straight off the stub, no follow-up `get` needed.
   Default to `--resolve stub` for reference-heavy records (recipes, NPCs,
   leveled lists, quests) to avoid N follow-up `get` calls; reach for
   `--resolve full` only when the complete nested record body is needed; bare

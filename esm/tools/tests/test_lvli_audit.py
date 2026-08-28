@@ -56,7 +56,7 @@ def entry(ref_edid: str, *, conditions: list[dict] | None = None, min_level=None
 class TestCheckUseFirstStarvation(unittest.TestCase):
     def test_not_use_first_match_never_fires(self):
         entries = [entry("A"), entry("B")]
-        self.assertIsNone(la.check_use_first_starvation(entries, set(), 95.0, {}))
+        self.assertIsNone(la.check_use_first_starvation(entries, set(), 95.0))
 
     def test_unconditioned_early_entry_starves_the_rest(self):
         # Entry 0 has NO Conditions at all -> always-true -> under Use First
@@ -65,7 +65,7 @@ class TestCheckUseFirstStarvation(unittest.TestCase):
         # listed after it becomes unreachable").
         entries = [entry("Common"), entry("Rare", conditions=[cond("HasLearnedRecipe", "Equal To", 0.0)])]
         flags = {la.USE_FIRST_MATCH_FLAG}
-        result = la.check_use_first_starvation(entries, flags, 95.0, {})
+        result = la.check_use_first_starvation(entries, flags, 95.0)
         assert result is not None
         self.assertEqual(len(result["hits"]), 1)
         hit = result["hits"][0]
@@ -82,7 +82,7 @@ class TestCheckUseFirstStarvation(unittest.TestCase):
             entry("Rare", conditions=[cond("HasLearnedRecipe", "Equal To", 0.0)]),
         ]
         flags = {la.USE_FIRST_MATCH_FLAG}
-        result = la.check_use_first_starvation(entries, flags, 95.0, {})
+        result = la.check_use_first_starvation(entries, flags, 95.0)
         assert result is not None
         self.assertIn("near-certain", result["hits"][0]["certainty"])
 
@@ -98,7 +98,7 @@ class TestCheckUseFirstStarvation(unittest.TestCase):
             entry("RecipeC", conditions=[cond("HasLearnedRecipe", "Equal To", 0.0)], min_level=15),
         ]
         flags = {la.USE_FIRST_MATCH_FLAG}
-        result = la.check_use_first_starvation(entries, flags, 95.0, {})
+        result = la.check_use_first_starvation(entries, flags, 95.0)
         self.assertIsNone(result)
 
     def test_ascending_level_alone_on_real_conditions_is_not_flagged(self):
@@ -110,7 +110,7 @@ class TestCheckUseFirstStarvation(unittest.TestCase):
             entry("B", conditions=[cond("GetIsInRegion", "Equal To", 1.0)], min_level=50),
         ]
         flags = {la.USE_FIRST_MATCH_FLAG}
-        self.assertIsNone(la.check_use_first_starvation(entries, flags, 95.0, {}))
+        self.assertIsNone(la.check_use_first_starvation(entries, flags, 95.0))
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +151,7 @@ class TestCheckBundleNameUniformPick(unittest.TestCase):
 class TestCheckLevelTierStarvation(unittest.TestCase):
     def test_multiple_min_levels_without_calc_all_flag_fires(self):
         entries = [entry("A", min_level=5), entry("B", min_level=25), entry("C", min_level=50)]
-        result = la.check_level_tier_starvation(entries, set(), {})
+        result = la.check_level_tier_starvation(entries, set())
         self.assertEqual(result, {"levels": [5.0, 25.0, 50.0]})
 
     def test_calc_all_levels_flag_set_does_not_fire(self):
@@ -160,12 +160,12 @@ class TestCheckLevelTierStarvation(unittest.TestCase):
         # highest -- with it set, multiple tiers are exactly the intended
         # shape, not a starvation risk.
         entries = [entry("A", min_level=5), entry("B", min_level=25), entry("C", min_level=50)]
-        result = la.check_level_tier_starvation(entries, {la.CALC_ALL_LEVELS_FLAG}, {})
+        result = la.check_level_tier_starvation(entries, {la.CALC_ALL_LEVELS_FLAG})
         self.assertIsNone(result)
 
     def test_single_level_does_not_fire(self):
         entries = [entry("A", min_level=10), entry("B", min_level=10)]
-        result = la.check_level_tier_starvation(entries, set(), {})
+        result = la.check_level_tier_starvation(entries, set())
         self.assertIsNone(result)
 
 
@@ -184,7 +184,7 @@ class TestCheckOverlapLadder(unittest.TestCase):
             entry("Common", conditions=[cond("GetRandomPercent", "Less Than Or Equal To", 90.0)]),
             entry("Rare", conditions=[cond("GetRandomPercent", "Less Than Or Equal To", 10.0)]),
         ]
-        result = la.check_overlap_ladder(entries, set(), {})
+        result = la.check_overlap_ladder(entries, set())
         assert result is not None
         self.assertTrue(result["same_function"])
         self.assertEqual(len(result["entries"]), 2)
@@ -198,7 +198,7 @@ class TestCheckOverlapLadder(unittest.TestCase):
             entry("Common", conditions=[cond("GetRandomPercent", "Less Than Or Equal To", 90.0)]),
             entry("Rare", conditions=[cond("GetRandomPercent", "Less Than Or Equal To", 10.0)]),
         ]
-        result = la.check_overlap_ladder(entries, {la.USE_FIRST_MATCH_FLAG}, {})
+        result = la.check_overlap_ladder(entries, {la.USE_FIRST_MATCH_FLAG})
         self.assertIsNone(result)
 
     def test_bounded_range_condition_does_not_count_as_unbounded(self):
@@ -217,7 +217,7 @@ class TestCheckOverlapLadder(unittest.TestCase):
             ),
             entry("Unconditioned"),
         ]
-        result = la.check_overlap_ladder(entries, set(), {})
+        result = la.check_overlap_ladder(entries, set())
         self.assertIsNone(result)
 
     def test_single_gated_entry_does_not_fire(self):
@@ -226,7 +226,7 @@ class TestCheckOverlapLadder(unittest.TestCase):
             entry("Gated", conditions=[cond("GetRandomPercent", "Less Than Or Equal To", 50.0)]),
             entry("Unconditioned"),
         ]
-        result = la.check_overlap_ladder(entries, set(), {})
+        result = la.check_overlap_ladder(entries, set())
         self.assertIsNone(result)
 
 
@@ -250,7 +250,7 @@ def make_record(*, form_id="0x00123456", editor_id="LL_Test", flags=None, raw_en
 class TestAnalyzeRecord(unittest.TestCase):
     def test_error_record_passes_through_unanalyzed(self):
         rec = {"error": "bulk_get failed", "sel": "0x00000001"}
-        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD, {})
+        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD)
         self.assertEqual(result, {"error": "bulk_get failed", "sel": "0x00000001"})
 
     def test_record_with_starvation_produces_finding_a(self):
@@ -259,7 +259,7 @@ class TestAnalyzeRecord(unittest.TestCase):
             {"Leveled List Entry": entry("Rare", conditions=[cond("HasLearnedRecipe", "Equal To", 0.0)])},
         ]
         rec = make_record(flags={la.USE_FIRST_MATCH_FLAG}, raw_entries=raw_entries)
-        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD, {})
+        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD)
         assert result is not None
         self.assertEqual(result["form_id"], "0x00123456")
         self.assertEqual(result["editor_id"], "LL_Test")
@@ -275,7 +275,7 @@ class TestAnalyzeRecord(unittest.TestCase):
             {"Leveled List Entry": entry("Rare", conditions=[cond("HasLearnedRecipe", "Equal To", 0.0)])},
         ]
         rec = make_record(flags={la.USE_FIRST_MATCH_FLAG}, raw_entries=raw_entries)
-        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD, {})
+        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD)
         assert result is not None
         self.assertIn("A", result["findings"])
         self.assertEqual(result["findings"]["A"]["hits"][0]["starved_count"], 1)
@@ -290,7 +290,7 @@ class TestAnalyzeRecord(unittest.TestCase):
             {"Leveled List Entry": entry("VariantB", conditions=[cond("HasLearnedRecipe", "Equal To", 0.0)])},
         ]
         rec = make_record(flags=set(), raw_entries=raw_entries, name="LL_PlainVariantPick")
-        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD, {})
+        result = la.analyze_record(rec, la.DEFAULT_NEAR_CERTAIN_THRESHOLD)
         self.assertIsNone(result)
 
 

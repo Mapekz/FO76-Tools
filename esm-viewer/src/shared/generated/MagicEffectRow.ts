@@ -2,8 +2,10 @@
 
 /**
  * One `Effects[]` entry of a [`MagicItemDigest`] (SPEL/ENCH/ALCH share this
- * identical shape). `conditions` rows are already GLOB-resolved (see
- * [`resolve_condition_row`]) so `render` needs no fetcher of its own.
+ * identical shape). `conditions` rows already carry any GLOB comparison
+ * value's `Value` inline (Stub resolution's value-bearing-leaf inline —
+ * see `src/decode/leaf_values.rs`), so `render` needs no fetcher of its
+ * own.
  */
 export type MagicEffectRow = { index: number, base_effect: unknown, archetype: string | null, actor_value: unknown, 
 /**
@@ -17,8 +19,9 @@ duration: unknown,
 /**
  * A sibling top-level `Magnitude` GLOB reference, if present — distinct
  * from `magnitude` above (see module docs on the two "Magnitude"
- * fields). GLOB-resolved (carries `"resolved_value"` when the ref is a
- * GLOB) via [`resolve_glob_ref`].
+ * fields). Already carries `"Value"` inline (Stub resolution's
+ * value-bearing-leaf inline — see `src/decode/leaf_values.rs`), so no
+ * further resolution step happens here.
  */
 magnitude_glob: unknown, duration_glob: unknown, 
 /**

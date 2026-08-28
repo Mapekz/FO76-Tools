@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, VecDeque};
 
+pub(crate) mod leaf_values;
 mod model_info;
 mod rules;
 mod scalars;
@@ -22,6 +23,7 @@ use rules::{PostDecodeTarget, apply_post_decode_rules};
 // `use super::*;` (both are private submodules that historically drew these
 // names from decode/mod.rs's own namespace) keep resolving after the
 // scalar/leaf toolbox and core interpreter moved out to `scalars.rs`/`walk.rs`.
+use leaf_values::InlineSource;
 use scalars::field_int_value;
 pub(crate) use scalars::json_f32;
 #[cfg(test)]
@@ -66,6 +68,10 @@ pub enum ResolveDepth {
     #[default]
     None,
     /// Resolve to a stub: `{"formid": "...", "editor_id": "...", "record_type": "..."}`.
+    /// For a reference to a "value-bearing leaf" record type (currently GLOB
+    /// and CURV — see `leaf_values`), extra keys carrying that type's bounded
+    /// payload are added flat alongside the three above (e.g. GLOB adds
+    /// `"Value"`), so the shape above is a floor, not a ceiling.
     Stub,
     /// Recursively decode the referenced record (depth-limited to 2 hops).
     Full,
@@ -76,6 +82,15 @@ pub trait FormIdRefResolver: Send + Sync {
     fn stub(&self, id: FormId) -> Option<FormIdStub>;
     /// Fully decode a record by FormID. Returns None if not found or on error.
     fn decode_full(&self, id: FormId) -> Option<Value>;
+    /// Value-bearing-leaf inline for `id`, whose target record has signature
+    /// `record_type` (see `leaf_values`). Returns the COMPLETE replacement
+    /// JSON for the reference (stub keys plus the leaf payload), or `None` to
+    /// fall back to the plain stub. Default: never inline, so existing
+    /// resolvers (including test fakes) opt out for free.
+    fn leaf_inline(&self, id: FormId, record_type: &str) -> Option<Value> {
+        let _ = (id, record_type);
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +100,17 @@ pub struct FormIdStub {
     pub formid: String,
     pub editor_id: Option<String>,
     pub record_type: String,
+}
+
+/// The three stub keys as a JSON object map, shared by the plain-stub path
+/// and by [`FormIdRefResolver::leaf_inline`] implementations that lift extra
+/// keys onto it.
+pub(crate) fn stub_map(stub: &FormIdStub) -> Map<String, Value> {
+    let mut map = Map::new();
+    map.insert("formid".to_string(), json!(stub.formid));
+    map.insert("editor_id".to_string(), json!(stub.editor_id));
+    map.insert("record_type".to_string(), json!(stub.record_type));
+    map
 }
 
 #[derive(Clone)]
@@ -205,13 +231,23 @@ pub(crate) fn curve_points_value(curve: &Curve) -> Value {
 
 /// Resolve a FormID field to its JSON representation.
 ///
-/// If the field's `valid_refs` includes `"CURV"` and a curve index is loaded,
-/// the curve's EditorID, path, and point data are inlined into the output
-/// object. When `ctx.resolve_depth` is `Stub` or `Full` and a resolver is
-/// present, the referenced record is expanded inline. Otherwise, a bare hex
-/// string is returned.
+/// If the field's `valid_refs` includes a value-bearing leaf type whose
+/// [`InlineSource`] is [`InlineSource::CurveIndex`] (currently only `"CURV"`)
+/// and a curve index is loaded, the curve's EditorID, path, and point data
+/// are inlined into the output object — this fires independently of
+/// `resolve_depth` because it needs no resolver (see `leaf_values`'s module
+/// doc for why this can't merge with the resolver-path branch below: no
+/// resolver exists at `ResolveDepth::None`, so the declaring field's
+/// `valid_refs` is the only signature signal available there). When
+/// `ctx.resolve_depth` is `Stub` or `Full` and a resolver is present, the
+/// referenced record is expanded inline (a `Stub` also checks the *target's*
+/// own signature for a value-bearing leaf, via
+/// [`FormIdRefResolver::leaf_inline`]). Otherwise, a bare hex string is
+/// returned.
 pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
-    if valid_refs.iter().any(|r| r == "CURV")
+    if valid_refs
+        .iter()
+        .any(|r| matches!(leaf_values::lookup(r), Some(InlineSource::CurveIndex)))
         && let Some(curves) = ctx.curves
         && let Some(curve) = curves.get(id)
     {
@@ -233,6 +269,9 @@ pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id:
         match ctx.resolve_depth {
             ResolveDepth::Stub => {
                 if let Some(stub) = resolver.stub(id) {
+                    if let Some(inlined) = resolver.leaf_inline(id, &stub.record_type) {
+                        return inlined;
+                    }
                     return serde_json::to_value(&stub).unwrap_or_else(|_| json!(id.display()));
                 }
             }
@@ -429,6 +468,150 @@ mod tests {
         assert_eq!(result2["editor_id"], Value::Null);
     }
 
+    /// The CURV `valid_refs` branch needs no resolver and must keep firing at
+    /// `ResolveDepth::None` — it's the only way a CURV reference's points
+    /// (which live outside the ESM entirely) can ever surface. Its shape
+    /// must stay exactly `{formid, editor_id, curve_path, curve}`: NO
+    /// `record_type` key, unlike a resolver-path stub. `esm-viewer`'s
+    /// `isFormIdStub` depends on that absence to render curve points inline
+    /// instead of collapsing them to one clickable stub leaf.
+    #[test]
+    fn curv_valid_refs_branch_still_fires_at_depth_none() {
+        let curve = crate::curves::Curve {
+            edid: Some("CT_Test".to_string()),
+            path: "Test.json".to_string(),
+            points: vec![crate::curves::CurvePoint { x: 1.0, y: 2.0 }],
+        };
+        let curves = crate::curves::CurveIndex::from_entries(vec![(0x3, curve)]);
+        let schema = empty_schema();
+        let mut ctx = bare_ctx(&schema);
+        assert_eq!(ctx.resolve_depth, ResolveDepth::None);
+        assert!(ctx.resolver.is_none());
+        ctx.curves = Some(&curves);
+
+        let result = resolve_formid(&ctx, &["CURV".to_string()], FormId::new(0x3));
+        let obj = result.as_object().expect("object");
+        assert_eq!(
+            obj.keys()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>(),
+            ["curve", "curve_path", "editor_id", "formid"]
+                .into_iter()
+                .collect()
+        );
+        assert_eq!(result["curve"], json!([{"x": 1.0, "y": 2.0}]));
+    }
+
+    /// A GLOB reference at `Stub` gains a flat `Value` key on top of the
+    /// three stub keys, via `FormIdRefResolver::leaf_inline`.
+    #[test]
+    fn glob_ref_at_stub_carries_value() {
+        let schema = empty_schema();
+        let target_id = FormId::new(0x10);
+        let resolver = StubResolver {
+            stubs: std::collections::HashMap::from([(
+                target_id,
+                FormIdStub {
+                    formid: target_id.display(),
+                    editor_id: Some("Challenge_Global_0076".into()),
+                    record_type: "GLOB".into(),
+                },
+            )]),
+            inlines: std::collections::HashMap::from([(
+                target_id,
+                json!({
+                    "formid": target_id.display(),
+                    "editor_id": "Challenge_Global_0076",
+                    "record_type": "GLOB",
+                    "Value": 76.0,
+                }),
+            )]),
+        };
+        let mut ctx = bare_ctx(&schema);
+        ctx.resolve_depth = ResolveDepth::Stub;
+        ctx.resolver = Some(&resolver);
+
+        let result = resolve_formid(&ctx, &[], target_id);
+        assert_eq!(result["Value"], json!(76.0));
+        assert_eq!(result["record_type"], json!("GLOB"));
+        assert_eq!(result["formid"], json!(target_id.display()));
+    }
+
+    /// When the resolver's `leaf_inline` declines (returns `None` — e.g. the
+    /// target has no leaf row, or its value field was absent), `Stub`
+    /// degrades byte-identically to the plain three-key stub.
+    #[test]
+    fn leaf_inline_none_degrades_to_plain_stub() {
+        let schema = empty_schema();
+        let target_id = FormId::new(0x20);
+        let resolver = StubResolver {
+            stubs: std::collections::HashMap::from([(
+                target_id,
+                FormIdStub {
+                    formid: target_id.display(),
+                    editor_id: Some("SomeGlob".into()),
+                    record_type: "GLOB".into(),
+                },
+            )]),
+            ..Default::default()
+        };
+        let mut ctx = bare_ctx(&schema);
+        ctx.resolve_depth = ResolveDepth::Stub;
+        ctx.resolver = Some(&resolver);
+
+        let result = resolve_formid(&ctx, &[], target_id);
+        assert_eq!(
+            result,
+            json!({
+                "formid": target_id.display(),
+                "editor_id": "SomeGlob",
+                "record_type": "GLOB",
+            })
+        );
+    }
+
+    /// A resolver's `leaf_inline` returning `None` for the requested id (here
+    /// because a SPEL reference isn't a value-bearing leaf type at all —
+    /// `DatabaseResolver`'s real `leaf_inline` would decline for the same
+    /// reason, via `leaf_values::lookup` missing "SPEL") falls through to the
+    /// plain stub, even when the resolver DOES have an unrelated inline
+    /// entry populated — proving `resolve_formid` keys strictly off this
+    /// reference's own id, never off "does this resolver do any inlining."
+    #[test]
+    fn non_table_record_type_stub_unchanged() {
+        let schema = empty_schema();
+        let target_id = FormId::new(0x30);
+        let resolver = StubResolver {
+            stubs: std::collections::HashMap::from([(
+                target_id,
+                FormIdStub {
+                    formid: target_id.display(),
+                    editor_id: Some("Mutation_AdrenalReaction".into()),
+                    record_type: "SPEL".into(),
+                },
+            )]),
+            // Deliberately populated for an unrelated FormID, to prove a SPEL
+            // stub isn't accidentally matched by an empty/default inlines map.
+            inlines: std::collections::HashMap::from([(
+                FormId::new(0x31),
+                json!({"formid": "0x00000031", "Value": 1.0}),
+            )]),
+        };
+        let mut ctx = bare_ctx(&schema);
+        ctx.resolve_depth = ResolveDepth::Stub;
+        ctx.resolver = Some(&resolver);
+
+        let result = resolve_formid(&ctx, &[], target_id);
+        assert_eq!(
+            result,
+            json!({
+                "formid": target_id.display(),
+                "editor_id": "Mutation_AdrenalReaction",
+                "record_type": "SPEL",
+            })
+        );
+    }
+
     fn vmad_wstring(s: &str) -> Vec<u8> {
         let mut out = (s.len() as u16).to_le_bytes().to_vec();
         out.extend_from_slice(s.as_bytes());
@@ -607,6 +790,7 @@ mod tests {
                     record_type: "SPEL".into(),
                 },
             )]),
+            ..Default::default()
         };
         let mut ctx = bare_ctx(&schema);
         ctx.resolve_depth = ResolveDepth::Stub;
@@ -717,8 +901,14 @@ mod tests {
         assert_eq!(arr[1].pointer("/0/value").and_then(|v| v.as_i64()), Some(2));
     }
 
+    #[derive(Default)]
     struct StubResolver {
         stubs: std::collections::HashMap<FormId, FormIdStub>,
+        /// Value-bearing-leaf inlines this fake resolver knows about, keyed
+        /// by FormID. Empty by default, which — combined with
+        /// `leaf_inline`'s crate-default body — makes every other
+        /// `StubResolver` in this file opt out of inlining unchanged.
+        inlines: std::collections::HashMap<FormId, Value>,
     }
 
     impl FormIdRefResolver for StubResolver {
@@ -728,6 +918,10 @@ mod tests {
 
         fn decode_full(&self, _id: FormId) -> Option<Value> {
             None
+        }
+
+        fn leaf_inline(&self, id: FormId, _record_type: &str) -> Option<Value> {
+            self.inlines.get(&id).cloned()
         }
     }
 

@@ -61,11 +61,9 @@
 //! reference on a fetched record's own fields already arrives pre-annotated
 //! as `{"formid", "editor_id", "record_type"}` (the same annotation
 //! `esm get --resolve stub` produces) — no follow-up per-reference fetch
-//! needed. One exception remains: a GLOB *reference*'s own `Value` field
-//! isn't expanded by Stub resolution (which only annotates the *reference*,
-//! not the referenced record's fields), so magnitude/duration/condition
-//! GLOB annotations still require one batched extra `bulk_get` (see
-//! [`resolve_glob_ref`]).
+//! needed, including for a GLOB reference's own `Value` (a value-bearing
+//! leaf type, see `src/decode/leaf_values.rs`), which Stub resolution now
+//! inlines directly onto the reference too.
 //!
 //! Two responsibilities stay with the caller (`cmd_walk` in
 //! `src/bin/cli.rs`) rather than living in this module, since neither fits
@@ -342,8 +340,10 @@ pub struct MgefDigest {
 }
 
 /// One `Effects[]` entry of a [`MagicItemDigest`] (SPEL/ENCH/ALCH share this
-/// identical shape). `conditions` rows are already GLOB-resolved (see
-/// [`resolve_condition_row`]) so `render` needs no fetcher of its own.
+/// identical shape). `conditions` rows already carry any GLOB comparison
+/// value's `Value` inline (Stub resolution's value-bearing-leaf inline —
+/// see `src/decode/leaf_values.rs`), so `render` needs no fetcher of its
+/// own.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -362,8 +362,9 @@ pub struct MagicEffectRow {
     pub duration: Value,
     /// A sibling top-level `Magnitude` GLOB reference, if present — distinct
     /// from `magnitude` above (see module docs on the two "Magnitude"
-    /// fields). GLOB-resolved (carries `"resolved_value"` when the ref is a
-    /// GLOB) via [`resolve_glob_ref`].
+    /// fields). Already carries `"Value"` inline (Stub resolution's
+    /// value-bearing-leaf inline — see `src/decode/leaf_values.rs`), so no
+    /// further resolution step happens here.
     #[cfg_attr(test, ts(type = "unknown"))]
     pub magnitude_glob: Option<Value>,
     #[cfg_attr(test, ts(type = "unknown"))]
@@ -518,29 +519,6 @@ pub(crate) fn stub_formid(v: Option<&Value>) -> Option<FormId> {
     crate::parse_form_id_input(s).ok()
 }
 
-/// Recursively collect every FormID-reference-stub found anywhere in `v`
-/// (object values keyed `"formid"`), deduped by insertion order. Used to
-/// batch-prefetch GLOB targets referenced anywhere inside a Conditions
-/// subtree, and as the OMOD ENCH-follow fallback scan (module docs).
-fn collect_ref_formids(v: &Value, out: &mut Vec<FormId>) {
-    match v {
-        Value::Object(map) => {
-            if let Some(fid) = stub_formid(Some(v)) {
-                out.push(fid);
-            }
-            for val in map.values() {
-                collect_ref_formids(val, out);
-            }
-        }
-        Value::Array(arr) => {
-            for item in arr {
-                collect_ref_formids(item, out);
-            }
-        }
-        _ => {}
-    }
-}
-
 pub(crate) fn dedup_sorted(fids: &mut Vec<FormId>) {
     fids.sort_by_key(|f| f.0);
     fids.dedup();
@@ -560,53 +538,6 @@ pub(crate) fn bulk_fetch_map(
     let sels: Vec<RecordSel> = fids.iter().map(|fid| RecordSel::FormId(*fid)).collect();
     let entries = f.bulk_get(&sels, ResolveDepth::Stub)?;
     Ok(entries.into_iter().map(|e| (e.sel.clone(), e)).collect())
-}
-
-/// When `v` is a formid-ref-stub pointing at a GLOB, clone it and inject the
-/// GLOB's own resolved `Value` field under the extra key `"resolved_value"`
-/// — computed once here, at digest-build time, so `walk::render`'s
-/// formatters need no fetcher/by_sel map of their own (mirrors the existing
-/// convention of Stub resolution itself annotating a ref inline). Non-GLOB
-/// refs (and non-refs) pass through unchanged.
-fn resolve_glob_ref(by_sel: &HashMap<String, BulkRecordEntry>, v: &Value) -> Value {
-    let mut out = v.clone();
-    if let Value::Object(map) = &mut out {
-        let is_glob = map.get("record_type").and_then(Value::as_str) == Some("GLOB");
-        if is_glob {
-            let fid = map
-                .get("formid")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let value = by_sel
-                .get(&fid)
-                .and_then(|e| e.fields.as_ref())
-                .and_then(|flds| flds.get("Value"))
-                .cloned();
-            if let Some(value) = value {
-                map.insert("resolved_value".to_string(), value);
-            }
-        }
-    }
-    out
-}
-
-/// Resolve every GLOB-valued `Parameter 1`/`Comparison Value` operand on one
-/// raw condition row (see [`resolve_glob_ref`]) so the row is a
-/// self-contained computed value.
-fn resolve_condition_row(by_sel: &HashMap<String, BulkRecordEntry>, row: &Value) -> Value {
-    let mut out = row.clone();
-    if let Value::Object(map) = &mut out {
-        for key in ["Parameter 1", "Comparison Value"] {
-            if let Some(v) = map.get(key)
-                && is_ref_stub(v)
-            {
-                let resolved = resolve_glob_ref(by_sel, v);
-                map.insert(key.to_string(), resolved);
-            }
-        }
-    }
-    out
 }
 
 // ─── conditions ─────────────────────────────────────────────────────────────
@@ -660,12 +591,6 @@ fn flatten_perk_condition_rows(node: &Value) -> Vec<Value> {
         }
     }
     out
-}
-
-/// Collect every GLOB/other FormID reference nested inside `conditions_node`
-/// so callers can batch-prefetch GLOB `Value`s before rendering.
-pub(crate) fn collect_condition_refs(conditions_node: &Value, out: &mut Vec<FormId>) {
-    collect_ref_formids(conditions_node, out);
 }
 
 // ─── per-type digests ───────────────────────────────────────────────────────
@@ -807,8 +732,11 @@ fn digest_magic_item(
         });
     }
 
-    // One batched bulk_get for every MGEF (Base Effect) + GLOB (Magnitude/
-    // Duration/condition-operand) reference across all effects.
+    // One batched bulk_get for every MGEF (Base Effect) reference across all
+    // effects. Magnitude/Duration GLOB refs and condition-operand GLOB refs
+    // need no fetch of their own anymore — the Stub-depth fetch that
+    // produced `fields` already inlined their `Value` directly onto each
+    // stub (see `src/decode/leaf_values.rs`).
     let mut want: Vec<FormId> = Vec::new();
     for item in effects {
         let Some(e) = item.get("Effect") else {
@@ -816,15 +744,6 @@ fn digest_magic_item(
         };
         if let Some(fid) = stub_formid(e.get("Base Effect")) {
             want.push(fid);
-        }
-        if let Some(fid) = stub_formid(e.get("Magnitude")) {
-            want.push(fid);
-        }
-        if let Some(fid) = stub_formid(e.get("Duration")) {
-            want.push(fid);
-        }
-        if let Some(cond) = e.get("Conditions") {
-            collect_condition_refs(cond, &mut want);
         }
     }
     dedup_sorted(&mut want);
@@ -858,14 +777,8 @@ fn digest_magic_item(
             .cloned()
             .unwrap_or(json!(0));
 
-        let magnitude_glob = e
-            .get("Magnitude")
-            .filter(|v| is_ref_stub(v))
-            .map(|v| resolve_glob_ref(&by_sel, v));
-        let duration_glob = e
-            .get("Duration")
-            .filter(|v| is_ref_stub(v))
-            .map(|v| resolve_glob_ref(&by_sel, v));
+        let magnitude_glob = e.get("Magnitude").filter(|v| is_ref_stub(v)).cloned();
+        let duration_glob = e.get("Duration").filter(|v| is_ref_stub(v)).cloned();
 
         let curve_table = e.get("Curve Table").cloned();
         let curve_input_av = e.get("Actor Value").filter(|v| is_ref_stub(v)).cloned();
@@ -873,10 +786,7 @@ fn digest_magic_item(
         let conditions = e
             .get("Conditions")
             .map(flatten_condition_rows)
-            .unwrap_or_default()
-            .iter()
-            .map(|row| resolve_condition_row(&by_sel, row))
-            .collect();
+            .unwrap_or_default();
 
         let perk_to_apply = summary.as_ref().and_then(|s| s.perk_to_apply).cloned();
         let equip_ability = summary.as_ref().and_then(|s| s.equip_ability).cloned();
@@ -910,11 +820,7 @@ fn digest_magic_item(
 /// Entry Point (fn/value/AV + perk conditions), or `NO effects` when the
 /// bonus is engine/script-side. Perk-entry field misattribution is already
 /// fixed upstream in the decoder, so no repair shim is needed here.
-fn digest_perk(
-    f: &mut impl ChaseFetcher,
-    fields: &Value,
-    enqueue: &mut Vec<EnqueueTarget>,
-) -> anyhow::Result<PerkDigest> {
+fn digest_perk(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Result<PerkDigest> {
     let data = fields.get("Data");
     let description = fields
         .get("Description")
@@ -937,16 +843,6 @@ fn digest_perk(
             effects: None,
         });
     };
-
-    // Batch-fetch every GLOB referenced by any effect's Perk Conditions.
-    let mut want: Vec<FormId> = Vec::new();
-    for item in effects {
-        if let Some(pc) = item.pointer("/Effect/Perk Conditions") {
-            collect_condition_refs(pc, &mut want);
-        }
-    }
-    dedup_sorted(&mut want);
-    let by_sel = bulk_fetch_map(f, &want)?;
 
     let mut rows = Vec::with_capacity(effects.len());
     for (i, item) in effects.iter().enumerate() {
@@ -987,10 +883,7 @@ fn digest_perk(
                 let conditions = e
                     .get("Perk Conditions")
                     .map(flatten_perk_condition_rows)
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|row| resolve_condition_row(&by_sel, row))
-                    .collect();
+                    .unwrap_or_default();
                 rows.push(PerkEffectRow::EntryPoint {
                     index: i,
                     entry_point_name,
@@ -1353,7 +1246,7 @@ fn digest_node(
         "KYWD" => Digest::Kywd(digest_kywd(f, formid)?),
         "MGEF" => Digest::Mgef(digest_mgef(fields, &mut enqueue)),
         "SPEL" | "ENCH" | "ALCH" => Digest::MagicItem(digest_magic_item(f, fields, &mut enqueue)?),
-        "PERK" => Digest::Perk(digest_perk(f, fields, &mut enqueue)?),
+        "PERK" => Digest::Perk(digest_perk(fields, &mut enqueue)?),
         "WEAP" => Digest::Weap(digest_weap(fields)),
         "PROJ" => Digest::Proj(digest_proj(fields, &mut enqueue)),
         "EXPL" => Digest::Expl(digest_expl(fields)),

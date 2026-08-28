@@ -34,6 +34,15 @@ a gameplay gate — identified by a populated `Type` field (anything other than 
 by zero SPEL/PERK consumers after reverse chase; never rendered as a keyword hook.
 _Avoid_: keyword hook (a tag has no SPEL/PERK consumer; the dead-end caveat must not fire)
 
+**Stub**:
+A FormID reference at `--resolve stub`, annotated with its identity (`formid`, `editor_id`,
+`record_type`) plus, for a **value-bearing leaf** record type (GLOB, CURV — see
+`src/decode/leaf_values.rs`), that type's own bounded payload inlined flat alongside those three
+keys (a GLOB stub also carries `Value`; a CURV stub carries `curve_path`/`curve` in place of
+`record_type`). Identity is the floor every stub guarantees, not the ceiling.
+_Avoid_: treating "stub" as identity-only — the three-key shape is `FormIdStub`'s Rust type, not
+the wire contract of every stub; assuming a non-value-bearing type's stub ever grows a value
+
 **Digest**:
 A compact per-record-type set of computed values (`walk::Digest`) — real data (FormID ref
 stubs, numbers, classified hops), not text. `walk::render` is the only place that turns one

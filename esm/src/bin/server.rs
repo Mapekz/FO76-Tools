@@ -472,7 +472,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                     },
                     {
                         "name": "esm_get_record",
-                        "description": "Fetch and decode one or more records by FormID or EditorID. Use this to inspect the full field layout of a record after identifying it with esm_search. The 'resolve' parameter controls how nested FormID references are rendered: 'stub' (default) annotates each reference inline with its EditorID and display name — saving round-trips; 'full' inlines the complete referenced records (richer but larger payloads); 'none' leaves raw hex FormIDs unchanged. Supply exactly one of 'id'/'formid'/'edid' for a single record, or 'ids' (a list mixing FormIDs and EditorIDs freely) to fetch several in one call — much cheaper than N separate calls when scanning many records. Bulk results are isolated per-selector: one bad FormID/EditorID in 'ids' returns an 'error' entry for that selector only, the rest still decode normally.",
+                        "description": "Fetch and decode one or more records by FormID or EditorID. Use this to inspect the full field layout of a record after identifying it with esm_search. The 'resolve' parameter controls how nested FormID references are rendered: 'stub' (default) annotates each reference inline with its EditorID and record type, plus — for a GLOB or CURV reference — that record's own value inlined too, so magnitudes/durations/thresholds are readable straight off the stub — saving round-trips; 'full' inlines the complete referenced records (richer but larger payloads); 'none' leaves raw hex FormIDs unchanged. Supply exactly one of 'id'/'formid'/'edid' for a single record, or 'ids' (a list mixing FormIDs and EditorIDs freely) to fetch several in one call — much cheaper than N separate calls when scanning many records. Bulk results are isolated per-selector: one bad FormID/EditorID in 'ids' returns an 'error' entry for that selector only, the rest still decode normally.",
                         "annotations": {"readOnlyHint": true},
                         "inputSchema": {
                             "type": "object",
@@ -502,7 +502,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                     "type": "string",
                                     "enum": ["none", "stub", "full"],
                                     "default": "stub",
-                                    "description": "How to render nested FormID references. 'stub' (default): annotate each reference with its EditorID + name — avoids extra round-trips. 'full': inline entire referenced records up to 2 levels. 'none': leave raw hex FormIDs unchanged. Applies to every record in bulk mode too."
+                                    "description": "How to render nested FormID references. 'stub' (default): annotate each reference with its EditorID + record type — avoids extra round-trips. A GLOB reference also carries its own 'Value'; a CURV reference carries 'curve_path'/'curve' points in place of 'record_type' (at every resolve depth, including 'none'). 'full': inline entire referenced records up to 2 levels. 'none': leave raw hex FormIDs unchanged (except CURV, as above). Applies to every record in bulk mode too."
                                 }
                             }
                         }

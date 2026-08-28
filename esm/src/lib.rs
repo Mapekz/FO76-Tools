@@ -1383,17 +1383,17 @@ impl Database {
         })
     }
 
-    /// Decode a record at `meta`'s offset with the given resolution depth.
-    /// `ResolveDepth::None` decodes with no FormID-reference resolver — the one
-    /// codepath used by every unresolved-decode call site (coverage scans,
-    /// unchanged-side diff decodes, plain `record_by_formid`/`record_by_edid`).
-    pub(crate) fn record_at_meta_with_depth(
+    /// Decode an already-parsed record at the given resolution depth. Shared
+    /// by `record_at_meta_with_depth` and `DatabaseResolver::leaf_inline`
+    /// (the latter always at `ResolveDepth::None`, since a value-bearing
+    /// leaf's own fields never need further reference-following) so a leaf
+    /// lookup never re-parses a record `DatabaseResolver::stub` already
+    /// parsed.
+    fn decode_parsed(
         &self,
-        meta: &crate::reader::RecordMeta,
+        parsed: &crate::reader::ParsedRecord,
         depth: crate::decode::ResolveDepth,
-    ) -> anyhow::Result<RecordResult> {
-        let parsed = self.esm.parse_record_at(meta.offset)?;
-        let editor_id = edid_from_subrecords(&parsed.subrecords);
+    ) -> Value {
         let resolver: Option<DatabaseResolver<'_>> = if depth != crate::decode::ResolveDepth::None {
             Some(DatabaseResolver::new(self, 2))
         } else {
@@ -1428,6 +1428,21 @@ impl Database {
                 crate::decode::curve_points_value(curve),
             );
         }
+        fields
+    }
+
+    /// Decode a record at `meta`'s offset with the given resolution depth.
+    /// `ResolveDepth::None` decodes with no FormID-reference resolver — the one
+    /// codepath used by every unresolved-decode call site (coverage scans,
+    /// unchanged-side diff decodes, plain `record_by_formid`/`record_by_edid`).
+    pub(crate) fn record_at_meta_with_depth(
+        &self,
+        meta: &crate::reader::RecordMeta,
+        depth: crate::decode::ResolveDepth,
+    ) -> anyhow::Result<RecordResult> {
+        let parsed = self.esm.parse_record_at(meta.offset)?;
+        let editor_id = edid_from_subrecords(&parsed.subrecords);
+        let fields = self.decode_parsed(&parsed, depth);
         Ok(RecordResult {
             header: parsed.header,
             editor_id,
@@ -1876,6 +1891,20 @@ impl<'a> DatabaseResolver<'a> {
     pub fn new(db: &'a Database, remaining: u8) -> Self {
         Self { db, remaining }
     }
+
+    /// `stub(id)` serialized to JSON, with a value-bearing-leaf inline
+    /// applied on top when one exists. Shared by `decode_full`'s two
+    /// stub-shaped fallbacks (depth limit, index miss) so `--resolve full`
+    /// is never *less* informative than `--resolve stub` for a GLOB/CURV
+    /// reference reached at hop >= 1.
+    fn stub_or_leaf_value(&self, id: FormId) -> Option<Value> {
+        use crate::decode::FormIdRefResolver;
+        let stub = self.stub(id)?;
+        if let Some(inlined) = self.leaf_inline(id, &stub.record_type) {
+            return Some(inlined);
+        }
+        serde_json::to_value(&stub).ok()
+    }
 }
 
 impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
@@ -1902,17 +1931,55 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
         })
     }
 
+    fn leaf_inline(&self, id: FormId, record_type: &str) -> Option<Value> {
+        match crate::decode::leaf_values::lookup(record_type)? {
+            crate::decode::leaf_values::InlineSource::CurveIndex => {
+                let curve = self.db.curves.as_ref()?.get(id)?;
+                Some(serde_json::json!({
+                    "formid": id.display(),
+                    "editor_id": curve.edid,
+                    "curve_path": curve.path,
+                    "curve": crate::decode::curve_points_value(curve),
+                }))
+            }
+            crate::decode::leaf_values::InlineSource::Fields(keys) => {
+                // Decode the target at `ResolveDepth::None`: no resolver, so
+                // no recursion and no depth-budget interaction. `stub()`
+                // already parsed this record's bytes (header + subrecord
+                // split) to build the plain stub — this reuses that parse,
+                // paying only the incremental cost of a schema decode over a
+                // record with at most a handful of members (see the
+                // `leaf_values` module doc for the measured cost).
+                let meta = self.db.get_formid_meta(id).ok()?;
+                let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
+                let fields = self
+                    .db
+                    .decode_parsed(&parsed, crate::decode::ResolveDepth::None);
+                let fields_obj = fields.as_object()?;
+                let mut map = crate::decode::stub_map(&self.stub(id)?);
+                let mut any = false;
+                for key in *keys {
+                    if let Some(v) = fields_obj.get(*key) {
+                        map.insert((*key).to_string(), v.clone());
+                        any = true;
+                    }
+                }
+                any.then(|| Value::Object(map))
+            }
+        }
+    }
+
     fn decode_full(&self, id: FormId) -> Option<Value> {
         if self.remaining == 0 {
             // At depth limit — fall back to stub
-            return self.stub(id).and_then(|s| serde_json::to_value(&s).ok());
+            return self.stub_or_leaf_value(id);
         }
         let Ok(meta) = self.db.get_formid_meta(id) else {
             // Index miss — fall back to the hardcoded-form table, same as `stub`.
             // There's no further record to recurse into, so this returns the
             // same stub-shaped JSON `stub()` would (matching the existing
             // depth-limit fallback above).
-            return self.stub(id).and_then(|s| serde_json::to_value(&s).ok());
+            return self.stub_or_leaf_value(id);
         };
         let parsed = self.db.esm.parse_record_at(meta.offset).ok()?;
         let editor_id = crate::reader::edid_from_subrecords(&parsed.subrecords);

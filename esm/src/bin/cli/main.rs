@@ -181,6 +181,14 @@ enum Commands {
         raw: bool,
         #[command(flatten)]
         sources: GetSourceArgs,
+        /// How to render nested FormID references. `none` (default): raw hex
+        /// FormIDs, unchanged. `stub`: annotate each reference with
+        /// `{formid, editor_id, record_type}` — cheap, one round-trip. A
+        /// value-bearing leaf type's own bounded payload rides along inline
+        /// (a GLOB reference also carries `Value`; a CURV reference carries
+        /// `curve_path`/`curve` in place of `record_type`, at every resolve
+        /// depth including `none`). `full`: recursively inline the complete
+        /// referenced record, depth-limited to 2 hops.
         #[arg(long, default_value = "none")]
         resolve: String,
     },

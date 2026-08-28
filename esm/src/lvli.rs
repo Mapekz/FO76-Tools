@@ -42,12 +42,14 @@
 //! to just the top one" behavior (classic in older Bethesda engines) is
 //! flagged unverified rather than assumed — see [`DropOptions::level`].
 
+use crate::FormId;
 use crate::chase::ChaseFetcher;
 use crate::curves::{CurvePoint, eval as curve_eval};
-use crate::walk::{
-    bulk_fetch_map, collect_condition_refs, dedup_sorted, flatten_condition_rows, stub_formid,
-};
-use crate::{BulkRecordEntry, FormId};
+use crate::walk::{bulk_fetch_map, dedup_sorted, flatten_condition_rows, stub_formid};
+// Only referenced by the fake-fetcher test harness below (`by_sel`'s type in
+// production code is inferred from `bulk_fetch_map`'s return, never named).
+#[cfg(test)]
+use crate::BulkRecordEntry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -194,18 +196,17 @@ fn is_legacy_entry(entry: &Value) -> bool {
     entry.get("Reference").is_none()
 }
 
-/// A GLOB reference's own `Value` field, resolved from an already-populated
-/// `by_sel` map (see [`bulk_fetch_map`]).
-fn resolve_glob_value(
-    stub: Option<&Value>,
-    by_sel: &HashMap<String, BulkRecordEntry>,
-) -> Option<f64> {
+/// A GLOB reference's own `Value` field, already inlined onto the stub by
+/// `--resolve stub` (see `src/decode/leaf_values.rs`) — no separate fetch
+/// needed, unlike before that inline existed (this module used to run its
+/// own extra `bulk_fetch_map` over every `*_Global`/condition GLOB ref for
+/// exactly this; see `esm/docs/adr/0011-value-bearing-leaf-inlining.md`).
+fn glob_stub_value(stub: Option<&Value>) -> Option<f64> {
     let obj = stub?.as_object()?;
     if obj.get("record_type").and_then(Value::as_str) != Some("GLOB") {
         return None;
     }
-    let fid = obj.get("formid")?.as_str()?;
-    by_sel.get(fid)?.fields.as_ref()?.get("Value")?.as_f64()
+    obj.get("Value")?.as_f64()
 }
 
 /// A CURV reference's points are inlined onto the field regardless of
@@ -228,7 +229,7 @@ fn eval_curve(v: &Value, level: f32) -> Option<f64> {
 /// the list level (`Chance None Value`/`Chance None Global`/`Chance None
 /// Curve Table`) and the modern entry shape (same three key names — LVLI's
 /// schema reuses them at both levels). Returns a probability in `[0, 1]`.
-fn resolve_chance_none(node: &Value, level: f32, by_sel: &HashMap<String, BulkRecordEntry>) -> f64 {
+fn resolve_chance_none(node: &Value, level: f32) -> f64 {
     if let Some(c) = node
         .get("Chance None Curve Table")
         .and_then(|v| eval_curve(v, level))
@@ -242,7 +243,7 @@ fn resolve_chance_none(node: &Value, level: f32, by_sel: &HashMap<String, BulkRe
     if flat != 0.0 {
         return (flat / 100.0).clamp(0.0, 1.0);
     }
-    if let Some(g) = resolve_glob_value(node.get("Chance None Global"), by_sel) {
+    if let Some(g) = glob_stub_value(node.get("Chance None Global")) {
         return (g / 100.0).clamp(0.0, 1.0);
     }
     0.0
@@ -251,7 +252,7 @@ fn resolve_chance_none(node: &Value, level: f32, by_sel: &HashMap<String, BulkRe
 /// An entry's own chance-none: the modern flat/GLOB/curve trio for a
 /// `Reference`-shaped entry, or the legacy `Base Data.Chance None` u8
 /// (no GLOB/curve sibling exists on that pre-174 shape).
-fn entry_chance_none(entry: &Value, level: f32, by_sel: &HashMap<String, BulkRecordEntry>) -> f64 {
+fn entry_chance_none(entry: &Value, level: f32) -> f64 {
     if is_legacy_entry(entry) {
         entry
             .pointer("/Base Data/Chance None")
@@ -259,7 +260,7 @@ fn entry_chance_none(entry: &Value, level: f32, by_sel: &HashMap<String, BulkRec
             .map(|v| (v / 100.0).clamp(0.0, 1.0))
             .unwrap_or(0.0)
     } else {
-        resolve_chance_none(entry, level, by_sel)
+        resolve_chance_none(entry, level)
     }
 }
 
@@ -275,11 +276,7 @@ fn entry_chance_none(entry: &Value, level: f32, by_sel: &HashMap<String, BulkRec
 /// `CT_Creatures_Loot_WeaponUser_Steel_Base`/`Container_Item2_ChanceNone`).
 /// Evaluating it at `--level` would invent a number off an unconfirmed axis,
 /// so it's flagged instead of guessed.
-fn resolve_min_level(
-    entry: &Value,
-    by_sel: &HashMap<String, BulkRecordEntry>,
-    notes: &mut Vec<DropNote>,
-) -> Option<f32> {
+fn resolve_min_level(entry: &Value, notes: &mut Vec<DropNote>) -> Option<f32> {
     if is_legacy_entry(entry) {
         return entry
             .pointer("/Base Data/Level")
@@ -298,7 +295,7 @@ fn resolve_min_level(
                 .to_string(),
         });
     }
-    if let Some(g) = resolve_glob_value(entry.get("Minimum Level Global"), by_sel) {
+    if let Some(g) = glob_stub_value(entry.get("Minimum Level Global")) {
         return Some(g as f32);
     }
     entry
@@ -310,7 +307,7 @@ fn resolve_min_level(
 /// An entry's Quantity, Curve-Table > Global > flat (modern shape) or
 /// `Base Data.Count` (legacy). `Quantity: 0` means "use the sublist's own
 /// count", not disabled — normalized to `1.0` here.
-fn resolve_quantity(entry: &Value, level: f32, by_sel: &HashMap<String, BulkRecordEntry>) -> f64 {
+fn resolve_quantity(entry: &Value, level: f32) -> f64 {
     let raw = if is_legacy_entry(entry) {
         entry.pointer("/Base Data/Count").and_then(Value::as_f64)
     } else if let Some(c) = entry
@@ -318,7 +315,7 @@ fn resolve_quantity(entry: &Value, level: f32, by_sel: &HashMap<String, BulkReco
         .and_then(|v| eval_curve(v, level))
     {
         Some(c)
-    } else if let Some(g) = resolve_glob_value(entry.get("Quantity Global"), by_sel) {
+    } else if let Some(g) = glob_stub_value(entry.get("Quantity Global")) {
         Some(g)
     } else {
         entry.get("Quantity").and_then(Value::as_f64)
@@ -368,12 +365,7 @@ fn selection_model(flags: &HashSet<String>) -> SelectionModel {
 /// One condition row's pass probability. Only `GetRandomPercent` is a real
 /// probability (a uniform 0-100 roll); anything else is a genuine gate this
 /// engine can't compute, so it's noted and defaulted per `strict`.
-fn condition_row_prob(
-    row: &Value,
-    by_sel: &HashMap<String, BulkRecordEntry>,
-    strict: bool,
-    notes: &mut Vec<DropNote>,
-) -> f64 {
+fn condition_row_prob(row: &Value, strict: bool, notes: &mut Vec<DropNote>) -> f64 {
     let function = row
         .get("Function")
         .and_then(Value::as_str)
@@ -386,7 +378,7 @@ fn condition_row_prob(
     }
     let operator = row.get("Operator").and_then(Value::as_str).unwrap_or("?");
     let cmp = match row.get("Comparison Value") {
-        Some(v) if v.is_object() => resolve_glob_value(Some(v), by_sel),
+        Some(v) if v.is_object() => glob_stub_value(Some(v)),
         Some(v) => v.as_f64(),
         None => None,
     };
@@ -407,12 +399,7 @@ fn condition_row_prob(
 /// An entry's overall gate-pass probability: OR-groups (a run of rows joined
 /// by a trailing `"AND/OR": "OR"`) combine via `1 - Π(1 - p)`, then groups AND
 /// together. No conditions at all means always-eligible (`1.0`).
-fn entry_gate_prob(
-    rows: &[Value],
-    by_sel: &HashMap<String, BulkRecordEntry>,
-    strict: bool,
-    notes: &mut Vec<DropNote>,
-) -> f64 {
+fn entry_gate_prob(rows: &[Value], strict: bool, notes: &mut Vec<DropNote>) -> f64 {
     if rows.is_empty() {
         return 1.0;
     }
@@ -422,7 +409,7 @@ fn entry_gate_prob(
         let mut group_fail = 1.0_f64;
         loop {
             let row = &rows[i];
-            let p = condition_row_prob(row, by_sel, strict, notes);
+            let p = condition_row_prob(row, strict, notes);
             group_fail *= 1.0 - p;
             let is_or = row.get("AND/OR").and_then(Value::as_str) == Some("OR");
             i += 1;
@@ -566,26 +553,15 @@ fn walk_node(
         }
     }
 
-    // One batched fetch for every GLOB this node's list/entries reference
-    // plus every sublist target's own fields (leaf targets need nothing
-    // further — their stub already carries editor_id/record_type).
+    // One batched fetch for every sublist target's own fields (leaf targets
+    // need nothing further — their stub already carries
+    // editor_id/record_type, and, for a GLOB leaf, its Value inlined too —
+    // see `glob_stub_value`. This used to also collect every `*_Global` and
+    // condition GLOB ref for a second bulk fetch; `--resolve stub` now
+    // inlines those values directly onto the reference, so that fetch is
+    // gone — see `esm/docs/adr/0011-value-bearing-leaf-inlining.md`.)
     let mut want: Vec<FormId> = Vec::new();
-    if let Some(fid) = stub_formid(fields.get("Chance None Global")) {
-        want.push(fid);
-    }
     for e in &entry_vals {
-        for key in [
-            "Chance None Global",
-            "Quantity Global",
-            "Minimum Level Global",
-        ] {
-            if let Some(fid) = stub_formid(e.get(key)) {
-                want.push(fid);
-            }
-        }
-        if let Some(cond) = e.get("Conditions") {
-            collect_condition_refs(cond, &mut want);
-        }
         if let Some(target) = entry_target(e)
             && target.get("record_type").and_then(Value::as_str) == Some("LVLI")
             && let Some(fid) = stub_formid(Some(target))
@@ -601,22 +577,20 @@ fn walk_node(
     dedup_sorted(&mut want);
     let by_sel = bulk_fetch_map(f, &want)?;
 
-    let list_factor = 1.0 - resolve_chance_none(fields, opts.level, &by_sel);
+    let list_factor = 1.0 - resolve_chance_none(fields, opts.level);
 
     let mut eligible: Vec<EligibleEntry> = Vec::new();
     let mut min_levels: Vec<i64> = Vec::new();
     for e in &entry_vals {
         let mut notes = Vec::new();
-        if let Some(ml) = resolve_min_level(e, &by_sel, &mut notes) {
+        if let Some(ml) = resolve_min_level(e, &mut notes) {
             if ml > opts.level {
                 continue;
             }
             min_levels.push((ml * 1000.0).round() as i64);
         }
         let gate_prob = match e.get("Conditions") {
-            Some(c) => {
-                entry_gate_prob(&flatten_condition_rows(c), &by_sel, opts.strict, &mut notes)
-            }
+            Some(c) => entry_gate_prob(&flatten_condition_rows(c), opts.strict, &mut notes),
             None => 1.0,
         };
         eligible.push(EligibleEntry {
@@ -676,12 +650,12 @@ fn walk_node(
             continue;
         }
         let entry = ee.entry;
-        let cn = entry_chance_none(entry, opts.level, &by_sel);
+        let cn = entry_chance_none(entry, opts.level);
         let effective_i = chosen_i * (1.0 - cn);
         if effective_i <= 0.0 {
             continue;
         }
-        let quantity = resolve_quantity(entry, opts.level, &by_sel);
+        let quantity = resolve_quantity(entry, opts.level);
 
         let Some(target) = entry_target(entry) else {
             continue;
@@ -935,8 +909,8 @@ mod tests {
         }
     }
 
-    fn glob_stub(fid: FormId, edid: &str) -> Value {
-        json!({"formid": fid.display(), "editor_id": edid, "record_type": "GLOB"})
+    fn glob_stub(fid: FormId, edid: &str, value: f64) -> Value {
+        json!({"formid": fid.display(), "editor_id": edid, "record_type": "GLOB", "Value": value})
     }
 
     fn target_stub(fid: FormId, rt: &str, edid: &str) -> Value {
@@ -1018,27 +992,25 @@ mod tests {
     #[test]
     fn condition_row_prob_reads_lower_and_upper_operator_families() {
         let mut notes = Vec::new();
-        let by_sel = HashMap::new();
         let ge = json!({"Function": "GetRandomPercent", "Operator": "Greater Than Or Equal To", "Comparison Value": 92.0});
-        assert!((condition_row_prob(&ge, &by_sel, false, &mut notes) - 0.08).abs() < 1e-9);
+        assert!((condition_row_prob(&ge, false, &mut notes) - 0.08).abs() < 1e-9);
         let lt = json!({"Function": "GetRandomPercent", "Operator": "Less Than", "Comparison Value": 10.0});
-        assert!((condition_row_prob(&lt, &by_sel, false, &mut notes) - 0.10).abs() < 1e-9);
+        assert!((condition_row_prob(&lt, false, &mut notes) - 0.10).abs() < 1e-9);
         assert!(notes.is_empty());
     }
 
     #[test]
     fn condition_row_prob_flags_non_probability_gates_and_respects_strict() {
-        let by_sel = HashMap::new();
         let has_recipe = json!({"Function": "HasLearnedRecipe", "Operator": "Equal To", "Comparison Value": 0.0});
         let mut lenient_notes = Vec::new();
         assert_eq!(
-            condition_row_prob(&has_recipe, &by_sel, false, &mut lenient_notes),
+            condition_row_prob(&has_recipe, false, &mut lenient_notes),
             1.0
         );
         assert_eq!(lenient_notes.len(), 1);
         let mut strict_notes = Vec::new();
         assert_eq!(
-            condition_row_prob(&has_recipe, &by_sel, true, &mut strict_notes),
+            condition_row_prob(&has_recipe, true, &mut strict_notes),
             0.0
         );
     }
@@ -1051,31 +1023,20 @@ mod tests {
 
     #[test]
     fn resolve_chance_none_flat_wins_over_glob() {
-        let mut by_sel = HashMap::new();
         let glob_fid = FormId::new(0x1000);
-        by_sel.insert(
-            glob_fid.display(),
-            BulkRecordEntry {
-                sel: glob_fid.display(),
-                header: None,
-                editor_id: None,
-                fields: Some(json!({"Value": 85.0})),
-                error: None,
-            },
-        );
         let node = json!({
             "Chance None Value": 10.0,
-            "Chance None Global": glob_stub(glob_fid, "SomeGlobal"),
+            "Chance None Global": glob_stub(glob_fid, "SomeGlobal", 85.0),
         });
-        assert!((resolve_chance_none(&node, 50.0, &by_sel) - 0.10).abs() < 1e-9);
+        assert!((resolve_chance_none(&node, 50.0) - 0.10).abs() < 1e-9);
 
         // Flat 0.0 -> the GLOB is the real chance-none (esm-cli SKILL.md's
         // TWZ07_LL_QuestReward_Event example: flat 0.0, GLOB 85 -> 15% drop).
         let node_zero_flat = json!({
             "Chance None Value": 0.0,
-            "Chance None Global": glob_stub(glob_fid, "SomeGlobal"),
+            "Chance None Global": glob_stub(glob_fid, "SomeGlobal", 85.0),
         });
-        assert!((resolve_chance_none(&node_zero_flat, 50.0, &by_sel) - 0.85).abs() < 1e-9);
+        assert!((resolve_chance_none(&node_zero_flat, 50.0) - 0.85).abs() < 1e-9);
     }
 
     // ─── full tree resolution ───────────────────────────────────────────

@@ -74,8 +74,10 @@ Checks four independent patterns:
 Rules A, C, and D all resolve `Minimum Level Global` / `GetRandomPercent`
 GLOB references (a per-entry or per-condition GLOB overriding the static
 field, e.g. economy-tunable recipe unlock levels or event drop rates) via
-one shared bulk GLOB lookup — reading the static/literal value alone would
-understate the true effective threshold for any entry that uses one.
+each reference's own inlined `Value` — `--resolve stub` already carries it
+(see `docs/adr/0011-value-bearing-leaf-inlining.md`), so no separate lookup
+is needed. Reading the static/literal value alone would understate the true
+effective threshold for any entry that uses a GLOB override.
 
 Usage:
     python3 tools/lvli_audit.py [--esm PATH] [--esm-bin PATH] [--out FILE]
@@ -169,22 +171,15 @@ def _param_key(param):
     return param
 
 
-def _resolve_glob_ref(ref: dict, glob_values: dict[str, float]) -> float | None:
-    """A GLOB reference's current `Value`, looked up in `glob_values` by
-    FormID, falling back to EditorID. `None` if neither resolves."""
-    formid = ref.get("formid")
-    if formid is not None and formid in glob_values:
-        return glob_values[formid]
-    edid = ref.get("editor_id")
-    return glob_values.get(edid) if edid is not None else None
-
-
-def resolve_comparison_value(cmp_value, glob_values: dict[str, float]) -> float | None:
-    """A condition's literal float, or its GLOB's current `Value` (see
-    `_resolve_glob_ref`) when the comparison is a GLOB reference. `None` if
-    neither resolves."""
+def resolve_comparison_value(cmp_value) -> float | None:
+    """A condition's literal float, or its GLOB's current `Value` when the
+    comparison is a GLOB reference — `--resolve stub` already inlines a
+    value-bearing leaf type's payload directly onto the reference (see
+    `esm/docs/adr/0011-value-bearing-leaf-inlining.md`), so no separate
+    lookup is needed. `None` if neither resolves."""
     if isinstance(cmp_value, dict):
-        return _resolve_glob_ref(cmp_value, glob_values)
+        value = cmp_value.get("Value")
+        return float(value) if isinstance(value, (int, float)) else None
     if isinstance(cmp_value, (int, float, str)):
         try:
             return float(cmp_value)
@@ -193,27 +188,28 @@ def resolve_comparison_value(cmp_value, glob_values: dict[str, float]) -> float 
     return None
 
 
-def resolve_min_level(entry: dict, glob_values: dict[str, float]) -> float | None:
-    """An entry's effective Minimum Level: its `Minimum Level Global` GLOB
-    (see `_resolve_glob_ref`) when present, else its static `Minimum Level`
-    field. `None` if a `Minimum Level Global` is present but unresolved —
-    not falling back to the (likely stale/placeholder) static field in that
+def resolve_min_level(entry: dict) -> float | None:
+    """An entry's effective Minimum Level: its `Minimum Level Global` GLOB's
+    inlined `Value` when present, else its static `Minimum Level` field.
+    `None` if a `Minimum Level Global` is present but unresolved — not
+    falling back to the (likely stale/placeholder) static field in that
     case, since that would understate the true level."""
     lvlg = entry.get("Minimum Level Global")
     if isinstance(lvlg, dict):
-        return _resolve_glob_ref(lvlg, glob_values)
+        value = lvlg.get("Value")
+        return float(value) if isinstance(value, (int, float)) else None
     lv = entry.get("Minimum Level")
     return lv if isinstance(lv, (int, float)) else None
 
 
-def is_near_certain(cond_list: list[dict], threshold: float, glob_values: dict[str, float]) -> bool | None:
+def is_near_certain(cond_list: list[dict], threshold: float) -> bool | None:
     """Whether every condition in `cond_list` is a `GetRandomPercent`
     <=/< check whose threshold is >= `threshold` (i.e. the entry is
     always or near-always eligible). No conditions at all also counts as
-    always-true. GLOB-referencing comparisons are resolved via
-    `glob_values` (see `collect_glob_values`); returns `None` only when a
-    GLOB reference couldn't be resolved (e.g. bulk_get error for that
-    GLOB) — reported as "unknown, verify manually" rather than guessed at."""
+    always-true. GLOB-referencing comparisons are resolved via their
+    already-inlined `Value` (see `resolve_comparison_value`); returns `None`
+    only when a GLOB reference couldn't be resolved (e.g. it had no `FLTV`)
+    — reported as "unknown, verify manually" rather than guessed at."""
     if not cond_list:
         return True
     saw_unresolved = False
@@ -222,7 +218,7 @@ def is_near_certain(cond_list: list[dict], threshold: float, glob_values: dict[s
             return False
         if c.get("Operator") not in ("Less Than Or Equal To", "Less Than"):
             return False
-        value = resolve_comparison_value(c.get("Comparison Value"), glob_values)
+        value = resolve_comparison_value(c.get("Comparison Value"))
         if value is None:
             saw_unresolved = True
             continue
@@ -231,11 +227,11 @@ def is_near_certain(cond_list: list[dict], threshold: float, glob_values: dict[s
     return None if saw_unresolved else True
 
 
-def describe_condition(c: dict, glob_values: dict[str, float]) -> str:
+def describe_condition(c: dict) -> str:
     cmp_value = c.get("Comparison Value")
     if isinstance(cmp_value, dict):
         label = cmp_value.get("editor_id") or cmp_value.get("formid") or "?"
-        resolved = resolve_comparison_value(cmp_value, glob_values)
+        resolved = resolve_comparison_value(cmp_value)
         cmp_text = f"{label} (={resolved:g})" if resolved is not None else f"{label} (unresolved)"
     else:
         cmp_text = cmp_value
@@ -251,7 +247,7 @@ def entry_reference_text(entry: dict) -> str:
     return "?"
 
 
-def find_unbounded_gate(entry: dict, glob_values: dict[str, float]) -> dict | None:
+def find_unbounded_gate(entry: dict) -> dict | None:
     """Rule D — the entry's Condition, if it boils down to a single one-sided
     range check (an Operator from `RANGE_OPS` with no complementary bound on
     the same Function/Parameters within this entry). Groups the entry's
@@ -281,7 +277,7 @@ def find_unbounded_gate(entry: dict, glob_values: dict[str, float]) -> dict | No
                 "function": key[0],
                 "operator": rep.get("Operator"),
                 "comparison_value": rep.get("Comparison Value"),
-                "resolved_value": resolve_comparison_value(rep.get("Comparison Value"), glob_values),
+                "resolved_value": resolve_comparison_value(rep.get("Comparison Value")),
             }
     return None
 
@@ -346,13 +342,13 @@ def compute_naive_cascade_odds(probs: list[float]) -> list[float]:
     return odds
 
 
-def check_overlap_ladder(entries: list[dict], flags: set[str], glob_values: dict[str, float]) -> dict | None:
+def check_overlap_ladder(entries: list[dict], flags: set[str]) -> dict | None:
     if USE_ALL_FLAG in flags or USE_FIRST_MATCH_FLAG in flags:
         return None
     if len(entries) < 2:
         return None
 
-    gates = [find_unbounded_gate(e, glob_values) for e in entries]
+    gates = [find_unbounded_gate(e) for e in entries]
     gated_indices = [i for i, g in enumerate(gates) if g is not None]
     if len(gated_indices) < 2:
         return None
@@ -374,7 +370,6 @@ def check_overlap_ladder(entries: list[dict], flags: set[str], glob_values: dict
                 "gate": (
                     describe_condition(
                         {"Function": g["function"], "Operator": g["operator"], "Comparison Value": g["comparison_value"]},
-                        glob_values,
                     )
                     if g is not None
                     else None
@@ -387,15 +382,13 @@ def check_overlap_ladder(entries: list[dict], flags: set[str], glob_values: dict
     }
 
 
-def check_use_first_starvation(
-    entries: list[dict], flags: set[str], threshold: float, glob_values: dict[str, float]
-) -> dict | None:
+def check_use_first_starvation(entries: list[dict], flags: set[str], threshold: float) -> dict | None:
     if USE_FIRST_MATCH_FLAG not in flags:
         return None
     hits = []
     for i, e in enumerate(entries[:-1]):
         conds = entry_conditions(e)
-        verdict = is_near_certain(conds, threshold, glob_values)
+        verdict = is_near_certain(conds, threshold)
         if verdict is False:
             continue
 
@@ -404,8 +397,8 @@ def check_use_first_starvation(
         # HasLearnedRecipe, GetIsInRegion) are legitimately order-dependent
         # even when ascending in level -- those conditions are consumed or
         # differ per situation, unlike "always/near-always true".
-        level_here = resolve_min_level(e, glob_values)
-        level_next = resolve_min_level(entries[i + 1], glob_values)
+        level_here = resolve_min_level(e)
+        level_next = resolve_min_level(entries[i + 1])
         level_note = (
             f" (Minimum Level {level_here:g} <= next entry's {level_next:g})"
             if level_here is not None and level_next is not None and level_here <= level_next
@@ -421,7 +414,7 @@ def check_use_first_starvation(
                 "index": i,
                 "reference": entry_reference_text(e),
                 "certainty": certainty + level_note,
-                "conditions": [describe_condition(c, glob_values) for c in conds],
+                "conditions": [describe_condition(c) for c in conds],
                 "starved_count": len(entries) - i - 1,
             }
         )
@@ -438,12 +431,12 @@ def check_bundle_name_uniform_pick(entries: list[dict], flags: set[str], name_te
     return {"entry_count": len(entries)}
 
 
-def check_level_tier_starvation(entries: list[dict], flags: set[str], glob_values: dict[str, float]) -> dict | None:
+def check_level_tier_starvation(entries: list[dict], flags: set[str]) -> dict | None:
     if CALC_ALL_LEVELS_FLAG in flags:
         return None
     seen_levels: set[float] = set()
     for e in entries:
-        lv = resolve_min_level(e, glob_values)
+        lv = resolve_min_level(e)
         if lv is not None:
             seen_levels.add(lv)
     levels = sorted(seen_levels)
@@ -452,30 +445,7 @@ def check_level_tier_starvation(entries: list[dict], flags: set[str], glob_value
     return {"levels": levels}
 
 
-def collect_glob_refs(records: list[dict]) -> set[str]:
-    """FormIDs of every GLOB referenced either as a `GetRandomPercent`
-    Comparison Value or as a `Minimum Level Global`, across every record's
-    Leveled List Entries — collected up front so they can all be resolved
-    in one bulk_get instead of per-entry lookups."""
-    refs: set[str] = set()
-    for rec in records:
-        fields = rec.get("fields") or {}
-        raw_entries = fields.get("Leveled List Entries") or []
-        for raw in raw_entries:
-            entry = lvli_entry.unwrap_entry(raw)
-            for c in entry_conditions(entry):
-                if c.get("Function") != "GetRandomPercent":
-                    continue
-                cmp_value = c.get("Comparison Value")
-                if isinstance(cmp_value, dict) and cmp_value.get("formid"):
-                    refs.add(cmp_value["formid"])
-            lvlg = entry.get("Minimum Level Global")
-            if isinstance(lvlg, dict) and lvlg.get("formid"):
-                refs.add(lvlg["formid"])
-    return refs
-
-
-def analyze_record(rec: dict, threshold: float, glob_values: dict[str, float]) -> dict | None:
+def analyze_record(rec: dict, threshold: float) -> dict | None:
     if rec.get("error"):
         return {"error": rec["error"], "sel": rec.get("sel")}
 
@@ -489,16 +459,16 @@ def analyze_record(rec: dict, threshold: float, glob_values: dict[str, float]) -
     form_id = (rec.get("header") or {}).get("form_id") or rec.get("sel")
 
     findings = {}
-    a = check_use_first_starvation(entries, flags, threshold, glob_values)
+    a = check_use_first_starvation(entries, flags, threshold)
     if a:
         findings["A"] = a
     b = check_bundle_name_uniform_pick(entries, flags, name_text)
     if b:
         findings["B"] = b
-    c = check_level_tier_starvation(entries, flags, glob_values)
+    c = check_level_tier_starvation(entries, flags)
     if c:
         findings["C"] = c
-    d = check_overlap_ladder(entries, flags, glob_values)
+    d = check_overlap_ladder(entries, flags)
     if d:
         findings["D"] = d
     if not findings:
@@ -664,29 +634,18 @@ def main(argv=None) -> int:
         form_ids = list_lvli_form_ids(client, esm_path)
         eprint(f"found {len(form_ids)} LVLI records; fetching...")
 
+        # `resolve="stub"` already inlines a value-bearing leaf type's payload
+        # (e.g. a GLOB's `Value`) directly onto each reference — see
+        # `docs/adr/0011-value-bearing-leaf-inlining.md` — so no separate
+        # bulk_get to resolve GLOB comparison values is needed anymore.
         records = client.bulk_get(str(esm_path), form_ids, resolve="stub")
-
-        glob_refs = collect_glob_refs(records)
-        glob_values: dict[str, float] = {}
-        if glob_refs:
-            eprint(f"resolving {len(glob_refs)} GLOB(s) referenced by GetRandomPercent conditions...")
-            for glob_rec in client.bulk_get(str(esm_path), sorted(glob_refs), resolve="none"):
-                value = (glob_rec.get("fields") or {}).get("Value")
-                if not isinstance(value, (int, float)):
-                    continue
-                formid = (glob_rec.get("header") or {}).get("form_id")
-                if formid:
-                    glob_values[formid] = value
-                edid = glob_rec.get("editor_id")
-                if edid:
-                    glob_values[edid] = value
     finally:
         client.close()
 
     hits = []
     errors = []
     for rec in records:
-        result = analyze_record(rec, args.near_certain_threshold, glob_values)
+        result = analyze_record(rec, args.near_certain_threshold)
         if result is None:
             continue
         if "error" in result:

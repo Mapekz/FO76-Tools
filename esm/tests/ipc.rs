@@ -905,12 +905,30 @@ fn make_bulk_stub_test_esm() -> Vec<u8> {
     append_subrecord(&mut ref_subs, b"YNAM", &1u32.to_le_bytes());
     append_subrecord(&mut ref_subs, b"ZNAM", &1u32.to_le_bytes());
 
-    let mut recs = Vec::new();
-    append_record(&mut recs, b"WEAP", 1, &target_subs);
-    append_record(&mut recs, b"WEAP", 2, &ref_subs);
+    let mut weap_recs = Vec::new();
+    append_record(&mut weap_recs, b"WEAP", 1, &target_subs);
+    append_record(&mut weap_recs, b"WEAP", 2, &ref_subs);
+
+    // A GLOB (form_id 3) referenced by a CHAL's `HNAM` ("Required Count
+    // Global", form_id 4) — proves a value-bearing leaf's inline (`Value`)
+    // survives the same daemon/IPC bulk-dispatch path as the plain
+    // EditorID/record_type annotation above.
+    let mut glob_subs = Vec::new();
+    append_subrecord(&mut glob_subs, b"EDID", &cstr("TargetGlob"));
+    append_subrecord(&mut glob_subs, b"FLTV", &76.0f32.to_le_bytes());
+    let mut glob_recs = Vec::new();
+    append_record(&mut glob_recs, b"GLOB", 3, &glob_subs);
+
+    let mut chal_subs = Vec::new();
+    append_subrecord(&mut chal_subs, b"EDID", &cstr("RefChal"));
+    append_subrecord(&mut chal_subs, b"HNAM", &3u32.to_le_bytes());
+    let mut chal_recs = Vec::new();
+    append_record(&mut chal_recs, b"CHAL", 4, &chal_subs);
 
     let mut buf = tes4_header();
-    buf.extend(wrap_grup(b"WEAP", &recs));
+    buf.extend(wrap_grup(b"WEAP", &weap_recs));
+    buf.extend(wrap_grup(b"GLOB", &glob_recs));
+    buf.extend(wrap_grup(b"CHAL", &chal_recs));
     buf
 }
 
@@ -934,6 +952,7 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
             sels: vec![
                 RecordSel::FormId(esm::FormId(2)),
                 RecordSel::FormId(esm::FormId(1)),
+                RecordSel::FormId(esm::FormId(4)),
             ],
             depth: ResolveDepth::Stub,
         },
@@ -942,7 +961,7 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
         panic!("expected Ok");
     };
     let entries: Vec<BulkRecordEntry> = serde_json::from_value(data).expect("entries");
-    assert_eq!(entries.len(), 2);
+    assert_eq!(entries.len(), 3);
 
     let referencer = &entries[0];
     assert_eq!(referencer.sel, "0x00000002");
@@ -971,6 +990,26 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
     assert_eq!(entries[1].sel, "0x00000001");
     assert!(entries[1].error.is_none());
     assert_eq!(entries[1].editor_id.as_deref(), Some("TargetWeap"));
+
+    // Third entry: a CHAL referencing a GLOB via `HNAM` ("Required Count
+    // Global") — the GLOB's own `Value` must survive the daemon/IPC bulk
+    // path, inlined onto the reference stub, not just its identity.
+    let chal = &entries[2];
+    assert_eq!(chal.sel, "0x00000004");
+    assert!(chal.error.is_none());
+    let chal_fields = chal.fields.as_ref().expect("fields present");
+    let glob_ref = chal_fields
+        .get("Required Count Global")
+        .expect("missing 'Required Count Global'");
+    assert_eq!(
+        glob_ref.get("record_type").and_then(|v| v.as_str()),
+        Some("GLOB")
+    );
+    assert_eq!(
+        glob_ref.get("editor_id").and_then(|v| v.as_str()),
+        Some("TargetGlob")
+    );
+    assert_eq!(glob_ref.get("Value").and_then(|v| v.as_f64()), Some(76.0));
 
     let _ = std::fs::remove_file(&tmp);
 }

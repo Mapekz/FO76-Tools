@@ -159,10 +159,15 @@ fn perk_fixture() -> FakeFetcher {
                                                 "Condition Data": {
                                                     "Function": "GetValue",
                                                     "Operator": "Greater Than Or Equal To",
+                                                    // Real `--resolve stub` output already
+                                                    // inlines a GLOB reference's `Value` (see
+                                                    // `src/decode/leaf_values.rs`); this fixture
+                                                    // mirrors that shape directly.
                                                     "Comparison Value": {
                                                         "formid": PERK_COND_GLOB_FID,
                                                         "editor_id": "LGND_Threshold",
                                                         "record_type": "GLOB",
+                                                        "Value": 40.0,
                                                     },
                                                     "Parameter 1": null,
                                                     "Run On": "Subject",
@@ -190,12 +195,6 @@ fn perk_fixture() -> FakeFetcher {
         "PERK",
         "TestPerkNoEffects",
         json!({"_record_type": "Perk", "Description": "Engine-side only."}),
-    );
-    f.insert(
-        PERK_COND_GLOB_FID,
-        "GLOB",
-        "LGND_Threshold",
-        json!({"_record_type": "Global", "Value": 40.0}),
     );
     f
 }
@@ -282,24 +281,22 @@ fn magic_item_fixture() -> FakeFetcher {
                     "Effect": {
                         "Base Effect": {"formid": "0x00600099", "editor_id": "SomeMgef", "record_type": "MGEF"},
                         "Effect Item Data": {"Magnitude": 0, "Duration": 0},
-                        "Magnitude": {"formid": GLOB_MAG_FID, "editor_id": "LGND_Survival_Scale", "record_type": "GLOB"},
+                        // Real `--resolve stub` output already inlines a GLOB
+                        // reference's `Value` (see `src/decode/leaf_values.rs`);
+                        // this fixture mirrors that shape directly rather than
+                        // relying on a separate fetch of GLOB_MAG_FID.
+                        "Magnitude": {"formid": GLOB_MAG_FID, "editor_id": "LGND_Survival_Scale", "record_type": "GLOB", "Value": 12.5},
                     }
                 },
                 {
                     "Effect": {
                         "Base Effect": {"formid": "0x00600099", "editor_id": "SomeMgef", "record_type": "MGEF"},
                         "Effect Item Data": {"Magnitude": 25, "Duration": 0},
-                        "Magnitude": {"formid": GLOB_MAG_FID, "editor_id": "LGND_Survival_Scale", "record_type": "GLOB"},
+                        "Magnitude": {"formid": GLOB_MAG_FID, "editor_id": "LGND_Survival_Scale", "record_type": "GLOB", "Value": 12.5},
                     }
                 },
             ],
         }),
-    );
-    f.insert(
-        GLOB_MAG_FID,
-        "GLOB",
-        "LGND_Survival_Scale",
-        json!({"_record_type": "Global", "Value": 12.5}),
     );
     f
 }

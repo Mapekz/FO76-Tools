@@ -82,29 +82,30 @@ fn fmt_ref(v: &Value) -> String {
 
 /// "EditorID=Value" — the magnitude/duration GLOB annotation (mirrors the TS
 /// original's `globValue()`; no leading hex, unlike condition operand
-/// rendering). `v` is already GLOB-resolved (see
-/// `super::resolve_glob_ref` — it carries `"resolved_value"` when known).
+/// rendering). `v` already carries `"Value"` inline (Stub resolution's
+/// value-bearing-leaf inline — see `src/decode/leaf_values.rs`) when known.
 fn fmt_glob_annotation(v: &Value) -> String {
     let Some(obj) = v.as_object() else {
         return "?".to_string();
     };
     let edid = obj.get("editor_id").and_then(Value::as_str).unwrap_or("?");
     let value = obj
-        .get("resolved_value")
+        .get("Value")
         .map(pyish)
         .unwrap_or_else(|| "?".to_string());
     format!("{edid}={value}")
 }
 
-/// "0xID<EditorID[=Value]>" — the inline condition-operand rendering.
-/// `v` is already GLOB-resolved (see `super::resolve_condition_row`).
+/// "0xID<EditorID[=Value]>" — the inline condition-operand rendering. `v`
+/// already carries `"Value"` inline when it's a GLOB comparison operand (see
+/// `fmt_glob_annotation`).
 fn fmt_condition_operand(v: Option<&Value>) -> String {
     match v {
         None | Some(Value::Null) => String::new(),
         Some(Value::Object(map)) if map.contains_key("formid") => {
             let fid = map.get("formid").and_then(Value::as_str).unwrap_or("?");
             let edid = map.get("editor_id").and_then(Value::as_str).unwrap_or("");
-            match map.get("resolved_value") {
+            match map.get("Value") {
                 Some(val) => format!("{fid}<{edid}={}>", pyish(val)),
                 None => format!("{fid}<{edid}>"),
             }
@@ -114,8 +115,8 @@ fn fmt_condition_operand(v: Option<&Value>) -> String {
 }
 
 /// `Function(Param1) Operator ComparisonValue[ on RunOn][ [OR]]` — the
-/// condition line format. `row` is already GLOB-resolved (see
-/// `super::resolve_condition_row`).
+/// condition line format. `row`'s operands already carry `"Value"` inline
+/// when GLOB-valued (see `fmt_condition_operand`).
 fn fmt_condition_row(row: &Value) -> String {
     let function = row.get("Function").and_then(Value::as_str).unwrap_or("?");
     let operator = row.get("Operator").and_then(Value::as_str).unwrap_or("==");
@@ -1116,7 +1117,7 @@ mod tests {
     fn fmt_condition_operand_renders_resolved_glob_value() {
         let v = serde_json::json!({
             "formid": "0x1", "editor_id": "LGND_Threshold", "record_type": "GLOB",
-            "resolved_value": 40.0,
+            "Value": 40.0,
         });
         assert_eq!(fmt_condition_operand(Some(&v)), "0x1<LGND_Threshold=40>");
     }
