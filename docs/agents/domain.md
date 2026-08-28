@@ -6,7 +6,7 @@ FO76-Tools is a **multi-context** repo: three independent Fallout 76 tools (`ba2
 
 ## Before exploring, read these
 
-- **`CONTEXT-MAP.md`** at the repo root, once it exists — it points at one `CONTEXT.md` per subproject. Read the one(s) relevant to the topic (e.g. only `esm/CONTEXT.md` for an ESM-decoding task; both `esm/CONTEXT.md` and `esm-viewer/CONTEXT.md` for a viewer task that touches the native addon boundary).
+- **`CONTEXT-MAP.md`** at the repo root — it points at one `CONTEXT.md` per subproject. Read the one(s) relevant to the topic (e.g. only `esm/CONTEXT.md` for an ESM-decoding task; both `esm/CONTEXT.md` and `esm-viewer/CONTEXT.md` for a viewer task that touches the native addon boundary).
 - **`docs/adr/`** at the repo root — system-wide decisions that span subprojects (rare, given how little they share).
 - **`ba2/docs/adr/`**, **`esm/docs/adr/`**, **`esm-viewer/docs/adr/`** — per-subproject decisions. Read the ones for the subproject(s) you're about to touch.
 
@@ -39,6 +39,6 @@ If the concept you need isn't in the glossary yet, that's a signal — either yo
 
 If your output contradicts an existing ADR (root `docs/adr/` or a subproject's `docs/adr/`), surface it explicitly rather than silently overriding:
 
-> _Contradicts `esm/docs/adr/0003-read-only-by-design.md` — but worth reopening because…_
+> _Contradicts `esm/docs/adr/0009-ba2-duplication-is-deliberate.md` — but worth reopening because…_
 
 Note: the root `CLAUDE.md`'s **Scope** section already documents one durable decision this way — `esm/` and `esm-viewer/` are read-only by design, and ESM write/serialize support is permanently out of scope. Treat that as ADR-equivalent even before it's formalized into a `docs/adr/` file.
