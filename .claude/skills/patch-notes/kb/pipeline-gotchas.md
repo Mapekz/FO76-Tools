@@ -64,6 +64,28 @@ silently lost their `Attribute Descriptor Keywords`, which a shape skim had call
 bookkeeping".
 *found 2026-07-22*
 
+## Reorder-only diffs tier DEEP through `substantive_change_major_record_type`
+
+Triage tiers by record type and changed field path, never by value. An `unkeyed` `_array_diff`
+(QUST `Virtual Machine Adapter / aliases`) renders a reordered alias as one `removed` plus one
+`added` entry, and a `positional` one (RACE `Bone Scale Data`, `Attacks`, VMAD `AnimationStates`
+properties) as a wave of `changed` indices — both look like substantive QUST/RACE changes and the
+DEEP tier fills with bundles that have no story. Those QUSTs also drag large satellite chains
+into their bundles, which is what keeps them out of ROLLOUT.
+
+**Symptom:** every DEEP bundle's only top-level path is `Virtual Machine Adapter` (or `Bone Scale
+Data` / `Attacks`), and the `removed`/`added` halves carry the same script names and property
+values.
+**Fix, before spawning writers:** canonicalise each changed field order-insensitively (sort dict
+items, sort lists of dicts, round floats) and compare `removed` vs `added` (or a live `get` on
+both snapshots); bundles that are set-equal go to the Under-the-hood line, not to a writer.
+**Example:** 20260814→20260821 — all 7 DEEP bundles and 43 ROLLOUT QUSTs were set-equal (50/50);
+18 RACE records and the Disturbed Grave ACTI likewise. No writer was spawned.
+
+Two more undecoded-blob shapes from the same patch, both bookkeeping: CELL `Unknown 2` is a
+little-endian u64 Unix timestamp (a last-saved stamp — 1,484 cells bumped from 2026-06 to
+2026-08), and ACTI/TACT/TERM `Unknown CTRN` bumps only its ID bytes.
+
 ## A schema field rename breaks downstream readers silently
 
 A decode rename doesn't error in a consumer — it yields defaults. PCRD card data moved from

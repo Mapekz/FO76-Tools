@@ -39,6 +39,12 @@ pair** — creature attack entries often share identical Attack Data and differ 
 Event` (`meleeStart_N` / `_Mirrored`), so it surfaces as a wave of string changes instead. Absence
 of the mirrored tell is not evidence against the artifact.
 
+A related false positive inside `Attacks[].Conditions`: `Condition Data / Parameter 1` on
+`IsPreviousMeleeAttackEvent` is a raw string-pointer int that shifts whenever the record is
+re-serialized; the decoded value is the sibling `Parameter #1` (the attack-event name). A
+`Parameter 1` delta with `Parameter #1` unchanged is not a change. Example: Sheepsquatch
+(0x00479D50), 39 attacks, every `Parameter 1` moved, no event name moved.
+
 **Example:** 20260717→20260724, 17 creature NPC_ records (EncMolerat03 0x001832F8, three
 WendigoColossusSpawn variants, DEL_E09A_EncUltraciteAbomination, five RD01_Enc05_* Ultragenetic
 creatures, three Burning and two Emperor Radscorpion variants, HTO_LvlMoleMiner_Molerat_BroodMother)
