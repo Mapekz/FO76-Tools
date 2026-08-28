@@ -537,6 +537,35 @@ still works for an id with no name at all.
   when a matching mod-box MISC is present in inventory — the OMOD/COBJ graph
   alone won't show that gate.
 
+## Effect-graph reachability (grant roots & dead-end AVs)
+
+Item obtainability (above) and effect liveness are different questions: an
+obtainable item can carry effect arms that never fire. Before treating any
+effect arm as live, traverse both directions and refs-check the **ends**:
+
+- **The leaf-refs trap.** In a grant chain (OMOD/ENCH → Perk-to-Apply MGEF →
+  PERK → Ability SPEL → Perk-to-Apply MGEF → PERK), every hop references the
+  next — so `refs` on any *middle* node always shows exactly one referrer and
+  looks alive. Only the **root** (the ENCH/SPEL that something must attach,
+  or the OMOD property that must exist) tells the truth. A keyword-gated
+  apply-perk whose gate is satisfiable still does nothing unless something
+  actually grants the perk. Worked case (20260821 dump): Pin-Pointer's
+  `ench_LegendaryWeapon_PinPointers` 0x007ACA02 has zero references — its
+  whole ENCH→AddPerk→SPEL→ApplyPerk island (a +50% striking-appendage row)
+  is authoring debris; the shipped OMOD wires only a keyword and a STAT_* AV.
+  Recipe: `walk <leaf>` upward to the root, then `refs <root formid>`.
+- **Dead-end AV writes.** An `ActorValues` write is only meaningful if the AV
+  has a downstream consumer — a PERK/MGEF entry point reading it (`Multiply
+  1 + Actor Value Mult`, curve input, condition). `refs <AVIF>` with only
+  writers and no readers ⇒ a native-engine flag or VFX enable (KillStreak
+  counters, VATSCriticalMultAdjust bounds, BloodyMess gib toggles), not a
+  stat.
+- **Neither direction is sufficient alone.** Zero refs can still be live
+  (script/VMAD grants, above) and a fully-wired graph can be unshipped
+  (P62). Cut-marker naming (`CUT_`/`zzz_`/`POST-`/`DEL`) and release history
+  break the ties — copy-paste debris names on intermediate records (a spell
+  named after a different legendary) are a strong orphan-island tell.
+
 ## Curve tables
 
 - **A `Curve Table` sibling means the flat scalar next to it is NOT the
