@@ -23,6 +23,11 @@ This repository contains three Fallout 76 tools. Most share no code, no workspac
 
 ## Agent skills
 
+### Commit messages
+
+Conventional Commits (`type(scope): summary`). See `docs/agents/commits.md` for the type and scope
+vocabulary in use, and for how the older bare-area prefixes (`esm: ...`) map onto it.
+
 ### Issue tracker
 
 Issues live in GitHub Issues ([`Mapekz/FO76-Tools`](https://github.com/Mapekz/FO76-Tools)), managed via the `gh` CLI — the single backlog for all three subprojects. See `docs/agents/issue-tracker.md`. Considered non-decisions (deliberate scope exclusions, carve-outs) are recorded as a present-tense note next to the code they constrain, not in a separate notes file.
