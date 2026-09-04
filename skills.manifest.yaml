@@ -1,0 +1,55 @@
+schema_version: 1
+bundle_name: fo76-agent-skills
+canonical_source_root: .claude/skills
+format:
+  entrypoint: SKILL.md
+  optional_sidecar: RULES.md
+  frontmatter_fields: [name, description]
+  body_format: CommonMark
+portability:
+  frontmatter_is_metadata: true
+  required_subskill_marker: "**REQUIRED SUB-SKILL:**"
+  relative_reference_base: skill_directory
+  missing_dependency_policy: report_unavailable_and_use_embedded_constraints
+  missing_tool_policy: translate_to_host_equivalent_or_report_blocked
+skills:
+  - name: agent-skill-portability
+    path: .claude/skills/agent-skill-portability/SKILL.md
+    requires: []
+    references: []
+  - name: fo76-hud-permissions
+    path: .claude/skills/fo76-hud-permissions/SKILL.md
+    requires: []
+    references: [references/ledger.md]
+  - name: fo76-hud-research
+    path: .claude/skills/fo76-hud-research/SKILL.md
+    requires: [fo76-hud-permissions]
+    references: [references/research-run.md]
+  - name: fo76-hudmodloader
+    path: .claude/skills/fo76-hudmodloader/SKILL.md
+    requires: []
+    references: [references/shared-hudtools.md]
+  - name: fo76-scaleform-ui
+    path: .claude/skills/fo76-scaleform-ui/SKILL.md
+    requires: [fo76-hudmodloader, fo76-hud-permissions]
+    references: [references/ffdec-workflow.md]
+  - name: fo76-haxe-ui
+    path: .claude/skills/fo76-haxe-ui/SKILL.md
+    requires: [fo76-scaleform-ui, fo76-hud-permissions]
+    references: [references/haxe-build.md]
+  - name: fo76-ui-effects
+    path: .claude/skills/fo76-ui-effects/SKILL.md
+    requires: [fo76-hud-permissions, fo76-scaleform-ui]
+    references: [references/animation-manifest.md]
+  - name: fo76-vanilla-ui
+    path: .claude/skills/fo76-vanilla-ui/SKILL.md
+    requires: []
+    references: [references/surface-manifest.md]
+  - name: fo76-xscal
+    path: .claude/skills/fo76-xscal/SKILL.md
+    requires: [fo76-scaleform-ui, fo76-hudmodloader, fo76-hud-permissions]
+    references: []
+  - name: fo76-zfe
+    path: .claude/skills/fo76-zfe/SKILL.md
+    requires: [fo76-scaleform-ui, fo76-hudmodloader, fo76-hud-permissions]
+    references: []
