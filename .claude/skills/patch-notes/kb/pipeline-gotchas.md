@@ -94,6 +94,44 @@ extracts every card's Special as "Unknown" and minLevel as 0 rather than failing
 the tell that a consumer needs the new name. Keep the old name as a fallback when migrating one.
 *found 2026-07-14*
 
+## `--bodies full` can OOM the diff; `--bodies stub` is the safe default
+
+`esm diff --bodies full` recursively resolves every FormID inside every added/removed record's
+body. One deeply-nested added record (a pets progression track with hundreds of reward links)
+is enough to push the diff past 19 GB resident; the rest of the diff is small (~3 GB).
+
+**Symptom:** `make_patch_notes.py` reports `esm diff failed with exit code -9` and the kernel log
+shows `Out of memory: Killed process (esm)`; RSS climbs past 12 GB within 15 seconds of start.
+**Fix:** run `make_patch_notes.py ... --bodies stub`. Nothing downstream needs full bodies — writers
+re-fetch with `get --resolve stub` anyway. Also run Step 3's daemon prewarm *after* the diff, not
+during it: a concurrent index-cache build shares the same memory headroom.
+**Example:** 20260821→20260903 — three full-body runs OOM-killed at 14.7, 14.0 and 19.3 GB; the
+stub run finished in 20 s at a 3 GB peak and produced 45 MB of diff.json.
+
+## A header-version bump (branch switch) fakes tens of thousands of changes
+
+When the two snapshots come from different editor builds (TES4 header `Version` differs, e.g.
+279 → 283), the newer build re-serializes most records. The diff then carries ~60K changed
+records of which almost none are gameplay. Known churn signatures from such a build, all to skip
+silently: PERK effect-header `Rank` renumbered to 0..N (keyed-array diffs then pair the wrong
+entries, so PERK `Float`/`Perk Entry ID` "changes" are fake — verify live); SPEL/ENCH/PERK effect
+entries lose `Effect Flags=(none)` and gain `_unknown 2=(struct: hex)`; OMOD `Data / Properties[] /
+Value 2` bumps 2 → 3; `Perk Condition Tab Count` 4 → 3; script `extra_bind_data_version` 4 → 3;
+QUST objective flag bit 0x10 cleared; WEAP `Sneak Attack Multiplier` and OMOD `Attribute Descriptor
+Keywords` appearing/disappearing wholesale; INFO `Previous INFO` and REFR `Layer` relinks; text
+case normalization and `é` → `�` garbling.
+
+**Symptom:** ROLLOUT tier > 50K bundles, DEEP > 300 after rules, `esm info` shows different
+`Version` lines for the two ESMs.
+**Fix:** (1) value-level scan with a per-leaf multiset check so positional reorders (SCOL parts,
+MSWP/MDSP swap lists, ARMA sculpt, VMAD fragments) cancel out; (2) drop the signatures above;
+(3) branch-drift check — a `--bodies none` diff of two *older* snapshots against the new one takes
+~20 s each; a candidate change that is absent from those diffs is the new snapshot merely equalling
+an older value, not a change. Hand writers a curated subset slice (`work/deep-slice.<topic>.json`,
+same shape) — `--merge-assessment` only re-tiers AMBIGUOUS bundles and cannot demote rule-DEEP.
+**Example:** 20260821 (Slasher PTS, v279) → 20260903 (Pets PTS, v283): 66,171 changed records,
+54,884 ROLLOUT bundles, 332 rule-DEEP → 81 curated bundles for two writers.
+
 ## Run the coverage gate before the narrative stage, not after
 
 A new snapshot can introduce record types the schema has never seen. The mechanical diff/triage

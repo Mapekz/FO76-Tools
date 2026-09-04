@@ -106,7 +106,10 @@ Easy / 0 / 0.0), `QQSD - Unknown 4 bytes` (00000000), `QTFS (Repeat Limit?)` (65
 `Quest Modules` (one empty struct), `Quest Start Data` (all-zero hex), and `General / Flags`
 gaining exactly `Has Dialogue Data` (raw value +0x8000). Every value is a schema default, and it
 co-occurs with the positional-reindex churn above on the same records. Treat the whole cluster as
-form_version schema population **unless a field in it carries a non-default value**.
+form_version schema population **unless a field in it carries a non-default value**. It also runs
+in reverse (populated defaults collapsing to null) on old hub QUSTs, dragging 100+ satellite
+TERM/ACTI/MESG records whose only changes are `Unknown CTRN`/Enlighten padding/`Activator Can Be
+Instanced` — still churn (QUST `EMS` 0x0012D5B8 + 176 satellites on 20260903).
 *verified 2026-07-22 vs 20260717*
 
 ## WEAP `Animation *` fields are cosmetic, not gameplay speed
@@ -289,8 +292,9 @@ FormIDs — they are `Attacks[].Attack.Attack Data.Attack Flags.value`, where bi
 decodes as `Override Data`. Confirmed by enumerating the flags live on 0x005751A0, 0x0078C584 and
 0x0080100A. 32 of 116 lints in one deep slice were this alone. Related: `0xFFFFFFFF` `dangling_ref`
 hits on INFO records are the `Responses[].Response Data.Emotion` enum sentinel (verified on
-0x0092C628–2B), also not a FormID.
-*verified 2026-07-24 vs 20260724*
+0x0092C628–2B), also not a FormID. AVIF `Flags` bitfields misfire the same way: `0x80000800` on `FollowerState`
+(0x00000344) is "Default to 1.0" + "Hardcoded", not a reference.
+*verified 2026-07-24 vs 20260724; AVIF case 2026-09-03*
 
 ## `desc_changed_stats_same` on undecoded hex blobs
 
@@ -304,6 +308,19 @@ lint's premise. Spot-verified on TACT `TEST_ENB_ModusSceneTerminal` (0x00006DB5)
 is `Unknown CTRN / hex`, and on `SDOW_MQ02_Graves_GraveActivator` (0x008F1672), a bare
 `GraveActivator01.nif` → `GraveActivator_NoSkeleton.nif` swap with no Description field.
 *verified 2026-08-03 vs 20260803*
+
+
+## `desc_changed_stats_same` misses stats that move through a linked GLOB
+
+The lint only compares fields on the record itself. A description change whose real magnitude
+lives on a referenced Magnitude Global (see mechanics: World Pets GLOB-backed magnitudes) reads as
+"text only" even when the number genuinely moved. Check every `Effect.Magnitude` / `Quantity
+Global` reference before trusting the lint's premise.
+
+**Example:** `WorldPets_Dog_ConsumableBuff` MGEF (0x008B7A75) description "every hour" → "every
+30 min", lint called it text-only; the linked GLOB `WorldPets_ConsumableGiftInterval` moved
+7000.0 → 1801.0.
+*verified 2026-09-03 vs 20260903*
 
 ## `unreferenced_perk_rank` on item-granted and Player-attached perks
 

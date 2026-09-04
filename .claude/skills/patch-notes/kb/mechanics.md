@@ -323,18 +323,33 @@ Pin, with `LL_DailyOps_Rewards_CursedRollingPin` nested under it. All six select
 template via the LVLI `Filter Keyword Chances` keyword `if_tmp_EN06_Cursed` (0x005A70B4).
 *verified 2026-07-24 vs 20260724*
 
-## World Pets is built but gated off (as of 20260710)
+## World Pets: tiered `HasEntitlement` gating, GLOB-backed magnitudes
 
-A C.A.M.P. pet (Cat/Dog/Deathclaw/Radhog) that follows you with commands and a hidden 1–200 "Pet
-Prowess Level" (`WorldPets_PetProwessLevel` AVIF family). Prowess perk ranks live on
-`CAMPPets_Actor_*` NPC templates (item/NPC-granted, so no PCRD — expected): damage ×1→×8 and
-incoming damage ×1→×0.2 across level brackets 1-49/50-99/100-149/150-199/200.
+The summonable C.A.M.P. pet (Cat/Dog/Deathclaw/Radhog) with commands, per-species leveling to
+200 and two passives per species. On the Pets PTS branch (20260903, header v283) it is live for
+testing; on the Slasher line it is gated off (the `IsWorldPet` KYWD gating the follow package is
+applied to nothing, the four command emotes sit in FLST `ATX_HideFromStoreList` 0x004875A1) — check
+those refs to tell which branch a snapshot is on. Every tiered passive/perk has the same shape: 3-4
+SPEL/PERK effects, each gated `HasEntitlement(ENTM tierN)==1 AND HasEntitlement(ENTM tierN+1)==0`,
+where the ENTMs are per-species-per-tier unlock markers with no grant path in the ESM (engine-side
+leveling). The real magnitude lives on the effect-level `Magnitude` FormID → a GLOB (the
+`Effect Item Data.Magnitude` beside it stays 0.0, the same "0.0 beside the real source" trap as
+curves). Pet Prowess: outgoing damage ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2 by tier.
+The progression tracks themselves are PGTR records, and the schema decodes them fully. Each
+species (Cat/Deathclaw/Dog/Radhog, 4 records, each `WorldPets_ProgressionTrack_<species>`) has 30
+Track Entries keyed by `Progress Threshold`, stepping by 5. Each entry's `VPRR` points at the
+`GMRW` reward it grants at that threshold; its `NAME` links back to the prerequisite entry's own
+`PGTI` id (e.g. the "Goo-Getter 2" entry's `NAME` points at the "Goo-Getter 1" entry). Some entries
+carry 2 reward slots — the second slot is an alternate reward for the case where a reward shared
+across tracks (e.g. a Player Icon) was already claimed via an earlier track, worded on the reward
+itself (e.g. "+250 free Caps! (Player Icon reward already claimed)"). RACE's `PGTF` field links a
+pet race to its track (`CAMPPets_<Species>Race` → its own `PGTR`); RACE's `Pet Commands` rstruct
+now also carries a `Command Emote` (`EMOT`) field per command.
 
-Not live because the `IsWorldPet` KYWD gating the follow package is applied to nothing, the World
-Pet faction has zero refs, a kill-switch spell ("Pet buffs are disabled") exists, and the four
-command emotes (0x00916200–0x00916203) were added to FLST `ATX_HideFromStoreList` (0x004875A1) in
-20260710. Distinct from the older `PETS_`-prefixed adoptable-companion quest system.
-*verified 2026-07-14 vs 20260710*
+**Example:** `WorldPets_DogBuff_Buff01` (Stimpak Fetcher, 0x0093BD1E) Effects[0].Magnitude →
+GLOB `WorldPets_ConsumableBuff_Dog01` (0x008D1875, 2.0); shared timer GLOB
+`WorldPets_ConsumableGiftInterval` (0x008B4291, 1801 s).
+*verified 2026-09-03 vs 20260903*
 
 ## A legendary-combination `Attach Point Index` mismatched against sibling Includes is a mesh-attach fix, not a stat change
 
@@ -353,12 +368,30 @@ Sledgehammer, Pump Action Shotgun) each had one 1★-legendary Include's Attach 
 An NPC_ `Properties[]` entry keyed by an Actor Value (e.g. Health) carries its own Curve Table, but
 the engine only reads it when `Configuration / Template Flags` bit `0x2` ("Use Stats") is cleared —
 otherwise stats still come from the `Default Template` chain. A curve swap on a Properties entry
-with the flag still set is dead data; check the flag before reporting the curve as live.
+with the flag still set is dead data; check the flag before reporting the curve as live. This
+holds however many records the retier touches: diff the bit old vs new on every record, and a
+same-value bit on both sides means the whole batch is inert (47 `HTO_` bosses Tier52 → Tier54 on
+20260903, all with `0x2` still set).
 
 **Example:** Pint-Sized Phantom Ringleader (0x008E06D5) swapped its Health Properties curve
 `CT_Creatures_Health_Universal_Tier31` → `..._Tier33` (+41% tapering to +16%) in the same diff that
 cleared Template Flags bit `0x2`.
 *verified 2026-08-03 vs 20260803*
+
+
+## ACBS `Template Flags` bits gate which per-record fields the engine reads
+
+Bits follow xEdit's `wbActorTemplateUse*` predicates in `wbDefinitionsFO76.pas`: `0x1` Use
+Traits, `0x2` Use Stats, `0x100` Use Inventory (more in that file). When a `Template Actors /
+Inventory` link clears alongside a `Configuration / Template Flags` delta, XOR old vs new and match
+the bit before writing "decoupled from template". Separately, ACBS `Flags` bit `Auto-calc stats +
+PC Level Mult` makes `Level Mult` (u16, real multiplier = value/1000) the live level-scaling knob
+instead of flat `Level`; a `Level Mult` diff row means nothing without that flag.
+
+**Example:** `TW003_LvlSupermutantBoss` (0x008833A8) Template Flags 15861 → 15605 (bit 0x100
+cleared) with its own inventory list appearing in the same diff; `E02A_LvlGulper_Prime`
+Level Mult 100 → 1000 = 10% → 100% of player level.
+*verified 2026-09-03 vs 20260903*
 
 ## Resolving a special-currency vendor's price and gate
 

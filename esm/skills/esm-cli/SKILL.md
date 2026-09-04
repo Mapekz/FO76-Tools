@@ -630,6 +630,13 @@ effect arm as live, traverse both directions and refs-check the **ends**:
   Records with zero/absent secondary damage, or no damage curve at all, stay
   silent (no `"Bash Damage"` key). Distinct from `"Bash Condition Loss Scale"`,
   which is a durability wear-rate curve, not bash damage.
+- **`esm curve <edid|formid>... [--at X ...] [--sum FROM TO [--step N]]`** reads
+  any `CURV` record's points and can interpolate/sum them — reach for it instead
+  of writing an inline interpolation script for a one-off table (leveling/XP
+  progression curves etc.) that isn't part of `curvelookup.py`'s hardcoded
+  tiered-file set. `--at`/`--sum` are mutually exclusive; multiple targets emit
+  a JSON array tagged with `sel`; it errors clearly if curve tables aren't
+  loaded rather than reporting zero points.
 - **`Data.Base Damage` is the weapon's physical-damage value**, overridden by
   a top-level `Damage Curve` (sibling of `Data`) when that curve resolves to
   real points; if curvetables are missing the curve stays a raw FormID and
