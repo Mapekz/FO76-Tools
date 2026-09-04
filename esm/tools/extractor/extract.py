@@ -27,7 +27,7 @@ OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
 # Record types present in the FO76 ESM.
 # Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
-WHITELIST = [
+SAFELIST = [
     "AACT", "AAMD", "AAPD", "ACHR", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
     "ANIO", "AORU", "ARMA", "ARMO", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
     "AUVF", "AVIF", "AVTR", "BNDS", "BOOK", "BPTD", "CAMS", "CELL", "CHAL", "CLAS",
@@ -2139,7 +2139,7 @@ class Extractor:
 
     def run(self) -> dict:
         records: dict = {}
-        for sig in WHITELIST:
+        for sig in SAFELIST:
             try:
                 rec = self.extract_record(sig)
             except Exception as e:

@@ -30,7 +30,7 @@ from extract import (  # noqa: E402
     FO76_PAS,
     INT_MAP,
     OUT,
-    WHITELIST,
+    SAFELIST,
     Extractor,
     find_matching_paren,
     read_text,
@@ -384,7 +384,7 @@ def _check_stub_downgrades(ex: "AuditExtractor", findings: list[Finding]) -> Non
     # parse_member() has a side effect: an unrecognized construct is recorded
     # into ex.report (unrecognized_constructs / unrecognized_by_record), the
     # latter attributed to whatever ex._current_record was left set to by the
-    # main ex.run() pass (e.g. the last record in WHITELIST). Probing var
+    # main ex.run() pass (e.g. the last record in SAFELIST). Probing var
     # definitions here — outside any real record context — must not leak bogus
     # "record X dropped construct Y" findings into the per-record section
     # below, so snapshot and restore all of that state around the loop.
@@ -524,7 +524,7 @@ def run_audit(
     exceptions = _load_exceptions(EXCEPTIONS_FILE)
 
     all_findings: list[Finding] = []
-    sigs = [record_filter] if record_filter else WHITELIST
+    sigs = [record_filter] if record_filter else SAFELIST
 
     for sig in sigs:
         p_rec: dict | None = pascal_schema.get("records", {}).get(sig)

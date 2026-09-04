@@ -914,7 +914,7 @@ fn removed_record_gets_full_body_from_a() {
 
 #[test]
 fn added_record_any_type_gets_body() {
-    // BOOK is not in the old ADDED_DETAIL_TYPES whitelist — it must still get
+    // BOOK is not in the old ADDED_DETAIL_TYPES safelist — it must still get
     // a decoded body now that every added type qualifies.
     let mut subs = Vec::new();
     append_subrecord(&mut subs, b"EDID", &cstr("NewBook"));
@@ -933,7 +933,7 @@ fn added_record_any_type_gets_body() {
     let fields = result.added[0]
         .fields
         .as_ref()
-        .expect("BOOK (not in the old whitelist) must now get a decoded body");
+        .expect("BOOK (not in the old safelist) must now get a decoded body");
     assert_eq!(fields["Editor ID"], json!("NewBook"));
 
     let _ = std::fs::remove_file(&path_a);
