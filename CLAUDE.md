@@ -19,7 +19,7 @@ This repository contains three Fallout 76 tools. Most share no code, no workspac
 
 ## Scope
 
-`esm/` and `esm-viewer/` are read-only by design — they inspect, diff, and serve `.esm` files, never write them. ESM write/serialize support (mod authoring: editing records and saving them back to a `.esm`) is **permanently out of scope**, not deferred — don't file it or design toward it.
+`esm/` and `esm-viewer/` are read-only by design — they inspect, diff, and serve `.esm` files, never write them. ESM write/serialize support (mod authoring: editing records and saving them back to an `.esm`) is **permanently out of scope**, not deferred — don't file it or design toward it.
 
 ## Agent skills
 
@@ -50,9 +50,7 @@ Before committing in any subproject, run that subproject's full check suite and 
 Fix formatting and clippy warnings rather than committing around them. Never commit with failing or skipped checks.
 
 Note that `just` in `esm/` does **not** build `bindings/napi` — it is a workspace member but not a
-*default* member, so `cargo fmt`/`clippy`/`test` skip it. After touching that crate, build it
-explicitly with `cargo build -p esm-napi`, and rebuild the addon (`cd bindings/napi && bun run build`)
-if the `EsmDatabase` surface changed.
+*default* member, so `cargo fmt`/`clippy`/`test` skip it. After touching that crate, build it explicitly with `cargo build -p esm-napi`, and rebuild the addon (`cd bindings/napi && bun run build`) if the `EsmDatabase` surface changed.
 
 ## Dependency policy
 
@@ -70,3 +68,19 @@ edition 2024 selects Cargo's MSRV-aware resolver, which reads `rust-version` as 
 dependency versions — a low value silently holds dependencies back. Keep `rust-version`,
 `clippy.toml`'s `msrv`, and `rust-toolchain.toml` in lockstep when bumping; a mismatch between the
 first two is a warning, which `-D warnings` turns into a failure.
+
+## HUD skill bundle
+
+The repository also contains repo-local Fallout 76 HUD skills under `.claude/skills/`. That path is
+the canonical source layout, not a Claude-only runtime requirement. Load `skills.manifest.yaml` and
+`docs/harness-compatibility.md` when adapting the skills for Codex, Grok, Claude, or a plain Markdown
+harness.
+
+- Treat `SKILL.md` as the complete entrypoint and `RULES.md` as a quick preflight only.
+- Resolve `**REQUIRED SUB-SKILL:**` dependencies recursively, or open their manifest paths manually
+  when the host has no composition feature.
+- Translate example commands to available host tools and report missing capabilities; never invent
+  extender APIs, skip permissions, execute downloaded content, or claim runtime confirmation from
+  static evidence.
+- Keep game files, extracted assets, downloaded payloads, binaries, credentials, and decompiler
+  output outside this repository.

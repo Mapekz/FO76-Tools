@@ -6,3 +6,8 @@
 
 # Session research scratch (kept out of version control)
 /scratch/
+
+# Local credentials
+.env
+.env.*
+!.env.example
