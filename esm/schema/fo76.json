@@ -43726,6 +43726,78 @@
         }
       ]
     },
+    "MSCS": {
+      "name": "Misc Item Spawner",
+      "members": [
+        {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sig": "EDID",
+          "sized": 0
+        },
+        {
+          "kind": "struct",
+          "name": "Object Bounds",
+          "fields": [
+            {
+              "kind": "integer",
+              "name": "X1",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Y1",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Z1",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "X2",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Y2",
+              "width": "s16",
+              "signed": true
+            },
+            {
+              "kind": "integer",
+              "name": "Z2",
+              "width": "s16",
+              "signed": true
+            }
+          ],
+          "sig": "OBND"
+        },
+        {
+          "kind": "unknown",
+          "name": "Unknown",
+          "sig": "DATA"
+        },
+        {
+          "kind": "rarray",
+          "name": "Spawns",
+          "element": {
+            "kind": "formid",
+            "name": "Spawn",
+            "valid_refs": [
+              "MISC"
+            ],
+            "sig": "SPWN"
+          }
+        }
+      ]
+    },
     "MSTT": {
       "name": "Moveable Static",
       "members": [
@@ -69235,6 +69307,7 @@
           "sig": "TSLT"
         },
         {
+          "_comment": "Pet Commands \u2014 live-game drift, in no wbDefinitions*.pas. Shape read off the 6 CAMPPets_*Race records (Cat_Tabby, Cat_RoboPaw, Dog_GermanShepherd, Dog_RoboPaw, RadHog, Deathclaw), 4 commands each.",
           "kind": "rarray",
           "name": "Pet Commands",
           "element": {
@@ -69242,24 +69315,53 @@
             "name": "Pet Command",
             "members": [
               {
+                "_comment": "CMDT \u2014 equals the low nibble of the same command's CMDE target on all 6 races: EMOT 0x00916200..03 = WorldPets_Emote_Command_Stay/Follow/Defend/Attack.",
                 "kind": "integer",
                 "name": "Command Type",
                 "width": "u8",
                 "signed": false,
+                "format": {
+                  "enum": [
+                    "Stay",
+                    "Follow",
+                    "Defend",
+                    "Attack"
+                  ]
+                },
                 "sig": "CMDT"
               },
               {
+                "_comment": "CMDN \u2014 the target EMOT's FULL, inlined (e.g. \"(Command) Follow Attack\").",
                 "kind": "lstring",
                 "name": "Command Name",
                 "sig": "CMDN"
               },
               {
+                "_comment": "CMDI \u2014 last carried by the 20260821 snapshot (values PetAttack1/PetFollow1/PetDefend1/PetStay1); the same string the target EMOT holds in SNAM, which xEdit names 'Swf Class Name' (wbDefinitionsFO76.pas:16666). Replaced by CMDE in 20260903; kept so older snapshots still decode.",
                 "kind": "string",
-                "name": "Command ID",
+                "name": "Swf Class Name",
                 "sig": "CMDI"
+              },
+              {
+                "_comment": "CMDE \u2014 new in 20260903; a direct EMOT reference in place of CMDI's inlined class name.",
+                "kind": "formid",
+                "name": "Command Emote",
+                "valid_refs": [
+                  "EMOT"
+                ],
+                "sig": "CMDE"
               }
             ]
           }
+        },
+        {
+          "_comment": "PGTF \u2014 new in 20260903 on the same 6 records; points at the species' WorldPets_ProgressionTrack_* PGTR.",
+          "kind": "formid",
+          "name": "Progression Track",
+          "valid_refs": [
+            "PGTR"
+          ],
+          "sig": "PGTF"
         }
       ]
     },
@@ -89554,6 +89656,237 @@
             }
           ],
           "sig": "GNAM"
+        }
+      ]
+    },
+    "PGTR": {
+      "_comment": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed.",
+      "name": "Progression Track",
+      "members": [
+        {
+          "kind": "string",
+          "name": "Editor ID",
+          "keep_case": true,
+          "sized": 0,
+          "sig": "EDID"
+        },
+        {
+          "kind": "lstring",
+          "name": "Name",
+          "sig": "FULL"
+        },
+        {
+          "_comment": "PGT1 \u2014 resolves to the WorldPets_Img_<species> KYWDs (0x0092736F..72); the separate WorldPets_Icon_<species> set is not referenced from PGTR.",
+          "kind": "formid",
+          "name": "Track Image Keyword",
+          "valid_refs": [
+            "KYWD"
+          ],
+          "sig": "PGT1"
+        },
+        {
+          "kind": "integer",
+          "name": "Entry Count",
+          "width": "u32",
+          "signed": false,
+          "sig": "PGTE"
+        },
+        {
+          "_comment": "Track Entries \u2014 count_path binds PGTE (30 on every track). stop_before must stay non-empty even though NAM0 itself never fires it: stop_before_check (src/decode/scope.rs) is the only path that halts the array once the PGTI anchor queue is empty; without it the loop decodes a bogus 31st entry out of the record-trailing NAM0/NAM1.",
+          "kind": "rarray",
+          "name": "Track Entries",
+          "count": {
+            "count_path": "Entry Count"
+          },
+          "stop_before": [
+            "NAM0"
+          ],
+          "element": {
+            "kind": "rstruct",
+            "name": "Track Entry",
+            "members": [
+              {
+                "_comment": "PGTI \u2014 not a FormID. A little-endian u64 key stamped by the authoring tool: contiguous within a track (Cat: 0x6A47CB50..6D), tracks 100 apart, low bits a Unix timestamp (2026-07-03). The UI's claim event sends it as {UID.hi, UID.lo} (PetProgressionTrackMenu.as:139-142; ProgressionNode.as:39 names it UID). Referenced only by sibling entries' Prerequisite Entry UID in the same record \u2014 a byte-grep of the 20260903 ESM finds each value exactly as its own PGTI plus at most one NAME.",
+                "kind": "integer",
+                "name": "Entry UID",
+                "width": "u64",
+                "signed": false,
+                "sig": "PGTI"
+              },
+              {
+                "_comment": "NAM0 (entry) \u2014 PetProgressionTrackMenu.as:215 binds it as LevelThreshhold; 5..200 across the 30 entries.",
+                "kind": "integer",
+                "name": "Level Threshold",
+                "width": "u32",
+                "signed": false,
+                "sig": "NAM0"
+              },
+              {
+                "_comment": "NAM1 (entry) \u2014 0 in all 120 entries of 20260903; no name in xEdit or the UI model.",
+                "kind": "integer",
+                "name": "Unknown",
+                "width": "u32",
+                "signed": false,
+                "sig": "NAM1"
+              },
+              {
+                "_comment": "NAM2 (entry) \u2014 0-byte in all 120 entries; decodes null.",
+                "kind": "lstring",
+                "name": "Unknown 2",
+                "sig": "NAM2"
+              },
+              {
+                "_comment": "Rewards \u2014 one reward per entry except the 'already claimed' alternates (thresholds 25 and 80 on every track: 8 of 120 entries carry two). stop_before NAM4 is the entry-level Has Prerequisite that follows the last reward; the element anchor NAM1 is shared with the entry-level NAM1, so this boundary is what actually ends the array.",
+                "kind": "rarray",
+                "name": "Rewards",
+                "stop_before": [
+                  "NAM4"
+                ],
+                "element": {
+                  "kind": "rstruct",
+                  "name": "Reward",
+                  "members": [
+                    {
+                      "_comment": "NAM1..NAM5 \u2014 ProgressionNode.as:27-35 (name, descriptionTitle, descriptionText, imageKeyword, iconKeyword), bound at PetProgressionTrackMenu.as:216-220.",
+                      "kind": "lstring",
+                      "name": "Name",
+                      "sig": "NAM1"
+                    },
+                    {
+                      "_comment": "NAM2 \u2014 the details-panel title line (RewardDescriptionTitle_tf, PetProgressionTrackMenu.as:365). Observed values form a small closed set (Passive Buff, Currency, Player Title, Player Icon, Pet Cosmetic, Player Cosmetic, Carry Capacity, Combat Upgrade, plus '(upgrade)' variants) \u2014 a de-facto reward category, but the field is the title, not a category key.",
+                      "kind": "lstring",
+                      "name": "Description Title",
+                      "sig": "NAM2"
+                    },
+                    {
+                      "kind": "lstring",
+                      "name": "Description Text",
+                      "sig": "NAM3"
+                    },
+                    {
+                      "_comment": "NAM4 \u2014 WorldPets_Img_* KYWDs (per reward).",
+                      "kind": "formid",
+                      "name": "Image Keyword",
+                      "valid_refs": [
+                        "KYWD"
+                      ],
+                      "sig": "NAM4"
+                    },
+                    {
+                      "_comment": "NAM5 \u2014 WorldPets_Icon_* KYWDs (shared per reward type, e.g. WorldPets_Icon_All_Caps).",
+                      "kind": "formid",
+                      "name": "Icon Keyword",
+                      "valid_refs": [
+                        "KYWD"
+                      ],
+                      "sig": "NAM5"
+                    },
+                    {
+                      "_comment": "NAM6 \u2014 1 in all 128 rewards of 20260903; no name in xEdit or the UI model.",
+                      "kind": "integer",
+                      "name": "Unknown",
+                      "width": "u32",
+                      "signed": false,
+                      "sig": "NAM6"
+                    },
+                    {
+                      "_comment": "VPRI \u2014 1 in all 128 rewards. VPR* signatures occur nowhere in xEdit (any game) and nowhere else in fo76.json.",
+                      "kind": "integer",
+                      "name": "Unknown 2",
+                      "width": "u32",
+                      "signed": false,
+                      "sig": "VPRI"
+                    },
+                    {
+                      "_comment": "VPRF \u2014 0 in all 128 rewards.",
+                      "kind": "integer",
+                      "name": "Unknown 3",
+                      "width": "u32",
+                      "signed": false,
+                      "sig": "VPRF"
+                    },
+                    {
+                      "_comment": "VPRR \u2014 the GMRW pointer, named as xEdit names the same role in wbReward ('Reward Record', wbDefinitionsFO76.pas:7016; GMRW's own DNAM carries the same name in fo76.json). This struct is NOT wbReward \u2014 wbReward's NAM7 is 'XP Amount Global' (a GLOB FormID), here NAM7 is a constant 1 \u2014 so wbReward's other names must not be imported.",
+                      "kind": "formid",
+                      "name": "Reward Record",
+                      "valid_refs": [
+                        "GMRW"
+                      ],
+                      "sig": "VPRR"
+                    },
+                    {
+                      "_comment": "ITME x2 \u2014 xEdit uses ITME only as wbEmpty end markers (wbDefinitionsFO76.pas:7017 'Reward End Marker', :11796 and FO4 :9525 'Marker End'). The first closes the VPRI/VPRF/VPRR group, the second the reward. Both are kind 'empty', the one kind decoded with the unscoped take_first (src/decode/walk.rs), so they are matched positionally; a missing ITME would shift every later marker.",
+                      "kind": "empty",
+                      "name": "Reward Record End Marker",
+                      "sig": "ITME"
+                    },
+                    {
+                      "_comment": "NAM7 \u2014 1 in all 128 rewards; the NAM7 names elsewhere in fo76.json belong to other structs.",
+                      "kind": "integer",
+                      "name": "Unknown 4",
+                      "width": "u32",
+                      "signed": false,
+                      "sig": "NAM7"
+                    },
+                    {
+                      "kind": "empty",
+                      "name": "Reward End Marker",
+                      "sig": "ITME"
+                    },
+                    {
+                      "_comment": "NAM3 (0-byte) \u2014 present only between two rewards of the same entry (8 of 128). Deliberately 'lstring', not 'empty': 'empty' is the one kind decoded with the unscoped take_first (src/decode/walk.rs), which here stole the NEXT entry's Description Text (same sig) and corrupted every entry after the first two-reward one; lstring is element-scoped and renders the same null. Regression test: tests/decode_records.rs pgtr_world_pets_radhog_track_decodes_correctly.",
+                      "kind": "lstring",
+                      "name": "Next Reward Present",
+                      "sig": "NAM3"
+                    }
+                  ]
+                }
+              },
+              {
+                "_comment": "NAM4 (entry) \u2014 1 on 36 of 120 entries; NAME is present iff 1.",
+                "kind": "integer",
+                "name": "Has Prerequisite",
+                "width": "u32",
+                "signed": false,
+                "format": {
+                  "enum": [
+                    "False",
+                    "True"
+                  ]
+                },
+                "sig": "NAM4"
+              },
+              {
+                "_comment": "NAME \u2014 an Entry UID of the same record (all 36 resolve; Cat threshold 40 \u2192 threshold 5). Same u64 key space as PGTI, not a FormID.",
+                "kind": "integer",
+                "name": "Prerequisite Entry UID",
+                "width": "u64",
+                "signed": false,
+                "sig": "NAME"
+              },
+              {
+                "kind": "empty",
+                "name": "Entry End Marker",
+                "sig": "ITME"
+              }
+            ]
+          }
+        },
+        {
+          "_comment": "NAM0 (record tail, 1 byte) \u2014 1 on all 4 tracks.",
+          "kind": "integer",
+          "name": "Unknown 3",
+          "width": "u8",
+          "signed": false,
+          "sig": "NAM0"
+        },
+        {
+          "_comment": "NAM1 (record tail, 1 byte) \u2014 0 on all 4 tracks. A u8, not an empty string: every genuinely empty lstring in this record is a 0-byte subrecord; typed lstring this rendered null and hid the byte.",
+          "kind": "integer",
+          "name": "Unknown 4",
+          "width": "u8",
+          "signed": false,
+          "sig": "NAM1"
         }
       ]
     }

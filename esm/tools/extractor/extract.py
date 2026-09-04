@@ -27,6 +27,10 @@ OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 
 # Record types present in the FO76 ESM.
 # Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
+# Record types with no Pascal definition are deliberately NOT in this list — they are
+# supplied whole by fo76.overrides.json's "records" block (currently: PGTR) — so the jq
+# output above must not be pasted back verbatim, or it would re-add them and make
+# extract_record fail with a warning.
 SAFELIST = [
     "AACT", "AAMD", "AAPD", "ACHR", "ACTI", "ADDN", "AECH", "ALCH", "AMDL", "AMMO",
     "ANIO", "AORU", "ARMA", "ARMO", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
@@ -39,7 +43,7 @@ SAFELIST = [
     "IDLE", "IDLM", "IMAD", "IMGS", "INFO", "INGR", "INNR", "IPCT", "IPDS", "KEYM",
     "KSSM", "KYWD", "LAYR", "LCRT", "LCTN", "LENS", "LGDI", "LGTM", "LIGH",
     "LOUT", "LSCR", "LTEX", "LVLI", "LVLN", "LVLP", "LVPC", "MATO", "MATT",
-    "MDSP", "MESG", "MGEF", "MISC", "MOVT", "MSTT", "MSWP", "MUSC", "MUST",
+    "MDSP", "MESG", "MGEF", "MISC", "MOVT", "MSCS", "MSTT", "MSWP", "MUSC", "MUST",
     "NAVI", "NAVM", "NOCM", "NOTE", "NPC_", "OMOD", "OTFT", "OVIS", "PACH", "PACK",
     "PCRD", "PEPF", "PERK", "PGRE", "PHZD", "PKIN", "PLYR", "PLYT", "PMFT", "PMIS", "PPAK", "PROJ", "QMDL",
     "QUST", "RACE", "REFR", "REGN", "RELA", "RESO", "REVB", "RFCT", "RFGP", "SCCO",

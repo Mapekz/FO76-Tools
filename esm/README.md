@@ -1,6 +1,6 @@
 # esm — FO76 ESM Reader
 
-A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 181 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, mechanics digests, and schema coverage auditing.
+A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 183 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, mechanics digests, and schema coverage auditing.
 
 > **Read-only.** This tool never modifies your `.esm` files. The only files it writes live in a shared sidecar directory next to the ESM, `esm_cache/`, holding five zero-copy rkyv sections per ESM (`<name>.esm.tree`, `<name>.esm.forms`, `<name>.esm.edid`, `<name>.esm.search`, `<name>.esm.xref`) — see [Index cache](#index-cache) below. Game data files (`*.esm`, `*.ba2`, and `esm_cache/`) are gitignored and non-redistributable — obtain them from your own game install.
 
@@ -10,7 +10,7 @@ A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master file
 esm/
   src/             Engine library + two binaries (esm CLI, esm-server)
   bindings/napi/   N-API addon (esm-napi) for Electron/Node.js
-  schema/          fo76.json (181 record types, embedded at compile time)
+  schema/          fo76.json (183 record types, embedded at compile time)
   tools/           Schema extractor (xEdit Pascal → JSON) + patch-note scripts
   static/          Embedded HTML for the HTTP server UI
 ```
@@ -181,7 +181,7 @@ Key re-exports: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`
 
 ## Schema
 
-`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers all 181 FO76 record types derived from xEdit Pascal definitions — every type currently decodes `full` (no unmapped subrecords against the reference ESM); test coverage is 3 `robust` (hand-picked, end-to-end: `NPC_`, `PERK`, `WEAP`), 59 `basic`, and 119 `none` (still covered by the exhaustive env-gated sweep test). An `fo76.overrides.json` is merged on top for manual corrections (newer-than-reference drift subrecords TES5Edit doesn't define — see `CLAUDE.md`'s "Coverage drift handling").
+`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers all 183 FO76 record types — 182 derived from xEdit Pascal definitions plus `PGTR`, hand-authored whole because xEdit has no definition for it — and every type currently decodes `full` (no unmapped subrecords against the reference ESM); test coverage is 3 `robust` (hand-picked, end-to-end: `NPC_`, `PERK`, `WEAP`), 61 `basic`, and 119 `none` (still covered by the exhaustive env-gated sweep test). An `fo76.overrides.json` is merged on top for manual corrections (newer-than-reference drift subrecords TES5Edit doesn't define — see `CLAUDE.md`'s "Coverage drift handling").
 
 Decode status is measured against a reference ESM via `esm coverage`; run it (or `esm coverage --type <SIG>`) for live per-type status instead of a checked-in snapshot.
 

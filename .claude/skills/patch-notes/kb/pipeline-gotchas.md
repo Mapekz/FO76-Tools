@@ -93,3 +93,27 @@ A decode rename doesn't error in a consumer — it yields defaults. PCRD card da
 extracts every card's Special as "Unknown" and minLevel as 0 rather than failing. That symptom is
 the tell that a consumer needs the new name. Keep the old name as a fallback when migrating one.
 *found 2026-07-14*
+
+## Run the coverage gate before the narrative stage, not after
+
+A new snapshot can introduce record types the schema has never seen. The mechanical diff/triage
+stage doesn't care — it happily diffs raw-fallback bytes — so a schema gap only becomes visible
+once a writer (or you) reads a decoded field and finds `_unmapped`/`_raw` where a real value
+should be, by which point bundles, the mechanics KB pass, and maybe a draft are already built on
+top of the gap.
+
+**Symptom:** `esm get`/`esm chase` on an affected record type returns `_unknown_record` or
+`_unmapped` keys instead of named fields; nothing upstream (diff, triage) flagged it.
+**Fix:** after `create_esm_archive.sh` drops the new `Data/<date>/`, run
+`esm coverage --gate` (via `FO76_ESM_PATH` or `--esm`) before starting the narrative stage. Zero
+exit means proceed. Non-zero: `esm coverage` (no `--gate`) shows which SIG rows carry
+`raw_fallback`/`unmapped`/`unknown_record`; stop, fix the schema gap in `esm/` (a type TES5Edit
+already defines in full only needs adding to `esm/tools/extractor/extract.py`'s `SAFELIST`;
+anything else is a hand-authored entry in `esm/schema/fo76.overrides.json`), and re-run the gate
+until it is clean.
+`--gate` checks `raw_fallback`/`unmapped`/`unknown_record` only — `unresolved` is a
+missing-localization signal, not a schema gap, and never blocks it.
+**Example:** 20260903 (Pets PTS): `--gate` failed with `unknown_record=7, unmapped=2380` from
+three new shapes — PGTR and MSCS (new record types) and RACE `CMDE`/`PGTF`; MSCS was a `SAFELIST`
+addition, PGTR and RACE needed `fo76.overrides.json` entries.
+*found 2026-09-04*

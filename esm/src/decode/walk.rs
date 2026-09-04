@@ -182,11 +182,24 @@ pub(crate) fn decode_member(
                 // scope_max is out of range), regressing
                 // qust_gq_horde_alias_fill_decodes_correctly /
                 // qust_gq_workshop_reclaim_decodes_correctly with a leftover
-                // `_unmapped 'ALED'`. No concrete real-ESM case currently
-                // needs Empty scoped (GMRW's ITME terminator is bounded by
-                // the RArray's own inclusive `term_idx + 1` upper bound in
-                // the RArray arm above, not by this take), so it stays
-                // unscoped rather than special-casing ALED here.
+                // `_unmapped 'ALED'`. GMRW's ITME terminator doesn't need
+                // this arm scoped either — it is bounded by the RArray's own
+                // inclusive `term_idx + 1` upper bound in the RArray arm
+                // above, not by this take.
+                //
+                // One real-ESM case DOES need a zero-length marker scoped:
+                // PGTR's per-reward "Next Reward Present" (sig NAM3), which
+                // shares its sig with the reward's own "Description Text".
+                // Declared `Empty`, this unscoped take stole the NEXT entry's
+                // description and corrupted every entry after the first
+                // two-reward one. That case is handled in the schema, not
+                // here: `schema/fo76.overrides.json` declares the marker as
+                // `lstring` (element-scoped, renders the same `null`), so
+                // this arm stays unscoped rather than special-casing ALED —
+                // see `pgtr_world_pets_radhog_track_decodes_correctly` in
+                // tests/decode_records.rs. Any future zero-length marker
+                // whose sig is reused inside the same element wants the same
+                // `lstring` treatment.
                 //
                 // Only emit the marker when the empty subrecord is actually present.
                 if take_first(by_sig, sig).is_some() {

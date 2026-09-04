@@ -50,6 +50,9 @@
 //! DLBR, DOOR, KEYM, LGTM, LIGH, MSTT, PGRE, PHZD, PLYR, PMIS, REFR, SCCO,
 //! STAT, TACT.
 //! DLVW, GDRY, TREE absent from this ESM version (no records); deferred.
+//! PGTR, MSCS added (2026-09-04): new record types on the 20260903 Pets PTS
+//! snapshot (World Pets progression tracks / misc item spawner), zero
+//! markers once safelisted/hand-authored.
 
 mod common;
 
@@ -80,6 +83,8 @@ const CLEAN_TYPES: &[&str] = &[
     "PLYR", "PMIS", "REFR", "SCCO", "STAT", "TACT",
     // Part C — coverage expansion (2026-07-02)
     "NAVM", "WRLD", "CELL",
+    // Pets PTS snapshot 20260903 — new record types, zero markers (2026-09-04)
+    "PGTR", "MSCS",
 ];
 
 /// Walk `v` and count every `_unmapped`, `raw_fallback`, and `_unknown_record`
