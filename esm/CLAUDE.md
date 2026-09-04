@@ -5,7 +5,14 @@ Guidance for Claude Code when working in this Rust workspace.
 ## Commands
 
 ```sh
-cargo build [--release]                             # esm CLI (target/release/esm)
+just release                                        # build esm CLI + esm-server together — use this to
+                                                     # actually run/query the CLI, not the bare cargo builds
+                                                     # below (esm-server needs --features server; the
+                                                     # daemon's self-heal can't detect one that was simply
+                                                     # never rebuilt, so a stale one silently serves wrong
+                                                     # decode output through the daemon while --local stays
+                                                     # correct — see justfile's `release` recipe comment)
+cargo build [--release]                             # esm CLI only (target/release/esm)
 cargo build [--release] --features server           # also builds esm-server
 cargo run --bin esm -- <args>                       # run CLI
 cargo run --features server --bin esm-server -- <ESM> [--mcp-stdio]

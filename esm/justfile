@@ -11,6 +11,8 @@
 #
 # Usage:
 #   just          -> fmt + clippy + test + gen-types + drift check (full local esm pass)
+#   just release  -> build both release binaries (esm CLI + esm-server daemon) in sync —
+#                  use this, not `cargo build --release`, before running/querying the CLI
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
 #   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
 #   just patch-tools-test -> Python tooling test suite (also enforced in CI)
@@ -23,6 +25,26 @@ default: check
 # tests and the generated-types drift guard: `gen-types` must produce no diff).
 check: fmt clippy test gen-types
     git diff --exit-code -- ../esm-viewer/src/shared/generated/
+
+# Build BOTH release binaries in one shot: `esm` (the CLI, on PATH via
+# ~/.local/bin/esm) and `esm-server` (the daemon `esm` auto-spawns and reuses
+# across invocations). Use this, not a bare `cargo build --release`, whenever
+# you actually intend to run the CLI or query the daemon afterward.
+#
+# `server` is deliberately not a default Cargo feature (pulls in tokio/axum/
+# tower-http, real compile-time cost) — required-features on the esm-server
+# bin target means a plain `cargo build --release` silently produces no
+# esm-server at all, or leaves an EXISTING one un-rebuilt. The daemon's
+# self-heal (backend.rs's exe fingerprint) only catches a running daemon
+# whose *own* binary changed on disk since it started; it cannot detect
+# "esm-server was never rebuilt" — from its own binary's point of view,
+# nothing changed. A schema/decode change that only rebuilds the plain `esm`
+# binary leaves an old esm-server serving stale/wrong decode output through
+# the daemon with no error, while `--local` queries (which never touch
+# esm-server) are correct — a confusing split. `just release` closes that gap
+# by always building both together.
+release:
+    cargo build --release --features server
 
 # Verify formatting.
 fmt:
