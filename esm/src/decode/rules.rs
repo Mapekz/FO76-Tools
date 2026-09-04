@@ -41,17 +41,8 @@ fn apply_crafting_quantity(struct_out: &mut Map<String, Value>) {
 
     let (quantity, source): (Value, &str) = match struct_out.get("Curve Table") {
         // Curve inlined by `resolve_formid`: {"formid", "curve_path", "curve":[{x,y}…]}.
-        Some(Value::Object(o)) => match o.get("curve").and_then(|c| c.as_array()) {
-            Some(pts) if !pts.is_empty() => {
-                let points: Vec<crate::curves::CurvePoint> = pts
-                    .iter()
-                    .filter_map(|p| {
-                        Some(crate::curves::CurvePoint {
-                            x: p.get("x").and_then(Value::as_f64)? as f32,
-                            y: p.get("y").and_then(Value::as_f64)? as f32,
-                        })
-                    })
-                    .collect();
+        Some(v @ Value::Object(_)) => match crate::curves::points_from_json(v) {
+            Some(points) if !points.is_empty() => {
                 match crate::curves::eval(&points, count as f32) {
                     Some(y) => (json_f32(y), "curve"),
                     None => (serde_json::json!(count), "count"),
@@ -125,17 +116,8 @@ pub(crate) fn apply_weapon_bash_curve(out: &mut Map<String, Value>) {
     };
 
     match damage_curve {
-        Value::Object(o) => match o.get("curve").and_then(|c| c.as_array()) {
-            Some(pts) if !pts.is_empty() => {
-                let points: Vec<crate::curves::CurvePoint> = pts
-                    .iter()
-                    .filter_map(|p| {
-                        Some(crate::curves::CurvePoint {
-                            x: p.get("x").and_then(Value::as_f64)? as f32,
-                            y: p.get("y").and_then(Value::as_f64)? as f32,
-                        })
-                    })
-                    .collect();
+        Value::Object(_) => match crate::curves::points_from_json(damage_curve) {
+            Some(points) if !points.is_empty() => {
                 let reference = crate::curves::eval(&points, 1.0);
                 if reference.is_none_or(|r| r <= 0.0) {
                     out.insert(

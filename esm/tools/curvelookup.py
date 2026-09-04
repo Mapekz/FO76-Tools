@@ -29,7 +29,10 @@ from pathlib import Path
 # and the directory / file-prefix / tier range for each combo.
 # ---------------------------------------------------------------------------
 
-SCRIPT_DIR = Path(__file__).parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from curvelib import fmt_value, interpolate  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -83,24 +86,6 @@ def load_curve(path: Path) -> list[dict]:
     with open(path) as f:
         data = json.load(f)
     return data["curve"]
-
-
-def interpolate(curve: list[dict], level: float) -> float:
-    """Linear interpolation with clamping at the curve's min/max x values."""
-    xs = [p["x"] for p in curve]
-    ys = [p["y"] for p in curve]
-
-    if level <= xs[0]:
-        return ys[0]
-    if level >= xs[-1]:
-        return ys[-1]
-
-    for i in range(len(xs) - 1):
-        if xs[i] <= level <= xs[i + 1]:
-            t = (level - xs[i]) / (xs[i + 1] - xs[i])
-            return ys[i] + t * (ys[i + 1] - ys[i])
-
-    return ys[-1]  # unreachable, but safe fallback
 
 
 def get_level_range(curve: list[dict]) -> tuple[float, float]:
@@ -177,11 +162,6 @@ def wizard_fill(base_path: Path, version: str,
 # ---------------------------------------------------------------------------
 # Output helpers
 # ---------------------------------------------------------------------------
-
-def fmt_value(v: float) -> str:
-    """Format value: integer if it's whole, else 2 decimal places."""
-    return f"{v:.0f}" if v == int(v) else f"{v:.2f}"
-
 
 def apply_resist(damage: float, resist: float) -> float:
     """Apply FO76 resistance formula: damage × clamp(0.01, 0.99, (damage×0.15/resist)^0.365)."""

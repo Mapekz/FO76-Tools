@@ -44,7 +44,7 @@
 
 use crate::FormId;
 use crate::chase::ChaseFetcher;
-use crate::curves::{CurvePoint, eval as curve_eval};
+use crate::curves::eval as curve_eval;
 use crate::walk::{bulk_fetch_map, dedup_sorted, flatten_condition_rows, stub_formid};
 // Only referenced by the fake-fetcher test harness below (`by_sel`'s type in
 // production code is inferred from `bulk_fetch_map`'s return, never named).
@@ -213,16 +213,8 @@ fn glob_stub_value(stub: Option<&Value>) -> Option<f64> {
 /// resolve depth (see `crate::decode::resolve_formid`'s CURV branch) — no
 /// fetch needed, just evaluate at `level`.
 fn eval_curve(v: &Value, level: f32) -> Option<f64> {
-    let points = v.get("curve")?.as_array()?;
-    let pts: Vec<CurvePoint> = points
-        .iter()
-        .filter_map(|p| {
-            let x = p.get("x")?.as_f64()? as f32;
-            let y = p.get("y")?.as_f64()? as f32;
-            Some(CurvePoint { x, y })
-        })
-        .collect();
-    curve_eval(&pts, level).map(f64::from)
+    let points = crate::curves::points_from_json(v)?;
+    curve_eval(&points, level).map(f64::from)
 }
 
 /// Flat-wins-over-GLOB-over-Curve-Table chance-none resolution, shared by

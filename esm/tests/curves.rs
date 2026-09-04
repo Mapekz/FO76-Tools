@@ -1,6 +1,6 @@
 mod common;
 
-use esm::curves::{CurveIndex, CurvePoint, ba2_internal_path, eval};
+use esm::curves::{CurveIndex, CurvePoint, ba2_internal_path, eval, points_from_json, sum_range};
 use esm::index::Index;
 use esm::reader::EsmFile;
 use esm::{Database, FormId, ResolveDepth};
@@ -222,4 +222,155 @@ fn get_curv_record_without_curves_loaded_omits_curve_field() {
         result.fields["JSON File Path 2"],
         serde_json::json!(r"LegendaryMods\Weapon_DamagePerKill.json")
     );
+}
+
+// ─── sum_range ──────────────────────────────────────────────────────────────
+
+#[test]
+fn sum_range_basic_case() {
+    // x=0..10 step 1 -> 0,10,20,...,100 -> sum = 550 (matches
+    // curvelib.py's own basic sum_range test, before it was ported here).
+    let pts = vec![
+        CurvePoint { x: 0.0, y: 0.0 },
+        CurvePoint { x: 10.0, y: 100.0 },
+    ];
+    let total = sum_range(&pts, 0.0, 10.0, 1.0).expect("sum_range must succeed");
+    // Epsilon (not exact equality): `eval`'s `t = (x - a.x) / (b.x - a.x)`
+    // interpolation fraction is computed in f32, so non-power-of-2 fractions
+    // (e.g. i/10) carry a small rounding error even though the underlying
+    // math is exact in real numbers.
+    assert!((total - 550.0).abs() < 1e-3, "got {total}");
+}
+
+#[test]
+fn sum_range_rejects_non_positive_step() {
+    let pts = vec![
+        CurvePoint { x: 0.0, y: 0.0 },
+        CurvePoint { x: 10.0, y: 100.0 },
+    ];
+    assert!(sum_range(&pts, 0.0, 10.0, 0.0).is_err());
+    assert!(sum_range(&pts, 0.0, 10.0, -1.0).is_err());
+}
+
+#[test]
+fn sum_range_rejects_end_before_start() {
+    let pts = vec![
+        CurvePoint { x: 0.0, y: 0.0 },
+        CurvePoint { x: 10.0, y: 100.0 },
+    ];
+    assert!(sum_range(&pts, 10.0, 0.0, 1.0).is_err());
+}
+
+/// `CT_WorldPets_XP_LevelingProgression` — real curve data, fetched live via
+/// `esm get CT_WorldPets_XP_LevelingProgression --json` against
+/// `$FO76_ESM_PATH` (Data/20260903/SeventySix.esm). Ported from
+/// `tools/tests/test_curvelib.py`'s `sum_range` golden-value tests (removed
+/// there — `sum_range` now lives only in `src/curves.rs`).
+fn worldpets_xp_leveling_progression() -> Vec<CurvePoint> {
+    [
+        (1.0, 0.0),
+        (2.0, 420.0),
+        (5.0, 500.0),
+        (10.0, 600.0),
+        (15.0, 700.0),
+        (20.0, 800.0),
+        (25.0, 900.0),
+        (30.0, 1000.0),
+        (35.0, 1100.0),
+        (40.0, 1200.0),
+        (45.0, 1300.0),
+        (50.0, 1400.0),
+        (55.0, 1550.0),
+        (60.0, 1700.0),
+        (65.0, 1850.0),
+        (70.0, 2000.0),
+        (75.0, 2150.0),
+        (80.0, 2300.0),
+        (85.0, 2450.0),
+        (90.0, 2600.0),
+        (95.0, 2750.0),
+        (100.0, 2900.0),
+        (105.0, 3050.0),
+        (110.0, 3200.0),
+        (115.0, 3350.0),
+        (120.0, 3500.0),
+        (125.0, 3650.0),
+        (130.0, 3800.0),
+        (135.0, 3950.0),
+        (140.0, 4100.0),
+        (145.0, 4250.0),
+        (150.0, 4400.0),
+        (155.0, 4600.0),
+        (160.0, 4800.0),
+        (165.0, 5000.0),
+        (170.0, 5200.0),
+        (175.0, 5400.0),
+        (180.0, 5600.0),
+        (185.0, 5800.0),
+        (190.0, 6000.0),
+        (195.0, 6200.0),
+        (200.0, 6400.0),
+    ]
+    .into_iter()
+    .map(|(x, y)| CurvePoint { x, y })
+    .collect()
+}
+
+#[test]
+fn sum_range_worldpets_xp_golden_values() {
+    let pts = worldpets_xp_leveling_progression();
+
+    let sum_1_200 = sum_range(&pts, 1.0, 200.0, 1.0).expect("sum_range 1..200");
+    assert!((sum_1_200 - 607540.0).abs() < 0.5, "got {sum_1_200}");
+
+    let sum_1_100 = sum_range(&pts, 1.0, 100.0, 1.0).expect("sum_range 1..100");
+    assert!((sum_1_100 - 153290.0).abs() < 0.5, "got {sum_1_100}");
+
+    let sum_101_200 = sum_range(&pts, 101.0, 200.0, 1.0).expect("sum_range 101..200");
+    assert!((sum_101_200 - 454250.0).abs() < 0.5, "got {sum_101_200}");
+}
+
+// ─── points_from_json ───────────────────────────────────────────────────────
+
+#[test]
+fn points_from_json_reads_curv_records_capital_curve_key() {
+    let v = serde_json::json!({
+        "_record_type": "Curve Table",
+        "Curve": [{"x": 0.0, "y": 0.0}, {"x": 10.0, "y": 100.0}],
+    });
+    let points = points_from_json(&v).expect("must find points under \"Curve\"");
+    assert_eq!(points.len(), 2);
+    assert_eq!(points[1].x, 10.0);
+    assert_eq!(points[1].y, 100.0);
+}
+
+#[test]
+fn points_from_json_reads_reference_stub_lowercase_curve_key() {
+    let v = serde_json::json!({
+        "formid": "0x00123456",
+        "editor_id": "CT_Test",
+        "curve_path": "Weapons/Weap_Test.json",
+        "curve": [{"x": 1.0, "y": 10.0}, {"x": 2.0, "y": 20.0}],
+    });
+    let points = points_from_json(&v).expect("must find points under \"curve\"");
+    assert_eq!(points.len(), 2);
+    assert_eq!(points[0].x, 1.0);
+    assert_eq!(points[0].y, 10.0);
+}
+
+#[test]
+fn points_from_json_none_when_neither_key_present() {
+    let v = serde_json::json!({"formid": "0x00123456", "editor_id": "SomeNonCurveRef"});
+    assert!(points_from_json(&v).is_none());
+}
+
+#[test]
+fn points_from_json_empty_array_is_some_empty_not_none() {
+    // A present-but-empty "curve" key is a genuinely different signal than
+    // an absent one (curves not loaded) — see the doc comment on
+    // `points_from_json`.
+    let v = serde_json::json!({"curve": []});
+    let points = points_from_json(&v);
+    assert!(points.is_some());
+    assert!(points.unwrap().is_empty());
 }

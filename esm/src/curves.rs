@@ -33,6 +33,9 @@ impl Curve {
 }
 
 /// Linear interpolation of y at x over sorted curve points.
+///
+/// Mirrors `interpolate` in `tools/curvelib.py` exactly: any change to
+/// clamping/edge-case semantics here should be ported there too.
 pub fn eval(points: &[CurvePoint], x: f32) -> Option<f32> {
     if points.is_empty() {
         return None;
@@ -56,6 +59,62 @@ pub fn eval(points: &[CurvePoint], x: f32) -> Option<f32> {
         }
     }
     Some(last.y)
+}
+
+/// Extract curve points from an already-decoded JSON value, handling both
+/// shapes produced elsewhere in this codebase: a CURV record's own decoded
+/// fields, which carry a top-level `"Curve"` key (see
+/// `Database::record_at_meta_with_depth`'s CURV-record inline), and a
+/// resolved curve-reference stub, which carries a lowercase `"curve"` key
+/// (see `decode::resolve_formid`'s `InlineSource::CurveIndex` branch).
+///
+/// Returns `None` only when *neither* key is present — the signal callers
+/// use to distinguish "curve tables not loaded" from "loaded, but genuinely
+/// zero points" (`Some(vec![])`, when the key is present but its array is
+/// empty). Points are **not** re-sorted here: they are already sorted by the
+/// time they reach this JSON (`parse_curve_json` sorts at index-build time),
+/// so re-sorting here would silently mask a real upstream regression instead
+/// of surfacing it.
+pub fn points_from_json(v: &serde_json::Value) -> Option<Vec<CurvePoint>> {
+    let raw = v.get("Curve").or_else(|| v.get("curve"))?;
+    let points = raw
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|p| {
+                    let x = p.get("x").and_then(serde_json::Value::as_f64)? as f32;
+                    let y = p.get("y").and_then(serde_json::Value::as_f64)? as f32;
+                    Some(CurvePoint { x, y })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(points)
+}
+
+/// Sum [`eval`] over x stepping from `start` to `end` inclusive.
+///
+/// Exact Rust port of `tools/curvelib.py::sum_range`'s semantics: steps are
+/// *counted* (`n = round((end - start) / step)`) rather than accumulated in
+/// a `while x <= end` loop, so float drift can't cause the loop to overshoot
+/// or miss the last point. Accumulates in `f64` for precision on large sums.
+pub fn sum_range(points: &[CurvePoint], start: f32, end: f32, step: f32) -> Result<f64> {
+    if step <= 0.0 || !step.is_finite() {
+        anyhow::bail!("step must be > 0 and finite, got {step}");
+    }
+    if end < start {
+        anyhow::bail!("end ({end}) must be >= start ({start})");
+    }
+
+    let n = ((end - start) / step).round() as i64;
+    let mut total = 0.0_f64;
+    for i in 0..=n {
+        let x = start + i as f32 * step;
+        if let Some(y) = eval(points, x) {
+            total += f64::from(y);
+        }
+    }
+    Ok(total)
 }
 
 /// Index of CURV FormID → parsed curve.
@@ -246,4 +305,147 @@ fn parse_curve_json(bytes: &[u8]) -> Option<Vec<CurvePoint>> {
     // Sort by x to ensure correct interpolation
     points.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
     Some(points)
+}
+
+// ─── `esm curve` / `esm_curve` MCP tool shared logic ───────────────────────
+
+/// Build the JSON result for the `esm curve` CLI command (`bin/cli/curve.rs`)
+/// from an already-resolved `Op::RecordBulk` response — the query logic
+/// itself, kept here (library level, not the CLI-only binary) so a future
+/// `esm_curve` MCP tool in a different binary can call the exact same code
+/// instead of re-implementing it.
+///
+/// `entries` must be the `BulkRecordEntry` list a single `Op::RecordBulk`
+/// call produced over the caller's selectors, in the same order — the
+/// single-vs-multi wrapping below relies on `entries.len()` matching the
+/// original target count.
+///
+/// `at` and `sum` are mutually exclusive. Clap already enforces this at the
+/// CLI layer (`conflicts_with`), but this function re-checks it defensively
+/// since a caller with no clap (MCP) can't rely on that for free.
+///
+/// - Exactly one entry: returns that entry's own result object directly, no
+///   `"sel"` wrapper key (matches `esm get`'s single-target convention).
+/// - More than one entry: returns a JSON array, each object tagged with its
+///   own `"sel"` key so callers can correlate results back to selectors.
+pub fn curve_query(
+    entries: &[crate::ipc::BulkRecordEntry],
+    at: &[f32],
+    sum: Option<(f32, f32)>,
+    step: f32,
+) -> serde_json::Value {
+    if !at.is_empty() && sum.is_some() {
+        return serde_json::json!({"error": "--at and --sum are mutually exclusive"});
+    }
+
+    let mut results: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|entry| curve_entry_result(entry, at, sum, step))
+        .collect();
+
+    if entries.len() == 1 {
+        return results.pop().unwrap_or(serde_json::Value::Null);
+    }
+
+    for (result, entry) in results.iter_mut().zip(entries) {
+        if let serde_json::Value::Object(map) = result {
+            map.insert("sel".to_string(), serde_json::json!(entry.sel));
+        }
+    }
+    serde_json::Value::Array(results)
+}
+
+/// One entry's result — everything `curve_query` needs except the `"sel"`
+/// wrapping, which only the multi-target case adds (see `curve_query`).
+fn curve_entry_result(
+    entry: &crate::ipc::BulkRecordEntry,
+    at: &[f32],
+    sum: Option<(f32, f32)>,
+    step: f32,
+) -> serde_json::Value {
+    if let Some(err) = &entry.error {
+        return serde_json::json!({"error": err});
+    }
+    let Some(fields) = &entry.fields else {
+        return serde_json::json!({
+            "error": format!("'{}' did not resolve to a record", entry.sel)
+        });
+    };
+    let record_type = fields
+        .get("_record_type")
+        .and_then(serde_json::Value::as_str);
+    if record_type != Some("Curve Table") {
+        return serde_json::json!({
+            "error": format!(
+                "'{}' resolved to a {}, not a Curve Table",
+                entry.sel,
+                record_type.unwrap_or("?")
+            )
+        });
+    }
+
+    let Some(points) = points_from_json(fields) else {
+        return serde_json::json!({
+            "error": format!(
+                "'{}': curve tables not loaded — is `misc/curvetables/json/` present next to \
+                 the ESM?",
+                entry.sel
+            )
+        });
+    };
+    if points.is_empty() {
+        return serde_json::json!({
+            "error": format!("'{}' is a Curve Table record but has no points", entry.sel)
+        });
+    }
+
+    let editor_id = entry.editor_id.clone().unwrap_or_default();
+
+    if let Some((start, end)) = sum {
+        return match sum_range(&points, start, end, step) {
+            Ok(total) => serde_json::json!({
+                "editor_id": editor_id,
+                "start": crate::decode::json_f32(start),
+                "end": crate::decode::json_f32(end),
+                "step": crate::decode::json_f32(step),
+                "sum": total,
+            }),
+            Err(e) => serde_json::json!({"error": e.to_string()}),
+        };
+    }
+
+    if !at.is_empty() {
+        let values: Vec<serde_json::Value> = at
+            .iter()
+            .map(|&x| {
+                let y = eval(&points, x).unwrap_or(0.0);
+                serde_json::json!({"x": crate::decode::json_f32(x), "y": crate::decode::json_f32(y)})
+            })
+            .collect();
+        return serde_json::json!({"editor_id": editor_id, "at": values});
+    }
+
+    let curve_path = fields
+        .get("JSON File Path")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            fields
+                .get("JSON File Path 2")
+                .and_then(serde_json::Value::as_str)
+        });
+    let point_values: Vec<serde_json::Value> = points
+        .iter()
+        .map(|p| serde_json::json!({"x": crate::decode::json_f32(p.x), "y": crate::decode::json_f32(p.y)}))
+        .collect();
+    match curve_path {
+        Some(path) => serde_json::json!({
+            "editor_id": editor_id,
+            "curve_path": path,
+            "points": point_values,
+        }),
+        None => serde_json::json!({
+            "editor_id": editor_id,
+            "points": point_values,
+        }),
+    }
 }

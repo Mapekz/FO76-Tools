@@ -88,6 +88,7 @@ esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 | `coverage --type <SIG>` | Schema decode audit; `--gate` exits non-zero on any raw fallback |
 | `walk <target>` | Interactive per-record-type mechanics digest (OMOD chains, LVLI drop odds, …) |
 | `chase <target>` | Machine-readable JSON mechanism classification (pipeline contract, not for reading by hand) |
+| `curve <target>...` | Ad-hoc lookup/sum over any Curve Table record's points (`--at X...`, `--sum FROM TO [--step N]`) |
 | `daemon {start,stop,status}` | Manage the background warm daemon (see [Daemon](#daemon) below) |
 | `cache status [--json]` | Inspect the on-disk index cache without opening the ESM |
 | `skill [--install]` | Print (or install into another repo's `.claude/skills/`) the agent usage-knowledge doc |

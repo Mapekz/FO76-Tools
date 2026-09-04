@@ -1,3 +1,4 @@
+mod curve;
 mod daemon;
 mod diff;
 mod inspect;
@@ -369,6 +370,36 @@ enum Commands {
         refs: bool,
         #[arg(long)]
         json: bool,
+    },
+    /// Ad-hoc lookup/sum over any `CURV` (Curve Table) record's points — the
+    /// generic counterpart to `walk --level`'s built-in evaluation, for a
+    /// one-off table (leveling/XP progression curves etc.) that isn't
+    /// implicitly evaluated by any other subcommand. CURV points are
+    /// already inlined into every `get`/`walk` response, so this is pure
+    /// client-side post-processing on an existing bulk fetch — no extra
+    /// round trip beyond the one this command itself makes.
+    Curve {
+        /// FormID(s) and/or EditorID(s) of CURV records (auto-detected per
+        /// token). A single target preserves plain single-record output;
+        /// two or more emit a JSON array (one entry per selector, each
+        /// tagged with its own `sel`).
+        #[arg(required = true)]
+        targets: Vec<String>,
+        /// Print the interpolated value at each given x. Mutually exclusive
+        /// with --sum.
+        #[arg(long, num_args = 1.., value_name = "X", conflicts_with = "sum")]
+        at: Vec<f32>,
+        /// Print the sum of interpolated values over this inclusive range.
+        /// Mutually exclusive with --at.
+        #[arg(long, num_args = 2, value_names = ["FROM", "TO"])]
+        sum: Option<Vec<f32>>,
+        /// Step size for --sum.
+        #[arg(long, default_value_t = 1.0, requires = "sum")]
+        step: f32,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        pretty: bool,
     },
     /// Print the embedded `esm-cli` usage-knowledge doc, or install it into a
     /// consumer repo's `.claude/skills/esm-cli/` for Claude Code to
@@ -931,6 +962,24 @@ fn dispatch_command(
             level,
             refs,
             json,
+            options.formid_base,
+        ),
+        Commands::Curve {
+            targets,
+            at,
+            sum,
+            step,
+            json,
+            pretty,
+        } => curve::cmd_curve(
+            backend,
+            esm,
+            targets,
+            at,
+            sum,
+            step,
+            json,
+            pretty,
             options.formid_base,
         ),
         Commands::Daemon { .. } => unreachable!(),
