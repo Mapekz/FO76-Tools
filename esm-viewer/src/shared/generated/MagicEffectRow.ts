@@ -27,4 +27,13 @@ magnitude_glob: unknown, duration_glob: unknown,
 /**
  * The raw `Curve Table` field (points + `curve_path`), if present.
  */
-curve_table: unknown, curve_input_av: unknown, conditions: unknown, perk_to_apply: unknown, equip_ability: unknown, };
+curve_table: unknown, curve_input_av: unknown, 
+/**
+ * `curve_table` evaluated at the walk's `--level`, when
+ * `curve_input_av` is absent (verified level-domained — see
+ * `crate::decode::level_curves::AxisGuard::SiblingIsNoneOrAbsent`).
+ * `None` either because there's no curve, or because `curve_input_av`
+ * names the real (non-level) axis — `curve_input_av` itself is already
+ * enough to render that axis note, so no separate field duplicates it.
+ */
+curve_at_level: number | null, conditions: unknown, perk_to_apply: unknown, equip_ability: unknown, };

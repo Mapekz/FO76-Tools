@@ -1363,3 +1363,249 @@ fn lvli_non_get_random_percent_gate_is_noted() {
          assume-pass with no trace, got:\n{text}"
     );
 }
+
+// ─── level-keyed curve evaluation (`crate::decode::level_curves`) ──────────
+
+const WEAP_CURVE_FID: &str = "0x00600050";
+const NPC_PROPS_FID: &str = "0x00600060";
+const ARMO_RESIST_FID: &str = "0x00600070";
+const ENCH_GUARD_FID: &str = "0x00600080";
+const LVLI_MINLEVEL_ROOT_FID: &str = "0x00600090";
+
+/// A WEAP root's `Damage Curve` is evaluated using [`WalkOptions::default`]'s
+/// own level constant — no `--level` flag passed — proving the feature fires
+/// without the reader having to opt in.
+#[test]
+fn weap_damage_curve_evaluates_at_default_level_with_no_level_flag() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        WEAP_CURVE_FID,
+        "WEAP",
+        "TestCurveWeapon",
+        json!({
+            "Damage Curve": {
+                "formid": "0x00600051",
+                "editor_id": "CT_TestDamage",
+                "curve_path": "test/damage.json",
+                "curve": [{"x": 1.0, "y": 10.0}, {"x": 100.0, "y": 100.0}],
+            },
+        }),
+    );
+    let result = walk(&mut f, sel(WEAP_CURVE_FID), &WalkOptions::default()).unwrap();
+    let text = node_digest(&result, WEAP_CURVE_FID).join("\n");
+    assert!(
+        text.contains("curves @ level 50:"),
+        "expected the default level (50) echoed in the curve block, got:\n{text}"
+    );
+    assert!(
+        text.contains("damage: 54.5") && text.contains("[CT_TestDamage]"),
+        "expected the Damage Curve row evaluated (not just present), got:\n{text}"
+    );
+}
+
+/// NPC_ `Properties[]` rows are labeled by their sibling `Actor Value`'s
+/// editor_id, one row per array element.
+#[test]
+fn npc_properties_curve_rows_labeled_by_actor_value() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        NPC_PROPS_FID,
+        "NPC_",
+        "TestCreatureNpc",
+        json!({
+            "Properties": [
+                {
+                    "Actor Value": {"formid": "0x1", "editor_id": "Health", "record_type": "AVIF"},
+                    "Value": 0.0,
+                    "Curve Table": {"curve": [{"x": 1.0, "y": 100.0}, {"x": 50.0, "y": 500.0}]},
+                },
+                {
+                    "Actor Value": {"formid": "0x2", "editor_id": "DamageResist", "record_type": "AVIF"},
+                    "Value": 0.0,
+                    "Curve Table": {"curve": [{"x": 1.0, "y": 10.0}, {"x": 50.0, "y": 40.0}]},
+                },
+            ],
+        }),
+    );
+    let result = walk(
+        &mut f,
+        sel(NPC_PROPS_FID),
+        &WalkOptions {
+            depth: 0,
+            level: 50.0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, NPC_PROPS_FID).join("\n");
+    assert!(
+        text.contains("Health: 500"),
+        "expected the Health property row labeled by Actor Value and evaluated, got:\n{text}"
+    );
+    assert!(
+        text.contains("DamageResist: 40"),
+        "expected the DamageResist property row labeled by Actor Value and evaluated, got:\n{text}"
+    );
+    // The generic field tree must still be present too — NPC_ used to fall
+    // through to `Digest::Generic` and must not lose that on gaining its own
+    // digest arm.
+    assert!(
+        text.contains("\"Properties\""),
+        "expected the generic field tree to still render Properties, got:\n{text}"
+    );
+}
+
+/// ARMO `Resistances[]` rows are labeled by their sibling `Type` (a DMGT
+/// stub), NOT `Actor Value` — the row-shape difference from NPC_/RACE
+/// `Properties[]` that a copy-pasted `label_from` would silently get wrong.
+#[test]
+fn armo_resistances_labeled_by_type_not_actor_value() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        ARMO_RESIST_FID,
+        "ARMO",
+        "TestArmorPiece",
+        json!({
+            "Resistances": [
+                {
+                    "Type": {"formid": "0x1", "editor_id": "dtEnergy", "record_type": "DMGT"},
+                    "Amount": 0,
+                    "Curve Table": {"curve": [{"x": 1.0, "y": 20.0}, {"x": 50.0, "y": 80.0}]},
+                },
+            ],
+        }),
+    );
+    let result = walk(
+        &mut f,
+        sel(ARMO_RESIST_FID),
+        &WalkOptions {
+            depth: 0,
+            level: 50.0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, ARMO_RESIST_FID).join("\n");
+    assert!(
+        text.contains("dtEnergy: 80"),
+        "expected the resistance row labeled by Type (dtEnergy), got:\n{text}"
+    );
+}
+
+/// ENCH `Effects[]` curve guard: an effect whose sibling `Actor Value` is
+/// absent is evaluated; one with a named `Actor Value` (e.g. a legendary-mod
+/// tier gate) is not — the axis note appears instead of a confidently wrong
+/// number.
+#[test]
+fn ench_effect_curve_guard_evaluates_only_when_actor_value_absent() {
+    let mut f = FakeFetcher::new();
+    f.insert(
+        ENCH_GUARD_FID,
+        "ENCH",
+        "TestGuardEnch",
+        json!({
+            "Effects": [
+                {"Effect": {
+                    "Base Effect": {"formid": "0x00600081", "editor_id": "SomeMgef", "record_type": "MGEF"},
+                    "Effect Item Data": {"Magnitude": 0, "Duration": 0},
+                    "Curve Table": {"editor_id": "CT_LevelDomained", "curve": [{"x": 1.0, "y": 10.0}, {"x": 50.0, "y": 100.0}]},
+                }},
+                {"Effect": {
+                    "Base Effect": {"formid": "0x00600081", "editor_id": "SomeMgef", "record_type": "MGEF"},
+                    "Effect Item Data": {"Magnitude": 0, "Duration": 0},
+                    "Actor Value": {"formid": "0x00600082", "editor_id": "Perception", "record_type": "AVIF"},
+                    "Curve Table": {"editor_id": "CT_CapsCurve", "curve": [{"x": 0.0, "y": 1.0}, {"x": 40000.0, "y": 5.0}]},
+                }},
+            ],
+        }),
+    );
+    let result = walk(
+        &mut f,
+        sel(ENCH_GUARD_FID),
+        &WalkOptions {
+            depth: 0,
+            level: 50.0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, ENCH_GUARD_FID).join("\n");
+    assert_eq!(
+        text.matches("curve @ walk level:").count(),
+        1,
+        "expected exactly one evaluated curve line (effect[0] only), got:\n{text}"
+    );
+    assert!(
+        text.contains("curve @ walk level: 100"),
+        "expected effect[0]'s level-domained curve evaluated to 100 at level 50, got:\n{text}"
+    );
+    assert!(
+        text.contains("curve INPUT axis: AV") && text.contains("Perception"),
+        "expected effect[1]'s named-AV axis note instead of an evaluated number, got:\n{text}"
+    );
+}
+
+/// COBJ's `Curve Table` is count-keyed (evaluated elsewhere by
+/// `decode::rules`'s quantity logic) and must never appear in this
+/// allowlist.
+#[test]
+fn cobj_curve_table_not_in_level_curves_allowlist() {
+    let fields = json!({
+        "Components": [{"Count": 3, "Curve Table": {"curve": [{"x": 1.0, "y": 1.0}, {"x": 5.0, "y": 5.0}]}}],
+    });
+    let rows = esm::decode::level_curves::eval_level_curves("COBJ", &fields, 50.0);
+    assert!(
+        rows.is_empty(),
+        "COBJ has no LEVEL_KEYED_CURVES rows — its Curve Table is count-keyed"
+    );
+}
+
+/// LVLI's `Minimim Level Curve Table` (schema typo, preserved verbatim) is
+/// tier-indexed, not level — it must stay absent from this allowlist, and
+/// the existing `lvli::resolve_min_level` unresolved-axis note (not a new
+/// evaluated number) must keep firing through the walk digest unchanged.
+#[test]
+fn lvli_minimim_level_curve_table_stays_unresolved_not_evaluated() {
+    let fields_direct = json!({
+        "Minimim Level Curve Table": {"curve": [{"x": 0.0, "y": 1.0}, {"x": 3.0, "y": 4.0}]},
+    });
+    assert!(
+        esm::decode::level_curves::eval_level_curves("LVLI", &fields_direct, 50.0).is_empty(),
+        "LVLI has no LEVEL_KEYED_CURVES rows at all"
+    );
+
+    let mut f = FakeFetcher::new();
+    f.insert(
+        LVLI_MINLEVEL_ROOT_FID,
+        "LVLI",
+        "TestMinLevelCurveRoot",
+        json!({
+            "_record_type": "Leveled Item",
+            "Flags": {"value": "0x0", "flags": []},
+            "Leveled List Entries": [{"Leveled List Entry": {
+                "Reference": lvli_leaf("0x00700099", "MISC", "SomeJunk"),
+                "Chance None Value": 0.0,
+                "Quantity": 1.0,
+                "Minimim Level Curve Table": {
+                    "formid": "0x00700098",
+                    "editor_id": "TestMinLevelCurve",
+                    "curve": [{"x": 0.0, "y": 1.0}, {"x": 3.0, "y": 4.0}],
+                },
+            }}],
+        }),
+    );
+    let result = walk(
+        &mut f,
+        sel(LVLI_MINLEVEL_ROOT_FID),
+        &WalkOptions {
+            depth: 0,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap();
+    let text = node_digest(&result, LVLI_MINLEVEL_ROOT_FID).join("\n");
+    assert!(
+        text.contains("unresolved:") && text.contains("Minimum Level Curve Table present"),
+        "expected the existing unresolved-axis note, not a new evaluated number, got:\n{text}"
+    );
+}

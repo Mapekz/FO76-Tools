@@ -8,6 +8,11 @@ use serde_json::{Map, Value, json};
 use std::collections::{HashMap, VecDeque};
 
 pub(crate) mod leaf_values;
+/// [`level_curves::LevelCurveRow`] is `pub` (used by `esm::walk`'s public
+/// digest structs) — the module is `pub` too so that type is externally
+/// reachable; everything else in it (the allowlist table, the guard enum,
+/// the path walker) stays `pub(crate)`.
+pub mod level_curves;
 mod model_info;
 mod rules;
 mod scalars;

@@ -87,6 +87,7 @@ use crate::chase::{
     ChaseFetcher, ChaseOptions, Hop, HopKind, RootStub, consumer_refs_by_type, omod_chase,
     summarize_explosion_detail,
 };
+use crate::decode::level_curves::{self, LevelCurveRow};
 use crate::ipc::RecordSel;
 use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
 use anyhow::Context as _;
@@ -153,7 +154,15 @@ pub struct WalkOptions {
     pub ref_limit: usize,
     /// Player level assumed by an LVLI root's drop-odds digest (see
     /// [`crate::lvli::DropOptions::level`]) — Minimum Level filtering and
-    /// Curve Table evaluation both key off it. Unused by every other digest.
+    /// Curve Table evaluation both key off it. Also drives level-keyed
+    /// Curve Table evaluation on WEAP/NPC_/RACE/ARMO/EXPL/ENCH/SPEL/ALCH
+    /// digests (see `crate::decode::level_curves`) — only for the specific
+    /// fields verified to be level-domained; count-keyed (COBJ component
+    /// quantity) and tier-index-keyed (LVLI's own Minimum Level Curve
+    /// Table) curve fields are deliberately excluded and stay unaffected by
+    /// this option. Ignored by every digest with no level-keyed curve
+    /// fields at all (GLOB, AVIF, KYWD, MGEF, PERK, PROJ, OMOD, and the
+    /// generic fallback).
     pub level: f32,
 }
 
@@ -263,6 +272,16 @@ pub enum Digest {
     Expl(ExplDigest),
     Lvli(LvliDigest),
     Omod(OmodDigest),
+    /// NPC_: level-keyed curves (Properties[] AV curves) plus the same
+    /// trimmed field tree the wildcard arm used to show for this type — see
+    /// [`digest_npc`].
+    Npc(NpcDigest),
+    /// RACE: level-keyed curves (Properties[] AV curves, EWS Actor Cost)
+    /// plus the trimmed field tree — see [`digest_race`].
+    Race(RaceDigest),
+    /// ARMO: level-keyed curves (Resistances[], durability, condition loss)
+    /// plus the trimmed field tree — see [`digest_armo`].
+    Armo(ArmoDigest),
     /// Fallback for every record type without a dedicated digest: the
     /// trimmed field tree (see [`trim_generic_fields`]), not a rigid struct
     /// — this record class is genuinely variable-shape, matching the plan's
@@ -374,6 +393,13 @@ pub struct MagicEffectRow {
     pub curve_table: Option<Value>,
     #[cfg_attr(test, ts(type = "unknown"))]
     pub curve_input_av: Option<Value>,
+    /// `curve_table` evaluated at the walk's `--level`, when
+    /// `curve_input_av` is absent (verified level-domained — see
+    /// `crate::decode::level_curves::AxisGuard::SiblingIsNoneOrAbsent`).
+    /// `None` either because there's no curve, or because `curve_input_av`
+    /// names the real (non-level) axis — `curve_input_av` itself is already
+    /// enough to render that axis note, so no separate field duplicates it.
+    pub curve_at_level: Option<f64>,
     #[cfg_attr(test, ts(type = "unknown"))]
     pub conditions: Vec<Value>,
     #[cfg_attr(test, ts(type = "unknown"))]
@@ -447,6 +473,13 @@ pub struct WeapDigest {
     pub eligible_levels: Vec<Value>,
     pub attach_slots: usize,
     pub has_object_template: bool,
+    /// `--level` (default [`crate::lvli::DEFAULT_LEVEL`]) assumed by
+    /// `level_curves` below.
+    pub level: f32,
+    /// Level-keyed curve fields (Damage Curve, durability, condition loss,
+    /// per-damage-type curves) evaluated at `level` — see
+    /// `crate::decode::level_curves`.
+    pub level_curves: Vec<LevelCurveRow>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -470,6 +503,11 @@ pub struct ExplDigest {
     /// carries.
     #[cfg_attr(test, ts(type = "unknown"))]
     pub detail: Value,
+    /// `--level` assumed by `level_curves` below.
+    pub level: f32,
+    /// Level-keyed curve fields (`Data.Damage Curve Table`, per-damage-type
+    /// curves) evaluated at `level` — see `crate::decode::level_curves`.
+    pub level_curves: Vec<LevelCurveRow>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -503,6 +541,48 @@ pub struct OmodDigest {
 pub struct GenericDigest {
     #[cfg_attr(test, ts(type = "unknown"))]
     pub trimmed: Value,
+}
+
+/// NPC_: level-keyed curves (`Properties[].Curve Table`, AV-labeled) plus
+/// the same trimmed field tree the wildcard [`GenericDigest`] arm used to
+/// show for this type before it got its own arm — see [`digest_npc`]. Kept
+/// as its own struct rather than sharing one shape with [`RaceDigest`]/
+/// [`ArmoDigest`] (all three happen to be `{level, level_curves, generic}`
+/// today) — a deliberate choice, not an oversight: each is free to diverge
+/// (e.g. gain its own extra field) without disturbing the other two.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct NpcDigest {
+    pub level: f32,
+    pub level_curves: Vec<LevelCurveRow>,
+    pub generic: GenericDigest,
+}
+
+/// RACE: level-keyed curves (`Properties[].Curve Table` AV-labeled,
+/// `EWS Actor Cost Curve`) plus the trimmed field tree — see
+/// [`digest_race`]. See [`NpcDigest`]'s doc comment for why this isn't
+/// merged with the other two same-shaped digests.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct RaceDigest {
+    pub level: f32,
+    pub level_curves: Vec<LevelCurveRow>,
+    pub generic: GenericDigest,
+}
+
+/// ARMO: level-keyed curves (`Resistances[].Curve Table` Type-labeled,
+/// durability, condition loss) plus the trimmed field tree — see
+/// [`digest_armo`]. See [`NpcDigest`]'s doc comment for why this isn't
+/// merged with the other two same-shaped digests.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct ArmoDigest {
+    pub level: f32,
+    pub level_curves: Vec<LevelCurveRow>,
+    pub generic: GenericDigest,
 }
 
 // ─── generic JSON helpers ───────────────────────────────────────────────────
@@ -718,7 +798,9 @@ fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
 /// `Perk to Apply`/`Equip Ability`.
 fn digest_magic_item(
     f: &mut impl ChaseFetcher,
+    sig: &str,
     fields: &Value,
+    level: f32,
     enqueue: &mut Vec<EnqueueTarget>,
 ) -> anyhow::Result<MagicItemDigest> {
     let empty = Vec::new();
@@ -782,6 +864,23 @@ fn digest_magic_item(
 
         let curve_table = e.get("Curve Table").cloned();
         let curve_input_av = e.get("Actor Value").filter(|v| is_ref_stub(v)).cloned();
+        // Reuse `level_curves`'s own registered guard for this (sig, path)
+        // rather than re-deriving the "Actor Value: None/absent" rule here
+        // — `LEVEL_KEYED_CURVES` is the single source of truth for it.
+        let curve_at_level =
+            level_curves::field_for(sig, "Effects[].Effect.Curve Table").and_then(|field_def| {
+                let ct = curve_table.as_ref()?;
+                let points = crate::curves::points_from_json(ct)?;
+                if points.is_empty() {
+                    return None;
+                }
+                match level_curves::guard_axis(&field_def.guard, e) {
+                    None => crate::curves::eval(&points, level).map(f64::from),
+                    // The axis name is already rendered off `curve_input_av`
+                    // above — no separate field needed for it here.
+                    Some(_axis) => None,
+                }
+            });
 
         let conditions = e
             .get("Conditions")
@@ -808,6 +907,7 @@ fn digest_magic_item(
             duration_glob,
             curve_table,
             curve_input_av,
+            curve_at_level,
             conditions,
             perk_to_apply,
             equip_ability,
@@ -908,7 +1008,7 @@ fn digest_perk(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Resu
     })
 }
 
-fn digest_weap(fields: &Value) -> WeapDigest {
+fn digest_weap(fields: &Value, level: f32) -> WeapDigest {
     let data = fields.get("Data");
     let keyword_ids = fields
         .pointer("/Keywords/Keywords")
@@ -944,6 +1044,8 @@ fn digest_weap(fields: &Value) -> WeapDigest {
         eligible_levels,
         attach_slots,
         has_object_template,
+        level,
+        level_curves: level_curves::eval_level_curves("WEAP", fields, level),
     }
 }
 
@@ -991,6 +1093,49 @@ fn trim_generic_fields(fields: &Value) -> Value {
 fn digest_generic(fields: &Value) -> GenericDigest {
     GenericDigest {
         trimmed: trim_generic_fields(fields),
+    }
+}
+
+/// Shared internal helper behind [`digest_npc`]/[`digest_race`]/
+/// [`digest_armo`]: level-keyed curves for `sig` plus the same trimmed
+/// field tree [`digest_generic`] already computes for every other type —
+/// these three record types don't lose their generic field dump just
+/// because they now also get curve evaluation.
+fn digest_generic_leveled(
+    sig: &str,
+    fields: &Value,
+    level: f32,
+) -> (Vec<LevelCurveRow>, GenericDigest) {
+    (
+        level_curves::eval_level_curves(sig, fields, level),
+        digest_generic(fields),
+    )
+}
+
+fn digest_npc(fields: &Value, level: f32) -> NpcDigest {
+    let (level_curves, generic) = digest_generic_leveled("NPC_", fields, level);
+    NpcDigest {
+        level,
+        level_curves,
+        generic,
+    }
+}
+
+fn digest_race(fields: &Value, level: f32) -> RaceDigest {
+    let (level_curves, generic) = digest_generic_leveled("RACE", fields, level);
+    RaceDigest {
+        level,
+        level_curves,
+        generic,
+    }
+}
+
+fn digest_armo(fields: &Value, level: f32) -> ArmoDigest {
+    let (level_curves, generic) = digest_generic_leveled("ARMO", fields, level);
+    ArmoDigest {
+        level,
+        level_curves,
+        generic,
     }
 }
 
@@ -1113,9 +1258,11 @@ fn digest_proj(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> ProjDigest {
     }
 }
 
-fn digest_expl(fields: &Value) -> ExplDigest {
+fn digest_expl(fields: &Value, level: f32) -> ExplDigest {
     ExplDigest {
         detail: summarize_explosion_detail(fields),
+        level,
+        level_curves: level_curves::eval_level_curves("EXPL", fields, level),
     }
 }
 
@@ -1245,11 +1392,16 @@ fn digest_node(
         "AVIF" => Digest::Avif(digest_avif(f, formid, fields)?),
         "KYWD" => Digest::Kywd(digest_kywd(f, formid)?),
         "MGEF" => Digest::Mgef(digest_mgef(fields, &mut enqueue)),
-        "SPEL" | "ENCH" | "ALCH" => Digest::MagicItem(digest_magic_item(f, fields, &mut enqueue)?),
+        "SPEL" | "ENCH" | "ALCH" => {
+            Digest::MagicItem(digest_magic_item(f, sig, fields, level, &mut enqueue)?)
+        }
         "PERK" => Digest::Perk(digest_perk(fields, &mut enqueue)?),
-        "WEAP" => Digest::Weap(digest_weap(fields)),
+        "WEAP" => Digest::Weap(digest_weap(fields, level)),
         "PROJ" => Digest::Proj(digest_proj(fields, &mut enqueue)),
-        "EXPL" => Digest::Expl(digest_expl(fields)),
+        "EXPL" => Digest::Expl(digest_expl(fields, level)),
+        "NPC_" => Digest::Npc(digest_npc(fields, level)),
+        "RACE" => Digest::Race(digest_race(fields, level)),
+        "ARMO" => Digest::Armo(digest_armo(fields, level)),
         "OMOD" => {
             // Classify Data.Properties[] via chase's mechanism classifier
             // first (ENCH/PROJ direct attachments are enqueued from the same

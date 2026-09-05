@@ -360,8 +360,13 @@ enum Commands {
         #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
         ref_limit: usize,
         /// Player level assumed by an LVLI root's drop-odds digest (Curve
-        /// Table evaluation, Minimum Level filtering). Ignored by every
-        /// other record type.
+        /// Table evaluation, Minimum Level filtering). Also drives Curve
+        /// Table evaluation on WEAP/NPC_/RACE/ARMO/EXPL/ENCH/SPEL/ALCH
+        /// digests, but only for the specific fields verified to be
+        /// level-domained — some curve fields are excluded on purpose (e.g.
+        /// COBJ's component-count-keyed curve, LVLI's own tier-index-keyed
+        /// Minimum Level Curve Table). Ignored by every digest with no
+        /// level-keyed curve fields at all.
         #[arg(long, default_value_t = esm::lvli::DEFAULT_LEVEL)]
         level: f32,
         /// Print the root record's grouped reverse-reference summary

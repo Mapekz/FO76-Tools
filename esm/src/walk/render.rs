@@ -8,9 +8,9 @@
 //! compute/sub-concern split in this crate.
 
 use super::{
-    AvifDigest, ConsumerGroup, Digest, ExplDigest, GenericDigest, GlobDigest, KywdDigest,
-    LvliDigest, MagicEffectRow, MagicItemDigest, MgefDigest, OmodDigest, PerkDigest, PerkEffectRow,
-    ProjDigest, WalkResult, WeapDigest,
+    ArmoDigest, AvifDigest, ConsumerGroup, Digest, ExplDigest, GenericDigest, GlobDigest,
+    KywdDigest, LevelCurveRow, LvliDigest, MagicEffectRow, MagicItemDigest, MgefDigest, NpcDigest,
+    OmodDigest, PerkDigest, PerkEffectRow, ProjDigest, RaceDigest, WalkResult, WeapDigest,
 };
 use crate::chase::{
     Evidence, FetchDirection, Hop, HopKind, first_array_container, is_truthy, named,
@@ -518,6 +518,17 @@ fn render_magic_effect_row(row: &MagicEffectRow, lines: &mut Vec<String>) {
         if let Some(av) = &row.curve_input_av {
             lines.push(format!("  curve INPUT axis: AV {}", fmt_ref(av)));
         }
+        // `curve_at_level` is populated only when `curve_input_av` is
+        // absent (verified level-domained — see
+        // `crate::decode::level_curves::AxisGuard::SiblingIsNoneOrAbsent`),
+        // so the two never both print: an AV-input axis note above, or an
+        // evaluated level number here, never both.
+        if let Some(v) = row.curve_at_level {
+            lines.push(format!(
+                "  curve @ walk level: {}",
+                pyish(&crate::decode::json_f32(v as f32))
+            ));
+        }
     }
 
     for cond in &row.conditions {
@@ -587,6 +598,43 @@ fn render_perk(d: &PerkDigest, lines: &mut Vec<String>) {
     }
 }
 
+/// Level-keyed curve lines, shared by every digest that carries them
+/// (WEAP/EXPL/NPC_/RACE/ARMO — see `crate::decode::level_curves`). Mirrors
+/// `render_lvli`'s level echo so the assumed level is always visible next
+/// to the numbers it produced. No-op when `rows` is empty (a record type in
+/// the allowlist with no populated level-keyed fields on this particular
+/// record — most records, most of the time).
+fn render_level_curves(level: f32, rows: &[LevelCurveRow], lines: &mut Vec<String>) {
+    if rows.is_empty() {
+        return;
+    }
+    lines.push(format!(
+        "curves @ level {}:",
+        pyish(&crate::decode::json_f32(level))
+    ));
+    for r in rows {
+        match r.value {
+            Some(v) => {
+                let edid = r
+                    .curve_edid
+                    .as_deref()
+                    .map(|e| format!(" [{e}]"))
+                    .unwrap_or_default();
+                lines.push(format!(
+                    "  {}: {}{edid}",
+                    r.label,
+                    pyish(&crate::decode::json_f32(v as f32))
+                ));
+            }
+            None => lines.push(format!(
+                "  {}: not evaluated — axis is {}, not level",
+                r.label,
+                r.axis.as_deref().unwrap_or("?")
+            )),
+        }
+    }
+}
+
 fn render_weap(d: &WeapDigest, lines: &mut Vec<String>) {
     lines.push(format!(
         "keywords: {}",
@@ -618,6 +666,7 @@ fn render_weap(d: &WeapDigest, lines: &mut Vec<String>) {
                 .to_string(),
         );
     }
+    render_level_curves(d.level, &d.level_curves, lines);
 }
 
 fn render_proj(d: &ProjDigest, lines: &mut Vec<String>) {
@@ -634,6 +683,7 @@ fn render_proj(d: &ProjDigest, lines: &mut Vec<String>) {
 
 fn render_expl(d: &ExplDigest, lines: &mut Vec<String>) {
     render_explosion_detail_lines(&d.detail, lines, "");
+    render_level_curves(d.level, &d.level_curves, lines);
 }
 
 /// Shared EXPL field lines (radius/force/stagger/impact/chain/damage) used by
@@ -775,6 +825,25 @@ fn render_generic(d: &GenericDigest, lines: &mut Vec<String>) {
             dump_lines.len() - GENERIC_DUMP_MAX_LINES
         ));
     }
+}
+
+/// NPC_/RACE/ARMO all render the same way: level-keyed curve lines first,
+/// then the same trimmed generic field tree these types showed before they
+/// got their own [`super::Digest`] variant — nothing lost, just curve lines
+/// gained.
+fn render_npc(d: &NpcDigest, lines: &mut Vec<String>) {
+    render_level_curves(d.level, &d.level_curves, lines);
+    render_generic(&d.generic, lines);
+}
+
+fn render_race(d: &RaceDigest, lines: &mut Vec<String>) {
+    render_level_curves(d.level, &d.level_curves, lines);
+    render_generic(&d.generic, lines);
+}
+
+fn render_armo(d: &ArmoDigest, lines: &mut Vec<String>) {
+    render_level_curves(d.level, &d.level_curves, lines);
+    render_generic(&d.generic, lines);
 }
 
 // ─── OMOD mechanism rendering ───────────────────────────────────────────────
@@ -1002,7 +1071,7 @@ fn render_reverse_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
 // ─── top-level dispatch ─────────────────────────────────────────────────────
 
 /// Turn one computed [`Digest`] into its rendered lines — the single place
-/// that dispatches on the 12-variant [`Digest`] enum for text output.
+/// that dispatches on the 15-variant [`Digest`] enum for text output.
 pub fn render_digest(digest: &Digest) -> Vec<String> {
     let mut lines = Vec::new();
     match digest {
@@ -1017,6 +1086,9 @@ pub fn render_digest(digest: &Digest) -> Vec<String> {
         Digest::Expl(d) => render_expl(d, &mut lines),
         Digest::Lvli(d) => render_lvli(d, &mut lines),
         Digest::Omod(d) => render_omod(d, &mut lines),
+        Digest::Npc(d) => render_npc(d, &mut lines),
+        Digest::Race(d) => render_race(d, &mut lines),
+        Digest::Armo(d) => render_armo(d, &mut lines),
         Digest::Generic(d) => render_generic(d, &mut lines),
     }
     lines
