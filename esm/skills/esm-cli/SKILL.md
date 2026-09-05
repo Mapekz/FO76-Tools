@@ -19,8 +19,9 @@ subcommand.
 - Subcommands: `daemon, cache, info, get, list, search, refs, tree, diff,
   coverage, chase, walk, skill`.
 - `FO76_ESM_PATH` is a plain process env var — there is no `.env` parser.
-- Every subcommand is one-shot; there is no REPL. `--local` costs seconds per
-  open — never use it for bulk work.
+  `daemon` takes no path at all; it resolves one at spawn.
+- Every subcommand is one-shot; a missing subcommand is a usage error, not a
+  REPL. `--local` costs seconds per open — never use it for bulk work.
 - **The daemon self-manages, so bulk work never needs lifecycle handling.** It
   auto-spawns, stale-evicts and reopens when the ESM changes on disk, and shuts
   down after 10 minutes idle (`ESM_DAEMON_IDLE_SECS=0` disables that). An
@@ -30,22 +31,29 @@ subcommand.
 - Rebuilding the binary self-heals the daemon via a size+mtime fingerprint.
   Changing loose files beside the dump (strings/curvetables) does *not* — run
   `esm daemon stop` after touching those.
-- **A first-ever `refs`/`walk`/`chase` against an ESM with no `esm_cache/`
-  takes tens of seconds to a couple of minutes** while it builds the `xref`
-  index (a full schema decode of every record). It streams progress to stderr
-  and then returns the real result — just wait. A second concurrent query
-  reuses the in-flight build instead of starting a redundant one.
-  `esm cache status [--json]` inspects without triggering anything;
-  `ESM_NO_PROGRESS=1` suppresses heartbeat *publishing* only.
+- **A cold call against an ESM with no `esm_cache/` yet can take tens of
+  seconds to a couple of minutes** — worst case a first-ever
+  `refs`/`walk`/`chase`, which builds the `xref` index (a full schema decode of
+  every record). It streams progress to stderr rather than hanging silently and
+  still returns the real result — just wait. A second concurrent query reuses
+  whichever build is already running instead of starting a redundant one.
+  `esm cache status [--json]` inspects without triggering anything.
+  `ESM_NO_PROGRESS=1` suppresses heartbeat *publishing* only (e.g. in an
+  embedding context where a stray file write is unwanted) — lock-based dedup
+  between concurrent builders keeps working regardless.
 ## MCP (for AI clients that support it)
 
 `esm-server --mcp-stdio` speaks JSON-RPC 2.0 over stdin/stdout, proxying the
 same warm daemon the CLI uses. Ten read-only tools: `esm_file_info`,
-`esm_search`, `esm_get_record`, `esm_list_groups`, `esm_list_records`,
-`esm_refs`, `esm_walk`, `esm_chase`, `esm_lvli_drop_table`, `esm_curve`. Point
-an MCP client at the built `esm-server` binary with
+`esm_search`, `esm_get_record` (`resolve=none|stub|full`, default `stub`),
+`esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS
+reverse-reference walk, default depth 1, up to 8, `0` = unbounded), `esm_walk`,
+`esm_chase`, `esm_lvli_drop_table`, `esm_curve` (interpolate/sum a CURV record,
+single or bulk via `ids`). Point an MCP client at the built `esm-server` binary
+with
 `args: ["--mcp-stdio", "<esm-or-data-path>"]`, and keep that config out of
 version control — it hardcodes a non-redistributable, machine-local ESM path.
+
 ## Fetching records
 
 - Selectors are FormIDs or EditorIDs, auto-detected. **A bare token is read as
@@ -58,15 +66,19 @@ version control — it hardcodes a non-redistributable, machine-local ESM path.
   `{"sel":…, "error":…}` in the array instead of failing the call; the
   single-target form throws.
 - **Default to `--resolve stub` for reference-heavy records** (recipes, NPCs,
-  leveled lists, quests) — it avoids N follow-up `get` calls. Reach for
-  `--resolve full` only when the complete nested body is needed.
+  leveled lists, quests) — it avoids N follow-up `get` calls, and a GLOB
+  reference carries its own `Value` on the stub, so magnitudes, durations,
+  required counts and condition thresholds read straight off it. Reach for
+  `--resolve full` only when the complete nested body is needed; bare `get` is
+  fine when the raw FormID values are what you actually want.
 - `list` never returns display names — use `search --in name` or `get`.
   `search` needs `"*"` to match all; `""` matches nothing.
 - `--limit 0` means unlimited on `list`/`search`/`refs`. All three print
   `note: output capped at N of M results; use --limit 0 to show all` to
   **stderr**, never stdout, so `--json` stays parseable when capped.
-- **`--localization-ba2`/`--strings-dir`/`--startup-ba2` force a cold
-  in-process open, bypassing the daemon** (ADR 0008): the shared cache holds
+- **`--localization-ba2`/`--strings-dir`/`--startup-ba2` on `get`/`list`/
+  `search`/`diff` force a cold in-process open, bypassing the daemon**
+  (ADR 0008): the shared cache holds
   exactly one warm `Database` per canonical ESM path, which a per-call source
   override has no coherent way to join. For sweeps needing localized strings,
   put the Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a
@@ -75,20 +87,33 @@ version control — it hardcodes a non-redistributable, machine-local ESM path.
 ## Reverse references (`refs`)
 
 - The default `--limit 100` truncates popular targets (see the stderr capped-
-  output note above) — pass `--limit 0` when you need everything.
+  output note above) — pass `--limit 0` when you need everything. Raise
+  `--depth` to reach a target through an intermediary (e.g. a quest alias).
 - `--entry-point`/`--ep` answers "what uses this hook?" — the reverse of
-  reading a PERK's own Entry Point off `get`/`walk`. Prefer the **numeric id**
-  over the name: some entry-point names are wrong (see below), and a few ids
-  have no name in the schema at all — `--ep 212` still finds its unnamed
-  carrier.
-- **EP attribution:** first-reach at minimum depth; equal-depth ties **union**
+  reading a PERK's own Entry Point off `get`/`walk`. `esm refs --ep 'Mod
+  Percent Blocked'` surfaces the Blocker perks and the Ogua Gauntlet/Defender's
+  leggo perks; one more `--depth` reaches the OMODs/weapons/perk cards that
+  reach *them*. Prefer the **numeric id** over the name: some entry-point names
+  are wrong (see below), and a few ids have no name in the schema at all —
+  `--ep 212` still finds its unnamed carrier. `--ep 0x...` is rejected (that's
+  a FormID, not an entry point).
+- **EP attribution:** a multi-match glob's stderr legend lists every matched
+  entry point as `id name` — e.g. `entry point 'Mod Weapon*' (2 matched: 44 Mod
+  Weapon Reload Speed, 45 Mod Weapon Spread)`. When more than one distinct id
+  appears in the printed rows an `EP` column shows comma-joined numeric ids per
+  row, carriers grouped by primary EP and BFS rows inheriting the originating
+  carrier's tag; `VIA` is populated from depth 1 and starts with the
+  originating carrier FormID. Attribution is
+  first-reach at minimum depth; equal-depth ties **union**
   EP tags (a record referenced by two carriers shows both ids), but an overlap
   first discovered at depth ≥ 2 that was already reached shallower stays
   attributed only to the shallower carrier. Carriers are emitted *before*
   referencers, so a broad glob at the default `--limit 100` may show only
   carrier rows — use `--limit 0` when you need the referencers.
 - `--omod-property`/`--prop` answers "which OMODs declare this property?".
-  Cross-space name collisions (same spelling, different id per space) include
+  Unlike `--ep` it is **flag-only**, never auto-detected from a bare positional
+  — `Health` is also a real AVIF EditorID, and a bare `refs Health` must keep
+  resolving to that AVIF. Cross-space name collisions (same spelling, different id per space) include
   at least `Keywords` (weap:31 / armo:3 / npc:0), `Enchantments` (weap:65 /
   armo:0 / npc:3), `Perk` (weap:116 / armo:18), `ActorValues`/`Actor Values`,
   and `Health` — scope-qualify whenever the space matters. Same
