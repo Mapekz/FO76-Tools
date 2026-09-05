@@ -15,16 +15,12 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 
 - Subcommands: `daemon, cache, info, get, list, search, refs, tree, diff,
   coverage, chase, walk, skill`.
-- ESM path comes from the global `--esm <PATH>` flag (long only; works before
-  or after the subcommand) with `FO76_ESM_PATH` env fallback — a plain process
-  env var, there is no `.env` parser. The path may be the `.esm` file or its
-  containing data folder. Exceptions: `diff <FILE_A> <FILE_B>` (two
-  positionals), `daemon` (no path; resolves at spawn), and `skill` (no path —
-  it only reads its own embedded doc).
+- `FO76_ESM_PATH` is a plain process env var — there is no `.env` parser. The
+  `--esm` flag is long-only and works before or after the subcommand.
 - Every subcommand is one-shot: it auto-spawns/uses a warm daemon and exits
   after printing. There is no interactive mode — a missing subcommand is a
-  usage error, not a REPL. `--local` runs cold in-process (seconds per open —
-  never use it for bulk work).
+  usage error, not a REPL. `--local` costs seconds per open — never use it for
+  bulk work.
 - The daemon self-manages, so bulk/sweep work never needs manual lifecycle
   handling: it auto-spawns on the first call, stale-evicts and reopens when
   the ESM changes on disk, and auto-shuts-down after 10 minutes idle
@@ -43,9 +39,7 @@ this crate changes fast, so re-verify anything here against `esm --help` /
   every record). It shows live progress on stderr while waiting rather than
   hanging silently, then still returns the real result — no flag needed. Use
   `esm cache status [--json]` to check what's built/building without
-  triggering anything, or pass the global `--no-wait` flag to bail (exit 75)
-  instead of blocking when a build is already in flight — useful in a script
-  that would rather retry later. A second concurrent query against the same
+  triggering anything. A second concurrent query against the same
   ESM waits on (and reuses) whichever build is already running rather than
   starting a redundant one. Set `ESM_NO_PROGRESS=1` to suppress heartbeat
   *publishing* only (e.g. in an embedding context where a stray file write is
@@ -69,32 +63,15 @@ hardcodes a non-redistributable, machine-local ESM path.
 - Selectors are `0x...` formids or EditorIDs. Bare tokens that *look* numeric
   auto-resolve FormID-first with EditorID fallback; scripts should still pass
   explicit `--formid`/`--edid` where the flag exists to skip the ambiguity.
-- A bare (no `0x` prefix) FormID token is always read as **hex**, never
-  decimal — `esm get 00568635` means `0x00568635`, not decimal 568635. If
-  that hex reading has no record, resolution falls straight to EditorID (then
-  the engine-hardcoded table); there is no implicit decimal fallback. The
-  global `--decimal` flag is the explicit override: it reads a bare digit
-  token as decimal instead (hex is never even attempted in that case), and
-  renders identity FormIDs (the FORMID column, `get`'s header,
-  `refs`/`diff`/`tree`/`walk` stubs — never FormIDs *inside* decoded field
-  bodies) as decimal on output. Use it when you specifically know you want
-  the decimal reading; `chase`'s JSON is exempt from the output half (it's a
-  machine pipeline contract requiring literal `0x########`).
-- **Bulk get**: `esm get <sel1> <sel2> … --json` — one target returns the
-  classic single object; 2+ return a JSON array in input order, each entry
-  tagged with its own `sel`. A bad selector becomes `{"sel":…, "error":…}` in
-  the array instead of failing the call (the single-target form throws).
-- `get --resolve none|stub|full` inlines FormID references — `stub` gives
-  `{formid, editor_id, record_type}` per ref (cheap); `full` recursively
-  inlines the record. A CURV reference always inlines its own curve points
-  (`curve_path`/`curve`, no `record_type`) at any resolve depth, including
-  bare `get`. A GLOB reference additionally carries its own `Value` at
-  `stub`/`full` — magnitudes, durations, required counts, condition
-  thresholds are readable straight off the stub, no follow-up `get` needed.
-  Default to `--resolve stub` for reference-heavy records (recipes, NPCs,
-  leveled lists, quests) to avoid N follow-up `get` calls; reach for
-  `--resolve full` only when the complete nested record body is needed; bare
-  `get` (no resolve) is fine when raw FormID values are specifically wanted.
+- Bare FormID tokens are read as **hex**, never decimal, with EditorID as the
+  only fallback — `esm get 00568635` means `0x00568635`, and there is no
+  implicit decimal reading. `--decimal` is the explicit override.
+- **Bulk get**: pass several selectors to one `get`. A bad selector becomes
+  `{"sel":…, "error":…}` in the array instead of failing the call (the
+  single-target form throws).
+- Default to `--resolve stub` for reference-heavy records (recipes, NPCs,
+  leveled lists, quests) — it avoids N follow-up `get` calls. Reach for
+  `--resolve full` only when the complete nested record body is needed.
 - `list` never returns display names — use `search --in name` or `get`.
   `search` needs `"*"` to match all (`""` matches nothing).
 - `--limit 0` means unlimited for `list`, `search`, and `refs`. All three
@@ -114,72 +91,26 @@ hardcodes a non-redistributable, machine-local ESM path.
 
 ## Reverse references (`refs`)
 
-- `esm refs --formid <0x...> [--depth N] [--type SIG] [--paths] --json`.
-- `--depth` 1–8 (0 = unbounded, use with `--limit 0` and a `--type` filter — an
-  unbounded walk over a hub-heavy graph like CELL/REFR can return hundreds of
-  thousands of rows): direct referrers at 1; raise it to reach a target through
-  an intermediary (e.g. a quest alias).
-- `--type <SIG>` filters to ONE 4-char referrer type server-side (not a
-  comma list) and composes correctly with `--limit`/`--depth`.
-- `--paths` annotates each row with the JSON field path(s) from referrer to
-  target (e.g. `Effects[2].Conditions[0].Parameter 1`). It decodes every
-  emitted row, so it's opt-in.
 - The default `--limit 100` truncates popular targets (see the stderr capped-
   output note above) — pass `--limit 0` when you need everything.
-- `--entry-point <name|id>` (alias `--ep`) answers "what uses this hook?" —
-  the reverse of reading a PERK's own Entry Point off `get`/`walk`. It
-  resolves to every PERK carrying that entry point, each emitted as its own
-  `depth: 0` row (a `D` column appears in table output), then walks refs from
-  all of them at once: `esm refs --ep 'Mod Percent Blocked'` surfaces the
-  Blocker perks, the Ogua Gauntlet/Defender's leggo perks, and (one more
-  `--depth`) the OMODs/weapons/perk cards that reach them. Matching is exact
-  and case-insensitive unless the value contains `*` (`--ep 'Mod VATS*'`
-  fans out across every VATS entry point). A bare positional target also
-  auto-detects an entry-point name when it isn't a real EditorID — `refs
-  'Mod Percent Blocked'` works without the flag — but a real EditorID always
-  wins over a same-named entry point. Numeric ids matter: some entry-point
-  *names* are wrong (see below), and a few ids have no name in the schema at
-  all — `--ep 212` still finds its (unnamed) carrier, `--ep 0x...` is
-  rejected (that's a FormID, not an entry point).
-- **EP attribution (glob-aware):** a multi-match glob's stderr legend lists
-  every matched entry point as `id name` (e.g. `entry point 'Mod Weapon*'
-  (2 matched: 44 Mod Weapon Reload Speed, 45 Mod Weapon Spread)`). When more
-  than one distinct id appears in the printed rows, an `EP` column shows
-  comma-joined numeric ids per row (carriers grouped by primary EP; BFS rows
-  inherit the originating carrier's tag). `VIA` is populated from depth 1 in
-  EP mode and starts with the originating carrier FormID. Attribution is
-  first-reach at minimum depth; equal-depth ties **union** EP tags (so a
-  record referenced by two carriers shows both ids) rather than picking one
-  arbitrarily — but an overlap first discovered at depth ≥ 2 that was already
-  reached shallower by a different carrier stays attributed only to the
-  shallower carrier. Caveat: carriers are emitted before referencers, so a
-  broad glob at the default `--limit 100` may show only carrier rows — use
-  `--limit 0` (or a larger limit) for EP walks when you need the referencers.
-- `--omod-property <[scope:]name-or-id>` (alias `--prop`) answers "which
-  OMODs declare this property?" — then walks refs from all of them at once.
-  Each matching OMOD is a `depth: 0` carrier row; a `PROP` column shows
-  `scope:id` (e.g. `weap:31`) when more than one distinct tag appears.
-  Syntax:
-  - **Scope-qualified** — `--prop weap:Speed` / `--prop weap:31` narrows to
-    one enum space (`weap` / `armo` / `npc`). Property ids are only
-    meaningful inside one space.
-  - **Bare name** — `--prop Keywords` matches across all three spaces;
-    each carrier is tagged with which space it came from, and a stderr
-    legend names every space that matched (same shape as a multi-match
-    `--ep` glob legend).
-  - **Bare numeric id is rejected** — `--prop 31` errors; write
-    `--prop weap:31`. An id alone is ambiguous across spaces.
-  Name matching is case-insensitive and whitespace-insensitive
-  (`ActorValues` and `'Actor Values'` both match). Cross-space name
-  collisions (same spelling, different ids per space) include at least:
-  `Keywords` (weap:31 / armo:3 / npc:0), `Enchantments` (weap:65 / armo:0 /
-  npc:3), `Perk` (weap:116 / armo:18), `ActorValues`/`Actor Values`, and
-  `Health`. Unlike `--ep`, `--prop` is **flag-only** — never auto-detected
-  from a bare positional (`Health` is also a real AVIF EditorID; a bare
-  `refs Health` must keep resolving to that AVIF). Caveat: carriers are
-  emitted before referencers, so a broad `--prop` (e.g. `Keywords`,
-  ~7,500+ carriers) at the default `--limit 100` may show only carrier
-  rows — use `--limit 0` (or a larger limit) when you need the referencers.
+- `--entry-point`/`--ep` answers "what uses this hook?" — the reverse of
+  reading a PERK's own Entry Point off `get`/`walk`. Prefer the **numeric id**
+  over the name: some entry-point names are wrong (see below), and a few ids
+  have no name in the schema at all — `--ep 212` still finds its unnamed
+  carrier.
+- **EP attribution:** first-reach at minimum depth; equal-depth ties **union**
+  EP tags (a record referenced by two carriers shows both ids), but an overlap
+  first discovered at depth ≥ 2 that was already reached shallower stays
+  attributed only to the shallower carrier. Carriers are emitted *before*
+  referencers, so a broad glob at the default `--limit 100` may show only
+  carrier rows — use `--limit 0` when you need the referencers.
+- `--omod-property`/`--prop` answers "which OMODs declare this property?".
+  Cross-space name collisions (same spelling, different id per space) include
+  at least `Keywords` (weap:31 / armo:3 / npc:0), `Enchantments` (weap:65 /
+  armo:0 / npc:3), `Perk` (weap:116 / armo:18), `ActorValues`/`Actor Values`,
+  and `Health` — scope-qualify whenever the space matters. Same
+  carriers-before-referencers caveat as `--ep`, and `Keywords` alone has
+  ~7,500+ carriers, so the default `--limit 100` shows nothing but carriers.
 
 **Worked example** (`Data.Includes[]` inheritance needs no special flag —
 `--paths` already labels the edges that include a Speed-declaring OMOD):
@@ -201,34 +132,30 @@ craftable-mod slot (`Object Template.Combinations[N]...Includes[0].Mod`).
 
 One rule: **read records with `walk`; `chase` is the machine contract.**
 
-- `esm walk <selector> [--refs] [--depth N] [--ref-limit N] [--json]` —
-  the interactive tool for *any* record type: one compact digest instead of
-  a chain of raw `get` dumps. `--json` serializes the same computed
-  [`Digest`](../../src/walk/mod.rs) values `walk` prints as text — one typed
-  shape per record type (FormID ref stubs, numbers, classified mechanism
-  hops), not the plain-text lines wrapped in JSON. Resolves AVs/GLOBs/
-  keywords to editor ids, prints curve points with the flat-wins rule
-  applied, and falls back to a search when the selector doesn't resolve.
-  Walking a KYWD or AVIF root reverse-chases its SPEL/PERK consumers instead
-  of dumping the mostly-empty record. On an OMOD root every mechanism is
-  classified and rendered inline: a directly-attached ENCH or PROJ property
-  is forward-fetched (`direct property → ENCH/PROJ …`) *and* followed into
-  the BFS; keyword/AVIF hooks are resolved by a reverse walk and rendered as
-  *path-sliced* evidence rows (only the consumer's gated `Effects[N]` rows —
-  a hub perk's dozen unrelated effects never print, and `AV hook → AVIF …`
-  is the same reverse-chase rendering, distinguished from a forward-fetched
-  direct property by the hop's typed `resolution` field, not by
-  eyeballing the target's record type); perk grants render the granted
-  perk's effect rows; and `Data.Includes[]` stubs are named so `_PARENT_*`
-  empty-shell OMODs point at the include carrying the real mechanic.
-  A hook keyword no SPEL/PERK condition references renders a `dead end`
-  note instead (tag keywords: `FeaturedItem`, `NonDroppable`, naming
-  keywords, …). `--depth` caps BFS chain-following (default 2; use 3 for
-  OMOD → ENCH → MGEF → granted-perk); the root's mechanism slice renders at
-  any depth. `--refs` appends grouped reverse references (see obtainability
-  below). On an LVLI root, `walk` resolves the actual drop odds instead of
-  dumping raw entries — see "Drop-chance math" below; `--level N` (default
-  50) feeds Curve Table evaluation and Minimum Level filtering.
+- `walk` is the interactive tool for *any* record type: one compact digest
+  instead of a chain of raw `get` dumps. `--json` serializes the same computed
+  [`Digest`](../../src/walk/mod.rs) values it prints as text — one typed shape
+  per record type (FormID ref stubs, numbers, classified mechanism hops), not
+  plain-text lines wrapped in JSON. It resolves AVs/GLOBs/keywords to editor
+  ids, prints curve points with the flat-wins rule applied, and falls back to a
+  search when the selector doesn't resolve. Walking a KYWD or AVIF root
+  reverse-chases its SPEL/PERK consumers instead of dumping the mostly-empty
+  record. On an OMOD root every mechanism is classified and rendered inline: a
+  directly-attached ENCH or PROJ property is forward-fetched (`direct property
+  → ENCH/PROJ …`) *and* followed into the BFS; keyword/AVIF hooks are resolved
+  by a reverse walk and rendered as *path-sliced* evidence rows (only the
+  consumer's gated `Effects[N]` rows — a hub perk's dozen unrelated effects
+  never print, and `AV hook → AVIF …` is the same reverse-chase rendering,
+  distinguished from a forward-fetched direct property by the hop's typed
+  `resolution` field, not by eyeballing the target's record type); perk grants
+  render the granted perk's effect rows; and `Data.Includes[]` stubs are named
+  so `_PARENT_*` empty-shell OMODs point at the include carrying the real
+  mechanic. A hook keyword no SPEL/PERK condition references renders a `dead
+  end` note instead (tag keywords: `FeaturedItem`, `NonDroppable`, naming
+  keywords, …). Raise `--depth` to 3 for OMOD → ENCH → MGEF → granted-perk;
+  the root's mechanism slice renders at any depth. On an LVLI root, `walk`
+  resolves the actual drop odds instead of dumping raw entries — see
+  "Drop-chance math" below.
 
 **Worked example** (`mod_Legendary_Weapon1_DmgConsecutiveHits` / "Furious",
 `0x004F577D`, a directly-attached ENCH property plus a KYWD-hook property —
@@ -267,19 +194,17 @@ effect rows inline), `AV hook → AVIF …` (reverse-chased like a keyword
 hook), `direct property → SPEL …` (forward-fetched), and bare-number
 properties as before.
 
-- `esm chase <selector> [--depth N] [--ref-limit N]` — the pipeline
-  evidence contract, not an interactive tool: always emits classified
-  mechanism JSON (`direct_property` / `perk_grant` / `keyword_hook` per
-  `Data.Properties[]` row for an OMOD; an own-`Effects[]` walk for
-  PERK/SPEL/ALCH/ENCH roots; hard error on any other type, no search
-  fallback). The JSON shape is stable — the patch-notes deep-writer parses
-  it. Reach for it only when you need machine-parseable classification
-  (scripts, fan-out agents); when *you* are reading a record, use `walk`.
+- `chase` is the pipeline evidence contract, not an interactive tool: one
+  classified mechanism per `Data.Properties[]` row for an OMOD
+  (`direct_property` / `perk_grant` / `keyword_hook`), an own-`Effects[]` walk
+  for PERK/SPEL/ALCH/ENCH roots, and no search fallback. The JSON shape is
+  stable — the patch-notes deep-writer parses it. Reach for it only when you
+  need machine-parseable classification (scripts, fan-out agents).
 
 **Gotcha — hub AVIF/KYWD blowup**: a property targeting a widely-read AV
 (e.g. `Health`) makes the reverse hook-resolution return dozens of unrelated
 consumers (survival hunger/thirst, Daily Ops mutations, unrelated legendary
-armor perks). `--ref-limit` (default 25) bounds it on both commands; walk's
+armor perks). `--ref-limit` bounds it on both commands; walk's
 KYWD/AVIF-root digest additionally caps display at 10 rows per consumer
 type.
 
