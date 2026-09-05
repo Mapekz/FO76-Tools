@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Tests for tools/extractor/extract.py leaf parsers."""
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 # Add parent directory to path to import extract module
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from extractor.extract import Extractor
+from extractor.extract import Extractor, format_overrides, write_schema_json
 
 
 class TestParseInteger(unittest.TestCase):
@@ -414,6 +416,62 @@ class TestParseUnion(unittest.TestCase):
         self.assertEqual(result['variants'][0]['width'], 'u8')
         self.assertEqual(result['variants'][1]['width'], 'u16')
         self.assertEqual(result['variants'][2]['width'], 'u32')
+
+
+class TestWriteSchemaJson(unittest.TestCase):
+    """Tests for write_schema_json — the single writer for schema/*.json."""
+
+    def test_indent_two_and_single_trailing_newline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "out.json"
+            write_schema_json(path, {"a": 1, "b": [1, 2]})
+            text = path.read_text(encoding="utf-8")
+            self.assertTrue(text.endswith("\n"))
+            self.assertFalse(text.endswith("\n\n"))
+            self.assertEqual(text, json.dumps({"a": 1, "b": [1, 2]}, indent=2) + "\n")
+            # Round-trips.
+            self.assertEqual(json.loads(text), {"a": 1, "b": [1, 2]})
+
+
+class TestFormatOverrides(unittest.TestCase):
+    """Tests for format_overrides — canonicalizes/checks fo76.overrides.json.
+
+    Takes a Path parameter, so these exercise a scratch temp file rather than
+    the real schema/fo76.overrides.json.
+    """
+
+    def test_check_passes_on_already_canonical_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "overrides.json"
+            write_schema_json(path, {"records": {}})
+            self.assertTrue(format_overrides(path, check=True))
+            # --check must not modify the file.
+            self.assertEqual(
+                path.read_text(encoding="utf-8"),
+                json.dumps({"records": {}}, indent=2) + "\n",
+            )
+
+    def test_check_fails_on_non_canonical_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "overrides.json"
+            # Valid JSON, but not in canonical indent-2 + trailing-newline form.
+            path.write_text(json.dumps({"records": {}}), encoding="utf-8")
+            before = path.read_text(encoding="utf-8")
+            self.assertFalse(format_overrides(path, check=True))
+            # --check must not modify the file even when it isn't canonical.
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+
+    def test_format_rewrites_non_canonical_file_in_place(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "overrides.json"
+            path.write_text(json.dumps({"records": {"FOO": 1}}), encoding="utf-8")
+            self.assertTrue(format_overrides(path, check=False))
+            self.assertEqual(
+                path.read_text(encoding="utf-8"),
+                json.dumps({"records": {"FOO": 1}}, indent=2) + "\n",
+            )
+            # Now idempotent under --check.
+            self.assertTrue(format_overrides(path, check=True))
 
 
 if __name__ == '__main__':

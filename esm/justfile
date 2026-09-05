@@ -10,11 +10,13 @@
 #   - napi native-addon build + smoke (continue-on-error in CI)
 #
 # Usage:
-#   just          -> fmt + clippy + test + gen-types + drift check (full local esm pass)
+#   just          -> fmt + clippy + test + gen-types + drift check + schema-fmt-check (full local esm pass)
 #   just release  -> build both release binaries (esm CLI + esm-server daemon) in sync —
 #                  use this, not `cargo build --release`, before running/querying the CLI
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
 #   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
+#   just schema-fmt -> canonicalize schema/fo76.overrides.json in place
+#   just schema-fmt-check -> verify schema/fo76.overrides.json is already canonical (also enforced in CI)
 #   just patch-tools-test -> Python tooling test suite (also enforced in CI)
 #   just patch-tools-lint -> ruff + ty over tools/ (also enforced in CI)
 #   just test-esm /path/a.esm /path/b.esm  -> env-gated diff integration test
@@ -23,7 +25,7 @@ default: check
 
 # Full local esm check (matches the CI rust matrix for esm, including server-feature
 # tests and the generated-types drift guard: `gen-types` must produce no diff).
-check: fmt clippy test gen-types
+check: fmt clippy test gen-types schema-fmt-check
     git diff --exit-code -- ../esm-viewer/src/shared/generated/
 
 # Build BOTH release binaries in one shot: `esm` (the CLI, on PATH via
@@ -77,6 +79,18 @@ gen-types:
 #   git clone https://github.com/Eckserah/TES5Edit.git ../TES5Edit && git -C ../TES5Edit checkout 80a2c3c6
 audit:
     python3 tools/extractor/audit.py --gate
+
+# schema/fo76.overrides.json is hand-edited, not generated — but it is
+# canonicalized through the same writer extract.py uses for fo76.json, so a
+# hand edit only ever changes the lines it intends to change instead of
+# reformatting the whole file. -check is an idempotence check (is the file
+# already in canonical form?), not a git-diff check, so in-progress schema
+# edits don't trip it.
+schema-fmt:
+    python3 tools/extractor/extract.py --format-overrides
+
+schema-fmt-check:
+    python3 tools/extractor/extract.py --format-overrides --check
 
 # Diff two ESM versions with real game data (requires two ESM paths).
 # The test is env-gated and skips silently when RUST_TEST_ESM_A/B are unset.

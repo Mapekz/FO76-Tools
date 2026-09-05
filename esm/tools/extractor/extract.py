@@ -2444,6 +2444,49 @@ def _apply_patch(record: dict, path: list[str], new_node: dict) -> None:
     raise ValueError(f"patch target {last!r} not found")
 
 
+def canonical_schema_text(obj: object) -> str:
+    """The one serialization every schema/*.json file is written in.
+
+    indent 2, json.dumps' default ASCII escaping (so `—` is `\\u2014`), one
+    trailing newline. Both the writer and the --check comparison go through
+    this, so "canonical" has exactly one definition.
+    """
+    return json.dumps(obj, indent=2) + "\n"
+
+
+def write_schema_json(path: Path, obj: object) -> None:
+    """Single canonical writer for every schema/*.json file.
+
+    fo76.json and fo76.ctda.json are extractor output written through here.
+    fo76.overrides.json is hand-edited, not generated, but is canonicalized
+    through this same function (via --format-overrides) so a hand edit only
+    ever changes the lines it intends to change, instead of reformatting
+    unrelated parts of the file.
+    """
+    path.write_text(canonical_schema_text(obj), encoding="utf-8")
+
+
+def format_overrides(path: Path, check: bool) -> bool:
+    """Canonicalize (or, with check=True, verify) fo76.overrides.json.
+
+    Loads the file with json.loads (preserving key order) and reformats it
+    via write_schema_json — the same writer used for the generated schema
+    files. Does not touch the extractor or require a TES5Edit checkout.
+    Returns True if the file is (now) canonical, False if --check found it
+    was not (in which case nothing is written).
+    """
+    current = path.read_text(encoding="utf-8")
+    obj = json.loads(current)
+    if check:
+        if current != canonical_schema_text(obj):
+            print(f"not canonical: {path}", file=sys.stderr)
+            return False
+        return True
+    write_schema_json(path, obj)
+    print(f"wrote {path}", file=sys.stderr)
+    return True
+
+
 def main() -> None:
     import argparse as _argparse
     import os as _os
@@ -2458,7 +2501,22 @@ def main() -> None:
         help="Fail on unexpected extraction warnings "
              "(also enabled by EXTRACT_STRICT=1 env var)",
     )
+    ap.add_argument(
+        "--format-overrides",
+        action="store_true",
+        help="Canonicalize schema/fo76.overrides.json in place and exit "
+             "(does not run the extractor, no ../TES5Edit checkout needed)",
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="With --format-overrides, verify the file is already canonical "
+             "instead of writing it; exits 1 if not",
+    )
     args = ap.parse_args()
+
+    if args.format_overrides:
+        sys.exit(0 if format_overrides(OVERRIDES, args.check) else 1)
 
     if not FO76_PAS.exists():
         print(f"Missing {FO76_PAS}", file=sys.stderr)
@@ -2523,11 +2581,11 @@ def main() -> None:
         _apply_schema_kinds(rec.get("members", []))
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(schema, indent=2), encoding="utf-8")
+    write_schema_json(OUT, schema)
     print(f"wrote {OUT}", file=sys.stderr)
 
     ctda = emit_ctda_table(read_text(FO76_PAS))
-    CTDA_OUT.write_text(json.dumps(ctda, indent=2), encoding="utf-8")
+    write_schema_json(CTDA_OUT, ctda)
     print(f"wrote {CTDA_OUT} ({len(ctda['functions'])} functions)", file=sys.stderr)
 
 
