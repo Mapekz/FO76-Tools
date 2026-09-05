@@ -17,7 +17,7 @@ subcommand.
 ## Invocation & path resolution
 
 - Subcommands: `daemon, cache, info, get, list, search, refs, tree, diff,
-  coverage, chase, walk, skill`.
+  coverage, chase, walk, curve, skill`.
 - `FO76_ESM_PATH` is a plain process env var — there is no `.env` parser.
   `daemon` takes no path at all; it resolves one at spawn.
 - Every subcommand is one-shot; a missing subcommand is a usage error, not a
@@ -50,8 +50,7 @@ same warm daemon the CLI uses. Ten read-only tools: `esm_file_info`,
 reverse-reference walk, default depth 1, up to 8, `0` = unbounded), `esm_walk`,
 `esm_chase`, `esm_lvli_drop_table`, `esm_curve` (interpolate/sum a CURV record,
 single or bulk via `ids`). Point an MCP client at the built `esm-server` binary
-with
-`args: ["--mcp-stdio", "<esm-or-data-path>"]`, and keep that config out of
+with `args: ["--mcp-stdio", "<esm-or-data-path>"]`, and keep that config out of
 version control — it hardcodes a non-redistributable, machine-local ESM path.
 
 ## Fetching records
