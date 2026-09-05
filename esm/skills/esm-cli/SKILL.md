@@ -1,94 +1,77 @@
 ---
 name: esm-cli
-description: Using the FO76 `esm` CLI effectively — invocation modes, bulk get, refs gotchas, walk/chase mechanics digests, obtainability verdicts, curve-table conventions, field-name churn. Use when querying SeventySix.esm records, decoding a perk/OMOD/legendary mechanic, or wrapping the CLI in scripts.
+description: Using the FO76 `esm` CLI effectively and reading what it returns — invocation and daemon behaviour, refs gotchas, walk/chase mechanics digests, curve tables, drop-chance math, and live-vs-cut game data. Use when querying SeventySix.esm records, decoding a perk/OMOD/legendary mechanic, deciding whether a record is live or player-obtainable, reading a damage or drop-chance number, or wrapping the CLI in scripts.
 ---
 
 # esm CLI knowledge
 
-Hard-won usage knowledge for the `esm` CLI (FO76-Tools/esm). This file ships
-embedded in the binary: `esm skill` prints it, `esm skill --install` writes it
-into a consumer repo's `.claude/skills/esm-cli/`. The binary is authoritative —
-this crate changes fast, so re-verify anything here against `esm --help` /
-`esm <subcommand> --help` before documenting or wrapping a subcommand.
+Usage knowledge for the `esm` CLI (FO76-Tools/esm), embedded in the binary —
+`esm skill` prints it, `esm skill --install` installs it into a consumer repo.
+
+**This doc never repeats what `esm <cmd> --help` says about a flag.** Run help
+for flag syntax and semantics; what follows is only what help cannot say —
+traps, judgment, and how to read game data. The binary is authoritative and
+this crate moves fast: re-verify here against `--help` before wrapping a
+subcommand.
 
 ## Invocation & path resolution
 
 - Subcommands: `daemon, cache, info, get, list, search, refs, tree, diff,
   coverage, chase, walk, skill`.
-- `FO76_ESM_PATH` is a plain process env var — there is no `.env` parser. The
-  `--esm` flag is long-only and works before or after the subcommand.
-- Every subcommand is one-shot: it auto-spawns/uses a warm daemon and exits
-  after printing. There is no interactive mode — a missing subcommand is a
-  usage error, not a REPL. `--local` costs seconds per open — never use it for
-  bulk work.
-- The daemon self-manages, so bulk/sweep work never needs manual lifecycle
-  handling: it auto-spawns on the first call, stale-evicts and reopens when
-  the ESM changes on disk, and auto-shuts-down after 10 minutes idle
-  (`ESM_DAEMON_IDLE_SECS=0` disables that). An advisory spawn-lock keeps
-  concurrent callers from double-spawning, so multiple agents safely share
-  one warm instance. `/op` responses carry no size ceiling — a bulk `get`
-  over `ESM_BULK_CHUNK` selectors (default 512, `0` disables) is
-  transparently split across multiple round-trips and reassembled.
-- Rebuilding the binary self-heals the daemon (a size+mtime fingerprint check
-  respawns it automatically) — no manual step needed. Changing loose files
-  next to the dump (strings/curvetables) does *not* self-heal: run
-  `esm daemon stop` after adding or changing those.
-- A cold call against an ESM with no `esm_cache/` yet can take tens of
-  seconds to a couple of minutes (worst case: `refs`/`walk`/`chase` on a
-  first-ever query, which builds the `xref` index — a full schema decode of
-  every record). It shows live progress on stderr while waiting rather than
-  hanging silently, then still returns the real result — no flag needed. Use
-  `esm cache status [--json]` to check what's built/building without
-  triggering anything. A second concurrent query against the same
-  ESM waits on (and reuses) whichever build is already running rather than
-  starting a redundant one. Set `ESM_NO_PROGRESS=1` to suppress heartbeat
-  *publishing* only (e.g. in an embedding context where a stray file write is
-  unwanted) — lock-based dedup between concurrent builders keeps working
-  regardless.
-
+- `FO76_ESM_PATH` is a plain process env var — there is no `.env` parser.
+- Every subcommand is one-shot; there is no REPL. `--local` costs seconds per
+  open — never use it for bulk work.
+- **The daemon self-manages, so bulk work never needs lifecycle handling.** It
+  auto-spawns, stale-evicts and reopens when the ESM changes on disk, and shuts
+  down after 10 minutes idle (`ESM_DAEMON_IDLE_SECS=0` disables that). An
+  advisory spawn-lock lets concurrent agents share one warm instance. A bulk
+  `get` over `ESM_BULK_CHUNK` selectors (default 512, `0` disables) is split
+  across round-trips and reassembled, so responses have no size ceiling.
+- Rebuilding the binary self-heals the daemon via a size+mtime fingerprint.
+  Changing loose files beside the dump (strings/curvetables) does *not* — run
+  `esm daemon stop` after touching those.
+- **A first-ever `refs`/`walk`/`chase` against an ESM with no `esm_cache/`
+  takes tens of seconds to a couple of minutes** while it builds the `xref`
+  index (a full schema decode of every record). It streams progress to stderr
+  and then returns the real result — just wait. A second concurrent query
+  reuses the in-flight build instead of starting a redundant one.
+  `esm cache status [--json]` inspects without triggering anything;
+  `ESM_NO_PROGRESS=1` suppresses heartbeat *publishing* only.
 ## MCP (for AI clients that support it)
 
-`esm-server --mcp-stdio` speaks JSON-RPC 2.0 over stdin/stdout, proxying the same warm daemon
-the CLI uses, so the warm-index benefit applies automatically. It exposes ten read-only tools:
-`esm_file_info`, `esm_search`, `esm_get_record` (`resolve=none|stub|full`, default `stub`),
-`esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse-reference walk,
-default depth 1, up to 8, `0` = unbounded), `esm_walk`, `esm_chase`, `esm_lvli_drop_table`,
-`esm_curve` (interpolate/sum a CURV record, single or bulk via `ids`). Wire
-it into an MCP client config with `command` pointing at the built `esm-server` binary and
-`args: ["--mcp-stdio", "<esm-or-data-path>"]`; keep that config out of version control — it
-hardcodes a non-redistributable, machine-local ESM path.
-
+`esm-server --mcp-stdio` speaks JSON-RPC 2.0 over stdin/stdout, proxying the
+same warm daemon the CLI uses. Ten read-only tools: `esm_file_info`,
+`esm_search`, `esm_get_record`, `esm_list_groups`, `esm_list_records`,
+`esm_refs`, `esm_walk`, `esm_chase`, `esm_lvli_drop_table`, `esm_curve`. Point
+an MCP client at the built `esm-server` binary with
+`args: ["--mcp-stdio", "<esm-or-data-path>"]`, and keep that config out of
+version control — it hardcodes a non-redistributable, machine-local ESM path.
 ## Fetching records
 
-- Selectors are `0x...` formids or EditorIDs. Bare tokens that *look* numeric
-  auto-resolve FormID-first with EditorID fallback; scripts should still pass
-  explicit `--formid`/`--edid` where the flag exists to skip the ambiguity.
-- Bare FormID tokens are read as **hex**, never decimal, with EditorID as the
-  only fallback — `esm get 00568635` means `0x00568635`, and there is no
-  implicit decimal reading. `--decimal` is the explicit override.
+- Selectors are FormIDs or EditorIDs, auto-detected. **A bare token is read as
+  hex, never decimal** — `esm get 00568635` means `0x00568635`. When that hex
+  reading has no record, resolution falls to EditorID and then the
+  engine-hardcoded table, never to a decimal reading; `--decimal` is the
+  explicit override. Scripts should pass `--formid`/`--edid` to skip the
+  ambiguity.
 - **Bulk get**: pass several selectors to one `get`. A bad selector becomes
-  `{"sel":…, "error":…}` in the array instead of failing the call (the
-  single-target form throws).
-- Default to `--resolve stub` for reference-heavy records (recipes, NPCs,
+  `{"sel":…, "error":…}` in the array instead of failing the call; the
+  single-target form throws.
+- **Default to `--resolve stub` for reference-heavy records** (recipes, NPCs,
   leveled lists, quests) — it avoids N follow-up `get` calls. Reach for
-  `--resolve full` only when the complete nested record body is needed.
+  `--resolve full` only when the complete nested body is needed.
 - `list` never returns display names — use `search --in name` or `get`.
-  `search` needs `"*"` to match all (`""` matches nothing).
-- `--limit 0` means unlimited for `list`, `search`, and `refs`. All three
-  print a `note: output capped at N of M results; use --limit 0 to show all`
-  line to **stderr** (never stdout) when the result hits the default limit,
-  so `--json` output stays valid, parseable JSON even when capped.
-- `--localization-ba2`/`--strings-dir`/`--startup-ba2` on `get`/`list`/
-  `search`/`diff` are CLI-only (ADR 0008): passing one forces a cold
-  in-process open instead of using the daemon. The daemon's shared cache
-  holds exactly one warm `Database` per canonical ESM path reused across
-  every client, and a per-call source override has no coherent way to join
-  that shared instance. For sweeps that need localized strings, place the
-  Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a
-  `misc/curvetables/` folder) next to the ESM instead — the daemon
-  auto-loads them on open, and warm lookups return localized output with no
-  per-call flags.
-
+  `search` needs `"*"` to match all; `""` matches nothing.
+- `--limit 0` means unlimited on `list`/`search`/`refs`. All three print
+  `note: output capped at N of M results; use --limit 0 to show all` to
+  **stderr**, never stdout, so `--json` stays parseable when capped.
+- **`--localization-ba2`/`--strings-dir`/`--startup-ba2` force a cold
+  in-process open, bypassing the daemon** (ADR 0008): the shared cache holds
+  exactly one warm `Database` per canonical ESM path, which a per-call source
+  override has no coherent way to join. For sweeps needing localized strings,
+  put the Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a
+  `misc/curvetables/` folder) beside the ESM instead — the daemon auto-loads
+  them on open and warm lookups return localized output with no per-call flags.
 ## Reverse references (`refs`)
 
 - The default `--limit 100` truncates popular targets (see the stderr capped-
@@ -133,29 +116,32 @@ craftable-mod slot (`Object Template.Combinations[N]...Includes[0].Mod`).
 One rule: **read records with `walk`; `chase` is the machine contract.**
 
 - `walk` is the interactive tool for *any* record type: one compact digest
-  instead of a chain of raw `get` dumps. `--json` serializes the same computed
-  [`Digest`](../../src/walk/mod.rs) values it prints as text — one typed shape
-  per record type (FormID ref stubs, numbers, classified mechanism hops), not
-  plain-text lines wrapped in JSON. It resolves AVs/GLOBs/keywords to editor
-  ids, prints curve points with the flat-wins rule applied, and falls back to a
-  search when the selector doesn't resolve. Walking a KYWD or AVIF root
-  reverse-chases its SPEL/PERK consumers instead of dumping the mostly-empty
-  record. On an OMOD root every mechanism is classified and rendered inline: a
-  directly-attached ENCH or PROJ property is forward-fetched (`direct property
-  → ENCH/PROJ …`) *and* followed into the BFS; keyword/AVIF hooks are resolved
-  by a reverse walk and rendered as *path-sliced* evidence rows (only the
-  consumer's gated `Effects[N]` rows — a hub perk's dozen unrelated effects
-  never print, and `AV hook → AVIF …` is the same reverse-chase rendering,
-  distinguished from a forward-fetched direct property by the hop's typed
-  `resolution` field, not by eyeballing the target's record type); perk grants
-  render the granted perk's effect rows; and `Data.Includes[]` stubs are named
-  so `_PARENT_*` empty-shell OMODs point at the include carrying the real
-  mechanic. A hook keyword no SPEL/PERK condition references renders a `dead
-  end` note instead (tag keywords: `FeaturedItem`, `NonDroppable`, naming
-  keywords, …). Raise `--depth` to 3 for OMOD → ENCH → MGEF → granted-perk;
-  the root's mechanism slice renders at any depth. On an LVLI root, `walk`
-  resolves the actual drop odds instead of dumping raw entries — see
-  "Drop-chance math" below.
+  instead of a chain of raw `get` dumps. It resolves AVs/GLOBs/keywords to
+  editor ids, prints curve points with the flat-wins rule applied, and falls
+  back to a search when the selector doesn't resolve. `--json` serializes the
+  same computed [`Digest`](../../src/walk/mod.rs) values it prints as text —
+  one typed shape per record type (FormID ref stubs, numbers, classified
+  mechanism hops), not plain-text lines wrapped in JSON.
+  - **KYWD or AVIF root**: reverse-chases its SPEL/PERK consumers instead of
+    dumping the mostly-empty record.
+  - **OMOD root**: every mechanism is classified and rendered inline. A
+    directly-attached ENCH or PROJ property is forward-fetched (`direct
+    property → ENCH/PROJ …`) *and* followed into the BFS. Keyword/AVIF hooks
+    are resolved by a reverse walk and rendered as *path-sliced* evidence rows
+    — only the consumer's gated `Effects[N]` rows, so a hub perk's dozen
+    unrelated effects never print. `AV hook → AVIF …` is that same
+    reverse-chase rendering; what distinguishes it from a forward-fetched
+    direct property is the hop's typed `resolution` field, not the target's
+    record type. Perk grants render the granted perk's effect rows, and
+    `Data.Includes[]` stubs are named so `_PARENT_*` empty-shell OMODs point at
+    the include carrying the real mechanic. A hook keyword that no SPEL/PERK
+    condition references renders a `dead end` note instead (tag keywords:
+    `FeaturedItem`, `NonDroppable`, naming keywords, …).
+  - **LVLI root**: resolves the actual drop odds instead of dumping raw
+    entries — see "Drop-chance math" below.
+  - Raise `--depth` to 3 for OMOD → ENCH → MGEF → granted-perk; the root's
+    mechanism slice renders at any depth.
+  - For how to read `--refs` output, see "Obtainability verdicts" below.
 
 **Worked example** (`mod_Legendary_Weapon1_DmgConsecutiveHits` / "Furious",
 `0x004F577D`, a directly-attached ENCH property plus a KYWD-hook property —
@@ -226,66 +212,61 @@ type.
 
 ## Damage-scope traps: character-wide vs weapon-scoped bonuses
 
-- **PERK entry points that read like "weapon damage" are actually
-  character-wide.** Entry point 167 (`Mod Weapon DMG Bonus Mult`) and
-  siblings (`Mod Incoming Weapon Damage`, `Mod Target Damage Resistance`,
-  `Mod My Critical Hit Damage Mult`, `Mod Percent Blocked`, `Mod Power Attack
-  Damage`, `Mod Max Consecutive Hits Allowed`, `Mod Projectile Bounce Count`,
-  `Apply Friendly/Combat Melee Hit Spell`) modify whatever damage instance is
-  happening on the actor right now, not "this weapon's damage." A PERK
-  granted via an OMOD's `Property 116`/`Perk` (chase's "PERK grant") stays active
-  while the granting item is equipped and applies to every simultaneous
-  damage source — thrown grenades/mines, Pain Train, VATS crits, blocking.
-  Example: `MedicalMalpractice_Perk` (0x0050D7FD) is an entry-point-167
-  effect whose only conditions are on the actor's own AV — nothing ties it
-  to the granting weapon.
+- **PERK entry points that read like "weapon damage" are character-wide.**
+  Entry point 167 (`Mod Weapon DMG Bonus Mult`) and siblings (`Mod Incoming
+  Weapon Damage`, `Mod Target Damage Resistance`, `Mod My Critical Hit Damage
+  Mult`, `Mod Percent Blocked`, `Mod Power Attack Damage`, `Mod Max Consecutive
+  Hits Allowed`, `Mod Projectile Bounce Count`, `Apply Friendly/Combat Melee
+  Hit Spell`) modify whatever damage instance is happening on the actor right
+  now, not "this weapon's damage". A PERK granted via an OMOD's `Property
+  116`/`Perk` (chase's "PERK grant") stays active while the granting item is
+  equipped and applies to every simultaneous damage source — thrown
+  grenades/mines, Pain Train, VATS crits, blocking. `MedicalMalpractice_Perk`
+  (0x0050D7FD) is an entry-point-167 effect whose only conditions read the
+  actor's own AV; nothing ties it to the granting weapon.
 - **The fix, when the devs bother, is a self-referential `WornHasKeyword`/
-  `HasKeyword` condition** naming a keyword unique to that item/roll — either
-  its own `CustomItemName_X` naming keyword or a legendary-effect keyword
-  like `HasLegendary_Weapon_APViaKill`. Example: `RD01_Weapon_LicketySplit`
+  `HasKeyword` condition** naming a keyword unique to that item or roll —
+  either its own `CustomItemName_X` naming keyword or a legendary-effect
+  keyword like `HasLegendary_Weapon_APViaKill`. `RD01_Weapon_LicketySplit`
   gates `Mod Projectile Bounce Count` on
   `HasKeyword(RD01_CustomItemName_LicketySplit)`. A condition on a *shared*
   category keyword (`WeaponTypeRanged`, `HasSilencer`) or an unrelated AV
   (`KillStreak`) is NOT a self-scope — the bonus still leaks, just narrower.
-- **OMOD `Property 106` (`DamageBonusMult`) is the same character-wide hook
-  as entry point 167 — not a per-weapon stat**, despite living on the
-  weapon's own OMOD. Its `Value Type` is bare `Float` (no AV/FormID pointer),
+- **OMOD `Property 106` (`DamageBonusMult`) is the same character-wide hook as
+  entry point 167 — not a per-weapon stat**, despite living on the weapon's own
+  OMOD. Its `Value Type` is a bare `Float` with no AV/FormID pointer,
   consistent with a hardcoded engine target rather than a WEAP field.
-  Example: `mod_Legendary_Weapon1_Guns_TwoShot` sets `DamageBonusMult
-  +0.75` — ordinary "Two Shot" rolls carry this leak, not just one weapon.
+  `mod_Legendary_Weapon1_Guns_TwoShot` sets `DamageBonusMult +0.75` — ordinary
+  "Two Shot" rolls carry this leak, not just one weapon.
 - **`Property 28` (`AttackDamage`) and `Property 77` (`DamageTypeValues`) DO
   write into the WEAP record's own fields** (`Data.Base Damage` / top-level
   `Damage Types[]` — see Curve tables below) and are genuinely weapon-scoped.
-  `Property 94` (`ActorValues`) sits in between: a while-equipped character
-  AV bonus (e.g. `mod_Custom_CivilUnrest` → +50 Action Points) — same
-  equip-gated scope as the PERK path, but usually not a damage stat, so it
-  doesn't compound like `DamageBonusMult`/entry-point-167.
+  `Property 94` (`ActorValues`) sits in between: a while-equipped character AV
+  bonus (`mod_Custom_CivilUnrest` → +50 Action Points) — same equip-gated scope
+  as the PERK path, but usually not a damage stat, so it doesn't compound like
+  `DamageBonusMult`/entry-point-167.
 - **A `Property 65` (`Enchantments`) attach can go either way — check the
   target MGEF's `Casting Type`/`Delivery`/`Archetype`, not just that an
   enchantment exists.** `Archetype: Damage`, `Casting Type: Fire and Forget`,
   `Delivery: Contact` is a genuine on-hit proc fired by that weapon's own
   attack — safe by construction (e.g. `TheKabloom`'s poison DoT). `Casting
-  Type: Constant Effect`, `Delivery: Self` is a standing character buff —
-  same leak risk as entry point 167 unless gated by a condition true only
-  while wielding that weapon (e.g. `GetInIronSights`, since you can't ADS
-  with a grenade). No condition at all is a confirmed leak — e.g.
-  `ench_ThePeacemaker` (`STAT_DmgExplosive`, Constant Effect/Self, zero
-  conditions).
+  Type: Constant Effect`, `Delivery: Self` is a standing character buff — same
+  leak risk as entry point 167 unless gated by a condition true only while
+  wielding that weapon (e.g. `GetInIronSights`, since you can't ADS with a
+  grenade). No condition at all is a confirmed leak — e.g. `ench_ThePeacemaker`
+  (`STAT_DmgExplosive`, Constant Effect/Self, zero conditions).
 - **Cross-check a suspiciously broad AV against sibling AVs before assuming
-  it's "the everything" stat** — some are narrower than they look. FO76 has
-  both `STAT_DmgExplosive` (every explosion: Fat Man, launchers, mines,
-  grenades) and a separate, narrower `STAT_DmgGrenade` (thrown grenades
-  only). Chase the actual `Actor Value` FormID on the MGEF; don't infer
-  scope from the AV editor-id prefix alone.
+  it's "the everything" stat.** FO76 has both `STAT_DmgExplosive` (every
+  explosion: Fat Man, launchers, mines, grenades) and a separate, narrower
+  `STAT_DmgGrenade` (thrown grenades only). Chase the actual `Actor Value`
+  FormID on the MGEF; don't infer scope from the AV editor-id prefix alone.
 - **A timed buff can outlive the weapon that triggered it.** An unconditioned
-  entry point that selects a Spell (`Apply Friendly Hit Spell`, `Apply
-  Combat Melee Spell`) is bad enough on its own, but if the Spell's effect
-  carries a duration (the perk's Description often states it — "for 30
-  Seconds" — even when the record's own `Duration` field reads empty),
-  swapping weapons *after* the proc doesn't end the buff. Contrast an
-  instantaneous on-target proc like a bleed DoT, which applies once with no
-  persistent buff.
-
+  entry point that selects a Spell (`Apply Friendly Hit Spell`, `Apply Combat
+  Melee Spell`) is bad enough on its own, but if the Spell's effect carries a
+  duration — the perk's Description often states it ("for 30 Seconds") even
+  when the record's own `Duration` field reads empty — swapping weapons *after*
+  the proc doesn't end the buff. Contrast an instantaneous on-target proc like
+  a bleed DoT, which applies once with no persistent buff.
 ## Perk rank verification (PCRD)
 
 **PCRD is the perk-card source of truth, not the PERK rank chain.** Each card carries a `Special`
@@ -339,41 +320,40 @@ as clean an authoritative signal, so flag uncertainty rather than asserting live
 
 **`esm walk <lvli-selector>` computes this automatically** (`src/lvli.rs`) —
 pool/`Use All`/`Use First Match` selection, flat-vs-GLOB-vs-Curve-Table
-chance-none, recursion through nested sublists to leaf items, all as one
-ranked table. Reach for it instead of hand-tracing a chain; the rules below
-are for reading its output (and for the handful of things it deliberately
-doesn't model — `Filter Keyword Chances`, `Epic Loot Chance`, list-level
-`Max Count`/`Max Global`/`Max Curve Table`, COED owner/rank gates — flagged
-as `unresolved` notes on the affected rows rather than silently guessed).
+chance-none, and recursion through nested sublists to leaf items, as one ranked
+table. Reach for it instead of hand-tracing a chain. The rules below are for
+reading its output, and for the handful of things it deliberately doesn't model
+(`Filter Keyword Chances`, `Epic Loot Chance`, list-level `Max Count`/`Max
+Global`/`Max Curve Table`, COED owner/rank gates) — those surface as
+`unresolved` notes on the affected rows rather than being silently guessed.
 
 - **A zero `Chance None Value` does not mean "guaranteed" — check the sibling
   `Chance None Global` on the same entry.** Each `Leveled List Entry` carries
   both a flat `Chance None Value` and an optional `Chance None Global` FormID;
   the flat value wins when nonzero, otherwise the GLOB is the real chance-none
-  (same flat-wins rule as MGEF magnitudes above). Reading only the flat field
+  (the same flat-wins rule as MGEF magnitudes). Reading only the flat field
   makes gated rewards look like 100% drops: `TWZ07_LL_QuestReward_Event` reports
   flat `0.0` but points at `RA_Rewards_Activities_UniqueWeapon_DropRate_Cnone`
-  = 85, i.e. a 15% drop. The list-level `Chance None Value` has no GLOB sibling
-  — that one really is flat. A `Chance None Curve Table` sibling, when present,
-  outranks both (see Curve tables below).
-- **Flags decide how to combine entries, and neither no-flag nor `Use First
-  Object That Matches All Conditions` is a 1/N pick.** `Use All` rolls every
-  entry independently (multiply the per-entry miss chances). **No flag is a
-  pool, not a uniform pick from the entry count**: every entry's own gate
-  rolls independently, the passing subset is pooled, and one member of *that
-  subset* is chosen uniformly — so an entry's real odds depend on how many
-  siblings are also passing at the same time, not just its own gate or a flat
-  `1/entry_count`. Confirmed against `SCORE_S22_Resources_Collector_
-  SoulSoupServer_Food` (0x008308D7): six entries on a descending
-  `GetRandomPercent ≥ {92,80,63,45,25}` ladder plus an unconditioned catch-all
-  read like a hand-authored 8/12/17/18/20/25% split, but the *actual* pool
-  odds are 2.20/5.66/10.96/17.19/25.22/38.77% — the rarest item is ~3.6×
-  rarer than the ladder implies, because it only wins when it's the *sole*
-  passing entry. `Use First Object That Matches All Conditions` walks entries
-  in order and takes the first whose conditions pass — so an entry gated on
-  `GetRandomPercent ≤ 10` genuinely is a flat 10%, and later entries are only
-  reachable when every earlier gate fails (their true probability is the
-  product of the preceding misses).
+  = 85, i.e. a 15% drop. The *list*-level `Chance None Value` has no GLOB
+  sibling — that one really is flat. A `Chance None Curve Table` sibling, when
+  present, outranks both.
+- **Flags decide how entries combine, and neither no-flag nor `Use First Object
+  That Matches All Conditions` is a 1/N pick.** `Use All` rolls every entry
+  independently (multiply the per-entry miss chances). **No flag is a pool, not
+  a uniform pick from the entry count**: every entry's own gate rolls
+  independently, the passing subset is pooled, and one member of *that subset*
+  is chosen uniformly — so an entry's real odds depend on how many siblings are
+  passing at the same time. Confirmed against
+  `SCORE_S22_Resources_Collector_SoulSoupServer_Food` (0x008308D7): six entries
+  on a descending `GetRandomPercent ≥ {92,80,63,45,25}` ladder plus an
+  unconditioned catch-all read like a hand-authored 8/12/17/18/20/25% split,
+  but the *actual* pool odds are 2.20/5.66/10.96/17.19/25.22/38.77% — the
+  rarest item is ~3.6× rarer than the ladder implies, because it only wins when
+  it is the *sole* passing entry. `Use First Object That Matches All
+  Conditions` instead walks entries in order and takes the first whose
+  conditions pass, so an entry gated on `GetRandomPercent ≤ 10` genuinely is a
+  flat 10%, and later entries are reachable only when every earlier gate fails
+  (their true probability is the product of the preceding misses).
 - **Entry-level `Conditions` gate the roll too** — `GetRandomPercent ≤ N` (flat
   or GLOB comparison value) and `HasLearnedRecipe(...) == 0` are the common
   ones. The recipe check is why plan-then-weapon lists hand out the plan first:
@@ -381,17 +361,15 @@ as `unresolved` notes on the affected rows rather than silently guessed).
   BOOK at `rand ≤ 5` (while unlearned) ahead of the weapon LVLI at `rand ≤ 10`.
   Any gate that isn't `GetRandomPercent` (`GetLevel`, `HasLearnedRecipe`, …) is
   real but not a probability the tool can compute — it renders as a `gated:`
-  note (assume-pass by default; `--strict` isn't exposed on `walk` yet, only
-  used internally).
-- `Quantity: 0` on an entry means "use the sublist's own count", not "disabled" —
-  creature death-item lists are full of them.
+  note, assume-pass by default (`--strict` is internal, not exposed on `walk`).
+- `Quantity: 0` on an entry means "use the sublist's own count", not "disabled"
+  — creature death-item lists are full of them.
 - **A `Minimum Level`/`Minimum Level Global` above the assumed player level
-  (`--level`, default 50) excludes an entry outright.** Whether FO76 further
-  collapses multiple *qualifying* Minimum Level tiers down to just the highest
-  one when `Calculate from all levels <= player's level` is unset is
-  unverified here — `walk` shows every qualifying tier and flags the ambiguity
-  rather than picking a side.
-
+  (`--level`) excludes an entry outright.** Whether FO76 further collapses
+  multiple *qualifying* Minimum Level tiers down to the highest one when
+  `Calculate from all levels <= player's level` is unset is unverified here —
+  `walk` shows every qualifying tier and flags the ambiguity rather than
+  picking a side.
 ## OMOD `Data.Includes[]` — inherited properties
 
 - **An OMOD's own `Properties[]` is only half the story: `Data.Includes[]`
