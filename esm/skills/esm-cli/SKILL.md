@@ -55,10 +55,11 @@ this crate changes fast, so re-verify anything here against `esm --help` /
 ## MCP (for AI clients that support it)
 
 `esm-server --mcp-stdio` speaks JSON-RPC 2.0 over stdin/stdout, proxying the same warm daemon
-the CLI uses, so the warm-index benefit applies automatically. It exposes nine read-only tools:
+the CLI uses, so the warm-index benefit applies automatically. It exposes ten read-only tools:
 `esm_file_info`, `esm_search`, `esm_get_record` (`resolve=none|stub|full`, default `stub`),
 `esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS reverse-reference walk,
-default depth 1, up to 8, `0` = unbounded), `esm_walk`, `esm_chase`, `esm_lvli_drop_table`. Wire
+default depth 1, up to 8, `0` = unbounded), `esm_walk`, `esm_chase`, `esm_lvli_drop_table`,
+`esm_curve` (interpolate/sum a CURV record, single or bulk via `ids`). Wire
 it into an MCP client config with `command` pointing at the built `esm-server` binary and
 `args: ["--mcp-stdio", "<esm-or-data-path>"]`; keep that config out of version control — it
 hardcodes a non-redistributable, machine-local ESM path.

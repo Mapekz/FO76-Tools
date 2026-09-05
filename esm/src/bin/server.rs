@@ -384,6 +384,7 @@ selector yields a per-entry error instead of failing the whole call.
 - esm_refs's \"output capped\" note goes to the CLI's stderr only — stdout/tool results stay valid JSON.
 - esm_walk is the primary \"what does this do\" tool; esm_chase/esm_lvli_drop_table return the same \
 classified data as fixed-shape JSON for programmatic use, not interactive reading.
+- esm_curve's `at` and `sum` are mutually exclusive — passing both is a hard error, not a silent pick.
 - `esm skill` prints this crate's full usage-knowledge doc; `esm skill --install` writes it into a \
 consumer repo's .claude/skills/esm-cli/.
 ";
@@ -608,7 +609,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 },
                                 "level": {
                                     "type": "number",
-                                    "description": "Player level assumed by an LVLI root's drop-odds digest — feeds Curve Table evaluation and Minimum Level filtering (default 50). Ignored by every other record type."
+                                    "description": "Player level assumed by an LVLI root's drop-odds digest — feeds Curve Table evaluation and Minimum Level filtering (default 50). Also drives level-keyed Curve Table evaluation on WEAP/NPC_/RACE/ARMO/EXPL/ENCH/SPEL/ALCH digests, for fields verified to be level-keyed. Ignored by every other record type."
                                 },
                                 "refs": {
                                     "type": "boolean",
@@ -665,6 +666,47 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 "level": {
                                     "type": "number",
                                     "description": "Player level assumed for Curve Table evaluation and Minimum Level filtering (default 50)."
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "name": "esm_curve",
+                        "description": "Look up a CURV (Curve Table) record's points, interpolate at specific x values, or sum over a range. No new daemon lookup beyond a normal record fetch — curve points are already inlined into every record response.",
+                        "annotations": {"readOnlyHint": true},
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "FormID (hex e.g. 0x00463F, or a bare digit run — read as hex first, decimal only via the decimal argument) or EditorID — auto-detected by format. Ignored if 'ids' is supplied."
+                                },
+                                "formid": {"type": "string", "description": "FormID as hex (default for a bare digit run) or decimal via the decimal argument. Ignored if 'ids' is supplied."},
+                                "edid": {"type": "string", "description": "EditorID string (exact match). Ignored if 'ids' is supplied."},
+                                "decimal": {
+                                    "type": "boolean",
+                                    "description": "Read a bare (no `0x` prefix) all-digit FormID token — in 'id'/'formid', or any entry of 'ids' — as decimal instead of hex. Default false: FormIDs are conventionally hex, so a bare digit run is always read as hex (with no implicit decimal fallback on a miss); set this only when you specifically mean the decimal reading — in which case hex is never attempted."
+                                },
+                                "ids": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Multiple targets (FormID and/or EditorID, mixed) — mirrors esm_get_record's `ids`. Result is a JSON array tagged with `sel` when more than one target is given. Takes priority over 'id'/'formid'/'edid' when non-empty."
+                                },
+                                "at": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "description": "Interpolated value at each given x. Mutually exclusive with `sum`."
+                                },
+                                "sum": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 2,
+                                    "maxItems": 2,
+                                    "description": "[FROM, TO] — sum interpolated values over this inclusive range. Mutually exclusive with `at`."
+                                },
+                                "step": {
+                                    "type": "number",
+                                    "description": "Step size for `sum` (default 1)."
                                 }
                             }
                         }
@@ -910,6 +952,61 @@ fn call_tool_proxy(
                 },
             )?;
             Ok(serde_json::to_string_pretty(&v)?)
+        }
+        "esm_curve" => {
+            use esm::curves::curve_query;
+            use esm::ipc::{BulkRecordEntry, RecordSel};
+
+            let sels: Vec<RecordSel> = match args.get("ids").and_then(|v| v.as_array()) {
+                Some(ids) if !ids.is_empty() => {
+                    let base = base_from_args(args);
+                    ids.iter()
+                        .map(|v| {
+                            let s = v
+                                .as_str()
+                                .ok_or_else(|| anyhow::anyhow!("'ids' entries must be strings"))?;
+                            RecordSel::from_input_with(s, base)
+                        })
+                        .collect::<anyhow::Result<Vec<_>>>()?
+                }
+                _ => vec![sel_from_args(args)?],
+            };
+
+            let at: Vec<f32> = args
+                .get("at")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_f64())
+                        .map(|x| x as f32)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let sum: Option<(f32, f32)> = args
+                .get("sum")
+                .and_then(|v| v.as_array())
+                .filter(|a| a.len() == 2)
+                .map(|a| {
+                    (
+                        a[0].as_f64().unwrap_or(0.0) as f32,
+                        a[1].as_f64().unwrap_or(0.0) as f32,
+                    )
+                });
+            let step = args.get("step").and_then(|v| v.as_f64()).unwrap_or(1.0) as f32;
+            if !at.is_empty() && sum.is_some() {
+                anyhow::bail!("'at' and 'sum' are mutually exclusive");
+            }
+
+            let v = backend.run(
+                esm_path,
+                Op::RecordBulk {
+                    sels,
+                    depth: esm::ResolveDepth::None,
+                },
+            )?;
+            let entries: Vec<BulkRecordEntry> = serde_json::from_value(v)?;
+            let result = curve_query(&entries, &at, sum, step);
+            Ok(serde_json::to_string_pretty(&result)?)
         }
         "esm_chase" => {
             let sel = sel_from_args(args)?;

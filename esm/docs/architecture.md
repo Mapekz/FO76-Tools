@@ -147,10 +147,10 @@ transparently — no manual `daemon stop` needed. Every `Backend::run` call is w
 of looking hung.
 
 `src/bin/server.rs` is an Axum HTTP server plus an MCP-stdio mode (`--mcp-stdio`, feature
-`server`), both backed by one `Registry`-cached `Database`. It exposes nine read-only MCP tools
+`server`), both backed by one `Registry`-cached `Database`. It exposes ten read-only MCP tools
 (`esm_file_info`, `esm_search`, `esm_get_record`, `esm_list_groups`, `esm_list_records`,
-`esm_refs`, `esm_walk`, `esm_chase`, `esm_lvli_drop_table`), all proxying to the same `Op`
-dispatch the CLI uses. `--daemon` mode adds an idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) that
+`esm_refs`, `esm_walk`, `esm_chase`, `esm_lvli_drop_table`, `esm_curve`), all proxying to the same
+`Op` dispatch the CLI uses. `--daemon` mode adds an idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) that
 self-exits when nothing has queried it recently.
 
 `bindings/napi/src/lib.rs`'s `EsmDatabase` (an `Arc<Mutex<Database>>`) is the fourth surface: it
