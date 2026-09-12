@@ -173,9 +173,20 @@ class TestLocateStringsDirs(unittest.TestCase):
             self._locate(a, b)
         self.assertEqual(cm.exception.code, 1)
 
-    def test_explicit_shared_dir_is_still_honoured(self):
+    def test_explicit_shared_dir_refused_when_both_sides_have_their_own(self):
+        # The gotcha this guards: one --strings-dir silently resolves the
+        # newer snapshot's text against the older table. When each side
+        # has its own strings/, a shared dir is an error, not a warning.
         a = self._snapshot("20260710")
         b = self._snapshot("20260717")
+        shared = self.tmp / "20260710" / "strings"
+        with self.assertRaises(SystemExit) as cm:
+            self._locate(a, b, explicit=str(shared))
+        self.assertEqual(cm.exception.code, 1)
+
+    def test_explicit_shared_dir_honoured_when_one_side_has_no_table(self):
+        a = self._snapshot("20260710")
+        b = self._snapshot("20260717", strings=False)
         shared = self.tmp / "20260710" / "strings"
         da, db = self._locate(a, b, explicit=str(shared))
         self.assertEqual(da, shared.resolve())
@@ -257,7 +268,7 @@ class TestBuildDiffCmd(unittest.TestCase):
     def test_argparse_default_exclude_type(self):
         args = mpn.build_arg_parser().parse_args(["a.esm", "b.esm"])
         self.assertEqual(args.exclude_type, mpn.DEFAULT_EXCLUDE_TYPE)
-        self.assertEqual(args.bodies, "full")
+        self.assertEqual(args.bodies, "stub")
 
     def test_argparse_exclude_type_disable(self):
         args = mpn.build_arg_parser().parse_args(["a.esm", "b.esm", "--exclude-type", ""])
@@ -342,11 +353,30 @@ class TestOrchestratorEndToEnd(unittest.TestCase):
         )
         narrative = manifest["stages"]["narrative"]
         self.assertIsNone(narrative["completed_at"])
-        # schema_version 2 (the LIVE shape update_manifest.py fills in) --
+        # schema_version 3 (the LIVE shape update_manifest.py fills in) --
         # not the retired per-category shape ("categories": []).
-        self.assertEqual(narrative["schema_version"], 2)
+        self.assertEqual(narrative["schema_version"], 3)
         self.assertNotIn("categories", narrative)
         self.assertEqual(narrative["max_chunk_chars"], 2000)
+        self.assertIn("usage", narrative)
+        self.assertIsNone(narrative["usage"])
+
+    def test_finished_narrative_is_not_overwritten_without_force(self):
+        out_dir = self.tmp_dir / "out"
+        self.assertEqual(self._run(out_dir), 0)
+        manifest = json.loads((out_dir / "manifest.json").read_text())
+        manifest["stages"]["narrative"]["completed_at"] = "2026-09-12T00:00:00Z"
+        (out_dir / "manifest.json").write_text(json.dumps(manifest))
+        with self.assertRaises(SystemExit) as cm:
+            self._run(out_dir)
+        self.assertEqual(cm.exception.code, 1)
+        # The finished run is untouched.
+        self.assertEqual(
+            json.loads((out_dir / "manifest.json").read_text())["stages"]["narrative"]["completed_at"],
+            "2026-09-12T00:00:00Z",
+        )
+        self.assertEqual(self._run(out_dir, ["--force-pipeline"]), 0)
+        self.assertIsNone(json.loads((out_dir / "manifest.json").read_text())["stages"]["narrative"]["completed_at"])
 
     def test_default_out_dir_used_when_not_given(self):
         rc = mpn.main([
@@ -492,11 +522,32 @@ class TestUpdateManifest(unittest.TestCase):
         self.assertEqual(narrative["chunks"], [])
         self.assertIsNone(narrative["triage"])
 
-    def test_schema_version_is_2(self):
+    def test_schema_version_is_3(self):
         rc = um.main([str(self.out_dir)])
         self.assertEqual(rc, 0)
         narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
-        self.assertEqual(narrative["schema_version"], 2)
+        self.assertEqual(narrative["schema_version"], 3)
+        self.assertIsNone(narrative["usage"])
+
+    def test_usage_json_is_folded_in_with_a_total(self):
+        work_dir = self.out_dir / "work"
+        work_dir.mkdir(exist_ok=True)
+        (work_dir / "usage.json").write_text(json.dumps({
+            "assessor": {"tokens": 1000},
+            "writers": [{"tokens": 40000}, {"tokens": 35000}],
+            "reviewer": {"tokens": 12000},
+        }))
+        self.assertEqual(um.main([str(self.out_dir)]), 0)
+        usage = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["usage"]
+        self.assertEqual(usage["total_tokens"], 88000)
+        self.assertEqual(usage["writers"][1]["tokens"], 35000)
+
+    def test_malformed_usage_json_is_ignored(self):
+        work_dir = self.out_dir / "work"
+        work_dir.mkdir(exist_ok=True)
+        (work_dir / "usage.json").write_text("not json")
+        self.assertEqual(um.main([str(self.out_dir)]), 0)
+        self.assertIsNone(json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["usage"])
 
     def test_patch_summary_and_chunks_discovered(self):
         self._write_patch_summary()

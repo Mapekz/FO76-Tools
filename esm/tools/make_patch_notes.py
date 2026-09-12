@@ -40,7 +40,12 @@ Options:
                           the esm/ workspace root, or whatever is on $PATH as 'esm').
     --type SIG            Only include records of this type (passed to esm diff).
     --bodies LEVEL        Detail level for decoded fields on added/removed record
-                          stubs: none|stub|full (default: full).
+                          stubs: none|stub|full (default: stub; `full` recursively
+                          resolves every added record body and can OOM the diff).
+    --force-pipeline      Overwrite an out-dir whose manifest already records a
+                          completed narrative stage. Without it the run is refused,
+                          so a stray sanity-check run can never clobber a finished
+                          week's notes -- use a scratch --out-dir for those.
     --keep-noise          Keep noisy fields (placement transforms, CELL precombine
                           bookkeeping, Object Bounds) instead of suppressing them.
     --exclude-type LIST   Comma-delimited record-type signatures to omit entirely
@@ -171,6 +176,21 @@ def default_out_dir(esm_a: Path, esm_b: Path) -> Path:
     return esm_b.parent / f"patch_{esm_token(esm_a)}_to_{esm_token(esm_b)}"
 
 
+def narrative_completed_at(out_dir: Path) -> str | None:
+    """`stages.narrative.completed_at` from an existing `<out_dir>/manifest.json`,
+    or None when there is no manifest, it is unreadable, or the narrative
+    stage never completed. Never raises."""
+    try:
+        manifest = pl.load_manifest(out_dir)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(manifest, dict):
+        return None
+    narrative = (manifest.get("stages") or {}).get("narrative") or {}
+    value = narrative.get("completed_at") if isinstance(narrative, dict) else None
+    return value if isinstance(value, str) and value else None
+
+
 def resolve_esm(path: Path, label: str) -> Path:
     """Resolve *path* to a concrete `.esm` file, mirroring the Rust CLI behaviour.
 
@@ -259,6 +279,16 @@ def locate_strings_dirs(
             die(1, f"--strings-dir not a directory: {d}")
         if has_any_strings(d, tok_a) and has_any_strings(d, tok_b):
             if not shared_dir_trustworthy:
+                own_a = esm_a.parent / "strings"
+                own_b = esm_b.parent / "strings"
+                if has_any_strings(own_a, tok_a) and has_any_strings(own_b, tok_b):
+                    die(1,
+                        f"--strings-dir {d} would serve BOTH sides, but each snapshot carries "
+                        f"its own string table:\n  {own_a}\n  {own_b}\n"
+                        f"One shared table silently resolves the newer side's text against the "
+                        f"older table (renames and description rewrites vanish). Omit "
+                        f"--strings-dir to auto-detect per side, or pass "
+                        f"--strings-dir-a/--strings-dir-b explicitly.")
                 eprint(
                     f"  WARNING: --strings-dir {d} is being used for BOTH sides, but the two "
                     f"ESMs live in different directories and share the stem '{tok_a}', so the "
@@ -443,9 +473,12 @@ def build_arg_parser():
                     help="Path to the esm binary (default: target/release/esm or $PATH)")
     ap.add_argument("--type", default=None, dest="record_type", metavar="TYPE",
                     help="Only include records of this type (passed to esm diff)")
-    ap.add_argument("--bodies", default="full", choices=["none", "stub", "full"], metavar="LEVEL",
+    ap.add_argument("--bodies", default="stub", choices=["none", "stub", "full"], metavar="LEVEL",
                     help="Detail level for decoded fields on added/removed record stubs "
-                         "(default: full)")
+                         "(default: stub; full can OOM the diff on deeply linked added records)")
+    ap.add_argument("--force-pipeline", action="store_true",
+                    help="Overwrite an out-dir whose manifest records a completed narrative "
+                         "stage (refused otherwise; use a scratch --out-dir for test runs)")
     ap.add_argument("--keep-noise", action="store_true",
                     help="Keep noisy fields (placement transforms, CELL precombine "
                          "bookkeeping, Object Bounds) instead of suppressing them")
@@ -538,6 +571,12 @@ def main(argv=None):
                     break
 
     out_dir = Path(args.out_dir).resolve() if args.out_dir else default_out_dir(esm_a, esm_b)
+    completed_at = narrative_completed_at(out_dir)
+    if completed_at and not args.force_pipeline:
+        die(1,
+            f"{out_dir} already holds a finished narrative stage (completed {completed_at}).\n"
+            f"Re-running the mechanical stage would clobber that run's diff/bundles/manifest.\n"
+            f"Pass --force-pipeline to overwrite it on purpose, or use a scratch --out-dir.")
     out_dir.mkdir(parents=True, exist_ok=True)
     eprint(f"  out dir: {out_dir}")
 

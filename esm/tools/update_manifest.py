@@ -12,14 +12,16 @@ skill: it records those two outputs, plus the final `work/triage.json` tier
 counts, into `stages.narrative`, leaving everything else in the manifest
 untouched.
 
-This is schema_version 2 of `stages.narrative` (the pipeline's older
+This is schema_version 3 of `stages.narrative`: version 2 plus an optional
+`usage` object folded in from `work/usage.json` (per-subagent token usage
+the orchestrator records). Version 2 dropped (the pipeline's older
 per-category shape -- `categories: [{id, label, notes_md, discord_dir,
 chunk_count, chunks}, ...]`, one `notes/<slug>.md` + `discord/<slug>/` per
 category -- is retired along with the category-slicing narrative flow; see
 `triage_bundles.py` and `deep-writer-prompt.md`). This version instead
 records a single `patch_summary_md` path, a flat `discord/` chunk list, and
-the triage tier counts, keyed under `stages.narrative.schema_version: 2` so
-any downstream consumer can tell the two shapes apart.
+the triage tier counts, keyed under `stages.narrative.schema_version` so
+any downstream consumer can tell the shapes apart.
 
 Usage:
     python3 tools/update_manifest.py OUT_DIR [--max-chunk-chars 2000]
@@ -111,8 +113,35 @@ def load_triage_stats(out_dir: Path) -> dict | None:
     }
 
 
+def load_usage(out_dir: Path) -> dict | None:
+    """The orchestrator's per-subagent token usage from `<out_dir>/work/
+    usage.json` (`{"assessor": {"tokens": N}, "writers": [{"tokens": N},
+    ...], "reviewer": {"tokens": N}}` -- any subset), with a derived
+    `total_tokens`; or None when the file is missing / unreadable /
+    malformed (never raises)."""
+    path = layout.work_usage_json(out_dir)
+    if not path.is_file():
+        return None
+    try:
+        with path.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    total = 0
+    for value in data.values():
+        entries = value if isinstance(value, list) else [value]
+        for entry in entries:
+            if isinstance(entry, dict) and isinstance(entry.get("tokens"), (int, float)):
+                total += int(entry["tokens"])
+    usage = dict(data)
+    usage["total_tokens"] = total
+    return usage
+
+
 def build_narrative_stage(out_dir: Path, max_chunk_chars: int) -> dict:
-    """Build the full `stages.narrative` payload (schema_version 2)."""
+    """Build the full `stages.narrative` payload (schema_version 3)."""
     chunks = discover_discord_chunks(out_dir)
     return {
         "schema_version": NARRATIVE_SCHEMA_VERSION,
@@ -123,6 +152,7 @@ def build_narrative_stage(out_dir: Path, max_chunk_chars: int) -> dict:
         "chunks": chunks,
         "max_chunk_chars": max_chunk_chars,
         "triage": load_triage_stats(out_dir),
+        "usage": load_usage(out_dir),
     }
 
 
@@ -140,6 +170,9 @@ def print_summary(narrative: dict, stream=sys.stderr):
             print(f"resolved by assessor: {triage['resolved_by_assessor']}", file=stream)
     else:
         print("triage tiers:     (no work/triage.json found)", file=stream)
+    usage = narrative.get("usage")
+    if usage:
+        print(f"subagent tokens:  {usage.get('total_tokens', 0):,}", file=stream)
 
 
 def build_arg_parser():

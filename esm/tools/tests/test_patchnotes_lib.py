@@ -80,10 +80,11 @@ class TestManifest(unittest.TestCase):
         self.assertEqual(m["inputs"]["old_token"], "20260626")
         self.assertEqual(m["stages"]["mechanical"]["completed_at"], None)
         self.assertEqual(m["stages"]["narrative"]["max_chunk_chars"], 2000)
-        # Seeded narrative shape must match the LIVE schema_version 2 shape
+        # Seeded narrative shape must match the LIVE schema_version 3 shape
         # update_manifest.py writes (see NARRATIVE_SCHEMA_VERSION's
         # docstring) -- not the retired per-category shape ("categories": []).
-        self.assertEqual(m["stages"]["narrative"]["schema_version"], 2)
+        self.assertEqual(m["stages"]["narrative"]["schema_version"], 3)
+        self.assertIsNone(m["stages"]["narrative"]["usage"])
         self.assertNotIn("categories", m["stages"]["narrative"])
         self.assertEqual(m["stages"]["narrative"]["discord_dir"], "discord")
 

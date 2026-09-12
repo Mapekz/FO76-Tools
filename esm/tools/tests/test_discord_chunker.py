@@ -12,6 +12,7 @@ a code block, and no source content is lost or a chunk left oversized.
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -286,6 +287,35 @@ class TestSizeCapAndContentPreservation(unittest.TestCase):
                     break
             else:
                 self.fail(f"content lost or reordered: {line!r} not found in order")
+
+
+class TestMainExitCode(unittest.TestCase):
+    """A hard-truncated chunk loses content: main() returns 1 unless
+    --allow-oversize, so the orchestrator treats it as a gate."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_normal_input_exits_zero(self):
+        src = self.tmp / "in.md"
+        src.write_text("# Title\n\n" + "\n\n".join(f"Paragraph {i} " + "x" * 200 for i in range(30)))
+        out = self.tmp / "discord"
+        self.assertEqual(dc.main([str(src), str(out)]), 0)
+        self.assertTrue(sorted(out.glob("chunk_*.md")))
+
+    def test_unsplittable_oversize_line_exits_one_unless_allowed(self):
+        src = self.tmp / "in.md"
+        src.write_text("# Title\n\n" + "y" * 2500 + "\n")
+        out = self.tmp / "discord"
+        self.assertEqual(dc.main([str(src), str(out)]), 1)
+        self.assertEqual(dc.main([str(src), str(out), "--allow-oversize"]), 0)
+        chunk = (out / "chunk_001.md").read_text()
+        self.assertLessEqual(len(chunk), 2000)
+        self.assertIn("[truncated", chunk)
 
 
 if __name__ == "__main__":

@@ -48,7 +48,16 @@ bucketing for whatever's left.
         bundle rule-tiering left `ambiguous`, then re-emits all five files
         (ambiguous bundles the assessor didn't resolve, or resolved with an
         unrecognized tier, remain `ambiguous`). Assessor-sourced reasons are
-        recorded in triage.json's `reasons` prefixed `assessor:`.
+        recorded in triage.json's `reasons` prefixed `assessor:`. A `drop`
+        verdict on a bundle whose digest was truncated is promoted to
+        `brief` -- the assessor never saw the whole change.
+
+Two value-level guards keep real changes out of the churn tiers: a changed
+record with an actual numeric delta (is_numeric_change_entry) on a
+non-plumbing path (not matching `field_path_drop_patterns`) never joins a
+ROLLOUT shape (`settings.rollout_numeric_exclusion`, default true; each
+rollout row reports how many it kept out), and the truncated-digest rule
+above.
 
 Deterministic output: bundle-id lists are sorted, and JSON keys are built by
 iterating those sorted lists, so two runs over the same inputs produce
@@ -76,11 +85,19 @@ import slice_bundles as sb  # noqa: E402
 
 DEFAULT_TIERS_PATH = SCRIPT_DIR / "patch_notes_tiers.json"
 
-#: Fallback defaults for tiers-config `settings`, mirrored from the task spec
-#: (~1200 chars per bundle digest, ~200 chars per summarized change).
-DEFAULT_AMBIGUOUS_DIGEST_MAX_CHARS = 1200
-DEFAULT_AMBIGUOUS_CHANGE_TRUNCATE_CHARS = 200
+#: Fallback defaults for tiers-config `settings`. The digest caps are
+#: generous (the assessor runs on the session model, not a small one) but
+#: still bounded; a digest that hits the cap is flagged `truncated` and can
+#: never be resolved to `drop` (see merge_assessment).
+DEFAULT_AMBIGUOUS_DIGEST_MAX_CHARS = 6000
+DEFAULT_AMBIGUOUS_CHANGE_TRUNCATE_CHARS = 400
 DEFAULT_ROLLOUT_MIN_RECORDS = 20
+#: Keep changed records with a real numeric delta out of ROLLOUT
+#: aggregation (they tier normally) -- `settings.rollout_numeric_exclusion`.
+DEFAULT_ROLLOUT_NUMERIC_EXCLUSION = True
+#: Above this many numeric records kept out of an otherwise-bulk shape,
+#: warn: they cascade into the rule tiers / the assessor.
+ROLLOUT_NUMERIC_EXCLUSION_WARN = 300
 
 #: brief-lines.md section order; a rule's `bucket` picks which one it renders
 #: under (falls back to "Other" if a rule/assessor override omits it).
@@ -146,13 +163,50 @@ def record_change_shape(record):
     return record.get("record_type"), tuple(sorted(paths))
 
 
-def compute_rollout_shapes(records, threshold) -> list[pl.RolloutShape]:
-    """Return deterministic metadata for changed-record shapes at threshold."""
+def record_has_numeric_change(record, drop_patterns=None) -> bool:
+    """True if any unsuppressed ChangeEntry on `record` is a real numeric
+    delta (see is_numeric_change_entry) on a path that is NOT pure plumbing
+    (`field_path_drop_patterns`: bounds, positions, model/material relinks,
+    ...) -- the value-level signal ROLLOUT's shape key is blind to. A mass
+    bounds/position tweak stays churn; a mass Damage/Value change does not."""
+    return any(
+        is_numeric_change_entry(entry)
+        for entry in record.get("changes") or []
+        if isinstance(entry, dict)
+        and not entry.get("suppressed")
+        and not _fnmatch_any(entry.get("path") or "", drop_patterns)
+    )
+
+
+def numeric_change_form_ids(records, drop_patterns=None) -> set[str]:
+    """FormIDs of every changed record with a real numeric delta on a
+    non-plumbing path (see record_has_numeric_change)."""
+    return {
+        form_id
+        for form_id, record in records.items()
+        if record.get("status") == "changed" and record_has_numeric_change(record, drop_patterns)
+    }
+
+
+def compute_rollout_shapes(records, threshold, numeric_excluded=None) -> list[pl.RolloutShape]:
+    """Return deterministic metadata for changed-record shapes at threshold.
+
+    `numeric_excluded` (a set of FormIDs, see numeric_change_form_ids) is
+    kept out of the per-shape counts entirely: a record whose change is a
+    real value delta is a story, not churn, even when 2,000 siblings changed
+    the same field. Each shape records how many it kept out."""
+    numeric_excluded = numeric_excluded or set()
     form_ids_by_shape = defaultdict(list)
+    excluded_by_shape: dict[tuple, int] = defaultdict(int)
     for form_id in sorted(records):
         record = records[form_id]
-        if record.get("status") == "changed":
-            form_ids_by_shape[record_change_shape(record)].append(form_id)
+        if record.get("status") != "changed":
+            continue
+        shape = record_change_shape(record)
+        if form_id in numeric_excluded:
+            excluded_by_shape[shape] += 1
+            continue
+        form_ids_by_shape[shape].append(form_id)
 
     rollout_shapes: list[pl.RolloutShape] = []
     for (record_type, paths), form_ids in form_ids_by_shape.items():
@@ -164,6 +218,7 @@ def compute_rollout_shapes(records, threshold) -> list[pl.RolloutShape]:
                 "paths": list(paths),
                 "record_count": len(form_ids),
                 "example_form_ids": form_ids[:3],
+                "numeric_excluded_count": excluded_by_shape.get((record_type, paths), 0),
             }
         )
     rollout_shapes.sort(
@@ -463,23 +518,28 @@ def rule_matches(rule, bundle, records, drop_patterns, narrative_patterns):
 # --------------------------------------------------------------------------
 
 
-def assign_tier(bundle, records, config, bulk_shapes=None):
+def assign_tier(bundle, records, config, bulk_shapes=None, numeric_excluded=None):
     """Return (tier, reason, bucket) for one bundle: `tier` is one of
     "rollout"/"deep"/"brief"/"drop"/"ambiguous"; `reason` is
     "rollout:<type>/<paths>", "<tier>:<rule id>", or None (ambiguous);
     `bucket` is the brief_rules bucket or None (non-brief). Priority:
     rollout > deep_rules > drop_rules > brief_rules -- see module docstring.
 
-    `bulk_shapes` is precomputed by compute_bundle_tiers. It defaults empty
-    so matcher-level callers can exercise only the declarative rule tiers.
+    `bulk_shapes` and `numeric_excluded` are precomputed by
+    compute_bundle_tiers. Both default empty so matcher-level callers can
+    exercise only the declarative rule tiers. A member in `numeric_excluded`
+    (a real value delta) keeps its whole bundle out of ROLLOUT.
     """
     bulk_shapes = bulk_shapes or set()
+    numeric_excluded = numeric_excluded or set()
     members = _non_context_members(bundle)
     member_records = []
     if members:
         for member in members:
             form_id = member.get("form_id")
             if form_id not in records or records[form_id].get("status") != "changed":
+                break
+            if form_id in numeric_excluded:
                 break
             record = records[form_id]
             if record_change_shape(record) not in bulk_shapes:
@@ -511,14 +571,24 @@ def compute_bundle_tiers(bundles, records, config) -> tuple[dict[str, pl.TierInf
     """Return (`{bundle_id: TierInfo}`, rollout_shapes) for every bundle."""
     settings = config.get("settings") or {}
     threshold = settings.get("rollout_min_records", DEFAULT_ROLLOUT_MIN_RECORDS)
-    rollout_shapes = compute_rollout_shapes(records, threshold)
+    exclude_numeric = settings.get("rollout_numeric_exclusion", DEFAULT_ROLLOUT_NUMERIC_EXCLUSION)
+    drop_patterns = config.get("field_path_drop_patterns") or []
+    numeric_excluded = numeric_change_form_ids(records, drop_patterns) if exclude_numeric else set()
+    rollout_shapes = compute_rollout_shapes(records, threshold, numeric_excluded)
+    kept_out = sum(item["numeric_excluded_count"] for item in rollout_shapes)
+    if kept_out > ROLLOUT_NUMERIC_EXCLUSION_WARN:
+        eprint(
+            f"warning: {kept_out} records with numeric value changes were kept out of "
+            f"ROLLOUT shapes and will tier normally (rules or assessor); if this is "
+            f"branch-drift churn, set settings.rollout_numeric_exclusion=false"
+        )
     bulk_shapes = {
         (item["record_type"], tuple(item["paths"]))
         for item in rollout_shapes
     }
     tiers_by_id: dict[str, pl.TierInfo] = {}
     for b in bundles:
-        tier, reason, bucket = assign_tier(b, records, config, bulk_shapes)
+        tier, reason, bucket = assign_tier(b, records, config, bulk_shapes, numeric_excluded)
         tiers_by_id[b["id"]] = {"tier": tier, "reason": reason, "bucket": bucket}
     return tiers_by_id, rollout_shapes
 
@@ -553,6 +623,9 @@ def build_triage_payload(bundles, tiers_by_id, rollout_shapes, extra_stats=None)
         "brief": len(brief),
         "drop": len(drop),
         "ambiguous": len(ambiguous),
+        "rollout_numeric_excluded": sum(
+            int(item.get("numeric_excluded_count") or 0) for item in rollout_shapes
+        ),
     }
     if extra_stats:
         stats.update(extra_stats)
@@ -807,8 +880,8 @@ def render_rollouts(rollout_shapes, rollout_ids, bundles_by_id, records):
         "Each row is a single bulk data change affecting many records at once, "
         "and is normally worth at most one line in the patch notes.",
         "",
-        "| Records | Bundles | Type | Fields |",
-        "| ---: | ---: | --- | --- |",
+        "| Records | Bundles | Kept out (numeric) | Type | Fields |",
+        "| ---: | ---: | ---: | --- | --- |",
     ]
     for item in sorted(
         rollout_shapes,
@@ -826,6 +899,7 @@ def render_rollouts(rollout_shapes, rollout_ids, bundles_by_id, records):
         fields = ", ".join(item["paths"]) or "*(suppressed changes only)*"
         lines.append(
             f"| {item['record_count']} | {bundle_counts.get(shape, 0)} | "
+            f"{int(item.get('numeric_excluded_count') or 0)} | "
             f"{_markdown_cell(item['record_type'] or '?')} | {_markdown_cell(fields)} |"
         )
     return "\n".join(lines) + "\n"
@@ -902,13 +976,17 @@ def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):
     return result
 
 
-def merge_assessment(tiers_by_id, assessment):
+def merge_assessment(tiers_by_id, assessment, truncated_ids=None):
     """Overlay an assessor's `{"tiers": {bundle_id: {"tier", "reason",
     "bucket"?}}}` onto `tiers_by_id` IN PLACE, resolving only bundles
     currently tiered "ambiguous". A bundle the assessor doesn't mention, or
-    resolves with an unrecognized tier, is left ambiguous. Returns the
-    number of bundles actually resolved this call."""
+    resolves with an unrecognized tier, is left ambiguous. A `drop` verdict
+    on a bundle in `truncated_ids` (its digest was cut to fit the size cap,
+    so the assessor never saw the whole change) is promoted to `brief`: a
+    partial view can demote a story to a one-liner, never erase it.
+    Returns the number of bundles actually resolved this call."""
     assessor_tiers = (assessment or {}).get("tiers") or {}
+    truncated_ids = truncated_ids or set()
     resolved = 0
     for bid, info in tiers_by_id.items():
         if info["tier"] != "ambiguous":
@@ -921,12 +999,34 @@ def merge_assessment(tiers_by_id, assessment):
             eprint(f"warning: assessment.json has unrecognized tier for {bid}: {new_tier!r} -- left ambiguous")
             continue
         reason = override.get("reason")
+        if new_tier == "drop" and bid in truncated_ids:
+            eprint(f"warning: assessor dropped {bid} from a truncated digest -- promoted to brief")
+            new_tier = "brief"
+            reason = f"{reason or '(no reason given)'} (promoted from drop: truncated digest)"
         info["tier"] = new_tier
         info["reason"] = f"assessor:{reason}" if reason else "assessor:(no reason given)"
         if new_tier == "brief":
             info["bucket"] = override.get("bucket") or "Other"
         resolved += 1
     return resolved
+
+
+def load_truncated_ids(out_dir) -> set[str]:
+    """Bundle ids whose digest in `work/ambiguous.json` carries
+    `"truncated": true` (written by the previous `run_triage`); empty when
+    the file is missing or unreadable."""
+    path = layout.work_ambiguous_json(out_dir)
+    if not path.is_file():
+        return set()
+    try:
+        payload = load_json(path)
+    except (OSError, json.JSONDecodeError):
+        return set()
+    return {
+        b.get("id")
+        for b in (payload.get("bundles") or [])
+        if isinstance(b, dict) and b.get("truncated") and b.get("id")
+    }
 
 
 def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH):
@@ -942,7 +1042,7 @@ def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH
     lints_by_id = sb._lints_index(bundles_data.get("lints") or [])
 
     tiers_by_id, rollout_shapes = compute_bundle_tiers(bundles, records, config)
-    resolved = merge_assessment(tiers_by_id, assessment)
+    resolved = merge_assessment(tiers_by_id, assessment, load_truncated_ids(out_dir))
 
     result = assemble_outputs(
         bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config,

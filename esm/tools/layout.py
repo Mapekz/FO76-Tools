@@ -27,8 +27,12 @@ Covers three groups of artifacts:
     `work/assessment.json` (assessor-subagent output), `work/official-
     notes.txt` (optional pasted-in official patch notes), `drafts/deep[.
     partN].md` + `drafts/deep[.partN].report.json` (deep-writer subagent
-    output, optionally split across N parts), `patch-summary.md` (the
-    assembled final writeup), `discord/` (chunked-for-Discord output dir).
+    output, optionally split across N parts), `work/claims-check.json` +
+    `work/coverage.json` (the deterministic gates over those drafts),
+    `work/cuts.json` (orchestrator's deliberate omissions), `work/
+    review.json` (cold-review findings), `work/usage.json` (per-subagent
+    token usage), `patch-summary.md` (the assembled final writeup),
+    `discord/` (chunked-for-Discord output dir).
 
 Python 3, stdlib only.
 """
@@ -160,6 +164,54 @@ def drafts_deep_report_json(out_dir: Path, part: int | None = None) -> Path:
     `deferred[]` entries the orchestrator must reconcile) -- same `part`
     convention as `drafts_deep_md`."""
     return drafts_dir(out_dir) / f"deep{_part_suffix(part)}.report.json"
+
+
+def work_claims_check_json(out_dir: Path) -> Path:
+    """`check_claims.py`'s verdict on every structured claim the deep
+    writers reported -- ok / mismatch / unverifiable per claim, plus numbers
+    in the draft prose no claim backs."""
+    return work_dir(out_dir) / "claims-check.json"
+
+
+def work_coverage_json(out_dir: Path) -> Path:
+    """`check_coverage.py`'s DEEP-tier coverage verdict: which bundle ids
+    are covered by which draft, deferred, cut, or missing."""
+    return work_dir(out_dir) / "coverage.json"
+
+
+def work_cuts_json(out_dir: Path) -> Path:
+    """Orchestrator-written `{"cuts": [{"bundle_id", "reason"}]}` -- DEEP
+    stories deliberately left out of `patch-summary.md`. The only way a
+    DEEP bundle may be absent from the summary and still pass
+    `check_coverage.py --summary`."""
+    return work_dir(out_dir) / "cuts.json"
+
+
+def work_review_json(out_dir: Path) -> Path:
+    """The cold-review subagent's findings against `patch-summary.md`
+    (`{"findings": [{"severity", "summary", "location"}]}`)."""
+    return work_dir(out_dir) / "review.json"
+
+
+def work_usage_json(out_dir: Path) -> Path:
+    """Orchestrator-written per-subagent token usage for the run, folded
+    into `manifest.json`'s `stages.narrative.usage` by `update_manifest.py`."""
+    return work_dir(out_dir) / "usage.json"
+
+
+def drafts_deep_reports(out_dir: Path) -> list[Path]:
+    """Every deep-writer report on disk, whole-tier (`deep.report.json`)
+    and split (`deep.partN.report.json`) alike, sorted by name."""
+    d = drafts_dir(out_dir)
+    if not d.is_dir():
+        return []
+    return sorted(p for p in d.glob("deep*.report.json") if p.is_file())
+
+
+def draft_md_for_report(report_path: Path) -> Path:
+    """The draft prose file paired with a `deep[.partN].report.json`."""
+    name = report_path.name[: -len(".report.json")] + ".md"
+    return report_path.parent / name
 
 
 def patch_summary_md(out_dir: Path) -> Path:

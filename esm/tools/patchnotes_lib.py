@@ -144,6 +144,45 @@ class RolloutShape(TypedDict):
     paths: list[str]
     record_count: int
     example_form_ids: list[str]
+    #: Changed records sharing this shape that were kept OUT of the rollout
+    #: because at least one of their changes is a real numeric delta
+    #: (`triage_bundles.is_numeric_change_entry`); they tier normally.
+    numeric_excluded_count: int
+
+
+ClaimStatus = Literal["ok", "mismatch", "unverifiable"]
+
+#: One number (or existence) a deep writer asserted in its draft, in the
+#: shape `check_claims.py` re-verifies. `record` is a FormID hex or an
+#: EditorID; `path` uses `comprehensive.json`'s ChangeEntry `path` notation
+#: (`" / "`-joined field names; an array row is addressed by its
+#: `key_display`, written as `[<key_display>]`). Exactly one kind applies:
+#:   changed:   `path` + `from` + `to`
+#:   existence: `status` in {added, removed}
+#:   value:     `path` + `value` + `side` in {old, new} -- a value that did
+#:              not change, or one that lives on a referenced record.
+#: Declared in the functional form (like `Edge`) because `from` is a keyword.
+Claim = TypedDict(
+    "Claim",
+    {
+        "record": str,
+        "path": NotRequired[str],
+        "status": NotRequired[Literal["added", "removed"]],
+        "side": NotRequired[Literal["old", "new"]],
+        "value": NotRequired[Any],
+        "from": NotRequired[Any],
+        "to": NotRequired[Any],
+    },
+)
+
+
+class ClaimResult(TypedDict):
+    claim: Claim
+    status: ClaimStatus
+    #: Where the verdict came from: the record's `changes[]`, a live daemon
+    #: lookup, or nowhere (unverifiable).
+    source: Literal["changes", "daemon", "none"]
+    detail: str
 
 
 class RuleContext(TypedDict):
@@ -185,9 +224,12 @@ SCHEMA_VERSION = 1
 #: counts. Version 1 is the older per-category shape: `categories: [{id,
 #: label, notes_md, discord_dir, chunk_count, chunks}, ...]`, one
 #: `notes/<slug>.md` + `discord/<slug>/` per category -- no longer produced.
-#: `new_manifest` below seeds a fresh v2-shaped placeholder so the
-#: mechanical stage never writes the v1 shape.
-NARRATIVE_SCHEMA_VERSION = 2
+#: `new_manifest` below seeds a fresh placeholder in the live shape so the
+#: mechanical stage never writes the v1 shape. Version 3 is version 2 plus
+#: an optional `usage` object (per-subagent token usage the orchestrator
+#: records in `work/usage.json`); readers treat a missing/None `usage` as
+#: "not recorded", so v2 manifests on disk stay readable.
+NARRATIVE_SCHEMA_VERSION = 3
 
 
 _FORMID_RE = re.compile(r"^0x[0-9A-Fa-f]{8}$")
@@ -488,11 +530,11 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
                                   "patch_summary_md": None,
                                   "discord_dir": "discord", "chunk_count": 0,
                                   "chunks": [], "max_chunk_chars": 2000,
-                                  "triage": None}}}
+                                  "triage": None, "usage": None}}}
 
     `stages.narrative`'s placeholder shape here matches the LIVE shape
     `update_manifest.py::build_narrative_stage` writes once the narrative
-    stage actually runs (schema_version NARRATIVE_SCHEMA_VERSION == 2), not
+    stage actually runs (schema_version NARRATIVE_SCHEMA_VERSION == 3), not
     the v1 per-category shape -- see NARRATIVE_SCHEMA_VERSION's docstring
     above.
     """
@@ -521,6 +563,7 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
                 "chunks": [],
                 "max_chunk_chars": 2000,
                 "triage": None,
+                "usage": None,
             },
         },
     }

@@ -691,7 +691,8 @@ class TestBuildTriagePayload(unittest.TestCase):
         self.assertEqual(payload["ambiguous"], ["B0004"])
         self.assertEqual(
             payload["stats"],
-            {"total_bundles": 4, "rollout": 0, "deep": 1, "brief": 1, "drop": 1, "ambiguous": 1},
+            {"total_bundles": 4, "rollout": 0, "deep": 1, "brief": 1, "drop": 1, "ambiguous": 1,
+             "rollout_numeric_excluded": 0},
         )
 
     def test_reasons_only_include_bundles_with_a_reason(self):
@@ -739,8 +740,8 @@ class TestRolloutTier(unittest.TestCase):
 
     def test_shape_at_threshold_tiers_its_bundles_rollout(self):
         records = {
-            "0x01": make_record("0x01", "MISC", changes=[make_change("Object Bounds / X1", 1, 2)]),
-            "0x02": make_record("0x02", "MISC", changes=[make_change("Object Bounds / Y1", 1, 2)]),
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Object Bounds / X1", None, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Object Bounds / Y1", None, 2)]),
         }
         bundles = [
             make_bundle("B0001", [make_member("0x01", "MISC")]),
@@ -775,8 +776,8 @@ class TestRolloutTier(unittest.TestCase):
 
     def test_different_member_shapes_must_each_be_bulk(self):
         records = {
-            "0x01": make_record("0x01", "MISC", changes=[make_change("Data / X", 1, 2)]),
-            "0x02": make_record("0x02", "MISC", changes=[make_change("Data / Y", 1, 2)]),
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Data / X", None, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Data / Y", None, 2)]),
             "0x03": make_record("0x03", "MISC", changes=[make_change("Full Name", "a", "b")]),
         }
         bundle = make_bundle("B0001", [
@@ -793,11 +794,11 @@ class TestRolloutTier(unittest.TestCase):
 
     def test_rollout_shapes_and_ids_are_deterministically_ordered(self):
         records = {
-            "0x05": make_record("0x05", "WEAP", changes=[make_change("Zulu / X", 1, 2)]),
-            "0x04": make_record("0x04", "MISC", changes=[make_change("Alpha / Y", 1, 2)]),
-            "0x03": make_record("0x03", "WEAP", changes=[make_change("Zulu / Y", 1, 2)]),
-            "0x02": make_record("0x02", "MISC", changes=[make_change("Alpha / X", 1, 2)]),
-            "0x01": make_record("0x01", "MISC", changes=[make_change("Alpha / Z", 1, 2)]),
+            "0x05": make_record("0x05", "WEAP", changes=[make_change("Zulu / X", None, 2)]),
+            "0x04": make_record("0x04", "MISC", changes=[make_change("Alpha / Y", None, 2)]),
+            "0x03": make_record("0x03", "WEAP", changes=[make_change("Zulu / Y", None, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Alpha / X", None, 2)]),
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Alpha / Z", None, 2)]),
         }
         bundles = [
             make_bundle(f"B000{i}", [make_member(f"0x0{i}", records[f"0x0{i}"]["record_type"])])
@@ -812,6 +813,52 @@ class TestRolloutTier(unittest.TestCase):
             [(3, "MISC", ["Alpha"]), (2, "WEAP", ["Zulu"])],
         )
         self.assertEqual(payload["rollout_shapes"][0]["example_form_ids"], ["0x01", "0x02", "0x04"])
+
+    def test_numeric_value_change_is_kept_out_of_rollout(self):
+        # Three MISC records change the same field; two are presence-only
+        # (None -> 2, a form_version field rollout), one is a real value
+        # delta (1 -> 2). The bulk shape still forms from the two, the
+        # numeric one tiers normally and the shape reports it.
+        records = {
+            "0x01": make_record("0x01", "MISC", changes=[make_change("Data / Value", None, 2)]),
+            "0x02": make_record("0x02", "MISC", changes=[make_change("Data / Value", None, 2)]),
+            "0x03": make_record("0x03", "MISC", changes=[make_change("Data / Value", 1, 2)]),
+        }
+        bundles = [make_bundle(f"B000{i}", [make_member(f"0x0{i}", "MISC")]) for i in (1, 2, 3)]
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        self.assertEqual(tiers_by_id["B0001"]["tier"], "rollout")
+        self.assertEqual(tiers_by_id["B0002"]["tier"], "rollout")
+        self.assertNotEqual(tiers_by_id["B0003"]["tier"], "rollout")
+        self.assertEqual(rollout_shapes[0]["record_count"], 2)
+        self.assertEqual(rollout_shapes[0]["numeric_excluded_count"], 1)
+        payload = tb.build_triage_payload(bundles, tiers_by_id, rollout_shapes)
+        self.assertEqual(payload["stats"]["rollout_numeric_excluded"], 1)
+        self.assertIn("| 1 | MISC |", tb.render_rollouts(rollout_shapes, payload["rollout"], {b["id"]: b for b in bundles}, records))
+
+    def test_numeric_change_on_plumbing_path_still_rolls_out(self):
+        # MINI_CONFIG's field_path_drop_patterns include "*model*": a mass
+        # numeric tweak to a model field is churn, never a story.
+        records = {
+            f"0x0{i}": make_record(f"0x0{i}", "STAT", changes=[make_change("Model / Scale", 1.0, 1.5)])
+            for i in (1, 2)
+        }
+        bundles = [make_bundle(f"B000{i}", [make_member(f"0x0{i}", "STAT")]) for i in (1, 2)]
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        self.assertEqual(tiers_by_id["B0001"]["tier"], "rollout")
+        self.assertEqual(rollout_shapes[0]["numeric_excluded_count"], 0)
+
+    def test_numeric_exclusion_can_be_switched_off(self):
+        records = {
+            f"0x0{i}": make_record(f"0x0{i}", "MISC", changes=[make_change("Data / Value", 1, 2)])
+            for i in (1, 2)
+        }
+        bundles = [make_bundle(f"B000{i}", [make_member(f"0x0{i}", "MISC")]) for i in (1, 2)]
+        config = self.config(2)
+        config["settings"]["rollout_numeric_exclusion"] = False
+        tiers_by_id, _shapes = tb.compute_bundle_tiers(bundles, records, config)
+        self.assertEqual(tiers_by_id["B0001"]["tier"], "rollout")
+        tiers_by_id, _shapes = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        self.assertNotEqual(tiers_by_id["B0001"]["tier"], "rollout")
 
     def test_non_rollout_existing_fixture_tiers_are_unchanged(self):
         fixture = TestBuildTriagePayload()
@@ -1147,6 +1194,42 @@ class TestRunTriage(unittest.TestCase):
                 if p.name in ("triage.json", "deep-slice.json", "ambiguous.json", "brief-lines.md", "rollouts.md")
             }
             self.assertEqual(first, second)
+
+
+class TestTruncatedDigestVeto(unittest.TestCase):
+    def test_drop_on_truncated_digest_is_promoted_to_brief(self):
+        tiers = {"B0001": {"tier": "ambiguous", "reason": None, "bucket": None}}
+        assessment = {"tiers": {"B0001": {"tier": "drop", "reason": "churn"}}}
+        resolved = tb.merge_assessment(tiers, assessment, truncated_ids={"B0001"})
+        self.assertEqual(resolved, 1)
+        self.assertEqual(tiers["B0001"]["tier"], "brief")
+        self.assertEqual(tiers["B0001"]["bucket"], "Other")
+        self.assertIn("promoted from drop: truncated digest", str(tiers["B0001"]["reason"]))
+
+    def test_drop_on_complete_digest_is_honoured(self):
+        tiers = {"B0001": {"tier": "ambiguous", "reason": None, "bucket": None}}
+        tb.merge_assessment(tiers, {"tiers": {"B0001": {"tier": "drop", "reason": "churn"}}}, truncated_ids=set())
+        self.assertEqual(tiers["B0001"]["tier"], "drop")
+
+    def test_run_merge_assessment_reads_truncation_from_ambiguous_json(self):
+        bundles_data, comprehensive_data = _sample_pipeline_output()
+        with TempOutDir(bundles_data, comprehensive_data) as out_dir:
+            config = json.loads(json.dumps(MINI_CONFIG))
+            config["settings"] = {"rollout_min_records": 20, "ambiguous_digest_max_chars": 40,
+                                  "ambiguous_change_truncate_chars": 200}
+            tiers_path = out_dir / "tiny-tiers.json"
+            tiers_path.write_text(json.dumps(config), encoding="utf-8")
+            first = tb.run_triage(out_dir, tiers_path)
+            self.assertEqual(first["triage"]["ambiguous"], ["B0004"])
+            self.assertTrue(first["ambiguous"]["bundles"][0].get("truncated"))
+            self.assertEqual(tb.load_truncated_ids(out_dir), {"B0004"})
+
+            assessment_path = out_dir / "work" / "assessment.json"
+            assessment_path.write_text(json.dumps({"tiers": {"B0004": {"tier": "drop", "reason": "looks like churn"}}}))
+            second = tb.run_merge_assessment(out_dir, assessment_path, tiers_path)
+            self.assertEqual(second["triage"]["drop"], ["B0003"])
+            self.assertIn("B0004", second["triage"]["brief"])
+            self.assertIn("promoted from drop", second["triage"]["reasons"]["B0004"])
 
 
 class TestRunMergeAssessment(unittest.TestCase):

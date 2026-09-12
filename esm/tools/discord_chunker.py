@@ -16,9 +16,13 @@ whole sections are greedily packed into chunks so a Discord post is a
 self-contained section (or run of small sections) rather than an arbitrary
 blank-line-bounded slice. See split_into_chunks() for the packing rules.
 
-Usage: python3 tools/discord_chunker.py <input.md> [output_dir]
+Usage: python3 tools/discord_chunker.py <input.md> [output_dir] [--allow-oversize]
+
+Exit code 1 when any chunk had to be hard-truncated (content lost) unless
+--allow-oversize is passed -- the orchestrator treats that as a gate.
 """
 
+import argparse
 import os
 import re
 import sys
@@ -30,6 +34,9 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import layout  # noqa: E402
 
 MAX_CHARS = 1900
+#: Discord's own per-message ceiling; a chunk over this is cut to fit it exactly.
+DISCORD_HARD_LIMIT = 2000
+TRUNCATION_MARK = '\n*[truncated — chunk too large]*'
 
 
 # ---------------------------------------------------------------------------
@@ -358,16 +365,32 @@ def split_into_chunks(lines, heading_indices, max_chars=MAX_CHARS):
     return [c for c in chunks if c.strip()]
 
 
-def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <input.md> [output_dir]")
-        sys.exit(1)
+def build_arg_parser():
+    ap = argparse.ArgumentParser(
+        prog="discord_chunker.py",
+        description=f"Split a Markdown file into Discord-sized (<= {MAX_CHARS} chars) chunks.",
+    )
+    ap.add_argument("input", help="Markdown file to chunk (normally patch-summary.md)")
+    ap.add_argument(
+        "output_dir", nargs="?", default=layout.DISCORD_DIRNAME,
+        help=f"Output directory (default: {layout.DISCORD_DIRNAME}/ -- the dirname "
+             "update_manifest.py looks for)",
+    )
+    ap.add_argument(
+        "--allow-oversize", action="store_true",
+        help="Exit 0 even if a chunk had to be hard-truncated (default: exit 1 so the "
+             "orchestrator fixes the summary and re-runs)",
+    )
+    return ap
 
-    input_path = sys.argv[1]
+
+def main(argv=None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    input_path = args.input
     # Defaults to layout.DISCORD_DIRNAME so this agrees with the dirname
     # update_manifest.py looks for; a mismatch here makes it silently write
     # to the wrong place and update_manifest.py report zero chunks.
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else layout.DISCORD_DIRNAME
+    output_dir = args.output_dir
 
     with open(input_path) as f:
         text = f.read()
@@ -389,8 +412,8 @@ def main():
         header = f"*(Part {i}/{total})*\n\n"
         content = header + chunk
         # Hard safety net — should not trigger with the code-block split above
-        if len(content) > 2000:
-            content = content[:1970] + '\n*[truncated — chunk too large]*'
+        if len(content) > DISCORD_HARD_LIMIT:
+            content = content[: DISCORD_HARD_LIMIT - len(TRUNCATION_MARK)] + TRUNCATION_MARK
             oversized += 1
         with open(path, 'w') as f:
             f.write(content)
@@ -402,7 +425,12 @@ def main():
     print(f"Smallest chunk: {min(sizes)} chars")
     if oversized:
         print(f"WARNING: {oversized} chunks exceeded 2000 chars and were hard-truncated", file=sys.stderr)
+        if not args.allow_oversize:
+            print("error: hard-truncated chunks lose content; fix the summary (cut prose, "
+                  "never numbers) and re-run, or pass --allow-oversize", file=sys.stderr)
+            return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
