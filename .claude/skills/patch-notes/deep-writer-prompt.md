@@ -68,6 +68,26 @@ every one to ground truth. Run all commands from the repo root.
    (`zzz_`/`CUT_`/`DEL_`/`POST_` are heuristics); POST_ content goes only under the datamined
    section with the standing disclaimer.
 
+## CLAIMS — every number you state is a claim record
+
+`check_claims.py` re-verifies your report against the data; a number it cannot verify fails
+the run and comes back to you. For every figure in the draft, add one entry to the report's
+`claims` array:
+
+- **a changed field:** `{"record": "<FormID or EditorID>", "path": "<ChangeEntry path>",
+  "from": <old>, "to": <new>}` — `path` is exactly the `path` string `--extract` shows
+  (`"Data / Damage"`). An array row is addressed by its `key_display`:
+  `"Effects / [Effect=0x0004B2E1] / Magnitude"`; a claim on the array itself
+  (`"path": "Effects"`) compares the row counts.
+- **a new or removed record:** `{"record": "...", "status": "added"|"removed"}`
+- **a value that did not change, or lives on a referenced record** (the granted perk's
+  magnitude, the GLOB's value, a curve point): `{"record": "...", "path": "<field path in the
+  decoded record>", "value": <v>, "side": "new"|"old"}`
+
+A derived figure (a percentage you computed) may appear in prose only when both inputs are
+claims. FormIDs go in Evidence lines; the coverage gate finds your bundle by its name,
+EditorID, or FormID, so name the item the way the style guide wants and it will be found.
+
 ## DEFERRALS — do not silently skip
 
 If a bundle's story genuinely belongs to another writer's slice (check `{OTHER_SLICES}`),
@@ -83,15 +103,23 @@ orchestrator reconciles every deferral — an unlisted skip is a dropped story.
    ```json
    {
      "bundles": <int>,
-     "claims_verified": <int>,
+     "bundles_covered": ["<every bundle id from your slice you wrote up>"],
+     "claims": [
+       {"record": "0x00568635", "path": "Data / Damage", "from": 20, "to": 25},
+       {"record": "mod_Custom_Foo", "path": "Effects / [Effect=0x0004B2E1] / Magnitude", "from": 10, "to": 15},
+       {"record": "0x0071AB00", "status": "added"},
+       {"record": "0x000E1A11", "path": "Data / Value", "value": 0.25, "side": "new"}
+     ],
      "lints_confirmed": ["..."], "lints_not_reproduced": ["..."],
      "unresolved": [{"what": "...", "tried": "..."}],
      "deferred": [{"form_ids": ["..."], "expected_owner": "...", "note": "..."}],
      "kb_proposals": [{"kind": "mechanic|trap", "entry": "<markdown, exact format below>"}]
    }
    ```
-   `unresolved` = anything you could not fully derive (the orchestrator chases these
-   interactively). `kb_proposals` = things you derived that the KB doesn't cover yet —
+   `bundles_covered` = the ids you actually wrote up (never a deferred one); the coverage gate
+   checks every DEEP id against these lists and matches deferrals by FormID. `claims` = one
+   entry per number in the draft (see CLAIMS above). `unresolved` = anything you could not
+   fully derive (the orchestrator chases these interactively). `kb_proposals` = things you derived that the KB doesn't cover yet —
    `mechanic` for how the game works (→ `{MECHANICS_KB}`), `trap` for a change that looks real
    but isn't, or a lint false positive (→ `{TRAPS_KB}`).
 
@@ -104,4 +132,5 @@ history of how you found it or what you first believed. If your entry refines so
 in the KB, say so in the `entry` text (`refines: <existing heading>`) instead of writing a
 near-duplicate.
 
-Your final text reply: ≤10 lines — headline findings, unresolved count, deferred count.
+Your final text reply: ≤10 lines — headline findings, bundles covered, claims count,
+unresolved count, deferred count.

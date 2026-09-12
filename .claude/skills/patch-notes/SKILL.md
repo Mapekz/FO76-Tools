@@ -3,12 +3,13 @@ name: patch-notes
 description: >
   Weekly Fallout 76 patch-notes narrative stage, tiered edition. Resolves the latest two
   snapshots from $FO76_DATA_DIR, runs (or reuses) the deterministic diff pipeline, triages
-  bundles into DEEP / BRIEF / DROP / ROLLOUT (rules + one cheap assessor agent for the
+  bundles into DEEP / BRIEF / DROP / ROLLOUT (rules + one assessor agent for the
   ambiguous middle; ROLLOUT aggregates bulk form_version field churn into one line per
-  change shape), fans out 1-2 Sonnet deep writers armed with the mechanics KB over the DEEP tier
-  only, reconciles deferrals and unresolved chases in the orchestrator, assembles a single
-  patch-summary.md, and chunks it for Discord. Use when asked to write, refresh, or re-run
-  weekly patch notes.
+  change shape), fans out 1-2 deep writers armed with the mechanics KB over the DEEP tier
+  only, gates every drafted number (check_claims.py) and every DEEP story (check_coverage.py),
+  reconciles deferrals in the orchestrator, assembles a single patch-summary.md, has it
+  cold-reviewed in a fresh context, and chunks it for Discord. Use when asked to write,
+  refresh, or re-run weekly patch notes.
 argument-hint: "[old-snapshot] [new-snapshot] [--out-dir DIR] [--official-notes URL_OR_FILE] [--force-pipeline] [--force]"
 ---
 
@@ -21,6 +22,11 @@ live under `esm/` (`esm/target/release/esm`, `python3 esm/tools/<script>.py`).
 ways this pipeline silently reports the wrong thing (string-table resolution, ROLLOUT value
 blindness, diff blind spots) and the recovery step for each. It is orchestrator-only — the deep
 writers get `kb/mechanics.md` and `kb/diff-traps.md` instead.
+
+**Any test, sanity-check, or partial run uses a scratch `--out-dir`** (e.g.
+`/tmp/pn-<OLD_TOKEN>_to_<NEW_TOKEN>`), and a subagent asked to run any pipeline command gets
+that scratch path in its brief. `make_patch_notes.py` refuses to overwrite an out-dir whose
+manifest records a finished narrative stage unless `--force-pipeline` is passed.
 
 ## 1. Resolve inputs
 
@@ -68,9 +74,19 @@ Fail fast, with a clear message, unless both hold:
 OUT="$FO76_DATA_DIR/notes/${OLD_TOKEN}_to_${NEW_TOKEN}"
 ```
 
-If `--official-notes` was given: a URL → fetch it now (WebFetch) and save the article text to
-`$OUT/work/official-notes.txt`; a file path → copy it there. This is optional input; absence
-changes nothing downstream except the discrepancy callouts.
+If `--official-notes` was given: a URL or a saved `.html` →
+
+```sh
+python3 esm/tools/fetch_official_notes.py "<url-or-html>" "$OUT/work/official-notes.txt"
+```
+
+It keeps only the newest section — the text before the first horizontal rule; Bethesda's
+"Inside the Vault" PTS pages stack several weeks on one page and a summarizing fetch blends
+them. Exit 3 means the page is client-rendered: fall back to WebFetch with the prompt "Return
+as plain text, without summarizing, only the part of the article before the first horizontal
+rule; stop at the first `<hr>`", and save that to the same file. A plain-text file path →
+copy it there. This is optional input; absence changes nothing downstream except the
+discrepancy callouts.
 
 **Never write the expanded value of `$FO76_DATA_DIR` (or any absolute path) into a file under
 `$OUT` — not in the summary, discord chunks, or the manifest.** Tokens (`20260626`) are fine;
@@ -104,15 +120,21 @@ fi
 If `REUSE=no` or `--force-pipeline` was passed:
 
 ```sh
-python3 esm/tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT"
+python3 esm/tools/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT" ${FORCE_PIPELINE:+--force-pipeline}
 ```
 
+Pass `--force-pipeline` through only when the user asked for it: the script refuses to
+overwrite an out-dir whose manifest records a finished narrative stage. `--bodies` defaults
+to `stub`; never pass `full` (it recursively resolves every added record body and OOMs the
+diff on deeply linked additions).
+
 **Check the strings banner it prints.** Two snapshots means two string tables, so the header
-must show `strings-dir-a:` and `strings-dir-b:` pointing at *different* dirs. A single
-`strings-dir:` line — or a `WARNING: --strings-dir ... BOTH sides` — means every localized
-FULL/DESC on the new side is being resolved against the other snapshot's table: renames and
-description rewrites silently vanish and stale text is reported as current. Stop and re-run
-with `--strings-dir-a`/`--strings-dir-b` rather than writing up that diff. (Corroborating tell,
+must show `strings-dir-a:` and `strings-dir-b:` pointing at *different* dirs. The script now
+refuses a shared `--strings-dir` when both snapshots carry their own table, but a single
+`strings-dir:` line can still appear when one side has no table of its own — then every
+localized FULL/DESC on the new side is being resolved against the other snapshot's table:
+renames and description rewrites silently vanish and stale text is reported as current. Stop
+and re-run with `--strings-dir-a`/`--strings-dir-b` rather than writing up that diff. (Corroborating tell,
 after the pipeline finishes: an `_unresolved` count in the hundreds instead of low double
 digits.)
 
@@ -148,12 +170,15 @@ This is load-bearing: on the 20260710→20260717 pair it took AMBIGUOUS
 from 34,327 bundles to 546 — the difference between "one assessor agent" and
 "impossible".
 
-If `ambiguous.json` has entries, spawn **one assessor subagent** (Agent tool,
-`model: haiku`) with this prompt shape — paste the digests inline, give it NO daemon
-access and no other tools than Read/Write:
+Triage keeps any changed record with a real numeric delta on a non-plumbing field out of
+ROLLOUT (`stats.rollout_numeric_excluded` in `triage.json`, the "Kept out (numeric)" column
+in `rollouts.md`), so a genuine balance change hiding inside a bulk shape tiers on its own.
 
-> You are triaging Fallout 76 patch-diff bundles. For each bundle below you get the actual
-> field-level before/after values. Assign each a tier: `deep` (real gameplay meaning —
+If `ambiguous.json` has entries, spawn **one assessor subagent** (Agent tool) pointed at
+`$OUT/work/ambiguous.json` — give it NO daemon access and no other tools than Read/Write:
+
+> You are triaging Fallout 76 patch-diff bundles. Read `<OUT>/work/ambiguous.json`; for each
+> bundle you get the actual field-level before/after values. Assign each a tier: `deep` (real gameplay meaning —
 > stats, drops, costs, spawns, quest logic, new obtainable content, datamined features;
 > a reader would want the full story), `brief` (existence is the story — a one-liner
 > suffices), or `drop` (bookkeeping churn a player can never observe). When in doubt
@@ -166,6 +191,10 @@ Then merge:
 ```sh
 python3 esm/tools/triage_bundles.py "$OUT" --merge-assessment "$OUT/work/assessment.json"
 ```
+
+A digest that hit the size cap is flagged `truncated`; the merge promotes a `drop` verdict on
+those to `brief` on its own (a partial view may shorten a story, never erase it). Record the
+assessor's token usage (from the Agent result) for Step 8.
 
 Sanity-check the final tier stats in `triage.json` — if DEEP exceeds ~40 bundles or DROP
 swallowed a record type you'd expect to matter (WEAP/PERK/OMOD), inspect `reasons` before
@@ -190,7 +219,7 @@ the slice in two by bundle (keep related bundles together; `esm/tools/triage_bun
 emits them in dependency-sorted order, so a simple contiguous split is fine) and launch two
 writers in one message.
 
-For each writer, spawn a subagent (Agent tool, `model: sonnet`) with
+For each writer, spawn a subagent (Agent tool) with
 `.claude/skills/patch-notes/deep-writer-prompt.md`, substituting:
 
 | Placeholder | Value |
@@ -206,25 +235,40 @@ For each writer, spawn a subagent (Agent tool, `model: sonnet`) with
 | `{DRAFT_PATH}` / `{REPORT_PATH}` | `$OUT/drafts/deep[.partN].{md,report.json}` |
 | `{OFFICIAL_NOTES_BLOCK}` | if official notes were provided: a bullet pointing at `$OUT/work/official-notes.txt` with the instruction "cross-reference every claim: data contradicting the article → `⚠️ Mismatch (official notes):`; significant changes the article omits → `⚠️ Undocumented:`". Otherwise empty. |
 
+Record each writer's token usage (from the Agent result) for Step 8.
+
+### Gates — run before reading a single draft
+
+```sh
+python3 esm/tools/check_claims.py "$OUT" --old-esm "$OLD_ESM" --new-esm "$NEW_ESM"
+python3 esm/tools/check_coverage.py "$OUT"
+```
+
+`check_claims.py` re-derives every `claims[]` entry from `comprehensive.json` (and the live
+daemon for values outside the diff). A `mismatch` is a wrong number; an `unverifiable` is a
+number nobody can stand behind. Send each back to its writer with the checker's detail line,
+or chase it yourself and fix the draft AND its claim. A report with zero claims means the
+writer prompt drifted — re-dispatch that writer. `check_coverage.py` asserts every DEEP bundle
+id is claimed by exactly one draft (or deferred to one) and that the draft names it. Neither
+gate may be skipped or overridden; loop until both exit 0.
+
 ## 6. Review & assemble (orchestrator — you)
 
 Read every draft + report. Then, in order:
 
-1. **Reconcile every deferral.** For each report's `deferred[]` entry, confirm the expected
-   owner's draft actually covers those FormIDs (search the draft text). Anything uncovered:
-   chase it yourself now — extract the record diff, then for `mod_Custom_*`/unique-effect
-   OMODs (or a PERK/SPEL/ALCH/ENCH selector directly) run
+1. **Reconcile every deferral `check_coverage.py` flagged** (`deferred_uncovered`) and every
+   `unresolved[]` item worth a story: chase it yourself now — extract the record diff, then
+   for `mod_Custom_*`/unique-effect OMODs (or a PERK/SPEL/ALCH/ENCH selector directly) run
    `esm/target/release/esm --esm "$NEW_ESM" chase <OMOD_OR_PERK_OR_SPEL_OR_ALCH_OR_ENCH>
    --json`; for anything else, `esm/target/release/esm --esm "$NEW_ESM" refs <id> --type
    <SIG> --paths --pretty` (one 4-char type per call) plus a bulk `get` for whatever it turns
-   up — write the missing bullets. This step exists because deferrals DO fall through; never
-   skip it.
-2. **Chase every `unresolved[]` item** worth a story: resolve it live via `esm chase` / bulk
-   `get --resolve stub` / `refs --type <SIG> --paths` (never a loop of single-selector
-   `get`s), soften it to "Unconfirmed:", or cut it. Never pass one through silently.
-3. **Spot-verify the 2-3 highest-impact numeric claims** per draft yourself in ONE bulk call —
-   `esm/target/release/esm --esm "$NEW_ESM" get <id1> <id2> <id3> --resolve stub --pretty`.
-4. **Merge `kb_proposals[]`** into the KB, routing by each proposal's `kind`: `mechanic` →
+   up. Write the missing bullets into `$OUT/drafts/deep.orchestrator.md` with a matching
+   `$OUT/drafts/deep.orchestrator.report.json` (`bundles_covered` + `claims`, same contract as
+   the writers) so both gates cover your additions too; soften what you cannot resolve to
+   "Unconfirmed:", or cut it. Never pass one through silently.
+2. **Re-run both gates** after any edit to a draft or report:
+   `check_claims.py` then `check_coverage.py`. The spot-check of old is now the whole set.
+3. **Merge `kb_proposals[]`** into the KB, routing by each proposal's `kind`: `mechanic` →
    `.claude/skills/patch-notes/kb/mechanics.md`, `trap` →
    `.claude/skills/patch-notes/kb/diff-traps.md`. These are the only files outside `$OUT` this
    skill may write. Before appending, enforce `mechanics.md`'s entry format yourself — writers
@@ -238,7 +282,7 @@ Read every draft + report. Then, in order:
    - Anything about the *pipeline itself* failing (diff blind spots, tiering artifacts, string
      resolution) belongs in `kb/pipeline-gotchas.md` — write it there yourself, not into the
      writer-facing files.
-5. **Assemble `$OUT/patch-summary.md`** — ONE document, sections ordered by signal:
+4. **Assemble `$OUT/patch-summary.md`** — ONE document, sections ordered by signal:
    `# FO76 Datamine — Patch <date>` / `## TL;DR` (≤6 bullets) / unique & legendary changes /
    balance / events & quests / new items / `## Datamined: <feature> (not live)` (standing
    disclaimer first) / `## Cut / Vaulted` / then append the BRIEF one-liners from
@@ -249,6 +293,24 @@ Read every draft + report. Then, in order:
    into a real section above if it has gameplay meaning; drop rows that are purely
    structural (padding, model relinks, editor bookkeeping). Never paste the table
    wholesale. Style guide applies throughout; cut prose over numbers when over budget.
+   Every DEEP story you leave out of the summary goes into `$OUT/work/cuts.json` as
+   `{"cuts": [{"bundle_id": "B0123", "reason": "<why>"}]}` — then:
+
+   ```sh
+   python3 esm/tools/check_coverage.py "$OUT" --summary
+   ```
+
+   Loop until it exits 0: a DEEP anchor absent from the summary and absent from `cuts.json`
+   is a dropped story.
+
+## 6b. Cold review (one read-only subagent)
+
+Spawn one subagent (Agent tool) with `.claude/skills/patch-notes/review-prompt.md`,
+substituting `{OUT}`, `{OLD_ESM}`, `{NEW_ESM}`. It reads only the artifacts — never your
+reasoning — and writes `$OUT/work/review.json`. Then: fix every `high` finding in the summary
+and in the draft + claim it came from; decide `med` on merit; ignore `low`. Re-run
+`check_claims.py` and `check_coverage.py --summary` after the fixes. Record the reviewer's
+token usage for Step 8.
 
 ## 7. Chunk for Discord
 
@@ -256,20 +318,29 @@ Read every draft + report. Then, in order:
 python3 esm/tools/discord_chunker.py "$OUT/patch-summary.md" "$OUT/discord"
 ```
 
-If stderr warns about hard truncation (`WARNING: N chunks exceeded 2000 chars`), fix the
-summary (cut prose, never numbers) and re-run.
+The chunker exits 1 when any chunk had to be hard-truncated (content lost): fix the summary
+(cut prose, never numbers) and re-run until it exits 0. `--allow-oversize` exists only for a
+truncation you knowingly accept — say so in the printed summary if you use it.
 
 ## 8. Manifest + summary
 
+Write the run's subagent token usage first, from the usage line each Agent result reported
+(omit a key whose agent did not run), then update the manifest:
+
 ```sh
+cat > "$OUT/work/usage.json" <<'EOF'
+{"assessor": {"tokens": 0}, "writers": [{"tokens": 0}], "reviewer": {"tokens": 0}}
+EOF
 python3 esm/tools/update_manifest.py "$OUT"
 ```
 
-Print: tier counts (deep/brief/drop/rollout, plus how many the assessor promoted/demoted),
-the rollout-shape count and how many records they cover, writer
-count, chunk count, unresolved-chased count, KB entries added, and the output paths
-(`$OUT/patch-summary.md`, `$OUT/discord/`) — no game-data paths or `$FO76_DATA_DIR`
-expansions in the printed summary either.
+Print: tier counts (deep/brief/drop/rollout, how many the assessor promoted/demoted, how many
+numeric records were kept out of rollouts), the rollout-shape count and how many records they
+cover, writer count, claims checked and how many came back as mismatch/unverifiable before
+fixes, DEEP coverage (covered / cut), review findings by severity, chunk count, KB entries
+added, total subagent tokens, and the output paths (`$OUT/patch-summary.md`,
+`$OUT/discord/`) — no game-data paths or `$FO76_DATA_DIR` expansions in the printed summary
+either.
 
 ## Guardrails
 
@@ -278,7 +349,10 @@ expansions in the printed summary either.
   (OMOD/ENCH Perks property) legitimately have no PCRD — verify the grant path instead via
   `esm/target/release/esm --esm "$NEW_ESM" refs <perk-id> --type PCRD --paths --pretty`.
 - Every number in the final summary traces to the slice, an `--extract`, or a live `esm`
-  call this run — never memory, never estimation, never rounding.
+  call this run — never memory, never estimation, never rounding — and is a `claims[]` entry
+  that `check_claims.py` verified this run.
+- Every DEEP bundle reaches the summary or `work/cuts.json` with a reason
+  (`check_coverage.py --summary` exits 0).
 - Every lint reaching the summary was re-verified live this run.
 - DROP-tier bundles are dropped *with logged reasons* (`triage.json`); the printed summary
   states the drop count so the user can audit `work/triage.json` when something seems missing.

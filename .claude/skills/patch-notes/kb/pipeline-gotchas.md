@@ -11,6 +11,8 @@ Same entry format: a claim as the heading, the symptom, the fix, one worked exam
 
 ## Per-snapshot string tables must be matched per side
 
+> **Enforced since 2026-09-12:** `make_patch_notes.py` refuses a shared `--strings-dir` when both snapshots carry their own `strings/`; only the one-side-missing case still needs the banner check.
+
 Both FO76 snapshots name their ESM `SeventySix.esm`, so a strings directory belonging to snapshot A
 satisfies a "does this dir have string files for token X" check for **both** sides. When that
 happens the newer snapshot's `FULL`/`DESC` lstring IDs resolve against the **older** snapshot's
@@ -48,6 +50,8 @@ My Stats terminal expansion.
 *found 2026-07-24*
 
 ## ROLLOUT shapes are blind to values
+
+> **Enforced since 2026-09-12:** triage keeps any changed record with a numeric delta on a non-plumbing field out of ROLLOUT (`settings.rollout_numeric_exclusion`, `rollouts.md` "Kept out (numeric)" column). The manual value scan below remains the check for the plumbing-pattern fields it deliberately skips.
 
 A change shape is `(record_type, set of changed field paths)` — it never looks at the before/after
 **values**. So a genuine `3.4028235e+38 → 100.0` edit has the same shape as the `null →
@@ -95,6 +99,8 @@ the tell that a consumer needs the new name. Keep the old name as a fallback whe
 *found 2026-07-14*
 
 ## `--bodies full` can OOM the diff; `--bodies stub` is the safe default
+
+> **Enforced since 2026-09-12:** `stub` is the script default; `full` must be asked for explicitly.
 
 `esm diff --bodies full` recursively resolves every FormID inside every added/removed record's
 body. One deeply-nested added record (a pets progression track with hundreds of reward links)
@@ -155,3 +161,20 @@ missing-localization signal, not a schema gap, and never blocks it.
 three new shapes — PGTR and MSCS (new record types) and RACE `CMDE`/`PGTF`; MSCS was a `SAFELIST`
 addition, PGTR and RACE needed `fo76.overrides.json` entries.
 *found 2026-09-04*
+
+## A stray run can clobber a finished week
+
+A subagent (or you) running `make_patch_notes.py` against the real `$FO76_DATA_DIR/notes/...`
+out-dir "just to sanity-check" rewrites diff/bundles/lints and resets the manifest's narrative
+stage — the finished week is gone. Every test or partial run takes a scratch `--out-dir`.
+
+> **Enforced since 2026-09-12:** the script refuses an out-dir whose manifest records a
+> completed narrative stage unless `--force-pipeline` is passed.
+
+## Official-notes pages stack several weeks
+
+Bethesda's "Inside the Vault" PTS articles keep multiple weeks on one page, separated by
+horizontal rules; a summarizing fetch blends them and the comparison baseline is wrong.
+
+> **Enforced since 2026-09-12:** `fetch_official_notes.py` cuts the page at the first `<hr>`
+> before stripping tags; the WebFetch fallback carries the same instruction (Step 1).

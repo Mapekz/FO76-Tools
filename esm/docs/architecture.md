@@ -260,10 +260,14 @@ reach the `esm` CLI/daemon — `bulk_get`, `list_type`, `refs`, `diff` — so no
 
 The **narrative stage** takes over from `work/deep-slice.json`/`ambiguous.json` onward: the
 `/patch-notes` skill (`FO76-Tools/.claude/skills/patch-notes/`, run with `FO76-Tools/` as cwd)
-fans out Sonnet deep-writer agents armed with `deep-writer-prompt.md`/`style-guide.md`/`kb/`
-over the DEEP tier, resolves the `ambiguous` tier with a cheap assessor pass, and assembles the
+fans out 1-2 deep-writer agents (session model) armed with `deep-writer-prompt.md`/`style-guide.md`/`kb/`
+over the DEEP tier, resolves the `ambiguous` tier with one assessor pass, and assembles the
 final `patch-summary.md`, chunked for Discord by `tools/discord_chunker.py` and finalized via
-`tools/update_manifest.py`.
+`tools/update_manifest.py`. Two deterministic gates sit between the writers and the summary:
+`tools/check_claims.py` re-derives every number a writer claimed (from `comprehensive.json`
+or the live daemon) and `tools/check_coverage.py` asserts every DEEP bundle id is covered by
+exactly one draft and reaches the summary or `work/cuts.json`; `tools/fetch_official_notes.py`
+extracts the newest section of an official patch-notes page for the discrepancy callouts.
 
 **`tools/extractor/`** is the schema side of the pipeline, not the diff side: `extract.py`
 (schema generation, described above), `audit.py --gate` (the parity gate `just audit` runs),
