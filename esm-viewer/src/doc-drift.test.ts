@@ -5,14 +5,14 @@
 // EMPTY — a hit means fix the doc (or the code), not add an exception.
 //
 // Five checks:
-//   1. Every path-shaped backtick token in README.md/CLAUDE.md resolves on disk.
+//   1. Every path-shaped backtick token in README.md/AGENTS.md resolves on disk.
 //   2. Every `bun run <script>` / `just <recipe>` mentioned in README.md,
-//      CLAUDE.md, or the justfile names a real package.json script / justfile
+//      AGENTS.md, or the justfile names a real package.json script / justfile
 //      recipe; no npm/npx/pnpm invocation is documented as a command to run.
 //   3. DESIGN.md's frontmatter `colors:` map and theme.ts's `colors` const
 //      agree in both directions (same tokens, same hex, theme.ts is truth).
 //   4. No raw hex/rgba color literal exists outside theme.ts.
-//   (5. CLAUDE.md's architecture-table paths are covered by check 1's own
+//   (5. AGENTS.md's architecture-table paths are covered by check 1's own
 //       extractor — see the "architecture table" case in that test.)
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -107,10 +107,10 @@ function classifyPathToken(rawSpan: string): { rel: string; base: string } | nul
   return null
 }
 
-test('doc path references resolve (README.md, CLAUDE.md)', () => {
+test('doc path references resolve (README.md, AGENTS.md)', () => {
   const docs: [string, string][] = [
     ['README.md', read(join(ROOT, 'README.md'))],
-    ['CLAUDE.md', read(join(ROOT, 'CLAUDE.md'))],
+    ['AGENTS.md', read(join(ROOT, 'AGENTS.md'))],
   ]
 
   const failures: string[] = []
@@ -182,13 +182,13 @@ describe('command references are real', () => {
   expect(realRecipes.size).toBeGreaterThan(0) // parser sanity — justfile shape changed?
 
   const readme = read(join(ROOT, 'README.md'))
-  const claudeMd = read(join(ROOT, 'CLAUDE.md'))
+  const agentsMd = read(join(ROOT, 'AGENTS.md'))
 
   test('every `bun run <script>` names a real package.json script', () => {
     const failures: string[] = []
     const sources: [string, string[]][] = [
       ['README.md', codeRegions(readme)],
-      ['CLAUDE.md', codeRegions(claudeMd)],
+      ['AGENTS.md', codeRegions(agentsMd)],
       ['justfile', [justfileText]],
     ]
     for (const [name, regions] of sources) {
@@ -208,14 +208,14 @@ describe('command references are real', () => {
   })
 
   test('every `just <recipe>` names a real justfile recipe', () => {
-    // Fenced code blocks only (not inline spans): CLAUDE.md's prose also says
+    // Fenced code blocks only (not inline spans): AGENTS.md's prose also says
     // "run `just gen-types` in `esm/`", a real recipe of the *sibling* esm/
     // repo's justfile, not this one — narrowing to actual invocation blocks
     // avoids mistaking that cross-repo mention for local drift.
     const failures: string[] = []
     const sources: [string, string[]][] = [
       ['README.md', fencedBlocks(readme)],
-      ['CLAUDE.md', fencedBlocks(claudeMd)],
+      ['AGENTS.md', fencedBlocks(agentsMd)],
     ]
     for (const [name, regions] of sources) {
       for (const region of regions) {
@@ -237,7 +237,7 @@ describe('command references are real', () => {
     const failures: string[] = []
     const sources: [string, string[]][] = [
       ['README.md', fencedBlocks(readme)],
-      ['CLAUDE.md', fencedBlocks(claudeMd)],
+      ['AGENTS.md', fencedBlocks(agentsMd)],
       ['justfile', [justfileText]],
     ]
     for (const [name, regions] of sources) {
@@ -246,7 +246,7 @@ describe('command references are real', () => {
           const mgr = pkgManagerAtLineStart(line)
           if (!mgr || SKIP_NPM_MENTIONS.has(mgr)) continue
           failures.push(
-            `${name}: \`${line.trim()}\` — this is a bun-only repo (see CLAUDE.md), ` +
+            `${name}: \`${line.trim()}\` — this is a bun-only repo (see AGENTS.md), ` +
               `no ${mgr} command should be documented as something to run`,
           )
         }

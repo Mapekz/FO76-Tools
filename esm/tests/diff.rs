@@ -878,6 +878,66 @@ fn diff_two_esm_versions_glob() {
         result.removed.len(),
         result.changed.len()
     );
+
+    // Structural invariants that hold for *any* pair of ESMs, so this stays a
+    // real assertion rather than a smoke print regardless of which snapshots
+    // RUST_TEST_ESM_A/B point at.
+    let ids = |stubs: &[esm::diff::RecordStub]| -> std::collections::BTreeSet<String> {
+        stubs.iter().map(|s| s.form_id.clone()).collect()
+    };
+    let added = ids(&result.added);
+    let removed = ids(&result.removed);
+    let changed: std::collections::BTreeSet<String> = result
+        .changed
+        .iter()
+        .map(|c| c.stub.form_id.clone())
+        .collect();
+
+    assert_eq!(
+        added.len(),
+        result.added.len(),
+        "added has duplicate FormIDs"
+    );
+    assert_eq!(
+        removed.len(),
+        result.removed.len(),
+        "removed has duplicate FormIDs"
+    );
+    assert_eq!(
+        changed.len(),
+        result.changed.len(),
+        "changed has duplicate FormIDs"
+    );
+
+    // A FormID is only-in-B, only-in-A, or in both — never two of those.
+    assert!(
+        added.is_disjoint(&removed),
+        "FormIDs in both added and removed: {:?}",
+        added.intersection(&removed).take(5).collect::<Vec<_>>()
+    );
+    assert!(
+        added.is_disjoint(&changed),
+        "FormIDs in both added and changed: {:?}",
+        added.intersection(&changed).take(5).collect::<Vec<_>>()
+    );
+    assert!(
+        removed.is_disjoint(&changed),
+        "FormIDs in both removed and changed: {:?}",
+        removed.intersection(&changed).take(5).collect::<Vec<_>>()
+    );
+
+    // A "changed" record with no field changes would be a bug in the differ.
+    for c in &result.changed {
+        let obj = c
+            .field_changes
+            .as_object()
+            .unwrap_or_else(|| panic!("{}: field_changes must be an object", c.stub.form_id));
+        assert!(
+            !obj.is_empty(),
+            "{}: listed as changed but field_changes is empty",
+            c.stub.form_id
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

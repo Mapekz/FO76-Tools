@@ -185,16 +185,25 @@ fn compress_entry_store_and_auto_always_uncompressed() {
     }
 }
 
-/// When `min_shrink_ratio` is 0.0, compression is always accepted (even if
-/// the compressed form is larger than the original).
+/// `min_shrink_ratio` 0.0 means compression is never accepted, not always:
+/// the threshold is `floor(len * 0.0) == 0`, and the accept test is
+/// `compressed.len() < threshold`, which no unsigned length can satisfy.
+/// Both an incompressible byte and a highly compressible buffer must store.
 #[test]
-fn compress_entry_shrink_ratio_zero_always_compresses() {
-    // A single byte: LZ4 output is larger, but ratio 0.0 means "always accept".
-    let data = vec![0xABu8; 1];
-    let (blob, packed_size) = compress_entry(&data, Codec::Lz4, 0.0).unwrap();
-    // threshold = floor(1 * 0.0) = 0; compressed.len() (e.g. 5) >= 0 is
-    // always true… wait, we need compressed.len() < threshold.
-    // threshold=0 means compressed (any len) is NOT < 0, so fallback to store.
-    // Actually let's just assert the behaviour is deterministic.
-    let _ = (blob, packed_size); // accept either outcome without asserting a specific value
+fn compress_entry_shrink_ratio_zero_always_stores() {
+    for data in [vec![0xABu8; 1], sample()] {
+        let (blob, packed_size) = compress_entry(&data, Codec::Lz4, 0.0).unwrap();
+        assert_eq!(
+            packed_size,
+            0,
+            "ratio 0.0 must store (len {}): packed_size==0 signals 'stored'",
+            data.len()
+        );
+        assert_eq!(
+            blob,
+            data,
+            "ratio 0.0 must store (len {}): blob must equal input verbatim",
+            data.len()
+        );
+    }
 }
