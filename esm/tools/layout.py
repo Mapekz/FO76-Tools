@@ -8,7 +8,7 @@ a bare directory name with no path component, a module-level constant).
 Before this module existed, ~20 artifact filenames were pure convention,
 hardcoded independently across every stage that touched them (the mechanical
 scripts in this directory, plus the `/patch-notes` narrative skill's own
-prose in `../.claude/skills/patch-notes/SKILL.md`). Two concrete files
+prose in `../../skills/patch-notes/SKILL.md`). Two concrete files
 already disagreed as a result (`discord_chunker.py`'s CLI default vs.
 `update_manifest.py`'s hardcoded dirname) with no compiler or test to catch
 it — see `DISCORD_DIRNAME` below.

@@ -18,7 +18,7 @@
 //!
 //! Automates the "chase pattern" for unique-weapon OMOD effects documented
 //! under "Chasing a unique-weapon effect" in
-//! `.claude/skills/patch-notes/kb/mechanics.md`, generalized past the
+//! `skills/patch-notes/kb/mechanics.md`, generalized past the
 //! OMOD-only original to also accept PERK, SPEL, ALCH, and ENCH selectors
 //! directly — the record types an OMOD's own forward-fetch hops resolve
 //! into. Read the KB section first — this module is a mechanical

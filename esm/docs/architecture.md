@@ -259,7 +259,7 @@ reach the `esm` CLI/daemon — `bulk_get`, `list_type`, `refs`, `diff` — so no
 `tools/` shells out to `esm` directly.
 
 The **narrative stage** takes over from `work/deep-slice.json`/`ambiguous.json` onward: the
-`/patch-notes` skill (`FO76-Tools/.claude/skills/patch-notes/`, run with `FO76-Tools/` as cwd)
+`/patch-notes` skill (`FO76-Tools/skills/patch-notes/`, run with `FO76-Tools/` as cwd)
 fans out 1-2 deep-writer agents (session model) armed with `deep-writer-prompt.md`/`style-guide.md`/`kb/`
 over the DEEP tier, resolves the `ambiguous` tier with one assessor pass, and assembles the
 final `patch-summary.md`, chunked for Discord by `tools/discord_chunker.py` and finalized via

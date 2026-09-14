@@ -24,7 +24,7 @@ are not part of this procedure. If delegation is unavailable, perform triage and
 drafting locally with the same input/output contracts, and report independent
 review as unavailable rather than presenting self-review as a fresh review.
 
-**Read `.claude/skills/patch-notes/kb/pipeline-gotchas.md` before Step 2.** It catalogues the
+**Read `skills/patch-notes/kb/pipeline-gotchas.md` before Step 2.** It catalogues the
 ways this pipeline silently reports the wrong thing (string-table resolution, ROLLOUT value
 blindness, diff blind spots) and the recovery step for each. It is orchestrator-only — the deep
 writers get `kb/mechanics.md` and `kb/diff-traps.md` instead.
@@ -226,17 +226,17 @@ emits them in dependency-sorted order, so a simple contiguous split is fine) and
 writers concurrently.
 
 For each writer, spawn a subagent with
-`.claude/skills/patch-notes/deep-writer-prompt.md`, substituting:
+`skills/patch-notes/deep-writer-prompt.md`, substituting:
 
 | Placeholder | Value |
 |---|---|
 | `{OLD_TOKEN}` / `{NEW_TOKEN}` | snapshot tokens |
 | `{SLICE_PATH}` | `$OUT/work/deep-slice.json` (or its part file) |
-| `{MECHANICS_KB}` | `.claude/skills/patch-notes/kb/mechanics.md` |
-| `{TRAPS_KB}` | `.claude/skills/patch-notes/kb/diff-traps.md` |
+| `{MECHANICS_KB}` | `skills/patch-notes/kb/mechanics.md` |
+| `{TRAPS_KB}` | `skills/patch-notes/kb/diff-traps.md` |
 | `{OUT}` | `$OUT` |
 | `{NEW_ESM}` / `{OLD_ESM}` | resolved ESM paths |
-| `{STYLE_GUIDE_PATH}` | `.claude/skills/patch-notes/style-guide.md` |
+| `{STYLE_GUIDE_PATH}` | `skills/patch-notes/style-guide.md` |
 | `{OTHER_SLICES}` | the other writer's slice path, or "none — you own everything DEEP" |
 | `{DRAFT_PATH}` / `{REPORT_PATH}` | `$OUT/drafts/deep[.partN].{md,report.json}` |
 | `{OFFICIAL_NOTES_BLOCK}` | if official notes were provided: a bullet pointing at `$OUT/work/official-notes.txt` with the instruction "cross-reference every claim: data contradicting the article → `⚠️ Mismatch (official notes):`; significant changes the article omits → `⚠️ Undocumented:`". Otherwise empty. |
@@ -275,8 +275,8 @@ Read every draft + report. Then, in order:
 2. **Re-run both gates** after any edit to a draft or report:
    `check_claims.py` then `check_coverage.py`. The spot-check of old is now the whole set.
 3. **Merge `kb_proposals[]`** into the KB, routing by each proposal's `kind`: `mechanic` →
-   `.claude/skills/patch-notes/kb/mechanics.md`, `trap` →
-   `.claude/skills/patch-notes/kb/diff-traps.md`. These are the only files outside `$OUT` this
+   `skills/patch-notes/kb/mechanics.md`, `trap` →
+   `skills/patch-notes/kb/diff-traps.md`. These are the only files outside `$OUT` this
    skill may write. Before appending, enforce `mechanics.md`'s entry format yourself — writers
    drift and the KB is re-read whole by every future run:
    - **Rewrite, don't paste** into that format; strip all history — how it was found, what was
@@ -311,7 +311,7 @@ Read every draft + report. Then, in order:
 
 ## 6b. Cold review (one read-only subagent)
 
-Spawn one subagent with `.claude/skills/patch-notes/review-prompt.md`,
+Spawn one subagent with `skills/patch-notes/review-prompt.md`,
 substituting `{OUT}`, `{OLD_ESM}`, `{NEW_ESM}`. It reads only the artifacts — never your
 reasoning — and writes `$OUT/work/review.json`. Then: fix every `high` finding in the summary
 and in the draft + claim it came from; decide `med` on merit; ignore `low`. Re-run
@@ -369,5 +369,5 @@ either.
 - No absolute filesystem paths, ESM filenames, or `$FO76_DATA_DIR` expansions in any file
   under `$OUT`.
 - This skill writes only inside `$OUT`, plus the KB files under
-  `.claude/skills/patch-notes/kb/` (merges in Step 6). It never modifies game data or anything
+  `skills/patch-notes/kb/` (merges in Step 6). It never modifies game data or anything
   else in the repo.
