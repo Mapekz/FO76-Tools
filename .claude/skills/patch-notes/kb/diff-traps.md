@@ -76,7 +76,12 @@ signature of a global serialization-format change from a form_version bump. Don'
 as a real multiplier change without an independent live cross-check. A lone `Value 2` change with
 no `Step` field present (or in either direction, not just 1→3) is not automatically this artifact —
 pull every sibling record sharing that exact `Property` name; if they agree on one value and yours
-diverges, it's a real outlier worth an Unconfirmed flag, not noise to drop.
+diverges, it's a real outlier worth an Unconfirmed flag, not noise to drop. Run that sibling test
+*within one snapshot*: on a `Value Type = FormID,Int` property (Keywords, Material Swaps,
+ImpactDataSet, ZoomData, ModelSwap) Value 1 carries the FormID and Value 2's int is never read, so
+if unrelated records in the same snapshot already disagree on it the slot carries no meaning.
+This holds inside ARMO/WEAP `Object Template / Combinations[].Object Mod Template Item / Properties`
+too.
 
 **Example:** 20260710→20260717 across ARMO colour-palette swaps, Letterman's Jacket, Dirty Postman
 Uniform, Brotherhood Scribe Outfit, Laundered Dresses, Grafton Monsters Jacket, Keep Out Backpack,
@@ -128,14 +133,22 @@ rename rides along with this churn — a naming shuffle, not new data.
 
 ## A `Localized` flag flip makes every text field look changed
 
-`SeventySix.esm` flipped `Localized` false → true between 20260710 and 20260717 (TES4 flags `0x01`
-→ `0x81`): the old side stores `FULL`/`DESC` inline, the new side stores 4-byte lstring IDs. Even
+The TES4 header's `Localized` flag (0x80) decides whether `FULL`/`DESC` hold a 4-byte lstring ID or
+inline text, and it has flipped in both directions: false → true between 20260710 and 20260717
+(flags `0x01` → `0x81`), and true → false between 20260821 and 20260903 (`0x81` → `0x01`, the Pets
+branch). Check it with `esm info` on both sides. Whichever way it moved, one side stores text
+inline — tagged `<ID=xxxxxxxx>`, with non-ASCII arriving as U+FFFD replacement glyphs. Even
 with per-side string tables wired correctly the round-trip normalizes text, so one patch yields
 tens of thousands of text "changes" that are really mojibake repairs (`Mj?lnir` → `Mjölnir`;
 `????` → `¬¬¬¬`, the legendary star-rating prefix), leading/trailing whitespace and newline churn
 on `Description`/`Header Text`/`Body Text`, and centering whitespace on terminal headers. **Only
-treat a text diff as a story when the wording changed.**
-*verified 2026-07-22 vs 20260717*
+treat a text diff as a story when the ASCII wording changed.**
+
+**Example:** LGDI `RA_LegendaryItems_Weapons_Rank4` (0x00863A9A) reads `¬¬¬¬ Normal Weapon Rewards`
+on 20260821 and `���� Normal Weapon Rewards` on 20260903, where the new side stores
+`<ID=3929B8F4>` plus raw single-byte text inline. The string table's bytes are identical on both
+sides.
+*verified 2026-09-14 vs 20260717 and 20260821/20260903*
 
 ## Terminal stat tokens migrated to `<STAT=X>` syntax
 
@@ -293,8 +306,12 @@ decodes as `Override Data`. Confirmed by enumerating the flags live on 0x005751A
 0x0080100A. 32 of 116 lints in one deep slice were this alone. Related: `0xFFFFFFFF` `dangling_ref`
 hits on INFO records are the `Responses[].Response Data.Emotion` enum sentinel (verified on
 0x0092C628–2B), also not a FormID. AVIF `Flags` bitfields misfire the same way: `0x80000800` on `FollowerState`
-(0x00000344) is "Default to 1.0" + "Hardcoded", not a reference.
-*verified 2026-07-24 vs 20260724; AVIF case 2026-09-03*
+(0x00000344) is "Default to 1.0" + "Hardcoded", not a reference. Two more non-FormID sources:
+`0x00000014` is the engine's hardcoded PlayerRef, so any `Condition Data / Reference` with
+`Run On: Reference` targeting it lints as dangling (`PowerArmorImpactEnchantment` 0x0011D53B,
+`DLC01Bot_KnockdownSpell` 0x0010EB2A), and NAVI `Navmesh Info / Edge Links` and `Preferred Edge
+Links` hold navmesh-local link ids rather than FormIDs (NAVI 0x00000FF1).
+*verified 2026-07-24 vs 20260724; AVIF case 2026-09-03; PlayerRef and NAVI cases 2026-09-14*
 
 ## `desc_changed_stats_same` on undecoded hex blobs
 
@@ -327,6 +344,11 @@ Global` reference before trusting the lint's premise.
 Perks granted by an OMOD/ENCH `Perks` property legitimately have no PCRD, and `STAT_BeneficialPerk`
 (0x0018ADAD) is attached directly to the Player NPC_ record (0x00000007). Verify the grant path
 with `refs <perk-id> --type PCRD --paths` instead of calling them orphaned. See `mechanics.md`.
+Some ordinary obtainable perk cards also have no PCRD and no reference of any type, so an empty
+`refs` result never proves a rank is ungrantable on its own — only call a rank orphaned when the
+card is unobtainable in game too. Known members: Lady Killer/Black Widow, Critical Banker,
+Pickpocket, Blitz, Intimidation, I'm Cured!. `LadyKiller01` (0x00019AA3) has zero refs and no
+`LadyKillerCard` record exists, while `Sneak01` (0x0004C935) resolves to `SneakCard` (0x0034409F).
 
 ## `lvli_blocked_entry`'s `quantity_zero` reason is a false positive when the entry has a `Quantity Global`
 
@@ -345,3 +367,42 @@ An unknown flag bit (cleared on 6 hazard clouds in 20260710) with no derivable g
 and not schema-fixable: xEdit's own `wbDefinitionsFO76.pas` names only bits 0–6, and bit 6 is
 itself "Unknown 6". A flag-only HAZD change has no story.
 *verified 2026-07-14 vs 20260710*
+
+## SPEL/ENCH effect rows gaining `Effect Item Data / _unknown 2` is cross-build serialization
+
+On a pair spanning two game builds, every SPEL/ENCH effect row can show eight zero bytes as
+`Effect Item Data / _unknown 2` while `Effect Flags`, `Cooldown Duration`, `Effect ID` and the
+record's `Max Item ID` collapse to null, with magnitudes, durations and conditions byte-identical.
+`Area` values moving in those same rows are unreliable for the same reason; a heterogeneous set of
+`Area` values all landing on one number is the tell.
+
+**Example:** 20260821→20260903 across 51 unrelated ability spells, including
+`abDogmeatHealthBonus` (0x00215CD3) and the eight `MTNM03_ZenSpell*`; `Area` 0 → 21 on nine of
+them and 100 → 0 on `DetectLifePATargetCloakSpell` (0x00247A41).
+*verified 2026-09-14 vs 20260821/20260903*
+
+## PERK `Effects` diffs on a re-serialised build are slot churn, not balance
+
+Test for a permutation before reading a PERK effect diff: collect each subpath's from/to multiset
+across the changed rows, and if they match, the entries only swapped slots. `Perk Entry ID`, entry
+point, function, `Float` and whole `Perk Conditions` lists move together and mirror each other.
+Two co-occurring fields are pure noise either way: `Entry Point / Perk Condition Tab Count`
+shifting by one is editor metadata, and `Actor Value, Float` appearing while `Float` and
+`Function Parameter 3 (Actor Value)` go null is one schema struct replacing two fields.
+
+**Example:** `PlayerPerk_Spotlight` (0x0046C7CF) reported 10 of 18 effect rows changed; both sides
+carry the same ten `Ab_Spotlight_*` abilities plus eight empty slots, differing only in order.
+*verified 2026-09-14 vs 20260903*
+
+## A creature-leveling "reversion" on a Pets-branch pair is a build fork, not a nerf
+
+When the newer snapshot is the Pets PTS branch, creature records look rolled back: the Health
+`Properties[]` entry and its `CT_Creatures_Health_Universal_TierNN` curve give way to the legacy
+top-level `Health Curve Table` on a `zzzCT_Creatures_Health_*` curve, `crGlowingCreatureLevelAdjust`
+(0x008464F5) disappears, `Actor Scaling Info` Level Min/Max and `Renorm_*_TierNN` globals return,
+and the `EncounterSkullIndex` (0x007ADDD9) property drops. The branch forked before that migration
+landed. This also reverses the `Value Currency` schema-population trap above, in that direction.
+
+**Example:** 55 records including `E02A_LvlCaveCricket_Prime` (0x00553710); `BobbyPin`
+(0x0000000A) `Value Currency` Caps001 → null is the same fork.
+*verified 2026-09-14 vs 20260821/20260903*

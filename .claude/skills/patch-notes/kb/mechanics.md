@@ -124,10 +124,12 @@ Garb of Mysteries / Thorn Armor" line. None of the six records was itself touche
 Since 20260710 these replace bespoke ENCH→MGEF→PERK script chains on several legendary mods —
 same numbers, new plumbing. A blank OMOD Description alongside a `STAT_*` ADD means the tooltip
 auto-generates from the AV's own text. **Don't call the migration semantics-preserving without
-checking the old implementation per mod:** Icemen's was a MUL+ADD on `DamageTypeValues` dtCryo
-(+20% *base* cryo damage, always on, and new cryo damage on non-cryo weapons) and became +50
-`STAT_DmgVsFreezing` (0x0085A2F1), a conditional DBM. Different axis — the 20→50 numbers are not
-comparable.
+checking the old implementation per mod, and don't assume a mod in the family migrated at all.**
+Icemen's did not: it carries one MUL+ADD on `DamageTypeValues` dtCryo (Value 2 = 0.2) and no
+`ActorValues` property, so it is +20% *base* cryo damage, always on, and it materialises cryo
+damage on a weapon that has none. `STAT_DmgVsFreezing` (0x0085A2F1) has exactly one OMOD
+consumer, Ice Breaker. Where a mod did migrate, the axis changes with it, so a `20 → 50` pair
+across the two implementations is not a comparison.
 
 **Example:** Severing's — old (20260702) OMOD → ENCH 0x008E0681 → MGEF (Perk to Apply) → PERK
 0x008E0723 "Mod Weapon DMG Bonus Mult" ADD 0.5, gated on bleed. New side ADDs `STAT_DmgVsBleeding`
@@ -337,7 +339,12 @@ leveling). The real magnitude lives on the effect-level `Magnitude` FormID → a
 curves). Pet Prowess: outgoing damage ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2 by tier.
 The progression tracks themselves are PGTR records, and the schema decodes them fully. Each
 species (Cat/Deathclaw/Dog/Radhog, 4 records, each `WorldPets_ProgressionTrack_<species>`) has 30
-Track Entries keyed by `Progress Threshold`, stepping by 5. Each entry's `VPRR` points at the
+Track Entries keyed by `Level Threshold` (named `Progress Threshold` before 20260903), covering pet
+level 5 to 200. Each entry also carries an authored reward `Name`/`Description Text`, which is the
+fastest source for what a tier actually does. Since 20260903 no pet effect reads a level at all:
+AVIF `WorldPets_PetProwessLevel` (0x00921E47) and the `WorldPets_PetLevelling_Level_*` globals are
+unused, and the ENTM markers are the only gate. On a pet gift LVLI the per-entry `Quantity Global`
+is the real count; the flat `Quantity` beside it is a stale authoring leftover. Each entry's `VPRR` points at the
 `GMRW` reward it grants at that threshold; its `NAME` links back to the prerequisite entry's own
 `PGTI` id (e.g. the "Goo-Getter 2" entry's `NAME` points at the "Goo-Getter 1" entry). Some entries
 carry 2 reward slots — the second slot is an alternate reward for the case where a reward shared
@@ -436,3 +443,17 @@ declaring a buff mutation-proof.
 carries `ChemEffect`, so Herbivore zeroes it; Carnivore keeps it (its gates name only Vegetable and
 Meat). The perk-granted +1/teammate MGEF (0x00905315) has no keywords and survives both.
 *verified 2026-08-15 vs 20260814*
+
+## A World Pets passive's loot tier is implemented by star rank or by item count, never both
+
+An activity-reward passive hangs off the activity's own death/reward list as one entry per tier,
+each gated `HasEntitlement(<species>_BUFF_<name>0N)`. Two shapes exist and they read identically
+in a diff: a `Use First Object That Matches All Conditions` list whose entries are 1/2/3-star
+templates ramps the rank, while several entries pointing at one shared list with a per-tier
+`Quantity Global` ramps the count and leaves the rank fixed at whatever that shared list holds.
+Read which shape you have before quoting a star rating.
+
+**Example:** Bounty Sniffer (0x0093D70B) ramps 1→2→3 star. Fun-Festation's three entries on
+`HTO_crLLD_Boss` (0x00863220) all point at 0x008FD890, which holds only 3-star lists, and ramp
+1→2→3 items through globals 0x008C9393/95/94.
+*verified 2026-09-14 vs 20260903*

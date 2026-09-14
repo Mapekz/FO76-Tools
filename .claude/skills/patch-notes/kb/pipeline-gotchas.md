@@ -178,3 +178,54 @@ horizontal rules; a summarizing fetch blends them and the comparison baseline is
 
 > **Enforced since 2026-09-12:** `fetch_official_notes.py` cuts the page at the first `<hr>`
 > before stripping tags; the WebFetch fallback carries the same instruction (Step 1).
+
+## An array keyed on an unstable field reports as wholly rewritten
+
+`array_diff` pairs array elements by a key derived from the element's shape
+(`esm/src/diff/array_diff.rs`, `element_key_spec`), widening onto extra scalar leaves when the
+proposed key isn't unique. A key component the newer build renumbers gives the same logical
+element a different key on each side, so nothing pairs and the array reports every element
+`removed` plus every element `added` — even at identical `count_from`/`count_to`. Triage then
+tiers those bundles DEEP, because a whole-array turnover reads as a large numeric change.
+
+> **Fixed since 2026-09-14:** a proposed key that resolves to null on every element is discarded
+> rather than widened (perk entry-point effects keyed on the `Base Effect` they never carry), and
+> VMAD alias objects decode their real alias id, so a quest's aliases stop collapsing into one key
+> group. Cross-build pairs still need the check below when a *new* shape shows up.
+
+**Symptom:** an `_array_diff` whose `count_from` equals `count_to` and whose `unchanged_count` is
+0 or near it, with a long `key_fields` list naming fields that look like serializer bookkeeping
+(`Rank`, `* Tab Count`, `* Index`, a version counter). Read `key_fields` first on any array that
+looks wholly rewritten.
+**Fix:** confirm against two `esm get` calls that the elements really did turn over. If they did
+not, the key is the problem, not the data — narrow `element_key_spec` for that shape rather than
+writing up the phantom rewrite.
+**Example:** 20260821→20260903 keyed PERK `Effects` on a 14-component widened key including
+`Effect Header.Rank`, which v283 renumbers to 0. 485 changed perks reported 860 added/removed
+effect entries; after the key fix, 72. QUST VMAD `aliases` was worse: every alias decoded as id 0,
+so all of a quest's aliases shared one key, uniqueness failed, and the unkeyed fallback reprinted
+all 12 aliases whenever one property moved — 351 records, of which 198 had no real change at all.
+*found 2026-09-14*
+
+## A snapshot can flip the Localized header flag, voiding every text comparison
+
+The TES4 header's `Localized` flag (0x80) decides whether `FULL`/`DESC` hold a 4-byte string-table
+id or inline text. A build that ships with it unset stores text inline, tagged `<ID=00001234>`,
+and non-ASCII characters arrive as replacement glyphs. Diffing such a snapshot against a
+localized one makes every localized field on every record look rewritten, and the
+string-table set-diff recovery pass above becomes meaningless: the newer snapshot still
+carries `strings/` files, but the build ignores them.
+
+**Symptom:** `esm info` reports `Localized: false` on one side and `true` on the other. The diff
+banner says `is not localized (TES4 Localized flag unset); ignoring the string tables supplied
+for it`. Downstream, every star prefix, terminal header and description reads as changed, and a
+`desc_changed_stats_same` lint fires in the hundreds.
+**Fix:** run `esm info` on both snapshots before the narrative stage and compare the flag. When
+it differs, treat every text-only delta as unreportable for that pair, skip the string-table
+recovery pass entirely rather than mining its output, and say so in the summary. Numeric and
+structural changes are unaffected.
+**Example:** 20260821 reports flags `0x00000081` / `Localized: true`; 20260903 reports
+`0x00000001` / `Localized: false`. The set-diff pass returned 1,051 added and 224 removed
+`.strings` entries for a build that reads none of them, and 158 `desc_changed_stats_same` lints
+on one writer's slice alone traced to the same cause.
+*found 2026-09-14*
