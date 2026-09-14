@@ -62,13 +62,11 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `Resol
 
 ## N-API Binding and Electron App
 
-The `bindings/napi/` sub-crate (`esm-napi`) builds a `esm-napi.<platform>.node` addon. The Electron app is now at `../esm-viewer/` (a sibling directory in the same repository) and depends on it via the `@fo76/esm-napi` npm package (local file dep, `"file:../esm/bindings/napi"`). After any Rust API change that affects `EsmDatabase`, rebuild the addon:
-
-```sh
-cd bindings/napi && bun run build   # or build:debug
-```
-
-The app loads the addon via `esm-viewer/src/main/addon.ts`. Most of the Rust N-API DTOs are mirrored to TypeScript via `ts-rs` (dev-dependency; `#[cfg_attr(test, derive(ts_rs::TS))]` + `#[cfg_attr(test, ts(export))]` on the DTOs in `lib.rs`/`ipc.rs`/`reader.rs`/`tree.rs`/`diff.rs`/`decode.rs`) — run `just gen-types` after changing any of those structs' shape, which regenerates `esm-viewer/src/shared/generated/*.ts`; `just check` fails if that regen produces an uncommitted diff. `esm-viewer/src/shared/api-types.ts` re-exports those generated types (aliasing a few names) and hand-writes only the IPC-contract-specific bits (`CH` channel names, `Fo76Api`, `FilterOp`) — keep *that* in sync when adding/removing `EsmDatabase` methods.
+The `bindings/napi/` sub-crate produces the addon consumed by
+`../esm-viewer/src/main/addon.ts` through the local `@fo76/esm-napi` dependency.
+Follow [the root validation map](../AGENTS.md#validation-map) for addon builds,
+DTO regeneration, and IPC synchronization. DTOs use `ts-rs` test-only derives
+and exports in Rust; generated TypeScript is not hand-edited.
 
 ## Game Data
 
@@ -86,7 +84,7 @@ Drift subrecords newer than the TES5Edit reference are handled as follows:
 
 - **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`**, **STAT `SNAM`+`ANLD`**, **REFR `MCND`** — mapped in `schema/fo76.overrides.json` (GMRW XALG expands from `$pascal_var: wbXALG`, u64 legendary flags; REFR MCND is an rarray-of-unknown, in no TES5Edit definition at all).
 - **CTDA function table** — generated to `schema/fo76.ctda.json` from Pascal; loaded at runtime in `src/ctda.rs`.
-- **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `decode.rs`.
+- **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `src/decode/mod.rs`.
 - **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode/vmad.rs` handles Script Fragments + Aliases tail.
 - **INFO/PACK/PERK/SCEN `VMAD` (fragmented)** — `decode_vmad_{info,pack,perk,scen}` in `src/decode/vmad.rs` handle each record type's Script Fragments tail; dispatched by `ctx.record_signature`.
 - **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is now in `CLEAN_TYPES`.

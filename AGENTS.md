@@ -26,8 +26,11 @@ subproject for unrelated edits.
 - ESM's default Cargo checks omit `bindings/napi`. After editing it, run
   `cargo build -p esm-napi` from `esm/`; rebuild the addon with
   `bun run build` from `esm/bindings/napi` when its API changes.
-- DTO changes need `just gen-types` from `esm/`; check the generated viewer
-  types and update the hand-written IPC contract when methods change.
+- DTO changes need `just gen-types` from `esm/`; it regenerates
+  `esm-viewer/src/shared/generated/`, which is drift-checked by `just check`.
+  `esm-viewer/src/shared/api-types.ts` re-exports those types; update its
+  hand-written IPC contract (`CH`, `Fo76Api`, `FilterOp`) when methods change.
+  Rebuild the addon and run the viewer checks for affected cross-project changes.
 - Game-data integration tests skip when their environment variables are unset.
   Report that coverage gap; a passing synthetic suite does not validate real data.
 

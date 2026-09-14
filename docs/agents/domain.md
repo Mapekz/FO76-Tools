@@ -2,7 +2,7 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-FO76-Tools is a **multi-context** repo: three independent Fallout 76 tools (`ba2/`, `esm/`, `esm-viewer/`) that share almost no code or vocabulary — a BA2 archive reader, an ESM record/subrecord decoder + server, and an Electron viewer UI. Each already has its own `CLAUDE.md`; domain docs follow the same per-subproject split.
+FO76-Tools is a **multi-context** repo: three independent Fallout 76 tools (`ba2/`, `esm/`, `esm-viewer/`) that share almost no code or vocabulary — a BA2 archive reader, an ESM record/subrecord decoder + server, and an Electron viewer UI. Each already has its own `AGENTS.md`; domain docs follow the same per-subproject split.
 
 ## Before exploring, read these
 
@@ -41,4 +41,4 @@ If your output contradicts an existing ADR (root `docs/adr/` or a subproject's `
 
 > _Contradicts `esm/docs/adr/0009-ba2-duplication-is-deliberate.md` — but worth reopening because…_
 
-Note: the root `CLAUDE.md`'s **Scope** section already documents one durable decision this way — `esm/` and `esm-viewer/` are read-only by design, and ESM write/serialize support is permanently out of scope. Treat that as ADR-equivalent even before it's formalized into a `docs/adr/` file.
+Note: the root `AGENTS.md` already documents one durable decision this way — `esm/` and `esm-viewer/` are read-only by design, and ESM write/serialize support is permanently out of scope. Treat that as ADR-equivalent even before it's formalized into a `docs/adr/` file.

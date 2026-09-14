@@ -51,13 +51,9 @@ a symlinked local dependency, not a published package. The addon is a Rust works
 of `esm/Cargo.toml`, so it lives under `esm/` rather than in this directory, and this app
 consumes it via that `file:` symlink dependency.
 
-**After any Rust API change to `EsmDatabase` in `esm/bindings/napi/src/lib.rs`, rebuild the
-addon** (`bun run build:addon`, or just let `predev`/`prebuild` do it automatically). Most DTO
-shapes are generated, not hand-mirrored: run `just gen-types` in `esm/` (part of `esm/`'s
-`just check`) to regenerate `src/shared/generated/*.ts` from the `ts-rs`-derived Rust structs.
-`src/shared/api-types.ts` re-exports those under their existing names and hand-writes only the
-IPC-contract pieces that aren't Rust types (`CH` channel names, `Fo76Api`, `FilterOp`) — update
-`Fo76Api` by hand when adding/removing/reshaping an `EsmDatabase` method.
+Follow [the root validation map](../AGENTS.md#validation-map) for addon builds,
+DTO regeneration, and IPC synchronization. `predev` and `prebuild` rebuild the
+addon automatically; the build pipeline does not type-check the app.
 
 If `node_modules/@fo76/esm-napi` fails to resolve after moving either directory,
 run `bun install` and inspect the links before changing dependencies or the lockfile. Bun links this
@@ -109,4 +105,4 @@ app's docs/config files were never brought under formatter control.
 | `src/preload/` | Context-isolated preload bridge exposed to the renderer |
 | `src/renderer/` | React UI (record tree, detail panel, referenced-by panel, open-files panel, nav history), Zustand store |
 | `src/shared/api-types.ts` | Re-exports the `ts-rs`-generated Rust N-API DTOs (`./generated/`) plus hand-written IPC-contract types (`CH`, `Fo76Api`, `FilterOp`) |
-| `src/shared/generated/` | Generated TypeScript mirrors (`ts-rs` + two hand-written generators) — regenerate via `just gen-types` in `esm/`; never hand-edit |
+| `src/shared/generated/` | Generated TypeScript mirrors (`ts-rs` + two hand-written generators) — follow the root validation map; never hand-edit |
