@@ -7967,3 +7967,49 @@ fn mscs_test_misc_items_decodes_correctly() {
         .expect("Spawns must decode");
     assert_eq!(spawns.len(), 13, "expected exactly 13 SPWN entries");
 }
+
+/// QUST VMAD alias objects follow xEdit's "Object v2" layout when the VMAD
+/// header's objFormat is 2: `Unused(u16), Alias(s16), FormID(u32)`.
+///
+/// Reading the first `u16` as the alias id instead reports every alias as id
+/// 0, which is the only field distinguishing two aliases that fill from the
+/// same object (a quest's own aliases all carry the quest's FormID). The diff
+/// layer keys alias arrays on that id, so an all-zero id collapses every
+/// alias into one key group, fails uniqueness, and falls back to an unkeyed
+/// diff that reprints all of a quest's aliases whenever one of them changes.
+///
+/// `Alias` is signed: -1 is the "None" sentinel for a script bound to the
+/// quest rather than to one of its aliases, and must survive as -1.
+#[test]
+fn qust_vmad_alias_ids_read_from_the_v2_object_layout() {
+    let vmad = concat!(
+        "0600", // version 6
+        "0200", // objFormat 2
+        "0000", // script count 0
+        "04",   // extra bind data version
+        "0000", // fragment count 0
+        "0000", // script name: empty -> no script data
+        "0200", // alias count 2
+        // alias 1: Unused=0, Alias=44, FormID=0x00002315, version, objFormat, 0 scripts
+        "0000", "2c00", "15230000", "0600", "0200", "0000",
+        // alias 2: Unused=0, Alias=-1 (None), same FormID
+        "0000", "ffff", "15230000", "0600", "0200", "0000",
+    );
+    let result = decode_fixture("QUST", 209, &[("EDID", "7465737400"), ("VMAD", vmad)]);
+
+    let aliases = result
+        .get("Virtual Machine Adapter")
+        .and_then(|v| v.get("aliases"))
+        .and_then(|v| v.as_array())
+        .expect("aliases array must decode");
+    assert_eq!(aliases.len(), 2);
+    assert_eq!(aliases[0].get("alias_id").and_then(Value::as_i64), Some(44));
+    assert_eq!(aliases[1].get("alias_id").and_then(Value::as_i64), Some(-1));
+    for alias in aliases {
+        assert_eq!(
+            alias.get("form_id").and_then(Value::as_str),
+            Some("0x00002315"),
+            "the FormID is the last member of the v2 layout"
+        );
+    }
+}

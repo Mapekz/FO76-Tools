@@ -200,20 +200,34 @@ pub fn decode_vmad_qust(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
     let alias_count = read_u16!() as usize;
     let mut aliases = Vec::new();
     for _ in 0..alias_count {
-        // ScriptPropertyObject: obj_format 2 → u16 alias_id + u16 unused + u32 FormID
-        //                       obj_format 1 → u32 FormID only
-        let (alias_id, form_id) = if obj_format >= 2 {
+        // ScriptPropertyObject, per xEdit ground truth (wbDefinitionsFO76.pas
+        // `wbScriptPropertyObject`, the same union `decode_vmad_property`'s
+        // `base_type == 1` arm reads): objFormat == 1 selects "Object v1"
+        // (FormID, Alias, Unused — FormID first); anything else, including the
+        // objFormat == 2 SeventySix.esm actually carries, selects "Object v2"
+        // (Unused, Alias, FormID — FormID last). Either layout is 8 bytes.
+        //
+        // `Alias` is itS16: -1 means "None" (a script attached to the quest
+        // itself rather than to one of its aliases), so it cannot be widened
+        // to an unsigned type. Reading `Unused` as the alias id — which this
+        // parser did until the layouts were reconciled — reports every alias
+        // as id 0, which erases the only field that tells two of a quest's
+        // aliases apart and makes `array_diff` fall back to an unkeyed diff
+        // that reprints every alias whenever one of them changes.
+        let (alias_id, form_id) = if obj_format == 1 {
             need!(8);
-            let a = u16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 2;
-            let _unused = u16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 2;
             let f = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
             pos += 4;
-            (a as u32, f)
+            let a = i16::from_le_bytes([data[pos], data[pos + 1]]);
+            pos += 4; // Alias (2) + Unused (2)
+            (a, f)
         } else {
-            let f = read_u32!();
-            (0u32, f)
+            need!(8);
+            let a = i16::from_le_bytes([data[pos + 2], data[pos + 3]]);
+            let f =
+                u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]);
+            pos += 8;
+            (a, f)
         };
         need!(4);
         let _version = i16::from_le_bytes([data[pos], data[pos + 1]]);

@@ -233,6 +233,14 @@ fn element_key_spec(sample: &serde_json::Map<String, Value>) -> Option<KeySpec> 
     if wrapper == Some("Stage") {
         return Some(vec![vec!["INDX.Stage Index".to_string()]]);
     }
+    // 6b. ARMA/RACE `Sculpt Data` bone-scale modifiers. The bone is the row's
+    //     identity; the `Bone Scale Delta` vec3 beside it is the payload. The
+    //     body carries no FormID member and no `* Index`, so without this the
+    //     array pairs positionally and a re-sorted modifier list reports every
+    //     row as a mutation with `Bone Name` itself among the "changes".
+    if wrapper == Some("Bone Scale Modifier") {
+        return Some(vec![vec!["Bone Name".to_string()]]);
+    }
     // 7. RACE/NPC_ `Attacks[]` entries that carry no `Required Slot` sibling
     //    (some attacks are unconditional) decode as the single-key wrapper
     //    `{"Attack": {"Attack Data": ..., "Attack Event": ..., ...}}`, which
@@ -286,6 +294,18 @@ fn element_key_spec(sample: &serde_json::Map<String, Value>) -> Option<KeySpec> 
     //    property mutating.
     if body.contains_key("name") && body.contains_key("type") && body.contains_key("value") {
         return Some(vec![vec!["name".to_string()]]);
+    }
+    // 11b. VMAD script fragments (`decode_vmad_*`'s `script_fragments.fragments`),
+    //    identified by the Papyrus fragment function they bind
+    //    (`Fragment_Stage_0700_Item_00`). `quest_stage_index` is the row's
+    //    ordinal, not its identity, and doesn't match heuristic 10's
+    //    `"* Index"` test anyway (these keys are the decoder's own snake_case,
+    //    not schema field names). Without this the array pairs positionally,
+    //    so re-sorting a quest's fragments — which a re-serialization does
+    //    routinely — reports every slot as a mutation of both its stage number
+    //    and its fragment name.
+    if body.contains_key("fragment_name") && body.contains_key("quest_stage") {
+        return Some(vec![vec!["fragment_name".to_string()]]);
     }
     // 12. Every FormID-shaped member, composed. LCTN's various reference-list
     //    shapes are the motivating case, and a lesson in not hand-curating
@@ -460,6 +480,41 @@ fn scalar_leaf_paths(body: &serde_json::Map<String, Value>, max_depth: usize) ->
 /// silently keeping a non-unique key, which `keyed_diff` would otherwise
 /// pair FIFO-by-list-order within each duplicate group (i.e. positionally,
 /// with no indication that happened).
+/// Drop key components that resolve to `null` on *every* element of both
+/// sides, and reject the spec outright when that leaves nothing.
+///
+/// `element_key_spec` proposes an identity from one sample element's shape
+/// without inspecting the arrays, so a heuristic written for one variant of
+/// a shape can propose a member a different variant never carries. PERK
+/// entry-point effects are the motivating case: they decode into the same
+/// `{"Effect": {..}}` wrapper as a SPEL/ENCH/ALCH magic effect, so
+/// heuristic 3 proposes `Base Effect` — a member only the magic-effect
+/// variant has. Every element then keys as `[null]`, which is never unique
+/// past one element, so `widen_key_spec_until_unique` widens onto whatever
+/// scalar leaves happen to make the key unique: `Effect Header.Rank`,
+/// `Entry Point.Perk Condition Tab Count` and friends. Those are exactly
+/// the fields a re-serialization renumbers, so on a cross-build diff every
+/// element's key changes and a perk whose effects are untouched reports its
+/// whole `Effects` array as removed and re-added.
+///
+/// A key that identifies nothing is not a key. Returning `None` here routes
+/// the array to positional pairing (equal lengths) or an unkeyed diff, both
+/// of which describe the real difference instead of inventing one.
+fn prune_degenerate_key_components(a: &[Value], b: &[Value], spec: KeySpec) -> Option<KeySpec> {
+    let mut kept: KeySpec = Vec::with_capacity(spec.len());
+    for alts in spec {
+        let component = vec![alts.clone()];
+        let identifies_something = a
+            .iter()
+            .chain(b.iter())
+            .any(|e| compute_key_info(e, &component).group != "[null]");
+        if identifies_something {
+            kept.push(alts);
+        }
+    }
+    (!kept.is_empty()).then_some(kept)
+}
+
 fn widen_key_spec_until_unique(
     a: &[Value],
     b: &[Value],
@@ -717,7 +772,7 @@ pub(crate) fn array_diff(a: &[Value], b: &[Value]) -> Value {
         return unkeyed_array_diff(a, b);
     };
 
-    match element_key_spec(sample) {
+    match element_key_spec(sample).and_then(|spec| prune_degenerate_key_components(a, b, spec)) {
         Some(spec) => match widen_key_spec_until_unique(a, b, &spec, sample) {
             Some(spec) => keyed_diff(a, b, &spec),
             None => unkeyed_array_diff(a, b),

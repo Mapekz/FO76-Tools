@@ -1373,3 +1373,124 @@ fn ref_names_includes_description() {
     assert_eq!(rn.editor_id.as_deref(), Some("TargetItem"));
     assert_eq!(rn.description.as_deref(), Some("A target description"));
 }
+
+/// A proposed key that resolves to null on every element is not a key, and
+/// must not be widened onto whatever scalar leaves happen to make the array
+/// unique.
+///
+/// PERK entry-point effects decode into the same `{"Effect": {..}}` wrapper
+/// as a magic effect, so the keyed-effect heuristic proposes `Base Effect` —
+/// a member perk effects never carry. Widening from there picks up
+/// `Effect Header.Rank`, which a cross-build re-serialization renumbers, so
+/// every element's key changes and an untouched `Effects` array reports as
+/// wholly removed and re-added. Falling through to positional pairing
+/// reports the one field that actually moved.
+#[test]
+fn array_diff_all_null_key_falls_through_to_positional() {
+    let effect = |rank: i64, entry_point: &str| {
+        json!({"Effect": {
+            "Effect Header": {"Effect Type": {"value": 2, "name": "Entry Point"}, "Rank": rank},
+            "Entry Point": {"Entry Point": {"value": 14, "name": entry_point}},
+        }})
+    };
+    let a = json!({"Effects": [effect(9, "Activate"), effect(7, "Activate")]});
+    let b = json!({"Effects": [effect(0, "Activate"), effect(7, "Activate")]});
+
+    let ad = &json_diff(&a, &b)["Effects"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("positional"));
+    assert!(
+        ad.get("added").is_none() && ad.get("removed").is_none(),
+        "an untouched element must not report as removed and re-added"
+    );
+    let changed = ad["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1, "only the first element changed");
+    assert_eq!(changed[0]["key"]["index"], json!(0));
+    assert_eq!(
+        changed[0]["changes"]["Effect"]["Effect Header"]["Rank"],
+        json!({"from": 9, "to": 0})
+    );
+}
+
+/// The pruning above only discards components that identify *nothing*. An
+/// array where some elements carry the keyed member and some do not still
+/// keys on it, so the ones that do keep pairing by identity.
+#[test]
+fn array_diff_partially_present_key_still_keys() {
+    let a = json!({"Effects": [
+        {"Effect": {"Base Effect": "0x00000001", "Magnitude": 10.0}},
+        {"Effect": {"Magnitude": 1.0}},
+    ]});
+    let b = json!({"Effects": [
+        {"Effect": {"Magnitude": 1.0}},
+        {"Effect": {"Base Effect": "0x00000001", "Magnitude": 20.0}},
+    ]});
+    let ad = &json_diff(&a, &b)["Effects"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("keyed"));
+    let changed = ad["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(
+        changed[0]["changes"]["Effect"]["Magnitude"],
+        json!({"from": 10.0, "to": 20.0}),
+        "the element carrying the key pairs across the reorder"
+    );
+}
+
+/// A re-sorted VMAD script-fragment list is a reorder, not 28 mutations.
+///
+/// The decoder emits these rows in file order with snake_case keys, so nothing
+/// in the generic heuristics claims them and positional pairing reports each
+/// slot as having changed both its stage number and its fragment name.
+#[test]
+fn array_diff_keys_vmad_script_fragments_by_fragment_name() {
+    let frag = |stage: i64, name: &str| {
+        json!({
+            "quest_stage": stage,
+            "quest_stage_index": 0,
+            "script_name": "Fragments:Quests:QF_Test_00000001",
+            "fragment_name": name,
+        })
+    };
+    let a = json!({"fragments": [
+        frag(700, "Fragment_Stage_0700_Item_00"),
+        frag(530, "Fragment_Stage_0530_Item_00"),
+    ]});
+    let b = json!({"fragments": [
+        frag(530, "Fragment_Stage_0530_Item_00"),
+        frag(700, "Fragment_Stage_0700_Item_00"),
+    ]});
+    assert!(
+        json_diff(&a, &b).as_object().is_some_and(|m| m.is_empty()),
+        "a pure reorder is not a change"
+    );
+}
+
+/// Same shape, one bone's delta genuinely edited: the reorder is absorbed and
+/// only the edited bone is reported.
+#[test]
+fn array_diff_keys_bone_scale_modifiers_by_bone_name() {
+    let bone = |name: &str, y: f64| {
+        json!({"Bone Scale Modifier": {
+            "Bone Name": name,
+            "Bone Scale Delta": {"x": 0.0, "y": y, "z": 0.0},
+        }})
+    };
+    let a = json!({"Bone Scale Modifiers": [
+        bone("LLeg_Thigh_skin", 0.04565704),
+        bone("RBreast_skin", 0.074),
+    ]});
+    let b = json!({"Bone Scale Modifiers": [
+        bone("RBreast_skin", 0.074),
+        bone("LLeg_Thigh_skin", 0.05),
+    ]});
+
+    let ad = &json_diff(&a, &b)["Bone Scale Modifiers"]["_array_diff"];
+    assert_eq!(ad["strategy"], json!("keyed"));
+    assert!(ad.get("added").is_none() && ad.get("removed").is_none());
+    let changed = ad["changed"].as_array().unwrap();
+    assert_eq!(changed.len(), 1);
+    assert_eq!(changed[0]["key"]["Bone Name"], json!("LLeg_Thigh_skin"));
+    assert_eq!(
+        changed[0]["changes"]["Bone Scale Modifier"]["Bone Scale Delta"]["y"],
+        json!({"from": 0.04565704, "to": 0.05})
+    );
+}
