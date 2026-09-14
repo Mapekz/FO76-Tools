@@ -239,6 +239,15 @@ fn find_invocations(region: &str) -> Vec<Invocation> {
             }
             let end = (i + 1 + LOOKAHEAD).min(toks.len());
             for tok in &toks[(i + 1)..end] {
+                // A `#` token starts a trailing shell comment (e.g. `cargo
+                // run --bin esm -- <args>  # run CLI`) — everything after it
+                // is prose, not part of the invocation being scanned.
+                // Back-ported from ba2/tests/doc_drift.rs, which grew this
+                // guard first (see ADR 0009: the two harnesses duplicate
+                // deliberately, so a fix to one is checked against the other).
+                if *tok == "#" {
+                    break;
+                }
                 let cand = trim_tok(tok);
                 if is_plausible_subcommand(cand) {
                     out.push(Invocation {
