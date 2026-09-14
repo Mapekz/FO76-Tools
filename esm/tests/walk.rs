@@ -104,6 +104,21 @@ fn sel(fid: &str) -> RecordSel {
     RecordSel::FormId(fid.parse().unwrap())
 }
 
+/// Walk out from `formid` to `depth` with otherwise-default options — the
+/// shape almost every test here wants.  Tests that vary another option build
+/// their own `WalkOptions` so the setting under test stays at the call site.
+fn walk_at(f: &mut FakeFetcher, formid: &str, depth: usize) -> WalkResult {
+    walk(
+        f,
+        sel(formid),
+        &WalkOptions {
+            depth,
+            ..WalkOptions::default()
+        },
+    )
+    .unwrap()
+}
+
 fn node_digest(result: &WalkResult, formid: &str) -> Vec<String> {
     let node = result
         .nodes
@@ -202,15 +217,7 @@ fn perk_fixture() -> FakeFetcher {
 #[test]
 fn perk_digest_enqueues_ability_spel_and_renders_entry_point() {
     let mut f = perk_fixture();
-    let result = walk(
-        &mut f,
-        sel(PERK_FID),
-        &WalkOptions {
-            depth: 1,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, PERK_FID, 1);
 
     // The Ability effect's SPEL target was fetched and visited one hop out.
     assert!(
@@ -246,15 +253,7 @@ fn perk_digest_enqueues_ability_spel_and_renders_entry_point() {
 #[test]
 fn perk_digest_no_effects_variant() {
     let mut f = perk_fixture();
-    let result = walk(
-        &mut f,
-        sel(PERK_NO_EFFECTS_FID),
-        &WalkOptions {
-            depth: 1,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, PERK_NO_EFFECTS_FID, 1);
     let lines = node_digest(&result, PERK_NO_EFFECTS_FID);
     assert!(
         lines
@@ -304,15 +303,7 @@ fn magic_item_fixture() -> FakeFetcher {
 #[test]
 fn magic_item_glob_magnitude_flat_wins_rule_both_ways() {
     let mut f = magic_item_fixture();
-    let result = walk(
-        &mut f,
-        sel(SPEL_MAGIC_FID),
-        &WalkOptions {
-            depth: 1,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, SPEL_MAGIC_FID, 1);
     let text = node_digest(&result, SPEL_MAGIC_FID).join("\n");
 
     assert!(
@@ -365,15 +356,7 @@ fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
     );
     // No fixture entry for (KYWD_FID, "PERK") -> FakeFetcher defaults to empty.
 
-    let result = walk(
-        &mut f,
-        sel(KYWD_FID),
-        &WalkOptions {
-            depth: 1,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, KYWD_FID, 1);
     let text = node_digest(&result, KYWD_FID).join("\n");
     assert!(text.contains("SPEL consumers (gate on this):"));
     assert!(text.contains(SPEL_CONSUMER_FID));
@@ -428,15 +411,7 @@ fn chain_fixture() -> FakeFetcher {
 #[test]
 fn depth_zero_never_enqueues_children() {
     let mut f = chain_fixture();
-    let result = walk(
-        &mut f,
-        sel(CHAIN_PERK_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, CHAIN_PERK_FID, 0);
     assert_eq!(result.nodes.len(), 1, "nodes = {:?}", result.nodes);
     assert_eq!(result.nodes[0].formid, CHAIN_PERK_FID);
 }
@@ -444,15 +419,7 @@ fn depth_zero_never_enqueues_children() {
 #[test]
 fn repeated_reference_is_visited_only_once() {
     let mut f = chain_fixture();
-    let result = walk(
-        &mut f,
-        sel(CHAIN_PERK_FID),
-        &WalkOptions {
-            depth: 1,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, CHAIN_PERK_FID, 1);
     let spel_nodes: Vec<_> = result
         .nodes
         .iter()
@@ -684,15 +651,7 @@ fn omod_follows_ench_property_and_enqueues_it() {
         json!({"_record_type": "Enchantment", "Editor ID": "TestGrantedEnch"}),
     );
 
-    let result = walk(
-        &mut f,
-        sel(OMOD_FID),
-        &WalkOptions {
-            depth: 1,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, OMOD_FID, 1);
     let text = node_digest(&result, OMOD_FID).join("\n");
     assert!(text.contains("direct property → ENCH"));
     assert!(text.contains(ENCH_PROP_FID));
@@ -798,15 +757,7 @@ fn omod_mixed_property_renders_keyword_hook_slice() {
 
     // The mechanism slice runs regardless of `--depth` — depth 0 only caps
     // BFS enqueueing, not this inline classification.
-    let result = walk(
-        &mut f,
-        sel(OMOD_MIXED_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, OMOD_MIXED_FID, 0);
     let text = node_digest(&result, OMOD_MIXED_FID).join("\n");
 
     assert!(text.contains("direct property → ENCH"), "digest:\n{text}");
@@ -856,15 +807,7 @@ fn omod_with_only_ench_properties_renders_no_other_mechanism_lines() {
         json!({"_record_type": "Enchantment", "Editor ID": "TestGrantedEnch"}),
     );
 
-    let result = walk(
-        &mut f,
-        sel(OMOD_ENCH_ONLY_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, OMOD_ENCH_ONLY_FID, 0);
     let text = node_digest(&result, OMOD_ENCH_ONLY_FID).join("\n");
     assert!(text.contains("direct property → ENCH"), "digest:\n{text}");
     for unexpected in ["keyword hook →", "perk grant →", "AV hook →", "gates "] {
@@ -1002,15 +945,7 @@ fn omod_includes_stub_renders_include_line() {
         }),
     );
 
-    let result = walk(
-        &mut f,
-        sel(OMOD_SHELL_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, OMOD_SHELL_FID, 0);
     let text = node_digest(&result, OMOD_SHELL_FID).join("\n");
     assert!(
         text.contains(&format!(
@@ -1213,15 +1148,7 @@ fn lvli_fixture() -> FakeFetcher {
 #[test]
 fn lvli_pool_digest_renders_ranked_drop_table() {
     let mut f = lvli_fixture();
-    let result = walk(
-        &mut f,
-        sel(LVLI_POOL_ROOT_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, LVLI_POOL_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_POOL_ROOT_FID).join("\n");
     assert!(
         text.contains("drop odds  model pool"),
@@ -1246,15 +1173,7 @@ fn lvli_pool_digest_renders_ranked_drop_table() {
 #[test]
 fn lvli_direct_sublist_entry_is_enqueued_as_its_own_bfs_node() {
     let mut f = lvli_fixture();
-    let result = walk(
-        &mut f,
-        sel(LVLI_SUBLIST_ROOT_FID),
-        &WalkOptions {
-            depth: 1,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, LVLI_SUBLIST_ROOT_FID, 1);
     // The aggregated root table already flattens through to the leaf...
     let root_text = node_digest(&result, LVLI_SUBLIST_ROOT_FID).join("\n");
     assert!(
@@ -1308,15 +1227,7 @@ fn lvli_level_option_moves_a_curve_driven_quantity() {
 #[test]
 fn lvli_flags_2_wins_selection_model_over_flags() {
     let mut f = lvli_fixture();
-    let result = walk(
-        &mut f,
-        sel(LVLI_FLAGS2_ROOT_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, LVLI_FLAGS2_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_FLAGS2_ROOT_FID).join("\n");
     assert!(
         text.contains("model Use All"),
@@ -1328,15 +1239,7 @@ fn lvli_flags_2_wins_selection_model_over_flags() {
 #[test]
 fn lvli_legacy_base_data_entry_renders() {
     let mut f = lvli_fixture();
-    let result = walk(
-        &mut f,
-        sel(LVLI_LEGACY_ROOT_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, LVLI_LEGACY_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_LEGACY_ROOT_FID).join("\n");
     assert!(
         text.contains("OldStyleItem"),
@@ -1347,15 +1250,7 @@ fn lvli_legacy_base_data_entry_renders() {
 #[test]
 fn lvli_non_get_random_percent_gate_is_noted() {
     let mut f = lvli_fixture();
-    let result = walk(
-        &mut f,
-        sel(LVLI_GATED_ROOT_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, LVLI_GATED_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_GATED_ROOT_FID).join("\n");
     assert!(
         text.contains("RecipeReward") && text.contains("gated:HasLearnedRecipe"),
@@ -1594,15 +1489,7 @@ fn lvli_minimim_level_curve_table_stays_unresolved_not_evaluated() {
             }}],
         }),
     );
-    let result = walk(
-        &mut f,
-        sel(LVLI_MINLEVEL_ROOT_FID),
-        &WalkOptions {
-            depth: 0,
-            ..WalkOptions::default()
-        },
-    )
-    .unwrap();
+    let result = walk_at(&mut f, LVLI_MINLEVEL_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_MINLEVEL_ROOT_FID).join("\n");
     assert!(
         text.contains("unresolved:") && text.contains("Minimum Level Curve Table present"),

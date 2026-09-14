@@ -1,6 +1,6 @@
 mod common;
 
-use common::{append_record, append_subrecord, cstr, tes4_header, wrap_grup, write_and_open};
+use common::{append_record, append_subrecord, cstr, esm_pair, tes4_header, wrap_grup};
 use esm::diff::{diff_databases, diff_databases_with, json_diff, strip_noise_fields};
 use esm::{BodyDetail, DiffOptions};
 use serde_json::json;
@@ -956,10 +956,9 @@ fn removed_record_gets_full_body_from_a() {
     buf_a.extend(wrap_grup(b"MISC", &recs));
     let buf_b = tes4_header();
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_removed_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_removed_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_removed");
 
-    let result = diff_databases(&db_a, &db_b).expect("diff");
+    let result = diff_databases(&pair.a, &pair.b).expect("diff");
     assert_eq!(result.removed.len(), 1);
     assert_eq!(result.added.len(), 0);
     let fields = result.removed[0]
@@ -967,9 +966,6 @@ fn removed_record_gets_full_body_from_a() {
         .as_ref()
         .expect("removed record must carry a decoded body from A (old-side decode)");
     assert_eq!(fields["Editor ID"], json!("RemovedItem"));
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }
 
 #[test]
@@ -985,19 +981,15 @@ fn added_record_any_type_gets_body() {
     let mut buf_b = tes4_header();
     buf_b.extend(wrap_grup(b"BOOK", &recs));
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_added_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_added_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_added");
 
-    let result = diff_databases(&db_a, &db_b).expect("diff");
+    let result = diff_databases(&pair.a, &pair.b).expect("diff");
     assert_eq!(result.added.len(), 1);
     let fields = result.added[0]
         .fields
         .as_ref()
         .expect("BOOK (not in the old safelist) must now get a decoded body");
     assert_eq!(fields["Editor ID"], json!("NewBook"));
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }
 
 #[test]
@@ -1017,14 +1009,13 @@ fn bodies_none_skips_fields_both_sides() {
     let mut buf_b = tes4_header();
     buf_b.extend(wrap_grup(b"BOOK", &book_recs));
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_bodies_none_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_bodies_none_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_bodies_none");
 
     let opts = DiffOptions {
         bodies: BodyDetail::None,
         ..Default::default()
     };
-    let result = diff_databases_with(&db_a, &db_b, &opts).expect("diff");
+    let result = diff_databases_with(&pair.a, &pair.b, &opts).expect("diff");
     assert_eq!(result.added.len(), 1);
     assert_eq!(result.removed.len(), 1);
     assert!(
@@ -1035,9 +1026,6 @@ fn bodies_none_skips_fields_both_sides() {
         result.removed[0].fields.is_none(),
         "BodyDetail::None must skip fields on the removed side"
     );
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }
 
 // ---------------------------------------------------------------------------
@@ -1098,14 +1086,13 @@ fn exclude_types_skips_all_buckets() {
     buf_b.extend(wrap_grup(b"NAVM", &navm_b));
     buf_b.extend(wrap_grup(b"MISC", &misc5_b));
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_exclude_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_exclude_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_exclude");
 
     let opts = DiffOptions {
         exclude_types: vec!["NAVM".to_string()],
         ..Default::default()
     };
-    let result = diff_databases_with(&db_a, &db_b, &opts).expect("diff");
+    let result = diff_databases_with(&pair.a, &pair.b, &opts).expect("diff");
 
     assert!(
         result.added.iter().all(|s| s.record_type != "NAVM"),
@@ -1125,9 +1112,6 @@ fn exclude_types_skips_all_buckets() {
     // The control MISC record isn't excluded and must still show up changed.
     assert_eq!(result.changed.len(), 1);
     assert_eq!(result.changed[0].stub.record_type, "MISC");
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }
 
 // ---------------------------------------------------------------------------
@@ -1238,10 +1222,9 @@ fn suppress_noise_drops_position_only_refr_and_counts_it() {
     let mut buf_b = tes4_header();
     buf_b.extend(wrap_grup(b"REFR", &refr_b));
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_suppress_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_suppress_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_suppress");
 
-    let result = diff_databases(&db_a, &db_b).expect("diff"); // default: suppress_noise = true
+    let result = diff_databases(&pair.a, &pair.b).expect("diff"); // default: suppress_noise = true
 
     assert!(
         !result
@@ -1270,9 +1253,6 @@ fn suppress_noise_drops_position_only_refr_and_counts_it() {
         kept.field_changes.get("Base").is_some(),
         "Base change must survive suppression"
     );
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }
 
 /// Same REFR(10) position-only-change scenario, but with `suppress_noise:
@@ -1299,14 +1279,13 @@ fn suppress_noise_false_keeps_position_only_refr_change() {
     let mut buf_b = tes4_header();
     buf_b.extend(wrap_grup(b"REFR", &refr_b));
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_no_suppress_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_no_suppress_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_no_suppress");
 
     let opts = DiffOptions {
         suppress_noise: false,
         ..Default::default()
     };
-    let result = diff_databases_with(&db_a, &db_b, &opts).expect("diff");
+    let result = diff_databases_with(&pair.a, &pair.b, &opts).expect("diff");
 
     assert_eq!(
         result.changed.len(),
@@ -1322,9 +1301,6 @@ fn suppress_noise_false_keeps_position_only_refr_change() {
             .is_some(),
         "with suppress_noise=false, Position/Rotation must remain in field_changes"
     );
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }
 
 // ---------------------------------------------------------------------------
@@ -1358,10 +1334,9 @@ fn restamp_pass_does_not_run_when_form_versions_match() {
     let mut buf_b = tes4_header();
     buf_b.extend(wrap_grup(b"INFO", &info_b));
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_restamp_same_fv_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_restamp_same_fv_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_restamp_same_fv");
 
-    let result = diff_databases(&db_a, &db_b).expect("diff"); // default: suppress_noise = true
+    let result = diff_databases(&pair.a, &pair.b).expect("diff"); // default: suppress_noise = true
 
     assert_eq!(
         result.changed.len(),
@@ -1381,9 +1356,6 @@ fn restamp_pass_does_not_run_when_form_versions_match() {
         "Previous INFO's null -> formid appearance must remain, unsuppressed: {:?}",
         result.changed[0].field_changes
     );
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }
 
 // ---------------------------------------------------------------------------
@@ -1419,17 +1391,13 @@ fn ref_names_includes_description() {
     buf_b.extend(wrap_grup(b"MISC", &tgt_rec));
     buf_b.extend(wrap_grup(b"WEAP", &ref_rec_b));
 
-    let (path_a, db_a) = write_and_open(&buf_a, "diff_ref_desc_a");
-    let (path_b, db_b) = write_and_open(&buf_b, "diff_ref_desc_b");
+    let pair = esm_pair(&buf_a, &buf_b, "diff_ref_desc");
 
-    let result = diff_databases(&db_a, &db_b).expect("diff");
+    let result = diff_databases(&pair.a, &pair.b).expect("diff");
     let rn = result
         .ref_names
         .get("0x00000001")
         .expect("ref_names must include the resolved TGT(1) reference");
     assert_eq!(rn.editor_id.as_deref(), Some("TargetItem"));
     assert_eq!(rn.description.as_deref(), Some("A target description"));
-
-    let _ = std::fs::remove_file(&path_a);
-    let _ = std::fs::remove_file(&path_b);
 }

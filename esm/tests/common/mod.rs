@@ -511,6 +511,36 @@ pub fn write_and_open(buf: &[u8], stem: &str) -> (PathBuf, Database) {
 // Synthetic BA2 (BTDX/GNRL) archive builder
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// Two synthetic ESMs opened as [`Database`]s, for the diff-engine tests.
+///
+/// The temp files are removed on drop, so a panicking assertion cleans up
+/// after itself — the hand-written `remove_file` tail each test used to end
+/// with only ran when the test passed.
+pub struct EsmPair {
+    pub a: Database,
+    pub b: Database,
+    paths: [PathBuf; 2],
+}
+
+impl Drop for EsmPair {
+    fn drop(&mut self) {
+        for path in &self.paths {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// Write `buf_a`/`buf_b` to temp `.esm` files named from `stem` and open both.
+pub fn esm_pair(buf_a: &[u8], buf_b: &[u8], stem: &str) -> EsmPair {
+    let (path_a, a) = write_and_open(buf_a, &format!("{stem}_a"));
+    let (path_b, b) = write_and_open(buf_b, &format!("{stem}_b"));
+    EsmPair {
+        a,
+        b,
+        paths: [path_a, path_b],
+    }
+}
+
 /// Build a minimal, valid BTDX/GNRL BA2 archive containing the given
 /// `(internal_name, contents)` entries, stored uncompressed (`packed_size = 0`).
 ///
