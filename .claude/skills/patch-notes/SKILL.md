@@ -10,13 +10,19 @@ description: >
   reconciles deferrals in the orchestrator, assembles a single patch-summary.md, has it
   cold-reviewed in a fresh context, and chunks it for Discord. Use when asked to write,
   refresh, or re-run weekly patch notes.
-argument-hint: "[old-snapshot] [new-snapshot] [--out-dir DIR] [--official-notes URL_OR_FILE] [--force-pipeline] [--force]"
 ---
+
+Arguments: `[old-snapshot] [new-snapshot] [--out-dir DIR] [--official-notes URL_OR_FILE] [--force-pipeline] [--force]`.
 
 You are the orchestrator for the narrative stage of the FO76 patch-notes pipeline. The
 mechanical stage (diffing, bundling, linting, triage) is deterministic Python; your job is
 steps 1-8 below. Run every command from the repo root — the esm crate's tools and binaries
 live under `esm/` (`esm/target/release/esm`, `python3 esm/tools/<script>.py`).
+
+Use the client's available delegation capability for the roles below; tool names
+are not part of this procedure. If delegation is unavailable, perform triage and
+drafting locally with the same input/output contracts, and report independent
+review as unavailable rather than presenting self-review as a fresh review.
 
 **Read `.claude/skills/patch-notes/kb/pipeline-gotchas.md` before Step 2.** It catalogues the
 ways this pipeline silently reports the wrong thing (string-table resolution, ROLLOUT value
@@ -82,7 +88,7 @@ python3 esm/tools/fetch_official_notes.py "<url-or-html>" "$OUT/work/official-no
 
 It keeps only the newest section — the text before the first horizontal rule; Bethesda's
 "Inside the Vault" PTS pages stack several weeks on one page and a summarizing fetch blends
-them. Exit 3 means the page is client-rendered: fall back to WebFetch with the prompt "Return
+them. Exit 3 means the page is client-rendered: use an available browser or page-fetch tool with the prompt "Return
 as plain text, without summarizing, only the part of the article before the first horizontal
 rule; stop at the first `<hr>`", and save that to the same file. A plain-text file path →
 copy it there. This is optional input; absence changes nothing downstream except the
@@ -174,8 +180,8 @@ Triage keeps any changed record with a real numeric delta on a non-plumbing fiel
 ROLLOUT (`stats.rollout_numeric_excluded` in `triage.json`, the "Kept out (numeric)" column
 in `rollouts.md`), so a genuine balance change hiding inside a bulk shape tiers on its own.
 
-If `ambiguous.json` has entries, spawn **one assessor subagent** (Agent tool) pointed at
-`$OUT/work/ambiguous.json` — give it NO daemon access and no other tools than Read/Write:
+If `ambiguous.json` has entries, spawn **one assessor subagent** pointed at
+`$OUT/work/ambiguous.json` — restrict it to reading that input and writing the assessment, with no daemon access:
 
 > You are triaging Fallout 76 patch-diff bundles. Read `<OUT>/work/ambiguous.json`; for each
 > bundle you get the actual field-level before/after values. Assign each a tier: `deep` (real gameplay meaning —
@@ -194,7 +200,7 @@ python3 esm/tools/triage_bundles.py "$OUT" --merge-assessment "$OUT/work/assessm
 
 A digest that hit the size cap is flagged `truncated`; the merge promotes a `drop` verdict on
 those to `brief` on its own (a partial view may shorten a story, never erase it). Record the
-assessor's token usage (from the Agent result) for Step 8.
+assessor's token usage for Step 8 only if the client reports it.
 
 Sanity-check the final tier stats in `triage.json` — if DEEP exceeds ~40 bundles or DROP
 swallowed a record type you'd expect to matter (WEAP/PERK/OMOD), inspect `reasons` before
@@ -217,9 +223,9 @@ than `$OUT/work/triage.json`; `--force` disables the skip.
 Count DEEP bundles. **≤20** → one writer owns the whole `deep-slice.json`. **>20** → split
 the slice in two by bundle (keep related bundles together; `esm/tools/triage_bundles.py`
 emits them in dependency-sorted order, so a simple contiguous split is fine) and launch two
-writers in one message.
+writers concurrently.
 
-For each writer, spawn a subagent (Agent tool) with
+For each writer, spawn a subagent with
 `.claude/skills/patch-notes/deep-writer-prompt.md`, substituting:
 
 | Placeholder | Value |
@@ -235,7 +241,7 @@ For each writer, spawn a subagent (Agent tool) with
 | `{DRAFT_PATH}` / `{REPORT_PATH}` | `$OUT/drafts/deep[.partN].{md,report.json}` |
 | `{OFFICIAL_NOTES_BLOCK}` | if official notes were provided: a bullet pointing at `$OUT/work/official-notes.txt` with the instruction "cross-reference every claim: data contradicting the article → `⚠️ Mismatch (official notes):`; significant changes the article omits → `⚠️ Undocumented:`". Otherwise empty. |
 
-Record each writer's token usage (from the Agent result) for Step 8.
+Record each writer's token usage for Step 8 only if the client reports it.
 
 ### Gates — run before reading a single draft
 
@@ -305,12 +311,12 @@ Read every draft + report. Then, in order:
 
 ## 6b. Cold review (one read-only subagent)
 
-Spawn one subagent (Agent tool) with `.claude/skills/patch-notes/review-prompt.md`,
+Spawn one subagent with `.claude/skills/patch-notes/review-prompt.md`,
 substituting `{OUT}`, `{OLD_ESM}`, `{NEW_ESM}`. It reads only the artifacts — never your
 reasoning — and writes `$OUT/work/review.json`. Then: fix every `high` finding in the summary
 and in the draft + claim it came from; decide `med` on merit; ignore `low`. Re-run
 `check_claims.py` and `check_coverage.py --summary` after the fixes. Record the reviewer's
-token usage for Step 8.
+token usage for Step 8 only if the client reports it.
 
 ## 7. Chunk for Discord
 
@@ -324,13 +330,13 @@ truncation you knowingly accept — say so in the printed summary if you use it.
 
 ## 8. Manifest + summary
 
-Write the run's subagent token usage first, from the usage line each Agent result reported
-(omit a key whose agent did not run), then update the manifest:
+Write `work/usage.json` only from usage the client actually reports. Its shape is
+`{"assessor": {"tokens": N}, "writers": [{"tokens": N}], "reviewer": {"tokens": N}}`.
+Omit roles that did not run or whose usage is unavailable; do not use zero as a
+placeholder. If none is reported, omit the file. On reruns, replace or remove the
+previous usage file so old counts cannot be attributed to this run. Then:
 
 ```sh
-cat > "$OUT/work/usage.json" <<'EOF'
-{"assessor": {"tokens": 0}, "writers": [{"tokens": 0}], "reviewer": {"tokens": 0}}
-EOF
 python3 esm/tools/update_manifest.py "$OUT"
 ```
 
@@ -338,7 +344,7 @@ Print: tier counts (deep/brief/drop/rollout, how many the assessor promoted/demo
 numeric records were kept out of rollouts), the rollout-shape count and how many records they
 cover, writer count, claims checked and how many came back as mismatch/unverifiable before
 fixes, DEEP coverage (covered / cut), review findings by severity, chunk count, KB entries
-added, total subagent tokens, and the output paths (`$OUT/patch-summary.md`,
+added, total reported subagent tokens and any missing usage, and the output paths (`$OUT/patch-summary.md`,
 `$OUT/discord/`) — no game-data paths or `$FO76_DATA_DIR` expansions in the printed summary
 either.
 
