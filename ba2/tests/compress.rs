@@ -31,39 +31,11 @@ fn zlib_round_trip() {
 
 // ── Decompression-bomb cap ────────────────────────────────────────────────
 
-/// A crafted, oversized declared output size must be rejected before any
-/// large allocation is attempted, for both codecs.
-#[test]
-fn decompress_lz4_rejects_oversized_expected_size() {
-    let result = decompress_lz4(b"", MAX_DECOMP_SIZE + 1);
-    assert!(
-        result.is_err(),
-        "expected error for oversized expected_size"
-    );
-    let msg = format!("{}", result.unwrap_err());
-    assert!(
-        msg.contains("exceeds limit"),
-        "unexpected error message: {msg}"
-    );
-}
-
-#[test]
-fn decompress_zlib_rejects_oversized_expected_size() {
-    let result = decompress_zlib(b"", MAX_DECOMP_SIZE + 1);
-    assert!(
-        result.is_err(),
-        "expected error for oversized expected_size"
-    );
-    let msg = format!("{}", result.unwrap_err());
-    assert!(
-        msg.contains("exceeds limit"),
-        "unexpected error message: {msg}"
-    );
-}
-
-/// The cap applies through the real dispatch path a corrupt/malicious archive
-/// would hit — `decompress()` with an attacker-controlled `unpacked_size`
-/// (the on-disk field), not just the two codec helpers directly.
+/// A crafted, oversized declared output size must be rejected before any large
+/// allocation is attempted, for both codecs.  Exercised through the real
+/// dispatch path a corrupt or malicious archive would hit — `decompress()` with
+/// an attacker-controlled `unpacked_size` (the on-disk field) — which reaches
+/// the same cap in `decompress_lz4` and `decompress_zlib`.
 #[test]
 fn decompress_rejects_oversized_unpacked_size_via_dispatch() {
     let oversized = (MAX_DECOMP_SIZE + 1) as u32;

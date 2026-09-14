@@ -179,27 +179,42 @@ fn synthetic_dds(
     dds
 }
 
+/// Temp-file guards that must stay alive for as long as the archive they back:
+/// the source directory holding the `.dds`, and the written archive file.
+type Dx10Guards = (TempDir, NamedTempFile);
+
+/// Write `dds` as the single entry of a DX10 archive under `archive_path` with
+/// `codec`, then reopen it.
+///
+/// Returns the reopened archive and the temp guards, which the caller must keep
+/// in scope.
+fn create_dx10(archive_path: &str, dds: &[u8], codec: Codec) -> (Ba2Archive, Dx10Guards) {
+    let src_dir = TempDir::new().unwrap();
+    let file_name = archive_path.rsplit('/').next().unwrap();
+    let src = src_dir.path().join(file_name);
+    std::fs::write(&src, dds).unwrap();
+
+    let out = NamedTempFile::new().unwrap();
+    let files = vec![(archive_path.to_string(), src)];
+    let opts = WriteOptions {
+        kind: ArchiveKind::Dx10,
+        codec,
+        ..Default::default()
+    };
+    write_ba2(out.path(), &files, &opts).unwrap();
+
+    let archive = Ba2Archive::open(out.path()).unwrap();
+    (archive, (src_dir, out))
+}
+
 /// A single-chunk (small, below the 512x512 chunking threshold) BC1 texture
 /// round-trips byte-for-byte through DX10 create → open → read.
 #[test]
 fn dx10_create_small_texture_round_trips() {
     // 64x64 BC1_UNORM, 1 mip: mip0 size = 64*64*4/8 = 2048 bytes.
     let dds = synthetic_dds(71, 64, 64, 1, false, 2048);
+    let (archive, _guards) = create_dx10("textures/small.dds", &dds, Codec::Store);
 
-    let src_dir = TempDir::new().unwrap();
-    let src = src_dir.path().join("small.dds");
-    std::fs::write(&src, &dds).unwrap();
-
-    let out = NamedTempFile::new().unwrap();
-    let files = vec![("textures/small.dds".to_string(), src)];
-    let opts = WriteOptions {
-        kind: ArchiveKind::Dx10,
-        codec: Codec::Store,
-        ..Default::default()
-    };
-    write_ba2(out.path(), &files, &opts).unwrap();
-
-    let archive = Ba2Archive::open(out.path()).unwrap();
     assert_eq!(archive.kind(), ArchiveKind::Dx10);
     assert_eq!(archive.list().len(), 1);
     let t = archive.list()[0].texture().unwrap();
@@ -231,21 +246,8 @@ fn dx10_create_multi_chunk_round_trips() {
     // minimum block clamp on the tail mips: 524288 + 131072 + 43704.
     let total_mip_len = 524288 + 131072 + 43704;
     let dds = synthetic_dds(71, 1024, 1024, 11, false, total_mip_len);
+    let (archive, _guards) = create_dx10("textures/large.dds", &dds, Codec::Store);
 
-    let src_dir = TempDir::new().unwrap();
-    let src = src_dir.path().join("large.dds");
-    std::fs::write(&src, &dds).unwrap();
-
-    let out = NamedTempFile::new().unwrap();
-    let files = vec![("textures/large.dds".to_string(), src)];
-    let opts = WriteOptions {
-        kind: ArchiveKind::Dx10,
-        codec: Codec::Store,
-        ..Default::default()
-    };
-    write_ba2(out.path(), &files, &opts).unwrap();
-
-    let archive = Ba2Archive::open(out.path()).unwrap();
     let t = archive.list()[0].texture().unwrap();
     assert_eq!(
         t.chunks.len(),
@@ -269,21 +271,8 @@ fn dx10_create_multi_chunk_round_trips() {
 fn dx10_create_zlib_compressed_round_trips() {
     let total_mip_len = 524288 + 131072 + 43704;
     let dds = synthetic_dds(71, 1024, 1024, 11, false, total_mip_len);
+    let (archive, _guards) = create_dx10("textures/large.dds", &dds, Codec::Zlib);
 
-    let src_dir = TempDir::new().unwrap();
-    let src = src_dir.path().join("large.dds");
-    std::fs::write(&src, &dds).unwrap();
-
-    let out = NamedTempFile::new().unwrap();
-    let files = vec![("textures/large.dds".to_string(), src)];
-    let opts = WriteOptions {
-        kind: ArchiveKind::Dx10,
-        codec: Codec::Zlib,
-        ..Default::default()
-    };
-    write_ba2(out.path(), &files, &opts).unwrap();
-
-    let archive = Ba2Archive::open(out.path()).unwrap();
     let entry = &archive.list()[0];
     assert!(entry.is_compressed());
 
@@ -296,21 +285,8 @@ fn dx10_create_zlib_compressed_round_trips() {
 fn dx10_create_cubemap_is_single_chunk() {
     // Large enough that a non-cubemap texture would chunk, but cubemap: 1 chunk.
     let dds = synthetic_dds(71, 2048, 2048, 1, true, 4096);
+    let (archive, _guards) = create_dx10("textures/cube.dds", &dds, Codec::Store);
 
-    let src_dir = TempDir::new().unwrap();
-    let src = src_dir.path().join("cube.dds");
-    std::fs::write(&src, &dds).unwrap();
-
-    let out = NamedTempFile::new().unwrap();
-    let files = vec![("textures/cube.dds".to_string(), src)];
-    let opts = WriteOptions {
-        kind: ArchiveKind::Dx10,
-        codec: Codec::Store,
-        ..Default::default()
-    };
-    write_ba2(out.path(), &files, &opts).unwrap();
-
-    let archive = Ba2Archive::open(out.path()).unwrap();
     let t = archive.list()[0].texture().unwrap();
     assert!(t.cubemap);
     assert_eq!(t.chunks.len(), 1);
@@ -324,21 +300,8 @@ fn dx10_create_cubemap_is_single_chunk() {
 fn dx10_create_dxt10_extension_format_round_trips() {
     // 32x32 BC7_UNORM, 1 mip: mip0 size = 32*32*8/8 = 1024 bytes.
     let dds = synthetic_dds(98, 32, 32, 1, false, 1024);
+    let (archive, _guards) = create_dx10("textures/bc7.dds", &dds, Codec::Store);
 
-    let src_dir = TempDir::new().unwrap();
-    let src = src_dir.path().join("bc7.dds");
-    std::fs::write(&src, &dds).unwrap();
-
-    let out = NamedTempFile::new().unwrap();
-    let files = vec![("textures/bc7.dds".to_string(), src)];
-    let opts = WriteOptions {
-        kind: ArchiveKind::Dx10,
-        codec: Codec::Store,
-        ..Default::default()
-    };
-    write_ba2(out.path(), &files, &opts).unwrap();
-
-    let archive = Ba2Archive::open(out.path()).unwrap();
     let t = archive.list()[0].texture().unwrap();
     assert_eq!(t.dxgi_format, 98);
 

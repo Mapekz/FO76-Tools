@@ -12,6 +12,29 @@ use common::TestTexture;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+/// Build the 36 raw bytes of one GNRL file record for `path`, hashing the name
+/// the way the writer does.  `packed_size == 0` is the stored-uncompressed
+/// sentinel.
+fn gnrl_record_bytes(
+    path: &str,
+    data_offset: u64,
+    packed_size: u32,
+    unpacked_size: u32,
+) -> [u8; 36] {
+    let (name_hash, dir_hash, ext) = hash_path(path);
+    write_record(&Record {
+        name_hash,
+        ext,
+        dir_hash,
+        flags: RECORD_FLAGS,
+        data_offset,
+        packed_size,
+        unpacked_size,
+    })
+}
+
 // ── Happy-path reads ──────────────────────────────────────────────────────
 
 #[test]
@@ -108,7 +131,6 @@ fn read_zlib_compressed_entry() {
 #[test]
 fn read_rejects_oversized_declared_unpacked_size() {
     let path = "data/bomb.bin";
-    let (name_hash, dir_hash, ext) = hash_path(path);
     // Small "compressed" payload — irrelevant, since the size cap must fire
     // before any decompressor call is made.
     let payload: &[u8] = b"tiny";
@@ -118,16 +140,12 @@ fn read_rejects_oversized_declared_unpacked_size() {
 
     let mut buf = Vec::new();
     buf.extend_from_slice(&write_header(1, ArchiveKind::Gnrl, 1, name_table_offset));
-    let record = Record {
-        name_hash,
-        ext,
-        dir_hash,
-        flags: RECORD_FLAGS,
-        data_offset: data_start,
-        packed_size: payload.len() as u32, // nonzero => compressed, decompress path taken
-        unpacked_size: (MAX_DECOMP_SIZE + 1) as u32, // crafted oversized declared size
-    };
-    buf.extend_from_slice(&write_record(&record));
+    buf.extend_from_slice(&gnrl_record_bytes(
+        path,
+        data_start,
+        payload.len() as u32, // nonzero => compressed, decompress path taken
+        (MAX_DECOMP_SIZE + 1) as u32, // crafted oversized declared size
+    ));
     buf.extend_from_slice(payload);
     let name = path.to_lowercase();
     buf.extend_from_slice(&(name.len() as u16).to_le_bytes());
@@ -240,19 +258,7 @@ fn rejects_truncated_name_length_prefix() {
     let mut buf = make_raw_header(1, b"GNRL", 1, nt_offset);
 
     // Record: minimal fields; only packed_size=0 and unpacked_size=1 matter here.
-    use ba2::format::{RECORD_FLAGS, Record, write_record};
-    use ba2::hash::hash_path;
-    let (name_hash, dir_hash, ext) = hash_path("a.txt");
-    let r = Record {
-        name_hash,
-        ext,
-        dir_hash,
-        flags: RECORD_FLAGS,
-        data_offset: data_start,
-        packed_size: 0,
-        unpacked_size: 1,
-    };
-    buf.extend_from_slice(&write_record(&r));
+    buf.extend_from_slice(&gnrl_record_bytes("a.txt", data_start, 0, 1));
     buf.extend_from_slice(entry_data); // 1 byte of data
     buf.push(0xAB); // only 1 byte for the name-table length prefix (needs 2)
 
@@ -272,19 +278,7 @@ fn rejects_truncated_name_bytes() {
 
     let mut buf = make_raw_header(1, b"GNRL", 1, nt_offset);
 
-    use ba2::format::{RECORD_FLAGS, Record, write_record};
-    use ba2::hash::hash_path;
-    let (name_hash, dir_hash, ext) = hash_path("a.txt");
-    let r = Record {
-        name_hash,
-        ext,
-        dir_hash,
-        flags: RECORD_FLAGS,
-        data_offset: data_start,
-        packed_size: 0,
-        unpacked_size: 1,
-    };
-    buf.extend_from_slice(&write_record(&r));
+    buf.extend_from_slice(&gnrl_record_bytes("a.txt", data_start, 0, 1));
     buf.extend_from_slice(entry_data);
     buf.extend_from_slice(&100u16.to_le_bytes()); // claims 100-char name
     // …but writes 0 name bytes
@@ -309,19 +303,8 @@ fn read_data_out_of_range() {
 
     let mut buf = make_raw_header(1, b"GNRL", 1, nt_offset);
 
-    use ba2::format::{RECORD_FLAGS, Record, write_record};
-    use ba2::hash::hash_path;
-    let (name_hash, dir_hash, ext) = hash_path("data/x.bin");
-    let r = Record {
-        name_hash,
-        ext,
-        dir_hash,
-        flags: RECORD_FLAGS,
-        data_offset: data_start,
-        packed_size: 0,
-        unpacked_size: u32::MAX, // claims 4 GiB, but actual data is 4 bytes
-    };
-    buf.extend_from_slice(&write_record(&r));
+    // unpacked_size claims 4 GiB, but the actual data is 4 bytes.
+    buf.extend_from_slice(&gnrl_record_bytes("data/x.bin", data_start, 0, u32::MAX));
     buf.extend_from_slice(entry_data);
     let name = "data\\x.bin";
     buf.extend_from_slice(&(name.len() as u16).to_le_bytes());
@@ -430,7 +413,6 @@ fn dx10_chunk_decompressed_length_mismatch_errors() {
     use ba2::format::{
         TEX_CHUNK_SIZE, TEX_RECORD_SIZE, TexChunk, TexRecord, write_tex_chunk, write_tex_record,
     };
-    use ba2::hash::hash_path;
 
     let payload = b"zlib payload for a length-mismatch test";
     let compressed = compress_zlib(payload).unwrap();
