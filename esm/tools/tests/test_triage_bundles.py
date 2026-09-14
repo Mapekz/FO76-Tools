@@ -22,16 +22,14 @@ from pathlib import Path
 from typing import Callable, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import builders  # noqa: E402
 import triage_bundles as tb  # noqa: E402
+from builders import TempOutDir, load_json  # noqa: E402
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "triage_bundles.py"
 REAL_TIERS_PATH = Path(__file__).resolve().parents[1] / "patch_notes_tiers.json"
-
-
-def load_json(path):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
 
 
 # --------------------------------------------------------------------------
@@ -40,10 +38,10 @@ def load_json(path):
 
 
 def make_member(fid, record_type, editor_id=None, name=None, status="changed", role="anchor"):
-    return {
-        "form_id": fid, "record_type": record_type, "editor_id": editor_id,
-        "name": name, "status": status, "role": role,
-    }
+    return builders.member(
+        form_id=fid, record_type=record_type, editor_id=editor_id,
+        name=name, status=status, role=role,
+    )
 
 
 def make_bundle(bid, members, category="uncategorized", title=None):
@@ -52,36 +50,29 @@ def make_bundle(bid, members, category="uncategorized", title=None):
     members = [dict(m) for m in members]
     members[0]["role"] = "anchor"
     anchor = members[0]
-    return {
-        "id": bid,
-        "category": category,
-        "category_label": category,
-        "category_rule": None,
-        "title": title or f"{anchor.get('name') or anchor.get('editor_id')} ({anchor['record_type']})",
-        "anchor": {k: anchor[k] for k in ("form_id", "record_type", "editor_id", "name", "status")},
-        "members": members,
-        "edges": [],
-        "bug_watch": False,
-        "lint_ids": [],
-    }
+    return builders.bundle(
+        id=bid,
+        category=category,
+        category_label=category,
+        title=title or f"{anchor.get('name') or anchor.get('editor_id')} ({anchor['record_type']})",
+        anchor=builders.anchor_of(anchor),
+        members=members,
+    )
 
 
 def make_change(path, from_=None, to=None, kind="scalar", suppressed=None, array=None, vmad=None):
-    return {
+    return builders.change(**{
         "path": path, "kind": kind, "from": from_, "to": to,
-        "from_display": None, "to_display": None,
-        "suppressed": suppressed, "common_group": None,
-        "array": array, "vmad": vmad,
-    }
+        "suppressed": suppressed, "array": array, "vmad": vmad,
+    })
 
 
 def make_record(fid, record_type, editor_id=None, name=None, status="changed",
                  changes=None, cut=None, prev_editor_id=None):
-    return {
-        "form_id": fid, "record_type": record_type, "editor_id": editor_id, "name": name,
-        "description": None, "status": status, "prev_editor_id": prev_editor_id, "cut": cut,
-        "fields": None, "refs_out": [], "changes": changes or [],
-    }
+    return builders.record(
+        form_id=fid, record_type=record_type, editor_id=editor_id, name=name,
+        status=status, prev_editor_id=prev_editor_id, cut=cut, changes=changes or [],
+    )
 
 
 # A tiny, self-contained config exercising every rule field this module
@@ -1113,25 +1104,6 @@ class TestMergeAssessment(unittest.TestCase):
 # --------------------------------------------------------------------------
 # File-based round trip: run_triage / run_merge_assessment / determinism
 # --------------------------------------------------------------------------
-
-
-class TempOutDir:
-    """A temp dir laid out like a pipeline output dir: bundles.json +
-    comprehensive.json (mirrors test_slice_bundles.py's helper)."""
-
-    def __init__(self, bundles_data, comprehensive_data):
-        self.bundles_data = bundles_data
-        self.comprehensive_data = comprehensive_data
-        self._tmp = tempfile.TemporaryDirectory()  # non-Optional: __exit__ always has one to clean up
-
-    def __enter__(self):
-        out_dir = Path(self._tmp.name)
-        (out_dir / "bundles.json").write_text(json.dumps(self.bundles_data), encoding="utf-8")
-        (out_dir / "comprehensive.json").write_text(json.dumps(self.comprehensive_data), encoding="utf-8")
-        return out_dir
-
-    def __exit__(self, *exc):
-        self._tmp.cleanup()
 
 
 def _sample_pipeline_output():

@@ -17,19 +17,18 @@ binary complies with -- see `test_esm_gateway.py`'s
 from __future__ import annotations
 
 import json
-import shutil
-import stat
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import make_patch_notes as mpn  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 import update_manifest as um  # noqa: E402
+from builders import TempDirTestCase, fake_esm_script  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 DIFF_SMALL = FIXTURES_DIR / "diff_small.json"
@@ -40,17 +39,11 @@ REFS_GRAPH = FIXTURES_DIR / "refs_graph.json"
 # Shared fixture builders
 # ---------------------------------------------------------------------------
 
-_FAKE_ESM_TEMPLATE = "#!/bin/sh\ncat \"{diff_json}\"\n"
-
 
 def make_fake_esm(tmp_dir: Path, diff_json: Path = DIFF_SMALL) -> Path:
     """A tiny shell-script stand-in for the `esm` binary: ignores every
     argument and cats a fixed diff.json fixture verbatim."""
-    script = tmp_dir / "fake_esm.sh"
-    script.write_text(_FAKE_ESM_TEMPLATE.format(diff_json=diff_json))
-    mode = script.stat().st_mode
-    script.chmod(mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    return script
+    return fake_esm_script(tmp_dir, stdout_path=diff_json)
 
 
 def make_snapshot(tmp_dir: Path, token: str, lang: str = "en") -> Path:
@@ -106,7 +99,7 @@ class TestEsmTokenAndOutDir(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestLocateStringsDirs(unittest.TestCase):
+class TestLocateStringsDirs(TempDirTestCase):
     """Regression cover for the per-side string-table resolution.
 
     The production snapshot layout dates the *parent directory* and leaves both
@@ -117,10 +110,6 @@ class TestLocateStringsDirs(unittest.TestCase):
     table and hiding every localized rename. `make_snapshot()` above uses dated
     stems, so only these tests exercise that shape.
     """
-
-    def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, self.tmp, True)
 
     def _snapshot(self, token: str, *, dated_stem: bool = False,
                   strings: bool = True) -> Path:
@@ -280,16 +269,13 @@ class TestBuildDiffCmd(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestOrchestratorEndToEnd(unittest.TestCase):
+class TestOrchestratorEndToEnd(TempDirTestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp_dir = Path(self._tmp.name)
+        super().setUp()
+        self.tmp_dir = self.tmp  # this suite reads it as a scratch dir, not an out-dir
         self.fake_esm = make_fake_esm(self.tmp_dir)
         self.old_esm = make_snapshot(self.tmp_dir, "20260626")
         self.new_esm = make_snapshot(self.tmp_dir, "20260703")
-
-    def tearDown(self):
-        self._tmp.cleanup()
 
     def _run(self, out_dir, extra_args=()):
         return mpn.main([
@@ -450,7 +436,7 @@ class TestOrchestratorEndToEnd(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestUpdateManifest(unittest.TestCase):
+class TestUpdateManifest(TempDirTestCase):
     """Covers update_manifest.py's tiered-edition narrative schema
     (schema_version 2): a single patch-summary.md, a flat discord/ chunk
     list, and work/triage.json tier counts -- the old per-category
@@ -458,8 +444,8 @@ class TestUpdateManifest(unittest.TestCase):
     retired (see triage_bundles.py / ../.claude/skills/patch-notes/deep-writer-prompt.md)."""
 
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.out_dir = Path(self._tmp.name)
+        super().setUp()
+        self.out_dir = self.tmp  # every test here treats it as a pipeline out-dir
         manifest = pl.new_manifest(
             patch_date="2026-07-03",
             old_token="20260626",
@@ -472,9 +458,6 @@ class TestUpdateManifest(unittest.TestCase):
         manifest["stages"]["mechanical"]["completed_at"] = "2026-07-03T00:00:00Z"
         manifest["stages"]["mechanical"]["files"] = {"diff": "diff.json"}
         pl.write_manifest(self.out_dir, manifest)
-
-    def tearDown(self):
-        self._tmp.cleanup()
 
     def _write_patch_summary(self, text="# Patch Summary\n"):
         (self.out_dir / "patch-summary.md").write_text(text)
@@ -507,11 +490,10 @@ class TestUpdateManifest(unittest.TestCase):
         (work_dir / "triage.json").write_text(json.dumps(payload))
 
     def test_missing_manifest_errors(self):
-        empty = Path(tempfile.mkdtemp())
-        try:
-            self.assertEqual(um.main([str(empty)]), 1)
-        finally:
-            shutil.rmtree(empty)
+        # A sibling dir with no manifest.json -- self.out_dir has one by setUp.
+        empty = self.tmp / "empty"
+        empty.mkdir()
+        self.assertEqual(um.main([str(empty)]), 1)
 
     def test_no_outputs_yields_null_summary_and_zero_chunks(self):
         rc = um.main([str(self.out_dir)])

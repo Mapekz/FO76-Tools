@@ -1,23 +1,16 @@
 #!/usr/bin/env python3
 """Tests for tools/patchnotes_lib.py."""
 
-import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import patchnotes_lib as pl  # noqa: E402
-
-FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-
-
-def load_fixture(name):
-    with open(FIXTURES_DIR / name, encoding="utf-8") as f:
-        return json.load(f)
-
+from builders import load_fixture  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # annotate_ref

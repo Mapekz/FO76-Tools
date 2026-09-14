@@ -10,32 +10,34 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import builders  # noqa: E402
 import check_claims as cc  # noqa: E402
 import layout  # noqa: E402
+from builders import TempDirTestCase  # noqa: E402
 
 
 def change(path, from_, to, kind="scalar", **extra):
-    entry = {
+    # Unlike the other suites' change builders this one fills in the backtick
+    # `from_display`/`to_display` renderings, because check_claims reads the
+    # displayed value when matching a drafted number back to the diff.
+    return builders.change(**{
         "path": path, "kind": kind, "from": from_, "to": to,
         "from_display": f"`{from_}`", "to_display": f"`{to}`",
-        "suppressed": None, "common_group": None, "array": None, "vmad": None,
-    }
-    entry.update(extra)
-    return entry
+        **extra,
+    })
 
 
 def record(fid, rtype, status="changed", editor_id=None, name=None, changes=None, fields=None, prev=None):
-    return {
-        "form_id": fid, "record_type": rtype, "editor_id": editor_id, "name": name,
-        "description": None, "status": status, "prev_editor_id": prev, "cut": None,
-        "fields": fields, "refs_out": [], "changes": changes or [],
-    }
+    return builders.record(
+        form_id=fid, record_type=rtype, editor_id=editor_id, name=name,
+        status=status, prev_editor_id=prev, fields=fields, changes=changes or [],
+    )
 
 
 EFFECTS_ARRAY = {
@@ -198,13 +200,7 @@ class TestUnbackedNumbers(unittest.TestCase):
         self.assertEqual(cc.find_unbacked_numbers("## Patch 20260912\nEvidence: 4242\n", []), [])
 
 
-class TestRunCheck(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp = Path(self._tmp.name)
-
-    def tearDown(self):
-        self._tmp.cleanup()
+class TestRunCheck(TempDirTestCase):
 
     def test_all_ok_writes_payload_and_passes(self):
         write_out_dir(self.tmp, [{"record": "0x00000001", "path": "Data / Damage", "from": 20, "to": 25}],

@@ -4,36 +4,32 @@
 import json
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import builders  # noqa: E402
 import slice_bundles as sb  # noqa: E402
+from builders import TempOutDir, load_fixture  # noqa: E402
 
-FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "slice_bundles.py"
 
 
 def minimal_comprehensive_record(**overrides):
-    record = {
-        "form_id": "0x00000001",
-        "record_type": "MISC",
-        "editor_id": "Foo",
-        "name": None,
-        "description": None,
-        "status": "changed",
-        "prev_editor_id": None,
-        "cut": None,
-        "fields": None,
-        "refs_out": [],
-        "changes": [],
-    }
-    record.update(overrides)
-    if "form_id" in overrides:
-        record["form_id"] = overrides["form_id"]
-    return record
+    # These four are spelled out rather than inherited from builders.record's
+    # defaults: several tests below assert on them (the 0x00000001 selector,
+    # the MISC type against --type filters), so they must not drift.
+    return builders.record(
+        **{
+            "form_id": "0x00000001",
+            "record_type": "MISC",
+            "editor_id": "Foo",
+            "status": "changed",
+            **overrides,
+        }
+    )
 
 
 def minimal_comprehensive_doc(records, **overrides):
@@ -46,39 +42,6 @@ def minimal_comprehensive_doc(records, **overrides):
     }
     doc.update(overrides)
     return doc
-
-
-def load_fixture(name):
-    with open(FIXTURES_DIR / name, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-class TempOutDir:
-    """Context manager: a temp dir with bundles.json (and optionally
-    comprehensive.json) already written, mirroring the pipeline's output
-    directory layout."""
-
-    def __init__(self, bundles_data=None, comprehensive_data=None):
-        self.bundles_data = bundles_data
-        self.comprehensive_data = comprehensive_data
-        self._tmp = None
-
-    def __enter__(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        out_dir = Path(self._tmp.name)
-        if self.bundles_data is not None:
-            (out_dir / "bundles.json").write_text(
-                json.dumps(self.bundles_data), encoding="utf-8"
-            )
-        if self.comprehensive_data is not None:
-            (out_dir / "comprehensive.json").write_text(
-                json.dumps(self.comprehensive_data), encoding="utf-8"
-            )
-        return out_dir
-
-    def __exit__(self, *exc):
-        if self._tmp is not None:
-            self._tmp.cleanup()
 
 
 # --------------------------------------------------------------------------
@@ -110,21 +73,14 @@ class TestLints(unittest.TestCase):
 class TestExtract(unittest.TestCase):
     @staticmethod
     def _record(**overrides):
-        entry = {
-            "form_id": "0x00123456",
-            "record_type": "WEAP",
-            "editor_id": "EnclavePlasmaGun",
-            "name": None,
-            "description": None,
-            "status": "changed",
-            "prev_editor_id": None,
-            "cut": None,
-            "fields": None,
-            "refs_out": [],
-            "changes": [],
-        }
-        entry.update(overrides)
-        return entry
+        return builders.record(
+            **{
+                "form_id": "0x00123456",
+                "record_type": "WEAP",
+                "editor_id": "EnclavePlasmaGun",
+                **overrides,
+            }
+        )
 
     def setUp(self):
         self.comprehensive = {

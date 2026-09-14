@@ -47,7 +47,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build_bundles as bb  # noqa: E402
+import builders  # noqa: E402
 import esm_gateway  # noqa: E402
+from builders import load_json  # noqa: E402
 from fake_gateway import FakeGateway  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -55,11 +57,6 @@ SCRIPT_PATH = Path(__file__).resolve().parents[1] / "build_bundles.py"
 REFS_FIXTURE_PATH = FIXTURES_DIR / "refs_graph.json"
 COMPREHENSIVE_MINI_PATH = FIXTURES_DIR / "comprehensive_mini.json"
 CATEGORIES_PATH = Path(__file__).resolve().parents[1] / "patch_notes_categories.json"
-
-
-def load_json(path):
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
 
 
 def _edge(frm, to, source="forward"):
@@ -509,10 +506,10 @@ class TestCategorization(unittest.TestCase):
 
     @staticmethod
     def _member(form_id, record_type, editor_id=None, name=None, role="anchor", status="changed"):
-        return {
-            "form_id": form_id, "record_type": record_type, "editor_id": editor_id,
-            "name": name, "status": status, "role": role,
-        }
+        return builders.member(
+            form_id=form_id, record_type=record_type, editor_id=editor_id,
+            name=name, status=status, role=role,
+        )
 
     def test_perk_anchor_matches_perks_rule_0(self):
         anchor = self._member("0x01", "PERK", "SomePerk")

@@ -39,9 +39,11 @@ from typing import Any, cast
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import esm_gateway  # noqa: E402
 import wire_constants  # noqa: E402
+from builders import TempDirTestCase, fake_esm_script  # noqa: E402
 from esm_gateway import (  # noqa: E402
     DaemonError,
     EsmGateway,
@@ -364,15 +366,14 @@ class WireFormatTests(unittest.TestCase):
 # ─── Discovery-path tests ────────────────────────────────────────────────────
 
 
-class DiscoveryPathTests(unittest.TestCase):
+class DiscoveryPathTests(TempDirTestCase):
     def setUp(self):
+        super().setUp()
         self._env_backup = dict(os.environ)
-        self._tmp = tempfile.TemporaryDirectory()
 
     def tearDown(self):
         os.environ.clear()
         os.environ.update(self._env_backup)
-        self._tmp.cleanup()
 
     def _clear_xdg_env(self):
         for var in ("XDG_RUNTIME_DIR", "XDG_CACHE_HOME", "HOME"):
@@ -380,21 +381,21 @@ class DiscoveryPathTests(unittest.TestCase):
 
     def test_runtime_dir_prefers_xdg_runtime_dir(self):
         self._clear_xdg_env()
-        runtime = Path(self._tmp.name) / "runtime"
+        runtime = self.tmp / "runtime"
         runtime.mkdir()
         os.environ["XDG_RUNTIME_DIR"] = str(runtime)
-        os.environ["XDG_CACHE_HOME"] = str(Path(self._tmp.name) / "cache")
+        os.environ["XDG_CACHE_HOME"] = str(self.tmp / "cache")
         self.assertEqual(runtime_dir(), runtime)
 
     def test_runtime_dir_falls_back_to_xdg_cache_home(self):
         self._clear_xdg_env()
-        cache = Path(self._tmp.name) / "cache"
+        cache = self.tmp / "cache"
         os.environ["XDG_CACHE_HOME"] = str(cache)
         self.assertEqual(runtime_dir(), cache)
 
     def test_runtime_dir_falls_back_to_home_cache(self):
         self._clear_xdg_env()
-        home = Path(self._tmp.name) / "home"
+        home = self.tmp / "home"
         home.mkdir()
         os.environ["HOME"] = str(home)
         self.assertEqual(runtime_dir(), home / ".cache")
@@ -403,19 +404,19 @@ class DiscoveryPathTests(unittest.TestCase):
         # dirs_sys::is_absolute_path treats a non-absolute value as unset.
         self._clear_xdg_env()
         os.environ["XDG_RUNTIME_DIR"] = "relative/path"
-        home = Path(self._tmp.name) / "home"
+        home = self.tmp / "home"
         home.mkdir()
         os.environ["HOME"] = str(home)
         self.assertEqual(runtime_dir(), home / ".cache")
 
     def test_read_daemon_info_missing_file_returns_none(self):
         self._clear_xdg_env()
-        os.environ["XDG_RUNTIME_DIR"] = self._tmp.name
+        os.environ["XDG_RUNTIME_DIR"] = str(self.tmp)
         self.assertIsNone(read_daemon_info())
 
     def test_read_daemon_info_round_trip(self):
         self._clear_xdg_env()
-        os.environ["XDG_RUNTIME_DIR"] = self._tmp.name
+        os.environ["XDG_RUNTIME_DIR"] = str(self.tmp)
         info = {
             "port": 12345,
             "token": "abc",
@@ -431,7 +432,7 @@ class DiscoveryPathTests(unittest.TestCase):
     def test_read_daemon_info_legacy_file_gets_defaults(self):
         # Legacy discovery file written before exe_* fields existed.
         self._clear_xdg_env()
-        os.environ["XDG_RUNTIME_DIR"] = self._tmp.name
+        os.environ["XDG_RUNTIME_DIR"] = str(self.tmp)
         daemon_info_path().write_text(json.dumps({"port": 1, "token": "x", "pid": 2}))
         info = read_daemon_info()
         assert info is not None
@@ -440,7 +441,7 @@ class DiscoveryPathTests(unittest.TestCase):
         self.assertFalse(daemon_fresh(info))
 
     def test_daemon_fresh_true_when_binary_signature_matches(self):
-        exe = Path(self._tmp.name) / "esm-server"
+        exe = self.tmp / "esm-server"
         exe.write_bytes(b"fake binary contents")
         st = exe.stat()
         info = {
@@ -452,7 +453,7 @@ class DiscoveryPathTests(unittest.TestCase):
         self.assertTrue(daemon_fresh(info))
 
     def test_daemon_fresh_false_after_binary_changes(self):
-        exe = Path(self._tmp.name) / "esm-server"
+        exe = self.tmp / "esm-server"
         exe.write_bytes(b"fake binary contents")
         st = exe.stat()
         info = {
@@ -551,14 +552,11 @@ class BuildDiffCmdTests(unittest.TestCase):
             Path("esm"), Path("a.esm"), Path("b.esm"), **cast(Any, kwargs)
         )
 
-    def test_shared_strings_dir_uses_single_flag(self):
-        d = Path("/strings")
-        cmd = self._cmd(strings_dir_a=d, strings_dir_b=d)
-        self.assertIn("--strings-dir", cmd)
-        self.assertNotIn("--strings-dir-a", cmd)
-
-    def test_empty_exclude_type_omits_flag(self):
-        self.assertNotIn("--exclude-type", self._cmd(exclude_type=""))
+    # The flag-mapping cases (--exclude-type, --strings-dir, --bodies, --type,
+    # --keep-noise, --pretty) live in test_orchestrator.TestBuildDiffCmd: it
+    # calls the same function object via make_patch_notes' re-export of
+    # esm_gateway.build_diff_cmd, and its strings-dir case asserts strictly
+    # more than this one did.
 
     def test_always_uses_local_diff(self):
         # diff() only ever shells out to `--local diff` -- see EsmGateway.diff's
@@ -568,29 +566,17 @@ class BuildDiffCmdTests(unittest.TestCase):
         self.assertIn("diff", cmd)
 
 
-class EsmGatewayDiffTests(unittest.TestCase):
+class EsmGatewayDiffTests(TempDirTestCase):
     """Exercises `EsmGateway.diff` directly against a tiny shell-script
     stand-in for the `esm` binary -- same technique as
     tools/tests/test_orchestrator.py's `make_fake_esm`, at the transport
     layer this delegates to."""
 
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp_dir = Path(self._tmp.name)
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
     def _fake_esm(self, stdout_text: str, *, exit_code: int = 0) -> Path:
-        # Write the desired stdout to its own file and `cat` it, rather than
-        # inlining it into the shell script, to sidestep shell-quoting
-        # entirely (mirrors test_orchestrator.py's make_fake_esm).
-        payload = self.tmp_dir / "stdout.txt"
-        payload.write_text(stdout_text)
-        script = self.tmp_dir / "fake_esm.sh"
-        script.write_text(f'#!/bin/sh\ncat "{payload}"\nexit {exit_code}\n')
-        script.chmod(script.stat().st_mode | stat.S_IEXEC)
-        return script
+        # exit_code is always spelled out here (unlike make_fake_esm, which
+        # lets the script inherit `cat`'s status) because these tests need a
+        # binary that fails on demand.
+        return fake_esm_script(self.tmp, stdout_text=stdout_text, exit_code=exit_code)
 
     def _diff(self, esm_bin):
         return esm_gateway.EsmGateway.diff(

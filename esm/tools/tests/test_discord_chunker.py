@@ -12,13 +12,14 @@ a code block, and no source content is lost or a chunk left oversized.
 from __future__ import annotations
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import discord_chunker as dc  # noqa: E402
+from builders import TempDirTestCase  # noqa: E402
 
 MAX_CHARS = dc.MAX_CHARS
 
@@ -289,16 +290,9 @@ class TestSizeCapAndContentPreservation(unittest.TestCase):
                 self.fail(f"content lost or reordered: {line!r} not found in order")
 
 
-class TestMainExitCode(unittest.TestCase):
+class TestMainExitCode(TempDirTestCase):
     """A hard-truncated chunk loses content: main() returns 1 unless
     --allow-oversize, so the orchestrator treats it as a gate."""
-
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp = Path(self._tmp.name)
-
-    def tearDown(self):
-        self._tmp.cleanup()
 
     def test_normal_input_exits_zero(self):
         src = self.tmp / "in.md"

@@ -6,15 +6,16 @@ mocked via urllib.request.urlopen."""
 from __future__ import annotations
 
 import sys
-import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import fetch_official_notes as fon  # noqa: E402
+from builders import TempDirTestCase  # noqa: E402
 
 PAGE = """<html><head><title>Inside the Vault</title><style>.x{}</style>
 <script>window.__x = 1;</script></head><body>
@@ -66,14 +67,7 @@ class TestExtraction(unittest.TestCase):
         self.assertNotIn("<", text)
 
 
-class TestMain(unittest.TestCase):
-    def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp = Path(self._tmp.name)
-
-    def tearDown(self):
-        self._tmp.cleanup()
-
+class TestMain(TempDirTestCase):
     def test_local_html_file(self):
         src = self.tmp / "page.html"
         src.write_text(PAGE)

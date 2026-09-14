@@ -7,23 +7,24 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import builders  # noqa: E402
 import check_coverage as cv  # noqa: E402
 import layout  # noqa: E402
+from builders import TempDirTestCase  # noqa: E402
 
 
 def bundle(bid, fid, edid, name):
-    return {
-        "id": bid, "title": f"{name} (WEAP)",
-        "anchor": {"form_id": fid, "record_type": "WEAP", "editor_id": edid, "name": name, "status": "changed"},
-        "members": [{"form_id": fid, "record_type": "WEAP", "editor_id": edid, "name": name, "status": "changed", "role": "anchor"}],
-        "edges": [], "bug_watch": False, "lint_ids": [],
-    }
+    anchor = builders.member(form_id=fid, record_type="WEAP", editor_id=edid, name=name, role="anchor")
+    return builders.bundle(
+        id=bid, title=f"{name} (WEAP)",
+        anchor=builders.anchor_of(anchor), members=[anchor],
+    )
 
 
 BUNDLES = [
@@ -33,17 +34,13 @@ BUNDLES = [
 ]
 
 
-class TestCoverage(unittest.TestCase):
+class TestCoverage(TempDirTestCase):
     def setUp(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        self.tmp = Path(self._tmp.name)
+        super().setUp()
         layout.work_dir(self.tmp).mkdir()
         layout.work_triage_json(self.tmp).write_text(json.dumps({"deep": ["B0001", "B0002", "B0003"]}))
         layout.work_deep_slice_json(self.tmp).write_text(json.dumps({"bundles": BUNDLES, "lints": []}))
         layout.drafts_dir(self.tmp).mkdir()
-
-    def tearDown(self):
-        self._tmp.cleanup()
 
     def report(self, name, covered, text, deferred=None):
         (layout.drafts_dir(self.tmp) / f"{name}.report.json").write_text(

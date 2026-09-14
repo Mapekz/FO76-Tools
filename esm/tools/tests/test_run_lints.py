@@ -12,15 +12,16 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import builders  # noqa: E402
 import change_entries  # noqa: E402
 import run_lints as rl  # noqa: E402
+from builders import TempOutDir  # noqa: E402
 from fake_gateway import FakeGateway  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
@@ -45,18 +46,21 @@ def make_record(
     refs_out=None,
     changes=None,
 ):
-    return {
-        "form_id": form_id,
-        "record_type": record_type,
-        "editor_id": editor_id,
-        "name": name,
-        "description": description,
-        "status": status,
-        "cut": cut,
-        "fields": fields if fields is not None else {},
-        "refs_out": refs_out if refs_out is not None else [],
-        "changes": changes if changes is not None else [],
-    }
+    # `fields` defaults to {} here, not builders.record's None: these records
+    # go through run_lints' `(rec.get("fields") or {}).get("Entries")` reads
+    # and several cases index into them directly.
+    return builders.record(
+        form_id=form_id,
+        record_type=record_type,
+        editor_id=editor_id,
+        name=name,
+        description=description,
+        status=status,
+        cut=cut,
+        fields=fields if fields is not None else {},
+        refs_out=refs_out if refs_out is not None else [],
+        changes=changes if changes is not None else [],
+    )
 
 
 def make_comp(records, ref_names=None):
@@ -69,22 +73,22 @@ def make_bundle(bundle_id, category, anchor_fid, anchor_type, members=None, edge
     # "status"/"category_rule" are required-but-nullable keys) so this
     # round-trips through pl.validate_bundles_payload() unchanged, which
     # TestEndToEndCli exercises via run_lints.main()'s bundles.json read.
-    b = {
+    # The anchor/member dicts stay literal rather than going through
+    # builders.anchor()/builders.member(): those carry the nullable
+    # editor_id/name keys too, and TestInjection pins this exact three-key
+    # anchor to prove lint injection leaves it untouched.
+    return builders.bundle(**{
         "id": bundle_id,
         "category": category,
         "category_label": category,
-        "category_rule": None,
         "title": f"Bundle {bundle_id}",
         "anchor": {"form_id": anchor_fid, "record_type": anchor_type, "status": "changed"},
         "members": members
         if members is not None
         else [{"form_id": anchor_fid, "record_type": anchor_type, "status": "changed", "role": "anchor"}],
         "edges": edges or [],
-        "bug_watch": False,
-        "lint_ids": [],
-    }
-    b.update(extra)
-    return b
+        **extra,
+    })
 
 
 def make_bundles(bundles=None):
@@ -858,27 +862,6 @@ class TestDeterminism(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TempOutDir:
-    """Temp dir pre-populated with comprehensive.json + bundles.json,
-    mirroring the pipeline's output-directory layout."""
-
-    def __init__(self, comp, bundles):
-        self.comp = comp
-        self.bundles = bundles
-        self._tmp = None
-
-    def __enter__(self):
-        self._tmp = tempfile.TemporaryDirectory()
-        out_dir = Path(self._tmp.name)
-        (out_dir / "comprehensive.json").write_text(json.dumps(self.comp), encoding="utf-8")
-        (out_dir / "bundles.json").write_text(json.dumps(self.bundles), encoding="utf-8")
-        return out_dir
-
-    def __exit__(self, *exc):
-        if self._tmp is not None:
-            self._tmp.cleanup()
-
-
 class TestEndToEndCli(unittest.TestCase):
     def test_full_run_writes_lints_and_updates_bundles(self):
         lvli_rec = make_record(
@@ -911,7 +894,7 @@ class TestEndToEndCli(unittest.TestCase):
         bundle = make_bundle("B0001", "loot", "0x08000001", "LVLI")
         bundles = make_bundles([bundle])
 
-        with TempOutDir(comp, bundles) as out_dir:
+        with TempOutDir(bundles_data=bundles, comprehensive_data=comp) as out_dir:
             rc = rl.main(
                 [
                     str(out_dir),
@@ -944,7 +927,7 @@ class TestEndToEndCli(unittest.TestCase):
     def test_offline_requires_refs_fixture(self):
         comp = make_comp([])
         bundles = make_bundles()
-        with TempOutDir(comp, bundles) as out_dir:
+        with TempOutDir(bundles_data=bundles, comprehensive_data=comp) as out_dir:
             rc = rl.main([str(out_dir), "--offline"])
             self.assertEqual(rc, 1)
 
@@ -966,7 +949,7 @@ class TestEndToEndCli(unittest.TestCase):
         comp = make_comp([cut_rec, lvli_rec])
         bundles = make_bundles()
 
-        with TempOutDir(comp, bundles) as out_dir:
+        with TempOutDir(bundles_data=bundles, comprehensive_data=comp) as out_dir:
             rc = rl.main(
                 [
                     str(out_dir),

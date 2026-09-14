@@ -9,19 +9,16 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import change_entries  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 import render_comprehensive as rc  # noqa: E402
+from builders import load_fixture  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 GOLDEN_DIR = FIXTURES_DIR / "golden"
 SCRIPT = Path(__file__).resolve().parents[1] / "render_comprehensive.py"
-
-
-def load_fixture(name):
-    with open(FIXTURES_DIR / name, encoding="utf-8") as f:
-        return json.load(f)
 
 
 # ---------------------------------------------------------------------------
