@@ -188,6 +188,54 @@ def numeric_change_form_ids(records, drop_patterns=None) -> set[str]:
     }
 
 
+def numeric_delta_signature(record, drop_patterns=None) -> str:
+    """Canonical JSON of a record's non-plumbing numeric deltas: each
+    contributing change entry's `path` plus its literal before/after. Two
+    records share a signature only when they changed the same fields to the
+    same values."""
+    deltas = sorted(
+        (entry.get("path") or "", json.dumps(entry.get("from"), sort_keys=True),
+         json.dumps(entry.get("to"), sort_keys=True))
+        for entry in record.get("changes") or []
+        if isinstance(entry, dict)
+        and not entry.get("suppressed")
+        and not _fnmatch_any(entry.get("path") or "", drop_patterns)
+        and is_numeric_change_entry(entry)
+    )
+    return json.dumps(deltas)
+
+
+def uniform_numeric_form_ids(records, form_ids, threshold, drop_patterns=None) -> set[str]:
+    """The subset of `form_ids` whose numeric delta is shared, verbatim, by at
+    least `threshold` records of the same change shape.
+
+    `rollout_numeric_exclusion` keeps any record with a real value delta out
+    of its ROLLOUT shape, one record at a time, so that a balance change
+    hiding inside bulk churn still tiers on its own. That is the right
+    default for a delta a human authored, and the wrong one for a delta the
+    build applied everywhere: 131 creatures dropping the same
+    `EncounterSkullIndex` property is one story, and excluding all 131
+    individually turns it into 131 DEEP bundles that each say the same thing.
+
+    Identity of the delta is the discriminator. A per-creature Health curve
+    rewrite gives every record a different signature and stays excluded; a
+    single property removed with the same before/after everywhere collapses
+    back into its shape, where `rollouts.md` reports it once with its record
+    count and example FormIDs."""
+    by_group: dict[tuple, list[str]] = defaultdict(list)
+    for form_id in form_ids:
+        record = records[form_id]
+        by_group[
+            (record_change_shape(record), numeric_delta_signature(record, drop_patterns))
+        ].append(form_id)
+    return {
+        form_id
+        for group in by_group.values()
+        if len(group) >= threshold
+        for form_id in group
+    }
+
+
 def compute_rollout_shapes(records, threshold, numeric_excluded=None) -> list[pl.RolloutShape]:
     """Return deterministic metadata for changed-record shapes at threshold.
 
@@ -574,6 +622,14 @@ def compute_bundle_tiers(bundles, records, config) -> tuple[dict[str, pl.TierInf
     exclude_numeric = settings.get("rollout_numeric_exclusion", DEFAULT_ROLLOUT_NUMERIC_EXCLUSION)
     drop_patterns = config.get("field_path_drop_patterns") or []
     numeric_excluded = numeric_change_form_ids(records, drop_patterns) if exclude_numeric else set()
+    uniform = uniform_numeric_form_ids(records, numeric_excluded, threshold, drop_patterns)
+    numeric_excluded -= uniform
+    if uniform:
+        eprint(
+            f"note: {len(uniform)} records whose numeric delta is identical across "
+            f"{threshold}+ siblings of the same shape rejoined their ROLLOUT shape "
+            f"(one story, not {len(uniform)}); see rollouts.md for the shape rows"
+        )
     rollout_shapes = compute_rollout_shapes(records, threshold, numeric_excluded)
     kept_out = sum(item["numeric_excluded_count"] for item in rollout_shapes)
     if kept_out > ROLLOUT_NUMERIC_EXCLUSION_WARN:

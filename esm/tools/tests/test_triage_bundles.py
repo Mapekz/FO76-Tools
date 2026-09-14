@@ -839,8 +839,11 @@ class TestRolloutTier(unittest.TestCase):
         self.assertEqual(rollout_shapes[0]["numeric_excluded_count"], 0)
 
     def test_numeric_exclusion_can_be_switched_off(self):
+        # Distinct deltas per record: an identical delta shared by the whole
+        # shape rejoins ROLLOUT on its own (see the uniform-delta tests
+        # below), which would mask the switch this test is about.
         records = {
-            f"0x0{i}": make_record(f"0x0{i}", "MISC", changes=[make_change("Data / Value", 1, 2)])
+            f"0x0{i}": make_record(f"0x0{i}", "MISC", changes=[make_change("Data / Value", i, i + 10)])
             for i in (1, 2)
         }
         bundles = [make_bundle(f"B000{i}", [make_member(f"0x0{i}", "MISC")]) for i in (1, 2)]
@@ -849,6 +852,52 @@ class TestRolloutTier(unittest.TestCase):
         tiers_by_id, _shapes = tb.compute_bundle_tiers(bundles, records, config)
         self.assertEqual(tiers_by_id["B0001"]["tier"], "rollout")
         tiers_by_id, _shapes = tb.compute_bundle_tiers(bundles, records, self.config(2))
+        self.assertNotEqual(tiers_by_id["B0001"]["tier"], "rollout")
+
+    def test_identical_numeric_delta_across_a_shape_rejoins_rollout(self):
+        # One property removed with the same before/after on every record is
+        # one story. Excluding each record individually turns it into N DEEP
+        # bundles that all say the same thing.
+        records = {
+            f"0x0{i}": make_record(f"0x0{i}", "NPC_", changes=[make_change("Data / Value", 3, 0)])
+            for i in (1, 2, 3)
+        }
+        bundles = [make_bundle(f"B000{i}", [make_member(f"0x0{i}", "NPC_")]) for i in (1, 2, 3)]
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(bundles, records, self.config(3))
+        self.assertEqual(
+            [tiers_by_id[f"B000{i}"]["tier"] for i in (1, 2, 3)],
+            ["rollout"] * 3,
+        )
+        self.assertEqual(rollout_shapes[0]["record_count"], 3)
+        self.assertEqual(rollout_shapes[0]["numeric_excluded_count"], 0)
+
+    def test_a_distinctive_delta_inside_a_uniform_shape_still_tiers_on_its_own(self):
+        # The collapse above must not swallow the one record that differs: a
+        # real balance change hiding inside bulk churn is the case
+        # rollout_numeric_exclusion exists for.
+        records = {
+            f"0x0{i}": make_record(f"0x0{i}", "NPC_", changes=[make_change("Data / Value", 3, 0)])
+            for i in (1, 2, 3)
+        }
+        records["0x04"] = make_record(
+            "0x04", "NPC_", changes=[make_change("Data / Value", 3, 99)]
+        )
+        bundles = [make_bundle(f"B000{i}", [make_member(f"0x0{i}", "NPC_")]) for i in (1, 2, 3, 4)]
+        tiers_by_id, rollout_shapes = tb.compute_bundle_tiers(bundles, records, self.config(3))
+        self.assertEqual(
+            [tiers_by_id[f"B000{i}"]["tier"] for i in (1, 2, 3)],
+            ["rollout"] * 3,
+        )
+        self.assertNotEqual(tiers_by_id["B0004"]["tier"], "rollout")
+        self.assertEqual(rollout_shapes[0]["numeric_excluded_count"], 1)
+
+    def test_uniform_delta_below_the_threshold_stays_excluded(self):
+        records = {
+            f"0x0{i}": make_record(f"0x0{i}", "NPC_", changes=[make_change("Data / Value", 3, 0)])
+            for i in (1, 2)
+        }
+        bundles = [make_bundle(f"B000{i}", [make_member(f"0x0{i}", "NPC_")]) for i in (1, 2)]
+        tiers_by_id, _shapes = tb.compute_bundle_tiers(bundles, records, self.config(3))
         self.assertNotEqual(tiers_by_id["B0001"]["tier"], "rollout")
 
     def test_non_rollout_existing_fixture_tiers_are_unchanged(self):
