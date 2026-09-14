@@ -1,6 +1,8 @@
 mod common;
 
-use common::{append_record, append_subrecord, cstr, esm_pair, tes4_header, wrap_grup};
+use common::{
+    append_record, append_subrecord, cstr, esm_pair, record_with_edid, tes4_header, wrap_grup,
+};
 use esm::diff::{diff_databases, diff_databases_with, json_diff, strip_noise_fields};
 use esm::{BodyDetail, DiffOptions};
 use serde_json::json;
@@ -1037,42 +1039,12 @@ fn exclude_types_skips_all_buckets() {
     // NAVM(1): removed. NAVM(2): added. NAVM(3): changed (EDID differs).
     // MISC(5): changed (EDID differs) — a control record that must survive
     // the exclusion untouched.
-    let mut navm1 = Vec::new();
-    {
-        let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &cstr("OldNav1"));
-        append_record(&mut navm1, b"NAVM", 1, &subs);
-    }
-    let mut navm2 = Vec::new();
-    {
-        let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &cstr("NewNav2"));
-        append_record(&mut navm2, b"NAVM", 2, &subs);
-    }
-    let mut navm3_a = Vec::new();
-    {
-        let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &cstr("NavA"));
-        append_record(&mut navm3_a, b"NAVM", 3, &subs);
-    }
-    let mut navm3_b = Vec::new();
-    {
-        let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &cstr("NavB"));
-        append_record(&mut navm3_b, b"NAVM", 3, &subs);
-    }
-    let mut misc5_a = Vec::new();
-    {
-        let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &cstr("KeepA"));
-        append_record(&mut misc5_a, b"MISC", 5, &subs);
-    }
-    let mut misc5_b = Vec::new();
-    {
-        let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &cstr("KeepB"));
-        append_record(&mut misc5_b, b"MISC", 5, &subs);
-    }
+    let navm1 = record_with_edid(b"NAVM", 1, "OldNav1");
+    let navm2 = record_with_edid(b"NAVM", 2, "NewNav2");
+    let navm3_a = record_with_edid(b"NAVM", 3, "NavA");
+    let navm3_b = record_with_edid(b"NAVM", 3, "NavB");
+    let misc5_a = record_with_edid(b"MISC", 5, "KeepA");
+    let misc5_b = record_with_edid(b"MISC", 5, "KeepB");
 
     let mut navm_a = navm1;
     navm_a.extend(navm3_a);

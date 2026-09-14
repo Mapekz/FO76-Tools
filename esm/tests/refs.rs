@@ -283,9 +283,14 @@ fn recursive_refs_depth1_matches_direct() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// depth=2 follows one hop beyond the direct referencers.
+/// depth=2 follows one hop beyond the direct referencers, and reports that it
+/// stopped there.
+///
+/// These were two tests issuing the same call: one checked the rows and their
+/// paths, the other checked the depth metadata. Same walk, so both assertion
+/// sets belong to one test.
 #[test]
-fn recursive_refs_depth2_follows_one_extra_hop() {
+fn recursive_refs_depth2_follows_one_extra_hop_and_reports_the_cap() {
     let (path, mut db) = open_chain_db();
 
     let list = referenced_by_enriched(
@@ -298,6 +303,7 @@ fn recursive_refs_depth2_follows_one_extra_hop() {
         esm::ipc::RefSort::Formid,
     )
     .expect("enriched");
+
     // Expect LVLI(2) at depth=1 and LVLI(3) at depth=2.
     assert_eq!(
         list.rows.len(),
@@ -325,6 +331,22 @@ fn recursive_refs_depth2_follows_one_extra_hop() {
         "depth-2 row should carry the depth-1 intermediate"
     );
     assert_eq!(row3.path[0].form_id, FormId(2).display());
+
+    // CONT(4) is 3 hops away, so the cap stops the walk before it.
+    let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
+    assert!(
+        !ids.contains(&FormId(4).display().as_str()),
+        "CONT(4) must not appear at depth=2"
+    );
+
+    // …and the result says so, rather than looking like a complete closure.
+    assert_eq!(list.requested_depth, 2);
+    assert_eq!(list.effective_depth, Some(2));
+    assert!(
+        list.depth_capped,
+        "LVLI(3) has an unexpanded referencer (CONT(4)) beyond the cap"
+    );
+    assert!(list.frontier_remaining >= 1);
 
     let _ = std::fs::remove_file(&path);
 }
@@ -401,41 +423,6 @@ fn recursive_refs_depth0_is_unbounded() {
     );
     assert!(!list.depth_capped);
     assert_eq!(list.frontier_remaining, 0);
-
-    let _ = std::fs::remove_file(&path);
-}
-
-/// depth cap terminates the walk at max_depth even if more hops exist, and
-/// the result reports that it did so via depth_capped/frontier_remaining.
-#[test]
-fn recursive_refs_depth_cap_terminates() {
-    let (path, mut db) = open_chain_db();
-
-    // depth=2 stops before reaching CONT(4) which is 3 hops away.
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        2,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
-    let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
-    assert!(
-        !ids.contains(&FormId(4).display().as_str()),
-        "CONT(4) must not appear at depth=2"
-    );
-    assert_eq!(list.rows.len(), 2);
-
-    assert_eq!(list.requested_depth, 2);
-    assert_eq!(list.effective_depth, Some(2));
-    assert!(
-        list.depth_capped,
-        "LVLI(3) has an unexpanded referencer (CONT(4)) beyond the cap"
-    );
-    assert!(list.frontier_remaining >= 1);
 
     let _ = std::fs::remove_file(&path);
 }

@@ -466,6 +466,17 @@ pub fn append_record(out: &mut Vec<u8>, sig: &[u8; 4], form_id: u32, subrecords:
     out.extend_from_slice(subrecords);
 }
 
+/// One serialized record carrying nothing but an `EDID` — the smallest record
+/// the diff engine can tell apart from another, and the shape most fixtures
+/// want when only presence or editor ID matters.
+pub fn record_with_edid(sig: &[u8; 4], form_id: u32, edid: &str) -> Vec<u8> {
+    let mut subs = Vec::new();
+    append_subrecord(&mut subs, b"EDID", &cstr(edid));
+    let mut rec = Vec::new();
+    append_record(&mut rec, sig, form_id, &subs);
+    rec
+}
+
 /// Wrap already-serialized records under a single top-level GRUP of `label`.
 pub fn wrap_grup(label: &[u8; 4], records: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
