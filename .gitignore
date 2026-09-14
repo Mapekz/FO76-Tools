@@ -6,3 +6,6 @@
 
 # Session research scratch (kept out of version control)
 /scratch/
+
+# TES5Edit checkout or symlink that esm's schema tooling reads as ../TES5Edit (see esm/justfile)
+/TES5Edit
