@@ -1,19 +1,11 @@
 import { describe, it, expect } from 'bun:test'
-import { buildLeafNode, buildAlignedTree, deepEqualForConflict, MISSING } from './alignedTree'
+import { buildLeafNode, buildAlignedTree, MISSING } from './alignedTree'
+import { makeFormIdStub } from '../../../test-support/fixtures'
 
-describe('deepEqualForConflict', () => {
-  it('compares FormID stubs by formid only, ignoring editor_id/record_type', () => {
-    const a = { formid: '0x1', editor_id: 'Foo', record_type: 'ARMO' }
-    const b = { formid: '0x1', editor_id: null, record_type: 'KYWD' }
-    expect(deepEqualForConflict(a, b)).toBe(true)
-  })
-
-  it('treats FormID stubs with different formid as unequal', () => {
-    const a = { formid: '0x1', editor_id: 'Foo', record_type: 'ARMO' }
-    const b = { formid: '0x2', editor_id: 'Foo', record_type: 'ARMO' }
-    expect(deepEqualForConflict(a, b)).toBe(false)
-  })
-})
+// `deepEqualForConflict`'s FormID-stub rule is exercised through
+// `buildLeafNode`, its only production caller — the two stub cases below cover
+// both of its outcomes, each stub pair differing in editor_id *and*
+// record_type so neither can be what the comparison keys on.
 
 describe('buildLeafNode (unified leaf-conflict rule)', () => {
   it('flags conflict when present values differ across columns', () => {
@@ -31,16 +23,16 @@ describe('buildLeafNode (unified leaf-conflict rule)', () => {
     expect(node.conflict).toBe(true)
   })
 
-  it('compares FormID stubs by formid only', () => {
-    const a = { formid: '0x1', editor_id: 'Foo', record_type: 'ARMO' }
-    const b = { formid: '0x1', editor_id: null, record_type: 'ARMO' }
+  it('compares FormID stubs by formid only, ignoring editor_id/record_type', () => {
+    const a = makeFormIdStub()
+    const b = makeFormIdStub({ editor_id: null, record_type: 'KYWD' })
     const node = buildLeafNode('kw', 'kw', [a, b])
     expect(node.conflict).toBe(false)
   })
 
   it('flags conflict for FormID stubs whose formid differs', () => {
-    const a = { formid: '0x1', editor_id: 'Foo', record_type: 'ARMO' }
-    const b = { formid: '0x2', editor_id: 'Foo', record_type: 'ARMO' }
+    const a = makeFormIdStub()
+    const b = makeFormIdStub({ formid: '0x2', record_type: 'KYWD' })
     const node = buildLeafNode('kw', 'kw', [a, b])
     expect(node.conflict).toBe(true)
   })

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'bun:test'
+import { describe, it, expect } from 'bun:test'
 import { fetchReferencedBy } from './referencedBy'
 import type { RefListResult } from '../../../shared/api-types'
+import { mockApi } from '../../../test-support/fixtures'
 
 describe('fetchReferencedBy', () => {
   it('passes its arguments through to api.referencedById and returns its result', async () => {
@@ -16,7 +17,7 @@ describe('fetchReferencedBy', () => {
       per_depth_totals: [],
       shown_max_depth: 0,
     }
-    const api = { referencedById: vi.fn<() => Promise<RefListResult>>(async () => result) }
+    const api = mockApi('referencedById', async () => result)
 
     const out = await fetchReferencedBy('db1', '0x00012345', 3, api)
 

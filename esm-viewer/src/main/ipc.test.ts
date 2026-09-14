@@ -144,16 +144,27 @@ describe('registerIpc wiring', () => {
   })
 
   describe('hand-written handlers', () => {
-    it('openFileDialog passes ESM filters/openFile and returns null when canceled', async () => {
-      showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
-      const result = await handlers.get(CH.openFileDialog)!({})
-      expect(showOpenDialog).toHaveBeenCalledWith({
-        filters: [{ name: 'ESM Files', extensions: ['esm'] }],
-        properties: ['openFile'],
-      })
-      expect(result).toBeNull()
-    })
+    // Both dialog handlers differ only in the options they hand Electron;
+    // the canceled path is otherwise identical.
+    it.each([
+      [
+        'openFileDialog',
+        CH.openFileDialog,
+        { filters: [{ name: 'ESM Files', extensions: ['esm'] }], properties: ['openFile'] },
+      ],
+      ['openFolderDialog', CH.openFolderDialog, { properties: ['openDirectory'] }],
+    ] as [string, string, Record<string, unknown>][])(
+      '%s passes its dialog options and returns null when canceled',
+      async (_name, channel, expectedOptions) => {
+        showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
+        const result = await handlers.get(channel)!({})
+        expect(showOpenDialog).toHaveBeenCalledWith(expectedOptions)
+        expect(result).toBeNull()
+      },
+    )
 
+    // No folder-dialog counterpart: only the file dialog's resolved path is
+    // consumed, so this is coverage of its own, not a missing row above.
     it('openFileDialog returns the first path when not canceled', async () => {
       showOpenDialog.mockResolvedValueOnce({
         canceled: false,
@@ -161,15 +172,6 @@ describe('registerIpc wiring', () => {
       })
       const result = await handlers.get(CH.openFileDialog)!({})
       expect(result).toBe('/tmp/picked.esm')
-    })
-
-    it('openFolderDialog passes openDirectory and returns null when canceled', async () => {
-      showOpenDialog.mockResolvedValueOnce({ canceled: true, filePaths: [] })
-      const result = await handlers.get(CH.openFolderDialog)!({})
-      expect(showOpenDialog).toHaveBeenCalledWith({
-        properties: ['openDirectory'],
-      })
-      expect(result).toBeNull()
     })
 
     it('openDatabase opens via napi, registers via add, and returns {id,path,info}', async () => {
@@ -220,15 +222,12 @@ describe('registerIpc wiring', () => {
       expect(result).toEqual({ added: [], removed: [], changed: [] })
     })
 
-    it('diff throws when the old id is unknown', async () => {
+    it.each([
+      ['old', 'missing', 'db-2'],
+      ['new', DB_ID, 'missing'],
+    ])('diff throws when the %s id is unknown', async (_which, oldId, newId) => {
       await expect(
-        handlers.get(CH.diff)!({}, 'missing', 'db-2', undefined, 'none', false, []),
-      ).rejects.toThrow('no database with id missing')
-    })
-
-    it('diff throws when the new id is unknown', async () => {
-      await expect(
-        handlers.get(CH.diff)!({}, DB_ID, 'missing', undefined, 'none', false, []),
+        handlers.get(CH.diff)!({}, oldId, newId, undefined, 'none', false, []),
       ).rejects.toThrow('no database with id missing')
     })
   })

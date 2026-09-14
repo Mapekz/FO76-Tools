@@ -11,15 +11,62 @@ import {
   validateTarget,
 } from './ipc-validators'
 
-describe('validateResolve', () => {
-  it.each(['none', 'stub', 'full'] as const)('passes %s through unchanged', (v) => {
-    expect(validateResolve(v)).toBe(v)
+// Four validators share one shape: an allow-list of literal values passed
+// through unchanged, plus one throw naming the whole allow-list. Each row
+// spells out its expected message in full rather than templating it — that
+// text is user-facing, and a shared template would stop catching a regression
+// in any single validator's wording.
+type EnumCase = [
+  name: string,
+  validate: (v: unknown) => string,
+  valid: string[],
+  invalid: string,
+  message: string,
+]
+
+const enumCases: EnumCase[] = [
+  [
+    'validateResolve',
+    validateResolve,
+    ['none', 'stub', 'full'],
+    'bogus',
+    'invalid resolve value: expected none|stub|full, got bogus',
+  ],
+  [
+    'validateSearchField',
+    validateSearchField,
+    ['edid', 'name', 'both'],
+    'description',
+    'invalid search field: expected edid|name|both, got description',
+  ],
+  [
+    'validateBodies',
+    validateBodies,
+    ['none', 'stub', 'full'],
+    'everything',
+    'invalid bodies value: expected none|stub|full, got everything',
+  ],
+  [
+    'validateFilterOp',
+    validateFilterOp,
+    ['exists', 'eq', 'contains', 'gt', 'lt', 'gte', 'lte'],
+    'neq',
+    'invalid filter op: expected exists|eq|contains|gt|lt|gte|lte, got neq',
+  ],
+]
+
+describe.each(enumCases)('%s', (_name, validate, valid, invalid, message) => {
+  it.each(valid)('passes %s through unchanged', (v) => {
+    expect(validate(v)).toBe(v)
   })
 
-  it('throws with a sensible message on an invalid value', () => {
-    expect(() => validateResolve('bogus')).toThrow(
-      'invalid resolve value: expected none|stub|full, got bogus',
-    )
+  it('throws naming the full allow-list on an invalid value', () => {
+    expect(() => validate(invalid)).toThrow(message)
+  })
+})
+
+describe('validateResolve (beyond the shared enum shape)', () => {
+  it('throws when the value is missing entirely', () => {
     expect(() => validateResolve(undefined)).toThrow(/invalid resolve value/)
   })
 })
@@ -60,43 +107,6 @@ describe('validateSigArray', () => {
 
   it('throws when any element is an invalid signature', () => {
     expect(() => validateSigArray(['WEAP', 'nope'])).toThrow(/invalid record signature/)
-  })
-})
-
-describe('validateSearchField', () => {
-  it.each(['edid', 'name', 'both'] as const)('passes %s through unchanged', (v) => {
-    expect(validateSearchField(v)).toBe(v)
-  })
-
-  it('throws on an invalid field', () => {
-    expect(() => validateSearchField('description')).toThrow(
-      'invalid search field: expected edid|name|both, got description',
-    )
-  })
-})
-
-describe('validateBodies', () => {
-  it.each(['none', 'stub', 'full'] as const)('passes %s through unchanged', (v) => {
-    expect(validateBodies(v)).toBe(v)
-  })
-
-  it('throws on an invalid value', () => {
-    expect(() => validateBodies('everything')).toThrow(/invalid bodies value/)
-  })
-})
-
-describe('validateFilterOp', () => {
-  it.each(['exists', 'eq', 'contains', 'gt', 'lt', 'gte', 'lte'] as const)(
-    'passes %s through unchanged',
-    (v) => {
-      expect(validateFilterOp(v)).toBe(v)
-    },
-  )
-
-  it('throws on an invalid op', () => {
-    expect(() => validateFilterOp('neq')).toThrow(
-      'invalid filter op: expected exists|eq|contains|gt|lt|gte|lte, got neq',
-    )
   })
 })
 

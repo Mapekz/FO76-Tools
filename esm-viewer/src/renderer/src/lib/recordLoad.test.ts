@@ -1,121 +1,119 @@
-import { describe, it, expect, vi } from 'bun:test'
+import { describe, it, expect, vi, type Mock } from 'bun:test'
 import { loadAllTypeRecords, loadGroupChildrenPage, loadTypeChildrenPage } from './recordLoad'
 import type { GroupChild, RecordRow } from '../../../shared/api-types'
+import { makeGroupChild, makeRow, mockApi } from '../../../test-support/fixtures'
 
-function makeRow(formId: string): RecordRow {
-  return { form_id: formId, record_type: 'ARMO', editor_id: null, name: null, offset: 0 }
+// Every suite here drives the ARMO record-type group, so its rows/children are
+// ARMO ones — passed explicitly rather than inherited from the shared
+// builders' defaults.
+function armoRow(formId: string): RecordRow {
+  return makeRow({ form_id: formId, record_type: 'ARMO' })
 }
 
-function makeRecordChild(formId: string): GroupChild {
-  return { node: 'record', form_id: formId, record_type: 'ARMO', editor_id: null, offset: 0 }
+function armoChild(formId: string): GroupChild {
+  return makeGroupChild({ form_id: formId, record_type: 'ARMO' })
 }
 
 describe('loadAllTypeRecords', () => {
   it('accumulates multiple chunks and reports progress after each one', async () => {
-    const chunk1 = [makeRow('0x01'), makeRow('0x02')]
-    const chunk2 = [makeRow('0x03')]
-    const listTypeRecords = vi
-      .fn<(dbId: string, sig: string, offset: number, chunkSize: number) => Promise<RecordRow[]>>()
-      .mockResolvedValueOnce(chunk1)
-      .mockResolvedValueOnce(chunk2)
-    const api = { listTypeRecords }
+    const chunk1 = [armoRow('0x01'), armoRow('0x02')]
+    const chunk2 = [armoRow('0x03')]
+    const api = mockApi('listTypeRecords')
+    api.listTypeRecords.mockResolvedValueOnce(chunk1).mockResolvedValueOnce(chunk2)
 
     const onChunk = vi.fn<(accumulated: RecordRow[]) => void>()
     await loadAllTypeRecords(api, 'db1', 'ARMO', 3, 2, onChunk)
 
-    expect(listTypeRecords).toHaveBeenNthCalledWith(1, 'db1', 'ARMO', 0, 2)
-    expect(listTypeRecords).toHaveBeenNthCalledWith(2, 'db1', 'ARMO', 2, 2)
+    expect(api.listTypeRecords).toHaveBeenNthCalledWith(1, 'db1', 'ARMO', 0, 2)
+    expect(api.listTypeRecords).toHaveBeenNthCalledWith(2, 'db1', 'ARMO', 2, 2)
     expect(onChunk).toHaveBeenNthCalledWith(1, chunk1)
     expect(onChunk).toHaveBeenNthCalledWith(2, [...chunk1, ...chunk2])
   })
 
   it('stops once the accumulated offset reaches total', async () => {
-    const chunk = [makeRow('0x01'), makeRow('0x02')]
-    const listTypeRecords = vi
-      .fn<(dbId: string, sig: string, offset: number, chunkSize: number) => Promise<RecordRow[]>>()
-      .mockResolvedValueOnce(chunk)
-    const api = { listTypeRecords }
+    const chunk = [armoRow('0x01'), armoRow('0x02')]
+    const api = mockApi('listTypeRecords')
+    api.listTypeRecords.mockResolvedValueOnce(chunk)
 
     const onChunk = vi.fn<(accumulated: RecordRow[]) => void>()
     await loadAllTypeRecords(api, 'db1', 'ARMO', 2, 2000, onChunk)
 
-    expect(listTypeRecords).toHaveBeenCalledTimes(1)
+    expect(api.listTypeRecords).toHaveBeenCalledTimes(1)
     expect(onChunk).toHaveBeenCalledTimes(1)
     expect(onChunk).toHaveBeenCalledWith(chunk)
   })
 
   it('breaks defensively on an empty chunk instead of looping forever', async () => {
-    const listTypeRecords = vi
-      .fn<(dbId: string, sig: string, offset: number, chunkSize: number) => Promise<RecordRow[]>>()
-      .mockResolvedValueOnce([])
-    const api = { listTypeRecords }
+    const api = mockApi('listTypeRecords')
+    api.listTypeRecords.mockResolvedValueOnce([])
 
     const onChunk = vi.fn<(accumulated: RecordRow[]) => void>()
     await loadAllTypeRecords(api, 'db1', 'ARMO', 100, 10, onChunk)
 
-    expect(listTypeRecords).toHaveBeenCalledTimes(1)
+    expect(api.listTypeRecords).toHaveBeenCalledTimes(1)
     expect(onChunk).not.toHaveBeenCalled()
   })
 })
 
-describe('loadTypeChildrenPage', () => {
+// `loadTypeChildrenPage` and `loadGroupChildrenPage` are one paging algorithm
+// over two different keys — a record-type signature vs a GRUP's byte offset —
+// reached through two different api methods. Each row wires its own
+// single-method api mock so the shared body stays key-agnostic.
+type PageCase = [
+  name: string,
+  key: string | number,
+  setup: () => {
+    spy: Mock<(...args: never[]) => Promise<GroupChild[]>>
+    fetch: (current: GroupChild[], pageSize: number) => Promise<GroupChild[]>
+  },
+]
+
+const pageCases: PageCase[] = [
+  [
+    'loadTypeChildrenPage',
+    'WRLD',
+    () => {
+      const api = mockApi('listTypeChildren')
+      return {
+        spy: api.listTypeChildren,
+        fetch: (current, pageSize) => loadTypeChildrenPage(api, 'db1', 'WRLD', current, pageSize),
+      }
+    },
+  ],
+  [
+    'loadGroupChildrenPage',
+    4096,
+    () => {
+      const api = mockApi('listGroupChildren')
+      return {
+        spy: api.listGroupChildren,
+        fetch: (current, pageSize) => loadGroupChildrenPage(api, 'db1', 4096, current, pageSize),
+      }
+    },
+  ],
+]
+
+describe.each(pageCases)('%s', (_name, key, setup) => {
   it('fetches the first page when current is empty', async () => {
-    const page1 = [makeRecordChild('0x01')]
-    const listTypeChildren = vi
-      .fn<(dbId: string, sig: string, offset: number, limit: number) => Promise<GroupChild[]>>()
-      .mockResolvedValueOnce(page1)
-    const api = { listTypeChildren }
+    const page1 = [armoChild('0x01')]
+    const { spy, fetch } = setup()
+    spy.mockResolvedValueOnce(page1)
 
-    const result = await loadTypeChildrenPage(api, 'db1', 'WRLD', [], 100)
+    const result = await fetch([], 100)
 
-    expect(listTypeChildren).toHaveBeenCalledWith('db1', 'WRLD', 0, 100)
+    expect(spy).toHaveBeenCalledWith('db1', key, 0, 100)
     expect(result).toEqual(page1)
   })
 
   it('appends the next page after the current offset', async () => {
-    const current = [makeRecordChild('0x01'), makeRecordChild('0x02')]
-    const page2 = [makeRecordChild('0x03')]
-    const listTypeChildren = vi
-      .fn<(dbId: string, sig: string, offset: number, limit: number) => Promise<GroupChild[]>>()
-      .mockResolvedValueOnce(page2)
-    const api = { listTypeChildren }
+    const current = [armoChild('0x01'), armoChild('0x02')]
+    const page2 = [armoChild('0x03')]
+    const { spy, fetch } = setup()
+    spy.mockResolvedValueOnce(page2)
 
-    const result = await loadTypeChildrenPage(api, 'db1', 'WRLD', current, 2)
+    const result = await fetch(current, 2)
 
-    expect(listTypeChildren).toHaveBeenCalledWith('db1', 'WRLD', 2, 2)
-    expect(result).toEqual([...current, ...page2])
-  })
-})
-
-describe('loadGroupChildrenPage', () => {
-  it('fetches the first page keyed by the group offset when current is empty', async () => {
-    const page1 = [makeRecordChild('0x01')]
-    const listGroupChildren = vi
-      .fn<
-        (dbId: string, groupOffset: number, offset: number, limit: number) => Promise<GroupChild[]>
-      >()
-      .mockResolvedValueOnce(page1)
-    const api = { listGroupChildren }
-
-    const result = await loadGroupChildrenPage(api, 'db1', 4096, [], 100)
-
-    expect(listGroupChildren).toHaveBeenCalledWith('db1', 4096, 0, 100)
-    expect(result).toEqual(page1)
-  })
-
-  it('appends the next page after the current offset', async () => {
-    const current = [makeRecordChild('0x01')]
-    const page2 = [makeRecordChild('0x02'), makeRecordChild('0x03')]
-    const listGroupChildren = vi
-      .fn<
-        (dbId: string, groupOffset: number, offset: number, limit: number) => Promise<GroupChild[]>
-      >()
-      .mockResolvedValueOnce(page2)
-    const api = { listGroupChildren }
-
-    const result = await loadGroupChildrenPage(api, 'db1', 4096, current, 1)
-
-    expect(listGroupChildren).toHaveBeenCalledWith('db1', 4096, 1, 1)
+    expect(spy).toHaveBeenCalledWith('db1', key, 2, 2)
     expect(result).toEqual([...current, ...page2])
   })
 })

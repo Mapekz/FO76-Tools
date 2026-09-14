@@ -1,10 +1,7 @@
-import { describe, it, expect, vi } from 'bun:test'
+import { describe, it, expect } from 'bun:test'
 import { listRecordTypeSigs, parseSigList } from './sigLists'
 import type { GroupNode } from '../../../shared/api-types'
-
-function makeGroup(sig: string, childCount: number): GroupNode {
-  return { group_type: 0, label: { kind: 'record_type', sig }, child_count: childCount, offset: 0 }
-}
+import { makeGroupNode, mockApi } from '../../../test-support/fixtures'
 
 describe('parseSigList', () => {
   it('splits, trims, and uppercases comma-separated signatures', () => {
@@ -28,31 +25,31 @@ describe('parseSigList', () => {
 describe('listRecordTypeSigs', () => {
   it('keeps only record_type groups with at least one child, sorted', async () => {
     const groups: GroupNode[] = [
-      makeGroup('WEAP', 5),
-      makeGroup('ARMO', 3),
+      makeGroupNode('WEAP', 5),
+      makeGroupNode('ARMO', 3),
       { group_type: 0, label: { kind: 'form_id', form_id: '0x01' }, child_count: 10, offset: 0 },
     ]
-    const listGroups = vi.fn<(id: string) => Promise<GroupNode[]>>(async () => groups)
+    const api = mockApi('listGroups', async () => groups)
 
-    const result = await listRecordTypeSigs({ listGroups }, 'db1')
+    const result = await listRecordTypeSigs(api, 'db1')
 
     expect(result).toEqual(['ARMO', 'WEAP'])
-    expect(listGroups).toHaveBeenCalledWith('db1')
+    expect(api.listGroups).toHaveBeenCalledWith('db1')
   })
 
   it('drops record_type groups with zero children', async () => {
-    const groups: GroupNode[] = [makeGroup('WEAP', 0), makeGroup('ARMO', 1)]
-    const listGroups = vi.fn<(id: string) => Promise<GroupNode[]>>(async () => groups)
+    const groups: GroupNode[] = [makeGroupNode('WEAP', 0), makeGroupNode('ARMO', 1)]
+    const api = mockApi('listGroups', async () => groups)
 
-    const result = await listRecordTypeSigs({ listGroups }, 'db1')
+    const result = await listRecordTypeSigs(api, 'db1')
 
     expect(result).toEqual(['ARMO'])
   })
 
   it('returns an empty array when there are no matching groups', async () => {
-    const listGroups = vi.fn<(id: string) => Promise<GroupNode[]>>(async () => [])
+    const api = mockApi('listGroups', async () => [])
 
-    const result = await listRecordTypeSigs({ listGroups }, 'db1')
+    const result = await listRecordTypeSigs(api, 'db1')
 
     expect(result).toEqual([])
   })
