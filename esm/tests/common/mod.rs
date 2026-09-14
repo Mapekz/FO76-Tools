@@ -93,6 +93,32 @@ pub fn subrecords_from(pairs: &[(&str, &str)]) -> Vec<OwnedSubrecord> {
         .collect()
 }
 
+/// Decode `pairs` as a `sig` record at `form_version`, against the embedded
+/// schema with no game file behind it.
+///
+/// This is the shape almost every record-decode regression test wants: the
+/// pairs are the verbatim `signature`/`hex` columns of
+/// `esm get <FILE> --formid <ID> --raw`, and `form_version` is that dump's
+/// `header.form_version` (see [`bare_ctx_fv`] for why it must match).
+pub fn decode_fixture(sig: &str, form_version: u16, pairs: &[(&str, &str)]) -> Value {
+    let schema = Schema::load_embedded().expect("embedded schema must load");
+    let ctx = bare_ctx_fv(&schema, form_version);
+    esm::decode::decode_record(&ctx, sig, &subrecords_from(pairs))
+}
+
+/// Assert a decoded record carries the expected human-readable `_record_type`.
+///
+/// A decode that falls back to an unknown record type still produces a
+/// plausible-looking object, so this is the check that the schema was matched
+/// at all — it belongs at the top of every decode regression test.
+pub fn assert_record_type(decoded: &Value, expected: &str) {
+    assert_eq!(
+        decoded.get("_record_type").and_then(|v| v.as_str()),
+        Some(expected),
+        "record decoded as the wrong type"
+    );
+}
+
 /// Decode a lowercase hex string into a `Vec<u8>`.
 pub fn hex_bytes(hex: &str) -> Vec<u8> {
     (0..hex.len())
@@ -405,10 +431,9 @@ pub fn unique_temp_path(stem: &str) -> PathBuf {
 // ──────────────────────────────────────────────────────────────────────────────
 //
 // `make_minimal_esm`/`make_xref_esm` above hand-roll one fixed layout each.
-// The diff-engine tests need many small, differently-shaped ESM pairs (added/
-// removed/changed records across several types), so these helpers factor out
-// the byte-level conventions (mirroring `tests/refs.rs`'s local helpers of the
-// same names) into reusable building blocks.
+// The diff-engine and refs tests need many small, differently-shaped ESM pairs
+// (added/removed/changed records across several types), so these helpers
+// factor the byte-level conventions out into reusable building blocks.
 
 /// The form_version stamped on every record built by [`append_record`].
 pub const TEST_FORM_VERSION: u16 = 208;

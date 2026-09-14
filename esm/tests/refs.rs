@@ -1,10 +1,11 @@
 mod common;
 
-use common::{make_xref_esm, unique_temp_path};
+use common::{
+    append_record, append_subrecord, cstr, make_xref_esm, tes4_header, wrap_grup, write_and_open,
+};
 use esm::ipc::{Op, RecordSel, RefList, dispatch_op, resolve_sel};
 use esm::refs::{find_ref_path, referenced_by_enriched, referenced_by_enriched_multi};
 use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec};
-use std::io::Write;
 
 /// Verify that `Database::referenced_by` returns each referencing record
 /// **exactly once**, even when that record references the target FormID in
@@ -19,13 +20,7 @@ use std::io::Write;
 #[test]
 fn referenced_by_deduplicates_within_record() {
     let buf = make_xref_esm();
-    let tmp = unique_temp_path("refs");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-        f.write_all(&buf).expect("write temp esm");
-    }
-
-    let mut db = Database::open(&tmp).expect("open db");
+    let (tmp, mut db) = write_and_open(&buf, "refs");
     let rows = db.referenced_by(FormId(1)).expect("referenced_by");
 
     assert_eq!(
@@ -63,19 +58,13 @@ const KILL_STREAK: u32 = 0x0000_0399;
 fn referenced_by_resolves_hardcoded_target() {
     let mut buf = tes4_header();
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes("TestReferencer"));
+    append_subrecord(&mut subs, b"EDID", &cstr("TestReferencer"));
     append_subrecord(&mut subs, b"YNAM", &KILL_STREAK.to_le_bytes());
     let mut rec = Vec::new();
     append_record(&mut rec, b"WEAP", 2, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let tmp = unique_temp_path("refs_hardcoded_target");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-        f.write_all(&buf).expect("write temp esm");
-    }
-
-    let mut db = Database::open(&tmp).expect("open db");
+    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_target");
     let rows = db
         .referenced_by(FormId(KILL_STREAK))
         .expect("referenced_by");
@@ -109,20 +98,14 @@ fn referenced_by_still_excludes_out_of_range_and_null_targets() {
 
     let mut buf = tes4_header();
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes("TestReferencer"));
+    append_subrecord(&mut subs, b"EDID", &cstr("TestReferencer"));
     append_subrecord(&mut subs, b"YNAM", &OUT_OF_RANGE.to_le_bytes());
     append_subrecord(&mut subs, b"ZNAM", &0u32.to_le_bytes()); // NULL
     let mut rec = Vec::new();
     append_record(&mut rec, b"WEAP", 2, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let tmp = unique_temp_path("refs_hardcoded_negative");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-        f.write_all(&buf).expect("write temp esm");
-    }
-
-    let mut db = Database::open(&tmp).expect("open db");
+    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_negative");
     assert!(
         db.referenced_by(FormId(OUT_OF_RANGE))
             .expect("referenced_by")
@@ -148,19 +131,13 @@ fn referenced_by_still_excludes_out_of_range_and_null_targets() {
 fn resolve_sel_edid_falls_back_to_hardcoded_table() {
     let mut buf = tes4_header();
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes("TestReferencer"));
+    append_subrecord(&mut subs, b"EDID", &cstr("TestReferencer"));
     append_subrecord(&mut subs, b"YNAM", &KILL_STREAK.to_le_bytes());
     let mut rec = Vec::new();
     append_record(&mut rec, b"WEAP", 2, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let tmp = unique_temp_path("refs_hardcoded_edid_sel");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-        f.write_all(&buf).expect("write temp esm");
-    }
-
-    let mut db = Database::open(&tmp).expect("open db");
+    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_edid_sel");
     let target = resolve_sel(&mut db, &RecordSel::Edid("KillStreak".to_string()))
         .expect("KillStreak should resolve via the hardcoded-table fallback");
     assert_eq!(target, FormId(KILL_STREAK));
@@ -193,18 +170,12 @@ fn resolve_sel_edid_real_record_wins_over_hardcoded_table() {
 
     let mut buf = tes4_header();
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes("KillStreak"));
+    append_subrecord(&mut subs, b"EDID", &cstr("KillStreak"));
     let mut rec = Vec::new();
     append_record(&mut rec, b"WEAP", REAL_FORM_ID, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let tmp = unique_temp_path("refs_hardcoded_precedence");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-        f.write_all(&buf).expect("write temp esm");
-    }
-
-    let mut db = Database::open(&tmp).expect("open db");
+    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_precedence");
     let target = resolve_sel(&mut db, &RecordSel::Edid("KillStreak".to_string()))
         .expect("KillStreak should resolve");
     assert_eq!(
@@ -219,34 +190,9 @@ fn resolve_sel_edid_real_record_wins_over_hardcoded_table() {
 
 // ── Helpers for building synthetic chain ESMs ────────────────────────────────
 
-const FORM_VERSION: u16 = 208;
-
-fn append_subrecord(out: &mut Vec<u8>, sig: &[u8; 4], data: &[u8]) {
-    out.extend_from_slice(sig);
-    out.extend_from_slice(&(data.len() as u16).to_le_bytes());
-    out.extend_from_slice(data);
-}
-
-fn edid_bytes(name: &str) -> Vec<u8> {
-    let mut v = name.as_bytes().to_vec();
-    v.push(0);
-    v
-}
-
-fn append_record(out: &mut Vec<u8>, sig: &[u8; 4], form_id: u32, subrecords: &[u8]) {
-    out.extend_from_slice(sig);
-    out.extend_from_slice(&(subrecords.len() as u32).to_le_bytes());
-    out.extend_from_slice(&0u32.to_le_bytes()); // flags
-    out.extend_from_slice(&form_id.to_le_bytes());
-    out.extend_from_slice(&0u32.to_le_bytes()); // vcs1
-    out.extend_from_slice(&FORM_VERSION.to_le_bytes());
-    out.extend_from_slice(&0u16.to_le_bytes()); // vcs2
-    out.extend_from_slice(subrecords);
-}
-
 fn build_misc(form_id: u32, edid: &str) -> Vec<u8> {
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
+    append_subrecord(&mut subs, b"EDID", &cstr(edid));
     let mut rec = Vec::new();
     append_record(&mut rec, b"MISC", form_id, &subs);
     rec
@@ -258,7 +204,7 @@ fn build_lvli(form_id: u32, edid: &str, item_ref: u32) -> Vec<u8> {
 
 fn build_lvli_multi(form_id: u32, edid: &str, item_refs: &[u32]) -> Vec<u8> {
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
+    append_subrecord(&mut subs, b"EDID", &cstr(edid));
     append_subrecord(&mut subs, b"LLCT", &[item_refs.len() as u8]);
     for &item_ref in item_refs {
         append_subrecord(&mut subs, b"LVLO", &item_ref.to_le_bytes());
@@ -270,7 +216,7 @@ fn build_lvli_multi(form_id: u32, edid: &str, item_refs: &[u32]) -> Vec<u8> {
 
 fn build_cont(form_id: u32, edid: &str, item_ref: u32) -> Vec<u8> {
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
+    append_subrecord(&mut subs, b"EDID", &cstr(edid));
     append_subrecord(&mut subs, b"COCT", &1u32.to_le_bytes());
     let mut cnto = item_ref.to_le_bytes().to_vec();
     cnto.extend_from_slice(&1i32.to_le_bytes());
@@ -278,31 +224,6 @@ fn build_cont(form_id: u32, edid: &str, item_ref: u32) -> Vec<u8> {
     let mut rec = Vec::new();
     append_record(&mut rec, b"CONT", form_id, &subs);
     rec
-}
-
-fn wrap_grup(label: &[u8; 4], records: &[u8]) -> Vec<u8> {
-    let mut buf = Vec::new();
-    let group_size = (24 + records.len()) as u32;
-    buf.extend_from_slice(b"GRUP");
-    buf.extend_from_slice(&group_size.to_le_bytes());
-    buf.extend_from_slice(label);
-    buf.extend_from_slice(&0i32.to_le_bytes());
-    buf.extend_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(records);
-    buf
-}
-
-fn tes4_header() -> Vec<u8> {
-    let mut buf = Vec::new();
-    buf.extend_from_slice(b"TES4");
-    buf.extend_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(&0u32.to_le_bytes());
-    buf.extend_from_slice(&0u16.to_le_bytes());
-    buf.extend_from_slice(&0u16.to_le_bytes());
-    buf
 }
 
 /// Build a 3-hop chain: MISC(1) ← LVLI(2) ← LVLI(3) ← CONT(4).
@@ -324,12 +245,7 @@ fn make_chain_esm() -> Vec<u8> {
 
 fn open_chain_db() -> (std::path::PathBuf, Database) {
     let buf = make_chain_esm();
-    let tmp = unique_temp_path("refs_chain");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp file");
-        f.write_all(&buf).expect("write");
-    }
-    let db = Database::open(&tmp).expect("open");
+    let (tmp, db) = write_and_open(&buf, "refs_chain");
     (tmp, db)
 }
 
@@ -588,12 +504,7 @@ fn make_sort_order_esm() -> Vec<u8> {
 #[test]
 fn recursive_refs_sort_depth_reorders_relative_to_formid() {
     let buf = make_sort_order_esm();
-    let tmp = unique_temp_path("refs_sort_order");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp file");
-        f.write_all(&buf).expect("write");
-    }
-    let mut db = Database::open(&tmp).expect("open");
+    let (tmp, mut db) = write_and_open(&buf, "refs_sort_order");
 
     let by_formid = referenced_by_enriched(
         &mut db,
@@ -795,12 +706,7 @@ fn recursive_refs_cycle_guard() {
     buf.extend_from_slice(&0u16.to_le_bytes());
     buf.extend_from_slice(&subs2);
 
-    let tmp = unique_temp_path("refs_cycle");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create");
-        f.write_all(&buf).expect("write");
-    }
-    let mut db = Database::open(&tmp).expect("open");
+    let (tmp, mut db) = write_and_open(&buf, "refs_cycle");
 
     let list = referenced_by_enriched(
         &mut db,
@@ -851,12 +757,7 @@ fn recursive_refs_limit_caps_output() {
 #[test]
 fn field_paths_none_when_not_requested() {
     let buf = make_xref_esm();
-    let tmp = unique_temp_path("refs_paths_off");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-        f.write_all(&buf).expect("write temp esm");
-    }
-    let mut db = Database::open(&tmp).expect("open db");
+    let (tmp, mut db) = write_and_open(&buf, "refs_paths_off");
 
     let list = referenced_by_enriched(
         &mut db,
@@ -884,12 +785,7 @@ fn field_paths_none_when_not_requested() {
 #[test]
 fn field_paths_finds_all_occurrences_in_one_record() {
     let buf = make_xref_esm();
-    let tmp = unique_temp_path("refs_paths_multi");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-        f.write_all(&buf).expect("write temp esm");
-    }
-    let mut db = Database::open(&tmp).expect("open db");
+    let (tmp, mut db) = write_and_open(&buf, "refs_paths_multi");
 
     let list = referenced_by_enriched(
         &mut db,
@@ -948,49 +844,39 @@ fn formid_reference_paths_unknown_referencer_returns_empty() {
 
 /// `type_filter` narrows emitted rows to the matching type but the walk keeps
 /// traversing through non-matching nodes — CONT(4) (3 hops away, behind two
-/// LVLI hops) must still be reachable when filtering for "CONT".
+/// LVLI hops) must still be reachable when filtering for "CONT". The match is
+/// case-insensitive, so every spelling of the signature must behave the same.
 #[test]
 fn type_filter_narrows_rows_but_keeps_traversing() {
     let (path, mut db) = open_chain_db();
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        6,
-        0,
-        Some("CONT"),
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
-    assert_eq!(
-        list.rows.len(),
-        1,
-        "only CONT(4) should survive the filter, got: {list:?}"
-    );
-    assert_eq!(list.rows[0].form_id, FormId(4).display());
-    assert_eq!(list.rows[0].record_type.as_deref(), Some("CONT"));
-
-    let _ = std::fs::remove_file(&path);
-}
-
-/// `type_filter` is case-insensitive.
-#[test]
-fn type_filter_case_insensitive() {
-    let (path, mut db) = open_chain_db();
-
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        6,
-        0,
-        Some("cont"),
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
-    assert_eq!(list.rows.len(), 1);
-    assert_eq!(list.rows[0].form_id, FormId(4).display());
+    for filter in ["CONT", "cont", "CoNt"] {
+        let list = referenced_by_enriched(
+            &mut db,
+            FormId(1),
+            6,
+            0,
+            Some(filter),
+            false,
+            esm::ipc::RefSort::Formid,
+        )
+        .expect("enriched");
+        assert_eq!(
+            list.rows.len(),
+            1,
+            "--type {filter}: only CONT(4) should survive the filter, got: {list:?}"
+        );
+        assert_eq!(
+            list.rows[0].form_id,
+            FormId(4).display(),
+            "--type {filter}: wrong row"
+        );
+        assert_eq!(
+            list.rows[0].record_type.as_deref(),
+            Some("CONT"),
+            "--type {filter}: record_type is reported in the record's own casing"
+        );
+    }
 
     let _ = std::fs::remove_file(&path);
 }
@@ -1087,7 +973,7 @@ fn type_filter_and_paths_compose() {
 /// entry point — the multi-effect dedup case.
 fn build_perk_entry_points(form_id: u32, edid: &str, entry_points: &[u8]) -> Vec<u8> {
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
+    append_subrecord(&mut subs, b"EDID", &cstr(edid));
     append_subrecord(&mut subs, b"DATA", &[0x01, 0x00, 0x01]); // top-level Data: Playable/Hidden/Unknown
     for &ep in entry_points {
         append_subrecord(&mut subs, b"PRKE", &[0x02, 0x00]);
@@ -1159,12 +1045,7 @@ fn seeds_with_ep(ids: &[(u32, u16)]) -> Vec<(FormId, Vec<CarrierTag>)> {
 
 fn open_entry_point_db() -> (std::path::PathBuf, Database) {
     let buf = make_entry_point_esm();
-    let tmp = unique_temp_path("refs_entry_point");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp file");
-        f.write_all(&buf).expect("write");
-    }
-    let db = Database::open(&tmp).expect("open");
+    let (tmp, db) = write_and_open(&buf, "refs_entry_point");
     (tmp, db)
 }
 
@@ -1184,12 +1065,7 @@ fn make_edid_collision_esm() -> Vec<u8> {
 
 fn open_edid_collision_db() -> (std::path::PathBuf, Database) {
     let buf = make_edid_collision_esm();
-    let tmp = unique_temp_path("refs_entry_point_collision");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp file");
-        f.write_all(&buf).expect("write");
-    }
-    let db = Database::open(&tmp).expect("open");
+    let (tmp, db) = write_and_open(&buf, "refs_entry_point_collision");
     (tmp, db)
 }
 
@@ -1776,7 +1652,7 @@ fn build_omod_properties(
     }
 
     let mut subs = Vec::new();
-    append_subrecord(&mut subs, b"EDID", &edid_bytes(edid));
+    append_subrecord(&mut subs, b"EDID", &cstr(edid));
     append_subrecord(&mut subs, b"DATA", &data);
     let mut rec = Vec::new();
     append_record(&mut rec, b"OMOD", form_id, &subs);
@@ -1820,13 +1696,7 @@ fn make_omod_property_esm() -> Vec<u8> {
 }
 
 fn open_omod_property_db() -> (std::path::PathBuf, Database) {
-    let tmp = unique_temp_path("refs_omod_property");
-    {
-        let mut f = std::fs::File::create(&tmp).expect("create temp file");
-        f.write_all(&make_omod_property_esm()).expect("write");
-    }
-    let db = Database::open(&tmp).expect("open");
-    (tmp, db)
+    write_and_open(&make_omod_property_esm(), "refs_omod_property")
 }
 
 #[test]
