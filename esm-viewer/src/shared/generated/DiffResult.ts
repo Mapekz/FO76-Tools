@@ -30,8 +30,9 @@ ref_names?: { [key in string]: RefName },
  * Count of `changed` records dropped entirely by noise suppression
  * (`DiffOptions::suppress_noise`), keyed by record-type signature.
  * Telemetry for renderers, e.g. "312 placement moves omitted".
- * Also holds leaf-level counters for issue #22 shapes (e.g.
- * `"padding_zeroed"`).
+ * Also holds leaf-level counters: issue #22 shapes (e.g.
+ * `"padding_zeroed"`) and `"localization_flip_text"`, string leaves
+ * dropped because only the Localized flag changed how they're stored.
  */
 suppressed_counts?: { [key in string]: number }, 
 /**

@@ -29,8 +29,8 @@ use crate::strings::StringKind;
 use anyhow::Context;
 use array_diff::is_empty_diff;
 pub use noise::strip_noise_fields;
-use noise::strip_version_gated_transitions;
 use noise::{apply_restamp_calibrated_suppression, strip_restamp_appearances};
+use noise::{strip_localization_flip_text, strip_version_gated_transitions};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -193,8 +193,9 @@ pub struct DiffResult {
     /// Count of `changed` records dropped entirely by noise suppression
     /// (`DiffOptions::suppress_noise`), keyed by record-type signature.
     /// Telemetry for renderers, e.g. "312 placement moves omitted".
-    /// Also holds leaf-level counters for issue #22 shapes (e.g.
-    /// `"padding_zeroed"`).
+    /// Also holds leaf-level counters: issue #22 shapes (e.g.
+    /// `"padding_zeroed"`) and `"localization_flip_text"`, string leaves
+    /// dropped because only the Localized flag changed how they're stored.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub suppressed_counts: BTreeMap<String, usize>,
     /// Serializer-default `(leaf_name, value, count)` rules the calibrated
@@ -239,6 +240,11 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 /// entirely when nothing else changed. Dropped counts are recorded in
 /// `DiffResult::suppressed_counts`; auto-classified defaults land in
 /// `DiffResult::auto_suppressed_defaults`.
+///
+/// When exactly one side has the TES4 Localized flag, one side's text comes
+/// from the string tables and the other's from the records; string leaves
+/// that differ only by the tables' whitespace rewrites are dropped first
+/// (`noise::strip_localization_flip_text`).
 ///
 /// `opts.exclude_types` omits matching 4-character signatures from `added`,
 /// `removed`, and `changed` outright — checked before any payload
@@ -308,6 +314,8 @@ pub fn diff_databases_with(
     // frequency pass can run after the per-record loop.
     let mut changed_restamp: Vec<bool> = Vec::new();
     let mut suppressed_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let localization_flip = a.is_localized != b.is_localized;
+    let mut flip_text_stripped = 0;
     let mut common_ids: Vec<FormId> = a_ids.intersection(&b_ids).copied().collect();
     common_ids.sort_by_key(|id| id.raw());
 
@@ -354,6 +362,9 @@ pub fn diff_databases_with(
         let mut restamp = false;
         if opts.suppress_noise {
             strip_noise_fields(&mut field_changes, meta_b.signature.as_str());
+            if localization_flip {
+                flip_text_stripped += strip_localization_flip_text(&mut field_changes);
+            }
             // Suppress only pure appearances/disappearances whose schema
             // activation actually changes between these form versions. The
             // old blanket appearance rule discarded genuine new subrecords
@@ -424,6 +435,10 @@ pub fn diff_databases_with(
     } else {
         Vec::new()
     };
+
+    if flip_text_stripped > 0 {
+        suppressed_counts.insert("localization_flip_text".to_owned(), flip_text_stripped);
+    }
 
     changed.sort_by(|x, y| x.stub.form_id.cmp(&y.stub.form_id));
 

@@ -1,8 +1,8 @@
-//! Noise suppression: the three sequential sub-stages `diff_databases_with`
-//! runs over a `changed` record's `field_changes` before deciding whether to
-//! keep or drop it entirely (see `DiffOptions::suppress_noise`). Stage order
-//! is load-bearing and must not change: unconditional → version-gated →
-//! restamp-#18 → calibrated-#22 (the last needs a global cross-record
+//! Noise suppression: the sequential sub-stages `diff_databases_with` runs
+//! over a `changed` record's `field_changes` before deciding whether to keep
+//! or drop it entirely (see `DiffOptions::suppress_noise`). Stage order is
+//! load-bearing and must not change: unconditional → localization-flip →
+//! version-gated → restamp-#18 → calibrated-#22 (the last needs a global cross-record
 //! frequency pass, hence runs after the per-record loop in
 //! `diff_databases_with`). Each stage may only ever *narrow* `field_changes`
 //! — over-stripping silently hides real patch-notes content.
@@ -295,14 +295,18 @@ fn is_materialized_on_resave(sig: &str, key: &str, from: &Value, to: &Value) -> 
     from.is_null() && !to.is_null() && MATERIALIZED_ON_RESAVE.contains(&(sig, key))
 }
 
+/// A leaf-noise test: `(member key, from, to) -> is noise`. `FnMut` so a
+/// pass can count what it strips.
+type LeafNoise<'a> = dyn FnMut(&str, &Value, &Value) -> bool + 'a;
+
 /// Strip a `_array_diff` envelope's noise in place (`ad` is the object under
 /// the `"_array_diff"` key: `strategy`/`key_fields`/`count_from`/`count_to`/
 /// `added`/`removed`/`changed`). Walks every `changed[]` element's `changes`
-/// recursively via [`strip_restamp_leaves`], drops elements whose `changes`
+/// recursively via [`strip_leaves`], drops elements whose `changes`
 /// collapses to empty, and drops the `"changed"` key itself when every
 /// element was dropped. Returns `true` when the whole envelope is now
 /// noise-free and should be removed by the caller: `added`/`removed` were
-/// never present (rule (a) never touches genuine structural changes — see
+/// never present (leaf tests never touch genuine structural changes — see
 /// `is_pure_transition`'s same reasoning) and `changed` is now empty or
 /// absent.
 ///
@@ -314,13 +318,16 @@ fn is_materialized_on_resave(sig: &str, key: &str, from: &Value, to: &Value) -> 
 /// every element paired 1:1 (see those functions' doc comments) — so a
 /// mismatch here would itself indicate a bug in an array-diff builder, not
 /// in this pass.
-fn strip_restamp_array_diff(ad: &mut serde_json::Map<String, Value>, sig: &str) -> bool {
+fn strip_leaf_array_diff(
+    ad: &mut serde_json::Map<String, Value>,
+    is_noise: &mut LeafNoise,
+) -> bool {
     if let Some(Value::Array(elements)) = ad.get_mut("changed") {
         elements.retain_mut(|elem| {
             let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut) else {
                 return true;
             };
-            strip_restamp_leaves(changes, sig);
+            strip_leaves(changes, is_noise);
             !changes.is_empty()
         });
         if elements.is_empty() {
@@ -331,46 +338,43 @@ fn strip_restamp_array_diff(ad: &mut serde_json::Map<String, Value>, sig: &str) 
     !(ad.contains_key("added") || ad.contains_key("removed") || ad.contains_key("changed"))
 }
 
-/// Strip restamp-noise leaves from `value` (the entry keyed by `key` in a
-/// record of type `sig`) in place, and report whether the parent map should
-/// drop `key` entirely. Three shapes:
+/// Strip noise leaves from `value` (the entry keyed by `key`) in place, and
+/// report whether the parent map should drop `key` entirely. Three shapes:
 ///
-/// - a leaf `{"from": .., "to": ..}` change — tested directly against rules
-///   (b)/(c), no recursion;
-/// - an `_array_diff` envelope — delegates to [`strip_restamp_array_diff`];
+/// - a leaf `{"from": .., "to": ..}` change — tested directly by `is_noise`,
+///   no recursion;
+/// - an `_array_diff` envelope — delegates to [`strip_leaf_array_diff`];
 /// - a plain nested struct object (e.g. `Responses[].changes.Response`, one
 ///   level of struct nesting under an array element's `changes`, per the
-///   design review) — recurse via [`strip_restamp_leaves`], then drop if the
+///   design review) — recurse via [`strip_leaves`], then drop if the
 ///   recursion emptied it.
-fn should_drop_after_strip(value: &mut Value, sig: &str, key: &str) -> bool {
+fn should_drop_leaf(value: &mut Value, key: &str, is_noise: &mut LeafNoise) -> bool {
     let Some(obj) = value.as_object_mut() else {
         return false;
     };
 
     if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
-        return strip_restamp_array_diff(ad, sig);
+        return strip_leaf_array_diff(ad, is_noise);
     }
 
     if obj.len() == 2 && obj.contains_key("from") && obj.contains_key("to") {
-        let from = &obj["from"];
-        let to = &obj["to"];
-        return is_zero_raw_transition(from, to) || is_materialized_on_resave(sig, key, from, to);
+        return is_noise(key, &obj["from"], &obj["to"]);
     }
 
-    strip_restamp_leaves(obj, sig);
+    strip_leaves(obj, is_noise);
     obj.is_empty()
 }
 
-/// Recursively strip restamp-noise leaves from a `changes`-shaped object
-/// map, in place, pruning parent keys whose value collapses to empty. See
-/// [`should_drop_after_strip`] for the per-key logic; this just drives it
-/// over every key in `map` and removes the ones it flags.
-fn strip_restamp_leaves(map: &mut serde_json::Map<String, Value>, sig: &str) {
+/// Recursively strip noise leaves from a `changes`-shaped object map, in
+/// place, pruning parent keys whose value collapses to empty. See
+/// [`should_drop_leaf`] for the per-key logic; this just drives it over
+/// every key in `map` and removes the ones it flags.
+fn strip_leaves(map: &mut serde_json::Map<String, Value>, is_noise: &mut LeafNoise) {
     let keys: Vec<String> = map.keys().cloned().collect();
     let mut to_remove = Vec::new();
     for key in keys {
         if let Some(value) = map.get_mut(&key)
-            && should_drop_after_strip(value, sig, &key)
+            && should_drop_leaf(value, &key, is_noise)
         {
             to_remove.push(key);
         }
@@ -389,7 +393,45 @@ pub(crate) fn strip_restamp_appearances(field_changes: &mut Value, sig: &str) {
     let Some(map) = field_changes.as_object_mut() else {
         return;
     };
-    strip_restamp_leaves(map, sig);
+    strip_leaves(map, &mut |key, from, to| {
+        is_zero_raw_transition(from, to) || is_materialized_on_resave(sig, key, from, to)
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Localization-flip suppression
+// ---------------------------------------------------------------------------
+//
+// PTS snapshots carry text inline until content freezes, then switch to the
+// string tables, so the TES4 Localized flag flips every few months. The
+// decoder already makes both modes emit the same text. What's left is a
+// handful of strings the table tool rewrites on the way in: a non-breaking
+// space becomes a plain space, and a bare LF becomes CRLF. Across a flip
+// those read as edits nobody made.
+
+/// Text as the string tables store it: NBSP → space, bare LF → CRLF.
+fn table_normalized(s: &str) -> String {
+    s.replace('\u{a0}', " ")
+        .replace("\r\n", "\n")
+        .replace('\n', "\r\n")
+}
+
+/// Drop string leaves whose two sides differ only by [`table_normalized`]'s
+/// rewrites, in place; returns how many were dropped. Only valid when the
+/// two sides' Localized flags differ, since only then was one side's text
+/// read from the tables and the other's from the record.
+pub(crate) fn strip_localization_flip_text(field_changes: &mut Value) -> usize {
+    let Some(map) = field_changes.as_object_mut() else {
+        return 0;
+    };
+    let mut stripped = 0;
+    strip_leaves(map, &mut |_, from, to| {
+        let noise = matches!((from, to), (Value::String(a), Value::String(b))
+            if table_normalized(a) == table_normalized(b));
+        stripped += usize::from(noise);
+        noise
+    });
+    stripped
 }
 
 // ---------------------------------------------------------------------------
@@ -805,6 +847,29 @@ mod tests {
     use crate::diff::RecordStub;
     use serde_json::json;
 
+    /// Across a Localized-flag flip, only the string tables' whitespace
+    /// rewrites are dropped — nested ones too, pruning emptied parents — and
+    /// any other text edit survives.
+    #[test]
+    fn localization_flip_drops_only_table_whitespace_rewrites() {
+        let mut fc = json!({
+            "Description": {"from": "A\u{a0}B\nC", "to": "A B\r\nC"},
+            "Name": {"from": "Blood Moon Paint", "to": "Blood Moon Hellcat Paint"},
+            "Menu Items": {"_array_diff": {"strategy": "positional", "count_from": 1,
+                "count_to": 1, "changed": [{"index": 0, "changes": {"Menu Item": {
+                    "Display Text": {"from": "x\ny", "to": "x\r\ny"}}}}]}},
+            "Value": {"from": 1, "to": 2},
+        });
+        assert_eq!(strip_localization_flip_text(&mut fc), 2);
+        assert_eq!(
+            fc,
+            json!({
+                "Name": {"from": "Blood Moon Paint", "to": "Blood Moon Hellcat Paint"},
+                "Value": {"from": 1, "to": 2},
+            })
+        );
+    }
+
     // `is_pure_appearance` / `strip_version_gated_transitions` are private, so
     // these live here per the crate convention. The risk being covered is
     // OVER-suppression: dropping an authored edit as if it were a field that
@@ -891,7 +956,7 @@ mod tests {
 
     #[test]
     fn restamp_leaves_unkeyed_array_diff_untouched() {
-        // `strip_restamp_array_diff` only walks `changed[]`; an `unkeyed`
+        // `strip_leaf_array_diff` only walks `changed[]`; an `unkeyed`
         // envelope never has one (see `unkeyed_array_diff`), so the whole
         // element lists must survive a restamp pass completely intact —
         // confirms the A2 review finding by construction, not just reading.
