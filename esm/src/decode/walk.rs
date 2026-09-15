@@ -511,7 +511,7 @@ pub(super) fn decode_array_member(
     payload: Option<&[u8]>,
 ) {
     if let Some(sig) = sig {
-        let taken = take_all(by_sig, sig);
+        let taken = take_all_in_scope(by_sig, sig, ctx);
         // A single subrecord may pack multiple fixed-size elements (e.g. KWDA
         // packs every keyword FormID into one subrecord, counted by KSIZ; APPR
         // packs attach-parent-slot FormIDs similarly).  Split each subrecord by

@@ -1,8 +1,9 @@
-//! Placed-world records: FLOR, FURN, CONT, TERM.
+//! Placed-world records: FLOR, FURN, CONT, TERM, SCOL.
 //!
 //! See [`super`] for the fixture conventions shared by every module here.
 
 use crate::common::{assert_fully_decoded, assert_record_type, decode_fixture};
+use serde_json::Value;
 
 /// TERM 0x00001676 — `<no edid>` — basic decode regression.
 #[test]
@@ -347,4 +348,78 @@ fn cont_drop_crate_govt01_decodes_correctly() {
         Some("0x0045538C"),
         "Sound - Close"
     );
+}
+
+/// first part every part's placements and left the rest empty.
+#[test]
+fn scol_placements_stay_with_their_part() {
+    // ClutterSC_RobCoPedTrim01 (0x00000B98): three parts whose DATA holds one,
+    // two and four 28-byte placements.
+    let result = decode_fixture(
+        "SCOL",
+        193,
+        &[
+            ("EDID", "436c757474657253435f526f62436f5065645472696d303100"),
+            ("OBND", "e0fe60ff80ff2001a0000200"),
+            (
+                "MODL",
+                "53434f4c5c536576656e74795369782e65736d5c434d30303030304239382e4e494600",
+            ),
+            (
+                "MODT",
+                "0400000011000000000000000500000004000000c2872c64646473009f9c1cd8a1ba239e\
+             646473009f9c1cd8eee6228a646473009f9c1cd8c0c019e9646473009f9c1cd8a3fd1613\
+             646473009f9c1cd8eca11707646473009f9c1cd8dd8f37b5646473009f9c1cd8beb2384f\
+             646473009f9c1cd8f1ee395b646473009f9c1cd8c1c9db37646473009f9c1cd8a2f4d4cd\
+             646473009f9c1cd8eda8d5d9646473009f9c1cd86c4dcdd5646473009f9c1cd8530a4725\
+             64647300dcc67371ef07ecbb646473009f9c1cd8f248c2e7646473009f9c1cd8f00ff76a\
+             646473009f9c1cd8dd8bd3446267736d2c8ac02451d6c1f86267736d2c8ac024d4c2af0f\
+             6267736d2c8ac024b10acd9d6267736d2c8ac024",
+            ),
+            ("ENLM", "01000000"),
+            ("ENLT", "ffffffff"),
+            ("ENLS", "0000803f"),
+            (
+                "AUUV",
+                "01000000000048420000f04100009c429a99193fcdcccc3d00000000",
+            ),
+            ("NAM1", "00000000"),
+            ("LODP", "00000000"),
+            ("ONAM", "1258030000000000"),
+            (
+                "DATA",
+                "0000000000000000000000000000000000000000000000000000803f",
+            ),
+            ("ONAM", "880d080000000000"),
+            (
+                "DATA",
+                "0000000000000000000000000000000000000080f00f49400000803f0000000000000000\
+             000000000000000000000080010084360000803f",
+            ),
+            ("ONAM", "33410d0000000000"),
+            (
+                "DATA",
+                "1e0000c30000303b000000000000000000000080e50f49400000803f1e0000c30000303b\
+             000000000000000000000080f20fc93f0000803f08000043000080b90000000000000000\
+             000000800400d0350000803f08000043000080b9000000000000000000000080e8cb9640\
+             0000803f",
+            ),
+        ],
+    );
+
+    assert_record_type(&result, "Static Collection");
+    assert_fully_decoded(&result);
+    let parts = result
+        .get("Parts")
+        .and_then(Value::as_array)
+        .expect("Parts must be an array");
+    let placements: Vec<_> = parts
+        .iter()
+        .map(|p| {
+            p.pointer("/Part/Placements")
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len)
+        })
+        .collect();
+    assert_eq!(placements, [1, 2, 4]);
 }

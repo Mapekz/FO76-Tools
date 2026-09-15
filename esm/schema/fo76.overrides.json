@@ -1664,6 +1664,23 @@
         },
         "_comment": "Head Datas Female Head Parts \u2014 mirrors Male Head Parts above. RPRF (Female Race Presets) immediately follows in document order; AHCF/FTSF/DFTF/TTGP are the remainder of Female Head Data \u2014 the last repeated section in RACE's document order, so no further NAM0-style boundary is needed after it."
       }
+    ],
+    "SCEN": [
+      {
+        "path": [
+          "Actions",
+          "element",
+          "Type Specific Action",
+          "Start Scene",
+          "HTID"
+        ],
+        "node": {
+          "kind": "lstring",
+          "sig": "HTID",
+          "name": "End Scene Say Greeting"
+        },
+        "_comment": "xEdit declares Start Scene's 0-byte 'End Scene Say Greeting' marker as wbEmpty(HTID). 'empty' is decoded with the unscoped take_first (src/decode/walk.rs), and HTID is also the Dialogue action's Player Headtracking and the Radio action's Play Sound, so a Start Scene action without its own marker took the next action's HTID: 90 spurious markers across 48 SCEN records in snapshot 20260914 (e.g. 0x0053AF54, whose Start Scene action at subrecords 39-46 carries no HTID), none of them a real marker. Declared 'lstring' instead: element-scoped, renders the same null."
+      }
     ]
   },
   "records": {

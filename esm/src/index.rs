@@ -32,7 +32,7 @@ use std::path::PathBuf;
 // catches those. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
 // share this one constant, so a bump rebuilds all five even when only one
 // changed.
-pub(crate) const CACHE_VERSION: u32 = 15;
+pub(crate) const CACHE_VERSION: u32 = 16;
 
 /// Per-record data stored in the lazy search index.
 ///

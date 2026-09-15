@@ -73542,9 +73542,9 @@
                         }
                       },
                       {
-                        "kind": "empty",
-                        "name": "End Scene Say Greeting",
-                        "sig": "HTID"
+                        "kind": "lstring",
+                        "sig": "HTID",
+                        "name": "End Scene Say Greeting"
                       }
                     ]
                   },

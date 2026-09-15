@@ -203,12 +203,19 @@ pub(super) fn stop_before_check(
     })
 }
 
-pub(super) fn take_all<'a>(
+/// Pops every queued `sig` subrecord up to the first one outside `ctx`'s
+/// scope. With no scope set (a top-level member) that is the whole queue;
+/// inside an `RArray` element it is only that element's own span. PKIN's
+/// Child Pack-In entries repeat `HNAM` + `INAM`, and an unscoped drain handed
+/// every entry's `INAM` reference list to the first one.
+pub(super) fn take_all_in_scope<'a>(
     by_sig: &mut HashMap<String, VecDeque<&'a OwnedSubrecord>>,
     sig: &str,
+    ctx: &DecodeContext<'_>,
 ) -> Vec<&'a OwnedSubrecord> {
-    by_sig
-        .remove(sig)
-        .map(|d| d.into_iter().collect())
-        .unwrap_or_default()
+    let mut taken = Vec::new();
+    while let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
+        taken.push(sr);
+    }
+    taken
 }

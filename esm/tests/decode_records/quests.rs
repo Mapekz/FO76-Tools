@@ -3,7 +3,7 @@
 //! See [`super`] for the fixture conventions shared by every module here.
 
 use crate::common::{assert_fully_decoded, assert_record_type, decode_fixture};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// INFO 0x0000219A — `<no edid>` — basic decode regression.
 #[test]
@@ -883,4 +883,95 @@ fn qust_vmad_alias_ids_read_from_the_v2_object_layout() {
             "the FormID is the last member of the v2 layout"
         );
     }
+}
+
+/// Start Scene action with no marker took the next Dialogue action's `HTID`.
+#[test]
+fn scen_start_scene_marker_stays_in_its_action() {
+    // 0x0053AF54: EDID plus its four actions (Dialogue, Start Scene, Dialogue,
+    // Dialogue); the Start Scene action carries no HTID.
+    let result = decode_fixture(
+        "SCEN",
+        195,
+        &[
+            (
+                "EDID",
+                "5730355f4d515f303031505f576179776172645f4c616365794973656c61417472726163\
+             745363656e655f303130305f496e74726f00",
+            ),
+            ("ANAM", "0000"),
+            ("NAM0", "00"),
+            ("ALID", "02000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "01000000"),
+            ("SNAM", "00000000"),
+            ("ENAM", "00000000"),
+            ("DATA", "47af5300"),
+            ("DMAX", "00002041"),
+            ("DMIN", "0000803f"),
+            ("HTID", "01000000"),
+            ("ANAM", ""),
+            ("ANAM", "0400"),
+            ("NAM0", "00"),
+            ("ALID", "02000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "04000000"),
+            ("SNAM", "02000000"),
+            ("ENAM", "02000000"),
+            ("ANAM", ""),
+            ("ANAM", "0000"),
+            ("NAM0", "00"),
+            ("ALID", "01000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "05000000"),
+            ("FNAM", "00100000"),
+            ("SNAM", "01000000"),
+            ("ENAM", "01000000"),
+            ("DATA", "41af5300"),
+            ("DMAX", "00002041"),
+            ("DMIN", "0000803f"),
+            ("HTID", "00000000"),
+            ("ANAM", ""),
+            ("ANAM", "0000"),
+            ("NAM0", "00"),
+            ("ALID", "02000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "07000000"),
+            ("FNAM", "00900000"),
+            ("SNAM", "01000000"),
+            ("ENAM", "01000000"),
+            ("DATA", "b29b5500"),
+            ("DMAX", "00002041"),
+            ("DMIN", "0000803f"),
+            ("HTID", "00000000"),
+            ("ANAM", ""),
+        ],
+    );
+
+    assert_record_type(&result, "Scene");
+    assert_fully_decoded(&result);
+    let actions = result
+        .get("Actions")
+        .and_then(Value::as_array)
+        .expect("Actions must be an array");
+    let summary: Vec<_> = actions
+        .iter()
+        .map(|a| {
+            (
+                a.pointer("/Action/Type/name").and_then(Value::as_str),
+                a.pointer("/Action/Start Scene/End Scene Say Greeting")
+                    .is_some(),
+                a.pointer("/Action/Dialogue/Player Headtracking").cloned(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            (Some("Dialogue"), false, Some(json!([1]))),
+            (Some("Start Scene"), false, None),
+            (Some("Dialogue"), false, Some(json!([0]))),
+            (Some("Dialogue"), false, Some(json!([0]))),
+        ]
+    );
 }

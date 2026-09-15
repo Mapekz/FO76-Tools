@@ -18,6 +18,12 @@
       "class_": "kind-mismatch",
       "path": "QUST/QTFS",
       "reason": "xEdit leaves QTFS as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) — undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Overridden in fo76.overrides.json (record_patches.QUST) to decode as an integer instead of raw bytes. Divergence is intentional."
+    },
+    {
+      "record": "SCEN",
+      "class_": "kind-mismatch",
+      "path": "SCEN[2:Actions][elem][0:Type Specific Action][v4]/HTID",
+      "reason": "Start Scene's 0-byte 'End Scene Say Greeting' marker is wbEmpty(HTID) in xEdit. 'empty' decodes with an unscoped take, and HTID is also the Dialogue action's Player Headtracking and the Radio action's Play Sound, so a Start Scene action without its own marker took the next action's HTID (0x0053AF54, snapshot 20260914). Overridden in fo76.overrides.json (record_patches.SCEN) to kind=lstring, which is element-scoped and renders the same null. Divergence is intentional."
     }
   ]
 }
