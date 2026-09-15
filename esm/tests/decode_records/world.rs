@@ -1,9 +1,9 @@
-//! Placed-world and region records: FLOR, FURN, CONT, TERM, SCOL, REGN.
+//! Placed-world and region records: FLOR, FURN, CONT, TERM, SCOL, PKIN, REGN.
 //!
 //! See [`super`] for the fixture conventions shared by every module here.
 
 use crate::common::{assert_fully_decoded, assert_record_type, decode_fixture};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// TERM 0x00001676 — `<no edid>` — basic decode regression.
 #[test]
@@ -478,4 +478,84 @@ fn regn_weather_entry_cubemap_scene_decodes() {
             .and_then(Value::as_str),
         Some("Sky/CubemapScenes/SundewGrove_CubemapScene01.nif")
     );
+}
+
+/// drain handed all 39 references to the first entry.
+#[test]
+fn pkin_child_pack_in_pairs_decode_per_entry() {
+    // zzz_TechTest_DB_PodCluster (0x0089ADC6).
+    let result = decode_fixture(
+        "PKIN",
+        208,
+        &[
+            (
+                "EDID",
+                "7a7a7a5f54656368546573745f44425f506f64436c757374657200",
+            ),
+            ("CNAM", "c3ad8900"),
+            ("VNAM", "00000000"),
+            ("FNAM", "00000000"),
+            ("GNAM", "0d000000"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "c2f48900c5f48900bff48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "bbf48900bef48900b8f48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "d0f48900d3f48900cdf48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "b4f48900b7f48900b1f48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "83f4890086f4890080f48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "7cf489007ff4890079f48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "75f4890078f4890072f48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "91f4890094f489008ef48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "d7f48900daf48900d4f48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "c9f48900ccf48900c6f48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "9ff48900a2f489009cf48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "adf48900b0f48900aaf48900"),
+            ("HNAM", "c5ad8900"),
+            ("INAM", "a6f48900a9f48900a3f48900"),
+        ],
+    );
+
+    assert_record_type(&result, "Pack-In");
+    assert_fully_decoded(&result);
+    let child = result
+        .get("Child Pack-In")
+        .expect("Child Pack-In must decode");
+    assert_eq!(
+        child.get("Child Pack-In Count").and_then(Value::as_u64),
+        Some(13)
+    );
+    let entries = child
+        .get("Child Pack-Ins")
+        .and_then(Value::as_array)
+        .expect("Child Pack-Ins must be an array");
+    assert_eq!(entries.len(), 13, "one entry per HNAM/INAM pair");
+    for entry in entries {
+        let entry = entry.get("Child Pack-In Entry").expect("entry wrapper");
+        assert_eq!(
+            entry.get("Child Pack-In").and_then(Value::as_str),
+            Some("0x0089ADC5")
+        );
+        let refs = entry
+            .get("References")
+            .and_then(Value::as_array)
+            .expect("each entry carries its own INAM");
+        assert_eq!(refs.len(), 3, "INAM packs three REFR FormIDs");
+    }
+    let refs = |i: usize| {
+        entries[i]
+            .pointer("/Child Pack-In Entry/References/0")
+            .cloned()
+    };
+    assert_eq!(refs(0), Some(json!("0x0089F4C2")));
+    assert_eq!(refs(1), Some(json!("0x0089F4BB")));
 }

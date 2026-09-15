@@ -20,6 +20,24 @@
       "reason": "xEdit leaves QTFS as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) — undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Overridden in fo76.overrides.json (record_patches.QUST) to decode as an integer instead of raw bytes. Divergence is intentional."
     },
     {
+      "record": "PKIN",
+      "class_": "count-mismatch",
+      "path": "PKIN[2:Child Pack-In]",
+      "reason": "xEdit models PKIN Child Pack-In as one GNAM/HNAM/INAM triple; the game writes GNAM as a pair count followed by that many HNAM + INAM pairs (zzz_TechTest_DB_PodCluster 0x0089ADC6, snapshot 20260914: GNAM=13, 13 pairs). Overridden in fo76.overrides.json (record_patches.PKIN): HNAM/INAM move into a 'Child Pack-Ins' rarray. Divergence is intentional."
+    },
+    {
+      "record": "PKIN",
+      "class_": "dropped",
+      "path": "PKIN[2:Child Pack-In]/HNAM",
+      "reason": "xEdit models PKIN Child Pack-In as one GNAM/HNAM/INAM triple; the game writes GNAM as a pair count followed by that many HNAM + INAM pairs (zzz_TechTest_DB_PodCluster 0x0089ADC6, snapshot 20260914: GNAM=13, 13 pairs). Overridden in fo76.overrides.json (record_patches.PKIN): HNAM/INAM move into a 'Child Pack-Ins' rarray. Divergence is intentional."
+    },
+    {
+      "record": "PKIN",
+      "class_": "dropped",
+      "path": "PKIN[2:Child Pack-In]/INAM",
+      "reason": "xEdit models PKIN Child Pack-In as one GNAM/HNAM/INAM triple; the game writes GNAM as a pair count followed by that many HNAM + INAM pairs (zzz_TechTest_DB_PodCluster 0x0089ADC6, snapshot 20260914: GNAM=13, 13 pairs). Overridden in fo76.overrides.json (record_patches.PKIN): HNAM/INAM move into a 'Child Pack-Ins' rarray. Divergence is intentional."
+    },
+    {
       "record": "QUST",
       "class_": "count-mismatch",
       "path": "QUST[6:Objectives][elem]",

@@ -1700,6 +1700,57 @@
         "_comment": "Head Datas Female Head Parts \u2014 mirrors Male Head Parts above. RPRF (Female Race Presets) immediately follows in document order; AHCF/FTSF/DFTF/TTGP are the remainder of Female Head Data \u2014 the last repeated section in RACE's document order, so no further NAM0-style boundary is needed after it."
       }
     ],
+    "PKIN": [
+      {
+        "path": [
+          "Child Pack-In"
+        ],
+        "node": {
+          "kind": "rstruct",
+          "name": "Child Pack-In",
+          "members": [
+            {
+              "kind": "integer",
+              "name": "Child Pack-In Count",
+              "width": "u32",
+              "signed": false,
+              "sig": "GNAM"
+            },
+            {
+              "kind": "rarray",
+              "name": "Child Pack-Ins",
+              "element": {
+                "kind": "rstruct",
+                "name": "Child Pack-In Entry",
+                "members": [
+                  {
+                    "kind": "formid",
+                    "name": "Child Pack-In",
+                    "valid_refs": [
+                      "PKIN"
+                    ],
+                    "sig": "HNAM"
+                  },
+                  {
+                    "kind": "array",
+                    "name": "References",
+                    "element": {
+                      "kind": "formid",
+                      "name": "Reference",
+                      "valid_refs": [
+                        "REFR"
+                      ]
+                    },
+                    "sig": "INAM"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "_comment": "xEdit models Child Pack-In as a single GNAM/HNAM/INAM triple (wbDefinitionsFO76.pas wbRecord(PKIN)). The game writes GNAM once as a pair count, then that many HNAM (child PKIN) + INAM (its REFR list) pairs: zzz_TechTest_DB_PodCluster (0x0089ADC6, snapshot 20260914) carries GNAM=13 and 13 pairs, every HNAM naming 0x0089ADC5; xEdit's shape left 12 of them _unmapped. Single-pair PKINs (4 in 20260903) decode as a one-entry array."
+      }
+    ],
     "REGN": [
       {
         "path": [

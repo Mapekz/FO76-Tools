@@ -84,6 +84,7 @@ Drift subrecords newer than the TES5Edit reference are handled as follows:
 
 - **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`**, **STAT `SNAM`+`ANLD`**, **REFR `MCND`**, **COEN `ETGR`**, **COBJ `ENAM`** — mapped in `schema/fo76.overrides.json` (GMRW XALG expands from `$pascal_var: wbXALG`, u64 legendary flags; REFR MCND is an rarray-of-unknown, in no TES5Edit definition at all).
 - **QUST objective `QOST`**, **REGN weather-entry `RDWC`** — nested drift, inserted beside an existing member by a `record_patches` entry with `"op": "insert_after"`.
+- **PKIN Child Pack-In** — the game repeats the `HNAM`+`INAM` pair `GNAM` times; xEdit models a single pair, so a `record_patches` entry turns it into an rarray.
 - **CTDA function table** — generated to `schema/fo76.ctda.json` from Pascal; loaded at runtime in `src/ctda.rs`.
 - **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `src/decode/mod.rs`.
 - **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode/vmad.rs` handles Script Fragments + Aliases tail.

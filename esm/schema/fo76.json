@@ -55593,24 +55593,34 @@
               "sig": "GNAM"
             },
             {
-              "kind": "formid",
-              "name": "Child Pack-In",
-              "valid_refs": [
-                "PKIN"
-              ],
-              "sig": "HNAM"
-            },
-            {
-              "kind": "array",
-              "name": "References",
+              "kind": "rarray",
+              "name": "Child Pack-Ins",
               "element": {
-                "kind": "formid",
-                "name": "Reference",
-                "valid_refs": [
-                  "REFR"
+                "kind": "rstruct",
+                "name": "Child Pack-In Entry",
+                "members": [
+                  {
+                    "kind": "formid",
+                    "name": "Child Pack-In",
+                    "valid_refs": [
+                      "PKIN"
+                    ],
+                    "sig": "HNAM"
+                  },
+                  {
+                    "kind": "array",
+                    "name": "References",
+                    "element": {
+                      "kind": "formid",
+                      "name": "Reference",
+                      "valid_refs": [
+                        "REFR"
+                      ]
+                    },
+                    "sig": "INAM"
+                  }
                 ]
-              },
-              "sig": "INAM"
+              }
             }
           ]
         },
