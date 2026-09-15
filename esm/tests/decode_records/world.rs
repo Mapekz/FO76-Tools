@@ -1,4 +1,4 @@
-//! Placed-world records: FLOR, FURN, CONT, TERM, SCOL.
+//! Placed-world and region records: FLOR, FURN, CONT, TERM, SCOL, REGN.
 //!
 //! See [`super`] for the fixture conventions shared by every module here.
 
@@ -422,4 +422,60 @@ fn scol_placements_stay_with_their_part() {
         })
         .collect();
     assert_eq!(placements, [1, 2, 4]);
+}
+
+/// REGN `RDWC` is a cubemap .nif path inside the weather region data entry.
+#[test]
+fn regn_weather_entry_cubemap_scene_decodes() {
+    // SundewGroveWeatherRegion (0x008B30A0).
+    let result = decode_fixture(
+        "REGN",
+        209,
+        &[
+            ("EDID", "53756e64657747726f766557656174686572526567696f6e00"),
+            ("RCLR", "0a0fc800"),
+            ("WNAM", "15da2500"),
+            ("RPLI", "00040000"),
+            (
+                "RPLD",
+                "40cae84718d525c8498df747b09c25c8baf9f947968f2bc8a8f1e947001b2cc8",
+            ),
+            ("RPLI", "00040000"),
+            (
+                "RPLD",
+                "63631a4884f68ec7f95c1b481c5c9cc7dce420487a089dc7eefa1f4897f38fc72f5b1d48\
+             606c8ec7",
+            ),
+            ("RPLI", "00040000"),
+            (
+                "RPLD",
+                "f61126483a44e4c7c9192b481015e5c73c302c48b824efc71c782948aeadf2c750212548\
+             fed5eec7",
+            ),
+            ("RPLI", "00040000"),
+            (
+                "RPLD",
+                "2d0c2f4893b625c8fc0b3248b0f623c800e13648040c24c8e4a03848a98b29c84c763748\
+             d8e02bc80c0c314828362cc831cc2e48fda029c8",
+            ),
+            ("RDAT", "0300000000500000"),
+            ("RDWT", ""),
+            ("RDWR", "00"),
+            (
+                "RDWC",
+                "536b792f437562656d61705363656e65732f53756e64657747726f76655f437562656d61\
+             705363656e6530312e6e696600",
+            ),
+            ("RCBN", "01"),
+        ],
+    );
+
+    assert_record_type(&result, "Region");
+    assert_fully_decoded(&result);
+    assert_eq!(
+        result
+            .pointer("/Region Data Entries/0/Region Data Entry/Cubemap Scene")
+            .and_then(Value::as_str),
+        Some("Sky/CubemapScenes/SundewGrove_CubemapScene01.nif")
+    );
 }

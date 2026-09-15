@@ -342,6 +342,25 @@
           "name": "Unknown"
         }
       }
+    ],
+    "COEN": [
+      {
+        "_comment": "ETGR \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A 0-byte marker between NNAM (Display Name) and ETIP on the 4 ATX_COEN_Character_LevelBoost_* entitlements (e.g. 0x008DC1E8); meaning unknown. The sig occurs at most once per record, so the unscoped 'empty' take is safe.",
+        "kind": "empty",
+        "sig": "ETGR",
+        "name": "ETGR - Unknown"
+      }
+    ],
+    "COBJ": [
+      {
+        "_comment": "ENAM \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. One FormID between CNAM (Created Object) and BNAM (Workbench Keyword), seen only on HIDE_co_Lead_Hard (0x008F531D), pointing at LVLI HIDE_LL_CriticalCrafting_HardLead (0x00948FB2, Override Name '(Rare Craft) Drifter Intel'). Name inferred from that list's EditorID and Override Name, hence the '?'.",
+        "kind": "formid",
+        "sig": "ENAM",
+        "name": "ENAM (Rare Craft List?)",
+        "valid_refs": [
+          "LVLI"
+        ]
+      }
     ]
   },
   "record_patches": {
@@ -1161,6 +1180,22 @@
           "signed": false
         },
         "_comment": "xEdit leaves this as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) \u2014 undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Decoding the 2 bytes as one u16 is the natural low-level mapping; name hedged with '?' since the repeat-limit semantic is inferred, not confirmed. See the 'Seasonal content converts by rename' entry in skills/patch-notes/kb/mechanics.md."
+      },
+      {
+        "path": [
+          "Objectives",
+          "element",
+          "FNAM"
+        ],
+        "op": "insert_after",
+        "node": {
+          "kind": "integer",
+          "name": "QOST - Unknown",
+          "sig": "QOST",
+          "width": "u16",
+          "signed": false
+        },
+        "_comment": "QOST \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. 2 bytes per objective, between the objective's FNAM (Flags) and NNAM (Display Text). 20 objectives across 3 quests: 19 read 0, one reads 1 (HIDEHideoutQuest 0x008B2ED0, objective 200). Decoded as u16; meaning unknown."
       }
     ],
     "INFO": [
@@ -1663,6 +1698,22 @@
           ]
         },
         "_comment": "Head Datas Female Head Parts \u2014 mirrors Male Head Parts above. RPRF (Female Race Presets) immediately follows in document order; AHCF/FTSF/DFTF/TTGP are the remainder of Female Head Data \u2014 the last repeated section in RACE's document order, so no further NAM0-style boundary is needed after it."
+      }
+    ],
+    "REGN": [
+      {
+        "path": [
+          "Region Data Entries",
+          "element",
+          "RDWR"
+        ],
+        "op": "insert_after",
+        "node": {
+          "kind": "string",
+          "name": "Cubemap Scene",
+          "sig": "RDWC"
+        },
+        "_comment": "RDWC \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A NUL-terminated .nif path under Sky/CubemapScenes/ (e.g. SundewGroveWeatherRegion 0x008B30A0 -> Sky/CubemapScenes/SundewGrove_CubemapScene01.nif), directly after RDWR in weather-type region data entries: 26 records, 16 distinct paths. Named after its asset directory."
       }
     ],
     "SCEN": [

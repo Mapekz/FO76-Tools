@@ -975,3 +975,69 @@ fn scen_start_scene_marker_stays_in_its_action() {
         ]
     );
 }
+
+/// objective keeps its own value.
+#[test]
+fn qust_objective_qost_decodes_per_objective() {
+    // HIDEHideoutQuest (0x008B2ED0): EDID plus its first three objectives.
+    let result = decode_fixture(
+        "QUST",
+        210,
+        &[
+            ("EDID", "48494445486964656f7574517565737400"),
+            ("QOBJ", "0000"),
+            ("FNAM", "00000000"),
+            ("QOST", "0000"),
+            (
+                "NNAM",
+                "3c49443d36313032424632303e4865616420746f203c416c6961733d4c6f636174696f6e\
+             3e00",
+            ),
+            ("QSTA", "0900000000000000000000000000"),
+            ("QOBJ", "6400"),
+            ("FNAM", "00000000"),
+            ("QOST", "0000"),
+            (
+                "NNAM",
+                "3c49443d36313032424632313e46696e64203c416c6961733d4163746f725f426f73733e\
+             00",
+            ),
+            ("QSTA", "1200000000020000000000080000"),
+            ("QOBJ", "c800"),
+            ("FNAM", "00000000"),
+            ("QOST", "0100"),
+            (
+                "NNAM",
+                "3c49443d36313032424632323e4b696c6c203c416c6961733d4163746f725f426f73733e\
+             00",
+            ),
+            ("QSTA", "1200000000000000000000000000"),
+        ],
+    );
+
+    assert_record_type(&result, "Quest");
+    assert_fully_decoded(&result);
+    let objectives = result
+        .get("Objectives")
+        .and_then(Value::as_array)
+        .expect("Objectives must be an array");
+    let qost: Vec<_> = objectives
+        .iter()
+        .map(|o| {
+            (
+                o.pointer("/Objective/Objective Index")
+                    .and_then(Value::as_u64),
+                o.pointer("/Objective/QOST - Unknown")
+                    .and_then(Value::as_u64),
+            )
+        })
+        .collect();
+    assert_eq!(
+        qost,
+        [
+            (Some(0), Some(0)),
+            (Some(100), Some(0)),
+            (Some(200), Some(1))
+        ]
+    );
+}

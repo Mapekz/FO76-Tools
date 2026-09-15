@@ -1,9 +1,9 @@
-//! Inventory items: ALCH, ARMO, ARMA, BOOK, MISC, MSCS, NOTE.
+//! Inventory items and entitlements: ALCH, ARMO, ARMA, BOOK, MISC, MSCS, NOTE, COEN.
 //!
 //! See [`super`] for the fixture conventions shared by every module here.
 
 use crate::common::{assert_fully_decoded, assert_record_type, decode_fixture};
-use serde_json::json;
+use serde_json::{Value, json};
 
 /// ALCH 0x000045C9 — `TrackingDart` — decodes to Ingestible fully.
 ///
@@ -597,4 +597,58 @@ fn mscs_test_misc_items_decodes_correctly() {
         .and_then(|v| v.as_array())
         .expect("Spawns must decode");
     assert_eq!(spawns.len(), 13, "expected exactly 13 SPWN entries");
+}
+
+/// COEN `ETGR` is a 0-byte marker; its presence is the whole value.
+#[test]
+fn coen_etgr_marker_decodes() {
+    // ATX_COEN_Character_LevelBoost_LevelUp (0x008DC1E8).
+    let result = decode_fixture(
+        "COEN",
+        210,
+        &[
+            (
+                "EDID",
+                "4154585f434f454e5f4368617261637465725f4c6576656c426f6f73745f4c6576656c55\
+             7000",
+            ),
+            (
+                "FULL",
+                "3c49443d38313031323843413e43686172616374657220426f6f7374204c6576656c2055\
+             7000",
+            ),
+            (
+                "DESC",
+                "3c49443d38313031323843423e4c6576656c20757020796f757220636861726163746572\
+             210d0a0d0a2d20424f4f5354204953204c4f535420494620434841524143544552204953\
+             2044454c455445442e2d00",
+            ),
+            ("KSIZ", "02000000"),
+            ("KWDA", "7bc67b0040dd6000"),
+            ("FNAM", "01000000"),
+            ("NNAM", "3c49443d38313031323843433e4c6576656c20557000"),
+            ("ETGR", ""),
+            (
+                "ETIP",
+                "54657874757265732f4154582f53746f726566726f6e742f4c6576656c426f6f73742f00",
+            ),
+            (
+                "ETDI",
+                "4154585f4368617261637465725f4c6576656c426f6f73745f4c6576656c55702e646473\
+             00",
+            ),
+            (
+                "ECIL",
+                "4154585f4368617261637465725f4c6576656c426f6f73745f4c6576656c55705f43312e\
+             64647300",
+            ),
+        ],
+    );
+
+    assert_record_type(&result, "Consumable Entitlement");
+    assert_fully_decoded(&result);
+    assert!(
+        result.get("ETGR - Unknown").is_some_and(Value::is_null),
+        "a present ETGR marker renders as null"
+    );
 }

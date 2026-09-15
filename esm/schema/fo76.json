@@ -15349,6 +15349,15 @@
             }
           ],
           "sig": "INTV"
+        },
+        {
+          "_comment": "ENAM \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. One FormID between CNAM (Created Object) and BNAM (Workbench Keyword), seen only on HIDE_co_Lead_Hard (0x008F531D), pointing at LVLI HIDE_LL_CriticalCrafting_HardLead (0x00948FB2, Override Name '(Rare Craft) Drifter Intel'). Name inferred from that list's EditorID and Override Name, hence the '?'.",
+          "kind": "formid",
+          "sig": "ENAM",
+          "name": "ENAM (Rare Craft List?)",
+          "valid_refs": [
+            "LVLI"
+          ]
         }
       ]
     },
@@ -15490,6 +15499,12 @@
               }
             }
           ]
+        },
+        {
+          "_comment": "ETGR \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A 0-byte marker between NNAM (Display Name) and ETIP on the 4 ATX_COEN_Character_LevelBoost_* entitlements (e.g. 0x008DC1E8); meaning unknown. The sig occurs at most once per record, so the unscoped 'empty' take is safe.",
+          "kind": "empty",
+          "sig": "ETGR",
+          "name": "ETGR - Unknown"
         }
       ]
     },
@@ -59905,6 +59920,13 @@
                 }
               },
               {
+                "kind": "integer",
+                "name": "QOST - Unknown",
+                "sig": "QOST",
+                "width": "u16",
+                "signed": false
+              },
+              {
                 "kind": "formid",
                 "name": "Quest Objective Timer",
                 "valid_refs": [
@@ -72254,6 +72276,11 @@
                 "kind": "unknown",
                 "name": "Unknown",
                 "sig": "RDWR"
+              },
+              {
+                "kind": "string",
+                "name": "Cubemap Scene",
+                "sig": "RDWC"
               },
               {
                 "kind": "float",

@@ -924,3 +924,47 @@ fn cobj_weapon_ranged_alien_blaster_decodes_correctly() {
         "Created Object"
     );
 }
+
+/// the recipe's rare-craft leveled list.
+#[test]
+fn cobj_rare_craft_list_decodes() {
+    // HIDE_co_Lead_Hard (0x008F531D).
+    let result = decode_fixture(
+        "COBJ",
+        210,
+        &[
+            ("EDID", "484944455f636f5f4c6561645f4861726400"),
+            ("YNAM", "86fd0500"),
+            ("ZNAM", "87fd0500"),
+            ("FVPA", "79fc8e0003000000000000000f000000e803000000000000"),
+            ("REPM", "00"),
+            ("LRNM", "03"),
+            ("DESC", "00"),
+            (
+                "CTDA",
+                "000000000000803f4a000000aa8f9400000000000000000000000000ffffffff",
+            ),
+            ("CNAM", "78fc8e00"),
+            ("ENAM", "b28f9400"),
+            ("BNAM", "f22f0100"),
+            ("FNAM", "1f538f00"),
+            ("DNAM", "0000000001000000"),
+            ("RECF", "0000000000000000"),
+        ],
+    );
+
+    assert_record_type(&result, "Constructible Object");
+    assert_fully_decoded(&result);
+    assert_eq!(
+        result
+            .get("ENAM (Rare Craft List?)")
+            .and_then(Value::as_str),
+        Some("0x00948FB2"),
+        "ENAM -> HIDE_LL_CriticalCrafting_HardLead"
+    );
+    assert_eq!(
+        result.get("Workbench Keyword").and_then(Value::as_str),
+        Some("0x00012FF2"),
+        "BNAM after ENAM still decodes"
+    );
+}
