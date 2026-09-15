@@ -88,6 +88,21 @@ class TestManifest(unittest.TestCase):
             loaded = pl.load_manifest(tmp)
             self.assertEqual(loaded, m)
 
+    def test_esm_is_localized_reads_the_tes4_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.esm"
+            for flags, want in ((0x81, True), (0x01, False)):
+                path.write_bytes(b"TES4" + b"\0" * 4 + flags.to_bytes(4, "little") + b"\0" * 12)
+                self.assertIs(pl.esm_is_localized(path), want)
+            path.write_bytes(b"FAKE ESM BYTES")
+            self.assertIsNone(pl.esm_is_localized(path))
+
+    def test_new_manifest_records_localized_flags(self):
+        m = pl.new_manifest("2026-07-03", "a", "b", 1, 2.0, "1.0.0", localized={"old": True, "new": False})
+        self.assertEqual(m["inputs"]["localized"], {"old": True, "new": False})
+        m = pl.new_manifest("2026-07-03", "a", "b", 1, 2.0, "1.0.0")
+        self.assertEqual(m["inputs"]["localized"], {"old": None, "new": None})
+
     def test_load_manifest_missing_returns_none(self):
         with tempfile.TemporaryDirectory() as tmp:
             self.assertIsNone(pl.load_manifest(tmp))

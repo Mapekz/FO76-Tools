@@ -131,24 +131,19 @@ rename rides along with this churn — a naming shuffle, not new data.
 
 # Text churn
 
-## A `Localized` flag flip makes every text field look changed
+## A `Localized` flag flip changes how text is stored, not what it says
 
-The TES4 header's `Localized` flag (0x80) decides whether `FULL`/`DESC` hold a 4-byte lstring ID or
-inline text, and it has flipped in both directions: false → true between 20260710 and 20260717
-(flags `0x01` → `0x81`), and true → false between 20260821 and 20260903 (`0x81` → `0x01`, the Pets
-branch). Check it with `esm info` on both sides. Whichever way it moved, one side stores text
-inline — tagged `<ID=xxxxxxxx>`, with non-ASCII arriving as U+FFFD replacement glyphs. Even
-with per-side string tables wired correctly the round-trip normalizes text, so one patch yields
-tens of thousands of text "changes" that are really mojibake repairs (`Mj?lnir` → `Mjölnir`;
-`????` → `¬¬¬¬`, the legendary star-rating prefix), leading/trailing whitespace and newline churn
-on `Description`/`Header Text`/`Body Text`, and centering whitespace on terminal headers. **Only
-treat a text diff as a story when the ASCII wording changed.**
+PTS builds keep text inline until content freezes, then read it from the string tables, so the
+TES4 `Localized` flag (0x80) flips every few months (on at 20260717, off at 20260903). Inline text
+is `<ID=xxxxxxxx>` plus Windows-1252 bytes; the decoder turns it into the same text the UTF-8
+tables hold, and the diff drops the tables' NBSP → space and LF → CRLF rewrites (counted as
+`localization_flip_text` in `comprehensive.md`). A text change on a flip pair is therefore real.
+If one differs only in non-ASCII glyphs, compare both snapshots' string tables by ID before
+reporting it.
 
 **Example:** LGDI `RA_LegendaryItems_Weapons_Rank4` (0x00863A9A) reads `¬¬¬¬ Normal Weapon Rewards`
-on 20260821 and `���� Normal Weapon Rewards` on 20260903, where the new side stores
-`<ID=3929B8F4>` plus raw single-byte text inline. The string table's bytes are identical on both
-sides.
-*verified 2026-09-14 vs 20260717 and 20260821/20260903*
+on 20260821 (table) and on 20260903 (inline `<ID=3929B8F4>`), so it doesn't appear in the diff.
+*verified 2026-09-15 vs 20260821/20260903*
 
 ## Terminal stat tokens migrated to `<STAT=X>` syntax
 

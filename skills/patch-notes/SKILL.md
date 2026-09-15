@@ -142,7 +142,8 @@ localized FULL/DESC on the new side is being resolved against the other snapshot
 renames and description rewrites silently vanish and stale text is reported as current. Stop
 and re-run with `--strings-dir-a`/`--strings-dir-b` rather than writing up that diff. (Corroborating tell,
 after the pipeline finishes: an `_unresolved` count in the hundreds instead of low double
-digits.)
+digits.) A `Localized flag flips` line is expected every few months and needs no action; see
+`kb/pipeline-gotchas.md`.
 
 ## 3. Prewarm the daemon
 

@@ -124,8 +124,8 @@ entries, so PERK `Float`/`Perk Entry ID` "changes" are fake — verify live); SP
 entries lose `Effect Flags=(none)` and gain `_unknown 2=(struct: hex)`; OMOD `Data / Properties[] /
 Value 2` bumps 2 → 3; `Perk Condition Tab Count` 4 → 3; script `extra_bind_data_version` 4 → 3;
 QUST objective flag bit 0x10 cleared; WEAP `Sneak Attack Multiplier` and OMOD `Attribute Descriptor
-Keywords` appearing/disappearing wholesale; INFO `Previous INFO` and REFR `Layer` relinks; text
-case normalization and `é` → `�` garbling.
+Keywords` appearing/disappearing wholesale; INFO `Previous INFO` and REFR `Layer` relinks; script
+name case normalization.
 
 **Symptom:** ROLLOUT tier > 50K bundles, DEEP > 300 after rules, `esm info` shows different
 `Version` lines for the two ESMs.
@@ -207,25 +207,15 @@ so all of a quest's aliases shared one key, uniqueness failed, and the unkeyed f
 all 12 aliases whenever one property moved — 351 records, of which 198 had no real change at all.
 *found 2026-09-14*
 
-## A snapshot can flip the Localized header flag, voiding every text comparison
+## The Localized header flag flips every few months
 
-The TES4 header's `Localized` flag (0x80) decides whether `FULL`/`DESC` hold a 4-byte string-table
-id or inline text. A build that ships with it unset stores text inline, tagged `<ID=00001234>`,
-and non-ASCII characters arrive as replacement glyphs. Diffing such a snapshot against a
-localized one makes every localized field on every record look rewritten, and the
-string-table set-diff recovery pass above becomes meaningless: the newer snapshot still
-carries `strings/` files, but the build ignores them.
+`manifest.json` records each side's TES4 `Localized` flag under `inputs.localized`, and the
+pipeline banner prints `Localized flag flips` when they differ. Text decodes the same either way,
+so nothing needs skipping. Every snapshot ships current `strings/` tables, localized or not, so
+the string-table set-diff pass above stays valid across a flip.
 
-**Symptom:** `esm info` reports `Localized: false` on one side and `true` on the other. The diff
-banner says `is not localized (TES4 Localized flag unset); ignoring the string tables supplied
-for it`. Downstream, every star prefix, terminal header and description reads as changed, and a
-`desc_changed_stats_same` lint fires in the hundreds.
-**Fix:** run `esm info` on both snapshots before the narrative stage and compare the flag. When
-it differs, treat every text-only delta as unreportable for that pair, skip the string-table
-recovery pass entirely rather than mining its output, and say so in the summary. Numeric and
-structural changes are unaffected.
-**Example:** 20260821 reports flags `0x00000081` / `Localized: true`; 20260903 reports
-`0x00000001` / `Localized: false`. The set-diff pass returned 1,051 added and 224 removed
-`.strings` entries for a build that reads none of them, and 158 `desc_changed_stats_same` lints
-on one writer's slice alone traced to the same cause.
-*found 2026-09-14*
+**Symptom:** `comprehensive.md` reports `localization_flip_text omitted at diff level`. That's the
+diff dropping string leaves that differ only by the tables' whitespace rewrites.
+**Example:** 20260821 → 20260903 (`true` → `false`) drops 53 such leaves. In 20260903, 244,420 of
+244,484 inline strings match that snapshot's own table exactly; the rest differ by NBSP or CRLF.
+*verified 2026-09-15*

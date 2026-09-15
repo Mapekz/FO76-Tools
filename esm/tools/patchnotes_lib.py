@@ -520,7 +520,19 @@ def write_manifest(out_dir, manifest):
         f.write("\n")
 
 
-def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, pipeline_version, counts=None):
+def esm_is_localized(esm_path) -> bool | None:
+    """The TES4 header's Localized flag (0x80), or None when the file doesn't
+    start with a TES4 record. PTS builds keep text inline until content
+    freezes, so the flag flips every few months."""
+    with Path(esm_path).open("rb") as f:
+        head = f.read(12)
+    if len(head) < 12 or head[:4] != b"TES4":
+        return None
+    return bool(int.from_bytes(head[8:12], "little") & 0x80)
+
+
+def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, pipeline_version, counts=None,
+                 localized=None):
     """
     Build a fresh manifest dict for the mechanical stage to write:
         {"schema_version": 1, "patch_date": ..., "inputs": {...},
@@ -537,6 +549,8 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
     stage actually runs (schema_version NARRATIVE_SCHEMA_VERSION == 3), not
     the v1 per-category shape -- see NARRATIVE_SCHEMA_VERSION's docstring
     above.
+
+    `localized` is `{"old": ..., "new": ...}`, each side's `esm_is_localized`.
     """
     return {
         "schema_version": SCHEMA_VERSION,
@@ -547,6 +561,7 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
             "new_esm_size": new_esm_size,
             "new_esm_mtime": new_esm_mtime,
             "pipeline_version": pipeline_version,
+            "localized": localized or {"old": None, "new": None},
         },
         "counts": counts or {},
         "stages": {

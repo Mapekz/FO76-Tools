@@ -598,6 +598,11 @@ def main(argv=None):
         settings["refs_depth"] = args.refs_depth
     config = {**config, "settings": settings}
 
+    localized = {"old": pl.esm_is_localized(esm_a), "new": pl.esm_is_localized(esm_b)}
+    if None not in localized.values() and localized["old"] != localized["new"]:
+        eprint(f"  Localized flag flips: {localized['old']} -> {localized['new']}. Text decodes the same "
+               f"either way; string-only whitespace rewrites are counted as localization_flip_text.")
+
     # ---- Step 2: esm diff ---------------------------------------------------
     diff_json_path = layout.diff_json(out_dir)
     diff_data = run_esm_diff(
@@ -726,6 +731,7 @@ def main(argv=None):
         new_esm_mtime=int(esm_b.stat().st_mtime),
         pipeline_version=pl.SCHEMA_VERSION,
         counts=manifest_counts,
+        localized=localized,
     )
     manifest["stages"]["mechanical"]["completed_at"] = _now_iso()
     manifest["stages"]["mechanical"]["files"] = dict(files_written)
