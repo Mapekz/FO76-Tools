@@ -1041,3 +1041,187 @@ fn qust_objective_qost_decodes_per_objective() {
         ]
     );
 }
+
+/// lost their Flags.
+#[test]
+fn qust_objectives_stop_before_the_aliases() {
+    // HIDEHideoutQuest (0x008B2ED0): EDID, objective 0, objective 999, then the
+    // Next Alias ID and the first alias through its ALED.
+    let result = decode_fixture(
+        "QUST",
+        210,
+        &[
+            ("EDID", "48494445486964656f7574517565737400"),
+            ("QOBJ", "0000"),
+            ("FNAM", "00000000"),
+            ("QOST", "0000"),
+            (
+                "NNAM",
+                "3c49443d36313032424632303e4865616420746f203c416c6961733d4c6f636174696f6e\
+             3e00",
+            ),
+            ("QSTA", "0900000000000000000000000000"),
+            ("QOBJ", "e703"),
+            ("FNAM", "0c000000"),
+            ("QOST", "0000"),
+            ("QOTM", "75478f00"),
+            ("SNAM", "d700"),
+            (
+                "NNAM",
+                "3c49443d36313032424632383e284f7074696f6e616c2920456c696d696e617465204c65\
+             6164657220517569636b6c7900",
+            ),
+            ("ANAM", "47000000"),
+            ("ALST", "08000000"),
+            ("ALID", "506c6179657200"),
+            ("ESAV", "00000000"),
+            ("ESDA", "00000000"),
+            ("ESRV", "00000000"),
+            ("ESRP", "00000000"),
+            ("FNAM", "1000000000000000"),
+            ("ALFE", "53435054"),
+            ("ALFD", "52330000"),
+            ("KSIZ", "01000000"),
+            ("KWDA", "730d9400"),
+            ("ALDN", "00000000"),
+            ("ALFC", "47db8f00"),
+            ("VTCK", "00000000"),
+            ("ALED", ""),
+        ],
+    );
+
+    assert_record_type(&result, "Quest");
+    assert_fully_decoded(&result);
+    let indexes: Vec<_> = result
+        .get("Objectives")
+        .and_then(Value::as_array)
+        .expect("Objectives must be an array")
+        .iter()
+        .map(|o| {
+            o.pointer("/Objective/Objective Index")
+                .and_then(Value::as_u64)
+        })
+        .collect();
+    assert_eq!(indexes, [Some(0), Some(999)]);
+    assert_eq!(
+        result
+            .pointer("/Aliases/0/Reference Alias/Flags/value")
+            .and_then(Value::as_str),
+        Some("0x10"),
+        "the alias keeps its own FNAM"
+    );
+}
+
+/// two extra phantom actions.
+#[test]
+fn scen_actions_stop_before_record_level_fields() {
+    // 0x0053AF54, verbatim.
+    let result = decode_fixture(
+        "SCEN",
+        195,
+        &[
+            (
+                "EDID",
+                "5730355f4d515f303031505f576179776172645f4c616365794973656c61417472726163\
+             745363656e655f303130305f496e74726f00",
+            ),
+            ("FNAM", "16200000"),
+            ("HNAM", ""),
+            ("NAM0", "00"),
+            ("NEXT", ""),
+            ("NEXT", ""),
+            ("WNAM", "5e010000"),
+            ("HNAM", ""),
+            ("HNAM", ""),
+            ("NAM0", "00"),
+            ("NEXT", ""),
+            ("NEXT", ""),
+            ("WNAM", "5e010000"),
+            ("HNAM", ""),
+            ("HNAM", ""),
+            ("NAM0", "00"),
+            (
+                "CTDA",
+                "00000000000000004a009443006e0300000000000000000000000000ffffffff",
+            ),
+            ("NEXT", ""),
+            ("NEXT", ""),
+            ("WNAM", "5e010000"),
+            ("HNAM", ""),
+            ("ALID", "01000000"),
+            ("LNAM", "04000000"),
+            ("DNAM", "1a000000"),
+            ("ALID", "02000000"),
+            ("LNAM", "04000000"),
+            ("DNAM", "1a000000"),
+            ("ANAM", "0000"),
+            ("NAM0", "00"),
+            ("ALID", "02000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "01000000"),
+            ("SNAM", "00000000"),
+            ("ENAM", "00000000"),
+            ("DATA", "47af5300"),
+            ("DMAX", "00002041"),
+            ("DMIN", "0000803f"),
+            ("HTID", "01000000"),
+            ("ANAM", ""),
+            ("ANAM", "0400"),
+            ("NAM0", "00"),
+            ("ALID", "02000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "04000000"),
+            ("SNAM", "02000000"),
+            ("ENAM", "02000000"),
+            ("ANAM", ""),
+            ("ANAM", "0000"),
+            ("NAM0", "00"),
+            ("ALID", "01000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "05000000"),
+            ("FNAM", "00100000"),
+            ("SNAM", "01000000"),
+            ("ENAM", "01000000"),
+            ("DATA", "41af5300"),
+            ("DMAX", "00002041"),
+            ("DMIN", "0000803f"),
+            ("HTID", "00000000"),
+            ("ANAM", ""),
+            ("ANAM", "0000"),
+            ("NAM0", "00"),
+            ("ALID", "02000000"),
+            ("ALSO", "ffffffff"),
+            ("INAM", "07000000"),
+            ("FNAM", "00900000"),
+            ("SNAM", "01000000"),
+            ("ENAM", "01000000"),
+            ("DATA", "b29b5500"),
+            ("DMAX", "00002041"),
+            ("DMIN", "0000803f"),
+            ("HTID", "00000000"),
+            ("ANAM", ""),
+            ("PNAM", "40af5300"),
+            ("INAM", "07000000"),
+            ("VNAM", "03000000030000000300000003000000"),
+            ("XNAM", "00000000"),
+        ],
+    );
+
+    assert_record_type(&result, "Scene");
+    assert_fully_decoded(&result);
+    assert_eq!(
+        result
+            .get("Actions")
+            .and_then(Value::as_array)
+            .map(Vec::len),
+        Some(4)
+    );
+    assert_eq!(
+        result.get("Parent Quest").and_then(Value::as_str),
+        Some("0x0053AF40")
+    );
+    assert_eq!(
+        result.get("Last Action Index").and_then(Value::as_u64),
+        Some(7)
+    );
+}

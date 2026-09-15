@@ -203,6 +203,54 @@ pub(super) fn stop_before_check(
     })
 }
 
+/// The signature of the earliest still-queued subrecord (any signature)
+/// inside `ctx`'s scope.
+pub(super) fn earliest_queued_sig<'a>(
+    by_sig: &'a HashMap<String, VecDeque<&OwnedSubrecord>>,
+    ctx: &DecodeContext<'_>,
+) -> Option<&'a str> {
+    by_sig
+        .iter()
+        .filter_map(|(sig, queue)| {
+            queue
+                .iter()
+                .find(|sr| doc_index_in_present_signature_scope(ctx, sr.doc_index))
+                .map(|sr| (sr.doc_index, sig.as_str()))
+        })
+        .min_by_key(|(doc_index, _)| *doc_index)
+        .map(|(_, sig)| sig)
+}
+
+/// Whether a `sig` subrecord can open one of `member`'s elements on its own.
+/// A union's variants count unless the union is chosen by another field's
+/// value (SCEN's type-specific action data, picked by the action's `ANAM`
+/// Type): such a variant can't exist without that field. A variant picked by
+/// its own subrecord's presence (SECH's `ECHO`/`ECHD` echo marker) or by the
+/// form version still counts.
+pub(super) fn can_open_element(member: &MemberDef, sig: &str) -> bool {
+    if member.sig() == Some(sig) {
+        return true;
+    }
+    match member {
+        MemberDef::RStruct { members, .. } => {
+            members.iter().any(|member| can_open_element(member, sig))
+        }
+        MemberDef::RArray { element, .. } => can_open_element(element, sig),
+        MemberDef::Union {
+            decider, variants, ..
+        } => {
+            !matches!(
+                decider,
+                crate::schema::UnionDecider::FieldValue { .. }
+                    | crate::schema::UnionDecider::FormIdTargetType { .. }
+            ) && variants
+                .iter()
+                .any(|variant| can_open_element(variant, sig))
+        }
+        _ => false,
+    }
+}
+
 /// Pops every queued `sig` subrecord up to the first one outside `ctx`'s
 /// scope. With no scope set (a top-level member) that is the whole queue;
 /// inside an `RArray` element it is only that element's own span. PKIN's

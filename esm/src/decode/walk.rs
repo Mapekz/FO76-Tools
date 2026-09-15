@@ -477,9 +477,22 @@ pub(super) fn decode_rarray_member(
                         next_element_start = term_idx + 1;
                         element_ctx = &scoped_ctx;
                     }
-                    // No anchor and no terminator left either —
-                    // decode fully unscoped, same as before this fix.
+                    // No anchor and no terminator left either — decode
+                    // unscoped, but only while the array continues: the
+                    // earliest queued subrecord must be able to open one of
+                    // this element's own (a trailing Object Template
+                    // combination's `OBTS` without its optional `OBTF`
+                    // anchor). Anything else belongs to a later member, and
+                    // decoding it here built phantom elements: objectives
+                    // made of QUST alias `FNAM`s, scene actions made of
+                    // SCEN's record-level `INAM`/`PNAM`.
                     None => {
+                        if anchor.is_some()
+                            && !earliest_queued_sig(by_sig, ctx)
+                                .is_some_and(|sig| can_open_element(element, sig))
+                        {
+                            break;
+                        }
                         element_ctx = ctx;
                     }
                 }
