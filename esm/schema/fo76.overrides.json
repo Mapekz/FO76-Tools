@@ -1842,7 +1842,7 @@
                       "sig": "ITME"
                     },
                     {
-                      "_comment": "NAM3 (0-byte) \u2014 present only between two rewards of the same entry (8 of 128). Deliberately 'lstring', not 'empty': 'empty' is the one kind decoded with the unscoped take_first (src/decode/walk.rs), which here stole the NEXT entry's Description Text (same sig) and corrupted every entry after the first two-reward one; lstring is element-scoped and renders the same null. Regression test: tests/decode_records.rs pgtr_world_pets_radhog_track_decodes_correctly.",
+                      "_comment": "NAM3 (0-byte) \u2014 present only between two rewards of the same entry (8 of 128). Deliberately 'lstring', not 'empty': 'empty' is the one kind decoded with the unscoped take_first (src/decode/walk.rs), which here stole the NEXT entry's Description Text (same sig) and corrupted every entry after the first two-reward one; lstring is element-scoped and renders the same null. Regression test: tests/decode_records/pet_tracks.rs pgtr_world_pets_radhog_track_decodes_correctly.",
                       "kind": "lstring",
                       "name": "Next Reward Present",
                       "sig": "NAM3"

@@ -197,7 +197,7 @@ python3 tools/extractor/audit.py --gate
 
 ## Tests
 
-~100 tests across `tests/` (integration test files, one per module — `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_records.rs`, `decode_coverage.rs`) plus inline `#[cfg(test)]` blocks for `tree`/`decode` internals not public outside the crate. `tests/decode_records.rs` uses verbatim subrecord bytes captured from `esm get --raw`, so it runs entirely in CI with no game data. Run all:
+~100 tests across `tests/` (integration test targets, one per module — `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_coverage.rs`) plus inline `#[cfg(test)]` blocks for `tree`/`decode` internals not public outside the crate. `tests/decode_records/` is a directory-backed target — one `main.rs` plus a module per record family — whose fixtures are verbatim subrecord bytes captured from `esm get --raw`, so it runs entirely in CI with no game data. Run all:
 
 ```sh
 cargo test

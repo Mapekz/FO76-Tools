@@ -30,7 +30,7 @@
 //! emit `raw_fallback` or undocumented `_unmapped` markers on at least some
 //! records in a reference ESM.
 //! Types marked partial† in the README decode only with documented drift
-//! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records.rs`.
+//! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records/`.
 //!
 //! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
 //! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT,

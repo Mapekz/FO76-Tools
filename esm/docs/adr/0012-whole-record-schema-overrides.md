@@ -36,7 +36,7 @@ in the file itself, member by member:
 
 - Such a record is *our* definition, not a mirror of upstream: `just audit`'s parity gate has
   nothing to compare it against, so its correctness rests on the byte-verbatim regression test
-  that must accompany it (`tests/decode_records.rs`) and on `esm coverage --gate` staying clean.
+  that must accompany it (`tests/decode_records/`) and on `esm coverage --gate` staying clean.
 - If upstream xEdit later defines the type, the `"records"` entry should be deleted and the
   signature added to `extract.py`'s `SAFELIST`, so parity resumes — the names may change then;
   a snapshot diff across that switch will show renames, not gameplay changes.

@@ -197,7 +197,7 @@ pub(crate) fn decode_member(
                 // `lstring` (element-scoped, renders the same `null`), so
                 // this arm stays unscoped rather than special-casing ALED —
                 // see `pgtr_world_pets_radhog_track_decodes_correctly` in
-                // tests/decode_records.rs. Any future zero-length marker
+                // tests/decode_records/pet_tracks.rs. Any future zero-length marker
                 // whose sig is reused inside the same element wants the same
                 // `lstring` treatment.
                 //
@@ -1265,7 +1265,7 @@ mod tests {
     ///
     /// This is the hermetic, byte-exact mirror of the public-API integration
     /// test `omod_legendary_weapon_data_decodes_correctly` in
-    /// `tests/decode_records.rs` — the 4-byte path is intentionally covered by
+    /// `tests/decode_records/weapons.rs` — the 4-byte path is intentionally covered by
     /// both.  This unit test calls `decode_struct_fields` directly and pins the
     /// return value (bytes consumed), which is invisible at the `decode_record`
     /// boundary.  The `count_prefix_u8` test below is the *only* guard for the

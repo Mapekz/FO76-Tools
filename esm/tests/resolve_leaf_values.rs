@@ -3,7 +3,7 @@
 //!
 //! All records here are synthetic in-memory byte buffers (no real ESM
 //! required), following the conventions in `tests/curves.rs` and
-//! `tests/decode_records.rs`. A CHAL record's `HNAM` ("Required Count
+//! `tests/decode_records/`. A CHAL record's `HNAM` ("Required Count
 //! Global") is decoded directly via `decode_record` rather than through a
 //! full second ESM file, so each test only needs to build the *target*
 //! record (GLOB/CURV) into a real `Database` for the resolver to look up.
