@@ -10,7 +10,12 @@ from pathlib import Path
 # Add parent directory to path to import extract module
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from extractor.extract import Extractor, format_overrides, write_schema_json
+from extractor.extract import (
+    Extractor,
+    _apply_patch,
+    format_overrides,
+    write_schema_json,
+)
 
 
 class TestParseInteger(unittest.TestCase):
@@ -473,6 +478,56 @@ class TestFormatOverrides(unittest.TestCase):
             # Now idempotent under --check.
             self.assertTrue(format_overrides(path, check=True))
 
+
+class TestApplyPatch(unittest.TestCase):
+    """record_patches splices: replace a node, or insert a sibling after it."""
+
+    @staticmethod
+    def record():
+        return {"members": [{
+            "kind": "rarray",
+            "name": "Objectives",
+            "element": {"kind": "rstruct", "name": "Objective", "members": [
+                {"kind": "integer", "sig": "QOBJ", "name": "Objective Index"},
+                {"kind": "integer", "sig": "FNAM", "name": "Flags"},
+                {"kind": "lstring", "sig": "NNAM", "name": "Display Text"},
+            ]},
+        }]}
+
+    @staticmethod
+    def sigs(record):
+        return [m["sig"] for m in record["members"][0]["element"]["members"]]
+
+    def test_replace_swaps_the_addressed_node(self):
+        rec = self.record()
+        _apply_patch(rec, ["Objectives", "element", "FNAM"], {"kind": "integer", "sig": "FNAM", "name": "New"})
+        self.assertEqual(self.sigs(rec), ["QOBJ", "FNAM", "NNAM"])
+        self.assertEqual(rec["members"][0]["element"]["members"][1]["name"], "New")
+
+    def test_insert_after_keeps_the_node_and_adds_its_next_sibling(self):
+        rec = self.record()
+        _apply_patch(rec, ["Objectives", "element", "FNAM"], {"kind": "integer", "sig": "QOST"}, "insert_after")
+        self.assertEqual(self.sigs(rec), ["QOBJ", "FNAM", "QOST", "NNAM"])
+
+    def test_insert_after_rejects_an_element_target(self):
+        with self.assertRaises(ValueError):
+            _apply_patch(self.record(), ["Objectives", "element"], {"kind": "integer"}, "insert_after")
+
+    def test_unknown_op_is_rejected(self):
+        with self.assertRaises(ValueError):
+            _apply_patch(self.record(), ["Objectives", "element", "FNAM"], {"kind": "integer"}, "append")
+
+    def test_path_descends_through_union_variants(self):
+        dialogue = {"kind": "rstruct", "name": "Dialogue", "members": [{"kind": "array", "sig": "HTID"}]}
+        rec = {"members": [{"kind": "union", "name": "Type Specific Action", "variants": [
+            dialogue,
+            {"kind": "rstruct", "name": "Start Scene", "members": [{"kind": "empty", "sig": "HTID"}]},
+        ]}]}
+        _apply_patch(rec, ["Type Specific Action", "Start Scene", "HTID"], {"kind": "lstring", "sig": "HTID"})
+        self.assertEqual(rec["members"][0]["variants"], [
+            dialogue,
+            {"kind": "rstruct", "name": "Start Scene", "members": [{"kind": "lstring", "sig": "HTID"}]},
+        ])
 
 if __name__ == '__main__':
     unittest.main()

@@ -2406,30 +2406,38 @@ def _patch_property_union(node: dict, dv: int) -> None:
 
 
 def _descend(node: dict, step: str) -> dict:
-    """Descend one step of a record_patches path: a member's sig/name, or the
-    literal 'element' to enter an array/rarray's element node."""
+    """Descend one step of a record_patches path: a member's (or a union
+    variant's) sig/name, or the literal 'element' to enter an array/rarray's
+    element node."""
     if step == "element":
         if "element" not in node:
             raise ValueError(f"patch step 'element': node has no element: {node.get('name')}")
         return node["element"]
-    for child in node.get("members", node.get("fields", [])):
+    for child in node.get("members") or node.get("fields") or node.get("variants") or []:
         if child.get("sig") == step or child.get("name") == step:
             return child
     raise ValueError(f"patch step {step!r} not found under {node.get('name')}")
 
 
-def _apply_patch(record: dict, path: list[str], new_node: dict) -> None:
+def _apply_patch(record: dict, path: list[str], new_node: dict, op: str = "replace") -> None:
     """Splice new_node into record at path (record_patches merge mode).
 
     Each path step names a child by sig/name, or is the literal 'element' to
-    enter an array/rarray's element. The last step is replaced in place;
-    everything else in the record is left untouched.
+    enter an array/rarray's element. op 'replace' swaps the last step's node
+    for new_node; op 'insert_after' keeps it and inserts new_node as its next
+    sibling (a subrecord absent from Pascal that belongs inside a nested
+    struct, where record_additions' top-level append can't reach). Everything
+    else in the record is left untouched.
     """
+    if op not in ("replace", "insert_after"):
+        raise ValueError(f"unknown patch op {op!r}")
     cur = record
     for step in path[:-1]:
         cur = _descend(cur, step)
     last = path[-1]
     if last == "element":
+        if op != "replace":
+            raise ValueError(f"patch op {op!r} needs a member target, not 'element'")
         if "element" not in cur:
             raise ValueError("patch target 'element' on non-array node")
         cur["element"] = new_node
@@ -2439,7 +2447,10 @@ def _apply_patch(record: dict, path: list[str], new_node: dict) -> None:
         raise ValueError(f"patch target {last!r}: parent has no members/fields")
     for i, child in enumerate(lst):
         if child.get("sig") == last or child.get("name") == last:
-            lst[i] = new_node
+            if op == "replace":
+                lst[i] = new_node
+            else:
+                lst.insert(i + 1, new_node)
             return
     raise ValueError(f"patch target {last!r} not found")
 
@@ -2533,6 +2544,9 @@ def main() -> None:
     #                        without touching the rest of the record. Use when the
     #                        extractor gets most of a record right but one nested
     #                        node resists static extraction (a HARD_RAW_VAR).
+    #                        With "op": "insert_after", the addressed node stays and
+    #                        the patch node becomes its next sibling — the nested
+    #                        counterpart of record_additions.
     #   "record_additions" — member-append: members are appended to the extractor-
     #                        generated record's members list without replacing it.
     #                        Use for genuine xEdit gaps (subrecords absent from Pascal).
@@ -2548,7 +2562,9 @@ def main() -> None:
                 if sig not in schema["records"]:
                     raise ValueError(f"record_patches: no extractor record for {sig} to patch")
                 for patch in patch_list:
-                    _apply_patch(schema["records"][sig], patch["path"], patch["node"])
+                    _apply_patch(
+                        schema["records"][sig], patch["path"], patch["node"], patch.get("op", "replace")
+                    )
                     patches += 1
             additions = 0
             for sig, extra_members in overrides.get("record_additions", {}).items():
