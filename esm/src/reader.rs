@@ -425,37 +425,55 @@ pub fn lstring_id_from_subrecords(subs: &[OwnedSubrecord], sig: &str) -> Option<
         .map(|s| u32::from_le_bytes(s.data[0..4].try_into().unwrap()))
 }
 
-/// Read a subrecord's data as an inline NUL-terminated string (for
-/// non-localized ESMs), stripping an optional `<ID=XXXXXXXX>` prefix.
+/// Read a subrecord's data as an inline lstring (for non-localized ESMs);
+/// see [`decode_inline_lstring`].
 ///
-/// Returns `None` if the subrecord is absent or its data is empty.
+/// Returns `None` if the subrecord is absent or carries no text.
 pub fn inline_string_from_subrecords(subs: &[OwnedSubrecord], sig: &str) -> Option<String> {
     let sr = subs.iter().find(|s| s.signature.as_str() == sig)?;
-    if sr.data.is_empty() {
+    decode_inline_lstring(&sr.data)
+}
+
+/// Decode a non-localized ESM's inline lstring payload: NUL-terminated
+/// Windows-1252 text, optionally prefixed with `<ID=XXXXXXXX>` (the string's
+/// table ID). Only the prefix is stripped: whitespace after it is part of the
+/// text (GMST `<ID=000359F8> days`), exactly as the string tables store it.
+///
+/// A localized snapshot resolves the same string through the UTF-8 string
+/// tables, so decoding the inline bytes any other way makes identical text
+/// differ across a Localized-flag flip.
+///
+/// Returns `None` when there is no text.
+pub fn decode_inline_lstring(data: &[u8]) -> Option<String> {
+    let nul_end = data.iter().position(|&b| b == 0).unwrap_or(data.len());
+    let mut text = &data[..nul_end];
+    if text.starts_with(b"<ID=")
+        && let Some(close) = text.iter().position(|&b| b == b'>')
+    {
+        text = &text[close + 1..];
+    }
+    if text.is_empty() {
         return None;
     }
-    let nul_end = sr
-        .data
+    Some(decode_windows_1252(text))
+}
+
+/// Windows-1252 code points for bytes `0x80..=0x9F`; the five bytes the code
+/// page leaves undefined map to the matching C1 control, as WHATWG does.
+/// Every other byte is its own code point.
+const WINDOWS_1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{0081}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008D}', '\u{017D}', '\u{008F}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{009D}', '\u{017E}', '\u{0178}',
+];
+
+fn decode_windows_1252(bytes: &[u8]) -> String {
+    bytes
         .iter()
-        .position(|&b| b == 0)
-        .unwrap_or(sr.data.len());
-    if nul_end == 0 {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&sr.data[..nul_end]);
-    // Strip the optional `<ID=XXXXXXXX>` reference marker.
-    let text = if s.starts_with("<ID=") {
-        if let Some(close) = s.find('>') {
-            let remainder = s[close + 1..].trim_start();
-            if remainder.is_empty() {
-                return None;
-            }
-            remainder.to_string()
-        } else {
-            s.into_owned()
-        }
-    } else {
-        s.into_owned()
-    };
-    Some(text)
+        .map(|&b| match b {
+            0x80..=0x9F => WINDOWS_1252_HIGH[usize::from(b - 0x80)],
+            _ => char::from(b),
+        })
+        .collect()
 }

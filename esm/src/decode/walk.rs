@@ -340,26 +340,8 @@ pub(super) fn decode_lstring_member(
                 }
             }
         } else {
-            // Non-localized ESM: field is an inline NUL-terminated string,
-            // optionally prefixed with `<ID=XXXXXXXX>` (a reference marker).
-            let raw = &sr.data;
-            let nul_end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-            let s = String::from_utf8_lossy(&raw[..nul_end]);
-            // Strip the optional `<ID=XXXXXXXX>` prefix.
-            let text = if s.starts_with("<ID=") {
-                if let Some(close) = s.find('>') {
-                    s[close + 1..].trim_start().to_string()
-                } else {
-                    s.into_owned()
-                }
-            } else {
-                s.into_owned()
-            };
-            if text.is_empty() {
-                Value::Null
-            } else {
-                json!(text)
-            }
+            // Non-localized ESM: field is inline Windows-1252 text.
+            crate::reader::decode_inline_lstring(&sr.data).map_or(Value::Null, Value::String)
         };
         out.insert(name.to_owned(), value);
     }
@@ -1853,6 +1835,27 @@ mod tests {
         data.push(0);
         let out = decode_lstring(&ctx, &subrecord("DESC", data, 0));
         assert_eq!(out.get("Description"), Some(&Value::Null));
+    }
+
+    /// Inline text must decode to what the snapshot's UTF-8 string table
+    /// holds for the same ID, or every such string looks changed when the
+    /// Localized flag flips: whitespace after the prefix is kept, and the
+    /// bytes are Windows-1252 (FO76's `¬` legendary star glyph, `•` bullets).
+    #[test]
+    fn inline_lstring_decodes_like_the_string_table() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let cases: [(&[u8], &str); 3] = [
+            (b"<ID=000359F8> days", " days"),
+            (b"<ID=610217FF>LEGENDARY MOD \xac\xac", "LEGENDARY MOD ¬¬"),
+            (b"\x95\x93Quote\x94 \x81", "•“Quote” \u{81}"),
+        ];
+        for (raw, want) in cases {
+            let mut data = raw.to_vec();
+            data.push(0);
+            let out = decode_lstring(&ctx, &subrecord("DESC", data, 0));
+            assert_eq!(out.get("Description"), Some(&json!(want)), "{raw:?}");
+        }
     }
 
     /// Fix E regression: a sig-bearing `Unused` member (Pascal
