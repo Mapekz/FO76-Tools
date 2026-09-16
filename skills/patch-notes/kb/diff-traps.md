@@ -1,142 +1,153 @@
 # Diff traps
 
-Things that look like a change but aren't, plus the false positives our own lints produce. Read
-this **before** writing up any diff row. Companion file: `mechanics.md`.
-
-When you hit one of these the correct output is usually *nothing* — or a single "under the hood"
-line. Never a gameplay claim.
-
-Same entry format as `mechanics.md`: a claim as the heading, 2-4 sentences, one worked example,
-one verified line. No decision history.
+Diff rows that look like changes but aren't, and the known false positives of our own lints.
+Check a row here **before** writing it up: a match produces no bullet, at most one "under the
+hood" line, never a gameplay claim. Entries follow `mechanics.md`'s entry format; game mechanics
+live there.
 
 ---
 
 # Serialization & schema-population churn
 
-## Positional array reindex churn is a reserialization artifact
+## Run the permutation test before reading any array diff
 
-Many `_array_diff` `changed` entries whose from/to field sets are identical but permuted to new
-indices are not new content. **Confirm the same value multiset exists on both sides before
-reporting** — compare the serialized multiset, don't eyeball it.
+Positional and keyed `_array_diff` entries often only move elements between slots. **Permutation
+test:** serialize each changed element (or each subpath's from/to values) into a multiset per
+side; matching multisets mean nothing changed. Seen on VMAD `scripts[]`/`script_fragments`/alias
+slots, RACE `Attacks[]`/`Bone Scale Data[]`, LCTN `Master Reference`/`Master Unique NPCs`, NPC_
+`Attacks[]` and PERK `Effects`. RACE shows mirrored numeric pairs (a `Damage Mult` 1.0 → 1.5 at
+one index, the reverse at another); NPC_ `Attacks[]` shows only `Attack Event` string changes, so
+a missing mirrored pair proves nothing.
 
-Seen in VMAD `scripts[]`, VMAD `script_fragments`, VMAD alias/property name-casing slots, RACE
-`Attacks[]` / `Bone Scale Data[]`, LCTN `Master Reference` / `Master Unique NPCs`, and NPC_
-`Attacks[]`.
-
-**VMAD `scripts[]` is the highest-risk surface, because the false positive reads as a feature.**
-A permuted script list looks exactly like "a bespoke script replaced the generic one" — the diff
-shows `name` changing at an index, and the two scripts at that index have different property
-counts, which then reads as "properties 3 → 6." Both readings are artifacts of comparing two
-different scripts that happen to share a slot. **Compare script lists as a name multiset with
-per-script property counts, never index by index.** A script named in the *from* side is only
-removed if its name is absent from the whole *to* side. Corollary: globals or aliases bound by a
-script that merely moved are not new bindings — check whether the target records existed in the
-old snapshot before calling the logic new.
-
-The tell-tale differs by record type. RACE-style shows mirrored numeric pairs (a `Damage Mult` 1.0
-→ 1.5 at one index paired with the exact reverse elsewhere). **NPC_ `Attacks[]` shows no mirrored
-pair** — creature attack entries often share identical Attack Data and differ only in `Attack
-Event` (`meleeStart_N` / `_Mirrored`), so it surfaces as a wave of string changes instead. Absence
-of the mirrored tell is not evidence against the artifact.
-
-A related false positive inside `Attacks[].Conditions`: `Condition Data / Parameter 1` on
-`IsPreviousMeleeAttackEvent` is a raw string-pointer int that shifts whenever the record is
-re-serialized; the decoded value is the sibling `Parameter #1` (the attack-event name). A
-`Parameter 1` delta with `Parameter #1` unchanged is not a change. Example: Sheepsquatch
-(0x00479D50), 39 attacks, every `Parameter 1` moved, no event name moved.
-
-**Example:** 20260717→20260724, 17 creature NPC_ records (EncMolerat03 0x001832F8, three
-WendigoColossusSpawn variants, DEL_E09A_EncUltraciteAbomination, five RD01_Enc05_* Ultragenetic
-creatures, three Burning and two Emperor Radscorpion variants, HTO_LvlMoleMiner_Molerat_BroodMother)
-had `Attacks` as their only changed path; bulk-getting both sides proved the multiset identical in
-all 17, order alone differing.
-
-**Example (VMAD `scripts[]`):** QUST `Burn_BountyHunt_Headhunt` (0x007EBDF4) showed
-`Virtual Machine Adapter / scripts` as its only changed path, with
-`defaultquestencounterwavescript` at index 0 replaced by
-`Burn:Burn_Bounty:Burn_Bounty_HeadhuntSpawnScript`. Both sides in fact carry the identical six
-scripts with identical property counts (3, 6, 12, 2, 5, 5) — the generic wave script moved to
-index 5 and the Head Hunt spawn script moved up from index 1. The three
-`Burn_BountyHunt_RecentHeadhuntGang_0N` globals it binds (0x00833A0A–0C) already existed at −1.0
-in the old snapshot, so no anti-repeat logic was added.
+**Example:** 20260717→20260724, 17 creature NPC_ records (e.g. EncMolerat03 0x001832F8) had
+`Attacks` as their only changed path; both sides held identical multisets.
 *verified 2026-07-24 vs 20260724*
+
+## VMAD `scripts[]` compares as a name multiset, never by index
+
+A permuted script list reads as a feature: "a bespoke script replaced the generic one, properties
+3 → 6", when two different scripts merely share a slot. Compare script names with per-script
+property counts; a script is removed only if its name is absent from the whole new side. Globals
+or aliases bound by a script that moved are not new bindings: check they exist in the old snapshot.
+
+**Example:** QUST `Burn_BountyHunt_Headhunt` (0x007EBDF4) carries the same six scripts (property
+counts 3, 6, 12, 2, 5, 5) reordered; its `Burn_BountyHunt_RecentHeadhuntGang_0N` globals
+(0x00833A0A–0C) already existed at −1.0.
+*verified 2026-07-24 vs 20260724*
+
+## PERK effect `Rank`, `Tab Count` and `Actor Value, Float` are bookkeeping
+
+After the permutation test, three PERK effect fields are noise either way. `Entry Point / Perk
+Condition Tab Count` shifting is editor metadata. `Actor Value, Float` appearing while `Float` and
+`Function Parameter 3 (Actor Value)` go null is one schema struct replacing two fields. `Effect
+Header / Rank` is not a rank gate: live single-rank perks carry 0, 1, 10, 40, 70/71 or 153
+(Retaliator's `RTSV_StormRender_Rebuttal` 0x008DB74B has its ×1.4 row at 1), and ranks are
+separate PERK records, so never call a row rank-locked or inert from it.
+
+**Example:** `PlayerPerk_Spotlight` (0x0046C7CF) reported 10 of 18 effect rows changed; both sides
+carry the same ten `Ab_Spotlight_*` abilities plus eight empty slots.
+*verified 2026-09-14 vs 20260903*
+
+## `Parameter 1` on `IsPreviousMeleeAttackEvent` is a string pointer
+
+That condition's `Condition Data / Parameter 1` is a raw string offset that shifts on every
+re-serialization; the decoded value is the sibling `Parameter #1` (the attack-event name). A
+`Parameter 1` delta with `Parameter #1` unchanged is no change.
+
+**Example:** Sheepsquatch (0x00479D50): all 39 attacks' `Parameter 1` moved, no event name did.
+*verified 2026-07-24 vs 20260724*
+
+## REGN `Region Areas` point lists re-serialize reversed or rotated
+
+A REGN diff with every `Points[N]` X/Y changed is usually the same polygon with its winding
+reversed and its start point rotated, within ≤10 units of jitter. Compare each area as a cyclic
+point sequence in both directions before calling a boundary redrawn.
+
+**Example:** 20260903→20260914, 96 of 97 changed Skyline Valley/Burning Springs region areas
+matched after reversal/rotation (max deviation 9.91); only `StormObjectRegion_Forest01`
+(0x006FCB0B) moved.
+*verified 2026-09-14 vs 20260914*
+
+## Cross-build pairs carry fixed re-serialization signatures
+
+When the two snapshots' TES4 header `Version` differs (e.g. 279 → 283), skip these:
+- SPEL/ENCH/PERK effect rows gain `Effect Item Data / _unknown 2` (eight zero bytes) while
+  `Effect Flags`, `Cooldown Duration`, `Effect ID` and the record's `Max Item ID` go null. The
+  rows' magnitudes, durations and conditions stay byte-identical, so a move there is a real
+  candidate; `Area` is unreliable (heterogeneous values landing on one number is the tell).
+- PERK `Effect Header / Rank` renumbered, so keyed diffs pair the wrong entries and PERK
+  `Float`/`Perk Entry ID` "changes" are fake until the permutation test or a live `get` says
+  otherwise; `Perk Condition Tab Count` 4 → 3.
+- OMOD `Properties[] / Value 2` 2 → 3; script `extra_bind_data_version` 4 → 3 and script-name
+  case normalization; QUST objective flag bit 0x10 cleared; INFO `Previous INFO` and REFR `Layer`
+  relinks.
+- WEAP `Sneak Attack Multiplier` and OMOD `Attribute Descriptor Keywords` appearing or vanishing
+  wholesale. On a same-build pair, `Attribute Descriptor Keywords` changes are real data.
+
+**Example:** 20260821→20260903 across 51 unrelated ability spells (e.g. `abDogmeatHealthBonus`
+0x00215CD3); `Area` 100 → 0 on `DetectLifePATargetCloakSpell` (0x00247A41).
+*verified 2026-09-14 vs 20260821/20260903*
+
+## `Value 2` on a FormID,Int property is never read
+
+On a `Value Type = FormID,Int` OMOD property (Keywords, MaterialSwaps, ImpactDataSet, ZoomData,
+ModelSwap), `Value 1` holds the FormID and `Value 2` carries no meaning, so any `Value 2` delta
+there is noise, including the form_version pair `Step: 0.0 → null` with `Value 2: 1 → 3` that
+repeats across unrelated records. On a property whose `Value 2` is read, a lone change is real if
+it diverges from every sibling carrying the same `Property` within one snapshot (flag it
+Unconfirmed). The same holds inside ARMO/WEAP `Object Template / Combinations[]` properties.
+
+**Example:** 20260710→20260717, `Step`/`Value 2` churn on ARMO colour-palette swaps, Letterman's
+Jacket, Vault 118 Jumpsuit and OMOD Bowling Ball Launcher.
+*verified 2026-07-22 vs 20260717; FormID,Int rule found 2026-09-14*
 
 ## `Value Currency` null → Caps001 is schema population
 
-A `Value Currency` field appearing from null to `0x0000000F (CNCY: Caps001 "Cap")` across a huge
-range of unrelated purchasable WEAP/ARMO/MISC records is a newly-decoded field defaulting to the
-universal currency — never anything else observed. Not an economy story.
+A `Value Currency` field appearing as `0x0000000F (CNCY: Caps001 "Cap")` across unrelated
+purchasable WEAP/ARMO/MISC records is a newly decoded field defaulting to the universal currency.
+No other currency has been observed there; it is not an economy story.
 *verified 2026-07-22 vs 20260717*
-
-## `Step: 0.0 → null` paired with `Value 2: 1 → 3` is serialization noise
-
-This exact pair on `Material Swaps`-style OMOD-Properties / Object-Mod-Template-Item entries,
-appearing identically across dozens of unrelated records with no other content change, is the
-signature of a global serialization-format change from a form_version bump. Don't read the `1 → 3`
-as a real multiplier change without an independent live cross-check. A lone `Value 2` change with
-no `Step` field present (or in either direction, not just 1→3) is not automatically this artifact —
-pull every sibling record sharing that exact `Property` name; if they agree on one value and yours
-diverges, it's a real outlier worth an Unconfirmed flag, not noise to drop. Run that sibling test
-*within one snapshot*: on a `Value Type = FormID,Int` property (Keywords, Material Swaps,
-ImpactDataSet, ZoomData, ModelSwap) Value 1 carries the FormID and Value 2's int is never read, so
-if unrelated records in the same snapshot already disagree on it the slot carries no meaning.
-This holds inside ARMO/WEAP `Object Template / Combinations[].Object Mod Template Item / Properties`
-too.
-
-**Example:** 20260710→20260717 across ARMO colour-palette swaps, Letterman's Jacket, Dirty Postman
-Uniform, Brotherhood Scribe Outfit, Laundered Dresses, Grafton Monsters Jacket, Keep Out Backpack,
-Vault 118 Jumpsuit, and OMOD Bowling Ball Launcher. Counter-example 20260803: Gatling Gun's
-Irradiated Paint (0x007AE53F) `Value 2` 3→1 while all 13 sibling Irradiated/Gatling paint OMODs
-stayed at 3 — a genuine outlier, flagged Unconfirmed rather than dropped.
-*verified 2026-08-03 vs 20260803*
 
 ## ARMO/ARMA `First Person Flags` converging to one value is schema population
 
-When unrelated ARMO/ARMA records' `Biped Body Template / First Person Flags` collapse from
-heterogeneous multi-flag sets to one identical value (e.g. `0x8000000`) in a single patch, it's
-schema population, not a per-item first-person clipping fix — heterogeneous "before" values
-converging on one "after" is the tell. The field's `dangling_ref` lint hits are also false
-positives: it renders like a FormID but is a bitfield (same shape as NPC_ `Attack Flags`).
+Unrelated ARMO/ARMA records' `Biped Body Template / First Person Flags` collapsing from
+heterogeneous multi-flag sets to one identical value in one patch is schema population, not a
+clipping fix. The field is a bitfield, so its `dangling_ref` hits are false positives too.
 
-**Example:** 20260814 — Wading Jacket (0x0089A8B2) and Enclave Scientist Outfit (0x008D502D) both
-land on `0x8000000` from different values; ARMA 0x008D502C lands on `0x4900F838`, flagged
-`dangling_ref`.
+**Example:** 20260814, Wading Jacket (0x0089A8B2) and Enclave Scientist Outfit (0x008D502D) both
+land on `0x8000000` from different values.
 *verified 2026-08-15 vs 20260814*
 
 ## The QUST schema-population cluster
 
-Dozens of unrelated public-event-style QUSTs going from null to all-default on this exact cluster
-in one diff: `Actor Reserve Flags` (none), `Actor Reserve Type` (None), `Public Event Data` (Very
-Easy / 0 / 0.0), `QQSD - Unknown 4 bytes` (00000000), `QTFS (Repeat Limit?)` (65535 = no limit),
-`Quest Modules` (one empty struct), `Quest Start Data` (all-zero hex), and `General / Flags`
-gaining exactly `Has Dialogue Data` (raw value +0x8000). Every value is a schema default, and it
-co-occurs with the positional-reindex churn above on the same records. Treat the whole cluster as
-form_version schema population **unless a field in it carries a non-default value**. It also runs
-in reverse (populated defaults collapsing to null) on old hub QUSTs, dragging 100+ satellite
-TERM/ACTI/MESG records whose only changes are `Unknown CTRN`/Enlighten padding/`Activator Can Be
-Instanced` — still churn (QUST `EMS` 0x0012D5B8 + 176 satellites on 20260903).
+Unrelated QUSTs going null → default on this cluster are form_version population **unless a field
+carries a non-default value**: `Actor Reserve Flags` (none), `Actor Reserve Type` (None), `Public
+Event Data` (Very Easy / 0 / 0.0), `QQSD - Unknown 4 bytes` (00000000), `QTFS (Repeat Limit?)`
+(65535), `Quest Modules` (one empty struct), `Quest Start Data` (all-zero hex), and `General /
+Flags` gaining `Has Dialogue Data` (+0x8000). It co-occurs with permutation churn and also runs in
+reverse on old hub QUSTs, dragging satellite TERM/ACTI/MESG records whose only changes are
+`Unknown CTRN`, Enlighten padding or `Activator Can Be Instanced`.
+
+**Example:** QUST `EMS` (0x0012D5B8) plus 176 satellites on 20260903.
 *verified 2026-07-22 vs 20260717*
+
+## Undecoded blobs that change on every save are bookkeeping
+
+CELL `Unknown 2` is a little-endian u64 Unix timestamp (a last-saved stamp), and ACTI/TACT/TERM
+`Unknown CTRN` bumps only its ID bytes. Neither carries gameplay.
+
+**Example:** 20260814→20260821, 1,484 cells' `Unknown 2` moved from 2026-06 to 2026-08.
+*verified 2026-08-28 vs 20260821*
 
 ## WEAP `Animation *` fields are cosmetic, not gameplay speed
 
 `Data / Animation Attack Seconds`, `RGW3 / Animation Reload Seconds`, `Bolt Draw Speed` and
-`Animation Fire Seconds` are animation-asset timing metadata, decoupled from the DPS-affecting
-stats. Live-checking Combat Knife and Hunting Rifle across 20260710→20260717 showed `Speed`,
-`Reload Speed` and `Melee Speed` byte-for-byte unchanged while the `Animation *` family moved (many
-melee weapons converging on exactly 1.1388938) across a large batch of starter weapons. Related: a `RGW2`/`FNAM` → `RGW3` struct
-rename rides along with this churn — a naming shuffle, not new data.
+`Animation Fire Seconds` are animation-asset timing, decoupled from `Speed`, `Reload Speed` and
+`Melee Speed`. A `RGW2`/`FNAM` → `RGW3` struct rename riding along is a naming shuffle.
+
+**Example:** 20260710→20260717, Combat Knife and Hunting Rifle kept `Speed`/`Reload Speed`/`Melee
+Speed` byte-identical while many melee weapons' `Animation *` values converged on 1.1388938.
 *verified 2026-07-22 vs 20260717*
-
-## REGN `Region Areas` point lists re-serialize reversed or rotated
-
-A REGN diff with every `Points[N]` X/Y changed is usually the same polygon with its winding reversed
-and its start point rotated, within ≤10 units of jitter. Compare each area as a cyclic point
-sequence in both directions before calling a boundary redrawn.
-
-**Example:** 20260903→20260914, 96 of 97 changed Skyline Valley/Burning Springs region areas
-matched after reversal/rotation (max deviation 9.91); only `StormObjectRegion_Forest01`
-(0x006FCB0B) actually moved.
-*verified 2026-09-14 vs 20260914*
 
 ---
 
@@ -144,39 +155,30 @@ matched after reversal/rotation (max deviation 9.91); only `StormObjectRegion_Fo
 
 ## A `Localized` flag flip changes how text is stored, not what it says
 
-PTS builds keep text inline until content freezes, then read it from the string tables, so the
-TES4 `Localized` flag (0x80) flips every few months (on at 20260717, off at 20260903). Inline text
-is `<ID=xxxxxxxx>` plus Windows-1252 bytes; the decoder turns it into the same text the UTF-8
-tables hold, and the diff drops the tables' NBSP → space and LF → CRLF rewrites (counted as
-`localization_flip_text` in `comprehensive.md`). A text change on a flip pair is therefore real.
-If one differs only in non-ASCII glyphs, compare both snapshots' string tables by ID before
-reporting it.
+The TES4 `Localized` flag (0x80) flips every few months: PTS builds keep text inline until content
+freezes. The decoder renders inline text identically to the string tables and the diff drops the
+tables' NBSP → space and LF → CRLF rewrites, so a text change on a flip pair is real. If one
+differs only in non-ASCII glyphs, compare both snapshots' string tables by ID before reporting it.
 
 **Example:** LGDI `RA_LegendaryItems_Weapons_Rank4` (0x00863A9A) reads `¬¬¬¬ Normal Weapon Rewards`
-on 20260821 (table) and on 20260903 (inline `<ID=3929B8F4>`), so it doesn't appear in the diff.
+from the table on 20260821 and inline on 20260903, and does not appear in the diff.
 *verified 2026-09-15 vs 20260821/20260903*
 
-## Terminal stat tokens migrated to `<STAT=X>` syntax
+## Terminal `<STAT=X>` tokens are renderer substitutions
 
-The personal-terminal "My Stats" family (`X01X_PlayerTerminal_Stats*`) changed its
-stat-substitution syntax from `<Token.Name=FishCaught>` to `<STAT=Fish Caught>`, with a
-parameterized variant `<STAT=Fish Caught: 007CE4D3>` where the trailing hex is the counted object's
-own FormID — so one generic counter key serves 62 fish species (combat instead uses one named key
-per line, `<STAT=Deathclaws Killed>`). Substitution is resolved by the terminal-text renderer and
-these TERMs carry no VMAD, so there is nothing script-side to chase. Expect every stat line to look
-changed on syntax alone.
+Personal-terminal "My Stats" TERMs (`X01X_PlayerTerminal_Stats*`) use `<STAT=Fish Caught>`, or
+`<STAT=Fish Caught: 007CE4D3>` where the trailing hex is the counted object's FormID. The terminal
+renderer resolves them and these TERMs carry no VMAD, so there is nothing to chase. A migration
+from the older `<Token.Name=FishCaught>` form makes every stat line look changed.
 *verified 2026-07-24 vs 20260724*
 
-## Description text lags the effect chain — verify the magnitude, not the string
+## Description text lags the effect chain: verify the magnitude, not the string
 
-An OMOD/ENCH description changing its stated magnitude does **not** imply the effect changed. Chase
-the actual magnitude before calling it a buff or nerf — and see `mechanics.md` on `Magnitude: 0.0`
-beside a curve table, because "the magnitude" is not always the `Magnitude` field.
+A description changing its stated magnitude does not imply the effect changed. Chase the actual
+magnitude (which may be a curve or GLOB, see `mechanics.md`) before calling a buff or nerf.
 
-**Example:** 20260717, the Head Hunts `Raging` armor mod (`HTO_mod_Legendary_Armor4_Raging`,
-0x0085B997) rewrote "Upon being hit, deal +3% Damage for 10 seconds" → "Gain 5% Damage for 10
-Seconds When Hit", but its PERK → SPEL → MGEF chain was untouched and carries magnitude 5.0 with no
-3.0 anywhere. The old text was wrong; this is a correction, not a buff.
+**Example:** 20260717, `HTO_mod_Legendary_Armor4_Raging` (0x0085B997) text "+3% Damage" → "5%
+Damage", but its PERK → SPEL → MGEF chain was untouched at 5.0: a text correction, not a buff.
 *verified 2026-07-22 vs 20260717*
 
 ---
@@ -185,256 +187,201 @@ Seconds When Hit", but its PERK → SPEL → MGEF chain was untouched and carrie
 
 ## Leveled-list `Chance None` is inverse
 
-A LVLI entry's `Chance None Value` / `Chance None Global` is the percent chance of getting
-**nothing** from that slot; the referenced item's own odds are `100 − Chance None`. A GLOB feeding
-`Chance None Global` going **up** is therefore a **nerf**. Weighted variant: when sibling entries
-each carry their own `Chance None Global` and the list's `Use All` flag is cleared (replaced by an
-undecoded bit, e.g. `0x200`), the globals read as relative weights for one weighted pick — often
-summing to a round total like 1000 — not inverse percentages; treat them as a ratio (seen on
-`HTO_crLLS_Rewards_Legendary_Mob_Weapons_Melee` 0x008F2B1A, weights 470/330/200, in 20260814).
+A LVLI entry's `Chance None Value`/`Chance None Global` is the percent chance of **nothing**; the
+item's odds are `100 − Chance None`, so a feeding GLOB going **up** is a **nerf**. Exception: when
+sibling entries each carry their own `Chance None Global` and the list's `Use All` flag is cleared
+(replaced by an undecoded bit such as `0x200`), the globals are relative weights for one pick,
+often summing to a round total; read them as a ratio (`HTO_crLLS_Rewards_Legendary_Mob_Weapons_Melee`
+0x008F2B1A: 470/330/200).
 
-**Example:** `UniqueWeaponSkinDropChance` (0x008FF251) 80.0 → 90.0 between 20260710 and 20260717 —
-a unique weapon-skin recipe's real odds fell 20% → 10%.
+**Example:** `UniqueWeaponSkinDropChance` (0x008FF251) 80.0 → 90.0: the skin recipe's odds fell
+20% → 10%.
 *verified 2026-07-22 vs 20260717; weighted variant 2026-08-15 vs 20260814*
 
-## A SPECIAL `Maximum Value` of float-max means uncapped, not missing data
+## A reward row gated on `GetRandomPercent <=` a 0-valued GLOB was already off
 
-Perception (0x000002C3), Charisma (0x000002C5) and Intelligence (0x000002C6) were already capped at
-100.0. Strength (0x000002C2), Endurance (0x000002C4), Agility (0x000002C7) and Luck (0x000002C8)
-carried `3.4028235e+38` until 20260717, when all four were set to 100.0 — so all seven SPECIALs now
-share one ceiling.
-*verified 2026-07-22 vs 20260717*
+When a GMRW/LVLI loses a row whose only condition is `GetRandomPercent <= <GLOB>` and that GLOB is
+0.0 on the old side, the removal cleans up a drop that could never roll. Get the GLOB on the OLD
+snapshot before writing any loss; a `DEL_`/`zzz` rename of the GLOB in the same diff confirms it.
 
-## New legendary effects arrive as renames of recycled Bounty FormIDs
+**Example:** 20260914, seven Workshop Attack/Pitt GMRWs (e.g. 0x0063124B) drop
+`P62_LLS_Rewards_TheDrifter_ActivationKeyCard` (0x00824D11), gated on GLOBs all at 0.0.
+*verified 2026-09-14 vs 20260903*
 
-Bethesda reuses FormIDs from long-dead `zzz_BOUNTY_`-prefixed legendary weapon mods/COBJ recipes
-(the retired Bounty event) for brand-new legendary content instead of allocating fresh ones — so
-they show up in a diff as **"changed" EditorID/Name renames, not "added" records**. When chasing a
-changed legendary OMOD/COBJ with a `zzz_BOUNTY_` prev_editor_id, don't assume the old effect was
-ever live or obtainable; check the old snapshot's description and property list before writing what
-it "used to do".
+## A leveled list's newly appended unconditional entry is a safety net
 
-**Example:** 20260710 — `zzz_BOUNTY_mod_Legendary_Weapon2_Insane` (0x0083DA6D) → Cryologist's,
-`..._Melee_Pulsating` (0x00849316) → Pyro-Technician's, `..._Guns_Rebate` (0x00849317) →
-Poisoner's, all retargeted to `ma_legendarycrafting_weapon`.
+When every entry in an LVLN/LVLI carries a tier or `LocationHasKeyword` condition and a new entry
+arrives with **no** Conditions, it is a catch-all so the list never returns nothing, not a new
+tier. Confirm every other entry kept its condition.
+
+**Example:** all eight Infestation (`HTO_`) faction boss LVLNs (e.g.
+`HTO_LChar_Faction_BloodEagle_Boss` 0x0085A386) gained an unconditioned `_T5_Fallback` entry.
+*verified 2026-08-03 vs 20260803*
+
+## Two CNDFs testing exclusive GLOB states in one Conditions list can't both be true
+
+A flat `Conditions` array's AND/OR combination isn't reliably invertible by hand when two
+referenced CNDFs require different values of the same GLOB. Report the named conditions and any
+unchanged baseline number, and flag the combined semantics Unconfirmed.
+
+**Example:** `SDOW_DailyOps_LL_Rewards_RepeatTier` (0x008FCEA5) combines a 25% `GetRandomPercent`
+with `SDOW_DailyOps_SlasherForced_CNDF` (Selection_Index==1) and `..._SlasherPref_CNDF` (==2).
+*verified 2026-08-03 vs 20260803*
+
+## New content often arrives as renames of recycled records
+
+A diff shows it as **changed** EditorID/Name, not added. Retired `zzz_BOUNTY_` legendary OMODs and
+COBJs get reused for new legendary effects, so never assume the old side was live: read its
+description and properties before writing what it "used to do". A seasonal quest made permanent
+is a QUST rename plus a `QTFS (Repeat Limit?)` change (65535 = no limit).
+
+**Example:** 20260710, `zzz_BOUNTY_mod_Legendary_Weapon2_Insane` (0x0083DA6D) → Cryologist's;
+`SDOW_SQ01_Graves_Repeatable` (0x008F1665) "(Seasonal) Laid to Unrest" → "(Repeatable) Disturbed
+Grave", QTFS 65535 → 50.
 *verified 2026-07-14 vs 20260710*
 
 ## An ENCH dropping N → N−1 effects is often a consolidation, not a nerf
 
-When a unique-mod ENCH loses an effect and a surviving effect is a generic/shared MGEF also used
-elsewhere (check `refs`), suspect a Script→native archetype consolidation: the bespoke Script MGEF
-gets rewritten to the native archetype, making the shared one redundant.
+When a unique-mod ENCH loses an effect and the survivor is a shared MGEF (check `refs`), suspect a
+Script → native archetype rewrite: the bespoke MGEF went native and made the shared one redundant.
 
-**Example:** `ench_QuickFix` (0x0091995B, Switchblade "The Quick Fix") carried shared MGEF
-`AbPerkFortifyMeleeSpeedEffect` (0x003E9567, native Peak Value Modifier on AVIF `weaponSpeedMult`)
-plus its own `AbQucikFix_Description` (0x0091995C, Script archetype). In 20260710 the bespoke MGEF
-became native on the same AV (flags 0x8A02) and the shared one was dropped, 2 effects → 1. Same
-curve both sides: `UniqueMods\Bonus_QuickFix.json`, AddictionCount → swing speed (0=+0%, 10=+50%).
+**Example:** 20260710, `ench_QuickFix` (0x0091995B): `AbQucikFix_Description` (0x0091995C) became
+native on `weaponSpeedMult` and shared `AbPerkFortifyMeleeSpeedEffect` (0x003E9567) was dropped;
+same curve `UniqueMods\Bonus_QuickFix.json` both sides.
 *verified 2026-07-14 vs 20260710*
 
 ## A named unique OMOD can be cosmetic-only for patches at a time
 
-Don't assume a named unique weapon mod already has a live mechanic just because its
-`CustomItem_SpeciallyNamed` + `CustomItemName_*` keyword tagging, its reward leveled-list entry and
-a flavorful `Name` are all wired up. Always diff the OMOD's actual `Data/Properties` count and
-contents against the prior snapshot before describing a change as a magnitude tweak — it may be the
-mod's first functional effect ever.
+`CustomItem_SpeciallyNamed`/`CustomItemName_*` tagging, a reward-list entry and a flavorful name
+don't prove a live mechanic. Diff the OMOD's `Data/Properties` count and contents against the old
+snapshot before calling a change a tweak: it may be the mod's first functional effect.
 
-**Example:** `mod_Custom_MintyBreather` had exactly that shape — 2 cosmetic keyword-ADDs, zero
-functional properties — since at least 20260710; 20260717 added its first gameplay property (a
-Perks ADD granting a heal-on-friendly-hit perk, repurposing an unused PERK record via an
-EditorID/Description rename plus flipping its `Hidden` flag).
+**Example:** `mod_Custom_MintyBreather` had only two cosmetic keyword ADDs until 20260717 added a
+Perks ADD granting a repurposed, un-hidden PERK.
 *verified 2026-07-22 vs 20260717*
 
-## A paint OMOD losing `ma_Melee_Appearance` is pool-scoping, not a stat change
+## A paint OMOD losing its `ma_*_Appearance` tag is pool-scoping, not a stat change
 
-`ma_Melee_Appearance` (0x005117B1) is the generic "any melee weapon cosmetic" pool tag; guns use
-the analogous `ma_Gun_Appearance` (0x0037D0B2). A unique/quest-reward paint losing one — via a
-direct `Target OMOD Keywords` removal or a new `REM Keywords` property — likely scopes that paint
-to its own dedicated source instead of the shared random-cosmetic pool. Flag this shape (keyword
-removal with no other property change, on a unique-named paint) as a pool-scoping signal, not a
-numeric change; the downstream obtainability isn't provable from the diff alone. A `REM Keywords`
-can also target the *wrong* pool tag as a bug — a REM of `ma_Melee_Appearance` on a gun mod is a
-no-op, and a patch swapping it to `ma_Gun_Appearance` is the real pool-scoping event, not the
-REM's mere presence.
+`ma_Melee_Appearance` (0x005117B1) and `ma_Gun_Appearance` (0x0037D0B2) tag the shared random
+cosmetic pools. A unique paint losing one (keyword removal or a new `REM Keywords`, no other
+change) is scoped to its own source; flag the signal, since obtainability isn't provable from the
+diff. A REM of the wrong pool tag is a no-op, so a swap to the right tag is the real scoping event.
 
-**Example:** 20260717 — Blue Ridge Branding Iron Paint, Cultist Piercer Paint, Head Hunter Paint.
-Gun-side fix 20260814: `mod_custom_HolyFire_Effect` (0x006E06A3), `mod_custom_TheKabloom_Effect`
-(0x006E2242), `mod_custom_EldersMark_Effect` (0x006E2246) corrected `ma_Melee_Appearance` →
+**Example:** 20260717, Blue Ridge Branding Iron, Cultist Piercer and Head Hunter Paint lost
+`ma_Melee_Appearance`; 20260814, gun paints `mod_custom_HolyFire_Effect` (0x006E06A3),
+`..._TheKabloom_Effect` (0x006E2242) and `..._EldersMark_Effect` (0x006E2246) swapped their REM to
 `ma_Gun_Appearance`.
-*verified 2026-07-22 vs 20260717; gun analog 2026-08-15 vs 20260814*
+*verified 2026-07-22 vs 20260717; gun swap 2026-08-15 vs 20260814*
 
-## The Glowing-Creature leveling migration is not Scorched-exclusive
+## A legendary-combination `Attach Point Index` fix is a mesh-attach correction
 
-The `crGlowingCreatureLevelAdjust` perk (entry point "Mod NPC Normalized Level", ADD +10) plus a
-swap onto dedicated `Renorm_{Max,Min}LVL_GlowingCreature` GLOBs (min 1 / max 100) and a generic
-`CT_Creatures_Health_Universal_TierNN` health curve lands on unrelated NPC categories — in
-20260717 on Prime Cave Cricket and Prime Gulper, **and on Grahm**, a friendly non-combat vendor.
-Read it as a broad leveling-system migration (old Actor-Scaling-Info + Renorm-offset GLOB model →
-perk-based normalized-level adjustment) rolling out record-by-record, not a themed creature rework.
-The `zzz`-prefixed legacy duplicates were left on the old system, confirming the live records are
-the ones being migrated.
-*verified 2026-07-22 vs 20260717*
+Within `Object Template / Combinations[N]...Includes[]`, base-part mods share `Attach Point Index:
+0`; a legendary row at `1` is a visual attachment outlier, and correcting it is cosmetic plumbing.
 
-## A leveled list's newly-appended unconditional entry is a safety net, not a new tier
-
-When every existing entry in an LVLN/LVLI carries a `LocationHasKeyword`/tier condition and a new
-entry is appended with **no** Conditions, it's a catch-all so the list never returns nothing when
-no condition matches — not a new selectable tier or a stealth buff. Confirm by checking that every
-other entry keeps its own condition unchanged.
-
-**Example:** All eight Infestation (`HTO_`) per-faction boss LVLNs (e.g.
-`HTO_LChar_Faction_BloodEagle_Boss`, 0x0085A386) gained a `_T5_Fallback` NPC_ entry with no
-Conditions, appended after their five keyword-gated Tier 1–5 entries.
+**Example:** 20260803, seven base weapons (Hunting Rifle, Knuckles, Laser Gun, Sickle, .44,
+Sledgehammer, Pump Action Shotgun) each had one 1★ Include corrected `1` → `0`.
 *verified 2026-08-03 vs 20260803*
-
-## Two CNDFs testing mutually-exclusive GLOB states in one Conditions list can't both resolve true
-
-A flat `Conditions` array's AND/OR combination isn't reliably invertible by hand when two
-referenced CNDF forms require different values of the same GLOB. Report the named conditions and
-any unchanged baseline number, and flag the combined semantics Unconfirmed rather than asserting
-which branch wins.
-
-**Example:** `SDOW_DailyOps_LL_Rewards_RepeatTier` (0x008FCEA5) combines a 25% `GetRandomPercent`
-with `SDOW_DailyOps_SlasherForced_CNDF` (Selection_Index==1) and `SDOW_DailyOps_SlasherPref_CNDF`
-(Selection_Index==2), which can never both be true in the same evaluation.
-*verified 2026-08-03 vs 20260803*
-
-## A reward row gated on `GetRandomPercent <=` a 0-valued GLOB was already switched off
-
-When a GMRW/LVLI loses a reward row whose only condition is `GetRandomPercent <= <GLOB>` and that
-GLOB is 0.0 on the old side, the removal cleans up a drop that could never roll. Get the GLOB on the
-OLD snapshot before writing any loss; a `DEL_`/`zzz` rename of the GLOB in the same diff confirms it.
-
-**Example:** 20260914, seven Workshop Attack/Pitt GMRWs (e.g. 0x0063124B) drop
-`P62_LLS_Rewards_TheDrifter_ActivationKeyCard` (0x00824D11), gated on GLOBs that were all 0.0.
-*verified 2026-09-14 vs 20260903*
 
 ## Armor/weapon combinations keyed on `ATX_if_tmp_Loadout_*` are Character Boost gear
 
 New `Object Template / Combinations` rows whose `Keywords` hold
-`ATX_if_tmp_Loadout_Level{50,100,150}Boost` are the gear templates for the Atomic Shop Character
-Boost loadout lists, not new craftable variants, and unrelated to any mod or lining rollout in the
-same patch. Resolve the keyword before attributing the rows.
+`ATX_if_tmp_Loadout_Level{50,100,150}Boost` are gear templates for the Atomic Shop Character Boost
+loadout lists, not craftable variants, and unrelated to any mod or lining rollout in the same
+patch. Resolve the keyword before attributing the rows.
 
-**Example:** 20260914, Combat Armor pieces 0x0011D3C3–C7 gain two rows used by
+**Example:** 20260914, Combat Armor pieces 0x0011D3C3–C7 gain rows used by
 `ATX_LL_Loadout_Level100Boost_Armor`/`Level150Boost_Armor` (0x008F4766/0x008F476C).
 *verified 2026-09-14 vs 20260914*
+
+## Creature leveling migrates record by record, and a cross-branch pair shows it reversed
+
+Creatures move from `Actor Scaling Info` Level Min/Max plus `Renorm_*_TierNN` GLOBs and a top-level
+`zzzCT_Creatures_Health_*` curve to perk `crGlowingCreatureLevelAdjust` (0x008464F5, "Mod NPC
+Normalized Level" +10), a Health `Properties[]` entry on `CT_Creatures_Health_Universal_TierNN`,
+and `Renorm_{Max,Min}LVL_GlowingCreature` (min 1, max 100). The rollout spans unrelated NPCs, even friendly
+vendors, so it is not a themed rework; `zzz` duplicates stay on the old system. A snapshot from a
+branch forked before the migration shows the reverse (plus `EncounterSkullIndex` 0x007ADDD9 and
+`Value Currency` dropping): a build fork, not a nerf.
+
+**Example:** 20260717, Prime Cave Cricket, Prime Gulper and the vendor Grahm migrated; 20260821 →
+20260903 (Pets branch) reverted 55 records including `E02A_LvlCaveCricket_Prime` (0x00553710).
+*verified 2026-09-14 vs 20260821/20260903*
+
+## A SPECIAL `Maximum Value` of float-max means uncapped
+
+`3.4028235e+38` is "no cap", not missing data. Since 20260717 all seven SPECIALs share a 100.0
+ceiling (Strength, Endurance, Agility and Luck moved from float-max).
+*verified 2026-07-22 vs 20260717*
 
 ---
 
 # Lint false positives
 
-## `dangling_ref` on NPC_ `Attack Flags` bitfields
+## `dangling_ref` on values that aren't FormIDs
 
-Values `0x80000000`, `0x80000002`, `0x80000004` and `0x80000010` on creature NPC_ records are not
-FormIDs — they are `Attacks[].Attack.Attack Data.Attack Flags.value`, where bit `0x80000000`
-decodes as `Override Data`. Confirmed by enumerating the flags live on 0x005751A0, 0x0078C584 and
-0x0080100A. 32 of 116 lints in one deep slice were this alone. Related: `0xFFFFFFFF` `dangling_ref`
-hits on INFO records are the `Responses[].Response Data.Emotion` enum sentinel (verified on
-0x0092C628–2B), also not a FormID. AVIF `Flags` bitfields misfire the same way: `0x80000800` on `FollowerState`
-(0x00000344) is "Default to 1.0" + "Hardcoded", not a reference. Two more non-FormID sources:
-`0x00000014` is the engine's hardcoded PlayerRef, so any `Condition Data / Reference` with
-`Run On: Reference` targeting it lints as dangling (`PowerArmorImpactEnchantment` 0x0011D53B,
-`DLC01Bot_KnockdownSpell` 0x0010EB2A), and NAVI `Navmesh Info / Edge Links` and `Preferred Edge
-Links` hold navmesh-local link ids rather than FormIDs (NAVI 0x00000FF1).
-*verified 2026-07-24 vs 20260724; AVIF case 2026-09-03; PlayerRef and NAVI cases 2026-09-14*
+These decode as numbers the lint mistakes for references:
+- NPC_ `Attacks[].Attack.Attack Data.Attack Flags` (`0x80000000` = `Override Data`, plus
+  `0x80000002/04/10`), ARMO/ARMA `First Person Flags`, and AVIF `Flags` (`0x80000800` on
+  `FollowerState` 0x00000344 = "Default to 1.0" + "Hardcoded") are bitfields.
+- `0xFFFFFFFF` on INFO `Responses[].Response Data.Emotion` is an enum sentinel (0x0092C628–2B).
+- `0x00000014` is the engine's hardcoded PlayerRef, so a `Run On: Reference` condition targeting it
+  lints (`PowerArmorImpactEnchantment` 0x0011D53B, `DLC01Bot_KnockdownSpell` 0x0010EB2A).
+- NAVI `Navmesh Info / Edge Links` and `Preferred Edge Links` hold navmesh-local link ids (NAVI
+  0x00000FF1).
 
-## `desc_changed_stats_same` on undecoded hex blobs
+**Example:** 32 of 116 lints in one deep slice were NPC_ `Attack Flags` (verified on
+0x005751A0, 0x0078C584, 0x0080100A).
+*verified 2026-07-24 vs 20260724; AVIF 2026-09-03; PlayerRef and NAVI 2026-09-14*
 
-The rule reports "description changed but no numeric stat changed" when the only changed path is an
-undecoded binary field — notably `Unknown CTRN / hex` on TACT/TERM records and `Unknown / hex`. No
-description is involved at all. 77 of 116 lints in one deep slice were this shape (68 CTRN, 9
-Unknown, plus 1 on STAT `Distant LOD` binary blobs). The rule should skip paths ending in `/ hex`
-or flagged `_raw`. Also fires on a bare `Model / Model FileName` swap with no `Description` field
-on the record at all — same fix: check the record's actual description field before trusting the
-lint's premise. Spot-verified on TACT `TEST_ENB_ModusSceneTerminal` (0x00006DB5), whose sole change
-is `Unknown CTRN / hex`, and on `SDOW_MQ02_Graves_GraveActivator` (0x008F1672), a bare
-`GraveActivator01.nif` → `GraveActivator_NoSkeleton.nif` swap with no Description field. A bare
-`Editor ID` or `Filter` rename trips it too (`Fishing_Fish_Small_Axolotl_Gold`, FISH 0x0091391B,
-a zzz rename with no Description).
+## `desc_changed_stats_same` fires on records with no description change
+
+The rule counts any string change with a side longer than 20 characters as a description change,
+so it fires when the only changes are an undecoded blob (`Unknown CTRN / hex` on TACT/TERM,
+`Unknown / hex`, STAT `Distant LOD`), a bare `Model / Model FileName` swap, or an `Editor
+ID`/`Filter` rename. Check that the record has a
+description field that actually changed before trusting the lint.
+
+**Example:** 77 of 116 lints in one deep slice were blob-only; also TACT
+`TEST_ENB_ModusSceneTerminal` (0x00006DB5), `SDOW_MQ02_Graves_GraveActivator` (0x008F1672, model
+swap) and FISH `Fishing_Fish_Small_Axolotl_Gold` (0x0091391B, zzz rename).
 *verified 2026-09-14 vs 20260914*
-
 
 ## `desc_changed_stats_same` misses stats that move through a linked GLOB
 
-The lint only compares fields on the record itself. A description change whose real magnitude
-lives on a referenced Magnitude Global (see mechanics: World Pets GLOB-backed magnitudes) reads as
-"text only" even when the number genuinely moved. Check every `Effect.Magnitude` / `Quantity
-Global` reference before trusting the lint's premise.
+The lint only compares the record's own fields. A description change whose magnitude lives on a
+referenced GLOB (`Effect.Magnitude`, `Quantity Global`) reads as text-only even when the number
+moved; check every such reference before trusting the lint.
 
-**Example:** `WorldPets_Dog_ConsumableBuff` MGEF (0x008B7A75) description "every hour" → "every
-30 min", lint called it text-only; the linked GLOB `WorldPets_ConsumableGiftInterval` moved
-7000.0 → 1801.0.
+**Example:** `WorldPets_Dog_ConsumableBuff` MGEF (0x008B7A75) "every hour" → "every 30 min", called
+text-only; its GLOB `WorldPets_ConsumableGiftInterval` moved 7000.0 → 1801.0.
 *verified 2026-09-03 vs 20260903*
 
-## `unreferenced_perk_rank` on item-granted and Player-attached perks
+## `unreferenced_perk_rank` on perks granted outside a PCRD
 
-Perks granted by an OMOD/ENCH `Perks` property legitimately have no PCRD, and `STAT_BeneficialPerk`
-(0x0018ADAD) is attached directly to the Player NPC_ record (0x00000007). Verify the grant path
-with `refs <perk-id> --type PCRD --paths` instead of calling them orphaned. See `mechanics.md`.
-Some ordinary obtainable perk cards also have no PCRD and no reference of any type, so an empty
-`refs` result never proves a rank is ungrantable on its own — only call a rank orphaned when the
-card is unobtainable in game too. Known members: Lady Killer/Black Widow, Critical Banker,
-Pickpocket, Blitz, Intimidation, I'm Cured!. `LadyKiller01` (0x00019AA3) has zero refs and no
-`LadyKillerCard` record exists, while `Sneak01` (0x0004C935) resolves to `SneakCard` (0x0034409F).
+Perks granted by an OMOD/ENCH `Perks` property have no PCRD, and `STAT_BeneficialPerk`
+(0x0018ADAD) is attached directly to the Player NPC_ (0x00000007); verify with `refs <perk-id>
+--type PCRD --paths`. Some obtainable cards have no PCRD and no reference at all (Lady
+Killer/Black Widow, Critical Banker, Pickpocket, Blitz, Intimidation, I'm Cured!), so an empty
+`refs` never proves a rank ungrantable: call it orphaned only when the card is unobtainable in game.
 
-## `lvli_blocked_entry`'s `quantity_zero` reason is a false positive when the entry has a `Quantity Global`
+**Example:** `LadyKiller01` (0x00019AA3) has zero refs and no `LadyKillerCard` record, while
+`Sneak01` (0x0004C935) resolves to `SneakCard` (0x0034409F).
+*found 2026-09-14*
 
-A `Leveled List Entry` with `Quantity: 0.0` is not dead when it also carries a `Quantity Global` —
-the engine reads the runtime quantity from that global; the flat `Quantity` field is a stale
-placeholder. Confirm by checking sibling entries in the same list for the identical
-zero-Quantity + nonzero-Global shape; if siblings are live, the flagged entry is too.
+## `lvli_blocked_entry`'s `quantity_zero` on an entry that isn't dead
 
-**Example:** `HTO_crLLD_Mob` (0x0085CDB6)'s Scrap entry (0x00893F7D): Quantity 0.0 with
-`Quantity Global` = 3.0, same shape as its confirmed-live ContextualAmmo sibling.
+`Quantity: 0.0` does not disable an entry. With a `Quantity Global` the global is the count and the
+flat field is a stale placeholder; without one, 0 means "use the sublist's own count". Sibling
+entries with the same shape that are known live confirm it.
+
+**Example:** `HTO_crLLD_Mob` (0x0085CDB6)'s Scrap entry (0x00893F7D): Quantity 0.0 with `Quantity
+Global` = 3.0, the same shape as its live ContextualAmmo sibling.
 *verified 2026-08-15 vs 20260814*
 
 ## HAZD `Data / Flags` has an unmapped bit
 
-An unknown flag bit (cleared on 6 hazard clouds in 20260710) with no derivable gameplay meaning,
-and not schema-fixable: xEdit's own `wbDefinitionsFO76.pas` names only bits 0–6, and bit 6 is
-itself "Unknown 6". A flag-only HAZD change has no story.
+A flag-only HAZD change has no story: the changed bit has no derivable meaning, and xEdit's
+`wbDefinitionsFO76.pas` names only bits 0–6, with bit 6 itself "Unknown 6".
+
+**Example:** 20260710, the bit cleared on 6 hazard clouds.
 *verified 2026-07-14 vs 20260710*
-
-## SPEL/ENCH effect rows gaining `Effect Item Data / _unknown 2` is cross-build serialization
-
-On a pair spanning two game builds, every SPEL/ENCH effect row can show eight zero bytes as
-`Effect Item Data / _unknown 2` while `Effect Flags`, `Cooldown Duration`, `Effect ID` and the
-record's `Max Item ID` collapse to null, with magnitudes, durations and conditions byte-identical.
-`Area` values moving in those same rows are unreliable for the same reason; a heterogeneous set of
-`Area` values all landing on one number is the tell.
-
-**Example:** 20260821→20260903 across 51 unrelated ability spells, including
-`abDogmeatHealthBonus` (0x00215CD3) and the eight `MTNM03_ZenSpell*`; `Area` 0 → 21 on nine of
-them and 100 → 0 on `DetectLifePATargetCloakSpell` (0x00247A41).
-*verified 2026-09-14 vs 20260821/20260903*
-
-## PERK `Effects` diffs on a re-serialised build are slot churn, not balance
-
-Test for a permutation before reading a PERK effect diff: collect each subpath's from/to multiset
-across the changed rows, and if they match, the entries only swapped slots. `Perk Entry ID`, entry
-point, function, `Float` and whole `Perk Conditions` lists move together and mirror each other.
-Two co-occurring fields are pure noise either way: `Entry Point / Perk Condition Tab Count`
-shifting by one is editor metadata, and `Actor Value, Float` appearing while `Float` and
-`Function Parameter 3 (Actor Value)` go null is one schema struct replacing two fields. The
-`Effect Header / Rank` byte is not a rank gate either: live single-rank perks carry 0, 1, 10, 40,
-70/71 or 153 there (Retaliator's `RTSV_StormRender_Rebuttal`, 0x008DB74B, has its ×1.4 row at 1),
-so never call a row rank-locked or inert from it; ranks are separate PERK records.
-
-**Example:** `PlayerPerk_Spotlight` (0x0046C7CF) reported 10 of 18 effect rows changed; both sides
-carry the same ten `Ab_Spotlight_*` abilities plus eight empty slots, differing only in order.
-*verified 2026-09-14 vs 20260903*
-
-## A creature-leveling "reversion" on a Pets-branch pair is a build fork, not a nerf
-
-When the newer snapshot is the Pets PTS branch, creature records look rolled back: the Health
-`Properties[]` entry and its `CT_Creatures_Health_Universal_TierNN` curve give way to the legacy
-top-level `Health Curve Table` on a `zzzCT_Creatures_Health_*` curve, `crGlowingCreatureLevelAdjust`
-(0x008464F5) disappears, `Actor Scaling Info` Level Min/Max and `Renorm_*_TierNN` globals return,
-and the `EncounterSkullIndex` (0x007ADDD9) property drops. The branch forked before that migration
-landed. This also reverses the `Value Currency` schema-population trap above, in that direction.
-
-**Example:** 55 records including `E02A_LvlCaveCricket_Prime` (0x00553710); `BobbyPin`
-(0x0000000A) `Value Currency` Caps001 → null is the same fork.
-*verified 2026-09-14 vs 20260821/20260903*

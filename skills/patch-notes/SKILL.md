@@ -25,8 +25,8 @@ drafting locally with the same input/output contracts, and report independent
 review as unavailable rather than presenting self-review as a fresh review.
 
 **Read `skills/patch-notes/kb/pipeline-gotchas.md` before Step 2.** It catalogues the
-ways this pipeline silently reports the wrong thing (string-table resolution, ROLLOUT value
-blindness, diff blind spots) and the recovery step for each. It is orchestrator-only — the deep
+ways this pipeline silently reports the wrong thing or fails (diff blind spots, tiering noise,
+memory and schema failures) and the recovery step for each. It is orchestrator-only — the deep
 writers get `kb/mechanics.md` and `kb/diff-traps.md` instead.
 
 **Any test, sanity-check, or partial run uses a scratch `--out-dir`** (e.g.

@@ -1,256 +1,169 @@
 # Pipeline gotchas (orchestrator only)
 
-Failure modes of the patch-notes pipeline itself — blind spots where the diff silently reports the
-wrong thing, and the recovery step for each. **Not handed to deep writers**: these are checks the
-orchestrator runs while driving `/patch-notes`. Game mechanics live in `mechanics.md`, diff-reading
-traps in `diff-traps.md`.
+Ways the patch-notes pipeline itself silently reports the wrong thing or fails, with the recovery
+for each. Deep writers never see this file; they get `mechanics.md` and `diff-traps.md`, which
+this file points into rather than repeating. Checks the scripts already enforce live in
+`SKILL.md`, not here.
 
-Same entry format: a claim as the heading, the symptom, the fix, one worked example.
+Entry format: a claim as the heading, one context sentence or two, **Symptom:**, **Fix:**, one
+**Example:**, and a `*found <date>*` line.
 
 ---
 
-## Per-snapshot string tables must be matched per side
+# Blind spots: changes the record diff never sees
 
-> **Enforced since 2026-09-12:** `make_patch_notes.py` refuses a shared `--strings-dir` when both snapshots carry their own `strings/`; only the one-side-missing case still needs the banner check.
+## Loose-file edits are invisible to the record diff
 
-Both FO76 snapshots name their ESM `SeventySix.esm`, so a strings directory belonging to snapshot A
-satisfies a "does this dir have string files for token X" check for **both** sides. When that
-happens the newer snapshot's `FULL`/`DESC` lstring IDs resolve against the **older** snapshot's
-table, which silently hides every localized text change and reports stale values as current.
+The diff compares ESM record bytes, so a changed string-table entry behind an unchanged lstring ID,
+or changed curve points behind an unchanged CURV reference, never enters the changed set. Pet XP,
+mutation scaling, legendary magnitudes and most text rewrites live in those files.
 
-**Symptom:** a rename you can see live via two `esm get` calls is absent from the diff, and the
-diff's `_unresolved` count is in the hundreds instead of low double digits (192 vs 12 on
-20260710→20260717).
-**Fix:** always pass `--strings-dir-a`/`--strings-dir-b` per side, or let the daemon auto-detect
-per ESM. The pipeline's banner must show two *different* dirs — a single `strings-dir:` line, or a
-`WARNING: --strings-dir ... BOTH sides`, means stop and re-run.
+**Symptom:** an official note describes a rebalance or rewording and no record in the diff moves; a
+Mismatch flag is about to say the data has no counterpart.
+**Fix (every patch, before any "no data counterpart" flag):**
+1. `diff -rq Data/<old>/misc/curvetables Data/<new>/misc/curvetables`, then compare each changed
+   file's `curve` points. Added files belong with the records that reference them.
+2. Parse `strings/SeventySix_en.{strings,dlstrings,ilstrings}` on both sides and set-diff by string
+   ID. Header `<II` (count, dataSize), then count × `<II` (stringID, offset), then data;
+   `.strings` entries are NUL-terminated, `.dlstrings`/`.ilstrings` u32-length-prefixed. Both
+   snapshots ship current tables whether or not they are `Localized`, so this stays valid across a
+   flip.
+
+**Example:** 20260903→20260914, `worldpets/worldpets_petxp_02.json` ×12 at all 42 points (level 100:
+2,900 → 34,800 XP) was the official "Re-balanced Pet XP levels". 20260717→20260724, OMOD
+`mod_Custom_Xerxos` (0x008F173D) "Emits Radiation" → "Emits Radiation at 6 RAD/s" was string-only.
+*found 2026-07-24; curve tables 2026-09-14*
+
+## ROLLOUT tiering is blind to values on plumbing fields
+
+A change shape is `(record_type, set of changed field paths)`. Triage keeps records with a numeric
+delta on a non-plumbing field out of ROLLOUT (`settings.rollout_numeric_exclusion`, the "Kept out
+(numeric)" column of `rollouts.md`), but plumbing-pattern fields are still tiered by shape alone, so
+a real edit there can hide among schema churn on the same field.
+
+**Symptom:** a `rollouts.md` row reads as editor bookkeeping while its values actually move.
+**Fix:** scan values, not shapes: for every rollout record, flag each ChangeEntry where neither side
+is null/empty and the sides still differ after Unicode-NFC and whitespace normalization.
+**Example:** 20260710→20260717, 100,705 entries → ~6,900 candidates, mostly `Enlighten Auto UV /
+Padding?`, which surfaced 353 OMODs that lost their `Attribute Descriptor Keywords`.
 *found 2026-07-22*
-
-## String-table-only text edits are invisible to the record diff
-
-A localized text field can change with **no record change at all**: the record keeps the same
-lstring ID and Bethesda edits the string-table entry it points at. The record-level diff compares
-record bytes, so such a record never enters the changed set and its text delta is never reported.
-Only records that ALSO changed structurally show their text delta.
-
-This is a *different* blind spot from the per-side-strings-dir gotcha above — that one hides
-changes on records that DID change; this one hides records that did not.
-
-**Recovery (run every patch as a second pass):** parse
-`strings/SeventySix_en.{strings,dlstrings,ilstrings}` for both snapshots and set-diff by string ID.
-Format: header `<II` (count, dataSize), then count × `<II` (stringID, offset), then the data block
-— `.strings` entries are NUL-terminated, `.dlstrings`/`.ilstrings` are u32-length-prefixed.
-
-**Example:** on 20260717→20260724 this surfaced 4 changed + 5 added dlstrings and 26 changed + 79
-added + 4 removed strings (`.ilstrings` had zero), including OMOD `mod_Custom_Xerxos` (0x008F173D)
-Description "Emits Radiation" → "Emits Radiation at 6 RAD/s" — matching its ENCH magnitude 3.0 →
-6.0, and absent from `comprehensive.json` entirely. Also the Cyberdog "Generates 1, 2, or 3 Star
-Legendary Items" claim, the Ghost Boy invisibility rewording, every Slasher rename, and the whole
-My Stats terminal expansion.
-*found 2026-07-24*
-
-## Curve-table edits are invisible to the record diff
-
-Curve tables (`Data/<date>/misc/curvetables/json/`) are loose JSON files, not ESM records. The
-pipeline reads them only to resolve a CURV reference, so a curve whose points change while its
-referencing record stays byte-identical never enters the diff. Pet XP, mutation scaling and
-legendary-effect magnitudes live there.
-
-**Symptom:** an official note describes a rebalance ("re-balanced XP levels") and no record in the
-diff moves; a Mismatch flag is about to say the data has no counterpart.
-**Fix (run every patch, before writing any "no data counterpart" flag):**
-`diff -rq Data/<old>/misc/curvetables Data/<new>/misc/curvetables`, then compare the `curve`
-points of each changed file. Added files belong with the records that reference them.
-**Example:** 20260903→20260914 — `worldpets/worldpets_petxp_02.json` is ×12 at all 42 points
-(level 100: 2,900 → 34,800 XP), the official "Re-balanced Pet XP levels" that the summary had
-flagged as unsupported. The same pass found `mutation_adrenal_{normal,super}.json` gaining a
-0-kill point at 0.
-*found 2026-09-14*
-
-## ROLLOUT shapes are blind to values
-
-> **Enforced since 2026-09-12:** triage keeps any changed record with a numeric delta on a non-plumbing field out of ROLLOUT (`settings.rollout_numeric_exclusion`, `rollouts.md` "Kept out (numeric)" column). The manual value scan below remains the check for the plumbing-pattern fields it deliberately skips.
-
-A change shape is `(record_type, set of changed field paths)` — it never looks at the before/after
-**values**. So a genuine `3.4028235e+38 → 100.0` edit has the same shape as the `null →
-3.4028235e+38` schema churn around it, and a real balance change can be tiered ROLLOUT purely
-because ≥20 other records touched the same field.
-
-The mandated ROLLOUT sanity check is therefore a **value-level scan**, not a skim of
-`rollouts.md`: for every rollout record, flag any ChangeEntry where neither side is null/empty and
-the two sides still differ after Unicode-NFC and whitespace normalization.
-
-**Example:** on 20260710→20260717 that reduced 100,705 entries to ~6,900 candidates — nearly all
-`Model / Enlighten Auto UV / Padding?` garbage-to-zeros, but it is what surfaced the 353 OMODs that
-silently lost their `Attribute Descriptor Keywords`, which a shape skim had called "editor
-bookkeeping".
-*found 2026-07-22*
-
-## Reorder-only diffs tier DEEP through `substantive_change_major_record_type`
-
-Triage tiers by record type and changed field path, never by value. An `unkeyed` `_array_diff`
-(QUST `Virtual Machine Adapter / aliases`) renders a reordered alias as one `removed` plus one
-`added` entry, and a `positional` one (RACE `Bone Scale Data`, `Attacks`, VMAD `AnimationStates`
-properties) as a wave of `changed` indices — both look like substantive QUST/RACE changes and the
-DEEP tier fills with bundles that have no story. Those QUSTs also drag large satellite chains
-into their bundles, which is what keeps them out of ROLLOUT.
-
-**Symptom:** every DEEP bundle's only top-level path is `Virtual Machine Adapter` (or `Bone Scale
-Data` / `Attacks`), and the `removed`/`added` halves carry the same script names and property
-values.
-**Fix, before spawning writers:** canonicalise each changed field order-insensitively (sort dict
-items, sort lists of dicts, round floats) and compare `removed` vs `added` (or a live `get` on
-both snapshots); bundles that are set-equal go to the Under-the-hood line, not to a writer.
-**Example:** 20260814→20260821 — all 7 DEEP bundles and 43 ROLLOUT QUSTs were set-equal (50/50);
-18 RACE records and the Disturbed Grave ACTI likewise. No writer was spawned.
-
-Two more undecoded-blob shapes from the same patch, both bookkeeping: CELL `Unknown 2` is a
-little-endian u64 Unix timestamp (a last-saved stamp — 1,484 cells bumped from 2026-06 to
-2026-08), and ACTI/TACT/TERM `Unknown CTRN` bumps only its ID bytes.
-
-## A schema field rename breaks downstream readers silently
-
-A decode rename doesn't error in a consumer — it yields defaults. PCRD card data moved from
-`fields['Unknown']` to `fields['Perk Card Data']` (2026-07-14); a reader still on the old name
-extracts every card's Special as "Unknown" and minLevel as 0 rather than failing. That symptom is
-the tell that a consumer needs the new name. Keep the old name as a fallback when migrating one.
-*found 2026-07-14*
-
-## `--bodies full` can OOM the diff; `--bodies stub` is the safe default
-
-> **Enforced since 2026-09-12:** `stub` is the script default; `full` must be asked for explicitly.
-
-`esm diff --bodies full` recursively resolves every FormID inside every added/removed record's
-body. One deeply-nested added record (a pets progression track with hundreds of reward links)
-is enough to push the diff past 19 GB resident; the rest of the diff is small (~3 GB).
-
-**Symptom:** `make_patch_notes.py` reports `esm diff failed with exit code -9` and the kernel log
-shows `Out of memory: Killed process (esm)`; RSS climbs past 12 GB within 15 seconds of start.
-**Fix:** run `make_patch_notes.py ... --bodies stub`. Nothing downstream needs full bodies — writers
-re-fetch with `get --resolve stub` anyway. Also run Step 3's daemon prewarm *after* the diff, not
-during it: a concurrent index-cache build shares the same memory headroom.
-**Example:** 20260821→20260903 — three full-body runs OOM-killed at 14.7, 14.0 and 19.3 GB; the
-stub run finished in 20 s at a 3 GB peak and produced 45 MB of diff.json.
-
-## A worldspace rework makes bundling run out of memory on REFR placements
-
-Bundling runs one reverse-reference search per record in the diff, serially, and keeps every edge
-in memory. A landscaping pass adds or moves hundreds of thousands of placed references (REFR), so
-the bundling step grows without bound while the diff itself finishes in seconds.
-
-**Symptom:** the diff has 100K+ REFR entries, `bundles.json` never appears, and the
-`make_patch_notes.py` process grows by ~350 MB a minute while the daemon sits near 100% CPU.
-**Fix:** run `make_patch_notes.py ... --exclude-type LAND,NAVM,REFR`. Placements are
-landscaping and quest-staging detail, not bundle stories: summarise them separately from a
-REFR-only diff (`esm --local diff OLD NEW --json --bodies stub --type REFR`) as counts by base
-object and the placements of newly added base objects.
-**Example:** 20260903→20260914 — 225K of 281K diff records were REFR (Skyline Valley rework);
-bundling passed 11 GB in 25 minutes and was killed. Without REFR the diff had 22K records and the
-mechanical stage finished in 270 s; the REFR-only diff showed 150 placements of the new
-`RTSV_SQ01_BrainInJar` collectible.
-
-## A header-version bump (branch switch) fakes tens of thousands of changes
-
-When the two snapshots come from different editor builds (TES4 header `Version` differs, e.g.
-279 → 283), the newer build re-serializes most records. The diff then carries ~60K changed
-records of which almost none are gameplay. Known churn signatures from such a build, all to skip
-silently: PERK effect-header `Rank` renumbered to 0..N (keyed-array diffs then pair the wrong
-entries, so PERK `Float`/`Perk Entry ID` "changes" are fake — verify live); SPEL/ENCH/PERK effect
-entries lose `Effect Flags=(none)` and gain `_unknown 2=(struct: hex)`; OMOD `Data / Properties[] /
-Value 2` bumps 2 → 3; `Perk Condition Tab Count` 4 → 3; script `extra_bind_data_version` 4 → 3;
-QUST objective flag bit 0x10 cleared; WEAP `Sneak Attack Multiplier` and OMOD `Attribute Descriptor
-Keywords` appearing/disappearing wholesale; INFO `Previous INFO` and REFR `Layer` relinks; script
-name case normalization.
-
-**Symptom:** ROLLOUT tier > 50K bundles, DEEP > 300 after rules, `esm info` shows different
-`Version` lines for the two ESMs.
-**Fix:** (1) value-level scan with a per-leaf multiset check so positional reorders (SCOL parts,
-MSWP/MDSP swap lists, ARMA sculpt, VMAD fragments) cancel out; (2) drop the signatures above;
-(3) branch-drift check — a `--bodies none` diff of two *older* snapshots against the new one takes
-~20 s each; a candidate change that is absent from those diffs is the new snapshot merely equalling
-an older value, not a change. Hand writers a curated subset slice (`work/deep-slice.<topic>.json`,
-same shape) — `--merge-assessment` only re-tiers AMBIGUOUS bundles and cannot demote rule-DEEP.
-**Example:** 20260821 (Slasher PTS, v279) → 20260903 (Pets PTS, v283): 66,171 changed records,
-54,884 ROLLOUT bundles, 332 rule-DEEP → 81 curated bundles for two writers.
-
-## Run the coverage gate before the narrative stage, not after
-
-A new snapshot can introduce record types the schema has never seen. The mechanical diff/triage
-stage doesn't care — it happily diffs raw-fallback bytes — so a schema gap only becomes visible
-once a writer (or you) reads a decoded field and finds `_unmapped`/`_raw` where a real value
-should be, by which point bundles, the mechanics KB pass, and maybe a draft are already built on
-top of the gap.
-
-**Symptom:** `esm get`/`esm chase` on an affected record type returns `_unknown_record` or
-`_unmapped` keys instead of named fields; nothing upstream (diff, triage) flagged it.
-**Fix:** after `create_esm_archive.sh` drops the new `Data/<date>/`, run
-`esm coverage --gate` (via `FO76_ESM_PATH` or `--esm`) before starting the narrative stage. Zero
-exit means proceed. Non-zero: `esm coverage` (no `--gate`) shows which SIG rows carry
-`raw_fallback`/`unmapped`/`unknown_record`; stop, fix the schema gap in `esm/` (a type TES5Edit
-already defines in full only needs adding to `esm/tools/extractor/extract.py`'s `SAFELIST`;
-anything else is a hand-authored entry in `esm/schema/fo76.overrides.json`), and re-run the gate
-until it is clean.
-`--gate` checks `raw_fallback`/`unmapped`/`unknown_record` only — `unresolved` is a
-missing-localization signal, not a schema gap, and never blocks it.
-**Example:** 20260903 (Pets PTS): `--gate` failed with `unknown_record=7, unmapped=2380` from
-three new shapes — PGTR and MSCS (new record types) and RACE `CMDE`/`PGTF`; MSCS was a `SAFELIST`
-addition, PGTR and RACE needed `fo76.overrides.json` entries.
-*found 2026-09-04*
-
-## A stray run can clobber a finished week
-
-A subagent (or you) running `make_patch_notes.py` against the real `$FO76_DATA_DIR/notes/...`
-out-dir "just to sanity-check" rewrites diff/bundles/lints and resets the manifest's narrative
-stage — the finished week is gone. Every test or partial run takes a scratch `--out-dir`.
-
-> **Enforced since 2026-09-12:** the script refuses an out-dir whose manifest records a
-> completed narrative stage unless `--force-pipeline` is passed.
-
-## Official-notes pages stack several weeks
-
-Bethesda's "Inside the Vault" PTS articles keep multiple weeks on one page, separated by
-horizontal rules; a summarizing fetch blends them and the comparison baseline is wrong.
-
-> **Enforced since 2026-09-12:** `fetch_official_notes.py` cuts the page at the first `<hr>`
-> before stripping tags; the WebFetch fallback carries the same instruction (Step 1).
-
-## An array keyed on an unstable field reports as wholly rewritten
-
-`array_diff` pairs array elements by a key derived from the element's shape
-(`esm/src/diff/array_diff.rs`, `element_key_spec`), widening onto extra scalar leaves when the
-proposed key isn't unique. A key component the newer build renumbers gives the same logical
-element a different key on each side, so nothing pairs and the array reports every element
-`removed` plus every element `added` — even at identical `count_from`/`count_to`. Triage then
-tiers those bundles DEEP, because a whole-array turnover reads as a large numeric change.
-
-> **Fixed since 2026-09-14:** a proposed key that resolves to null on every element is discarded
-> rather than widened (perk entry-point effects keyed on the `Base Effect` they never carry), and
-> VMAD alias objects decode their real alias id, so a quest's aliases stop collapsing into one key
-> group. Cross-build pairs still need the check below when a *new* shape shows up.
-
-**Symptom:** an `_array_diff` whose `count_from` equals `count_to` and whose `unchanged_count` is
-0 or near it, with a long `key_fields` list naming fields that look like serializer bookkeeping
-(`Rank`, `* Tab Count`, `* Index`, a version counter). Read `key_fields` first on any array that
-looks wholly rewritten.
-**Fix:** confirm against two `esm get` calls that the elements really did turn over. If they did
-not, the key is the problem, not the data — narrow `element_key_spec` for that shape rather than
-writing up the phantom rewrite.
-**Example:** 20260821→20260903 keyed PERK `Effects` on a 14-component widened key including
-`Effect Header.Rank`, which v283 renumbers to 0. 485 changed perks reported 860 added/removed
-effect entries; after the key fix, 72. QUST VMAD `aliases` was worse: every alias decoded as id 0,
-so all of a quest's aliases shared one key, uniqueness failed, and the unkeyed fallback reprinted
-all 12 aliases whenever one property moved — 351 records, of which 198 had no real change at all.
-*found 2026-09-14*
 
 ## The Localized header flag flips every few months
 
-`manifest.json` records each side's TES4 `Localized` flag under `inputs.localized`, and the
-pipeline banner prints `Localized flag flips` when they differ. Text decodes the same either way,
-so nothing needs skipping. Every snapshot ships current `strings/` tables, localized or not, so
-the string-table set-diff pass above stays valid across a flip.
+`manifest.json` records each side's TES4 `Localized` flag under `inputs.localized`, and the banner
+prints `Localized flag flips` when they differ. Text decodes the same either way, so nothing needs
+skipping; what a writer should know is in `diff-traps.md`'s Localized entry.
 
-**Symptom:** `comprehensive.md` reports `localization_flip_text omitted at diff level`. That's the
-diff dropping string leaves that differ only by the tables' whitespace rewrites.
-**Example:** 20260821 → 20260903 (`true` → `false`) drops 53 such leaves. In 20260903, 244,420 of
-244,484 inline strings match that snapshot's own table exactly; the rest differ by NBSP or CRLF.
-*verified 2026-09-15*
+**Symptom:** `comprehensive.md` reports `localization_flip_text omitted at diff level`: string
+leaves differing only by the tables' NBSP/CRLF rewrites were dropped. Expected, no action.
+**Example:** 20260821 → 20260903 (`true` → `false`) dropped 53 leaves; 244,420 of 244,484 inline
+strings matched that snapshot's own table exactly.
+*found 2026-09-15*
+
+---
+
+# Tiering noise: phantom changes that reach DEEP
+
+## Reorder-only diffs tier DEEP through `substantive_change_major_record_type`
+
+Triage tiers by record type and field path, never by value. An `unkeyed` `_array_diff` (QUST
+`Virtual Machine Adapter / aliases`) renders a reordered element as one `removed` plus one `added`,
+and a `positional` one (RACE `Bone Scale Data`, `Attacks`, VMAD `AnimationStates`) as a wave of
+`changed` indices. Both read as substantive, and the QUSTs' satellite chains keep them out of
+ROLLOUT.
+
+**Symptom:** every DEEP bundle's only top-level path is `Virtual Machine Adapter`, `Bone Scale
+Data` or `Attacks`, with the same names and values on both halves.
+**Fix, before spawning writers:** apply `diff-traps.md`'s permutation test to each bundle
+(canonicalize order-insensitively: sort dict items and lists of dicts, round floats); set-equal
+bundles go to the Under-the-hood line, not to a writer.
+**Example:** 20260814→20260821, all 7 DEEP bundles, 43 ROLLOUT QUSTs, 18 RACE records and the
+Disturbed Grave ACTI were set-equal. No writer was spawned.
+*found 2026-08-28*
+
+## An array keyed on an unstable field reports as wholly rewritten
+
+`array_diff` pairs elements by a key derived from their shape (`esm/src/diff/array_diff.rs`,
+`element_key_spec`), widening onto extra scalar leaves when the key isn't unique. It discards a
+proposed key that is null on every element, and VMAD aliases decode their real id, but a key
+component a new build renumbers still gives each element a different key per side, so every
+element reports `removed` plus `added` and the bundle tiers DEEP.
+
+**Symptom:** an `_array_diff` with `count_from == count_to`, `unchanged_count` at or near 0, and a
+`key_fields` list naming serializer bookkeeping (`Rank`, `* Tab Count`, `* Index`, a version
+counter).
+**Fix:** confirm with two `esm get` calls whether elements really turned over. If not, narrow
+`element_key_spec` for that shape in `esm/` rather than writing up the phantom rewrite.
+**Example:** 20260821→20260903, PERK `Effects` keyed on a widened key including `Effect
+Header.Rank` reported 860 added/removed effect entries across 485 perks; 72 after the key fix.
+*found 2026-09-14*
+
+## A header-version bump (branch switch) fakes tens of thousands of changes
+
+When the snapshots come from different editor builds (TES4 header `Version` differs), the newer
+build re-serializes most records.
+
+**Symptom:** ROLLOUT > 50K bundles, DEEP > 300 after rules, and `esm info` shows different
+`Version` lines for the two ESMs.
+**Fix:**
+1. Value-level scan with a per-leaf multiset check, so positional reorders (SCOL parts, MSWP/MDSP
+   swap lists, ARMA sculpt, VMAD fragments) cancel out.
+2. Drop the signatures in `diff-traps.md`'s "Cross-build pairs carry fixed re-serialization
+   signatures".
+3. Branch-drift check: a `--bodies none` diff of two *older* snapshots against the new one (~20 s
+   each); a candidate absent from those diffs is the new snapshot merely equalling an older value.
+4. Hand writers a curated slice (`work/deep-slice.<topic>.json`, same shape):
+   `--merge-assessment` re-tiers only AMBIGUOUS bundles and cannot demote rule-DEEP.
+
+**Example:** 20260821 (Slasher PTS, v279) → 20260903 (Pets PTS, v283): 66,171 changed records,
+54,884 ROLLOUT bundles, 332 rule-DEEP → 81 curated bundles for two writers.
+*found 2026-09-04*
+
+---
+
+# Failures: runs that break or poison downstream work
+
+## A worldspace rework makes bundling run out of memory on REFR placements
+
+Bundling runs one reverse-reference search per diff record, serially, and keeps every edge in
+memory. A landscaping pass adds or moves hundreds of thousands of REFRs, so bundling grows without
+bound while the diff itself finishes in seconds.
+
+**Symptom:** 100K+ REFR entries in the diff, no `bundles.json`, and `make_patch_notes.py` growing
+~350 MB a minute while the daemon sits near 100% CPU.
+**Fix:** run `make_patch_notes.py ... --exclude-type LAND,NAVM,REFR`. Summarize placements
+separately from a REFR-only diff (`esm --local diff OLD NEW --json --bodies stub --type REFR`) as
+counts by base object plus placements of newly added base objects.
+**Example:** 20260903→20260914, 225K of 281K diff records were REFR (Skyline Valley rework);
+bundling passed 11 GB in 25 minutes. Without REFR: 22K records, mechanical stage in 270 s; the
+REFR-only diff showed 150 placements of the new `RTSV_SQ01_BrainInJar` collectible.
+*found 2026-09-14*
+
+## Run the coverage gate before the narrative stage
+
+A new snapshot can add record types or fields the schema has never seen. Diff and triage work on
+raw-fallback bytes without complaint, so the gap surfaces only when someone reads `_unmapped`/`_raw`
+in a decoded record, after bundles and drafts are built on it.
+
+**Symptom:** `esm get`/`esm chase` returns `_unknown_record` or `_unmapped` keys; nothing upstream
+flagged it.
+**Fix:** after the new `Data/<date>/` lands, run `esm coverage --gate` (via `FO76_ESM_PATH` or
+`--esm`). Non-zero: `esm coverage` shows which SIG rows carry `raw_fallback`/`unmapped`/
+`unknown_record`; fix the schema in `esm/` (a type TES5Edit defines in full goes in
+`esm/tools/extractor/extract.py`'s `SAFELIST`; anything else is an entry in
+`esm/schema/fo76.overrides.json`) and re-run until clean. `unresolved` counts are missing
+localization, not schema gaps, and never block the gate.
+**Example:** 20260903 (Pets PTS): `unknown_record=7, unmapped=2380` from PGTR and MSCS (new types)
+and RACE `CMDE`/`PGTF`; MSCS needed a `SAFELIST` addition, the rest `fo76.overrides.json` entries.
+*found 2026-09-04*
+
+## A schema field rename breaks downstream readers silently
+
+A decode rename doesn't error in a consumer; the reader gets defaults. Keep the old name as a
+fallback when migrating a reader.
+
+**Symptom:** a tool reports every record with the same default value ("Unknown", 0).
+**Fix:** re-dump one known record, grep the actual field names, and update the reader.
+**Example:** PCRD card data moved from `fields['Unknown']` to `fields['Perk Card Data']`; readers
+still on the old name reported every card's Special as "Unknown" and minLevel as 0.
+*found 2026-07-14*

@@ -1,12 +1,12 @@
 # Mechanics KB
 
-Durable Fallout 76 game mechanics derived from the ESM. Read this **before** chasing — chase
-only what isn't here. Companion file: `diff-traps.md` (things that look like changes but aren't).
+Durable Fallout 76 game mechanics derived from the ESM. Read this **before** chasing, and chase
+only what isn't here. Changes that look real but aren't live in `diff-traps.md`.
 
 Entries are point-in-time. Treat anything verified more than ~2 months ago as a hint and
-re-verify with one live `get` before asserting it in a draft.
+re-verify it with one live `get` before asserting it in a draft.
 
-**Entry format** — keep new entries to this shape, ≤10 lines:
+**Entry format.** Both KB files use it; keep entries to ≤10 lines:
 
 ```
 ## <Rule stated as a claim, not a topic>
@@ -15,82 +15,107 @@ re-verify with one live `get` before asserting it in a draft.
 *verified <YYYY-MM-DD> vs <snapshot>*
 ```
 
-No decision history, no provenance, no "this used to be called X" narrative — if a rename still
-matters, it's an alias line, not a paragraph.
+Present tense only: no decision history or provenance. A rename that still matters is an alias
+clause, not a paragraph.
 
 ---
 
+# Chasing effects
+
 ## Chasing a unique-weapon effect
 
-`esm chase <FORMID_OR_EDID>` automates this (always emits classified JSON) — run it first, hand-walk only what it
-misses (`esm/src/chase.rs`'s module docstring lists the limits). It accepts an OMOD, or a PERK /
-SPEL / ALCH / ENCH directly (walking that record's own `Effects[]`), and auto-follows one extra
-hop through an MGEF's `Perk to Apply` / `Equip Ability`.
+Run `esm chase <FORMID_OR_EDID>` first and hand-walk only what it misses (`esm/src/chase.rs`'s
+module docstring lists the limits). It accepts an OMOD, or a PERK/SPEL/ALCH/ENCH directly
+(walking its own `Effects[]`), and follows one extra hop through an MGEF's `Perk to Apply` /
+`Equip Ability`. A `mod_Custom_*` OMOD implements its mechanic one of four ways:
 
-A `mod_Custom_*` OMOD implements its mechanic one of four ways:
+1. **Direct property**: ADD/SET on a weapon stat or actor value in `Data/Properties`. An AVIF's
+   name is not its semantics; read the hop's `hop.resolution` (`"reverse"` = an AV hook resolved
+   to its gating SPEL/PERK `Effects[N]` row, `"forward"` = a plain SPEL/ENCH/PROJ attachment).
+2. **Perk grant**: Property `116`/`Perk` ADD of a PERK. Item-granted perks have no PCRD.
+3. **Keyword hook**: the OMOD only ADDs a `CustomItemName_*`/`dn_*` KYWD; the mechanic is a
+   SPEL/PERK effect gated on `WornHasKeyword(<keyword>)`, found by `refs --type SPEL --paths`.
+4. **Projectile override**: Property `80` `OverrideProjectile` SET to a dedicated PROJ; the
+   magnitude is on its EXPL's `Data / Damage Curve Table`. Curves swap wholesale by FormID and
+   name (`..._Tier28` → `..._Tier40`), so a bulk get of old and new curves quantifies the delta.
 
-1. **Direct property** — ADD/SET on a weapon stat or actor value in `Data/Properties`. An AVIF's
-   name is not its semantics, but `chase`'s JSON already resolves the consumer for you (reverse
-   `refs --type SPEL|PERK --paths`, sliced to the gated `Effects[N]` row) — read `hop.resolution`
-   off the hop (`"reverse"` for an AV hook, `"forward"` for a plain SPEL/ENCH/PROJ attachment)
-   instead of re-deriving the distinction from `hop.target.record_type` or re-running `refs` by
-   hand.
-2. **Perk grant** — Property `116`/`Perk` ADD of a PERK. Item-granted perks have **no PCRD** (see
-   `diff-traps.md`'s `unreferenced_perk_rank` entry — don't call them orphaned).
-3. **Keyword hook** — the OMOD only ADDs a `CustomItemName_*` / `dn_*` KYWD; the mechanic lives
-   in a SPEL/PERK effect gated on `WornHasKeyword(<that keyword>)`. `refs --type SPEL --paths` on
-   the keyword points straight at the gating `Effects[N].Conditions[...]`.
-4. **Projectile override** — Property `80` `OverrideProjectile` SET to a dedicated PROJ; the
-   magnitude lives on that PROJ's linked EXPL's `Data / Damage Curve Table`, not the OMOD. Curves
-   are swapped wholesale by FormID+name (`CT_Player_Damage_Universal_Tier28` → `..._Tier40`), so
-   a bulk get across old/new curve FormIDs quantifies the delta.
-
-Empty-shell OMODs pull their effect from `Data/Includes[]` (`_PARENT_*` building blocks) — `chase`
-returns nothing useful on those; chase the include instead.
+An empty-shell OMOD pulls its effect from `Data/Includes[]` (`_PARENT_*` blocks, recursively);
+`chase` returns nothing useful on it, so chase the include.
 
 **Example:** `RD01_Mod_Custom_ResolveBreaker_CustomName` (0x007934FE) → PROJ 0x007CA02E → EXPL
 0x007CA02D.
 *verified 2026-07-14 vs 20260710*
 
+## `Magnitude: 0.0` beside a real value source is a live effect
+
+A `Curve Table` beside an ENCH/SPEL effect's `Effect Item Data` is always the value source; a
+`Magnitude` GLOB is the source when the flat `Magnitude` is 0.0 (a nonzero flat value wins).
+Reading the flat 0.0 alone produces a confident false negative ("grants nothing", "is cut").
+A curve's x-axis is the effect's sibling `Actor Value`, often not a level: two points can be two
+states. An AV nothing in the ESM writes is engine-side; say so rather than inventing a trigger.
+
+**Example:** `MoM_ench_GarbofMysteries` (0x0052192E) `Effects[1]`, Magnitude 0.0, curve
+`CT_Armor_MoM_GarbofMysteriesSneak` `[(0, 5), (1, 20)]` keyed on AVIF `MoM_EyeOfRa` (0x006DE64A):
+5 or 20 Sneak depending on the Eye of Ra set bonus.
+*verified 2026-07-24 vs 20260724*
+
+---
+
+# Damage & stats
+
 ## A "+X% damage" is one of three distinct mechanisms
 
-Identify which before writing any number, and name it in prose — **never write a bare "+X%
-damage"**. The mechanism determines how the number stacks, which is what build-crafter readers
-need.
+Identify which before writing any number and name it in prose; never write a bare "+X% damage".
+The mechanism decides how the number stacks, which is what build-crafters need.
 
-1. **Additive damage bonus (DBM)** — a contribution to the damage-bonus-multiplier pool, stacking
-   additively with every other bonus (so a build dilutes it). Sources: ADD to a `STAT_DmgMult*` AV
-   (unconditional) or a `STAT_DmgVs*` AV (conditional on target status); OMOD property
-   `DamageBonusMult`; PERK entry point "Mod Weapon DMG Bonus Mult". Report values ×100.
-2. **Base damage increase** — changes to `AttackDamage` or `DamageTypeValues` (directly or via an
-   OMOD MUL+ADD on property 77). Multiplies through everything downstream.
-3. **Damage multiplier** — multiplies total outgoing damage after bonuses: power attack,
-   body-part/weakpoint mults, Taking One for the Team, Follow Through. Rare in legendary mods,
-   strongest per point.
+1. **Additive damage bonus (DBM)**: joins the damage-bonus pool, stacking additively with every
+   other bonus (so a build dilutes it). Sources: ADD to a `STAT_DmgMult*` or `STAT_DmgVs*` AV,
+   OMOD property `DamageBonusMult`, PERK entry point "Mod Weapon DMG Bonus Mult". Report ×100.
+2. **Base damage increase**: `AttackDamage` or `DamageTypeValues` (directly or via an OMOD
+   MUL+ADD on property 77). Multiplies through everything downstream.
+3. **Damage multiplier**: multiplies total outgoing damage after bonuses (power attack,
+   weakpoint mults, Taking One for the Team, Follow Through). Rare on legendaries, strongest per
+   point.
 
-**Example:** BoomStick (0x00680832) property 106 `DamageBonusMult` 1.5 → 0.75 = +150% → +75%, a
-DBM contribution — not a base-damage cut.
+**Example:** BoomStick (0x00680832) property 106 `DamageBonusMult` 1.5 → 0.75 = +150% → +75% DBM,
+not a base-damage cut.
 *verified 2026-07-15 vs 20260702/20260710*
 
 ## Exact `DamageTypeValues` fold
 
 `final(X) = max(0, (lastSET ?? base(X)) + Σ(MUL × ORIGINAL base(X)) + ΣADD)`. MULs scale off the
-type's *original* base, never a running total; a SET discards the base entirely. `dtPhysical` ≡ the
-weapon's own `AttackDamage`. SET/ADD are flat with no level scaling.
-
-This matters most for a type the weapon **lacks** (`base(X) = 0`): a positive MUL materialises a
-new component, scaled off a fallback base (ballistic if the weapon has any physical damage, else
-its primary elemental type — never an explosion component) and level-scaled by the fallback's own
-curve. A **negative** MUL on a missing type multiplies zero and vanishes, evaluated **per-modifier,
-not netted** — so in a batch of "−X% on all damage types" mods, each independently yields 0 and
-does *not* cancel a sibling mod's positive MUL on the same type.
+type's original base, never a running total; a SET discards the base. `dtPhysical` ≡ the weapon's
+own `AttackDamage`. SET/ADD are flat with no level scaling. For a type the weapon **lacks**
+(`base(X) = 0`), a positive MUL materializes a new component off a fallback base (ballistic if the
+weapon has physical damage, else its primary elemental type, never explosion), level-scaled by
+that fallback's curve. A **negative** MUL on a missing type yields 0 per modifier and does not
+cancel a sibling mod's positive MUL on that type.
 *verified 2026-07-15 vs 20260702/20260710*
+
+## OMOD property semantics
+
+- **`Value Type` decides the slots.** `Float`/`Int`: `MUL+ADD` effective = base × (1 + Value 1) +
+  Value 2 (FO4/76 convention, inferred from worked examples). `FormID,Float` (e.g.
+  `DamageTypeValues`): Value 1 is the FormID, Value 2 the magnitude. `FormID,Int` (Keywords,
+  MaterialSwaps, ImpactDataSet, ZoomData, ModelSwap): Value 1 is the FormID, Value 2 is never read.
+- Property IDs seen raw: `77` `DamageTypeValues`, `80` `OverrideProjectile`, `106`
+  `DamageBonusMult`, `116` `Perk`.
+- **A curve table on a property overrides Value 2.** Curve removed + Value 2 changed = scaling
+  replaced by a flat value. Armor carry-weight-style curves key on item level (1/10/20/30/40/50).
+- **`SET` vs `ADD` on a list-valued property is clobber vs append.** SET on `Keywords` or
+  `Enchantments` erases every other entry, including the `ma_*` tags other mods target, so a lone
+  `Function Type SET → ADD` row is that bug being fixed and matters more than it looks.
+- `Attribute Descriptor Keywords` (NAM3) hold `MAD_*`/`MAN_*` keywords composing the crafting
+  blurb ("Superior Critical Shot Damage"); losing them costs the blurb, not the effect.
+
+**Example:** 20260717→20260724, `_PARENT_mod_melee_weapon_Hooked` flipped `Keywords` SET → ADD:
+the official "Pipe Wrench Hooked mod prevented further modifications" fix.
+*verified 2026-07-24 vs 20260724*
 
 ## `STAT_*` AVs route through four shared plumbing perks
 
-`STAT_*` actor values are never read ad hoc. Each is translated into engine behaviour by an
-entry-point row on one of four hidden perks. Check a new `STAT_*` AV against these before
-inferring its effect from the name alone.
+A `STAT_*` AV does nothing on its own: an entry-point row on one of four hidden perks translates
+it. Check a new `STAT_*` AV against them before inferring its effect from the name.
 
 | Plumbing perk | Covers |
 |---|---|
@@ -99,372 +124,229 @@ inferring its effect from the name alone.
 | `STAT_DamageVsPerk` | conditional / target-state damage |
 | `STAT_BeneficialPerk` (0x0018ADAD) | 17 non-damage rows: sneak detection, spell magnitude/duration, cone of fire, item condition loss, lockpick sweet spot, VATS hit chance, ricochet, evasion, sprint AP drain, incoming limb damage |
 
-Each row is either `Multiply 1 + Actor Value Mult` (Float 0.01 → ×(1 + AV/100)) or `Add Actor
-Value Mult` (Float 1.0 → +AV flat); the target AV is in `Function Parameter 3 (Actor Value)`.
-**Flipping a row between those two forms silently rebalances every source feeding that AV**, with
-no change to any of those source records. Weakpoint/limb-scoped damage rows are "Multiply 1+AV".
-`STAT_DmgVsTorso` is the one exception with no plumbing row — read by the `DamageVsNonWeakpoint_DO`
-default object instead. `STAT_DmgThrown` (0x0090F5E4) is thrown weapons' own additive damage stat:
-a `STAT_DamagePerk` `Add Actor Value Mult` row (Float 0.01) gated on `WeaponTypeThrown`, so 1 point
-= +1% DBM on thrown weapons; the Spring Assisted arm lining (`_PARENT_mod_Armor_ThrownDamage`,
-0x0090F5F3, ADD 100.0) is its only feeder. `STAT_BeneficialPerk` has no PCRD (attached directly to the Player NPC_,
-0x00000007).
+Each row is `Multiply 1 + Actor Value Mult` (Float 0.01 → ×(1 + AV/100)) or `Add Actor Value Mult`
+(+AV × Float); the AV is in `Function Parameter 3 (Actor Value)`. **Flipping a row between those
+forms silently rebalances every source feeding that AV** without touching them. Weakpoint/limb
+damage rows are Multiply. `STAT_DmgVsTorso` has no row: the `DamageVsNonWeakpoint_DO` default
+object reads it.
 
 **Example:** 20260717→20260724, the `Mod Detection Sneak Skill` row on `STAT_Sneak` (0x0008D1BF)
-went `Multiply 1+AV` 0.01 → `Add AV` 1.0 — the single change behind the official "Sneak bonus
-fixed for Sneak Bobblehead / Chinese Stealth Armor / Secret Agent's / Nuka-Inspiration: Dark /
-Garb of Mysteries / Thorn Armor" line. None of the six records was itself touched.
+went Multiply 0.01 → Add 1.0: the official Sneak-bonus fix for six items, none of them touched.
 *verified 2026-07-24 vs 20260724*
 
-## `STAT_Dmg*` families and the enchantment→AV migration
+## `STAT_Dmg*` families
 
-- `STAT_DmgVs{Bleeding,Burning,Poisoned,Freezing}` — +X% damage vs targets currently in that
-  status; the 4★ legendary family (Severing's, Pyromaniac's, Viper's, Icemen's).
-- `STAT_DmgMult{Cryo,Fire,Poison}` — unconditional elemental DBM. Cryo/Fire are fortified by
-  Science! ranks `ScienceMaster01` ("Cryologist") and `ScienceExpert01` ("Pyro-Technician"); no
-  live perk consumes the Poison variant.
+- `STAT_DmgVs{Bleeding,Burning,Poisoned,Freezing}`: +X% DBM vs targets in that status; the 4★
+  family (Severing's, Pyromaniac's, Viper's). `STAT_DmgVsFreezing` (0x0085A2F1) has one OMOD
+  consumer, Ice Breaker.
+- `STAT_DmgMult{Cryo,Fire,Poison}`: unconditional elemental DBM. Science! ranks `ScienceMaster01`
+  (Cryologist) and `ScienceExpert01` (Pyro-Technician) fortify Cryo/Fire; nothing reads Poison.
+- `STAT_DmgThrown` (0x0090F5E4): a `STAT_DamagePerk` Add row (Float 0.01) gated on
+  `WeaponTypeThrown`, so 1 point = +1% DBM on thrown weapons; fed only by the Spring Assisted arm
+  lining (`_PARENT_mod_Armor_ThrownDamage` 0x0090F5F3, ADD 100.0).
 
-Since 20260710 these replace bespoke ENCH→MGEF→PERK script chains on several legendary mods —
-same numbers, new plumbing. A blank OMOD Description alongside a `STAT_*` ADD means the tooltip
-auto-generates from the AV's own text. **Don't call the migration semantics-preserving without
-checking the old implementation per mod, and don't assume a mod in the family migrated at all.**
-Icemen's did not: it carries one MUL+ADD on `DamageTypeValues` dtCryo (Value 2 = 0.2) and no
-`ActorValues` property, so it is +20% *base* cryo damage, always on, and it materialises cryo
-damage on a weapon that has none. `STAT_DmgVsFreezing` (0x0085A2F1) has exactly one OMOD
-consumer, Ice Breaker. Where a mod did migrate, the axis changes with it, so a `20 → 50` pair
-across the two implementations is not a comparison.
+Since 20260710 these replace bespoke ENCH → MGEF → PERK chains on some legendary mods. A blank OMOD
+Description beside a `STAT_*` ADD means the tooltip comes from the AV. Check each mod's old
+implementation: the axis can change, so a `20 → 50` pair across implementations is no comparison,
+and Icemen's never migrated (MUL+ADD `DamageTypeValues` dtCryo 0.2 = +20% base cryo, materializing
+cryo on weapons that lack it).
 
-**Example:** Severing's — old (20260702) OMOD → ENCH 0x008E0681 → MGEF (Perk to Apply) → PERK
-0x008E0723 "Mod Weapon DMG Bonus Mult" ADD 0.5, gated on bleed. New side ADDs `STAT_DmgVsBleeding`
-(0x00837DFC) 50.0 directly; the old ENCH is `zzz`-vaulted. Same magnitude.
-*verified 2026-07-14 vs 20260702/20260710*
-
-## OMOD property semantics
-
-- `MUL+ADD`: effective = base × (1 + Value1) + Value2. Standard FO4/76 convention, inferred from
-  worked examples, not confirmed against engine code.
-- Property IDs worth recognizing on sight, for skimming raw diffs (already resolved to these
-  names in decoded output): `77` = `DamageTypeValues`, `80` = `OverrideProjectile`, `106` =
-  `DamageBonusMult`, `116` = `Perk`.
-- **A curve table on a property overrides Value2 as the magnitude source.** Curve removed + Value2
-  changed = scaling replaced by a flat value. The x-axis on armor carry-weight-style curves is
-  **item level** (break points 1/10/20/30/40/50).
-- **`SET` vs `ADD` on a list-valued property is clobber vs append.** SET on `Enchantments` erases
-  every other enchantment on the item; SET on `Keywords` erases every other keyword, including the
-  weapon-type and `ma_*` mod-association tags other systems and mods depend on. A diff row whose
-  only content is `Function Type SET → ADD` on the same property and value is that bug being
-  fixed, and it is always more consequential than it looks.
-- `Attribute Descriptor Keywords` (NAM3) holds `MAD_*` (Modification **A**ttribute **D**escriptor,
-  e.g. `MAD_Superior`) and `MAN_*` (Attribute **N**ame, e.g. `MAN_Range`) keywords composing the
-  crafting menu's blurb ("Superior Critical Shot Damage"). They carry no stat of their own —
-  losing them costs the blurb, not the effect. No `from_version` gate, so churn here is real data.
-
-**Example:** 20260717→20260724, `_PARENT_mod_melee_weapon_Hooked` flipped `Keywords` SET → ADD —
-the official "Pipe Wrench Hooked mod prevented further modifications" fix, since the SET had wiped
-the wrench's keywords so no other mod's `ma_*` target matched it.
-*verified 2026-07-24 vs 20260724*
-
-## `Magnitude: 0.0` beside a `Curve Table` is a live effect, not a dead one
-
-When an ENCH/SPEL effect carries a `Curve Table` alongside its `Effect Item Data`, the curve is the
-value source and the flat `Magnitude` is meaningless — commonly authored as `0.0`. Reading the
-magnitude alone produces a confident false negative ("grants nothing / is cut / a balance change
-can't reach it"). Always check for a sibling curve before saying any of those.
-
-The curve's x-axis is the effect's sibling `Actor Value`, frequently **not** a level — two curve
-points are often two *states*, not a ramp.
-
-**Example:** `MoM_ench_GarbofMysteries` (0x0052192E) `Effects[1]` `abFortifySneak`, Magnitude 0.0,
-curve `CT_Armor_MoM_GarbofMysteriesSneak` = `[(0, 5), (1, 20)]` keyed on AVIF `MoM_EyeOfRa`
-(0x006DE64A) — the Garb grants **5 or 20** Sneak depending on the Eye of Ra set bonus. Nothing in
-the ESM writes `MoM_EyeOfRa`, so the toggle is engine-side; say that rather than inventing a
-trigger.
-*verified 2026-07-24 vs 20260724*
-
-## Shared engine counters live at hardcoded AV slots
-
-Bullet Storm, Kill Streak and Onslaught are native-engine counters with **no queryable AVIF** —
-`esm get 0x399` 404s even though `refs` displays a synthesized stub. Build and decay are
-engine-side and unmodeled by any record: the data exposes only steady-state inputs (cap, per-stack
-bonus), never the ramp.
-
-| Counter | AV | Stacks gained by |
-|---|---|---|
-| Bullet Storm | `0x39B` | spending ammo |
-| Kill Streak | `0x399` | kills |
-| Onslaught | `0x395` | consecutive hits |
-
-### Bullet Storm
-
-Stacks come from **spending ammo** (GMST `uAmmoSpenderAmmoUsePerStack` sets the rate) — not kills,
-not hits. Cap is AVIF `AmmoSpenderMaxStacks` (0x0083C3CB), fortifiable; base **20** = 10
-unconditional + 10 gated on `HasPerk(HeavyGunnerMaster01)`, both effects on SPEL `AbPerkHeavyGunner`
-(0x0031BE58) via MGEF `abAmmoSpenderFortifyStacks` (0x0083C3D1). Floor: `AmmoSpenderMinStacks`
-(0x00919957). Per-kill gain switch: `EnableAmmoSpenderOnKill` (0x00924DB9), a boolean AVIF whose
-consumer is native code — its description is the authoritative text. Damage scaling: curves
-`Perks\HeavyDamageBonus{,2,3}.json` on the same SPEL.
-
-**Example:** Foundation's Vengeance (0x0064781F) adds an `AbPerkHeavyGunner` effect (Magnitude 5.0)
-gated on `WornHasKeyword(CustomItemName_FoundationsVengeance, 0x0064781E)` AND `GetHealthPercentage
-<= 0.25` — +5 max stacks under 25% HP.
-*verified 2026-07-14 vs 20260710*
-
-### Kill Streak
-
-Base +1/kill, cap 10, decays after ~30s without a kill. Enabled via AVIF `EnableKillStreak`
-(0x0080B56A) / MGEF `abEnableKillStreak`; `KillStreakPerKillCount` (0x00924E31) adds extra stacks
-per kill on top. Read by Adrenaline (+10% damage/stack) and several unique-item perks.
-
-**Don't conflate it with the generic on-kill hook.** Perks that *read the counter* (via
-`curve.input:"killStreak"` or a condition on AV `0x399`) are a different system from PERK entry
-point **187 "Apply On Kill Spell"**, which is stateless — a one-shot spell every kill, no counter,
-timer, cap, or shared AV. Exactly 32 PERKs use EP187. Two lookalikes to keep separate: Psychopath
-(all 3 ranks — 0x0027A86F/72, 0x003701AD) is **EP119** "Mod VATS Critical Charge" gated on
-`GetIsInVATS=0`, i.e. crit-meter charge on a non-VATS **hit**, not a kill; Grim Reaper's Sprint is
-**EP107** "Mod VATS Player AP On Kill Chance", unique to that family.
-
-**Example:** Inertial — `mod_Legendary_Weapon2_APViaKill` (0x00606B72) → keyword →
-`LegendaryAPViaKillPerk` (0x00606B75), EP187, +15 AP/kill.
-*verified 2026-07-20 vs 20260710 (all 1991 PERK records scanned)*
-
-### Onslaught
-
-Base max is **0** — every source ADDs to a single shared max via PERK entry point 190 "Mod Max
-Consecutive Hits Allowed"; per-stack bonuses come from EP189 "Mod Damage on Consecutive Hits" or
-from curves reading `0x395` directly. Contributors (max / per-stack): Furious +9 / +1% dbm,
-Pounder's +10 / +1% dbm, Gunslinger Master +10 / —, Gunslinger Expert +3 / +1% weakpoint damage,
-Guerrilla Expert +3 / +1% reload speed, Guerrilla Master +5 / +5% dbm at close range, Whacker
-Smacker +0 / +5% power-attack bonus. **Combo-Breaker's is not Onslaught** despite the flavor — it's
-EP79/EP27, a chance-to-not-consume-AP mechanic.
-*verified 2026-07-20 vs 20260710*
-
-## The Cheat Death revive family shares one cooldown framework
-
-AVIF `CheatDeathResetOnWeakPointChance` (0x00924E29) — "Attacks Against Weak Points Have a <VALUE>
-Chance to Reset a Revive Effect Cooldown", percentage-flagged, so +30.0 = +30% chance per
-weak-point hit. Known members: Life Saver, E.M.T., Power Armor Reboot, Scout Banner (found by
-EditorID search, not proven exhaustive).
-*verified 2026-07-13 vs 20260710*
+**Example:** Severing's, old: ENCH 0x008E0681 → PERK 0x008E0723 "Mod Weapon DMG Bonus Mult" ADD 0.5
+gated on bleed; new: ADD `STAT_DmgVsBleeding` (0x00837DFC) 50.0. Same magnitude.
+*verified 2026-07-14 vs 20260702/20260710; STAT_DmgThrown 2026-09-14 vs 20260914*
 
 ## Charge weapons (Gauss family)
 
-- `Data / Full Power Seconds` = time to reach full charge (Gauss Rifle base 1.0s).
+- `Data / Full Power Seconds` = time to full charge (Gauss Rifle base 1.0 s).
 - `Data / Full Power Damage Mult` = the full-charge damage multiplier (Gauss Rifle base 2.0).
+  `MinPowerPerShot`, `MaxPowerPerShot` and `Min Power Per Shot` are older names for this field.
 - Fast Trigger-family receivers (`_PARENT_mod_WEAPON_Receiver_FastTrigger_Solo`/`_Dual`) carry
-  `FullPowerSeconds` MUL+ADD −0.25 beside `AttackDelaySec` −0.25: a charge weapon using one reaches
-  full charge 25% sooner, and non-charge guns ignore the property. The Gauss Shotgun is the only
-  charge weapon with such receivers (e.g. "Hair Trigger Receiver", 0x00573741).
-- **Name aliases:** this one field has been called `MinPowerPerShot`, then `MaxPowerPerShot`, now
-  `FullPowerDamageMult` (and `Min Power Per Shot` in the raw WEAP `Data` struct, patched via
-  `schema/fo76.overrides.json`). Treat all of them as the same field — data captured before
-  2026-07-15 may carry an old name.
+  `FullPowerSeconds` MUL+ADD −0.25 beside `AttackDelaySec` −0.25: 25% faster full charge on a
+  charge weapon, ignored elsewhere. Only the Gauss Shotgun has such receivers (e.g. "Hair Trigger
+  Receiver", 0x00573741).
 
 **Example:** Flatliner (`RD01_Mod_Custom_StrikeBreaker_CustomName`, 0x00793512) ADDs +1.0 Full
-Power Damage Mult (2.0→3.0, full-charge bonus +100%→+200%) and +0.5 Full Power Seconds (1.0→1.5s),
-replacing an ADD Perk 116 grant of `mod_weapon_penetrating`.
-*verified 2026-07-14 vs 20260710*
+Power Damage Mult (full-charge bonus +100% → +200%) and +0.5 Full Power Seconds (1.0 → 1.5 s).
+*verified 2026-07-14 vs 20260710; receivers 2026-09-14 vs 20260914*
+
+## Shared engine counters live at hardcoded AV slots
+
+Bullet Storm, Kill Streak and Onslaught have **no queryable AVIF** (`esm get 0x399` 404s though
+`refs` shows a stub). Build and decay are engine-side: the data exposes only caps and per-stack
+bonuses, never the ramp.
+
+| Counter | AV | Stacks gained by |
+|---|---|---|
+| Bullet Storm | `0x39B` | spending ammo (rate: GMST `uAmmoSpenderAmmoUsePerStack`) |
+| Kill Streak | `0x399` | kills |
+| Onslaught | `0x395` | consecutive hits |
+
+**Bullet Storm.** Cap AVIF `AmmoSpenderMaxStacks` (0x0083C3CB), base 20 = 10 unconditional + 10
+gated on `HasPerk(HeavyGunnerMaster01)`, both on SPEL `AbPerkHeavyGunner` (0x0031BE58) via MGEF
+0x0083C3D1; floor `AmmoSpenderMinStacks` (0x00919957); per-kill switch `EnableAmmoSpenderOnKill`
+(0x00924DB9, native consumer, its description is authoritative); damage curves
+`Perks\HeavyDamageBonus{,2,3}.json`. Foundation's Vengeance (0x0064781F): +5 max stacks under 25% HP.
+
+**Kill Streak.** +1/kill, cap 10, decays after ~30 s without a kill. Enabled by AVIF
+`EnableKillStreak` (0x0080B56A); `KillStreakPerKillCount` (0x00924E31) adds stacks per kill. Read
+by Adrenaline (+10% damage/stack) and unique-item perks, via `curve.input:"killStreak"` or a
+condition on AV `0x399`. Different system: PERK entry point
+**187 "Apply On Kill Spell"** is stateless (32 PERKs, e.g. Inertial's `LegendaryAPViaKillPerk`
+0x00606B75, +15 AP/kill). Psychopath is EP119 (crit charge on a non-VATS hit, not a kill); Grim
+Reaper's Sprint is EP107.
+
+**Onslaught.** Base max 0; sources ADD to one shared max via EP190 "Mod Max Consecutive Hits
+Allowed", with per-stack bonuses from EP189 or curves on `0x395`. Max / per-stack: Furious +9 / +1%
+DBM, Pounder's +10 / +1% DBM, Gunslinger Master +10 / none, Gunslinger Expert +3 / +1% weakpoint,
+Guerrilla Expert +3 / +1% reload, Guerrilla Master +5 / +5% DBM close range, Whacker Smacker +0 /
++5% power-attack bonus. Combo-Breaker's is EP79/EP27 (chance to not consume AP), not Onslaught.
+*verified 2026-07-20 vs 20260710 (all 1991 PERK records scanned)*
+
+## The Cheat Death revive family shares one cooldown framework
+
+AVIF `CheatDeathResetOnWeakPointChance` (0x00924E29), percentage-flagged: +30.0 = +30% chance per
+weak-point hit to reset a revive cooldown. Members found by EditorID search (not proven
+exhaustive): Life Saver, E.M.T., Power Armor Reboot, Scout Banner.
+*verified 2026-07-13 vs 20260710*
+
+## Diet mutations zero chem-keyworded effects on matching food
+
+Herbivore and Carnivore each grant three perks; the third ("Safe Veggies" 0x003C4059 / "Safe
+Meat") multiplies to 0 any effect keyworded `RadiationInjestion`, `SURV_EffectTypeDiseaseVector` or
+`ChemEffect` on matching items (Vegetable/Herb/Fruit; Meat). A food buff built on the chem MGEF
+pattern (`ChemEffect` + its own Stack keyword + `ChemDispelEffects`) is nullified by the matching mutation, while the doubler (×2/×2.5, needs
+`SURV_EffectTypeFood*`) never touches it. Audit all three perks before calling a buff
+mutation-proof.
+
+**Example:** Lucky-Leaf Tea (0x008FBA0C, Herb): its +1 LCK MGEF (0x008FBA0E) carries `ChemEffect`, so
+Herbivore zeroes it; the unkeyworded +1/teammate MGEF (0x00905315) survives both.
+*verified 2026-08-15 vs 20260814*
+
+---
+
+# Creatures
 
 ## Creature weapon damage curves are keyed on wielder level
 
-An enemy WEAP's `Damage Curve` (e.g. `CT_Creatures_Damage_Universal_TierNN`) has **x = wielder
-level**. Never quote the curve's first point as "the damage" — evaluate at the wielding NPC_'s
-actual level(s): its fixed level plus the `Renorm_MinLVL_TierNN` / `Renorm_MaxLVL_TierNN` GLOB
-bounds (get the GLOBs). Interpolate linearly, as the engine's `Curve::eval` does.
+An enemy WEAP's `Damage Curve` (e.g. `CT_Creatures_Damage_Universal_TierNN`) has x = wielder
+level. Evaluate it at the NPC_'s real levels (its fixed level and its `Renorm_MinLVL_TierNN` /
+`Renorm_MaxLVL_TierNN` GLOBs), interpolating linearly, never at the first point. **Combat
+inventory is not loot:** only the death-item/reward LVLI chain is obtainable, so an inventory-only
+weapon is "the boss attacks with it", never a drop or a legendary-mod roll.
 
-**Combat inventory ≠ loot.** An NPC_'s inventory / Object Template is what it *fights with*; only
-the death-item/reward LVLI chain (e.g. `*_LL_BountyDrop_*`) is player-obtainable. An inventory-only
-weapon is described as "the boss attacks with it", never as a drop, and never as "can roll
-legendary mods".
-
-**Example:** Slasher Knife / Throwing Knife (0x00927375/76) share
-`CT_Creatures_Damage_Universal_Tier30` → 104 damage at boss default level 100, ≈245 at its Tier07
-max level 175.
+**Example:** Slasher Knife / Throwing Knife (0x00927375/76), `CT_Creatures_Damage_Universal_Tier30`:
+104 damage at boss level 100, ≈245 at Tier07 max level 175.
 *verified 2026-07-15 vs 20260710*
+
+## ACBS `Template Flags` bits gate which per-record fields the engine reads
+
+Bits follow xEdit's `wbActorTemplateUse*` predicates: `0x1` Use Traits, `0x2` Use Stats, `0x100`
+Use Inventory. While `0x2` is set, stats come from the `Default Template` chain and a record's own
+`Properties[]` curve is dead data; an inventory link clearing needs its `0x100` bit read too. XOR old
+vs new flags on every record of a batch before reporting a curve swap or "decoupled from
+template". ACBS `Flags` bit `Auto-calc stats + PC Level Mult` makes `Level Mult` (value/1000) the
+live scaling knob instead of `Level`.
+
+**Example:** Pint-Sized Phantom Ringleader (0x008E06D5) swapped Health curve Tier31 → Tier33 while
+clearing `0x2`; 47 `HTO_` bosses' Tier52 → Tier54 on 20260903 kept `0x2` set and are inert.
+*verified 2026-09-03 vs 20260903*
 
 ## Epic creatures & epic rank
 
-`EpicRankData` on the NPC_ carries `HealthMult` 2.0–4.8 across ranks 1–5, gated by the
-`EpicCreatureDisallowedKeywords` FLST. Two distinct VMAD shapes assign a boss's rank — check for
-either: QUST `EncounterWaves[].BossEpicLevel` (only meaningful when that wave's `BossEpicChance ==
-100`; a nonzero-but-not-100 chance means the rank is conditional), or a boss-alias
-`defaultforcelegendaryalias.minRank`. Some well-known bosses carry neither shape.
-
-- **Loot-list rank ≠ epic rank.** A creature's community "★-rank" is usually read off its *loot*
-  LVLI/LGDI EditorID ("…3Star…", "…Rank4…"), an unrelated data path. Citing it as proof of epic
-  rank is a common false positive.
-- **The "~32k HP" community figure is the game's old signed-int cap (32767), lifted circa 2023.**
-  Per-nearby-player HP scaling is a **myth** — nothing in the data scales HP off player count.
-  ESM-derived HP (base curve × the rank's `HealthMult`) is authoritative and can exceed 1M at high
-  rank and level; don't reintroduce the cap or a player-count model when a number looks large.
+`EpicRankData` on the NPC_ carries `HealthMult` 2.0–4.8 across ranks 1–5, gated by FLST
+`EpicCreatureDisallowedKeywords`. A boss's rank comes from QUST `EncounterWaves[].BossEpicLevel`
+(fixed only when `BossEpicChance == 100`; a nonzero chance below 100 makes the rank conditional)
+or a boss-alias `defaultforcelegendaryalias.minRank`;
+some bosses carry neither. A creature's community "★-rank" read off its loot LVLI/LGDI EditorID is
+not epic rank. ESM-derived HP (base curve × `HealthMult`) is authoritative and can exceed 1M: the
+"~32k HP" figure is the old signed-int cap, and no data scales HP by player count.
 *verified 2026-07-19 vs 20260710*
+
+---
+
+# Items, crafting & vendors
 
 ## COBJ `Constructible Instantiation Filter Keyword` picks the crafted item's template
 
-The keyword is matched against the created object's
-`Object Template / Combinations[].Combination.Object Mod Template Item.Keywords[]`; whichever
-combination carries it supplies the mod loadout the crafted instance is stamped with. With the
-field null the engine falls back to the combination flagged `Default: True`. Combinations are
-human-named ("Default", "Standard", "Standard Epic", "Simple"), the fastest way to read intent.
-The same keyword family also gates LVLI `Filter Keyword Chances`.
+The keyword matches the created object's `Object Template / Combinations[]...Keywords[]`, and that
+combination's mod loadout is stamped on the crafted item; with the field null the `Default: True`
+combination applies. Combination names ("Default", "Simple", "Standard Epic") read intent fastest.
+The same keyword family gates LVLI `Filter Keyword Chances`. A COBJ dropping the keyword matters
+only if the two combinations' `Includes` differ.
 
-A COBJ dropping this keyword is neither automatically a no-op nor automatically meaningful — you
-must compare the two combinations' `Includes` lists on the created object.
-
-**Example:** 20260717→20260724, 48 base weapon recipes dropped `if_tmp_Melee_Simple_Restricted` /
-`if_tmp_Minigun_Simple_Restricted`. On 40 the "Simple" and "Default" combinations are
-byte-identical (pure bookkeeping); on 8 (Ripper, Power Fist, Chinese Officer Sword, Grognak's Axe,
-Bowie Knife, Guitar Sword, Revolutionary Sword, Rolling Pin) "Simple" omitted
-`mod_Shared_Melee_Paint_None`, so the crafted weapon now ships with that slot filled.
+**Example:** 20260724, 48 recipes dropped `if_tmp_Melee_Simple_Restricted`/`..._Minigun_...`; on 8
+(e.g. Ripper, Power Fist) "Simple" lacked `mod_Shared_Melee_Paint_None`, so crafts now fill that slot.
 *verified 2026-07-24 vs 20260724*
 
 ## The "Cursed" weapon line lives entirely in one `_PARENT_` include
 
-Six weapons have a `*_Custom_Cursed` OMOD (Shovel, Pickaxe, Harpoon Gun, Rolling Pin, Sickle,
-Broadsider). None carries the mechanic — each is an empty shell whose `Data/Includes[]` pulls in
-`_PARENT_mod_WEAPON_Cursed` (0x008AC233), holding the whole effect: `Speed` MUL+ADD +0.15,
-`Durability` MUL+ADD −0.15, `DamageBonusMult` ADD 0.35 (a DBM), and a `Keywords` ADD of
-`dn_HasCustomMod_Cursed` (0x005A70B5 — read only by two INNR naming-rule lists, a display tag with
-no SPEL/PERK consumer). `chase` on the per-weapon OMOD returns nothing useful.
-
-Acquisition: `E06_Colossus_LLS_Quest_Rewards_Unique` (A Colossal Problem / Earle) for Shovel,
-Pickaxe and Harpoon Gun; `LLS_TreasureHunt_Rewards_Rare_Common` for Sickle, Broadsider and Rolling
-Pin, with `LL_DailyOps_Rewards_CursedRollingPin` nested under it. All six select the cursed
-template via the LVLI `Filter Keyword Chances` keyword `if_tmp_EN06_Cursed` (0x005A70B4).
+The six `*_Custom_Cursed` OMODs (Shovel, Pickaxe, Harpoon Gun, Rolling Pin, Sickle, Broadsider) are
+empty shells including `_PARENT_mod_WEAPON_Cursed` (0x008AC233): `Speed` MUL+ADD +0.15,
+`Durability` −0.15, `DamageBonusMult` ADD 0.35 (DBM), and display tag `dn_HasCustomMod_Cursed`.
+Sources: `E06_Colossus_LLS_Quest_Rewards_Unique` (Shovel, Pickaxe, Harpoon Gun) and
+`LLS_TreasureHunt_Rewards_Rare_Common` (Sickle, Broadsider, Rolling Pin via
+`LL_DailyOps_Rewards_CursedRollingPin`), all selecting the template via `if_tmp_EN06_Cursed`
+(0x005A70B4).
 *verified 2026-07-24 vs 20260724*
-
-## World Pets: passives gate on progression-track entries, GLOB-backed magnitudes
-
-The summonable C.A.M.P. pet (Cat/Dog/Deathclaw/Radhog) with commands, per-species leveling to
-200 and two passives per species. On the Pets PTS branch (20260903, header v283) it is live for
-testing; on the Slasher line it is gated off (the `IsWorldPet` KYWD gating the follow package is
-applied to nothing, the four command emotes sit in FLST `ATX_HideFromStoreList` 0x004875A1) — check
-those refs to tell which branch a snapshot is on. Every tiered passive/perk has the same shape: 3-4
-SPEL/PERK/LVLI/GMRW rows, each gated on condition function 942 (absent from xEdit's table), whose
-`Parameter #1` (CIS1) is base64 of an 8-byte little-endian PGTR `Entry UID`. Decode it and map it
-to a `WorldPets_ProgressionTrack_<species>_NEW` entry before reading a tier, and check each gate's
-species and tier: some point at another pet's track. The `WorldPets_ENTM_*_BUFF/PERK_*`
-entitlements and `WorldPets_LvReward_*` GMRWs are `zzz` and empty. The real magnitude lives on the effect-level `Magnitude` FormID → a GLOB (the
-`Effect Item Data.Magnitude` beside it stays 0.0, the same "0.0 beside the real source" trap as
-curves). Pet Prowess: outgoing damage ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2 by tier.
-The progression tracks themselves are PGTR records, and the schema decodes them fully. Each
-species (Cat/Deathclaw/Dog/Radhog, 4 records, each `WorldPets_ProgressionTrack_<species>_NEW`) has 30
-Track Entries keyed by `Level Threshold` (named `Progress Threshold` before 20260903), covering pet
-level 5 to 200. Each entry also carries an authored reward `Name`/`Description Text`, which is the
-fastest source for what a tier actually does. Since 20260903 no pet effect reads a level at all:
-AVIF `WorldPets_PetProwessLevel` (0x00921E47) and the `WorldPets_PetLevelling_Level_*` globals are
-unused, and the track-entry gates are the only gate. On a pet gift LVLI the per-entry `Quantity Global`
-is the real count; the flat `Quantity` beside it is a stale authoring leftover. Each entry's `VPRR` points at the
-`GMRW` reward it grants at that threshold; its `NAME` links back to the prerequisite entry's own
-`PGTI` id (e.g. the "Goo-Getter 2" entry's `NAME` points at the "Goo-Getter 1" entry). Some entries
-carry 2 reward slots — the second slot is an alternate reward for the case where a reward shared
-across tracks (e.g. a Player Icon) was already claimed via an earlier track, worded on the reward
-itself (e.g. "+250 free Caps! (Player Icon reward already claimed)"). RACE's `PGTF` field links a
-pet race to its track (`CAMPPets_<Species>Race` → its own `PGTR`); RACE's `Pet Commands` rstruct
-now also carries a `Command Emote` (`EMOT`) field per command.
-
-**Example:** `WorldPets_DogBuff_Buff01` (Stimpak Fetcher, 0x0093BD1E) Effects[0].Magnitude →
-GLOB `WorldPets_ConsumableBuff_Dog01` (0x008D1875, 2.0); shared timer GLOB
-`WorldPets_ConsumableGiftInterval` (0x008B4291, 1801 s). `WorldPets_CatBuff_Buff01` (0x0093BD1C)
-CIS1 `UMtHagAAAAA=` → Entry UID 1783090000 = Cat track 'Baits Finder 1'.
-*verified 2026-09-14 vs 20260914*
-
-## A legendary-combination `Attach Point Index` mismatched against sibling Includes is a mesh-attach fix, not a stat change
-
-Within `Object Template / Combinations[N].Combination.Object Mod Template Item.Includes[]`, every
-base-part mod normally shares `Attach Point Index: 0`; a legendary-mod row sitting at `1` while its
-siblings sit at `0` is a visual mesh-attachment outlier — correcting it to match is cosmetic
-plumbing, never a damage/stat change.
-
-**Example:** 20260803, seven base weapons (Hunting Rifle, Knuckles, Laser Gun, Sickle, .44,
-Sledgehammer, Pump Action Shotgun) each had one 1★-legendary Include's Attach Point Index corrected
-`1` → `0` to match its siblings.
-*verified 2026-08-03 vs 20260803*
-
-## An NPC_'s own stat curve override needs `Use Stats` off to take effect
-
-An NPC_ `Properties[]` entry keyed by an Actor Value (e.g. Health) carries its own Curve Table, but
-the engine only reads it when `Configuration / Template Flags` bit `0x2` ("Use Stats") is cleared —
-otherwise stats still come from the `Default Template` chain. A curve swap on a Properties entry
-with the flag still set is dead data; check the flag before reporting the curve as live. This
-holds however many records the retier touches: diff the bit old vs new on every record, and a
-same-value bit on both sides means the whole batch is inert (47 `HTO_` bosses Tier52 → Tier54 on
-20260903, all with `0x2` still set).
-
-**Example:** Pint-Sized Phantom Ringleader (0x008E06D5) swapped its Health Properties curve
-`CT_Creatures_Health_Universal_Tier31` → `..._Tier33` (+41% tapering to +16%) in the same diff that
-cleared Template Flags bit `0x2`.
-*verified 2026-08-03 vs 20260803*
-
-
-## ACBS `Template Flags` bits gate which per-record fields the engine reads
-
-Bits follow xEdit's `wbActorTemplateUse*` predicates in `wbDefinitionsFO76.pas`: `0x1` Use
-Traits, `0x2` Use Stats, `0x100` Use Inventory (more in that file). When a `Template Actors /
-Inventory` link clears alongside a `Configuration / Template Flags` delta, XOR old vs new and match
-the bit before writing "decoupled from template". Separately, ACBS `Flags` bit `Auto-calc stats +
-PC Level Mult` makes `Level Mult` (u16, real multiplier = value/1000) the live level-scaling knob
-instead of flat `Level`; a `Level Mult` diff row means nothing without that flag.
-
-**Example:** `TW003_LvlSupermutantBoss` (0x008833A8) Template Flags 15861 → 15605 (bit 0x100
-cleared) with its own inventory list appearing in the same diff; `E02A_LvlGulper_Prime`
-Level Mult 100 → 1000 = 10% → 100% of player level.
-*verified 2026-09-03 vs 20260903*
 
 ## Resolving a special-currency vendor's price and gate
 
-A BOOK/plan/item's own `Value` field is Caps-denominated by default even when the item actually
-sells for Gold Bullion or another special currency — don't call the price "unconfirmed" from that
-field alone. `refs <item>` to the vendor LVLI (tier) entry it sits in, up to the CONT/NPC selling
-it, to the FACT tied to that vendor, and read `Vendor Buy Currency` on the FACT for the real
-currency; the item's `Value` number is still the correct price magnitude, only the currency is
-overridden. A per-tier vendor LVLI entry's own `Conditions` (a `Rep_Tier_<Location>_N_<Rank>` CNDF
-against an AVIF like `Reputation_AV_Crater`) gives the named reputation gate to cite alongside it.
+An item's `Value` is the right price magnitude but always reads as Caps. Follow `refs` from the
+item to its vendor LVLI tier entry, the CONT/NPC selling it, and that vendor's FACT, whose `Vendor
+Buy Currency` is the real currency. The tier entry's `Conditions` (a `Rep_Tier_<Location>_N_<Rank>`
+CNDF on an AVIF like `Reputation_AV_Crater`) name the reputation gate.
 
-**Example:** `Plan: Piercing Love` (BOOK 0x00930841, Value 1000/Caps001) → LVLI
-`W05_LLV_GoldVendor_Raider_Mortimer_6_Ally` → CONT `W05_Raiders_GoldVendorChest_Mortimer` → FACT
-`W05_Raider_Mortimer_GoldVendorFaction` (`Vendor Buy Currency = GoldBullion`), gated on
-`Reputation_AV_Crater >= 12000` ("Ally") → "Sold by Mortimer for 1000 Gold Bullion at Ally
-reputation with the Raiders."
+**Example:** `Plan: Piercing Love` (BOOK 0x00930841, Value 1000) → LVLI
+`W05_LLV_GoldVendor_Raider_Mortimer_6_Ally` → CONT → FACT `Vendor Buy Currency = GoldBullion`, gated
+`Reputation_AV_Crater >= 12000`: "1000 Gold Bullion from Mortimer at Ally".
 *verified 2026-08-04 vs 20260803*
 
-## Seasonal content converts by rename, not by adding records
+---
 
-A seasonal one-off promoted to a permanent repeatable shows up as a QUST rename plus a
-`QTFS (Repeat Limit?)` flip, never a new record. `0xffff` (65535) reads as "no limit".
+# World Pets
 
-**Example:** `SDOW_SQ01_Graves_Repeatable` (0x008F1665) in 20260710 — "(Seasonal) Laid to Unrest" →
-"(Repeatable) Disturbed Grave", QTFS 65535 → 50. For reference, Slasher Season Y2's chain is
-`SDOW_MQ01_Bodies` (0x008F15C1) → `MQ02_Graves` (0x008F15A1) → MQ04 (0x008F15C2) → MQ05
-(0x008F15C3), tracked by radio quest `SDOW_SQ_DebunkerRadio` (0x008EDF32) via `LCP_SDOW_*` GLOB
-toggles.
-*verified 2026-07-14 vs 20260710*
+## World Pets passives gate on progression-track entries
 
-## Diet mutations zero chem-keyworded effects on matching food — check the "Safe" perk, not just the doubler and nullifier
+Each species (Cat/Dog/Deathclaw/Radhog) has two tiered passives built from 3-4 SPEL/PERK/LVLI/GMRW
+rows, each gated on condition function 942 (absent from xEdit's table). Its `Parameter #1` (CIS1)
+is base64 of an 8-byte little-endian PGTR `Entry UID`: decode it, map it to a
+`WorldPets_ProgressionTrack_<species>_NEW` entry, and check each gate's species and tier, since
+some point at another pet's track. Nothing reads a pet level (`WorldPets_PetProwessLevel` 0x00921E47
+and `WorldPets_PetLevelling_Level_*` are unused), and the `WorldPets_ENTM_*_BUFF/PERK_*`
+entitlements and `WorldPets_LvReward_*` GMRWs are `zzz` and empty. Magnitudes sit on `Magnitude`
+GLOBs beside a flat 0.0.
+Pet Prowess by tier: outgoing ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2.
 
-Herbivore and Carnivore each grant three perks; the third ("Safe Veggies" 0x003C4059 / "Safe Meat")
-multiplies to 0 any effect keyworded `RadiationInjestion`, `SURV_EffectTypeDiseaseVector`, or
-`ChemEffect` on the matching item type (Vegetable|Herb|Fruit for Herbivore; Meat for Carnivore). A
-food/drink buff built on the chem MGEF pattern (`ChemEffect` + own Stack keyword +
-`ChemDispelEffects`) is therefore nullified by the *matching* diet mutation, while the doubler
-(×2/×2.5, requires `SURV_EffectTypeFood*` keywords) never touches it. Audit all three perks before
-declaring a buff mutation-proof.
+**Example:** `WorldPets_CatBuff_Buff01` (0x0093BD1C) CIS1 `UMtHagAAAAA=` → Entry UID 1783090000 =
+Cat track "Baits Finder 1"; `WorldPets_DogBuff_Buff01` (Stimpak Fetcher, 0x0093BD1E)
+`Effects[0].Magnitude` → GLOB `WorldPets_ConsumableBuff_Dog01` (0x008D1875, 2.0).
+*verified 2026-09-14 vs 20260914*
 
-**Example:** Lucky-Leaf Tea (0x008FBA0C, `IngredientTypeHerb`): its base +1 LCK MGEF (0x008FBA0E)
-carries `ChemEffect`, so Herbivore zeroes it; Carnivore keeps it (its gates name only Vegetable and
-Meat). The perk-granted +1/teammate MGEF (0x00905315) has no keywords and survives both.
-*verified 2026-08-15 vs 20260814*
+## A World Pets progression track is one PGTR record per species
 
-## A World Pets passive's loot tier is implemented by star rank or by item count, never both
+`WorldPets_ProgressionTrack_<species>_NEW` holds 30 Track Entries keyed by `Level Threshold`
+(formerly `Progress Threshold`), pet level 5 to 200. An entry's authored `Name`/`Description Text`
+says what the tier does; its `VPRR` points at the granted `GMRW`, and its `NAME` points at the
+prerequisite entry's `PGTI`. A second reward slot is the alternate when a cross-track reward (e.g.
+a Player Icon) was already claimed. RACE `PGTF` links `CAMPPets_<Species>Race` to its track, and
+RACE `Pet Commands` carries a `Command Emote` (`EMOT`) per command. Gift timers share GLOB
+`WorldPets_ConsumableGiftInterval` (0x008B4291, 1801 s).
+*verified 2026-09-14 vs 20260914*
 
-An activity-reward passive hangs off the activity's own death/reward list as one entry per tier,
-each gated on its progression-track entry (see "World Pets: passives gate on progression-track
-entries"). Two shapes exist and they read identically
-in a diff: a `Use First Object That Matches All Conditions` list whose entries are 1/2/3-star
-templates ramps the rank, while several entries pointing at one shared list with a per-tier
-`Quantity Global` ramps the count and leaves the rank fixed at whatever that shared list holds.
-Read which shape you have before quoting a star rating.
+## Refs tell whether a snapshot has World Pets switched on
 
-**Example:** Bounty Sniffer (0x0093D70B) ramps 1→2→3 star. Fun-Festation's three entries on
-`HTO_crLLD_Boss` (0x00863220) all point at 0x008FD890, which holds only 3-star lists, and ramp
-1→2→3 items through globals 0x008C9393/95/94.
+The Pets PTS branch (20260903, header v283) has pets live for testing; on the Slasher line KYWD
+`IsWorldPet` (which gates the follow package) is applied to nothing and the four command emotes
+sit in FLST `ATX_HideFromStoreList` (0x004875A1). Check those refs to tell a snapshot's branch.
+*verified 2026-09-03 vs 20260903*
+
+## A World Pets loot passive ramps star rank or item count, never both
+
+An activity-reward passive adds one gated entry per tier to the activity's reward list. A `Use
+First Object That Matches All Conditions` list of 1/2/3-star templates ramps the rank; several
+entries pointing at one shared list with per-tier `Quantity Global`s ramp the count at that list's
+fixed rank. The two read identically in a diff, so check the shape before quoting stars.
+
+**Example:** Bounty Sniffer (0x0093D70B) ramps 1→2→3 star; Fun-Festation's entries on
+`HTO_crLLD_Boss` (0x00863220) all point at 3-star-only 0x008FD890 and ramp 1→2→3 items.
 *verified 2026-09-14 vs 20260903*
