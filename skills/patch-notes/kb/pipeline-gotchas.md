@@ -49,6 +49,24 @@ Legendary Items" claim, the Ghost Boy invisibility rewording, every Slasher rena
 My Stats terminal expansion.
 *found 2026-07-24*
 
+## Curve-table edits are invisible to the record diff
+
+Curve tables (`Data/<date>/misc/curvetables/json/`) are loose JSON files, not ESM records. The
+pipeline reads them only to resolve a CURV reference, so a curve whose points change while its
+referencing record stays byte-identical never enters the diff. Pet XP, mutation scaling and
+legendary-effect magnitudes live there.
+
+**Symptom:** an official note describes a rebalance ("re-balanced XP levels") and no record in the
+diff moves; a Mismatch flag is about to say the data has no counterpart.
+**Fix (run every patch, before writing any "no data counterpart" flag):**
+`diff -rq Data/<old>/misc/curvetables Data/<new>/misc/curvetables`, then compare the `curve`
+points of each changed file. Added files belong with the records that reference them.
+**Example:** 20260903→20260914 — `worldpets/worldpets_petxp_02.json` is ×12 at all 42 points
+(level 100: 2,900 → 34,800 XP), the official "Re-balanced Pet XP levels" that the summary had
+flagged as unsupported. The same pass found `mutation_adrenal_{normal,super}.json` gaining a
+0-kill point at 0.
+*found 2026-09-14*
+
 ## ROLLOUT shapes are blind to values
 
 > **Enforced since 2026-09-12:** triage keeps any changed record with a numeric delta on a non-plumbing field out of ROLLOUT (`settings.rollout_numeric_exclusion`, `rollouts.md` "Kept out (numeric)" column). The manual value scan below remains the check for the plumbing-pattern fields it deliberately skips.
@@ -113,6 +131,23 @@ re-fetch with `get --resolve stub` anyway. Also run Step 3's daemon prewarm *aft
 during it: a concurrent index-cache build shares the same memory headroom.
 **Example:** 20260821→20260903 — three full-body runs OOM-killed at 14.7, 14.0 and 19.3 GB; the
 stub run finished in 20 s at a 3 GB peak and produced 45 MB of diff.json.
+
+## A worldspace rework makes bundling run out of memory on REFR placements
+
+Bundling runs one reverse-reference search per record in the diff, serially, and keeps every edge
+in memory. A landscaping pass adds or moves hundreds of thousands of placed references (REFR), so
+the bundling step grows without bound while the diff itself finishes in seconds.
+
+**Symptom:** the diff has 100K+ REFR entries, `bundles.json` never appears, and the
+`make_patch_notes.py` process grows by ~350 MB a minute while the daemon sits near 100% CPU.
+**Fix:** run `make_patch_notes.py ... --exclude-type LAND,NAVM,REFR`. Placements are
+landscaping and quest-staging detail, not bundle stories: summarise them separately from a
+REFR-only diff (`esm --local diff OLD NEW --json --bodies stub --type REFR`) as counts by base
+object and the placements of newly added base objects.
+**Example:** 20260903→20260914 — 225K of 281K diff records were REFR (Skyline Valley rework);
+bundling passed 11 GB in 25 minutes and was killed. Without REFR the diff had 22K records and the
+mechanical stage finished in 270 s; the REFR-only diff showed 150 placements of the new
+`RTSV_SQ01_BrainInJar` collectible.
 
 ## A header-version bump (branch switch) fakes tens of thousands of changes
 

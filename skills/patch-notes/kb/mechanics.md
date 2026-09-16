@@ -104,7 +104,10 @@ Value Mult` (Float 1.0 → +AV flat); the target AV is in `Function Parameter 3 
 **Flipping a row between those two forms silently rebalances every source feeding that AV**, with
 no change to any of those source records. Weakpoint/limb-scoped damage rows are "Multiply 1+AV".
 `STAT_DmgVsTorso` is the one exception with no plumbing row — read by the `DamageVsNonWeakpoint_DO`
-default object instead. `STAT_BeneficialPerk` has no PCRD (attached directly to the Player NPC_,
+default object instead. `STAT_DmgThrown` (0x0090F5E4) is thrown weapons' own additive damage stat:
+a `STAT_DamagePerk` `Add Actor Value Mult` row (Float 0.01) gated on `WeaponTypeThrown`, so 1 point
+= +1% DBM on thrown weapons; the Spring Assisted arm lining (`_PARENT_mod_Armor_ThrownDamage`,
+0x0090F5F3, ADD 100.0) is its only feeder. `STAT_BeneficialPerk` has no PCRD (attached directly to the Player NPC_,
 0x00000007).
 
 **Example:** 20260717→20260724, the `Mod Detection Sneak Skill` row on `STAT_Sneak` (0x0008D1BF)
@@ -247,6 +250,10 @@ EditorID search, not proven exhaustive).
 
 - `Data / Full Power Seconds` = time to reach full charge (Gauss Rifle base 1.0s).
 - `Data / Full Power Damage Mult` = the full-charge damage multiplier (Gauss Rifle base 2.0).
+- Fast Trigger-family receivers (`_PARENT_mod_WEAPON_Receiver_FastTrigger_Solo`/`_Dual`) carry
+  `FullPowerSeconds` MUL+ADD −0.25 beside `AttackDelaySec` −0.25: a charge weapon using one reaches
+  full charge 25% sooner, and non-charge guns ignore the property. The Gauss Shotgun is the only
+  charge weapon with such receivers (e.g. "Hair Trigger Receiver", 0x00573741).
 - **Name aliases:** this one field has been called `MinPowerPerShot`, then `MaxPowerPerShot`, now
   `FullPowerDamageMult` (and `Min Power Per Shot` in the raw WEAP `Data` struct, patched via
   `schema/fo76.overrides.json`). Treat all of them as the same field — data captured before
@@ -325,25 +332,27 @@ Pin, with `LL_DailyOps_Rewards_CursedRollingPin` nested under it. All six select
 template via the LVLI `Filter Keyword Chances` keyword `if_tmp_EN06_Cursed` (0x005A70B4).
 *verified 2026-07-24 vs 20260724*
 
-## World Pets: tiered `HasEntitlement` gating, GLOB-backed magnitudes
+## World Pets: passives gate on progression-track entries, GLOB-backed magnitudes
 
 The summonable C.A.M.P. pet (Cat/Dog/Deathclaw/Radhog) with commands, per-species leveling to
 200 and two passives per species. On the Pets PTS branch (20260903, header v283) it is live for
 testing; on the Slasher line it is gated off (the `IsWorldPet` KYWD gating the follow package is
 applied to nothing, the four command emotes sit in FLST `ATX_HideFromStoreList` 0x004875A1) — check
 those refs to tell which branch a snapshot is on. Every tiered passive/perk has the same shape: 3-4
-SPEL/PERK effects, each gated `HasEntitlement(ENTM tierN)==1 AND HasEntitlement(ENTM tierN+1)==0`,
-where the ENTMs are per-species-per-tier unlock markers with no grant path in the ESM (engine-side
-leveling). The real magnitude lives on the effect-level `Magnitude` FormID → a GLOB (the
+SPEL/PERK/LVLI/GMRW rows, each gated on condition function 942 (absent from xEdit's table), whose
+`Parameter #1` (CIS1) is base64 of an 8-byte little-endian PGTR `Entry UID`. Decode it and map it
+to a `WorldPets_ProgressionTrack_<species>_NEW` entry before reading a tier, and check each gate's
+species and tier: some point at another pet's track. The `WorldPets_ENTM_*_BUFF/PERK_*`
+entitlements and `WorldPets_LvReward_*` GMRWs are `zzz` and empty. The real magnitude lives on the effect-level `Magnitude` FormID → a GLOB (the
 `Effect Item Data.Magnitude` beside it stays 0.0, the same "0.0 beside the real source" trap as
 curves). Pet Prowess: outgoing damage ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2 by tier.
 The progression tracks themselves are PGTR records, and the schema decodes them fully. Each
-species (Cat/Deathclaw/Dog/Radhog, 4 records, each `WorldPets_ProgressionTrack_<species>`) has 30
+species (Cat/Deathclaw/Dog/Radhog, 4 records, each `WorldPets_ProgressionTrack_<species>_NEW`) has 30
 Track Entries keyed by `Level Threshold` (named `Progress Threshold` before 20260903), covering pet
 level 5 to 200. Each entry also carries an authored reward `Name`/`Description Text`, which is the
 fastest source for what a tier actually does. Since 20260903 no pet effect reads a level at all:
 AVIF `WorldPets_PetProwessLevel` (0x00921E47) and the `WorldPets_PetLevelling_Level_*` globals are
-unused, and the ENTM markers are the only gate. On a pet gift LVLI the per-entry `Quantity Global`
+unused, and the track-entry gates are the only gate. On a pet gift LVLI the per-entry `Quantity Global`
 is the real count; the flat `Quantity` beside it is a stale authoring leftover. Each entry's `VPRR` points at the
 `GMRW` reward it grants at that threshold; its `NAME` links back to the prerequisite entry's own
 `PGTI` id (e.g. the "Goo-Getter 2" entry's `NAME` points at the "Goo-Getter 1" entry). Some entries
@@ -355,8 +364,9 @@ now also carries a `Command Emote` (`EMOT`) field per command.
 
 **Example:** `WorldPets_DogBuff_Buff01` (Stimpak Fetcher, 0x0093BD1E) Effects[0].Magnitude →
 GLOB `WorldPets_ConsumableBuff_Dog01` (0x008D1875, 2.0); shared timer GLOB
-`WorldPets_ConsumableGiftInterval` (0x008B4291, 1801 s).
-*verified 2026-09-03 vs 20260903*
+`WorldPets_ConsumableGiftInterval` (0x008B4291, 1801 s). `WorldPets_CatBuff_Buff01` (0x0093BD1C)
+CIS1 `UMtHagAAAAA=` → Entry UID 1783090000 = Cat track 'Baits Finder 1'.
+*verified 2026-09-14 vs 20260914*
 
 ## A legendary-combination `Attach Point Index` mismatched against sibling Includes is a mesh-attach fix, not a stat change
 
@@ -447,7 +457,8 @@ Meat). The perk-granted +1/teammate MGEF (0x00905315) has no keywords and surviv
 ## A World Pets passive's loot tier is implemented by star rank or by item count, never both
 
 An activity-reward passive hangs off the activity's own death/reward list as one entry per tier,
-each gated `HasEntitlement(<species>_BUFF_<name>0N)`. Two shapes exist and they read identically
+each gated on its progression-track entry (see "World Pets: passives gate on progression-track
+entries"). Two shapes exist and they read identically
 in a diff: a `Use First Object That Matches All Conditions` list whose entries are 1/2/3-star
 templates ramps the rank, while several entries pointing at one shared list with a per-tier
 `Quantity Global` ramps the count and leaves the rank fixed at whatever that shared list holds.

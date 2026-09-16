@@ -127,6 +127,17 @@ melee weapons converging on exactly 1.1388938) across a large batch of starter w
 rename rides along with this churn — a naming shuffle, not new data.
 *verified 2026-07-22 vs 20260717*
 
+## REGN `Region Areas` point lists re-serialize reversed or rotated
+
+A REGN diff with every `Points[N]` X/Y changed is usually the same polygon with its winding reversed
+and its start point rotated, within ≤10 units of jitter. Compare each area as a cyclic point
+sequence in both directions before calling a boundary redrawn.
+
+**Example:** 20260903→20260914, 96 of 97 changed Skyline Valley/Burning Springs region areas
+matched after reversal/rotation (max deviation 9.91); only `StormObjectRegion_Forest01`
+(0x006FCB0B) actually moved.
+*verified 2026-09-14 vs 20260914*
+
 ---
 
 # Text churn
@@ -289,6 +300,27 @@ with `SDOW_DailyOps_SlasherForced_CNDF` (Selection_Index==1) and `SDOW_DailyOps_
 (Selection_Index==2), which can never both be true in the same evaluation.
 *verified 2026-08-03 vs 20260803*
 
+## A reward row gated on `GetRandomPercent <=` a 0-valued GLOB was already switched off
+
+When a GMRW/LVLI loses a reward row whose only condition is `GetRandomPercent <= <GLOB>` and that
+GLOB is 0.0 on the old side, the removal cleans up a drop that could never roll. Get the GLOB on the
+OLD snapshot before writing any loss; a `DEL_`/`zzz` rename of the GLOB in the same diff confirms it.
+
+**Example:** 20260914, seven Workshop Attack/Pitt GMRWs (e.g. 0x0063124B) drop
+`P62_LLS_Rewards_TheDrifter_ActivationKeyCard` (0x00824D11), gated on GLOBs that were all 0.0.
+*verified 2026-09-14 vs 20260903*
+
+## Armor/weapon combinations keyed on `ATX_if_tmp_Loadout_*` are Character Boost gear
+
+New `Object Template / Combinations` rows whose `Keywords` hold
+`ATX_if_tmp_Loadout_Level{50,100,150}Boost` are the gear templates for the Atomic Shop Character
+Boost loadout lists, not new craftable variants, and unrelated to any mod or lining rollout in the
+same patch. Resolve the keyword before attributing the rows.
+
+**Example:** 20260914, Combat Armor pieces 0x0011D3C3–C7 gain two rows used by
+`ATX_LL_Loadout_Level100Boost_Armor`/`Level150Boost_Armor` (0x008F4766/0x008F476C).
+*verified 2026-09-14 vs 20260914*
+
 ---
 
 # Lint false positives
@@ -318,8 +350,10 @@ or flagged `_raw`. Also fires on a bare `Model / Model FileName` swap with no `D
 on the record at all — same fix: check the record's actual description field before trusting the
 lint's premise. Spot-verified on TACT `TEST_ENB_ModusSceneTerminal` (0x00006DB5), whose sole change
 is `Unknown CTRN / hex`, and on `SDOW_MQ02_Graves_GraveActivator` (0x008F1672), a bare
-`GraveActivator01.nif` → `GraveActivator_NoSkeleton.nif` swap with no Description field.
-*verified 2026-08-03 vs 20260803*
+`GraveActivator01.nif` → `GraveActivator_NoSkeleton.nif` swap with no Description field. A bare
+`Editor ID` or `Filter` rename trips it too (`Fishing_Fish_Small_Axolotl_Gold`, FISH 0x0091391B,
+a zzz rename with no Description).
+*verified 2026-09-14 vs 20260914*
 
 
 ## `desc_changed_stats_same` misses stats that move through a linked GLOB
@@ -383,7 +417,10 @@ across the changed rows, and if they match, the entries only swapped slots. `Per
 point, function, `Float` and whole `Perk Conditions` lists move together and mirror each other.
 Two co-occurring fields are pure noise either way: `Entry Point / Perk Condition Tab Count`
 shifting by one is editor metadata, and `Actor Value, Float` appearing while `Float` and
-`Function Parameter 3 (Actor Value)` go null is one schema struct replacing two fields.
+`Function Parameter 3 (Actor Value)` go null is one schema struct replacing two fields. The
+`Effect Header / Rank` byte is not a rank gate either: live single-rank perks carry 0, 1, 10, 40,
+70/71 or 153 there (Retaliator's `RTSV_StormRender_Rebuttal`, 0x008DB74B, has its ×1.4 row at 1),
+so never call a row rank-locked or inert from it; ranks are separate PERK records.
 
 **Example:** `PlayerPerk_Spotlight` (0x0046C7CF) reported 10 of 18 effect rows changed; both sides
 carry the same ten `Ab_Spotlight_*` abilities plus eight empty slots, differing only in order.
