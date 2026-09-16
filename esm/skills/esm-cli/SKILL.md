@@ -161,8 +161,13 @@ One rule: **read records with `walk`; `chase` is the machine contract.**
     the include carrying the real mechanic. A hook keyword that no SPEL/PERK
     condition references renders a `dead end` note instead (tag keywords:
     `FeaturedItem`, `NonDroppable`, naming keywords, …).
-  - **LVLI root**: resolves the actual drop odds instead of dumping raw
-    entries — see "Drop-chance math" below.
+  - **LVLI root**: resolves the actual drop odds as a tree bounded by
+    `--depth` (default 1 for an LVLI root) — see "Drop-chance math" below.
+  - **Loot-bag items** (ALCH/SPEL/ENCH or MGEF): an LVLI named by the effect
+    MGEF's Papyrus script property (`script
+    Creatures:FestiveGiftAddItem.FestiveLeveledList → LVLI …`) is walked as
+    its own node, so the bag's drop odds print in the same call. `refs` on
+    such an LVLI shows only the MGEF; the item sits one hop further back.
   - Raise `--depth` to 3 for OMOD → ENCH → MGEF → granted-perk; the root's
     mechanism slice renders at any depth.
   - For how to read `--refs` output, see "Obtainability verdicts" below.
@@ -344,12 +349,28 @@ as clean an authoritative signal, so flag uncertainty rather than asserting live
 
 **`esm walk <lvli-selector>` computes this automatically** (`src/lvli.rs`) —
 pool/`Use All`/`Use First Match` selection, flat-vs-GLOB-vs-Curve-Table
-chance-none, and recursion through nested sublists to leaf items, as one ranked
-table. Reach for it instead of hand-tracing a chain. The rules below are for
-reading its output, and for the handful of things it deliberately doesn't model
-(`Filter Keyword Chances`, `Epic Loot Chance`, list-level `Max Count`/`Max
-Global`/`Max Curve Table`, COED owner/rank gates) — those surface as
-`unresolved` notes on the affected rows rather than being silently guessed.
+chance-none, and recursion through nested sublists to leaf items. Reach for it
+instead of hand-tracing a chain.
+
+Read the text like `du -d`. `--depth` counts record hops plus nesting levels
+(default 1 on an LVLI root; an LVLI reached through a record hop expands
+whatever depth remains, always at least its direct entries). Every number is per
+roll of the root list:
+
+- `▸ LVLI … (pool, 419 items)` is a collapsed sublist: `expected` is items out
+  of it, `p(>=1)` the chance it yields anything. Raise `--depth` to open it.
+- `▾ LVLI …` is expanded; its entries follow, indented.
+- The `notes` column holds footnote numbers, explained once under the table;
+  `list notes` on the header line apply to every entry of the root list. A
+  collapsed row's numbers include caveats from inside it.
+- `--json` carries the same tree under `table.tree` plus `table.rows`, which
+  always flattens every level to leaf items (a leaf reached by one path matches
+  its tree row).
+
+The rules below are for reading that output, and for the handful of things it
+deliberately doesn't model (`Filter Keyword Chances`, `Epic Loot Chance`,
+list-level `Max Count`/`Max Global`/`Max Curve Table`, COED owner/rank gates) —
+those surface as notes rather than being silently guessed.
 
 - **A zero `Chance None Value` does not mean "guaranteed" — check the sibling
   `Chance None Global` on the same entry.** Each `Leveled List Entry` carries
@@ -384,8 +405,8 @@ Global`/`Max Curve Table`, COED owner/rank gates) — those surface as
   `RD01_LLS_Raids_Rewards_Enc01_Weapons_Valkyrie` is `Use First Match` with the
   BOOK at `rand ≤ 5` (while unlearned) ahead of the weapon LVLI at `rand ≤ 10`.
   Any gate that isn't `GetRandomPercent` (`GetLevel`, `HasLearnedRecipe`, …) is
-  real but not a probability the tool can compute — it renders as a `gated:`
-  note, assume-pass by default (`--strict` is internal, not exposed on `walk`).
+  real but not a probability the tool can compute — it renders as a "can't be
+  computed — assumed to pass" note, assume-pass by default (`--strict` is internal, not exposed on `walk`).
 - `Quantity: 0` on an entry means "use the sublist's own count", not "disabled"
   — creature death-item lists are full of them.
 - **A `Minimum Level`/`Minimum Level Global` above the assumed player level

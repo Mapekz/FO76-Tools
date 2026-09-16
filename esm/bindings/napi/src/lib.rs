@@ -348,8 +348,9 @@ impl EsmDatabase {
 
     /// Interactive digest of a record and the chain it references (see
     /// `esm::walk`) — computed server-side (in-process here) via `Op::Walk`,
-    /// the same op the daemon and MCP server dispatch. `depth`/`ref_limit`/
-    /// `level` default to `esm::walk::DEFAULT_DEPTH`/
+    /// the same op the daemon and MCP server dispatch. `depth` defaults per
+    /// root type (`esm::walk::default_depth`); `ref_limit`/
+    /// `level` default to
     /// `esm::chase::DEFAULT_REF_LIMIT`/`esm::lvli::DEFAULT_LEVEL` when
     /// omitted; `want_refs` mirrors the CLI's `--refs` flag.
     #[napi]
@@ -370,9 +371,7 @@ impl EsmDatabase {
                 .map_err(|e| napi::Error::from_reason(e.to_string()))?;
             let op = esm::ipc::Op::Walk {
                 sel,
-                depth: depth
-                    .map(|d| d as usize)
-                    .unwrap_or(esm::walk::DEFAULT_DEPTH),
+                depth: depth.map(|d| d as usize),
                 ref_limit: ref_limit
                     .map(|d| d as usize)
                     .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),

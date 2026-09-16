@@ -5,7 +5,9 @@
 use esm::chase::ChaseFetcher;
 use esm::ipc::RecordSel;
 use esm::reader::RecordHeaderInfo;
-use esm::walk::{WalkOptions, WalkResult, build_refs_digest, render_digest, render_text, walk};
+use esm::walk::{
+    Digest, WalkOptions, WalkResult, build_refs_digest, render_digest, render_text, walk,
+};
 use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use serde_json::json;
 use std::collections::HashMap;
@@ -112,7 +114,7 @@ fn walk_at(f: &mut FakeFetcher, formid: &str, depth: usize) -> WalkResult {
         f,
         sel(formid),
         &WalkOptions {
-            depth,
+            depth: Some(depth),
             ..WalkOptions::default()
         },
     )
@@ -316,6 +318,103 @@ fn magic_item_glob_magnitude_flat_wins_rule_both_ways() {
         ),
         "expected flat-wins branch in: {text}"
     );
+}
+
+const LOOT_BAG_ALCH_FID: &str = "0x00600022";
+const LOOT_BAG_MGEF_FID: &str = "0x00600023";
+const LOOT_BAG_LVLI_FID: &str = "0x00600024";
+
+/// A loot-bag consumable: its effect's MGEF names the LVLI it hands out only
+/// through a Papyrus script property, never a record field.
+fn loot_bag_fixture() -> FakeFetcher {
+    let mut f = FakeFetcher::new();
+    let lvli = json!({"formid": LOOT_BAG_LVLI_FID, "editor_id": "BagLoot", "record_type": "LVLI"});
+    f.insert(
+        LOOT_BAG_ALCH_FID,
+        "ALCH",
+        "LootBag",
+        json!({
+            "Effects": [{
+                "Effect": {
+                    "Base Effect": {"formid": LOOT_BAG_MGEF_FID, "editor_id": "LootBagEffect", "record_type": "MGEF"},
+                    "Effect Item Data": {"Magnitude": 0, "Duration": 0},
+                }
+            }],
+        }),
+    );
+    f.insert(
+        LOOT_BAG_MGEF_FID,
+        "MGEF",
+        "LootBagEffect",
+        json!({
+            "Virtual Machine Adapter": {"version": 6, "scripts": [
+                {"name": "Creatures:FestiveGiftAddItem", "status": 0, "properties": [
+                    {"name": "FestiveLeveledList", "type": 1, "value": lvli},
+                ]},
+                {"name": "FXaddItemOnEffectScript", "status": 0, "properties": [
+                    {"name": "fChanceToSpawn", "type": 4, "value": 70.0},
+                    {"name": "leveledItemsToAdd", "type": 11, "value": [lvli]},
+                    {"name": "NotALoot", "type": 1, "value": {"formid": "0x00600025", "editor_id": "Kw", "record_type": "KYWD"}},
+                ]},
+            ]},
+            "Magic Effect Data": {"Data": {"Archetype": {"value": 1, "name": "Script"}}},
+        }),
+    );
+    f.insert(
+        LOOT_BAG_LVLI_FID,
+        "LVLI",
+        "BagLoot",
+        json!({
+            "Leveled List Entries": [lvli_entry(lvli_leaf("0x00600026", "ALCH", "BagCandy"))],
+        }),
+    );
+    f
+}
+
+#[test]
+fn magic_item_follows_base_effect_script_leveled_list() {
+    let mut f = loot_bag_fixture();
+    let result = walk_at(&mut f, LOOT_BAG_ALCH_FID, 1);
+    let text = node_digest(&result, LOOT_BAG_ALCH_FID).join("\n");
+    assert!(
+        text.contains(&format!(
+            "script Creatures:FestiveGiftAddItem.FestiveLeveledList → LVLI {LOOT_BAG_LVLI_FID} BagLoot"
+        )),
+        "expected the script loot line in:\n{text}"
+    );
+    assert!(
+        text.contains("script FXaddItemOnEffectScript.leveledItemsToAdd → LVLI"),
+        "expected the array-property loot line in:\n{text}"
+    );
+    assert!(
+        !text.contains("NotALoot"),
+        "non-LVLI properties stay out:\n{text}"
+    );
+
+    let lvli = result
+        .nodes
+        .iter()
+        .find(|n| n.formid == LOOT_BAG_LVLI_FID)
+        .expect("the script's LVLI is walked one hop from the item");
+    assert_eq!(lvli.depth, 1);
+    assert_eq!(
+        lvli.via.as_deref(),
+        Some("script Creatures:FestiveGiftAddItem.FestiveLeveledList")
+    );
+    assert!(
+        node_digest(&result, LOOT_BAG_LVLI_FID)
+            .join("\n")
+            .contains("BagCandy")
+    );
+}
+
+#[test]
+fn mgef_root_follows_script_leveled_list() {
+    let mut f = loot_bag_fixture();
+    let result = walk_at(&mut f, LOOT_BAG_MGEF_FID, 1);
+    assert!(result.nodes.iter().any(|n| n.formid == LOOT_BAG_LVLI_FID));
+    let text = node_digest(&result, LOOT_BAG_MGEF_FID).join("\n");
+    assert!(text.contains("script Creatures:FestiveGiftAddItem.FestiveLeveledList → LVLI"));
 }
 
 // ─── KYWD reverse-chase ─────────────────────────────────────────────────────
@@ -898,7 +997,7 @@ fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
         &mut f,
         sel(OMOD_HUB_FID),
         &WalkOptions {
-            depth: 0,
+            depth: Some(0),
             ref_limit: 2,
             ..WalkOptions::default()
         },
@@ -1028,8 +1127,8 @@ fn lvli_fixture() -> FakeFetcher {
         }),
     );
 
-    // Direct sublist entry → its own BFS node, on top of the aggregated
-    // table already flattening through it.
+    // A sublist whose list-wide note covers two items, under a root that
+    // also carries a direct leaf.
     f.insert(
         LVLI_SUBLIST_CHILD_FID,
         "LVLI",
@@ -1037,7 +1136,11 @@ fn lvli_fixture() -> FakeFetcher {
         json!({
             "_record_type": "Leveled Item",
             "Flags": {"value": "0x0", "flags": []},
-            "Leveled List Entries": [lvli_entry(lvli_leaf("0x00700022", "WEAP", "NestedWeapon"))],
+            "Max Count": 2,
+            "Leveled List Entries": [
+                lvli_entry(lvli_leaf("0x00700022", "WEAP", "NestedWeapon")),
+                lvli_entry(lvli_leaf("0x00700023", "WEAP", "NestedPistol")),
+            ],
         }),
     );
     f.insert(
@@ -1046,12 +1149,11 @@ fn lvli_fixture() -> FakeFetcher {
         "TestSublistRoot",
         json!({
             "_record_type": "Leveled Item",
-            "Flags": {"value": "0x0", "flags": []},
-            "Leveled List Entries": [lvli_entry(lvli_leaf(
-                LVLI_SUBLIST_CHILD_FID,
-                "LVLI",
-                "TestSublistChild",
-            ))],
+            "Flags": {"value": "0x4", "flags": ["Use All"]},
+            "Leveled List Entries": [
+                lvli_entry(lvli_leaf(LVLI_SUBLIST_CHILD_FID, "LVLI", "TestSublistChild")),
+                lvli_entry(lvli_leaf("0x00700024", "ALCH", "DirectStimpak")),
+            ],
         }),
     );
 
@@ -1171,21 +1273,95 @@ fn lvli_pool_digest_renders_ranked_drop_table() {
 }
 
 #[test]
-fn lvli_direct_sublist_entry_is_enqueued_as_its_own_bfs_node() {
+fn lvli_depth_bounds_the_drop_tree_like_du() {
     let mut f = lvli_fixture();
+
+    // Depth 1: the sublist is one subtotal row, and never its own BFS node.
     let result = walk_at(&mut f, LVLI_SUBLIST_ROOT_FID, 1);
-    // The aggregated root table already flattens through to the leaf...
-    let root_text = node_digest(&result, LVLI_SUBLIST_ROOT_FID).join("\n");
+    assert_eq!(result.nodes.len(), 1, "sublists stay inside the tree");
+    let text = node_digest(&result, LVLI_SUBLIST_ROOT_FID).join("\n");
     assert!(
-        root_text.contains("NestedWeapon"),
-        "root's own table should already show the flattened leaf, got:\n{root_text}"
+        text.contains("▸ LVLI 0x00700021 TestSublistChild  (pool, 2 items)"),
+        "expected a collapsed subtotal row, got:\n{text}"
     );
-    // ...but the intermediate sublist should still be independently visited.
-    let child_text = node_digest(&result, LVLI_SUBLIST_CHILD_FID).join("\n");
     assert!(
-        child_text.contains("NestedWeapon"),
-        "sublist's own digest should render its own entry, got:\n{child_text}"
+        text.contains("DirectStimpak"),
+        "direct leaf listed, got:\n{text}"
     );
+    assert!(
+        !text.contains("NestedWeapon"),
+        "depth 1 hides nested items, got:\n{text}"
+    );
+
+    // Depth 2: the sublist expands in place, its items indented under it.
+    let result = walk_at(&mut f, LVLI_SUBLIST_ROOT_FID, 2);
+    assert_eq!(result.nodes.len(), 1);
+    let lines = node_digest(&result, LVLI_SUBLIST_ROOT_FID);
+    let parent = lines
+        .iter()
+        .position(|l| l.contains("▾ LVLI 0x00700021 TestSublistChild"))
+        .unwrap_or_else(|| panic!("expected an expanded sublist row in {lines:#?}"));
+    let child = &lines[parent + 1];
+    assert!(child.contains("NestedWeapon") || child.contains("NestedPistol"));
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    assert!(indent(child) > indent(&lines[parent]), "{lines:#?}");
+}
+
+#[test]
+fn lvli_list_wide_note_prints_once_as_a_footnote() {
+    let mut f = lvli_fixture();
+    let result = walk_at(&mut f, LVLI_SUBLIST_CHILD_FID, 0);
+    let text = node_digest(&result, LVLI_SUBLIST_CHILD_FID).join("\n");
+    assert_eq!(
+        text.matches("Max Count present on this list").count(),
+        1,
+        "got:\n{text}"
+    );
+    assert!(
+        text.contains("list notes 1"),
+        "header carries the tag, got:\n{text}"
+    );
+    assert!(
+        text.contains("[1] Max Count present on this list"),
+        "got:\n{text}"
+    );
+}
+
+#[test]
+fn lvli_tree_subtotal_matches_its_flat_rows() {
+    let mut f = lvli_fixture();
+    let result = walk_at(&mut f, LVLI_SUBLIST_ROOT_FID, 2);
+    let Digest::Lvli(d) = &result.nodes[0].digest else {
+        panic!("expected an LVLI digest");
+    };
+    let entries = d.table.tree.as_ref().unwrap().entries.as_ref().unwrap();
+    let sub = entries
+        .iter()
+        .find(|b| b.formid == LVLI_SUBLIST_CHILD_FID)
+        .unwrap();
+    let nested: f64 = ["0x00700022", "0x00700023"]
+        .iter()
+        .map(|fid| {
+            d.table
+                .rows
+                .iter()
+                .find(|r| r.formid == *fid)
+                .unwrap()
+                .expected_count
+        })
+        .sum();
+    assert!((sub.expected_count - nested).abs() < 1e-9);
+    assert!((sub.p_at_least_one - 1.0).abs() < 1e-9);
+    assert_eq!(d.table.rows.len(), 3, "flat rows still recurse fully");
+}
+
+#[test]
+fn lvli_root_defaults_to_depth_one() {
+    let mut f = lvli_fixture();
+    let result = walk(&mut f, sel(LVLI_SUBLIST_ROOT_FID), &WalkOptions::default()).unwrap();
+    let text = node_digest(&result, LVLI_SUBLIST_ROOT_FID).join("\n");
+    assert!(text.contains("▸ LVLI 0x00700021"), "got:\n{text}");
+    assert!(!text.contains("NestedWeapon"), "got:\n{text}");
 }
 
 #[test]
@@ -1195,7 +1371,7 @@ fn lvli_level_option_moves_a_curve_driven_quantity() {
         &mut f,
         sel(LVLI_CURVE_ROOT_FID),
         &WalkOptions {
-            depth: 0,
+            depth: Some(0),
             level: 0.0,
             ..WalkOptions::default()
         },
@@ -1206,7 +1382,7 @@ fn lvli_level_option_moves_a_curve_driven_quantity() {
         &mut f2,
         sel(LVLI_CURVE_ROOT_FID),
         &WalkOptions {
-            depth: 0,
+            depth: Some(0),
             level: 100.0,
             ..WalkOptions::default()
         },
@@ -1253,7 +1429,8 @@ fn lvli_non_get_random_percent_gate_is_noted() {
     let result = walk_at(&mut f, LVLI_GATED_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_GATED_ROOT_FID).join("\n");
     assert!(
-        text.contains("RecipeReward") && text.contains("gated:HasLearnedRecipe"),
+        text.contains("RecipeReward")
+            && text.contains("[1] condition HasLearnedRecipe can't be computed"),
         "a non-GetRandomPercent gate must render as a caveat, not silently \
          assume-pass with no trace, got:\n{text}"
     );
@@ -1326,7 +1503,7 @@ fn npc_properties_curve_rows_labeled_by_actor_value() {
         &mut f,
         sel(NPC_PROPS_FID),
         &WalkOptions {
-            depth: 0,
+            depth: Some(0),
             level: 50.0,
             ..WalkOptions::default()
         },
@@ -1374,7 +1551,7 @@ fn armo_resistances_labeled_by_type_not_actor_value() {
         &mut f,
         sel(ARMO_RESIST_FID),
         &WalkOptions {
-            depth: 0,
+            depth: Some(0),
             level: 50.0,
             ..WalkOptions::default()
         },
@@ -1418,7 +1595,7 @@ fn ench_effect_curve_guard_evaluates_only_when_actor_value_absent() {
         &mut f,
         sel(ENCH_GUARD_FID),
         &WalkOptions {
-            depth: 0,
+            depth: Some(0),
             level: 50.0,
             ..WalkOptions::default()
         },
@@ -1492,7 +1669,30 @@ fn lvli_minimim_level_curve_table_stays_unresolved_not_evaluated() {
     let result = walk_at(&mut f, LVLI_MINLEVEL_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_MINLEVEL_ROOT_FID).join("\n");
     assert!(
-        text.contains("unresolved:") && text.contains("Minimum Level Curve Table present"),
+        text.contains("Minimum Level Curve Table present"),
         "expected the existing unresolved-axis note, not a new evaluated number, got:\n{text}"
+    );
+}
+
+#[test]
+fn lvli_with_no_eligible_entries_still_prints_its_list_footnotes() {
+    let mut f = FakeFetcher::new();
+    let mut entry = lvli_entry(lvli_leaf("0x00700091", "WEAP", "HighLevelGun"));
+    entry["Leveled List Entry"]["Minimum Level"] = json!(100.0);
+    f.insert(
+        "0x00700090",
+        "LVLI",
+        "TooHighForLevel50",
+        json!({"Flags": {"value": "0x0", "flags": []}, "Max Count": 1, "Leveled List Entries": [entry]}),
+    );
+    let result = walk_at(&mut f, "0x00700090", 0);
+    let text = node_digest(&result, "0x00700090").join("\n");
+    assert!(
+        text.contains("(no eligible entries at this level)"),
+        "got:\n{text}"
+    );
+    assert!(
+        text.contains("list notes 1") && text.contains("[1] Max Count"),
+        "got:\n{text}"
     );
 }

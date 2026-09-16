@@ -352,9 +352,12 @@ enum Commands {
     Walk {
         /// FormID or EditorID (auto-detected).
         selector: String,
-        /// BFS depth cap (0 = just the root, no chain-following).
-        #[arg(long, default_value_t = esm::walk::DEFAULT_DEPTH)]
-        depth: usize,
+        /// Hops to follow from the root, counting both record references and
+        /// LVLI nesting levels (like `du -d`). 0 = just the root; an LVLI
+        /// always lists its direct entries. [default: 1 for an LVLI root,
+        /// 2 otherwise]
+        #[arg(long)]
+        depth: Option<usize>,
         /// Cap on refs rows fetched per record-type filter for an OMOD
         /// root's keyword/AVIF mechanism consumer lookups.
         #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]

@@ -10,7 +10,8 @@
 use super::{
     ArmoDigest, AvifDigest, ConsumerGroup, Digest, ExplDigest, GenericDigest, GlobDigest,
     KywdDigest, LevelCurveRow, LvliDigest, MagicEffectRow, MagicItemDigest, MgefDigest, NpcDigest,
-    OmodDigest, PerkDigest, PerkEffectRow, ProjDigest, RaceDigest, WalkResult, WeapDigest,
+    OmodDigest, PerkDigest, PerkEffectRow, ProjDigest, RaceDigest, ScriptLeveledList, WalkResult,
+    WeapDigest,
 };
 use crate::chase::{
     Evidence, FetchDirection, Hop, HopKind, first_array_container, is_truthy, named,
@@ -391,22 +392,6 @@ fn align_table(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {
     out
 }
 
-fn format_drop_notes(notes: &[crate::lvli::DropNote]) -> String {
-    use crate::lvli::DropNote;
-    notes
-        .iter()
-        .map(|n| match n {
-            DropNote::Gated { function } => format!("gated:{function}"),
-            DropNote::Cycle => "cycle".to_string(),
-            DropNote::DepthCapped => "depth-capped".to_string(),
-            DropNote::PoolCapped => "pool-capped".to_string(),
-            DropNote::QuantityOnSublist => "qty-on-sublist".to_string(),
-            DropNote::Unresolved { reason } => format!("unresolved: {reason}"),
-        })
-        .collect::<Vec<_>>()
-        .join("; ")
-}
-
 // ─── per-type renderers ─────────────────────────────────────────────────────
 
 fn render_glob(d: &GlobDigest, lines: &mut Vec<String>) {
@@ -467,6 +452,18 @@ fn render_mgef(d: &MgefDigest, lines: &mut Vec<String>) {
     }
     if let Some(desc) = &d.description {
         lines.push(format!("description \"{desc}\""));
+    }
+    render_script_leveled_lists(&d.script_leveled_lists, "", lines);
+}
+
+fn render_script_leveled_lists(rows: &[ScriptLeveledList], indent: &str, lines: &mut Vec<String>) {
+    for row in rows {
+        lines.push(format!(
+            "{indent}script {}.{} → LVLI {}",
+            row.script,
+            row.property,
+            fmt_ref(&row.list)
+        ));
     }
 }
 
@@ -541,6 +538,7 @@ fn render_magic_effect_row(row: &MagicEffectRow, lines: &mut Vec<String>) {
     if let Some(eq) = &row.equip_ability {
         lines.push(format!("  Equip Ability → {}", fmt_ref(eq)));
     }
+    render_script_leveled_lists(&row.script_leveled_lists, "  ", lines);
 }
 
 fn render_perk(d: &PerkDigest, lines: &mut Vec<String>) {
@@ -780,10 +778,21 @@ fn render_lvli(d: &LvliDigest, lines: &mut Vec<String>) {
         crate::lvli::SelectionModel::UseAll => "Use All (every passing entry dispensed)",
         crate::lvli::SelectionModel::UseFirstMatch => "Use First Match (ordered cascade)",
     };
+    let mut footnotes = DropFootnotes::default();
+    let list_tags = table
+        .tree
+        .as_ref()
+        .map(|t| footnotes.tags(&t.notes))
+        .unwrap_or_default();
     lines.push(format!(
-        "drop odds  model {model_name}  level {}  p(nothing) {:.1}%{}",
+        "drop odds  model {model_name}  level {}  p(nothing) {:.1}%{}{}",
         table.level,
         table.p_nothing * 100.0,
+        if list_tags.is_empty() {
+            String::new()
+        } else {
+            format!("  list notes {list_tags}")
+        },
         if table.truncated {
             "  [approximated in places — see notes]"
         } else {
@@ -791,25 +800,127 @@ fn render_lvli(d: &LvliDigest, lines: &mut Vec<String>) {
         },
     ));
 
-    if table.rows.is_empty() {
+    let entries = table
+        .tree
+        .as_ref()
+        .and_then(|t| t.entries.as_deref())
+        .unwrap_or_default();
+    if entries.is_empty() {
         lines.push("  (no eligible entries at this level)".to_string());
     } else {
-        let headers = ["item", "expected", "p(>=1)", "notes"];
-        let rows: Vec<Vec<String>> = table
-            .rows
-            .iter()
-            .map(|r| {
-                vec![
-                    format!("{} {} {}", r.record_type, r.formid, r.editor_id),
-                    format!("{:.4}", r.expected_count),
-                    format!("{:.2}%", r.p_at_least_one * 100.0),
-                    format_drop_notes(&r.notes),
-                ]
-            })
-            .collect();
-        for line in align_table(&headers, &rows) {
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        drop_tree_rows(entries, 0, &mut footnotes, &mut rows);
+        for line in align_table(&["entry", "expected", "p(>=1)", "notes"], &rows) {
             lines.push(format!("  {line}"));
         }
+    }
+    if !footnotes.notes.is_empty() {
+        lines.push("  notes".to_string());
+        for (i, note) in footnotes.notes.iter().enumerate() {
+            lines.push(format!("    [{}] {}", i + 1, describe_drop_note(note)));
+        }
+    }
+}
+
+/// Numbers each distinct [`crate::lvli::DropNote`] in first-seen order, so a
+/// caveat shared by hundreds of rows prints once under the table.
+#[derive(Default)]
+struct DropFootnotes {
+    notes: Vec<crate::lvli::DropNote>,
+}
+
+impl DropFootnotes {
+    fn tags<'a>(&mut self, notes: impl IntoIterator<Item = &'a crate::lvli::DropNote>) -> String {
+        let mut numbers: Vec<usize> = Vec::new();
+        for note in notes {
+            let n = match self.notes.iter().position(|seen| seen == note) {
+                Some(i) => i + 1,
+                None => {
+                    self.notes.push(note.clone());
+                    self.notes.len()
+                }
+            };
+            if !numbers.contains(&n) {
+                numbers.push(n);
+            }
+        }
+        numbers.sort_unstable();
+        numbers
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+/// One row per entry, depth-first. `▾` marks an expanded sublist (its
+/// entries follow, indented), `▸` a collapsed one (a subtotal).
+fn drop_tree_rows(
+    entries: &[crate::lvli::DropBranch],
+    indent: usize,
+    footnotes: &mut DropFootnotes,
+    rows: &mut Vec<Vec<String>>,
+) {
+    for b in entries {
+        let pad = "  ".repeat(indent);
+        let (marker, suffix, tags) = match &b.sublist {
+            Some(list) => {
+                let model = match list.model {
+                    crate::lvli::SelectionModel::Pool => "pool",
+                    crate::lvli::SelectionModel::UseAll => "Use All",
+                    crate::lvli::SelectionModel::UseFirstMatch => "first match",
+                };
+                let items = if list.item_count == 1 {
+                    "item"
+                } else {
+                    "items"
+                };
+                let tags =
+                    footnotes.tags(b.notes.iter().chain(&list.notes).chain(&list.nested_notes));
+                let marker = if list.entries.is_some() {
+                    "▾ "
+                } else {
+                    "▸ "
+                };
+                (
+                    marker,
+                    format!("  ({model}, {} {items})", list.item_count),
+                    tags,
+                )
+            }
+            None => ("  ", String::new(), footnotes.tags(&b.notes)),
+        };
+        rows.push(vec![
+            format!(
+                "{pad}{marker}{} {} {}{suffix}",
+                b.record_type, b.formid, b.editor_id
+            ),
+            format!("{:.4}", b.expected_count),
+            format!("{:.2}%", b.p_at_least_one * 100.0),
+            tags,
+        ]);
+        if let Some(children) = b.sublist.as_ref().and_then(|l| l.entries.as_deref()) {
+            drop_tree_rows(children, indent + 1, footnotes, rows);
+        }
+    }
+}
+
+fn describe_drop_note(note: &crate::lvli::DropNote) -> String {
+    use crate::lvli::DropNote;
+    match note {
+        DropNote::Gated { function } => {
+            format!("condition {function} can't be computed — assumed to pass")
+        }
+        DropNote::Cycle => "sublist recurs into its own ancestor — counted as nothing".to_string(),
+        DropNote::DepthCapped => "recursion cap reached — sublist counted as one item".to_string(),
+        DropNote::PoolCapped => format!(
+            "pool of more than {} entries — odds approximated",
+            crate::lvli::MAX_EXACT_POOL_ENTRIES
+        ),
+        DropNote::QuantityOnSublist => {
+            "quantity on a sublist — expected count exact, p(>=1) unverified".to_string()
+        }
+        DropNote::Unresolved { reason } => reason.clone(),
     }
 }
 

@@ -210,7 +210,9 @@ new optional fields and enum variants are fine, renames and removals are not, wi
 mean-field approximation) selection and flat/GLOB/Curve-Table `Chance None` resolution.
 Anything the model doesn't cover (`Filter Keyword Chances`, `Epic Loot Chance`, list-level `Max
 *`, COED) surfaces as a `DropNote::Unresolved` on the affected row rather than being silently
-dropped.
+dropped. With `DropOptions::tree_depth > 0` it also returns `DropTable::tree`, the same odds as
+`DropList`/`DropBranch` nesting cut off at that depth (deeper sublists become subtotal rows);
+`walk` renders only the tree, bounded by its `--depth`, while `rows` stay fully flattened.
 
 **`src/refs.rs`** — the reverse-reference graph engine: `referenced_by_enriched`/
 `_multi` (BFS from one or more seeds) and `find_ref_path` (bidirectional path search between two

@@ -1013,3 +1013,21 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
 
     let _ = std::fs::remove_file(&tmp);
 }
+
+/// `Op::Walk.depth` became optional; a request that omits it must still
+/// parse (the walk then picks a default per root type), and an explicit
+/// depth from an older client still lands as `Some`.
+#[test]
+fn walk_op_depth_is_optional_on_the_wire() {
+    let sel = serde_json::to_value(RecordSel::Edid("SomeList".to_string())).unwrap();
+    let omitted = serde_json::json!({"op": "walk", "sel": sel, "ref_limit": 25, "level": 50.0, "want_refs": false});
+    match serde_json::from_value::<Op>(omitted).expect("depth may be omitted") {
+        Op::Walk { depth, .. } => assert_eq!(depth, None),
+        other => panic!("expected Op::Walk, got {other:?}"),
+    }
+    let explicit = serde_json::json!({"op": "walk", "sel": sel, "depth": 3, "ref_limit": 25, "level": 50.0, "want_refs": false});
+    match serde_json::from_value::<Op>(explicit).expect("explicit depth") {
+        Op::Walk { depth, .. } => assert_eq!(depth, Some(3)),
+        other => panic!("expected Op::Walk, got {other:?}"),
+    }
+}

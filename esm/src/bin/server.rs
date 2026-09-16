@@ -601,7 +601,7 @@ async fn run_mcp_stdio(esm_path: PathBuf) -> anyhow::Result<()> {
                                 },
                                 "depth": {
                                     "type": "integer",
-                                    "description": "BFS depth cap (default 2). 0 = digest just the root, no chain-following. Only governs which referenced records get their own digest — an OMOD root's own mechanisms are always classified regardless."
+                                    "description": "Hops to follow from the root, counting both record references and LVLI nesting levels (like du -d); default 1 for an LVLI root, 2 otherwise. 0 = digest just the root, no chain-following. An OMOD root's own mechanisms are always classified, and an LVLI always lists its direct entries. The JSON's flat drop-table rows always recurse fully; only the nested tree is depth-bounded."
                                 },
                                 "ref_limit": {
                                     "type": "integer",
@@ -928,8 +928,7 @@ fn call_tool_proxy(
             let depth = args
                 .get("depth")
                 .and_then(|v| v.as_u64())
-                .map(|d| d as usize)
-                .unwrap_or(esm::walk::DEFAULT_DEPTH);
+                .map(|d| d as usize);
             let ref_limit = args
                 .get("ref_limit")
                 .and_then(|v| v.as_u64())

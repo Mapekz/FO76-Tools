@@ -88,8 +88,9 @@ export declare class EsmDatabase {
   /**
    * Interactive digest of a record and the chain it references (see
    * `esm::walk`) — computed server-side (in-process here) via `Op::Walk`,
-   * the same op the daemon and MCP server dispatch. `depth`/`ref_limit`/
-   * `level` default to `esm::walk::DEFAULT_DEPTH`/
+   * the same op the daemon and MCP server dispatch. `depth` defaults per
+   * root type (`esm::walk::default_depth`); `ref_limit`/
+   * `level` default to
    * `esm::chase::DEFAULT_REF_LIMIT`/`esm::lvli::DEFAULT_LEVEL` when
    * omitted; `want_refs` mirrors the CLI's `--refs` flag.
    */

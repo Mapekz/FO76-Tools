@@ -20,7 +20,8 @@
 //! FormID, depth-capped) starting from one resolved record, computing a
 //! record-type-specific digest for each node and enqueueing whatever's
 //! worth following one hop further (a magic effect's granted Perk/Equip
-//! Ability, a PERK's Ability SPEL, an OMOD's ENCH property, ...). It
+//! Ability, a PERK's Ability SPEL, an OMOD's ENCH property, an LVLI named by
+//! an MGEF's script property, ...). It
 //! composes the same two primitives
 //! `esm::chase`'s "chase pattern" uses — [`ChaseFetcher::bulk_get`] and
 //! [`ChaseFetcher::refs`] — no new trait, no new wire `Op`.
@@ -53,9 +54,11 @@
 //! resulting [`crate::lvli::DropTable`] verbatim — see `crate::lvli`'s
 //! module docs for the mechanics and what isn't modeled. `--level` (default
 //! [`crate::lvli::DEFAULT_LEVEL`]) feeds Curve Table evaluation and Minimum
-//! Level filtering. A direct sublist entry is also enqueued as its own BFS
-//! node so an intermediate list stays inspectable, even though the
-//! aggregated table already flattens through it.
+//! Level filtering. The text shows the table's depth-bounded nesting tree
+//! ([`crate::lvli::DropTable::tree`]), which works like `du -d`: past the
+//! walk's remaining depth a sublist is one subtotal row, so `--depth` bounds
+//! the output. Sublists are never separate BFS nodes; the tree covers them.
+//! The flat `rows` still recurse fully for `--json` consumers.
 //!
 //! Every record is fetched at [`ResolveDepth::Stub`], so every direct FormID
 //! reference on a fetched record's own fields already arrives pre-annotated
@@ -98,6 +101,18 @@ use std::collections::{HashMap, HashSet, VecDeque};
 /// Default BFS depth cap.
 pub const DEFAULT_DEPTH: usize = 2;
 
+/// Default depth for an LVLI root: its direct entries, sublists as subtotals.
+pub const DEFAULT_LVLI_DEPTH: usize = 1;
+
+/// The depth [`walk`] uses when [`WalkOptions::depth`] is unset.
+pub fn default_depth(root_sig: &str) -> usize {
+    if root_sig == "LVLI" {
+        DEFAULT_LVLI_DEPTH
+    } else {
+        DEFAULT_DEPTH
+    }
+}
+
 /// Reverse-ref walk depth/cap for the KYWD/AVIF "who gates on this?" digest.
 /// [`render::CONSUMER_ROWS_SHOWN`] (a *display* cap) further
 /// trims the fetched rows at render time; [`ConsumerGroup::total`] preserves
@@ -139,11 +154,13 @@ type EnqueueTarget = (FormId, String);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct WalkOptions {
-    /// BFS depth cap — nodes reached only via a chain longer than this are
-    /// never fetched. 0 means "just the root, no enqueueing". Only governs
-    /// BFS enqueueing — an OMOD root's inline mechanism slice (see
-    /// `digest_omod_mechanisms`) always runs regardless of this cap.
-    pub depth: usize,
+    /// Hop cap, `None` = [`default_depth`] for the root's type. Counts record
+    /// hops (nodes reached only via a longer chain are never fetched) and,
+    /// for an LVLI node, the nesting levels its drop tree expands: an LVLI
+    /// at hop `d` expands `depth - d` levels, and always at least its direct
+    /// entries. 0 means "just the root, no enqueueing". An OMOD root's inline
+    /// mechanism slice (see `digest_omod_mechanisms`) runs regardless.
+    pub depth: Option<usize>,
     /// Cap on refs rows fetched per record-type filter, passed straight
     /// through to `esm::chase::ChaseOptions::ref_limit` for an OMOD root's
     /// keyword/AVIF mechanism consumer lookups (see
@@ -169,7 +186,7 @@ pub struct WalkOptions {
 impl Default for WalkOptions {
     fn default() -> Self {
         Self {
-            depth: DEFAULT_DEPTH,
+            depth: None,
             ref_limit: crate::chase::DEFAULT_REF_LIMIT,
             level: crate::lvli::DEFAULT_LEVEL,
         }
@@ -356,6 +373,22 @@ pub struct MgefDigest {
     #[cfg_attr(test, ts(type = "unknown"))]
     pub equip_ability: Option<Value>,
     pub description: Option<String>,
+    pub script_leveled_lists: Vec<ScriptLeveledList>,
+}
+
+/// An LVLI handed to one of a record's Papyrus script properties, e.g. a
+/// loot-bag MGEF's `Creatures:FestiveGiftAddItem.FestiveLeveledList`. The
+/// engine data has no other edge from such an item to what it yields, so
+/// walk follows this one (see [`script_leveled_lists`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct ScriptLeveledList {
+    pub script: String,
+    pub property: String,
+    /// The LVLI's ref stub.
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub list: Value,
 }
 
 /// One `Effects[]` entry of a [`MagicItemDigest`] (SPEL/ENCH/ALCH share this
@@ -406,6 +439,8 @@ pub struct MagicEffectRow {
     pub perk_to_apply: Option<Value>,
     #[cfg_attr(test, ts(type = "unknown"))]
     pub equip_ability: Option<Value>,
+    /// The Base Effect MGEF's [`ScriptLeveledList`]s.
+    pub script_leveled_lists: Vec<ScriptLeveledList>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -745,6 +780,60 @@ struct MgefSummary<'v> {
     description: Option<&'v Value>,
 }
 
+/// Every LVLI ref stub under a record's `Virtual Machine Adapter` script
+/// properties. A property value may be a single object (type 1), an object
+/// array (type 11), or a struct, so the whole value is searched.
+fn script_leveled_lists(fields: &Value) -> Vec<ScriptLeveledList> {
+    fn collect(v: &Value, out: &mut Vec<Value>) {
+        match v {
+            Value::Object(obj) if is_ref_stub(v) => {
+                if obj.get("record_type").and_then(Value::as_str) == Some("LVLI") {
+                    out.push(v.clone());
+                }
+            }
+            Value::Object(obj) => obj.values().for_each(|c| collect(c, out)),
+            Value::Array(arr) => arr.iter().for_each(|c| collect(c, out)),
+            _ => {}
+        }
+    }
+    let Some(scripts) = fields
+        .pointer("/Virtual Machine Adapter/scripts")
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let mut rows = Vec::new();
+    for script in scripts {
+        let script_name = script.get("name").and_then(Value::as_str).unwrap_or("?");
+        let Some(props) = script.get("properties").and_then(Value::as_array) else {
+            continue;
+        };
+        for prop in props {
+            let mut lists = Vec::new();
+            if let Some(value) = prop.get("value") {
+                collect(value, &mut lists);
+            }
+            let property = prop.get("name").and_then(Value::as_str).unwrap_or("?");
+            rows.extend(lists.into_iter().map(|list| ScriptLeveledList {
+                script: script_name.to_string(),
+                property: property.to_string(),
+                list,
+            }));
+        }
+    }
+    rows
+}
+
+/// Enqueue each [`ScriptLeveledList`] as its own BFS node, so the list's
+/// drop odds land in the same walk as the item that hands it out.
+fn script_leveled_lists_enqueue(rows: &[ScriptLeveledList], enqueue: &mut Vec<EnqueueTarget>) {
+    for row in rows {
+        if let Some(fid) = stub_formid(Some(&row.list)) {
+            enqueue.push((fid, format!("script {}.{}", row.script, row.property)));
+        }
+    }
+}
+
 /// Pull the handful of fields both [`digest_mgef`] (a directly-visited MGEF
 /// node) and [`digest_magic_item`] (an MGEF reached via a SPEL/ENCH/ALCH
 /// effect's `Base Effect`) need out of an MGEF record's own decoded fields.
@@ -776,6 +865,8 @@ fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
     if let Some(fid) = summary.equip_ability.and_then(|eq| stub_formid(Some(eq))) {
         enqueue.push((fid, "Equip Ability".to_string()));
     }
+    let script_leveled_lists = script_leveled_lists(fields);
+    script_leveled_lists_enqueue(&script_leveled_lists, enqueue);
     MgefDigest {
         archetype: summary.archetype.map(str::to_string),
         casting_type: summary.casting_type.map(str::to_string),
@@ -788,6 +879,7 @@ fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .map(str::to_string),
+        script_leveled_lists,
     }
 }
 
@@ -895,6 +987,8 @@ fn digest_magic_item(
         if let Some(fid) = equip_ability.as_ref().and_then(|eq| stub_formid(Some(eq))) {
             enqueue.push((fid, "Equip Ability".to_string()));
         }
+        let script_leveled_lists = mgef_fields.map(script_leveled_lists).unwrap_or_default();
+        script_leveled_lists_enqueue(&script_leveled_lists, enqueue);
 
         rows.push(MagicEffectRow {
             index: i,
@@ -911,6 +1005,7 @@ fn digest_magic_item(
             conditions,
             perk_to_apply,
             equip_ability,
+            script_leveled_lists,
         });
     }
     Ok(MagicItemDigest { effects: rows })
@@ -1266,53 +1361,23 @@ fn digest_expl(fields: &Value, level: f32) -> ExplDigest {
     }
 }
 
-/// Enqueue each entry's own *direct* sublist target (an entry whose
-/// `Reference`/legacy `Item` resolves to another LVLI) as its own BFS node,
-/// so `--depth` can drill into an intermediate list's own digest. The
-/// aggregated table [`digest_lvli`] renders already flattens the full
-/// recursive expansion down to leaf items regardless of `--depth` — this is
-/// purely so the intermediate list stays visible, not load-bearing for the
-/// odds themselves.
-fn lvli_direct_sublists(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) {
-    let Some(list) = fields.get("Leveled List Entries").and_then(Value::as_array) else {
-        return;
-    };
-    for item in list {
-        let Some(entry) = item.get("Leveled List Entry") else {
-            continue;
-        };
-        let target = entry
-            .get("Reference")
-            .or_else(|| entry.pointer("/Base Data/Item"));
-        let Some(target) = target else {
-            continue;
-        };
-        if target.get("record_type").and_then(Value::as_str) == Some("LVLI")
-            && let Some(fid) = stub_formid(Some(target))
-        {
-            enqueue.push((fid, "leveled list entry".to_string()));
-        }
-    }
-}
-
 /// LVLI: resolve full drop odds via [`crate::lvli::drop_table`] (pool/`Use
 /// All`/`Use First Match` selection, chance-none, Curve Table evaluation at
-/// `level`, recursion through nested sublists) and wrap the result verbatim.
-/// Direct sublist targets are also enqueued as their own BFS nodes (see
-/// [`lvli_direct_sublists`]).
+/// `level`, recursion through nested sublists) with a nesting tree
+/// `tree_depth` levels deep, and wrap the result verbatim.
 fn digest_lvli(
     f: &mut impl ChaseFetcher,
     formid: FormId,
     fields: &Value,
     level: f32,
-    enqueue: &mut Vec<EnqueueTarget>,
+    tree_depth: usize,
 ) -> anyhow::Result<LvliDigest> {
     let opts = crate::lvli::DropOptions {
         level,
+        tree_depth,
         ..Default::default()
     };
     let table = crate::lvli::drop_table(f, formid, fields, &opts)?;
-    lvli_direct_sublists(fields, enqueue);
     Ok(LvliDigest { table })
 }
 
@@ -1376,19 +1441,28 @@ pub fn build_refs_digest(rows: &[RefRow]) -> RefsDigest {
 /// attach to the enqueued node). `ref_limit` only matters for the OMOD arm's
 /// mechanism slice (see [`digest_omod_mechanisms`]) and the KYWD/AVIF root's
 /// own consumer digest (which ignores it — see [`WalkOptions::ref_limit`]).
+/// `remaining_depth` is the hop budget left at this node, which an LVLI
+/// spends on drop-tree nesting.
 fn digest_node(
     f: &mut impl ChaseFetcher,
     sig: &str,
     formid: FormId,
     editor_id: &str,
     fields: &Value,
-    ref_limit: usize,
-    level: f32,
+    opts: &WalkOptions,
+    remaining_depth: usize,
 ) -> anyhow::Result<(Digest, Vec<EnqueueTarget>)> {
+    let (ref_limit, level) = (opts.ref_limit, opts.level);
     let mut enqueue = Vec::new();
     let digest = match sig {
         "GLOB" => Digest::Glob(digest_glob(fields)),
-        "LVLI" => Digest::Lvli(digest_lvli(f, formid, fields, level, &mut enqueue)?),
+        "LVLI" => Digest::Lvli(digest_lvli(
+            f,
+            formid,
+            fields,
+            level,
+            remaining_depth.max(1),
+        )?),
         "AVIF" => Digest::Avif(digest_avif(f, formid, fields)?),
         "KYWD" => Digest::Kywd(digest_kywd(f, formid)?),
         "MGEF" => Digest::Mgef(digest_mgef(fields, &mut enqueue)),
@@ -1433,6 +1507,8 @@ pub fn walk(
     opts: &WalkOptions,
 ) -> anyhow::Result<WalkResult> {
     let mut visited: HashSet<FormId> = HashSet::new();
+    // Resolved from the root's type once it's fetched.
+    let mut max_depth = opts.depth.unwrap_or(DEFAULT_DEPTH);
     let mut nodes: Vec<WalkNode> = Vec::new();
     let mut queue: VecDeque<(RecordSel, usize, Option<String>)> = VecDeque::new();
     queue.push_back((selector.clone(), 0, None));
@@ -1465,6 +1541,11 @@ pub fn walk(
             continue;
         };
 
+        if depth == 0 {
+            max_depth = opts
+                .depth
+                .unwrap_or_else(|| default_depth(&header.signature));
+        }
         let formid = header.form_id;
         if !visited.insert(formid) {
             continue;
@@ -1484,8 +1565,8 @@ pub fn walk(
             formid,
             &editor_id,
             &fields,
-            opts.ref_limit,
-            opts.level,
+            opts,
+            max_depth.saturating_sub(depth),
         )?;
 
         nodes.push(WalkNode {
@@ -1498,7 +1579,7 @@ pub fn walk(
             digest,
         });
 
-        if depth < opts.depth {
+        if depth < max_depth {
             for (target_fid, via_label) in enqueue {
                 if !visited.contains(&target_fid) {
                     queue.push_back((RecordSel::FormId(target_fid), depth + 1, Some(via_label)));

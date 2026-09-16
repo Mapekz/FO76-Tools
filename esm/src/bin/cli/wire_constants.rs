@@ -75,7 +75,7 @@ fn sample_ops() -> Vec<Op> {
         },
         Op::Walk {
             sel: RecordSel::FormId(FormId::new(0)),
-            depth: 0,
+            depth: None,
             ref_limit: 0,
             level: 0.0,
             want_refs: false,

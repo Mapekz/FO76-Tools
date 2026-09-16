@@ -72,7 +72,7 @@ pub(crate) fn cmd_walk(
     backend: &mut Backend,
     file: &Path,
     selector: &str,
-    depth: usize,
+    depth: Option<usize>,
     ref_limit: usize,
     level: f32,
     want_refs: bool,

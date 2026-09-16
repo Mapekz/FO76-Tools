@@ -311,7 +311,9 @@ pub enum Op {
     /// `Op::Search` (see `docs/adr/0001`'s dated amendment).
     Walk {
         sel: RecordSel,
-        depth: usize,
+        /// `None` = [`crate::walk::default_depth`] for the root's type.
+        #[serde(default)]
+        depth: Option<usize>,
         ref_limit: usize,
         level: f32,
         want_refs: bool,
@@ -820,6 +822,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                 level: *level,
                 max_depth: *max_depth,
                 strict: *strict,
+                tree_depth: 0,
             };
             let mut fetcher = DbFetcher { db: &mut *db };
             let table = crate::lvli::drop_table(

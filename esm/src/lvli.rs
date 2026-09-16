@@ -133,6 +133,51 @@ pub struct DropRow {
     pub notes: Vec<DropNote>,
 }
 
+/// One direct entry of a list in a [`DropTable::tree`]. Odds are per
+/// invocation of the *root* list, like `du -d`'s sizes, so a leaf reached by
+/// one path matches its [`DropRow`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct DropBranch {
+    pub formid: String,
+    pub editor_id: String,
+    pub record_type: String,
+    /// Copies of a leaf item, or items out of a sublist.
+    pub expected_count: f64,
+    /// Probability this entry yields at least one item.
+    pub p_at_least_one: f64,
+    /// Caveats specific to this entry (gates, cycles, quantity on a
+    /// sublist); list-wide caveats live on [`DropList::notes`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<DropNote>,
+    /// Set when the entry is itself an LVLI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sublist: Option<DropList>,
+}
+
+/// One list in a [`DropTable::tree`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct DropList {
+    pub model: SelectionModel,
+    /// Probability one invocation of this list yields nothing.
+    pub p_nothing: f64,
+    /// Distinct leaf items this list can yield, through every nesting level.
+    pub item_count: usize,
+    /// Caveats that apply to every entry of this list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<DropNote>,
+    /// Direct entries sorted by `p_at_least_one` descending; `None` past
+    /// [`DropOptions::tree_depth`], where the list is only a subtotal.
+    pub entries: Option<Vec<DropBranch>>,
+    /// Caveats from inside a collapsed list (`entries: None`), so a subtotal
+    /// row still says it's approximate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested_notes: Vec<DropNote>,
+}
+
 /// The result of resolving one LVLI's odds, sorted by `expected_count`
 /// descending.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,6 +193,10 @@ pub struct DropTable {
     /// node exceeded [`MAX_EXACT_POOL_ENTRIES`] — the table is still
     /// complete, just not everywhere exact (see each row's `notes`).
     pub truncated: bool,
+    /// The same odds as a nesting tree, expanded [`DropOptions::tree_depth`]
+    /// levels. `None` when that option is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree: Option<DropList>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -159,6 +208,11 @@ pub struct DropOptions {
     /// When true, a Condition gate this engine can't compute (see
     /// [`DropNote::Gated`]) is assumed to fail rather than pass.
     pub strict: bool,
+    /// Nesting levels [`DropTable::tree`] lists entries for: 1 = the root's
+    /// direct entries with sublists as subtotals. 0 = no tree. Independent of
+    /// `max_depth`; the flat `rows` always recurse fully.
+    #[serde(default)]
+    pub tree_depth: usize,
 }
 
 impl Default for DropOptions {
@@ -167,6 +221,7 @@ impl Default for DropOptions {
             level: DEFAULT_LEVEL,
             max_depth: MAX_RECURSION_DEPTH,
             strict: false,
+            tree_depth: 0,
         }
     }
 }
@@ -479,6 +534,48 @@ struct NodeResult {
     p_empty: f64,
     leaves: HashMap<FormId, LeafAgg>,
     truncated: bool,
+    model: SelectionModel,
+    notes: Vec<DropNote>,
+    /// `Some` while tree levels remain (see [`TreeScale`]).
+    branches: Option<Vec<DropBranch>>,
+}
+
+/// How [`walk_node`] builds [`DropTable::tree`] rows: `levels` still to
+/// expand, and the multipliers that turn one invocation of this node into
+/// one invocation of the root.
+#[derive(Clone, Copy)]
+struct TreeScale {
+    levels: usize,
+    p: f64,
+    expected: f64,
+}
+
+/// Moves `node.branches` out rather than copying the built subtree.
+fn into_drop_list(node: &mut NodeResult) -> DropList {
+    let list_notes = node.notes.clone();
+    let nested_notes = if node.branches.is_none() {
+        let mut nested: Vec<DropNote> = Vec::new();
+        let mut leaves: Vec<(&FormId, &LeafAgg)> = node.leaves.iter().collect();
+        leaves.sort_by_key(|(fid, _)| fid.raw());
+        for (_, agg) in leaves {
+            for n in &agg.notes {
+                if !list_notes.contains(n) && !nested.contains(n) {
+                    nested.push(n.clone());
+                }
+            }
+        }
+        nested
+    } else {
+        Vec::new()
+    };
+    DropList {
+        model: node.model,
+        p_nothing: node.p_empty,
+        item_count: node.leaves.len(),
+        notes: list_notes,
+        entries: node.branches.take(),
+        nested_notes,
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -524,6 +621,7 @@ fn walk_node(
     opts: &DropOptions,
     depth: usize,
     path: &mut Vec<FormId>,
+    scale: TreeScale,
 ) -> anyhow::Result<NodeResult> {
     let entry_vals = entries(fields);
     let flags = lvlf_flags(fields);
@@ -560,10 +658,11 @@ fn walk_node(
         {
             want.push(fid);
         }
-        if e.get("Extra Data").is_some_and(|v| !v.is_null()) {
-            node_notes.push(DropNote::Unresolved {
-                reason: "Extra Data (COED owner/rank/condition) present — not modeled".to_string(),
-            });
+        let extra_data = DropNote::Unresolved {
+            reason: "Extra Data (COED owner/rank/condition) present — not modeled".to_string(),
+        };
+        if e.get("Extra Data").is_some_and(|v| !v.is_null()) && !node_notes.contains(&extra_data) {
+            node_notes.push(extra_data);
         }
     }
     dedup_sorted(&mut want);
@@ -636,6 +735,7 @@ fn walk_node(
     let mut node_leaves: HashMap<FormId, LeafAgg> = HashMap::new();
     let mut sum_effective_survive = 0.0_f64;
     let mut prod_all_fail = 1.0_f64;
+    let mut branches: Vec<DropBranch> = Vec::new();
 
     for (ee, &chosen_i) in eligible.iter().zip(&chosen) {
         if chosen_i <= 0.0 {
@@ -670,6 +770,9 @@ fn walk_node(
             .to_string();
 
         let mut entry_notes = ee.notes.clone();
+        let reach_p = scale.p * list_factor * effective_i;
+        let reach_expected = scale.expected * list_factor * effective_i * quantity;
+        let mut sublist: Option<DropList> = None;
         let (child_leaves, child_empty) = if target_rt == "LVLI" {
             if path.contains(&target_fid) {
                 entry_notes.push(DropNote::Cycle);
@@ -695,8 +798,17 @@ fn walk_node(
                 {
                     Some(sub_fields) => {
                         path.push(target_fid);
-                        let child = walk_node(f, sub_fields, opts, depth + 1, path)?;
+                        let child_scale = TreeScale {
+                            levels: scale.levels.saturating_sub(1),
+                            p: reach_p,
+                            expected: reach_expected,
+                        };
+                        let mut child =
+                            walk_node(f, sub_fields, opts, depth + 1, path, child_scale)?;
                         path.pop();
+                        if scale.levels > 0 {
+                            sublist = Some(into_drop_list(&mut child));
+                        }
                         truncated |= child.truncated;
                         if quantity != 1.0 {
                             entry_notes.push(DropNote::QuantityOnSublist);
@@ -758,6 +870,27 @@ fn walk_node(
             );
         }
 
+        if scale.levels > 0 {
+            let child_expected: f64 = child_leaves.iter().map(|l| l.2).sum();
+            branches.push(DropBranch {
+                formid: target_fid.display(),
+                editor_id: target
+                    .get("editor_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                record_type: target
+                    .get("record_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                expected_count: reach_expected * child_expected,
+                p_at_least_one: (reach_p * (1.0 - child_empty)).clamp(0.0, 1.0),
+                notes: entry_notes.clone(),
+                sublist,
+            });
+        }
+
         let survive_i = effective_i * (1.0 - child_empty);
         if disjoint {
             sum_effective_survive += survive_i;
@@ -784,10 +917,28 @@ fn walk_node(
         }
     }
 
+    let branches = (scale.levels > 0).then(|| {
+        branches.sort_by(|a, b| {
+            b.p_at_least_one
+                .partial_cmp(&a.p_at_least_one)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    b.expected_count
+                        .partial_cmp(&a.expected_count)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .then_with(|| a.formid.cmp(&b.formid))
+        });
+        branches
+    });
+
     Ok(NodeResult {
         p_empty: node_p_empty,
         leaves: node_leaves,
         truncated,
+        model,
+        notes: node_notes,
+        branches,
     })
 }
 
@@ -802,7 +953,13 @@ pub fn drop_table(
 ) -> anyhow::Result<DropTable> {
     let model = selection_model(&lvlf_flags(fields));
     let mut path = vec![root_formid];
-    let result = walk_node(f, fields, opts, 0, &mut path)?;
+    let scale = TreeScale {
+        levels: opts.tree_depth,
+        p: 1.0,
+        expected: 1.0,
+    };
+    let mut result = walk_node(f, fields, opts, 0, &mut path, scale)?;
+    let tree = (opts.tree_depth > 0).then(|| into_drop_list(&mut result));
 
     let mut rows: Vec<DropRow> = result
         .leaves
@@ -829,6 +986,7 @@ pub fn drop_table(
         p_nothing: result.p_empty,
         rows,
         truncated: result.truncated,
+        tree,
     })
 }
 
@@ -1270,5 +1428,125 @@ mod tests {
         // Mean-field odds should still sum close to 1 across all n unconditioned entries.
         let sum: f64 = table.rows.iter().map(|r| r.p_at_least_one).sum();
         assert!((sum - 1.0).abs() < 1e-6);
+    }
+
+    // ─── nesting tree ───────────────────────────────────────────────────
+
+    fn sum_tree_leaves(entries: &[DropBranch], out: &mut HashMap<String, f64>) {
+        for b in entries {
+            match b.sublist.as_ref().and_then(|l| l.entries.as_deref()) {
+                Some(children) => {
+                    let child_sum: f64 = children.iter().map(|c| c.expected_count).sum();
+                    assert!(
+                        (b.expected_count - child_sum).abs() < 1e-9,
+                        "{} subtotal {} != its entries' {child_sum}",
+                        b.editor_id,
+                        b.expected_count
+                    );
+                    sum_tree_leaves(children, out);
+                }
+                None => *out.entry(b.formid.clone()).or_default() += b.expected_count,
+            }
+        }
+    }
+
+    /// Three levels with every scaling factor away from 1: list and entry
+    /// chance-none, quantity on a sublist and a leaf, a gated pool, Use All,
+    /// and a cycle back to the root.
+    fn three_level_fixture() -> (FakeFetcher, FormId, Value) {
+        let (root, mid, deep) = (FormId::new(0x60), FormId::new(0x61), FormId::new(0x62));
+        let mut f = FakeFetcher::new();
+        f.insert(
+            deep,
+            lvli_fields(
+                &[],
+                vec![
+                    entry_ref_gated(
+                        target_stub(FormId::new(0x70), "WEAP", "Z"),
+                        "Greater Than Or Equal To",
+                        50.0,
+                    ),
+                    entry_ref(target_stub(FormId::new(0x71), "WEAP", "W")),
+                ],
+            ),
+        );
+        let mut y = entry_ref(target_stub(FormId::new(0x72), "ALCH", "Y"));
+        y["Leveled List Entry"]["Quantity"] = json!(3.0);
+        f.insert(
+            mid,
+            lvli_fields(
+                &["Use All"],
+                vec![
+                    y,
+                    entry_ref(target_stub(deep, "LVLI", "Deep")),
+                    entry_ref(target_stub(root, "LVLI", "Root")),
+                ],
+            ),
+        );
+        let mut to_mid = entry_ref(target_stub(mid, "LVLI", "Mid"));
+        to_mid["Leveled List Entry"]["Chance None Value"] = json!(50.0);
+        to_mid["Leveled List Entry"]["Quantity"] = json!(2.0);
+        let mut root_fields = lvli_fields(
+            &[],
+            vec![
+                to_mid,
+                entry_ref(target_stub(FormId::new(0x73), "MISC", "X")),
+            ],
+        );
+        root_fields["Chance None Value"] = json!(25.0);
+        (f, root, root_fields)
+    }
+
+    #[test]
+    fn tree_leaves_and_subtotals_match_flat_rows_at_full_depth() {
+        let (mut f, root, fields) = three_level_fixture();
+        let opts = DropOptions {
+            tree_depth: MAX_RECURSION_DEPTH,
+            ..Default::default()
+        };
+        let table = drop_table(&mut f, root, &fields, &opts).unwrap();
+        let tree = table.tree.as_ref().unwrap();
+        let mut sums = HashMap::new();
+        sum_tree_leaves(tree.entries.as_ref().unwrap(), &mut sums);
+        for r in &table.rows {
+            let t = sums.get(&r.formid).copied().unwrap_or(0.0);
+            assert!(
+                (t - r.expected_count).abs() < 1e-9,
+                "{}: tree {t} vs flat {}",
+                r.editor_id,
+                r.expected_count
+            );
+        }
+        assert_eq!(table.rows.len(), 4);
+        assert!((row(&table, "Y").expected_count - 0.75 * 0.5 * 0.5 * 2.0 * 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn tree_depth_one_collapses_sublists_and_zero_omits_the_tree() {
+        let (mut f, root, fields) = three_level_fixture();
+        let opts = DropOptions {
+            tree_depth: 1,
+            ..Default::default()
+        };
+        let table = drop_table(&mut f, root, &fields, &opts).unwrap();
+        let entries = table.tree.as_ref().unwrap().entries.as_ref().unwrap();
+        let mid = entries.iter().find(|b| b.editor_id == "Mid").unwrap();
+        let mid_list = mid.sublist.as_ref().unwrap();
+        assert!(mid_list.entries.is_none());
+        assert_eq!(mid_list.item_count, 3);
+        let flat: f64 = ["Y", "Z", "W"]
+            .iter()
+            .map(|e| row(&table, e).expected_count)
+            .sum();
+        assert!((mid.expected_count - flat).abs() < 1e-9);
+
+        let no_tree = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        assert!(no_tree.tree.is_none());
+        assert!(
+            serde_json::to_value(&no_tree)
+                .unwrap()
+                .get("tree")
+                .is_none()
+        );
     }
 }
