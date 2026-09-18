@@ -18,6 +18,10 @@ re-verify it with one live `get` before asserting it in a draft.
 Present tense only: no decision history or provenance. A rename that still matters is an alias
 clause, not a paragraph.
 
+**Rules for reading `esm` output are owned by `esm skill`** (flat-vs-curve-vs-GLOB values, curve
+axes, `Data/Includes[]` inheritance, drop-chance math). Entries here restate only the clause the
+writing task needs; correct the rule there first, then mirror it.
+
 ---
 
 # Chasing effects
@@ -48,15 +52,14 @@ An empty-shell OMOD pulls its effect from `Data/Includes[]` (`_PARENT_*` blocks,
 
 ## `Magnitude: 0.0` beside a real value source is a live effect
 
-A `Curve Table` beside an ENCH/SPEL effect's `Effect Item Data` is always the value source; a
-`Magnitude` GLOB is the source when the flat `Magnitude` is 0.0 (a nonzero flat value wins).
-Reading the flat 0.0 alone produces a confident false negative ("grants nothing", "is cut").
-A curve's x-axis is the effect's sibling `Actor Value`, often not a level: two points can be two
-states. An AV nothing in the ESM writes is engine-side; say so rather than inventing a trigger.
+A sibling `Curve Table` is always the value source; a `Magnitude` GLOB is the source when the flat
+`Magnitude` is 0.0, and a nonzero flat value wins over its GLOB. Reading the flat 0.0 alone
+produces a confident false negative ("grants nothing", "is cut"). `chase` JSON hands you the raw
+rows, so re-read any zero magnitude with `get --resolve stub`, which inlines the curve points and
+the keying `Actor Value` — that axis is often a state toggle, not a level.
 
-**Example:** `MoM_ench_GarbofMysteries` (0x0052192E) `Effects[1]`, Magnitude 0.0, curve
-`CT_Armor_MoM_GarbofMysteriesSneak` `[(0, 5), (1, 20)]` keyed on AVIF `MoM_EyeOfRa` (0x006DE64A):
-5 or 20 Sneak depending on the Eye of Ra set bonus.
+**Example:** `MoM_ench_GarbofMysteries` (0x0052192E) `Effects[1]` reads Magnitude 0.0 and pays 5 or
+20 Sneak off `CT_Armor_MoM_GarbofMysteriesSneak`, keyed on the Eye of Ra set bonus.
 *verified 2026-07-24 vs 20260724*
 
 ---

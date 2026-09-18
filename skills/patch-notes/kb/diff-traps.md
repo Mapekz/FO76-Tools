@@ -75,9 +75,8 @@ When the two snapshots' TES4 header `Version` differs (e.g. 279 → 283), skip t
   `Effect Flags`, `Cooldown Duration`, `Effect ID` and the record's `Max Item ID` go null. The
   rows' magnitudes, durations and conditions stay byte-identical, so a move there is a real
   candidate; `Area` is unreliable (heterogeneous values landing on one number is the tell).
-- PERK `Effect Header / Rank` renumbered, so keyed diffs pair the wrong entries and PERK
-  `Float`/`Perk Entry ID` "changes" are fake until the permutation test or a live `get` says
-  otherwise; `Perk Condition Tab Count` 4 → 3.
+- PERK effect rows: `Float`/`Perk Entry ID` "changes" are fake until the permutation test or a
+  live `get` says otherwise; `Perk Condition Tab Count` 4 → 3.
 - OMOD `Properties[] / Value 2` 2 → 3; script `extra_bind_data_version` 4 → 3 and script-name
   case normalization; QUST objective flag bit 0x10 cleared; INFO `Previous INFO` and REFR `Layer`
   relinks.
