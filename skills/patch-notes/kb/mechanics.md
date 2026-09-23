@@ -165,12 +165,12 @@ gated on bleed; new: ADD `STAT_DmgVsBleeding` (0x00837DFC) 50.0. Same magnitude.
   `MinPowerPerShot`, `MaxPowerPerShot` and `Min Power Per Shot` are older names for this field.
 - Fast Trigger-family receivers (`_PARENT_mod_WEAPON_Receiver_FastTrigger_Solo`/`_Dual`) carry
   `FullPowerSeconds` MUL+ADD −0.25 beside `AttackDelaySec` −0.25: 25% faster full charge on a
-  charge weapon, ignored elsewhere. Only the Gauss Shotgun has such receivers (e.g. "Hair Trigger
-  Receiver", 0x00573741).
+  charge weapon, ignored elsewhere. The Gauss Shotgun and Gauss Pistol have such receivers (e.g.
+  "Hair Trigger Receiver", 0x00573741).
 
 **Example:** Flatliner (`RD01_Mod_Custom_StrikeBreaker_CustomName`, 0x00793512) ADDs +1.0 Full
 Power Damage Mult (full-charge bonus +100% → +200%) and +0.5 Full Power Seconds (1.0 → 1.5 s).
-*verified 2026-07-14 vs 20260710; receivers 2026-09-14 vs 20260914*
+*verified 2026-07-14 vs 20260710; receivers 2026-09-20 vs 20260918*
 
 ## Shared engine counters live at hardcoded AV slots
 
@@ -243,8 +243,8 @@ weapon is "the boss attacks with it", never a drop or a legendary-mod roll.
 
 ## ACBS `Template Flags` bits gate which per-record fields the engine reads
 
-Bits follow xEdit's `wbActorTemplateUse*` predicates: `0x1` Use Traits, `0x2` Use Stats, `0x100`
-Use Inventory. While `0x2` is set, stats come from the `Default Template` chain and a record's own
+Bits follow the order of `Template Actors`: `0x1` Use Traits, `0x2` Use Stats, `0x100` Use
+Inventory, `0x1000` Use Keywords (a child's own `Keywords` edit is dead data while it is set). While `0x2` is set, stats come from the `Default Template` chain and a record's own
 `Properties[]` curve is dead data; an inventory link clearing needs its `0x100` bit read too. XOR old
 vs new flags on every record of a batch before reporting a curve swap or "decoupled from
 template". ACBS `Flags` bit `Auto-calc stats + PC Level Mult` makes `Level Mult` (value/1000) the
@@ -281,6 +281,16 @@ only if the two combinations' `Includes` differ.
 (e.g. Ripper, Power Fist) "Simple" lacked `mod_Shared_Melee_Paint_None`, so crafts now fill that slot.
 *verified 2026-07-24 vs 20260724*
 
+## The shared ranged mod set lives in `_PARENT_mod_WEAPON_*` includes
+
+Per-weapon mods named True, Stabilized, Aligned, Hardened, Severe, Calibrated, Hair Trigger, Swift
+or Stinging are shells whose numbers come from shared includes: get the include once and reuse it
+across weapons. A shell whose name promises a stat but lacks the include is a Mismatch.
+
+**Example:** M79 Severe Receiver (0x0094F183) includes `Damage_Tier1` (0x0027AC25, DBM +0.25) and
+`CritDMG_dual` (0x0027AC23, +0.5); Gauss Pistol Severe Receiver (0x00951626) includes neither.
+*verified 2026-09-20 vs 20260918*
+
 ## The "Cursed" weapon line lives entirely in one `_PARENT_` include
 
 The six `*_Custom_Cursed` OMODs (Shovel, Pickaxe, Harpoon Gun, Rolling Pin, Sickle, Broadsider) are
@@ -294,15 +304,21 @@ Sources: `E06_Colossus_LLS_Quest_Rewards_Unique` (Shovel, Pickaxe, Harpoon Gun) 
 
 ## Resolving a special-currency vendor's price and gate
 
-An item's `Value` is the right price magnitude but always reads as Caps. Follow `refs` from the
-item to its vendor LVLI tier entry, the CONT/NPC selling it, and that vendor's FACT, whose `Vendor
-Buy Currency` is the real currency. The tier entry's `Conditions` (a `Rep_Tier_<Location>_N_<Rank>`
-CNDF on an AVIF like `Reputation_AV_Crater`) name the reputation gate.
+Follow `refs` from the item to its vendor LVLI tier entry, the CONT/NPC selling it, and that
+vendor's FACT, whose `Vendor Buy Currency` is the real currency. The tier entry's `Conditions` (a
+`Rep_Tier_<Location>_N_<Rank>` CNDF on an AVIF like `Reputation_AV_Crater`) name the reputation
+gate. For the amount, read the item's `Gold Bullion Value` first: when it points at an
+`Econ_GoldVendor_Tier_NN` GLOB, that GLOB's value is the bullion price and `Value` is only the
+Caps worth. `Value` is the price magnitude only when `Gold Bullion Value` is absent. Never quote a
+vendor price without both fields read and the FACT currency named; an EditorID suffix such as
+`_StampVendor` says nothing about currency.
 
-**Example:** `Plan: Piercing Love` (BOOK 0x00930841, Value 1000) → LVLI
+**Example:** `Plan: Piercing Love` (BOOK 0x00930841, Value 1000, no `Gold Bullion Value`) → LVLI
 `W05_LLV_GoldVendor_Raider_Mortimer_6_Ally` → CONT → FACT `Vendor Buy Currency = GoldBullion`, gated
 `Reputation_AV_Crater >= 12000`: "1000 Gold Bullion from Mortimer at Ally".
-*verified 2026-08-04 vs 20260803*
+`SCORE_S26_Recipe_Cryolator_Blasted_StampVendor` (BOOK 0x00918210) has Value 15 and `Gold Bullion
+Value` → `Econ_GoldVendor_Tier_12` = 2000: "2,000 Gold Bullion", not 15.
+*verified 2026-09-20 vs 20260918*
 
 ---
 
@@ -314,7 +330,9 @@ Each species (Cat/Dog/Deathclaw/Radhog) has two tiered passives built from 3-4 S
 rows, each gated on condition function 942 (absent from xEdit's table). Its `Parameter #1` (CIS1)
 is base64 of an 8-byte little-endian PGTR `Entry UID`: decode it, map it to a
 `WorldPets_ProgressionTrack_<species>_NEW` entry, and check each gate's species and tier, since
-some point at another pet's track. Nothing reads a pet level (`WorldPets_PetProwessLevel` 0x00921E47
+some point at another pet's track. Entry UIDs are `1783090000 + 100 × species + entry index` (Cat 0,
+Deathclaw 1, Dog 2, Radhog 3) and base64 is case-sensitive, so one wrong letter lands on another
+species; also read `Comparison Value`, since `== 0.0` on a tier's own entry inverts the gate. Nothing reads a pet level (`WorldPets_PetProwessLevel` 0x00921E47
 and `WorldPets_PetLevelling_Level_*` are unused), and the `WorldPets_ENTM_*_BUFF/PERK_*`
 entitlements and `WorldPets_LvReward_*` GMRWs are `zzz` and empty. Magnitudes sit on `Magnitude`
 GLOBs beside a flat 0.0.
@@ -323,7 +341,7 @@ Pet Prowess by tier: outgoing ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×
 **Example:** `WorldPets_CatBuff_Buff01` (0x0093BD1C) CIS1 `UMtHagAAAAA=` → Entry UID 1783090000 =
 Cat track "Baits Finder 1"; `WorldPets_DogBuff_Buff01` (Stimpak Fetcher, 0x0093BD1E)
 `Effects[0].Magnitude` → GLOB `WorldPets_ConsumableBuff_Dog01` (0x008D1875, 2.0).
-*verified 2026-09-14 vs 20260914*
+*verified 2026-09-14 vs 20260914; UID formula 2026-09-20 vs 20260918*
 
 ## A World Pets progression track is one PGTR record per species
 

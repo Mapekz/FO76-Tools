@@ -119,6 +119,19 @@ build re-serializes most records.
 54,884 ROLLOUT bundles, 332 rule-DEEP → 81 curated bundles for two writers.
 *found 2026-09-04*
 
+## A BRIEF "added" line can be an enemy-only copy of an existing item
+
+`brief-lines.md` templates every added record as `**<name>** (<TYPE>): added`, with no EditorID. A
+duplicate made for NPCs carries the original's display name, so it reads as new player apparel.
+
+**Symptom:** a BRIEF "added" ARMO/WEAP whose name is an item players already own.
+**Fix:** before writing "New apparel/weapon" from BRIEF lines, `esm search "<name>"`; an EditorID
+ending `_NONPLAYABLE`, or `refs` showing only creature/NPC outfit lists, makes it an enemy-only copy.
+**Example:** `Clothes_LostHeavyArmourBurnt01_Storm_NONPLAYABLE` (0x0095167D) "Burnt Vault 63 Riot
+Control Outfit" copies 0x0076D18B and is referenced only by `HIDE_crLLI_Outfit_LostWildcard`
+(0x008F4E83).
+*found 2026-09-20*
+
 ---
 
 # Failures: runs that break or poison downstream work
@@ -148,7 +161,8 @@ in a decoded record, after bundles and drafts are built on it.
 **Symptom:** `esm get`/`esm chase` returns `_unknown_record` or `_unmapped` keys; nothing upstream
 flagged it.
 **Fix:** after the new `Data/<date>/` lands, run `esm coverage --gate` (via `FO76_ESM_PATH` or
-`--esm`). Non-zero: `esm coverage` shows which SIG rows carry `raw_fallback`/`unmapped`/
+`--esm`); it walks every record (~2 min), so add `--local` when it exits with `timed out waiting
+for daemon response`. Non-zero: `esm coverage` shows which SIG rows carry `raw_fallback`/`unmapped`/
 `unknown_record`; fix the schema in `esm/` (a type TES5Edit defines in full goes in
 `esm/tools/extractor/extract.py`'s `SAFELIST`; anything else is an entry in
 `esm/schema/fo76.overrides.json`) and re-run until clean. `unresolved` counts are missing

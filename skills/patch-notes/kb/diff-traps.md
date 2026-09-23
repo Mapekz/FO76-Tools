@@ -191,11 +191,12 @@ item's odds are `100 − Chance None`, so a feeding GLOB going **up** is a **ner
 sibling entries each carry their own `Chance None Global` and the list's `Use All` flag is cleared
 (replaced by an undecoded bit such as `0x200`), the globals are relative weights for one pick,
 often summing to a round total; read them as a ratio (`HTO_crLLS_Rewards_Legendary_Mob_Weapons_Melee`
-0x008F2B1A: 470/330/200).
+0x008F2B1A: 470/330/200). LVLN lists do the same, but their per-entry `LVOC` globals decode under
+`_unmapped` as little-endian GLOB FormIDs (`HIDE_LChar_RobotWildcard` 0x0094F8E4: 85/15).
 
 **Example:** `UniqueWeaponSkinDropChance` (0x008FF251) 80.0 → 90.0: the skin recipe's odds fell
 20% → 10%.
-*verified 2026-07-22 vs 20260717; weighted variant 2026-08-15 vs 20260814*
+*verified 2026-07-22 vs 20260717; weighted variant 2026-08-15 vs 20260814; LVLN 2026-09-20 vs 20260918*
 
 ## A reward row gated on `GetRandomPercent <=` a 0-valued GLOB was already off
 
@@ -306,6 +307,26 @@ branch forked before the migration shows the reverse (plus `EncounterSkullIndex`
 20260903 (Pets branch) reverted 55 records including `E02A_LvlCaveCricket_Prime` (0x00553710).
 *verified 2026-09-14 vs 20260821/20260903*
 
+## A new mod COBJ's `Created Object` can point at the wrong record
+
+On a mod rollout, check each added COBJ's `Created Object` against its EditorID: copy-paste leaves
+recipes crafting another weapon's OMOD (whose `Target OMOD Keywords` won't match) or the loose-mod
+MISC instead of the OMOD. Report these as wiring bugs, not as new mods.
+
+**Example:** `co_mod_M79_Stock_SecondaryDMG` (0x0094F164) creates `mod_PlasmaGun_Grip_SecondaryDMG`
+(0x0018C468); `co_mod_GaussPistol_Grip_HipAccuracy` (0x0094F7EA) creates MISC 0x0094F7F8.
+*verified 2026-09-20 vs 20260918*
+
+## A WAVE losing a spawn definition can be a gender-pair collapse
+
+A `Wave Encounter Definitions` count of 2 → 1 is not half the enemies when the old pair was a
+fixed-male and a fixed-female NPC_ and the replacement templates Traits from a mixed face LVLN.
+Check the removed Spawn References' EditorIDs for `_M`/`_F` before writing a spawn-count change.
+
+**Example:** `BountyHunt_Grunt_Toxic_WaveEnc` (0x00833A19) dropped 0x007D107D and 0x007D1083 for
+0x007CFA9D, which rolls its face from `BountyHunt_Face_GhoulAndHuman_GenderAll` (0x007CFA80).
+*verified 2026-09-20 vs 20260918*
+
 ## A SPECIAL `Maximum Value` of float-max means uncapped
 
 `3.4028235e+38` is "no cap", not missing data. Since 20260717 all seven SPECIALs share a 100.0
@@ -321,7 +342,8 @@ ceiling (Strength, Endurance, Agility and Luck moved from float-max).
 These decode as numbers the lint mistakes for references:
 - NPC_ `Attacks[].Attack.Attack Data.Attack Flags` (`0x80000000` = `Override Data`, plus
   `0x80000002/04/10`), ARMO/ARMA `First Person Flags`, and AVIF `Flags` (`0x80000800` on
-  `FollowerState` 0x00000344 = "Default to 1.0" + "Hardcoded") are bitfields.
+  `FollowerState` 0x00000344 = "Default to 1.0" + "Hardcoded"), NPC_ `Configuration / Flags`
+  (`0xA800807A` on pet actor 0x0090ABCB) and FURN `Active Markers / Flags` are bitfields.
 - `0xFFFFFFFF` on INFO `Responses[].Response Data.Emotion` is an enum sentinel (0x0092C628–2B).
 - `0x00000014` is the engine's hardcoded PlayerRef, so a `Run On: Reference` condition targeting it
   lints (`PowerArmorImpactEnchantment` 0x0011D53B, `DLC01Bot_KnockdownSpell` 0x0010EB2A).
@@ -330,7 +352,7 @@ These decode as numbers the lint mistakes for references:
 
 **Example:** 32 of 116 lints in one deep slice were NPC_ `Attack Flags` (verified on
 0x005751A0, 0x0078C584, 0x0080100A).
-*verified 2026-07-24 vs 20260724; AVIF 2026-09-03; PlayerRef and NAVI 2026-09-14*
+*verified 2026-07-24 vs 20260724; AVIF 2026-09-03; PlayerRef and NAVI 2026-09-14; NPC_/FURN 2026-09-20*
 
 ## `desc_changed_stats_same` fires on records with no description change
 
@@ -345,15 +367,17 @@ description field that actually changed before trusting the lint.
 swap) and FISH `Fishing_Fish_Small_Axolotl_Gold` (0x0091391B, zzz rename).
 *verified 2026-09-14 vs 20260914*
 
-## `desc_changed_stats_same` misses stats that move through a linked GLOB
+## `desc_changed_stats_same` misses stats that move through a linked GLOB or a swapped include
 
-The lint only compares the record's own fields. A description change whose magnitude lives on a
+The lint only compares the record's own fields. An OMOD whose `Data / Includes` row swaps one
+`_PARENT_` template for another (`mod_GaussPistol_Barrel_Suppressed_Base` 0x0054A170) changes every
+stat the templates carry while its own `Properties` stay put; diff the two templates. A description change whose magnitude lives on a
 referenced GLOB (`Effect.Magnitude`, `Quantity Global`) reads as text-only even when the number
 moved; check every such reference before trusting the lint.
 
 **Example:** `WorldPets_Dog_ConsumableBuff` MGEF (0x008B7A75) "every hour" → "every 30 min", called
 text-only; its GLOB `WorldPets_ConsumableGiftInterval` moved 7000.0 → 1801.0.
-*verified 2026-09-03 vs 20260903*
+*verified 2026-09-03 vs 20260903; includes 2026-09-20 vs 20260918*
 
 ## `unreferenced_perk_rank` on perks granted outside a PCRD
 
