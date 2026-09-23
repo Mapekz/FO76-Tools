@@ -355,7 +355,7 @@ mod tests {
     // ─── Stale eviction ─────────────────────────────────────────────────
     //
     // The daemon's advertised "stale-evicts if the ESM changes on disk — no
-    // manual restart needed" behaviour (CLAUDE.md). The `FakeHost` seam
+    // manual restart needed" behaviour (AGENTS.md). The `FakeHost` seam
     // below tests it deterministically, without a real ESM on disk, a real
     // write, or mtime-granularity luck.
 

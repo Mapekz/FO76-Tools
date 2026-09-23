@@ -1471,7 +1471,7 @@ fn effect_chase(
 // ─── colocated unit tests for private helpers ───────────────────────────────
 // `first_array_container`/`walk_path`/`named`/`is_formid_stub`/`stub` are
 // private and not reachable from an external `tests/` integration crate, so
-// these stay colocated (see esm/CLAUDE.md's testing conventions).
+// these stay colocated (see esm/AGENTS.md's testing conventions).
 #[cfg(test)]
 mod tests {
     use super::*;

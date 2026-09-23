@@ -2,7 +2,7 @@
 //! translation shared by the CLI, HTTP/MCP server, and N-API bindings.
 //!
 //! All functions here are fully `pub`, so per the colocated-vs-`tests/`
-//! convention in `esm/CLAUDE.md` these live in their own integration test
+//! convention in `esm/AGENTS.md` these live in their own integration test
 //! file (mirroring `tests/wildcard.rs` for `wildcard_match`) rather than a
 //! `#[cfg(test)]` block in `src/query.rs` itself.
 

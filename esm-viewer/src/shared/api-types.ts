@@ -1,6 +1,6 @@
 // TypeScript mirrors of the Rust N-API DTOs, generated from `esm`'s structs via
 // `ts-rs` (plus two hand-written generators for schema/marker data) — see
-// `esm/justfile`'s `gen-types` recipe and `esm/CLAUDE.md`. Do NOT hand-edit
+// `esm/justfile`'s `gen-types` recipe and `esm/AGENTS.md`. Do NOT hand-edit
 // anything under `./generated/`; regenerate it there instead.
 //
 // This file re-exports the generated types under their existing external names

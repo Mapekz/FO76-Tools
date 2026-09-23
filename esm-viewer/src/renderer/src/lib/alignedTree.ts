@@ -46,7 +46,7 @@ export function coverageBadges(obj: Record<string, unknown>): string[] {
 
 /** Recursively checks a decoded `fields` tree for any schema decode-coverage gap
  * marker (`_unknown_record`, `_raw`, `_unmapped`, `_unresolved`) — see
- * esm/CLAUDE.md "Decode output key conventions". Used to auto-default the
+ * esm/AGENTS.md "Decode output key conventions". Used to auto-default the
  * raw/decoded toggle and to drive inline coverage badges. */
 export function hasCoverageMarkers(value: unknown): boolean {
   if (Array.isArray(value)) {

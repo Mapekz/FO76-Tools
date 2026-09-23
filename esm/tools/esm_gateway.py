@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 `EsmGateway` -- the one seam every `tools/*.py` pipeline stage uses to reach
-the `esm` CLI/daemon (see ../CLAUDE.md, "Bulk / sweep workflow"). Talks the
+the `esm` CLI/daemon (see ../AGENTS.md, "Bulk / sweep workflow"). Talks the
 same wire protocol the Rust CLI/N-API/MCP clients use so external tooling
 (patch-notes generators, clustering scripts, ...) can reuse the resident
 daemon instead of paying the ~280 MiB cold-index cost per call.
@@ -753,7 +753,7 @@ class EsmGateway:
         routing through `/op Diff` would require dropping per-side strings
         control and relying on the daemon's sibling-file auto-load instead,
         which is a real behavior change, not a plumbing one, and out of scope
-        here (see esm/CLAUDE.md's "Bulk / sweep workflow" for how daemon
+        here (see esm/AGENTS.md's "Bulk / sweep workflow" for how daemon
         auto-load works when no override flags are given).
 
         `stdin=DEVNULL` is defensive hygiene for any subprocess call, not a

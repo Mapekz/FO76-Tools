@@ -1313,7 +1313,7 @@ mod tests {
 
     /// `summarize_effect` is private and not reachable from an external
     /// `tests/` integration crate, so its test stays colocated here (see
-    /// esm/CLAUDE.md's testing conventions).
+    /// esm/AGENTS.md's testing conventions).
     #[test]
     fn summarize_effect_renders_base_effect_magnitude_and_conditions() {
         let effect = serde_json::json!({

@@ -102,7 +102,7 @@ pub struct RecordResult {
 
 /// Presentation type for the CLI's own `list_by_type` printing — does not cross
 /// the N-API boundary (no napi binding calls `Database::list_by_type`), so it
-/// is intentionally not derived for TS export; see esm-viewer/CLAUDE.md.
+/// is intentionally not derived for TS export; see esm-viewer/AGENTS.md.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListEntry {
     pub form_id: String,

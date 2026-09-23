@@ -84,7 +84,7 @@ fn export_bindings_markers() {
     out.push_str(
         " * single source of truth the decoder inserts these under). See \"Decode output\n",
     );
-    out.push_str(" * key conventions\" in esm/CLAUDE.md. */\n");
+    out.push_str(" * key conventions\" in esm/AGENTS.md. */\n");
     out.push_str("export const MARKERS = {\n");
     out.push_str(&format!(
         "  UNKNOWN_RECORD: {},\n",

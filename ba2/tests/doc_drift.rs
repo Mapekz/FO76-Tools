@@ -1,17 +1,17 @@
-//! Doc-drift guard: fails when `README.md` / `CLAUDE.md` drift away from the
+//! Doc-drift guard: fails when `README.md` / `AGENTS.md` drift away from the
 //! real, built CLI. Four checks:
 //!
-//! 1. Every `ba2 <subcommand>` invocation named in `README.md`/`CLAUDE.md` is
+//! 1. Every `ba2 <subcommand>` invocation named in `README.md`/`AGENTS.md` is
 //!    a real subcommand of the built binary (ground truth: `ba2 --help`).
 //! 2. Every real subcommand (except `help`) is mentioned, by name, in
-//!    `README.md` (the human CLI doc — `CLAUDE.md` doesn't enumerate
+//!    `README.md` (the human CLI doc — `AGENTS.md` doesn't enumerate
 //!    subcommands beyond its architecture table, so it isn't held to this
 //!    check).
 //! 3. Every `--flag` token that shares a code fence/span with a named `ba2
 //!    <subcommand>` invocation in either doc is a real flag of the CLI
 //!    (ground truth: the global `--help` plus every subcommand's `--help`).
 //! 4. Every backtick-quoted repo-relative path token in `README.md` and
-//!    `CLAUDE.md` resolves to a real file or directory, relative to the
+//!    `AGENTS.md` resolves to a real file or directory, relative to the
 //!    crate root (`../`-prefixed cross-repo references resolve relative to
 //!    the workspace root instead, since every FO76-Tools subproject lives in
 //!    this one repo).
@@ -33,7 +33,7 @@ use std::process::Command;
 // doc wasn't corrected in the same change.
 
 /// Subcommand-shaped words this test's doc extraction pulls out of
-/// `README.md`/`CLAUDE.md` that are known false positives (not real `ba2
+/// `README.md`/`AGENTS.md` that are known false positives (not real `ba2
 /// <subcommand>` invocations) and not worth tightening the extractor for.
 const SKIP_INVOCATIONS: &[&str] = &[];
 
@@ -288,7 +288,7 @@ fn doc_invocations_are_real_subcommands() {
 
     let docs = [
         ("README.md", read_doc("README.md")),
-        ("CLAUDE.md", read_doc("CLAUDE.md")),
+        ("AGENTS.md", read_doc("AGENTS.md")),
     ];
 
     let mut failures = Vec::new();
@@ -326,7 +326,7 @@ fn doc_flags_are_real() {
 
     let docs = [
         ("README.md", read_doc("README.md")),
-        ("CLAUDE.md", read_doc("CLAUDE.md")),
+        ("AGENTS.md", read_doc("AGENTS.md")),
     ];
 
     let mut failures = Vec::new();
@@ -413,7 +413,7 @@ fn doc_cross_references_resolve() {
         .expect("ba2/ crate root has a parent directory");
 
     let docs = [
-        ("CLAUDE.md".to_string(), read_doc("CLAUDE.md")),
+        ("AGENTS.md".to_string(), read_doc("AGENTS.md")),
         ("README.md".to_string(), read_doc("README.md")),
     ];
 

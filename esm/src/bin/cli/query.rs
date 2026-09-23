@@ -88,7 +88,7 @@ pub(crate) fn cmd_get(
             anyhow::bail!(
                 "--localization-ba2/--strings-dir/--startup-ba2 are not supported with \
                  multiple selectors; run one target at a time, or place the strings/curves \
-                 next to the ESM so the warm daemon auto-loads them (see esm/CLAUDE.md)"
+                 next to the ESM so the warm daemon auto-loads them (see esm/AGENTS.md)"
             );
         }
         let sels: Vec<RecordSel> = targets

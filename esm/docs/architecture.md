@@ -49,7 +49,7 @@ MCP server, and patch-notes tooling all key off of.
 hand-written. `tools/extractor/extract.py` reads the sibling `../TES5Edit` checkout's Pascal
 record definitions (`Core/wbDefinitionsFO76.pas`, `Core/wbDefinitionsCommon.pas`) and emits
 `schema/fo76.json` plus `schema/fo76.ctda.json` (the CTDA function table) and consults
-`schema/fo76.overrides.json` for subrecords TES5Edit doesn't define at all (see CLAUDE.md's
+`schema/fo76.overrides.json` for subrecords TES5Edit doesn't define at all (see AGENTS.md's
 "Coverage drift handling" table — LVLI `LVLD`, REFR `MCND`, etc.). `tools/extractor/audit.py
 --gate` is the parity gate: it fails the build when decode coverage regresses against the
 Pascal source. Fix decode coverage by changing the extractor or the overrides file — never by

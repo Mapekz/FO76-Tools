@@ -1,5 +1,5 @@
 //! Doc-drift guard: fails when `skills/esm-cli/SKILL.md` / `README.md` /
-//! `CLAUDE.md` / `docs/architecture.md` / `docs/adr/*.md` drift away from the
+//! `AGENTS.md` / `docs/architecture.md` / `docs/adr/*.md` drift away from the
 //! real, built CLI. Four checks:
 //!
 //! 1. Every `esm <subcommand>` invocation named in `SKILL.md`/`README.md` is a
@@ -9,7 +9,7 @@
 //! 3. Every `--flag` token that shares a code fence/span with a named `esm
 //!    <subcommand>` invocation in `SKILL.md` is a real flag of the CLI
 //!    (ground truth: the global `--help` plus every subcommand's `--help`).
-//! 4. Every backtick-quoted repo-relative path token in `CLAUDE.md`,
+//! 4. Every backtick-quoted repo-relative path token in `AGENTS.md`,
 //!    `README.md`, `docs/architecture.md`, and `docs/adr/*.md` resolves to a
 //!    real file or directory.
 //!
@@ -40,7 +40,7 @@ const SKIP_DOC_FLAGS: &[&str] = &[];
 
 /// Backtick-quoted repo-relative paths that do not currently resolve.
 /// Verified stale on inspection, but this test is scoped to adding
-/// `tests/doc_drift.rs` only — it must not edit `CLAUDE.md`/`docs/adr/*.md`
+/// `tests/doc_drift.rs` only — it must not edit `AGENTS.md`/`docs/adr/*.md`
 /// to fix them, so they're parked here instead of silently passing.
 ///
 /// - `src/decode.rs`, `src/bin/cli.rs`: both were split into directories
@@ -456,7 +456,7 @@ fn doc_cross_references_resolve() {
         .expect("esm/ crate root has a parent directory");
 
     let mut docs: Vec<(String, String)> = vec![
-        ("CLAUDE.md".to_string(), read_doc("CLAUDE.md")),
+        ("AGENTS.md".to_string(), read_doc("AGENTS.md")),
         ("README.md".to_string(), read_doc("README.md")),
         (
             "docs/architecture.md".to_string(),
@@ -482,7 +482,7 @@ fn doc_cross_references_resolve() {
                 // Only `../esm-viewer/...` is in scope: it's the one sibling
                 // repo this doc set legitimately cross-references. `../TES5Edit`
                 // is explicitly out of scope — that checkout is optional and
-                // may not exist on CI (see CLAUDE.md's schema-tooling note).
+                // may not exist on CI (see AGENTS.md's schema-tooling note).
                 if span.starts_with("../esm-viewer") {
                     let candidate = workspace_parent.join(rest);
                     if !candidate.exists() {

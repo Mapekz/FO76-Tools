@@ -150,7 +150,7 @@ if let Some(t) = archive.list()[0].texture() {
 
 ~121 tests, all synthetic in-memory data — no real BA2 archive required. Run with `cargo test`.
 Real multi-GiB DX10 archives are spot-checked via the CLI when texture paths change (see
-`ba2/CLAUDE.md` for the file-by-file breakdown).
+`ba2/AGENTS.md` for the file-by-file breakdown).
 
 ```sh
 cargo test

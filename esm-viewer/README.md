@@ -15,7 +15,7 @@ of reloading the ESM per query.
 
 - [Bun](https://bun.sh) (package manager and test runner)
 - A Rust toolchain (to build the native addon this app depends on — see
-  [`../esm/CLAUDE.md`](../esm/CLAUDE.md) for the pinned version)
+  [`../esm/AGENTS.md`](../esm/AGENTS.md) for the pinned version)
 - [`just`](https://github.com/casey/just) (optional; thin wrapper over the `bun run` scripts
   below)
 
@@ -36,5 +36,5 @@ Without `just`, the equivalent `bun run` scripts are `dev`, `build`, `lint:ci`,
 - [`PRODUCT.md`](PRODUCT.md) — product spec: users, purpose, positioning, constraints.
 - [`DESIGN.md`](DESIGN.md) — design system ("The Hex Workbench"): colors, typography, layout,
   components.
-- [`CLAUDE.md`](CLAUDE.md) — agent-facing build/architecture detail: native-addon rebuild
+- [`AGENTS.md`](AGENTS.md) — agent-facing build/architecture detail: native-addon rebuild
   workflow, generated-type regeneration, lint/format/typecheck tooling, known gotchas.

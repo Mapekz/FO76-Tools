@@ -181,7 +181,7 @@ Key re-exports: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`
 
 ## Schema
 
-`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers all 183 FO76 record types — 182 derived from xEdit Pascal definitions plus `PGTR`, hand-authored whole because xEdit has no definition for it — and every type currently decodes `full` (no unmapped subrecords against the reference ESM); test coverage is 3 `robust` (hand-picked, end-to-end: `NPC_`, `PERK`, `WEAP`), 61 `basic`, and 119 `none` (still covered by the exhaustive env-gated sweep test). An `fo76.overrides.json` is merged on top for manual corrections (newer-than-reference drift subrecords TES5Edit doesn't define — see `CLAUDE.md`'s "Coverage drift handling").
+`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers all 183 FO76 record types — 182 derived from xEdit Pascal definitions plus `PGTR`, hand-authored whole because xEdit has no definition for it — and every type currently decodes `full` (no unmapped subrecords against the reference ESM); test coverage is 3 `robust` (hand-picked, end-to-end: `NPC_`, `PERK`, `WEAP`), 61 `basic`, and 119 `none` (still covered by the exhaustive env-gated sweep test). An `fo76.overrides.json` is merged on top for manual corrections (newer-than-reference drift subrecords TES5Edit doesn't define — see `AGENTS.md`'s "Coverage drift handling").
 
 Decode status is measured against a reference ESM via `esm coverage`; run it (or `esm coverage --type <SIG>`) for live per-type status instead of a checked-in snapshot.
 
@@ -258,5 +258,5 @@ bun run build          # production build
 
 - [`docs/architecture.md`](docs/architecture.md) — record read flow, index/cache lifecycle, process topology, feature-layer modules.
 - [`docs/adr/`](docs/adr/) — design decisions and their rationale.
-- [`CLAUDE.md`](CLAUDE.md) — conventions and invariants for agents working on this codebase.
+- [`AGENTS.md`](AGENTS.md) — conventions and invariants for agents working on this codebase.
 - `esm skill` / [`skills/esm-cli/SKILL.md`](skills/esm-cli/SKILL.md) — usage knowledge for agents *using* the CLI (bulk workflows, `refs` gotchas, mechanics-digest reading, obtainability verdicts, curve-table conventions).

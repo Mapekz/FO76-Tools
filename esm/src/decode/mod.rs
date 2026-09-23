@@ -42,7 +42,7 @@ use vmad::{
 use walk::decode_member;
 
 /// Single source of truth for the schema decode-coverage marker keys (see
-/// "Decode output key conventions" in esm/CLAUDE.md). Exported to TypeScript
+/// "Decode output key conventions" in esm/AGENTS.md). Exported to TypeScript
 /// (`esm-viewer/src/shared/generated/markers.generated.ts`) so the renderer's
 /// coverage-badge logic (`alignedTree.ts`'s `coverageBadges`) never hardcodes
 /// these strings independently of the decoder that produces them.
@@ -60,7 +60,7 @@ pub mod markers {
 /// Controls how deeply FormID references are followed during decode.
 ///
 /// `ts_rs::TS` is derived only under `#[cfg(test)]` (`ts-rs` is a dev-dependency,
-/// not a regular one — see `esm/CLAUDE.md` "N-API Binding and Electron App").
+/// not a regular one — see `esm/AGENTS.md` "N-API Binding and Electron App").
 /// The export test itself lives behind `#[ts(export)]`, which `ts-rs` already
 /// gates on `#[cfg(test)]` internally; the outer `cfg_attr` is what keeps the
 /// `TS` impl (and the `ts_rs` extern crate reference) out of non-test builds.

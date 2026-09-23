@@ -351,7 +351,7 @@ fn print_field_changes(changes: &Value, indent: &str) {
 /// Typed form of an `_array_diff` envelope's `"strategy"` field (see
 /// `diff.rs`'s `array_diff`/`unkeyed_array_diff`/`keyed_array_diff` etc. for
 /// the four cases this crate's diff pipeline actually produces — `keyed`,
-/// `positional`, `set`, `unkeyed`, per `esm/CLAUDE.md`'s `diff.rs` entry).
+/// `positional`, `set`, `unkeyed`, per `esm/AGENTS.md`'s `diff.rs` entry).
 /// `diff.rs` itself never keeps a Rust-side enum for this — every strategy
 /// is written straight to an untyped `serde_json::Value` string at the point
 /// it's decided, so this is CLI-local: a named, testable home for the
