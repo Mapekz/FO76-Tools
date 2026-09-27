@@ -53,3 +53,55 @@ fn walk_structure_events_sequence() {
     assert_eq!(events[2], "Record(WEAP,2)");
     assert_eq!(events[3], "GroupEnd");
 }
+
+/// One subrecord on the wire: 4-byte signature, u16 size, payload.
+fn sub(sig: &[u8; 4], size: u16, payload: &[u8]) -> Vec<u8> {
+    let mut out = sig.to_vec();
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(payload);
+    out
+}
+
+/// An `XXXX` subrecord carrying the real u32 size of the next subrecord, whose
+/// own u16 size field is then 0 (the payload is too large to fit in it).
+fn xxxx(real_size: u32) -> Vec<u8> {
+    sub(b"XXXX", 4, &real_size.to_le_bytes())
+}
+
+#[test]
+fn xxxx_supplies_the_size_of_a_following_zero_size_subrecord() {
+    let big = vec![0xAB; 70_000];
+    let mut buf = xxxx(big.len() as u32);
+    buf.extend(sub(b"DATA", 0, &big));
+    buf.extend(sub(b"EDID", 3, b"ok\0"));
+
+    let subs = esm::reader::parse_subrecords(&buf).unwrap();
+    let sigs: Vec<&str> = subs.iter().map(|s| s.signature.as_str()).collect();
+    assert_eq!(sigs, ["DATA", "EDID"], "XXXX itself is not emitted");
+    assert_eq!(subs[0].data.len(), 70_000);
+    assert_eq!(subs[1].data, b"ok\0");
+}
+
+#[test]
+fn xxxx_is_ignored_when_the_next_subrecord_has_its_own_size() {
+    let mut buf = xxxx(9_999);
+    buf.extend(sub(b"EDID", 3, b"ok\0"));
+    buf.extend(sub(b"FULL", 0, b""));
+
+    let subs = esm::reader::parse_subrecords(&buf).unwrap();
+    assert_eq!(subs[0].data, b"ok\0");
+    assert!(
+        subs[1].data.is_empty(),
+        "a pending XXXX size is consumed by the very next subrecord only"
+    );
+}
+
+#[test]
+fn xxxx_size_past_the_end_of_the_record_is_clamped() {
+    let mut buf = xxxx(1_000_000);
+    buf.extend(sub(b"DATA", 0, &[1, 2, 3]));
+
+    let subs = esm::reader::parse_subrecords(&buf).unwrap();
+    assert_eq!(subs.len(), 1);
+    assert_eq!(subs[0].data, [1, 2, 3]);
+}
