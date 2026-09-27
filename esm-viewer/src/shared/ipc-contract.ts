@@ -28,6 +28,7 @@ import {
   validateFilterOp,
   validateOptionalText,
   validateUint,
+  validateRefDepth,
   validateTarget,
 } from '../main/ipc-validators'
 
@@ -74,12 +75,7 @@ export const CONTRACT: readonly ContractEntry[] = [
   {
     channel: 'referenced-by-id',
     method: 'referencedById',
-    // `depth` deliberately skips `validateUint`: a non-number `depth` clamps
-    // to `NaN` via `Math.max`/`Math.min`, which the addon treats as default depth.
-    validate: ([target, depth]) => [
-      validateTarget(target),
-      Math.max(1, Math.min((depth as number) ?? 1, 6)),
-    ],
+    validate: ([target, depth]) => [validateTarget(target), validateRefDepth(depth)],
   },
   {
     channel: 'list-type-children',

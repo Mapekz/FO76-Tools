@@ -61,6 +61,17 @@ export function validateUint(name: string, v: unknown, max = 100_000): number {
   throw new Error(`invalid ${name}: expected integer 0–${max}, got ${String(v)}`)
 }
 
+/**
+ * Referenced-by walk depth in hops. Absent means 1; integers clamp to
+ * `1..=max`. Anything else is rejected, because the addon reads a depth of 0
+ * as an unbounded walk and a non-number would reach it as 0.
+ */
+export function validateRefDepth(v: unknown, max = 6): number {
+  if (v === undefined || v === null) return 1
+  if (typeof v === 'number' && Number.isInteger(v)) return Math.max(1, Math.min(v, max))
+  throw new Error(`invalid depth: expected an integer, got ${String(v)}`)
+}
+
 export function validateTarget(v: unknown): string {
   if (typeof v === 'string' && v.length > 0 && v.length <= 512) return v
   throw new Error(`invalid target: must be a non-empty string`)

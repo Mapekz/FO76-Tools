@@ -8,6 +8,7 @@ import {
   validateFilterOp,
   validateOptionalText,
   validateUint,
+  validateRefDepth,
   validateTarget,
 } from './ipc-validators'
 
@@ -192,5 +193,24 @@ describe('validateTarget', () => {
 
   it('throws on a non-string value', () => {
     expect(() => validateTarget(123)).toThrow('invalid target: must be a non-empty string')
+  })
+})
+
+describe('validateRefDepth', () => {
+  it('defaults an absent depth to one hop', () => {
+    expect(validateRefDepth(undefined)).toBe(1)
+    expect(validateRefDepth(null)).toBe(1)
+  })
+
+  it('clamps integers into 1..=6', () => {
+    expect(validateRefDepth(0)).toBe(1)
+    expect(validateRefDepth(3)).toBe(3)
+    expect(validateRefDepth(99)).toBe(6)
+  })
+
+  it('rejects non-integers instead of letting them reach the addon as an unbounded walk', () => {
+    for (const bad of ['3', 2.5, Number.NaN, {}]) {
+      expect(() => validateRefDepth(bad)).toThrow(/invalid depth/)
+    }
   })
 })
