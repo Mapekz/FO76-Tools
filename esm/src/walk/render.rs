@@ -972,13 +972,15 @@ fn render_omod(d: &OmodDigest, lines: &mut Vec<String>) {
     }
 }
 
-/// Render classified [`Hop`]s in classifier order. Consecutive
-/// [`HopKind::TagKeyword`] hops collapse into one `tags` block; include-
-/// sourced hops (`source_omod.is_some()`) are skipped here — walk enqueues
-/// includes as their own BFS nodes instead of folding them into the
-/// includer's digest. A directly-attached ENCH property renders through the
-/// same `DirectProperty` path as a PROJ or SPEL (no separate ENCH-follow
-/// pass to suppress against — see `super::omod_hops_enqueue`).
+/// Render classified [`Hop`]s in classifier order. Consecutive bare-value
+/// properties (no record to chase, e.g. `AttackDamage MUL+ADD -0.4`) collapse
+/// into one `properties` block and consecutive [`HopKind::TagKeyword`] hops
+/// into one `tags` block; include-sourced hops (`source_omod.is_some()`) are
+/// skipped here — walk enqueues includes as their own BFS nodes instead of
+/// folding them into the includer's digest. A directly-attached ENCH property
+/// renders through the same `DirectProperty` path as a PROJ or SPEL (no
+/// separate ENCH-follow pass to suppress against — see
+/// `super::omod_hops_enqueue`).
 pub(super) fn render_omod_hops(hops: &[Hop], lines: &mut Vec<String>) {
     let mut i = 0;
     while i < hops.len() {
@@ -988,7 +990,12 @@ pub(super) fn render_omod_hops(hops: &[Hop], lines: &mut Vec<String>) {
             continue;
         }
         if hop.target.is_none() {
+            let start = i;
             i += 1;
+            while i < hops.len() && hops[i].source_omod.is_none() && hops[i].target.is_none() {
+                i += 1;
+            }
+            render_property_block(&hops[start..i], lines);
             continue;
         }
         if hop.kind == HopKind::TagKeyword {
@@ -1006,6 +1013,52 @@ pub(super) fn render_omod_hops(hops: &[Hop], lines: &mut Vec<String>) {
         }
         render_omod_hop(hop, lines);
         i += 1;
+    }
+}
+
+/// One `properties` block for a contiguous run of bare-value property rows:
+/// the property name, its function, and its value(s), aligned.
+fn render_property_block(hops: &[Hop], lines: &mut Vec<String>) {
+    lines.push("properties".to_string());
+    let rows: Vec<Vec<String>> = hops
+        .iter()
+        .map(|hop| {
+            vec![
+                pyish(&hop.property),
+                pyish(&hop.function),
+                fmt_property_values(hop),
+            ]
+        })
+        .collect();
+    for row in align_table(&["", "", ""], &rows).into_iter().skip(1) {
+        lines.push(format!("    {}", row.trim_end()));
+    }
+}
+
+/// A property row's operand(s): `value1`, then `value2` when it carries
+/// anything (a curve table replaces the pair).
+fn fmt_property_values(hop: &Hop) -> String {
+    if let Some(curve) = hop.curve_table.as_ref().and_then(fmt_curve) {
+        return curve;
+    }
+    let second = match &hop.value2 {
+        Value::Null => None,
+        Value::Number(n) if n.as_f64() == Some(0.0) => None,
+        v => Some(pyish(v)),
+    };
+    match second {
+        Some(v2) => format!("{}, {v2}", pyish(&hop.value1)),
+        None => pyish(&hop.value1),
+    }
+}
+
+/// `  (FUNCTION value2)` suffix for a property row whose `value1` is the
+/// record it points at, e.g. `DamageTypeValues dtCryo` with `MUL+ADD 0.6`.
+fn fmt_target_operand(hop: &Hop) -> String {
+    match &hop.value2 {
+        Value::Null => String::new(),
+        Value::Number(n) if n.as_f64() == Some(0.0) => String::new(),
+        v => format!("  ({} {})", pyish(&hop.function), pyish(v)),
     }
 }
 
@@ -1037,9 +1090,9 @@ fn render_tag_keyword_block(hops: &[Hop], lines: &mut Vec<String>) {
     }
 }
 
-/// Render one classified [`Hop`] as indented mechanism lines. Skips bare-
-/// number properties (`hop.target.is_none()` — nothing to chase, unchanged
-/// from before this walk had a dedicated OMOD digest). A directly-attached
+/// Render one classified [`Hop`] as indented mechanism lines. Bare-value
+/// properties (`hop.target.is_none()`) render through
+/// [`render_property_block`] instead. A directly-attached
 /// ENCH property renders through the plain `DirectProperty` arm below, same
 /// as a direct SPEL attachment.
 fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>) {
@@ -1077,13 +1130,21 @@ fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>) {
             render_reverse_evidence(&hop.evidence, lines);
         }
         HopKind::DirectProperty if target_rt == "PROJ" => {
-            lines.push(format!("direct property → {}", fmt_stub(target)));
+            lines.push(format!(
+                "direct property → {}{}",
+                fmt_stub(target),
+                fmt_target_operand(hop)
+            ));
             render_projectile_evidence(&hop.evidence, lines);
         }
         // Direct SPEL attachment (the other `FORWARD_FETCH_TYPES` member
         // besides ENCH/PERK) — forward-fetched the same way a perk grant is.
         HopKind::DirectProperty => {
-            lines.push(format!("direct property → {}", fmt_stub(target)));
+            lines.push(format!(
+                "direct property → {}{}",
+                fmt_stub(target),
+                fmt_target_operand(hop)
+            ));
             render_forward_evidence(&hop.evidence, lines);
         }
     }
@@ -1289,6 +1350,33 @@ pub fn render_text(result: &WalkResult) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn omod_bare_value_properties_render_as_one_aligned_block() {
+        use serde_json::json;
+        let hop = |v: Value| -> Hop { serde_json::from_value(v).unwrap() };
+        let dmgt = json!({"formid": "0x00060A83", "editor_id": "dtCryo", "record_type": "DMGT"});
+        let hops = vec![
+            hop(json!({"property_index": 0, "property": "Weight", "function": "MUL+ADD",
+                       "value1": 0.1, "value2": 0.0, "kind": "direct_property", "evidence": []})),
+            hop(json!({"property_index": 1, "property": "AttackDamage", "function": "MUL+ADD",
+                       "value1": -0.4, "value2": -0.4, "kind": "direct_property", "evidence": []})),
+            hop(json!({"property_index": 2, "property": "DamageTypeValues", "function": "MUL+ADD",
+                       "value1": dmgt, "value2": 0.6, "kind": "direct_property",
+                       "target": dmgt, "evidence": []})),
+        ];
+        let mut lines = Vec::new();
+        render_omod_hops(&hops, &mut lines);
+        assert_eq!(
+            lines,
+            vec![
+                "properties",
+                "    Weight        MUL+ADD  0.1",
+                "    AttackDamage  MUL+ADD  -0.4, -0.4",
+                "direct property → DMGT 0x00060A83 dtCryo  (MUL+ADD 0.6)",
+            ]
+        );
+    }
 
     #[test]
     fn pyish_drops_trailing_zero_on_whole_floats() {

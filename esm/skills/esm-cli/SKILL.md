@@ -206,8 +206,10 @@ $ esm walk mod_Legendary_Weapon1_DmgConsecutiveHits --depth 3
 
 Other mechanism headers you'll see: `perk grant → PERK …` (granted perk's
 effect rows inline), `AV hook → AVIF …` (reverse-chased like a keyword
-hook), `direct property → SPEL …` (forward-fetched), and bare-number
-properties as before.
+hook), `direct property → SPEL …` (forward-fetched; a row that also carries a
+value shows it, e.g. `direct property → DMGT … dtCryo  (MUL+ADD 0.6)`), and a
+`properties` block for rows with no record to follow
+(`AttackDamage  MUL+ADD  -0.4, -0.4`: function, then `value1, value2`).
 
 - `chase` is the pipeline evidence contract, not an interactive tool: one
   classified mechanism per `Data.Properties[]` row for an OMOD
