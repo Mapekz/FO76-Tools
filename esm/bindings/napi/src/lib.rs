@@ -25,6 +25,7 @@ impl EsmDatabase {
     /// caching — while still fixing the canonicalization gap.
     #[napi(factory)]
     pub async fn open_database(path: String) -> napi::Result<EsmDatabase> {
+        esm::logging::init();
         let inner = tokio::task::spawn_blocking(move || {
             esm::registry::Registry::new().get_or_open(std::path::Path::new(&path))
         })

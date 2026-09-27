@@ -12,6 +12,7 @@ pub mod formid;
 pub mod hardcoded;
 pub mod index;
 pub mod ipc;
+pub mod logging;
 pub mod lvli;
 pub mod progress;
 pub mod query;
@@ -678,8 +679,8 @@ impl Database {
     /// **file**, it is used directly.
     ///
     /// After locating the ESM, sibling sources are loaded automatically when
-    /// present (missing sources are silently skipped; load failures print a
-    /// warning to stderr but do not abort):
+    /// present (missing sources are silently skipped; load failures are
+    /// reported through `log::warn!` and do not abort):
     ///
     /// - **Strings**: loose `strings/<stem>_<locale>.{strings,…}` or
     ///   `<stem>_<locale>.strings` in the folder, else any

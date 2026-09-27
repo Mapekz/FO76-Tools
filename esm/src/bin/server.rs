@@ -1128,6 +1128,7 @@ fn reset_sigpipe_to_default() {
 async fn main() -> anyhow::Result<()> {
     #[cfg(unix)]
     reset_sigpipe_to_default();
+    esm::logging::init();
 
     let cli = Cli::parse();
 
