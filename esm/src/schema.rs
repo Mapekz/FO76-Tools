@@ -223,6 +223,10 @@ pub enum MemberDef {
     },
 }
 
+// `SCHEMA_DIGEST`: FNV-1a over the embedded `fo76.json` and `fo76.ctda.json`,
+// computed by `build.rs`.
+include!(concat!(env!("OUT_DIR"), "/schema_digest.rs"));
+
 impl MemberDef {
     /// Returns this member's directly declared subrecord signature, if any.
     pub fn sig(&self) -> Option<&str> {

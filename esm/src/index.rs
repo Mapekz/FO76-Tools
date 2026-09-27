@@ -29,7 +29,8 @@ use std::path::PathBuf;
 // same fields now hold different derived values). Content changes are
 // invisible to `*_LAYOUT_FINGERPRINT`, which only folds in the archived
 // type's `size_of`/`align_of` — the version bump is the only thing that
-// catches those. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
+// catches those, except for `xref`'s dependency on the embedded schema,
+// which `XREF_LAYOUT_FINGERPRINT` folds in itself. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
 // share this one constant, so a bump rebuilds all five even when only one
 // changed.
 pub(crate) const CACHE_VERSION: u32 = 19;
@@ -226,6 +227,10 @@ pub(crate) struct XrefSection {
 /// other named `Archive`-derived type is reachable from `XrefSection` (its
 /// key/value types are `u32`/`Vec<u32>`, both `rkyv`-builtin), so only
 /// `XrefSection` itself needs folding in.
+///
+/// Unlike the other sections, `xref`'s content is derived from a full schema
+/// decode, so this also folds in [`crate::schema::SCHEMA_DIGEST`]: a binary
+/// embedding a different schema rejects the old section and rebuilds it.
 const XREF_LAYOUT_FINGERPRINT: u64 = {
     use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
 
@@ -233,10 +238,11 @@ const XREF_LAYOUT_FINGERPRINT: u64 = {
         FNV_OFFSET_BASIS,
         core::mem::size_of::<rkyv::Archived<XrefSection>>() as u64,
     );
-    fnv1a_u64(
+    let acc = fnv1a_u64(
         acc,
         core::mem::align_of::<rkyv::Archived<XrefSection>>() as u64,
-    )
+    );
+    fnv1a_u64(acc, crate::schema::SCHEMA_DIGEST)
 };
 
 /// Binds the `xref` section's archived type to its kind and layout
@@ -1126,6 +1132,23 @@ mod tests {
         kinds.sort_by_key(|k| *k as u32);
         kinds.dedup();
         assert_eq!(kinds.len(), 5, "every section must have a distinct KIND");
+    }
+
+    #[test]
+    fn xref_fingerprint_depends_on_the_embedded_schema() {
+        use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
+        let layout_only = fnv1a_u64(
+            fnv1a_u64(
+                FNV_OFFSET_BASIS,
+                core::mem::size_of::<rkyv::Archived<XrefSection>>() as u64,
+            ),
+            core::mem::align_of::<rkyv::Archived<XrefSection>>() as u64,
+        );
+        assert_eq!(
+            XREF_LAYOUT_FINGERPRINT,
+            fnv1a_u64(layout_only, crate::schema::SCHEMA_DIGEST)
+        );
+        assert_ne!(crate::schema::SCHEMA_DIGEST, 0);
     }
 
     /// Arbitrary, test-only `cache_version` — these tests exercise the
