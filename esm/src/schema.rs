@@ -303,12 +303,24 @@ pub enum IntegerWidth {
 pub enum ArrayCount {
     FillToEnd,
     Fixed(usize),
-    CountPath(String),
+    CountPath(CountPath),
     /// The array is prefixed by a little-endian unsigned integer that gives the element count.
     /// The prefix byte width is encoded in xEdit's negative `wbArray` count argument:
     /// `-1` → 4 bytes (u32), `-2` → 2 bytes (u16), `-4` → 1 byte (u8).
     /// See `TwbArrayDef::GetPrefixLength` in `TES5Edit/Core/wbInterface.pas`.
     CountPrefix(usize),
+}
+
+/// Where an array's element count lives: an integer field already decoded
+/// earlier in the record. `up` is how many enclosing scopes to climb from the
+/// struct holding the array (0 = a sibling field, 1 = the enclosing struct's or
+/// record's fields); `path` is the chain of output names from that scope down to
+/// the integer. The extractor produces this from xEdit's `SetCountPath`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CountPath {
+    pub up: usize,
+    pub path: Vec<String>,
 }
 
 /// Default `width_bytes` value (1) for `ByteAtOffset`.
@@ -426,6 +438,26 @@ pub enum EnumFormat {
     Sparse(HashMap<String, String>),
 }
 
+impl MemberDef {
+    /// Call `f` on this member and every member nested inside it, stopping at
+    /// the first error.
+    fn try_visit(
+        &self,
+        f: &mut impl FnMut(&MemberDef) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        f(self)?;
+        match self {
+            MemberDef::Struct { fields, .. } => fields.iter().try_for_each(|m| m.try_visit(f)),
+            MemberDef::RStruct { members, .. } => members.iter().try_for_each(|m| m.try_visit(f)),
+            MemberDef::RArray { element, .. } | MemberDef::Array { element, .. } => {
+                element.try_visit(f)
+            }
+            MemberDef::Union { variants, .. } => variants.iter().try_for_each(|m| m.try_visit(f)),
+            _ => Ok(()),
+        }
+    }
+}
+
 impl Schema {
     pub fn load_embedded() -> anyhow::Result<Self> {
         Self::from_json(include_str!("../schema/fo76.json"))
@@ -437,10 +469,67 @@ impl Schema {
     }
 
     pub fn from_json(text: &str) -> anyhow::Result<Self> {
-        Ok(serde_json::from_str(text)?)
+        let schema: Self = serde_json::from_str(text)?;
+        schema.validate()?;
+        Ok(schema)
+    }
+
+    /// Reject schema content the decoder cannot interpret, so a bad extractor
+    /// or override edit fails at load instead of decoding silently wrong.
+    fn validate(&self) -> anyhow::Result<()> {
+        for (sig, record) in &self.records {
+            for member in &record.members {
+                member.try_visit(&mut |m| match m {
+                    MemberDef::RArray {
+                        name,
+                        count: Some(ArrayCount::CountPath(c)),
+                        ..
+                    }
+                    | MemberDef::Array {
+                        name,
+                        count: Some(ArrayCount::CountPath(c)),
+                        ..
+                    } if c.up > 1 || c.path.is_empty() => anyhow::bail!(
+                        "{sig} {name:?}: count path {c:?} must climb at most one scope \
+                         and name a field"
+                    ),
+                    _ => Ok(()),
+                })?;
+            }
+        }
+        Ok(())
     }
 
     pub fn record(&self, sig: &str) -> Option<&RecordDef> {
         self.records.get(sig)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Schema;
+
+    fn one_array(count_path: &str) -> String {
+        format!(
+            r#"{{"records":{{"TEST":{{"name":"Test","members":[{{"kind":"array","name":"Things",
+            "element":{{"kind":"integer","name":"Thing","width":"u8"}},
+            "count":{{"count_path":{count_path}}}}}]}}}}}}"#
+        )
+    }
+
+    #[test]
+    fn accepts_a_count_path_one_scope_up() {
+        Schema::from_json(&one_array(r#"{"up":1,"path":["Counts","Things"]}"#)).unwrap();
+    }
+
+    #[test]
+    fn rejects_a_count_path_the_decoder_cannot_resolve() {
+        for bad in [
+            r#"{"up":2,"path":["Count"]}"#,
+            r#"{"up":0,"path":[]}"#,
+            r#""..\\XCNT\\Count""#,
+        ] {
+            assert!(Schema::from_json(&one_array(bad)).is_err(), "{bad}");
+        }
     }
 }

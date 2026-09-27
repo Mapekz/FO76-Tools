@@ -1,5 +1,5 @@
 use crate::formid::{FormId, parse_formid};
-use crate::schema::{EnumFormat, IntegerWidth, MemberDef, UnionDecider, ValueFormat};
+use crate::schema::{CountPath, EnumFormat, IntegerWidth, MemberDef, UnionDecider, ValueFormat};
 use serde_json::{Map, Value, json};
 
 use super::{DecodeContext, hex, resolve_formid};
@@ -189,6 +189,12 @@ pub(super) fn field_int_value(out: &Map<String, Value>, field: &str) -> Option<u
     } else {
         out.get(field)?
     };
+    int_value(val)
+}
+
+/// A decoded integer as `u64`: a plain number, or the `value` of an enum or
+/// flags object.
+fn int_value(val: &Value) -> Option<u64> {
     match val {
         Value::Number(n) => n.as_u64(),
         Value::String(s) => parse_uint_str(s),
@@ -199,6 +205,25 @@ pub(super) fn field_int_value(out: &Map<String, Value>, field: &str) -> Option<u
         }),
         _ => None,
     }
+}
+
+/// Resolve an array's [`CountPath`] against the struct being decoded (`local`)
+/// or, for `up == 1`, the enclosing scope the caller put in `ctx.outer_struct`.
+pub(super) fn count_path_value(
+    local: &Map<String, Value>,
+    ctx: &DecodeContext<'_>,
+    count: &CountPath,
+) -> Option<u64> {
+    let mut scope = match count.up {
+        0 => local,
+        1 => ctx.outer_struct.as_ref()?,
+        _ => return None,
+    };
+    let (last, parents) = count.path.split_last()?;
+    for name in parents {
+        scope = scope.get(name)?.as_object()?;
+    }
+    int_value(scope.get(last)?)
 }
 
 /// Parse a decimal or `0x`-prefixed hexadecimal string to u64.

@@ -2233,6 +2233,86 @@ class Extractor:
         return {"records": records}
 
 
+# Names xEdit misspells inside SetCountPath strings, mapped to the element name
+# the same definition file declares.
+_COUNT_PATH_TYPOS: dict[str, str] = {"Couner Effect Count": "Counter Effect Count"}
+
+
+def _child_nodes(node: dict) -> list[dict]:
+    """The nodes a count path can name one level below `node`."""
+    for key in ("fields", "members"):
+        if isinstance(node.get(key), list):
+            return [n for n in node[key] if isinstance(n, dict)]
+    return []
+
+
+def _find_count_segment(nodes: list[dict], seg: str) -> list[dict] | None:
+    """Find the element a count-path segment names, by name or signature.
+
+    Signature-less record-level groups (rstructs) are transparent to xEdit's
+    lookup but are their own object in decoded output, so a match found inside
+    one returns the group too: the returned chain is every node whose name the
+    output path must pass through.
+    """
+    seg = _COUNT_PATH_TYPOS.get(seg, seg)
+    for key in ("name", "sig"):
+        for node in nodes:
+            if node.get(key) == seg:
+                return [node]
+    for node in nodes:
+        if node.get("kind") == "rstruct" and not node.get("sig"):
+            inner = _find_count_segment(_child_nodes(node), seg)
+            if inner:
+                return [node, *inner]
+    return None
+
+
+def _resolve_count_path(pascal: str, scopes: list[list[dict]]) -> dict:
+    """Translate an xEdit `SetCountPath` into the decoder's structured form.
+
+    xEdit paths are relative to the container holding the array: `..` climbs
+    one container, and each other segment names an element by name or by
+    signature. The decoder takes `{"up": N, "path": [...]}`: how many enclosing
+    scopes to climb, then the chain of output names to the integer. Raises
+    ValueError when a segment names nothing, so a path the decoder cannot
+    resolve fails extraction instead of decoding a count of zero.
+    """
+    segments = [seg for seg in pascal.split("\\") if seg]
+    up = 0
+    while segments and segments[0] == "..":
+        segments.pop(0)
+        up += 1
+    depth = len(scopes) - 1 - up
+    if depth < 0 or not segments:
+        raise ValueError(f"count path {pascal!r} climbs out of the record")
+    nodes = scopes[depth]
+    names: list[str] = []
+    for seg in segments:
+        chain = _find_count_segment(nodes, seg)
+        if chain is None:
+            raise ValueError(f"count path {pascal!r}: no element named {seg!r}")
+        names.extend(node["name"] for node in chain)
+        nodes = _child_nodes(chain[-1])
+    return {"up": up, "path": names}
+
+
+def _normalize_count_paths(nodes: list, scopes: list[list[dict]] | None = None) -> None:
+    """Rewrite every xEdit `count_path` string under `nodes` into structured form."""
+    scopes = (scopes or []) + [[n for n in nodes if isinstance(n, dict)]]
+    for node in scopes[-1]:
+        count = node.get("count")
+        if isinstance(count, dict) and isinstance(count.get("count_path"), str):
+            count["count_path"] = _resolve_count_path(count["count_path"], scopes)
+        if _child_nodes(node):
+            _normalize_count_paths(_child_nodes(node), scopes)
+        element = node.get("element")
+        if isinstance(element, dict) and _child_nodes(element):
+            _normalize_count_paths(_child_nodes(element), scopes)
+        for variant in node.get("variants", []) or []:
+            if isinstance(variant, dict) and _child_nodes(variant):
+                _normalize_count_paths(_child_nodes(variant), scopes)
+
+
 def _apply_schema_kinds(members: list) -> None:
     """Replace magic-string dispatch targets with explicit schema kinds.
 
@@ -2595,6 +2675,7 @@ def main() -> None:
     # ran inside Extractor.run(), and CTDA structs must not reach the decoder.
     for rec in schema["records"].values():
         _apply_schema_kinds(rec.get("members", []))
+        _normalize_count_paths(rec.get("members", []))
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     write_schema_json(OUT, schema)

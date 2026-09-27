@@ -170,11 +170,12 @@ pub(super) fn rarray_count(
 ) -> Option<usize> {
     match count {
         Some(ArrayCount::Fixed(n)) => Some(*n),
-        Some(ArrayCount::CountPath(path)) => field_int_value(out, path)
+        Some(ArrayCount::CountPath(path)) => count_path_value(out, ctx, path)
             .or_else(|| {
-                ctx.outer_struct
-                    .as_ref()
-                    .and_then(|o| field_int_value(o, path))
+                let outer = ctx.outer_struct.as_ref()?;
+                (path.up == 0)
+                    .then(|| count_path_value(outer, ctx, path))
+                    .flatten()
             })
             .map(|n| n as usize),
         // Prefix counts live inside a single payload-backed `Array`; repeated

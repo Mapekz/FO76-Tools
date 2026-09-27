@@ -29,11 +29,11 @@ use rules::{PostDecodeTarget, apply_post_decode_rules};
 // names from decode/mod.rs's own namespace) keep resolving after the
 // scalar/leaf toolbox and core interpreter moved out to `scalars.rs`/`walk.rs`.
 use leaf_values::InlineSource;
-use scalars::field_int_value;
 pub(crate) use scalars::json_f32;
 #[cfg(test)]
 pub(crate) use scalars::member_version_bounds;
 pub(crate) use scalars::member_version_ok;
+use scalars::{count_path_value, field_int_value};
 pub use vmad::decode_vmad;
 #[cfg(test)]
 use vmad::{

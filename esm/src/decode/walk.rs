@@ -1,14 +1,14 @@
 use crate::reader::OwnedSubrecord;
-use crate::schema::{ArrayCount, FieldDef, LStringTable, MemberDef, UnionDecider};
+use crate::schema::{ArrayCount, CountPath, FieldDef, LStringTable, MemberDef, UnionDecider};
 use serde_json::{Map, Value, json};
 use std::collections::{HashMap, VecDeque};
 
 use super::model_info::decode_model_info;
 use super::rules::{PostDecodeTarget, apply_post_decode_rules};
 use super::scalars::{
-    choose_union_variant, field_int_value, field_value_key, int_size, member_from_size_ok,
-    member_version_ok, read_le_uint, scalar_bytes, scalar_float, scalar_formid, scalar_int,
-    scalar_rgba, scalar_string, scalar_vec3, sibling_target_sig,
+    choose_union_variant, count_path_value, field_int_value, field_value_key, int_size,
+    member_from_size_ok, member_version_ok, read_le_uint, scalar_bytes, scalar_float,
+    scalar_formid, scalar_int, scalar_rgba, scalar_string, scalar_vec3, sibling_target_sig,
 };
 use super::scope::*;
 use super::vmad::{
@@ -289,7 +289,10 @@ pub(super) fn decode_struct_member(
     } else if let Some(sig) = sig
         && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
     {
-        let child_ctx = if fields.iter().any(contains_field_value_union) {
+        let child_ctx = if fields
+            .iter()
+            .any(|f| contains_field_value_union(f) || counts_from_enclosing_scope(f))
+        {
             Some(ctx.with_outer_struct(out.clone()))
         } else {
             None
@@ -803,6 +806,19 @@ fn insert_unique(map: &mut Map<String, Value>, key: String, value: Value) {
 }
 
 /// Returns true when `member` or any nested field uses a `FieldValue` union decider.
+/// Whether `member` is an array whose count lives in the enclosing scope
+/// (`up >= 1`), so its struct must be decoded with that scope in
+/// `ctx.outer_struct`.
+fn counts_from_enclosing_scope(member: &MemberDef) -> bool {
+    matches!(
+        member,
+        MemberDef::Array {
+            count: Some(ArrayCount::CountPath(CountPath { up: 1.., .. })),
+            ..
+        }
+    )
+}
+
 fn contains_field_value_union(member: &MemberDef) -> bool {
     match member {
         MemberDef::Union {
@@ -1052,7 +1068,7 @@ pub(crate) fn decode_struct_fields(
                         }
                     }
                     Some(ArrayCount::CountPath(path)) => {
-                        struct_out.get(path).and_then(|v| v.as_u64()).unwrap_or(0) as usize
+                        count_path_value(&struct_out, ctx, path).unwrap_or(0) as usize
                     }
                     Some(ArrayCount::Fixed(n)) => *n,
                     _ => 0,
@@ -1338,6 +1354,59 @@ mod tests {
     }
 
     #[test]
+    fn array_count_path_reads_the_enclosing_record_scope() {
+        // FSTS shape: XCNT holds the counts, and each DATA array is sized by
+        // an XCNT field one scope up (xEdit `..\\XCNT\\Walking Count`).
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let counts = MemberDef::Struct {
+            sig: Some("XCNT".into()),
+            name: "Counts".into(),
+            fields: vec![
+                int_field("Walking", IntegerWidth::U32),
+                int_field("Running", IntegerWidth::U32),
+            ],
+            from_version: None,
+            below_version: None,
+        };
+        let counted = |name: &str, field: &str| MemberDef::Array {
+            sig: None,
+            name: name.into(),
+            element: Box::new(int_field("Step", IntegerWidth::U32)),
+            count: Some(ArrayCount::CountPath(CountPath {
+                up: 1,
+                path: vec!["Counts".into(), field.into()],
+            })),
+        };
+        let data = MemberDef::Struct {
+            sig: Some("DATA".into()),
+            name: "Footsteps".into(),
+            fields: vec![
+                counted("Walking Steps", "Walking"),
+                counted("Running Steps", "Running"),
+            ],
+            from_version: None,
+            below_version: None,
+        };
+        let xcnt: Vec<u8> = [2u32, 1].iter().flat_map(|n| n.to_le_bytes()).collect();
+        let payload: Vec<u8> = [7u32, 8, 9].iter().flat_map(|n| n.to_le_bytes()).collect();
+        let subrecords = [subrecord("XCNT", xcnt, 0), subrecord("DATA", payload, 1)];
+        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
+        for sr in &subrecords {
+            by_sig
+                .entry(sr.signature.as_str().to_string())
+                .or_default()
+                .push_back(sr);
+        }
+
+        let mut out = Map::new();
+        decode_member(&ctx, &counts, &mut out, &mut by_sig, None);
+        decode_member(&ctx, &data, &mut out, &mut by_sig, None);
+        assert_eq!(out["Footsteps"]["Walking Steps"], json!([7, 8]));
+        assert_eq!(out["Footsteps"]["Running Steps"], json!([9]));
+    }
+
+    #[test]
     fn rarray_count_path_bounds_repeated_subrecord_groups() {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
@@ -1353,7 +1422,10 @@ mod tests {
                             name: "Morph Preset".into(),
                             members: vec![sig_int_field("MPPI", "Index", IntegerWidth::U32)],
                         }),
-                        count: Some(ArrayCount::CountPath("Count".into())),
+                        count: Some(ArrayCount::CountPath(CountPath {
+                            up: 0,
+                            path: vec!["Count".into()],
+                        })),
                         stop_before: Vec::new(),
                     },
                     sig_int_field("MPPK", "Tail", IntegerWidth::U16),

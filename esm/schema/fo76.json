@@ -8331,7 +8331,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Include Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Include Count"
+                            ]
+                          }
                         }
                       },
                       {
@@ -8757,7 +8762,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Property Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Property Count"
+                            ]
+                          }
                         }
                       }
                     ],
@@ -12889,7 +12899,12 @@
                 ]
               },
               "count": {
-                "count_path": "Meshes Count"
+                "count_path": {
+                  "up": 0,
+                  "path": [
+                    "Meshes Count"
+                  ]
+                }
               }
             },
             {
@@ -23383,7 +23398,13 @@
                 ]
               },
               "count": {
-                "count_path": "..\\XCNT\\Swimming Count"
+                "count_path": {
+                  "up": 1,
+                  "path": [
+                    "Footstep Counts",
+                    "Swimming Count"
+                  ]
+                }
               }
             },
             {
@@ -23397,7 +23418,13 @@
                 ]
               },
               "count": {
-                "count_path": "..\\XCNT\\Sneaking Count"
+                "count_path": {
+                  "up": 1,
+                  "path": [
+                    "Footstep Counts",
+                    "Sneaking Count"
+                  ]
+                }
               }
             },
             {
@@ -23411,7 +23438,13 @@
                 ]
               },
               "count": {
-                "count_path": "..\\XCNT\\Sprinting Count"
+                "count_path": {
+                  "up": 1,
+                  "path": [
+                    "Footstep Counts",
+                    "Sprinting Count"
+                  ]
+                }
               }
             },
             {
@@ -23425,7 +23458,13 @@
                 ]
               },
               "count": {
-                "count_path": "..\\XCNT\\Running Count"
+                "count_path": {
+                  "up": 1,
+                  "path": [
+                    "Footstep Counts",
+                    "Running Count"
+                  ]
+                }
               }
             },
             {
@@ -23439,7 +23478,13 @@
                 ]
               },
               "count": {
-                "count_path": "..\\XCNT\\Walking Count"
+                "count_path": {
+                  "up": 1,
+                  "path": [
+                    "Footstep Counts",
+                    "Walking Count"
+                  ]
+                }
               }
             }
           ],
@@ -25492,7 +25537,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Include Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Include Count"
+                            ]
+                          }
                         }
                       },
                       {
@@ -25918,7 +25968,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Property Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Property Count"
+                            ]
+                          }
                         }
                       }
                     ],
@@ -41711,7 +41766,14 @@
             "sig": "ESCE"
           },
           "count": {
-            "count_path": "DATA\\Couner Effect Count"
+            "count_path": {
+              "up": 0,
+              "path": [
+                "Magic Effect Data",
+                "Data",
+                "Counter Effect Count"
+              ]
+            }
           }
         },
         {
@@ -48529,7 +48591,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Include Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Include Count"
+                            ]
+                          }
                         }
                       },
                       {
@@ -48955,7 +49022,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Property Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Property Count"
+                            ]
+                          }
                         }
                       }
                     ],
@@ -49992,7 +50064,12 @@
                 ]
               },
               "count": {
-                "count_path": "Include Count"
+                "count_path": {
+                  "up": 0,
+                  "path": [
+                    "Include Count"
+                  ]
+                }
               }
             },
             {
@@ -50418,7 +50495,12 @@
                 ]
               },
               "count": {
-                "count_path": "Property Count"
+                "count_path": {
+                  "up": 0,
+                  "path": [
+                    "Property Count"
+                  ]
+                }
               }
             }
           ],
@@ -68464,7 +68546,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Count"
+                            ]
+                          }
                         }
                       },
                       {
@@ -68972,7 +69059,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Count"
+                            ]
+                          }
                         }
                       },
                       {
@@ -69734,7 +69826,13 @@
                 "sig": "XLRM"
               },
               "count": {
-                "count_path": "XRMR\\Linked Rooms Count"
+                "count_path": {
+                  "up": 0,
+                  "path": [
+                    "Header",
+                    "Linked Rooms Count"
+                  ]
+                }
               }
             }
           ]
@@ -86333,7 +86431,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Include Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Include Count"
+                            ]
+                          }
                         }
                       },
                       {
@@ -86759,7 +86862,12 @@
                           ]
                         },
                         "count": {
-                          "count_path": "Property Count"
+                          "count_path": {
+                            "up": 0,
+                            "path": [
+                              "Property Count"
+                            ]
+                          }
                         }
                       }
                     ],
@@ -89733,7 +89841,12 @@
           "kind": "rarray",
           "name": "Track Entries",
           "count": {
-            "count_path": "Entry Count"
+            "count_path": {
+              "up": 0,
+              "path": [
+                "Entry Count"
+              ]
+            }
           },
           "stop_before": [
             "NAM0"

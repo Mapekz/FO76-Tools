@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from extractor.extract import (
     Extractor,
     _apply_patch,
+    _normalize_count_paths,
     format_overrides,
     write_schema_json,
 )
@@ -528,6 +529,63 @@ class TestApplyPatch(unittest.TestCase):
             dialogue,
             {"kind": "rstruct", "name": "Start Scene", "members": [{"kind": "lstring", "sig": "HTID"}]},
         ])
+
+
+def _count_of(nodes: list, name: str) -> dict:
+    for node in nodes:
+        if node.get("name") == name:
+            return node["count"]["count_path"]
+        for key in ("fields", "members"):
+            found = _count_of(node.get(key, []), name) if node.get(key) else None
+            if found:
+                return found
+    return {}
+
+
+class TestNormalizeCountPaths(unittest.TestCase):
+    """xEdit SetCountPath strings become {up, path} over output names."""
+
+    def test_sibling_name_stays_local(self):
+        members = [{"kind": "struct", "sig": "DATA", "name": "Data", "fields": [
+            {"kind": "integer", "name": "Include Count"},
+            {"kind": "array", "name": "Includes", "count": {"count_path": "Include Count"}},
+        ]}]
+        _normalize_count_paths(members)
+        self.assertEqual(_count_of(members, "Includes"), {"up": 0, "path": ["Include Count"]})
+
+    def test_parent_signature_resolves_to_its_output_name(self):
+        members = [
+            {"kind": "struct", "sig": "XCNT", "name": "Footstep Counts", "fields": [
+                {"kind": "integer", "name": "Walking Count"}]},
+            {"kind": "struct", "sig": "DATA", "name": "Footsteps", "fields": [
+                {"kind": "array", "name": "Walking Footsteps",
+                 "count": {"count_path": "..\\XCNT\\Walking Count"}}]},
+        ]
+        _normalize_count_paths(members)
+        self.assertEqual(
+            _count_of(members, "Walking Footsteps"),
+            {"up": 1, "path": ["Footstep Counts", "Walking Count"]},
+        )
+
+    def test_signatureless_group_is_searched_and_named(self):
+        members = [
+            {"kind": "rstruct", "name": "Magic Effect Data", "members": [
+                {"kind": "struct", "sig": "DATA", "name": "Data", "fields": [
+                    {"kind": "integer", "name": "Counter Effect Count"}]}]},
+            {"kind": "rarray", "name": "Counter Effects",
+             "count": {"count_path": "DATA\\Couner Effect Count"}},
+        ]
+        _normalize_count_paths(members)
+        self.assertEqual(
+            _count_of(members, "Counter Effects"),
+            {"up": 0, "path": ["Magic Effect Data", "Data", "Counter Effect Count"]},
+        )
+
+    def test_unresolvable_path_fails_extraction(self):
+        members = [{"kind": "array", "name": "Things", "count": {"count_path": "Missing"}}]
+        with self.assertRaises(ValueError):
+            _normalize_count_paths(members)
+
 
 if __name__ == '__main__':
     unittest.main()

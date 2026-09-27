@@ -260,6 +260,14 @@ jobs:
         working-directory: esm
         run: python3 tools/extractor/audit.py --gate
 
+      # schema/fo76.json and fo76.ctda.json are generated: regenerating them
+      # from the pinned Pascal plus fo76.overrides.json must change nothing.
+      - name: schema regeneration drift guard
+        working-directory: esm
+        run: |
+          python3 tools/extractor/extract.py
+          git diff --exit-code schema/fo76.json schema/fo76.ctda.json
+
       # --features server: hardcoded.py's `list` step below now goes through
       # esm_gateway.py's warm-daemon EsmGateway (Op::ListTypeRecords) instead
       # of its own subprocess call, so esm-server must exist alongside esm
