@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # release.yml runs this whole workflow first and publishes only if it passes.
+  workflow_call:
 
 jobs:
   # ── Rust: fmt / clippy / test ──────────────────────────────────────────────
@@ -33,17 +35,19 @@ jobs:
           rustflags: ""
           cache-workspaces: ${{ matrix.crate }}
 
+      # --all / --workspace: esm/Cargo.toml is a non-virtual workspace root, so
+      # without them only the root package is checked and bindings/napi is not.
       - name: fmt
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       - name: clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       # The esm-server binary has `required-features = ["server"]`, so
       # --all-targets alone silently skips it.  Lint it explicitly.
       - name: clippy (server feature)
         if: matrix.crate == 'esm'
-        run: cargo clippy --all-targets --features server -- -D warnings
+        run: cargo clippy --workspace --all-targets --features server -- -D warnings
 
       - name: test
         run: cargo test
@@ -168,6 +172,11 @@ jobs:
 
       - name: build (debug)
         run: bun run build:debug
+
+      # index.d.ts is tracked (esm-viewer typechecks against it without building
+      # the addon), so the build must not change it.
+      - name: check index.d.ts drift
+        run: git diff --exit-code -- index.d.ts
 
       - name: smoke test (skips without FO76_ESM)
         run: bun run test

@@ -89,10 +89,14 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "**${channel}** -> tag \`${tag}\`, version \`${version}\`" >> "$GITHUB_STEP_SUMMARY"
 
+  # ── The full CI suite gates every publish ─────────────────────────────────
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   # ── Per-platform build + smoke + archive ──────────────────────────────────
   build:
     name: build (${{ matrix.target }})
-    needs: meta
+    needs: [meta, ci]
     runs-on: ${{ matrix.os }}
     strategy:
       # Surface both platforms' errors in one run; `publish` still needs the
