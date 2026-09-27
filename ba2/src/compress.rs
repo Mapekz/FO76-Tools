@@ -32,35 +32,46 @@ pub enum Codec {
 
 // ── Decompression ────────────────────────────────────────────────────────────
 
-/// Decompress raw-LZ4-block data to `expected_size` bytes.
+/// Decompress raw-LZ4-block data that must expand to exactly `expected_size`
+/// bytes.
 ///
 /// FO76 BA2 blobs use `lz4_flex::decompress` (raw block, no size prefix).
 pub fn decompress_lz4(compressed: &[u8], expected_size: usize) -> Result<Vec<u8>> {
-    if expected_size > MAX_DECOMP_SIZE {
-        anyhow::bail!(
-            "LZ4 declared output size {} exceeds limit of {} bytes",
-            expected_size,
-            MAX_DECOMP_SIZE
-        );
-    }
-    lz4_flex::decompress(compressed, expected_size)
-        .map_err(|e| anyhow::anyhow!("LZ4 decompress: {}", e))
+    check_declared_size("LZ4", expected_size)?;
+    let out = lz4_flex::decompress(compressed, expected_size)
+        .map_err(|e| anyhow::anyhow!("LZ4 decompress: {}", e))?;
+    check_exact_size("LZ4", out, expected_size)
 }
 
-/// Decompress a zlib-wrapped buffer to approximately `expected_size` bytes.
+/// Decompress a zlib stream that must inflate to exactly `expected_size`
+/// bytes. Reading stops one byte past `expected_size`, so a stream that
+/// inflates further is rejected without being inflated in full.
 pub fn decompress_zlib(compressed: &[u8], expected_size: usize) -> Result<Vec<u8>> {
-    if expected_size > MAX_DECOMP_SIZE {
-        anyhow::bail!(
-            "zlib declared output size {} exceeds limit of {} bytes",
-            expected_size,
-            MAX_DECOMP_SIZE
-        );
-    }
-    let mut decoder = ZlibDecoder::new(compressed);
+    check_declared_size("zlib", expected_size)?;
     let mut out = Vec::with_capacity(expected_size);
-    decoder
+    ZlibDecoder::new(compressed)
+        .take(expected_size as u64 + 1)
         .read_to_end(&mut out)
         .context("zlib decompression failed")?;
+    check_exact_size("zlib", out, expected_size)
+}
+
+fn check_declared_size(codec: &str, expected_size: usize) -> Result<()> {
+    if expected_size > MAX_DECOMP_SIZE {
+        anyhow::bail!(
+            "{codec} declared output size {expected_size} exceeds limit of {MAX_DECOMP_SIZE} bytes"
+        );
+    }
+    Ok(())
+}
+
+fn check_exact_size(codec: &str, out: Vec<u8>, expected_size: usize) -> Result<Vec<u8>> {
+    if out.len() != expected_size {
+        anyhow::bail!(
+            "{codec} output is {} bytes, expected {expected_size}",
+            out.len()
+        );
+    }
     Ok(out)
 }
 

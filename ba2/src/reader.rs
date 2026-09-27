@@ -241,8 +241,10 @@ impl Ba2Archive {
         nt_start: usize,
     ) -> Result<Vec<Ba2Entry>> {
         let mut pos = HEADER_SIZE;
+        // `file_count` comes from the header; don't trust it for an allocation
+        // until the record area could actually hold that many records.
         let mut raw: Vec<(crate::format::TexRecord, Vec<TexChunk>)> =
-            Vec::with_capacity(file_count);
+            Vec::with_capacity(file_count.min(data.len() / TEX_RECORD_SIZE));
         for i in 0..file_count {
             if pos + TEX_RECORD_SIZE > data.len() {
                 bail!("BA2 texture record {} truncated", i);

@@ -13,36 +13,45 @@ use std::io::Read;
 /// bytes → raw hex fallback, never panic") extended to the compression layer.
 pub const MAX_DECOMP_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
 
-/// Decompress an LZ4-block-compressed buffer to the given expected output size.
+/// Decompress an LZ4-block-compressed buffer that must expand to exactly
+/// `expected_size` bytes.
 ///
 /// BA2 archives use raw LZ4 blocks (not the LZ4 frame format).
 pub fn decompress_lz4(compressed: &[u8], expected_size: usize) -> anyhow::Result<Vec<u8>> {
-    if expected_size > MAX_DECOMP_SIZE {
-        anyhow::bail!(
-            "LZ4 declared output size {} exceeds limit of {} bytes",
-            expected_size,
-            MAX_DECOMP_SIZE
-        );
-    }
-    lz4_flex::decompress(compressed, expected_size)
-        .map_err(|e| anyhow::anyhow!("LZ4 decompress: {}", e))
+    check_declared_size("LZ4", expected_size)?;
+    let out = lz4_flex::decompress(compressed, expected_size)
+        .map_err(|e| anyhow::anyhow!("LZ4 decompress: {}", e))?;
+    check_exact_size("LZ4", out, expected_size)
 }
 
+/// Decompress a zlib stream that must inflate to exactly `expected_size`
+/// bytes. Reading stops one byte past `expected_size`, so a stream that
+/// inflates further is rejected without being inflated in full.
 pub fn decompress_zlib(compressed: &[u8], expected_size: usize) -> anyhow::Result<Vec<u8>> {
-    if expected_size > MAX_DECOMP_SIZE {
-        anyhow::bail!(
-            "zlib declared output size {} exceeds limit of {} bytes",
-            expected_size,
-            MAX_DECOMP_SIZE
-        );
-    }
-    let mut decoder = ZlibDecoder::new(compressed);
+    check_declared_size("zlib", expected_size)?;
     let mut out = Vec::with_capacity(expected_size);
-    decoder
+    ZlibDecoder::new(compressed)
+        .take(expected_size as u64 + 1)
         .read_to_end(&mut out)
         .context("zlib decompression failed")?;
-    if expected_size > 0 && out.len() != expected_size {
-        // Some records may not match exactly; keep what we got.
+    check_exact_size("zlib", out, expected_size)
+}
+
+fn check_declared_size(codec: &str, expected_size: usize) -> anyhow::Result<()> {
+    if expected_size > MAX_DECOMP_SIZE {
+        anyhow::bail!(
+            "{codec} declared output size {expected_size} exceeds limit of {MAX_DECOMP_SIZE} bytes"
+        );
+    }
+    Ok(())
+}
+
+fn check_exact_size(codec: &str, out: Vec<u8>, expected_size: usize) -> anyhow::Result<Vec<u8>> {
+    if out.len() != expected_size {
+        anyhow::bail!(
+            "{codec} output is {} bytes, expected {expected_size}",
+            out.len()
+        );
     }
     Ok(out)
 }
@@ -117,5 +126,34 @@ mod tests {
         // Sanity: a zero declared size returns an empty vec without error.
         data[0..4].copy_from_slice(&0u32.to_le_bytes());
         assert!(decompress_record_data(&data).is_ok());
+    }
+
+    #[test]
+    fn zlib_output_longer_than_declared_is_rejected() {
+        let data = vec![7u8; 4096];
+        let packed = flate2_compress(&data);
+        let err = decompress_zlib(&packed, 100).unwrap_err().to_string();
+        assert!(err.contains("expected 100"), "{err}");
+        assert_eq!(decompress_zlib(&packed, 4096).unwrap(), data);
+    }
+
+    #[test]
+    fn zlib_output_shorter_than_declared_is_rejected() {
+        let packed = flate2_compress(&[1u8; 10]);
+        assert!(decompress_zlib(&packed, 11).is_err());
+    }
+
+    #[test]
+    fn lz4_output_shorter_than_declared_is_rejected() {
+        let packed = lz4_flex::compress(&[3u8; 64]);
+        assert!(decompress_lz4(&packed, 65).is_err());
+        assert_eq!(decompress_lz4(&packed, 64).unwrap(), vec![3u8; 64]);
+    }
+
+    fn flate2_compress(data: &[u8]) -> Vec<u8> {
+        use std::io::Write;
+        let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(data).unwrap();
+        enc.finish().unwrap()
     }
 }

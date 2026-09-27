@@ -179,3 +179,27 @@ fn compress_entry_shrink_ratio_zero_always_stores() {
         );
     }
 }
+
+// ── Exact-length decompression ────────────────────────────────────────────
+
+#[test]
+fn zlib_output_longer_than_declared_is_rejected() {
+    let data = vec![7u8; 4096];
+    let packed = compress_zlib(&data).unwrap();
+    let err = decompress_zlib(&packed, 100).unwrap_err().to_string();
+    assert!(err.contains("expected 100"), "{err}");
+    assert_eq!(decompress_zlib(&packed, 4096).unwrap(), data);
+}
+
+#[test]
+fn zlib_output_shorter_than_declared_is_rejected() {
+    let packed = compress_zlib(&[1u8; 10]).unwrap();
+    assert!(decompress_zlib(&packed, 11).is_err());
+}
+
+#[test]
+fn lz4_output_shorter_than_declared_is_rejected() {
+    let packed = compress_lz4(&[3u8; 64]);
+    assert!(decompress_lz4(&packed, 65).is_err());
+    assert_eq!(decompress_lz4(&packed, 64).unwrap(), vec![3u8; 64]);
+}
