@@ -70,7 +70,8 @@ has no codec for, such as an unknown VMAD property type), a struct subrecord wit
 after its fields gets `_trailing`, and an LString whose ID has no match in the loaded string
 tables gets `_unresolved`. The marker keys are the single source of truth in `decode::markers`;
 the `coverage` subcommand counts them from the typed tree by reason, and its `--gate` fails on
-every kind except schema-declared unknown bytes.
+every kind except schema-declared unknown bytes and unresolved localization (`_unresolved`: a
+string table that isn't loaded, not a decode gap).
 
 **Where the embedded schema comes from**: `schema/fo76.json` is a build artifact, not
 hand-written. `tools/extractor/extract.py` reads the sibling `../TES5Edit` checkout's Pascal
