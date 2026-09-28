@@ -1064,12 +1064,16 @@ def assemble_outputs(bundles, records, lints_by_id, tiers_by_id, rollout_shapes,
 
 
 def write_outputs(out_dir, result):
+    """Writes the five `work/` files with `triage.json` last, removing it
+    first: its presence marks a complete, consistent set, which is what
+    `prepare` checks before reusing a triage."""
     layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
-    jsonio.write(layout.work_triage_json(out_dir), result["triage"])
+    layout.work_triage_json(out_dir).unlink(missing_ok=True)
     jsonio.write(layout.work_deep_slice_json(out_dir), result["deep_slice"])
     jsonio.write(layout.work_ambiguous_json(out_dir), result["ambiguous"])
     layout.work_brief_lines_md(out_dir).write_text(result["brief_lines_md"], encoding="utf-8")
     layout.work_rollouts_md(out_dir).write_text(result["rollouts_md"], encoding="utf-8")
+    jsonio.write(layout.work_triage_json(out_dir), result["triage"])
 
 
 def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):

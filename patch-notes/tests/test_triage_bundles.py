@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Callable, cast
+from unittest import mock
 
 from pn import schemas
 from pn import triage_bundles as tb
@@ -1218,6 +1219,22 @@ class TestRunTriage(unittest.TestCase):
 
             on_disk_triage = load_json(out_dir / "work" / "triage.json")
             self.assertEqual(on_disk_triage, result["triage"])
+
+    def test_an_interrupted_rewrite_leaves_no_triage_to_reuse(self):
+        bundles_data, comprehensive_data = _sample_pipeline_output()
+        with TempOutDir(bundles_data, comprehensive_data) as out_dir:
+            tiers_path = _write_mini_tiers_config(out_dir)
+            tb.run_triage(out_dir, tiers_path)
+            real_write = tb.jsonio.write
+
+            def fail_on_slice(path, payload):
+                if path.name == "deep-slice.json":
+                    raise OSError("disk full")
+                real_write(path, payload)
+
+            with mock.patch.object(tb.jsonio, "write", fail_on_slice), self.assertRaises(OSError):
+                tb.run_triage(out_dir, tiers_path)
+            self.assertFalse((out_dir / "work" / "triage.json").exists())
 
     def test_missing_bundles_json_raises(self):
         with tempfile.TemporaryDirectory() as tmp:

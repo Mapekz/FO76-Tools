@@ -294,6 +294,18 @@ class TestMainExitCode(TempDirTestCase):
         self.assertEqual(dc.main([str(src), str(out)]), 0)
         self.assertTrue(sorted(out.glob("chunk_*.md")))
 
+    def test_stale_chunk_cleanup_takes_the_directory_literally(self):
+        src = self.tmp / "in.md"
+        src.write_text("# Title\n\nShort.\n")
+        out = self.tmp / "release[1]" / "discord"
+        sibling = self.tmp / "release1" / "discord"
+        for d in (out, sibling):
+            d.mkdir(parents=True)
+            (d / "chunk_009.md").write_text("stale")
+        self.assertEqual(dc.main([str(src), str(out)]), 0)
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
+        self.assertTrue((sibling / "chunk_009.md").exists())
+
     def test_unsplittable_oversize_line_exits_one_unless_allowed(self):
         src = self.tmp / "in.md"
         src.write_text("# Title\n\n" + "y" * 2500 + "\n")

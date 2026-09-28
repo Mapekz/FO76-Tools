@@ -23,10 +23,10 @@ Exit code 1 when any chunk had to be hard-truncated (content lost) unless
 """
 
 import argparse
-import glob
 import os
 import re
 import sys
+from pathlib import Path
 
 from pn import layout
 
@@ -398,8 +398,10 @@ def main(argv=None) -> int:
     os.makedirs(output_dir, exist_ok=True)
     # A re-run after the summary shrank must not leave the old run's
     # higher-numbered chunks behind.
-    for stale in glob.glob(os.path.join(output_dir, "chunk_*.md")):
-        os.remove(stale)
+    # Path.glob, not glob.glob: the directory is literal even if it holds
+    # glob metacharacters (`release[1]/`).
+    for stale in Path(output_dir).glob("chunk_*.md"):
+        stale.unlink()
 
     chunks = split_into_chunks(discord_lines, heading_indices)
     total = len(chunks)

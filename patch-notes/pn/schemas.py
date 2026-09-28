@@ -20,7 +20,7 @@ from typing import Any, Callable, Literal, NotRequired, TypedDict, TypeVar, cast
 from pn import jsonio
 
 #: Bumped whenever any artifact's shape changes.
-PIPELINE_VERSION = 2
+PIPELINE_VERSION = 3
 
 T = TypeVar("T")
 

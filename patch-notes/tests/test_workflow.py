@@ -119,6 +119,16 @@ class TestPrepareGatePublish(TempDirTestCase):
         assert summary is not None
         self.assertTrue(summary["reused"])
 
+    def test_output_from_an_older_pipeline_version_is_rebuilt(self):
+        self.prepare()
+        manifest = jsonio.read(layout.manifest_json(self.out))
+        manifest["inputs"]["pipeline_version"] = schemas.PIPELINE_VERSION - 1
+        jsonio.write(layout.manifest_json(self.out), manifest)
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertFalse(summary["reused"])
+        self.assertTrue(summary["retriaged"])
+
     def gate(self, *extra):
         esms = ["--old-esm", str(self.data / "20260626" / "SeventySix.esm")]
         esms += ["--new-esm", str(self.data / "20260703" / "SeventySix.esm")]
