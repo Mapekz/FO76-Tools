@@ -2,7 +2,9 @@
 //! (called from [`super::json_diff`]'s array arm) chooses between, and the
 //! `_array_diff` envelope shape ADR 0005 freezes: `strategy` is one of
 //! `keyed`/`positional`/`set`/`unkeyed`, alongside `key_fields`/`count_from`/
-//! `count_to`/`added`/`removed`/`changed`/`unchanged_count`.
+//! `count_to`/`added`/`removed`/`changed`/`unchanged_count`, and
+//! `reorder_only: true` when the two sides hold the same elements in a
+//! different order (see [`is_reorder_only`]).
 //!
 //! Decoded rarray elements are almost always either uniform primitives (a
 //! FormID list) or single-member "rstruct" wrappers (`{"Leveled List Entry":
@@ -739,8 +741,68 @@ fn keyed_diff(a: &[Value], b: &[Value], spec: &KeySpec) -> Value {
 ///
 /// Returns an empty object when the chosen strategy finds no differences —
 /// e.g. a reorder-only keyed array — matching `json_diff`'s convention of
-/// omitting unchanged fields entirely.
+/// omitting unchanged fields entirely. A non-empty diff of two arrays that
+/// hold the same elements in a different order carries `reorder_only: true`.
 pub(crate) fn array_diff(a: &[Value], b: &[Value]) -> Value {
+    let mut diff = strategy_diff(a, b);
+    if let Some(inner) = diff.get_mut("_array_diff").and_then(Value::as_object_mut)
+        && is_reorder_only(a, b)
+    {
+        inner.insert("reorder_only".to_string(), Value::Bool(true));
+    }
+    diff
+}
+
+/// Whether `a` and `b` hold the same elements up to order, comparing nested
+/// arrays order-insensitively too. A CTDA condition list never counts: a
+/// condition's position is semantic (`AND`/`OR` chaining), so reordering
+/// one is a real change.
+fn is_reorder_only(a: &[Value], b: &[Value]) -> bool {
+    if a.len() != b.len() || is_condition_list(a) || is_condition_list(b) {
+        return false;
+    }
+    let mut left: Vec<String> = a.iter().map(order_free_key).collect();
+    let mut right: Vec<String> = b.iter().map(order_free_key).collect();
+    left.sort_unstable();
+    right.sort_unstable();
+    left == right
+}
+
+/// A decoded CTDA list: elements wrapped as `{"Condition": {...}}`.
+fn is_condition_list(items: &[Value]) -> bool {
+    items.iter().any(|v| {
+        v.as_object()
+            .is_some_and(|o| o.len() == 1 && o.contains_key("Condition"))
+    })
+}
+
+/// A string that is equal for two values exactly when they are equal up to
+/// object key order and the order of any array other than a condition list.
+fn order_free_key(v: &Value) -> String {
+    match v {
+        Value::Object(o) => {
+            let mut members: Vec<(&String, String)> =
+                o.iter().map(|(k, v)| (k, order_free_key(v))).collect();
+            members.sort();
+            let body: Vec<String> = members
+                .into_iter()
+                .map(|(k, v)| format!("{}:{v}", Value::String(k.clone())))
+                .collect();
+            format!("{{{}}}", body.join(","))
+        }
+        Value::Array(items) => {
+            let mut keys: Vec<String> = items.iter().map(order_free_key).collect();
+            if !is_condition_list(items) {
+                keys.sort_unstable();
+            }
+            format!("[{}]", keys.join(","))
+        }
+        other => other.to_string(),
+    }
+}
+
+/// [`array_diff`] without the `reorder_only` mark.
+fn strategy_diff(a: &[Value], b: &[Value]) -> Value {
     if a == b {
         return Value::Object(serde_json::Map::new());
     }
@@ -786,6 +848,63 @@ pub(crate) fn array_diff(a: &[Value], b: &[Value]) -> Value {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn reorder_only(diff: &Value) -> bool {
+        diff["_array_diff"]["reorder_only"] == json!(true)
+    }
+
+    #[test]
+    fn a_permuted_array_is_marked_reorder_only() {
+        // LCTN `Master Worldspace Cells`: the same grid cells, shuffled.
+        let a = [
+            json!({"Grid X": 11, "Grid Y": 4}),
+            json!({"Grid X": 10, "Grid Y": 3}),
+        ];
+        let b = [
+            json!({"Grid X": 10, "Grid Y": 3}),
+            json!({"Grid X": 11, "Grid Y": 4}),
+        ];
+        assert!(reorder_only(&array_diff(&a, &b)));
+    }
+
+    #[test]
+    fn a_permutation_nested_inside_elements_is_reorder_only() {
+        let a = [
+            json!({"name": "S", "properties": [{"name": "A"}, {"name": "B"}]}),
+            json!({"name": "T"}),
+        ];
+        let b = [
+            json!({"name": "T"}),
+            json!({"name": "S", "properties": [{"name": "B"}, {"name": "A"}]}),
+        ];
+        assert!(reorder_only(&array_diff(&a, &b)));
+    }
+
+    #[test]
+    fn a_real_edit_is_not_reorder_only() {
+        let a = [
+            json!({"Grid X": 11, "Grid Y": 4}),
+            json!({"Grid X": 10, "Grid Y": 3}),
+        ];
+        let b = [
+            json!({"Grid X": 10, "Grid Y": 3}),
+            json!({"Grid X": 12, "Grid Y": 4}),
+        ];
+        let diff = array_diff(&a, &b);
+        assert!(diff.get("_array_diff").is_some());
+        assert!(!reorder_only(&diff));
+    }
+
+    #[test]
+    fn a_reordered_condition_list_is_a_real_change() {
+        let cond =
+            |f: &str| json!({"Condition": {"Condition Data": {"Function": f, "AND/OR": "OR"}}});
+        let a = [cond("GetIsID"), cond("GetRandomPercent")];
+        let b = [cond("GetRandomPercent"), cond("GetIsID")];
+        let diff = array_diff(&a, &b);
+        assert!(diff.get("_array_diff").is_some());
+        assert!(!reorder_only(&diff));
+    }
 
     #[test]
     fn lcs_align_common_prefix_suffix_trim_shrinks_the_dp_below_its_safety_cap() {

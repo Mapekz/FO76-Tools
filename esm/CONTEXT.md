@@ -97,6 +97,11 @@ identity until it's checked. See
 _Avoid_: "array key" (the identity is a domain fact about the record shape, not a diff
 implementation detail)
 
+**Reorder-only array**:
+An array diff whose two sides hold the same elements in a different order, compared
+order-insensitively at every depth; `_array_diff` marks it `reorder_only: true`. A CTDA condition
+list never counts, because its order is semantic.
+
 **Unkeyed array**:
 An array whose elements have no stable element identity, so a diff reports only the elements
 that don't survive an order-preserving alignment across the two sides (`removed`/`added`,

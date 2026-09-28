@@ -182,7 +182,9 @@ what falls outside it, plus an `unchanged_count`). A proposed key is never trust
 sample's shape alone — `widen_key_spec_until_unique` appends further scalar fields until the key
 is actually unique on both sides, falling back to `unkeyed` if nothing achieves that (ADR 0005).
 Arrays with no stable per-element identity classify as `unkeyed` outright — CTDA `Conditions[]`
-is the canonical case, fenced by ADR 0005. `noise.rs` suppresses noise in a
+is the canonical case, fenced by ADR 0005. Whatever the strategy, a non-empty diff of two arrays
+holding the same elements in a new order (compared order-insensitively at every depth, condition
+lists excepted) carries `reorder_only: true`. `noise.rs` suppresses noise in a
 `changed` record's `field_changes` (off via `--keep-noise` on the CLI): `suppress_record` runs the
 per-record stages and `apply_restamp_calibrated_suppression` the cross-record one, in the
 load-bearing order its module docs list.
