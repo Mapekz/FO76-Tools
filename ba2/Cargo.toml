@@ -45,6 +45,15 @@ tempfile = "3"
 [target.'cfg(unix)'.dependencies]
 libc = { version = "0.2", optional = true }
 
+# These exercise the `ba2` binary, which only the `cli` feature builds.
+[[test]]
+name = "sigpipe"
+required-features = ["cli"]
+
+[[test]]
+name = "doc_drift"
+required-features = ["cli"]
+
 [dev-dependencies]
 repo-policy = { path = "../repo-policy" }
 globset = "0.4"

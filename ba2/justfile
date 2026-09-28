@@ -16,13 +16,15 @@ check: fmt clippy test
 fmt:
     cargo fmt -p ba2 --check
 
-# Lint (deny warnings).
+# Lint (deny warnings), with the CLI and as the library alone.
 clippy:
     cargo clippy -p ba2 --all-targets -- -D warnings
+    cargo clippy -p ba2 --no-default-features --all-targets -- -D warnings
 
-# Run all tests.
+# Run all tests, with the CLI and as the library alone.
 test:
     cargo test -p ba2
+    cargo test -p ba2 --no-default-features
 
 # Compare the real archives in DIR (the Playtest install's Data folder) with
 # tests/baselines/playtest.tsv.
