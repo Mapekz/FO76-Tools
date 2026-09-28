@@ -1332,7 +1332,7 @@ impl Database {
         // CURV records only carry a path to an external curve-points JSON file
         // (see schema `JSON File Path[/2]`) — inline the parsed points too, so a
         // plain `get` on a CURV record doesn't require a second out-of-band read
-        // of that file. Referencing records already get this via `resolve_formid`
+        // of that file. Referencing records already get this via `render_formid`
         // (decode.rs); this covers the CURV record itself.
         if parsed.header.signature == "CURV"
             && let Some(curve) = self

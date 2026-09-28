@@ -235,6 +235,7 @@ dependencies = [
  "flate2",
  "fs2",
  "getrandom 0.4.3",
+ "indexmap",
  "libc",
  "log",
  "lz4_flex",

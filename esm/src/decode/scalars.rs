@@ -1,8 +1,9 @@
 use crate::formid::{FormId, parse_formid};
 use crate::schema::{CountPath, EnumFormat, IntegerWidth, MemberDef, UnionDecider, ValueFormat};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
-use super::{DecodeContext, hex, resolve_formid};
+use super::node::{Fields, Node};
+use super::{DecodeContext, refs_curve};
 
 /// Emit a decoded f32 game value as a JSON number, free of f32→f64 widening
 /// noise (e.g. `0.5f32` printing as `0.49999998`). `serde_json::Value` only
@@ -25,14 +26,17 @@ pub(crate) fn json_f32(f: f32) -> Value {
     )
 }
 
-pub(super) fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
+pub(super) fn format_int(v: i64, format: Option<&ValueFormat>) -> Node {
     match format {
         Some(ValueFormat::Enum { values }) => match values {
             EnumFormat::Dense(names) => {
                 if v >= 0 && (v as usize) < names.len() {
-                    json!({"value": v, "name": names[v as usize]})
+                    Node::Enum {
+                        value: v,
+                        name: names[v as usize].clone(),
+                    }
                 } else {
-                    json!(v)
+                    Node::Int(v)
                 }
             }
             EnumFormat::Sparse(map) => {
@@ -41,9 +45,12 @@ pub(super) fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
                     .get(&key)
                     .or_else(|| map.get(&format!("0x{:X}", v as u32)))
                 {
-                    json!({"value": v, "name": name})
+                    Node::Enum {
+                        value: v,
+                        name: name.clone(),
+                    }
                 } else {
-                    json!(v)
+                    Node::Int(v)
                 }
             }
         },
@@ -54,9 +61,12 @@ pub(super) fn format_int(v: i64, format: Option<&ValueFormat>) -> Value {
                     set.push(name.clone());
                 }
             }
-            json!({"value": format!("0x{:X}", v as u64), "flags": set})
+            Node::Flags {
+                value: v as u64,
+                set,
+            }
         }
-        _ => json!(v),
+        _ => Node::Int(v),
     }
 }
 
@@ -70,66 +80,59 @@ pub(super) fn scalar_int(
     width: IntegerWidth,
     signed: bool,
     format: Option<&ValueFormat>,
-) -> Option<Value> {
+) -> Option<Node> {
     read_int(bytes, width, signed).map(|v| format_int(v, format))
 }
 
-pub(super) fn scalar_float(bytes: &[u8]) -> Option<Value> {
-    if bytes.len() < 4 {
-        return None;
-    }
-    Some(json_f32(f32::from_le_bytes(
-        bytes[0..4].try_into().unwrap(),
+pub(super) fn scalar_float(bytes: &[u8]) -> Option<Node> {
+    Some(Node::Float(f32::from_le_bytes(
+        bytes.get(0..4)?.try_into().ok()?,
     )))
 }
 
-pub(super) fn scalar_formid(
-    ctx: &DecodeContext<'_>,
-    valid_refs: &[String],
-    bytes: &[u8],
-) -> Option<Value> {
+pub(super) fn scalar_formid(valid_refs: &[String], bytes: &[u8]) -> Option<Node> {
+    let id = FormId::new(u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?));
+    Some(Node::FormId {
+        id,
+        curve: refs_curve(valid_refs),
+    })
+}
+
+pub(super) fn scalar_bytes(bytes: &[u8]) -> Node {
+    Node::Bytes(bytes.to_vec())
+}
+
+pub(super) fn scalar_rgba(bytes: &[u8]) -> Option<Node> {
     if bytes.len() < 4 {
         return None;
     }
-    let id = FormId::new(u32::from_le_bytes(bytes[0..4].try_into().unwrap()));
-    Some(resolve_formid(ctx, valid_refs, id))
+    Some(Node::obj([
+        ("r", Node::int(bytes[0])),
+        ("g", Node::int(bytes[1])),
+        ("b", Node::int(bytes[2])),
+        ("a", Node::int(bytes[3])),
+    ]))
 }
 
-pub(super) fn scalar_bytes(bytes: &[u8]) -> Value {
-    json!({"hex": hex::encode(bytes)})
-}
-
-pub(super) fn scalar_rgba(bytes: &[u8]) -> Option<Value> {
-    if bytes.len() < 4 {
-        return None;
-    }
-    Some(json!({
-        "r": bytes[0], "g": bytes[1], "b": bytes[2], "a": bytes[3]
-    }))
-}
-
-pub(super) fn scalar_vec3(bytes: &[u8]) -> Option<Value> {
+pub(super) fn scalar_vec3(bytes: &[u8]) -> Option<Node> {
     if bytes.len() < 12 {
         return None;
     }
-    Some(json!({
-        "x": json_f32(f32::from_le_bytes(bytes[0..4].try_into().unwrap())),
-        "y": json_f32(f32::from_le_bytes(bytes[4..8].try_into().unwrap())),
-        "z": json_f32(f32::from_le_bytes(bytes[8..12].try_into().unwrap())),
-    }))
+    let f = |i: usize| Node::Float(f32::from_le_bytes(bytes[i..i + 4].try_into().unwrap()));
+    Some(Node::obj([("x", f(0)), ("y", f(4)), ("z", f(8))]))
 }
 
 /// Fixed-size vs null-terminated string decode shared by `decode_member` (subrecord
 /// pool) and `decode_struct_fields` (contiguous buffer cursor). Callers own bounds
 /// checks and cursor advancement.
-pub(super) fn scalar_string(bytes: &[u8], sized: &Option<u32>) -> Value {
+pub(super) fn scalar_string(bytes: &[u8], sized: &Option<u32>) -> Node {
     let s = match sized {
         Some(n) if *n > 0 => String::from_utf8_lossy(&bytes[..bytes.len().min(*n as usize)])
             .trim_end_matches('\0')
             .to_string(),
         _ => read_zstring(bytes),
     };
-    json!(s)
+    Node::Str(s)
 }
 
 pub(super) fn read_int(data: &[u8], width: IntegerWidth, signed: bool) -> Option<i64> {
@@ -177,24 +180,41 @@ pub(super) fn read_le_uint(data: &[u8], offset: usize, width: usize) -> Option<u
     Some(v)
 }
 
-/// Resolve a field's raw integer value from an already-decoded output map.
-///
-/// Handles plain numbers, enum objects (`{"value": N, "name": "..."}`) and
-/// flags objects (`{"value": "0x...", "flags": [...]}`).
-pub(super) fn field_int_value(out: &Map<String, Value>, field: &str) -> Option<u64> {
-    let val = if let Some((parent, child)) = field.split_once('.') {
-        out.get(parent)
-            .and_then(|v| v.as_object())
-            .and_then(|o| o.get(child))?
-    } else {
-        out.get(field)?
-    };
-    int_value(val)
+/// A field's node by name; `"parent.child"` reaches one struct level down.
+fn field_node<'a>(out: &'a Fields, field: &str) -> Option<&'a Node> {
+    match field.split_once('.') {
+        Some((parent, child)) => out.get(parent)?.get(child),
+        None => out.get(field),
+    }
+}
+
+/// Resolve a field's raw integer value from the already-decoded fields: a
+/// plain integer, an enum's or flags' value, or a numeric string.
+pub(super) fn field_int_value(out: &Fields, field: &str, ctx: &DecodeContext<'_>) -> Option<u64> {
+    int_value(field_node(out, field)?, ctx)
 }
 
 /// A decoded integer as `u64`: a plain number, or the `value` of an enum or
-/// flags object.
-fn int_value(val: &Value) -> Option<u64> {
+/// flags node. Nodes whose rendering depends on resolution are read through
+/// their rendered JSON.
+fn int_value(node: &Node, ctx: &DecodeContext<'_>) -> Option<u64> {
+    match node {
+        Node::Int(v) | Node::Enum { value: v, .. } => u64::try_from(*v).ok(),
+        Node::Flags { value, .. } => Some(*value),
+        Node::Str(s) => parse_uint_str(s),
+        Node::Null
+        | Node::Bool(_)
+        | Node::Float(_)
+        | Node::Bytes(_)
+        | Node::Raw { .. }
+        | Node::Array(_) => None,
+        Node::FormId { .. } | Node::LString { .. } | Node::Struct(_) => {
+            json_int_value(&node.to_json(ctx))
+        }
+    }
+}
+
+fn json_int_value(val: &Value) -> Option<u64> {
     match val {
         Value::Number(n) => n.as_u64(),
         Value::String(s) => parse_uint_str(s),
@@ -210,7 +230,7 @@ fn int_value(val: &Value) -> Option<u64> {
 /// Resolve an array's [`CountPath`] against the struct being decoded (`local`)
 /// or, for `up == 1`, the enclosing scope the caller put in `ctx.outer_struct`.
 pub(super) fn count_path_value(
-    local: &Map<String, Value>,
+    local: &Fields,
     ctx: &DecodeContext<'_>,
     count: &CountPath,
 ) -> Option<u64> {
@@ -221,9 +241,9 @@ pub(super) fn count_path_value(
     };
     let (last, parents) = count.path.split_last()?;
     for name in parents {
-        scope = scope.get(name)?.as_object()?;
+        scope = scope.get(name)?.as_struct()?;
     }
-    int_value(scope.get(last)?)
+    int_value(scope.get(last)?, ctx)
 }
 
 /// Parse a decimal or `0x`-prefixed hexadecimal string to u64.
@@ -235,19 +255,31 @@ pub(super) fn parse_uint_str(s: &str) -> Option<u64> {
     }
 }
 
-/// Resolve a `FieldValue` lookup key from an already-decoded output map.
+/// Resolve a `FieldValue` lookup key from the already-decoded fields.
 ///
 /// Supports dot-separated paths (e.g. `"Effect Header.Effect Type"`) to reach
-/// into nested objects. For enum-formatted integers, the object has a `"value"`
-/// key whose integer is used as the map key. JSON `null` maps to the key `"null"`
-/// (used by union deciders such as `wbNAVIParentDecider`).
-pub(super) fn field_value_key(out: &Map<String, Value>, field: &str) -> Option<String> {
-    let val = if let Some((parent, child)) = field.split_once('.') {
-        out.get(parent)?.get(child)?
-    } else {
-        out.get(field)?
+/// into nested structs. For enum-formatted integers the enum's integer is the
+/// key. Null maps to the key `"null"` (used by union deciders such as
+/// `wbNAVIParentDecider`).
+pub(super) fn field_value_key(
+    out: &Fields,
+    field: &str,
+    ctx: &DecodeContext<'_>,
+) -> Option<String> {
+    let key = match field_node(out, field)? {
+        Node::Null => "null".to_string(),
+        Node::Int(v) | Node::Enum { value: v, .. } => v.to_string(),
+        Node::Str(s) => s.clone(),
+        node => json_value_key(&node.to_json(ctx)),
     };
-    let key = match val {
+    if key.is_empty() {
+        return None;
+    }
+    Some(key)
+}
+
+fn json_value_key(val: &Value) -> String {
+    match val {
         Value::Null => "null".to_string(),
         Value::Number(n) => n.to_string(),
         Value::String(s) => s.clone(),
@@ -257,28 +289,25 @@ pub(super) fn field_value_key(out: &Map<String, Value>, field: &str) -> Option<S
             .map(|v| v.to_string())
             .unwrap_or_default(),
         _ => val.to_string(),
-    };
-    if key.is_empty() {
-        return None;
     }
-    Some(key)
 }
 
 /// Resolve the target record signature for a decoded sibling FormID field.
-pub(super) fn sibling_target_sig(value: &Value, ctx: &DecodeContext<'_>) -> Option<String> {
-    if let Value::Object(o) = value
-        && let Some(rt) = o.get("record_type").and_then(|v| v.as_str())
-    {
-        return Some(rt.to_string());
-    }
-    let id = match value {
-        Value::String(s) => parse_formid(s).ok(),
-        Value::Object(o) => o
-            .get("formid")
-            .and_then(|v| v.as_str())
-            .and_then(|s| parse_formid(s).ok()),
-        _ => None,
-    }?;
+pub(super) fn sibling_target_sig(node: &Node, ctx: &DecodeContext<'_>) -> Option<String> {
+    let id = match node {
+        Node::FormId { id, .. } if id.0 != 0 => *id,
+        Node::Str(s) => parse_formid(s).ok()?,
+        Node::Struct(o) => {
+            if let Some(Node::Str(rt)) = o.get("record_type") {
+                return Some(rt.clone());
+            }
+            match o.get("formid") {
+                Some(Node::Str(s)) => parse_formid(s).ok()?,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
     ctx.resolver.and_then(|r| r.stub(id).map(|s| s.record_type))
 }
 

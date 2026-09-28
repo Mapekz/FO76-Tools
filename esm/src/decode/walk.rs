@@ -1,6 +1,6 @@
+use super::node::{Fields, Node, insert_unique};
 use crate::reader::OwnedSubrecord;
 use crate::schema::{ArrayCount, CountPath, FieldDef, LStringTable, MemberDef, UnionDecider};
-use serde_json::{Map, Value, json};
 use std::collections::{HashMap, VecDeque};
 
 use super::model_info::decode_model_info;
@@ -12,15 +12,15 @@ use super::scalars::{
 };
 use super::scope::*;
 use super::vmad::{
-    decode_vmad, decode_vmad_info, decode_vmad_pack, decode_vmad_perk, decode_vmad_qust,
-    decode_vmad_scen,
+    decode_vmad_info, decode_vmad_pack, decode_vmad_perk, decode_vmad_qust, decode_vmad_scen,
+    vmad_node,
 };
-use super::{DecodeContext, hex, lstring_table_to_kind, markers};
+use super::{DecodeContext, lstring_table_to_kind};
 
 pub(crate) fn decode_member(
     ctx: &DecodeContext<'_>,
     member: &MemberDef,
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
     by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
     payload: Option<&[u8]>,
 ) {
@@ -89,12 +89,12 @@ pub(crate) fn decode_member(
             ..
         } => {
             if let Some(data) = payload {
-                if let Some(v) = scalar_formid(ctx, valid_refs, data) {
+                if let Some(v) = scalar_formid(valid_refs, data) {
                     out.insert(name.clone(), v);
                 }
             } else if let Some(sig) = sig
                 && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-                && let Some(v) = scalar_formid(ctx, valid_refs, &sr.data)
+                && let Some(v) = scalar_formid(valid_refs, &sr.data)
             {
                 out.insert(name.clone(), v);
             }
@@ -144,12 +144,12 @@ pub(crate) fn decode_member(
             } else {
                 ctx
             };
-            let mut group = Map::new();
+            let mut group = Fields::new();
             for m in members {
                 decode_member(scoped_ctx, m, &mut group, by_sig, None);
             }
             if !group.is_empty() {
-                out.insert(name.clone(), Value::Object(group));
+                out.insert(name.clone(), Node::Struct(group));
             }
         }
         MemberDef::RArray {
@@ -203,7 +203,7 @@ pub(crate) fn decode_member(
                 //
                 // Only emit the marker when the empty subrecord is actually present.
                 if take_first(by_sig, sig).is_some() {
-                    out.insert(name.clone(), json!(null));
+                    out.insert(name.clone(), Node::Null);
                 }
             }
         }
@@ -222,45 +222,26 @@ pub(crate) fn decode_member(
             if let Some(sig) = sig
                 && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
             {
-                out.insert(
-                    name.clone(),
-                    json!({
-                        "hex": hex::encode(&sr.data),
-                        "_raw": true
-                    }),
-                );
+                out.insert(name.clone(), Node::raw(&sr.data));
             }
         }
         MemberDef::RawFallback { sig, name, reason } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    out.insert(
-                        name.clone(),
-                        json!({
-                            "hex": hex::encode(&sr.data),
-                            "_raw": true,
-                            "reason": reason
-                        }),
-                    );
+                    out.insert(name.clone(), Node::raw_reason(Some(&sr.data), reason));
                 }
             } else {
-                out.insert(
-                    name.clone(),
-                    json!({
-                        "_raw": true,
-                        "reason": reason
-                    }),
-                );
+                out.insert(name.clone(), Node::raw_reason(None, reason));
             }
         }
         MemberDef::Vmad { sig, name } => decode_vmad_member(ctx, sig, name, out, by_sig),
         MemberDef::Ctda { sig, name } => {
             if let Some(sig) = sig {
                 if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    out.insert(name.clone(), crate::ctda::decode_ctda(&sr.data, ctx));
+                    out.insert(name.clone(), crate::ctda::ctda_node(&sr.data, ctx));
                 }
             } else if let Some(data) = payload {
-                out.insert(name.clone(), crate::ctda::decode_ctda(data, ctx));
+                out.insert(name.clone(), crate::ctda::ctda_node(data, ctx));
             }
         }
         MemberDef::ModelInfo { sig, name } => {
@@ -280,7 +261,7 @@ pub(super) fn decode_struct_member(
     sig: &Option<String>,
     name: &str,
     fields: &[FieldDef],
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
     by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
     payload: Option<&[u8]>,
 ) {
@@ -307,14 +288,14 @@ pub(super) fn decode_lstring_member(
     sig: &Option<String>,
     name: &str,
     table: &LStringTable,
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
     by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
 ) {
     if let Some(sig) = sig
         && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
     {
         // "No string present" must decode to the same JSON in both
-        // modes (`Value::Null`). The two representations are not
+        // modes (`Node::Null`). The two representations are not
         // interchangeable on the wire — localized files store a
         // 4-byte ID, non-localized files store inline text — so a
         // mode-dependent encoding of "empty" makes every nameless
@@ -323,28 +304,22 @@ pub(super) fn decode_lstring_member(
         let value = if ctx.is_localized {
             // Localized ESM: field is a 4-byte ID into string tables.
             if sr.data.len() < 4 {
-                Value::Null
+                Node::Null
             } else {
                 let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
                 if id == 0 {
                     // 0 is the engine's "no string" sentinel, not a
                     // missing table entry — mirrors resolve_formid's
                     // null-FormID special case.
-                    Value::Null
+                    Node::Null
                 } else {
                     let kind = lstring_table_to_kind(table, ctx.record_signature, sig);
-                    match ctx.localization.and_then(|loc| loc.lookup(kind, id)) {
-                        Some(text) => json!(text),
-                        None => json!({
-                            "lstring_id": format!("0x{:08X}", id),
-                            (markers::UNRESOLVED): true
-                        }),
-                    }
+                    Node::LString { id, kind }
                 }
             }
         } else {
             // Non-localized ESM: field is inline Windows-1252 text.
-            crate::reader::decode_inline_lstring(&sr.data).map_or(Value::Null, Value::String)
+            crate::reader::decode_inline_lstring(&sr.data).map_or(Node::Null, Node::Str)
         };
         out.insert(name.to_owned(), value);
     }
@@ -356,7 +331,7 @@ pub(super) fn decode_rarray_member(
     element: &MemberDef,
     count: &Option<ArrayCount>,
     stop_before: &[String],
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
     by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
 ) {
     let mut items = Vec::new();
@@ -484,16 +459,16 @@ pub(super) fn decode_rarray_member(
             }
         }
 
-        let mut item = Map::new();
+        let mut item = Fields::new();
         decode_member(element_ctx, element, &mut item, by_sig, None);
         let after: usize = by_sig.values().map(|v| v.len()).sum();
         if before == after {
             break; // no subrecords consumed — done
         }
-        items.push(Value::Object(item));
+        items.push(Node::Struct(item));
     }
     if !items.is_empty() {
-        out.insert(name.to_owned(), Value::Array(items));
+        out.insert(name.to_owned(), Node::Array(items));
     }
 }
 
@@ -504,7 +479,7 @@ pub(super) fn decode_array_member(
     name: &str,
     element: &FieldDef,
     count: &Option<ArrayCount>,
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
     by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
     payload: Option<&[u8]>,
 ) {
@@ -517,7 +492,7 @@ pub(super) fn decode_array_member(
         // strictly larger; otherwise fall back to one element per subrecord so
         // variable-size element arrays are unaffected.
         let elem_size = field_byte_size(ctx, element);
-        let mut items: Vec<Value> = Vec::new();
+        let mut items: Vec<Node> = Vec::new();
         for sr in taken {
             match elem_size {
                 Some(sz) if sz > 0 && sr.data.len() > sz => {
@@ -543,7 +518,7 @@ pub(super) fn decode_array_member(
                     {
                         let mut pos = 0;
                         while pos < sr.data.len() {
-                            let mut elem_out = Map::new();
+                            let mut elem_out = Fields::new();
                             let consumed = decode_struct_fields(
                                 ctx,
                                 elem_name,
@@ -554,7 +529,7 @@ pub(super) fn decode_array_member(
                             if consumed == 0 {
                                 break;
                             }
-                            if let Some(v) = elem_out.remove(elem_name) {
+                            if let Some(v) = elem_out.swap_remove(elem_name) {
                                 items.push(v);
                             }
                             pos += consumed;
@@ -568,7 +543,7 @@ pub(super) fn decode_array_member(
             items.truncate(*n);
         }
         if !items.is_empty() {
-            out.insert(name.to_owned(), Value::Array(items));
+            out.insert(name.to_owned(), Node::Array(items));
         }
     } else if let (Some(data), Some(ArrayCount::Fixed(n))) = (payload, count) {
         // No sig: a nested array element (e.g. the inner dimension of an
@@ -594,7 +569,7 @@ pub(super) fn decode_array_member(
                 pos += elem_size;
             }
             if !items.is_empty() {
-                out.insert(name.to_owned(), Value::Array(items));
+                out.insert(name.to_owned(), Node::Array(items));
             }
         }
     }
@@ -607,7 +582,7 @@ pub(super) fn decode_union_member(
     name: &str,
     decider: &UnionDecider,
     variants: &[MemberDef],
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
     by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
     payload: Option<&[u8]>,
 ) {
@@ -627,10 +602,10 @@ pub(super) fn decode_union_member(
         } => {
             // Bitmask check first (for flag-field deciders like wbBOOKTeachesDecider).
             let by_bits = if !bits.is_empty() {
-                let raw = field_int_value(out, field).or_else(|| {
+                let raw = field_int_value(out, field, ctx).or_else(|| {
                     ctx.outer_struct
                         .as_ref()
-                        .and_then(|o| field_int_value(o, field))
+                        .and_then(|o| field_int_value(o, field, ctx))
                 });
                 raw.and_then(|v| {
                     bits.iter().find_map(|[mask, var_idx]| {
@@ -646,11 +621,11 @@ pub(super) fn decode_union_member(
             };
             by_bits
                 .or_else(|| {
-                    field_value_key(out, field)
+                    field_value_key(out, field, ctx)
                         .or_else(|| {
                             ctx.outer_struct
                                 .as_ref()
-                                .and_then(|o| field_value_key(o, field))
+                                .and_then(|o| field_value_key(o, field, ctx))
                         })
                         .and_then(|k| map.get(&k).copied())
                 })
@@ -727,7 +702,7 @@ pub(super) fn decode_union_member(
         // union's own name conceptually), so their decoded value
         // would otherwise land under the empty-string key instead
         // of the union's own (correctly-deduped) name.
-        let mut tmp = Map::new();
+        let mut tmp = Fields::new();
         decode_member(ctx, variant, &mut tmp, by_sig, effective_payload);
         for (k, v) in tmp {
             let key = if k.is_empty() { name.to_owned() } else { k };
@@ -748,10 +723,7 @@ pub(super) fn decode_union_member(
     }
     out.insert(
         name.to_owned(),
-        json!({
-            "_raw": true,
-            "reason": "union decider unresolved"
-        }),
+        Node::raw_reason(None, "union decider unresolved"),
     );
 }
 
@@ -759,7 +731,7 @@ pub(super) fn decode_vmad_member(
     ctx: &DecodeContext<'_>,
     sig: &Option<String>,
     name: &str,
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
     by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
 ) {
     if let Some(sig) = sig
@@ -778,30 +750,9 @@ pub(super) fn decode_vmad_member(
             // into the xref index instead of being silently dropped by the
             // generic `decode_vmad`, which stops after the base scripts.
             Some("TERM") => decode_vmad_perk(ctx, &sr.data),
-            _ => decode_vmad(ctx, &sr.data),
+            _ => vmad_node(ctx, &sr.data),
         };
         out.insert(name.to_owned(), decoded);
-    }
-}
-
-/// Insert `value` into `map` under `key`. If `key` is already present, try
-/// `"key 2"`, `"key 3"`, … to avoid silently clobbering an earlier value.
-///
-/// This handles schema patterns where the same `wbXxx` definition is reused
-/// for two different struct slots (e.g. MGEF's two `wbActorValue` fields).
-fn insert_unique(map: &mut Map<String, Value>, key: String, value: Value) {
-    if !map.contains_key(&key) {
-        map.insert(key, value);
-        return;
-    }
-    let mut n = 2usize;
-    loop {
-        let candidate = format!("{key} {n}");
-        if !map.contains_key(&candidate) {
-            map.insert(candidate, value);
-            return;
-        }
-        n += 1;
     }
 }
 
@@ -839,10 +790,10 @@ pub(crate) fn decode_struct_fields(
     struct_name: &str,
     fields: &[FieldDef],
     data: &[u8],
-    out: &mut Map<String, Value>,
+    out: &mut Fields,
 ) -> usize {
     let mut pos = 0usize;
-    let mut struct_out = Map::new();
+    let mut struct_out = Fields::new();
     for field in fields {
         if !member_version_ok(ctx.form_version, field) {
             continue;
@@ -881,7 +832,7 @@ pub(crate) fn decode_struct_fields(
                 name, valid_refs, ..
             } => {
                 if pos + 4 <= data.len() {
-                    if let Some(v) = scalar_formid(ctx, valid_refs, &data[pos..]) {
+                    if let Some(v) = scalar_formid(valid_refs, &data[pos..]) {
                         struct_out.insert(name.clone(), v);
                     }
                     pos += 4;
@@ -930,14 +881,7 @@ pub(crate) fn decode_struct_fields(
             }
             MemberDef::RawFallback { name, reason, .. } => {
                 if pos < data.len() {
-                    struct_out.insert(
-                        name.clone(),
-                        json!({
-                            "hex": hex::encode(&data[pos..]),
-                            "_raw": true,
-                            "reason": reason
-                        }),
-                    );
+                    struct_out.insert(name.clone(), Node::raw_reason(Some(&data[pos..]), reason));
                 }
                 pos = data.len();
                 break;
@@ -970,10 +914,10 @@ pub(crate) fn decode_struct_fields(
                     } => {
                         // Bitmask check first.
                         let by_bits = if !bits.is_empty() {
-                            let raw = field_int_value(&struct_out, field).or_else(|| {
+                            let raw = field_int_value(&struct_out, field, ctx).or_else(|| {
                                 ctx.outer_struct
                                     .as_ref()
-                                    .and_then(|o| field_int_value(o, field))
+                                    .and_then(|o| field_int_value(o, field, ctx))
                             });
                             raw.and_then(|v| {
                                 bits.iter().find_map(|[mask, var_idx]| {
@@ -989,11 +933,11 @@ pub(crate) fn decode_struct_fields(
                         };
                         by_bits
                             .or_else(|| {
-                                field_value_key(&struct_out, field)
+                                field_value_key(&struct_out, field, ctx)
                                     .or_else(|| {
                                         ctx.outer_struct
                                             .as_ref()
-                                            .and_then(|o| field_value_key(o, field))
+                                            .and_then(|o| field_value_key(o, field, ctx))
                                     })
                                     .and_then(|k| map.get(&k).copied())
                             })
@@ -1027,7 +971,7 @@ pub(crate) fn decode_struct_fields(
                         // each key, avoiding silent clobbers when two union
                         // slots share the same variant name (e.g. MGEF's two
                         // `wbActorValue` fields both named "Actor Value").
-                        let mut tmp = Map::new();
+                        let mut tmp = Fields::new();
                         decode_member(ctx, variant, &mut tmp, &mut dummy, Some(&data[pos..]));
                         for (k, v) in tmp {
                             insert_unique(&mut struct_out, k, v);
@@ -1036,10 +980,7 @@ pub(crate) fn decode_struct_fields(
                         pos = advance_union(ctx, variant, &data[pos..], pos);
                     }
                 } else {
-                    struct_out.insert(
-                        name.clone(),
-                        json!({"hex": hex::encode(&data[pos..]), "_raw": true}),
-                    );
+                    struct_out.insert(name.clone(), Node::raw(&data[pos..]));
                     pos = data.len();
                     break;
                 }
@@ -1091,26 +1032,22 @@ pub(crate) fn decode_struct_fields(
                         pos += elem_size;
                     }
                     if !items.is_empty() {
-                        struct_out.insert(name.clone(), Value::Array(items));
+                        struct_out.insert(name.clone(), Node::Array(items));
                     }
                 }
             }
             MemberDef::Unknown { name, .. } => {
                 if pos < data.len() {
-                    insert_unique(
-                        &mut struct_out,
-                        name.clone(),
-                        json!({"hex": hex::encode(&data[pos..]), "_raw": true}),
-                    );
+                    insert_unique(&mut struct_out, name.clone(), Node::raw(&data[pos..]));
                 }
                 break;
             }
             _ => {}
         }
     }
-    apply_post_decode_rules(PostDecodeTarget::Struct(&mut struct_out));
+    apply_post_decode_rules(PostDecodeTarget::Struct(&mut struct_out), ctx);
     if !struct_out.is_empty() {
-        out.insert(struct_name.to_string(), Value::Object(struct_out));
+        out.insert(struct_name.to_string(), Node::Struct(struct_out));
     }
     pos
 }
@@ -1175,7 +1112,7 @@ fn field_byte_size(ctx: &DecodeContext<'_>, field: &FieldDef) -> Option<usize> {
 fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos: usize) -> usize {
     match variant {
         MemberDef::Struct { name, fields, .. } => {
-            let mut tmp = Map::new();
+            let mut tmp = Fields::new();
             let consumed = decode_struct_fields(ctx, name, fields, data, &mut tmp);
             pos + consumed
         }
@@ -1186,14 +1123,14 @@ fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos:
     }
 }
 
-fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) -> Value {
-    let mut m = Map::new();
+fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) -> Node {
+    let mut m = Fields::new();
     let mut by_sig = HashMap::new();
     decode_member(ctx, field, &mut m, &mut by_sig, Some(data));
     if m.len() == 1 {
         m.into_values().next().unwrap()
     } else {
-        Value::Object(m)
+        Node::Struct(m)
     }
 }
 
@@ -1201,6 +1138,15 @@ fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) ->
 mod tests {
     use super::*;
     use crate::decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
+    use serde_json::{Map, Value, json};
+
+    /// Render decoded fields to boundary JSON for assertions.
+    fn rendered(ctx: &DecodeContext<'_>, fields: Fields) -> Map<String, Value> {
+        match Node::Struct(fields).into_json(ctx) {
+            Value::Object(map) => map,
+            _ => unreachable!("a struct renders to an object"),
+        }
+    }
     use crate::formid::FormId;
     use crate::schema::{IntegerWidth, Schema};
 
@@ -1294,8 +1240,9 @@ mod tests {
             int_field("Sentinel", IntegerWidth::U8),
         ];
         let data: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00, 0x2A];
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Test", &fields, &data, &mut out);
+        let out = rendered(&ctx, out);
         // decode_struct_fields nests all fields under the struct name key.
         let inner = out
             .get("Test")
@@ -1331,8 +1278,9 @@ mod tests {
             int_field("Sentinel", IntegerWidth::U8),
         ];
         let data: Vec<u8> = vec![0x01, 0x07, 0x00, 0x00, 0x00, 0xFF];
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Test", &fields, &data, &mut out);
+        let out = rendered(&ctx, out);
         let inner = out
             .get("Test")
             .and_then(|v| v.as_object())
@@ -1399,9 +1347,10 @@ mod tests {
                 .push_back(sr);
         }
 
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_member(&ctx, &counts, &mut out, &mut by_sig, None);
         decode_member(&ctx, &data, &mut out, &mut by_sig, None);
+        let out = rendered(&ctx, out);
         assert_eq!(out["Footsteps"]["Walking Steps"], json!([7, 8]));
         assert_eq!(out["Footsteps"]["Running Steps"], json!([9]));
     }
@@ -1451,8 +1400,9 @@ mod tests {
                 .push_back(sr);
         }
 
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_member(&ctx, &morph_groups, &mut out, &mut by_sig, None);
+        let out = rendered(&ctx, out);
         let groups = out
             .get("Morph Groups")
             .and_then(|v| v.as_array())
@@ -1577,8 +1527,9 @@ mod tests {
         ctx.resolve_depth = ResolveDepth::Stub;
         ctx.resolver = Some(&resolver);
 
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Extra Data", &fields, &payload, &mut out);
+        let out = rendered(&ctx, out);
         let inner = out
             .get("Extra Data")
             .and_then(|v| v.as_object())
@@ -1590,8 +1541,9 @@ mod tests {
 
         // Without resolver, default variant 0 (Unused) — no Global Variable key.
         let ctx_no_resolver = bare_ctx(&schema);
-        let mut out2 = Map::new();
+        let mut out2 = Fields::new();
         decode_struct_fields(&ctx_no_resolver, "Extra Data", &fields, &payload, &mut out2);
+        let out2 = rendered(&ctx_no_resolver, out2);
         let inner2 = out2
             .get("Extra Data")
             .and_then(|v| v.as_object())
@@ -1674,8 +1626,9 @@ mod tests {
         let schema = empty_schema();
         let mut ctx = bare_ctx(&schema);
         ctx.form_version = 197;
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Effect Item Data", &efit_fields(), &data, &mut out);
+        let out = rendered(&ctx, out);
         let obj = out
             .get("Effect Item Data")
             .and_then(|v| v.as_object())
@@ -1701,8 +1654,9 @@ mod tests {
         let schema = empty_schema();
         let mut ctx = bare_ctx(&schema);
         ctx.form_version = 170;
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Effect Item Data", &efit_fields(), &data, &mut out);
+        let out = rendered(&ctx, out);
         let obj = out
             .get("Effect Item Data")
             .and_then(|v| v.as_object())
@@ -1727,8 +1681,9 @@ mod tests {
         let schema = empty_schema();
         let mut ctx = bare_ctx(&schema);
         ctx.form_version = 160;
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Effect Item Data", &efit_fields(), &data, &mut out);
+        let out = rendered(&ctx, out);
         let obj = out
             .get("Effect Item Data")
             .and_then(|v| v.as_object())
@@ -1752,8 +1707,9 @@ mod tests {
         let schema = empty_schema();
         let mut ctx = bare_ctx(&schema);
         ctx.form_version = 150;
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Effect Item Data", &efit_fields(), &data, &mut out);
+        let out = rendered(&ctx, out);
         let obj = out
             .get("Effect Item Data")
             .and_then(|v| v.as_object())
@@ -1809,8 +1765,9 @@ mod tests {
             sig: Some("VMAD".into()),
             name: "Virtual Machine Adapter".into(),
         };
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_member(&ctx, &member, &mut out, &mut by_sig, None);
+        let out = rendered(&ctx, out);
 
         let decoded = out
             .get("Virtual Machine Adapter")
@@ -1842,9 +1799,9 @@ mod tests {
             .entry(sr.signature.as_str().to_string())
             .or_default()
             .push_back(sr);
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_member(ctx, &member, &mut out, &mut by_sig, None);
-        out
+        rendered(ctx, out)
     }
 
     /// "No string present" must decode to `Value::Null` in BOTH localization
@@ -1957,8 +1914,9 @@ mod tests {
                 .push_back(sr);
         }
 
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_member(&ctx, &member, &mut out, &mut by_sig, None);
+        let out = rendered(&ctx, out);
 
         assert!(
             out.is_empty(),
@@ -1989,8 +1947,9 @@ mod tests {
             int_field("Sentinel", IntegerWidth::U8),
         ];
         let data: Vec<u8> = vec![0xAA, 0xBB, 0xCC, 0x2A];
-        let mut out = Map::new();
+        let mut out = Fields::new();
         decode_struct_fields(&ctx, "Test", &fields, &data, &mut out);
+        let out = rendered(&ctx, out);
         let inner = out
             .get("Test")
             .and_then(|v| v.as_object())

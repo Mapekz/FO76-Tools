@@ -1,15 +1,16 @@
+use super::node::{Fields, Node};
 use super::*;
 
 pub(super) enum PostDecodeTarget<'a> {
-    Struct(&'a mut Map<String, Value>),
-    Record(&'a mut Map<String, Value>),
+    Struct(&'a mut Fields),
+    Record(&'a mut Fields),
 }
 
 /// Central registration point for FO76-specific post-decode rules.
-pub(super) fn apply_post_decode_rules(target: PostDecodeTarget<'_>) {
+pub(super) fn apply_post_decode_rules(target: PostDecodeTarget<'_>, ctx: &DecodeContext<'_>) {
     match target {
-        PostDecodeTarget::Struct(out) => apply_crafting_quantity(out),
-        PostDecodeTarget::Record(out) => apply_weapon_bash_curve(out),
+        PostDecodeTarget::Struct(out) => apply_crafting_quantity(out, ctx),
+        PostDecodeTarget::Record(out) => apply_weapon_bash_curve(out, ctx),
     }
 }
 
@@ -30,61 +31,59 @@ pub(super) fn apply_post_decode_rules(target: PostDecodeTarget<'_>) {
 ///
 /// Shape-gated: no-op when either key is absent (prevents touching unrelated
 /// structs that coincidentally share field names). Never panics.
-fn apply_crafting_quantity(struct_out: &mut Map<String, Value>) {
-    if !struct_out.contains_key("Curve Table") {
+fn apply_crafting_quantity(struct_out: &mut Fields, ctx: &DecodeContext<'_>) {
+    let Some(curve_table) = struct_out.get("Curve Table") else {
         return;
-    }
+    };
     // Recognise both count-key spellings; stop if neither is present.
-    let count = field_int_value(struct_out, "Count")
-        .or_else(|| field_int_value(struct_out, "Scrap Component Count"));
+    let count = field_int_value(struct_out, "Count", ctx)
+        .or_else(|| field_int_value(struct_out, "Scrap Component Count", ctx));
     let Some(count) = count else { return };
 
-    let (quantity, source): (Value, &str) = match struct_out.get("Curve Table") {
-        // Curve inlined by `resolve_formid`: {"formid", "curve_path", "curve":[{x,y}…]}.
-        Some(v @ Value::Object(_)) => match crate::curves::points_from_json(v) {
+    let count_node = Node::Int(count as i64);
+    let (quantity, source): (Node, &str) = match curve_table.to_json(ctx) {
+        // Curve inlined by `render_formid`: {"formid", "curve_path", "curve":[{x,y}…]}.
+        v @ Value::Object(_) => match crate::curves::points_from_json(&v) {
             Some(points) if !points.is_empty() => {
                 match crate::curves::eval(&points, count as f32) {
-                    Some(y) => (json_f32(y), "curve"),
-                    None => (serde_json::json!(count), "count"),
+                    Some(y) => (Node::Float(y), "curve"),
+                    None => (count_node, "count"),
                 }
             }
-            _ => (serde_json::json!(count), "count"),
+            _ => (count_node, "count"),
         },
         // Bare hex string: curve referenced but curves not loaded (no Startup BA2).
-        Some(Value::String(_)) => (serde_json::json!(count), "count_unresolved_curve"),
+        Value::String(_) => (count_node, "count_unresolved_curve"),
         // null slot or any other shape → literal count is the effective quantity.
-        _ => (serde_json::json!(count), "count"),
+        _ => (count_node, "count"),
     };
     struct_out.insert("Quantity".to_string(), quantity);
-    struct_out.insert("Quantity Source".to_string(), serde_json::json!(source));
+    struct_out.insert("Quantity Source".to_string(), Node::str(source));
 }
 
 /// FormID for `WeaponTypeAutomaticMelee` (KYWD `0x006D5081`), referenced by the
 /// "Stable Tools" perk's `HasKeyword` condition — the game-authoritative gate for
 /// power-tool bash damage scaling (Auto Axe, Chainsaw, Drill, Ripper, Buzz Blade).
-const AUTOMATIC_MELEE_KEYWORD: &str = "0x006D5081";
+const AUTOMATIC_MELEE_KEYWORD: FormId = FormId(0x006D5081);
 
-fn automatic_melee_keyword_present(out: &Map<String, Value>) -> bool {
+fn automatic_melee_keyword_present(out: &Fields) -> bool {
     let Some(keywords) = out
         .get("Keywords")
         .and_then(|v| v.get("Keywords"))
-        .and_then(Value::as_array)
+        .and_then(Node::as_array)
     else {
         return false;
     };
-    keywords.iter().any(|kw| match kw {
-        Value::String(s) => s == AUTOMATIC_MELEE_KEYWORD,
-        Value::Object(o) => o
-            .get("formid")
-            .and_then(Value::as_str)
-            .is_some_and(|s| s == AUTOMATIC_MELEE_KEYWORD),
-        _ => false,
-    })
+    keywords
+        .iter()
+        .any(|kw| matches!(kw, Node::FormId { id, .. } if *id == AUTOMATIC_MELEE_KEYWORD))
 }
 
-fn weapon_bash_eligible(out: &Map<String, Value>, data: &Map<String, Value>) -> bool {
+fn weapon_bash_eligible(out: &Fields, data: &Fields, ctx: &DecodeContext<'_>) -> bool {
     match data
         .get("Weapon Type")
+        .map(|v| v.to_json(ctx))
+        .as_ref()
         .and_then(|v| v.get("name"))
         .and_then(Value::as_str)
     {
@@ -100,59 +99,51 @@ fn weapon_bash_eligible(out: &Map<String, Value>, data: &Map<String, Value>) -> 
 /// carrying the `WeaponTypeAutomaticMelee` keyword are eligible; others emit an
 /// explicit `"ineligible"` marker when a curve is present but the weapon does not
 /// qualify.
-pub(crate) fn apply_weapon_bash_curve(out: &mut Map<String, Value>) {
-    let Some(data) = out.get("Data").and_then(Value::as_object) else {
+pub(crate) fn apply_weapon_bash_curve(out: &mut Fields, ctx: &DecodeContext<'_>) {
+    let Some(data) = out.get("Data").and_then(Node::as_struct) else {
         return;
     };
     let secondary = data
         .get("Secondary Damage")
-        .and_then(Value::as_f64)
+        .and_then(|v| v.to_json(ctx).as_f64())
         .unwrap_or(0.0);
     if secondary == 0.0 {
         return;
     }
-    let Some(damage_curve) = out.get("Damage Curve") else {
+    let Some(damage_curve) = out.get("Damage Curve").map(|v| v.to_json(ctx)) else {
         return;
     };
 
-    match damage_curve {
-        Value::Object(_) => match crate::curves::points_from_json(damage_curve) {
+    let source = |s: &str| Node::obj([("source", Node::str(s))]);
+    let bash = match damage_curve {
+        Value::Object(_) => match crate::curves::points_from_json(&damage_curve) {
             Some(points) if !points.is_empty() => {
                 let reference = crate::curves::eval(&points, 1.0);
-                if reference.is_none_or(|r| r <= 0.0) {
-                    out.insert(
-                        "Bash Damage".to_string(),
-                        json!({"source": "curve_zero_reference"}),
-                    );
-                    return;
+                match reference {
+                    None => source("curve_zero_reference"),
+                    Some(r) if r <= 0.0 => source("curve_zero_reference"),
+                    Some(_) if !weapon_bash_eligible(out, data, ctx) => source("ineligible"),
+                    Some(reference) => {
+                        let curve = points
+                            .iter()
+                            .map(|p| {
+                                Node::obj([
+                                    ("level", Node::Float(p.x)),
+                                    ("damage", Node::Float(secondary as f32 * p.y / reference)),
+                                ])
+                            })
+                            .collect();
+                        Node::obj([
+                            ("source", Node::str("curve")),
+                            ("curve", Node::Array(curve)),
+                        ])
+                    }
                 }
-                let reference = reference.unwrap();
-                if !weapon_bash_eligible(out, data) {
-                    out.insert("Bash Damage".to_string(), json!({"source": "ineligible"}));
-                    return;
-                }
-                let curve: Vec<Value> = points
-                    .iter()
-                    .map(|p| {
-                        json!({
-                            "level": json_f32(p.x),
-                            "damage": json_f32(secondary as f32 * p.y / reference),
-                        })
-                    })
-                    .collect();
-                out.insert(
-                    "Bash Damage".to_string(),
-                    json!({"source": "curve", "curve": curve}),
-                );
             }
-            _ => {}
+            _ => return,
         },
-        Value::String(_) => {
-            out.insert(
-                "Bash Damage".to_string(),
-                json!({"source": "unresolved_curve"}),
-            );
-        }
-        _ => {}
-    }
+        Value::String(_) => source("unresolved_curve"),
+        _ => return,
+    };
+    out.insert("Bash Damage".to_string(), bash);
 }

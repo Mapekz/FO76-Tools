@@ -1,6 +1,4 @@
-use serde_json::{Map, Value, json};
-
-use super::hex;
+use super::node::{Fields, Node};
 
 /// Decodes the structured `wbModelInfo` (FO4/FO76 non-TES5) layout shared by every "Model
 /// Information" subrecord (`MODT`, `DMDT`, `MO2T`..`MO5T`, `NAM2`, `NAM5`):
@@ -27,24 +25,27 @@ use super::hex;
 /// exactly account for the subrecord's length — covering the TES5-style 2-counter layout,
 /// corrupt data, and any record this heuristic doesn't actually fit — rather than panicking,
 /// consistent with the decoder-must-never-panic invariant.
-pub(super) fn decode_model_info(data: &[u8]) -> Value {
-    fn raw(data: &[u8]) -> Value {
-        json!({ "hex": hex::encode(data), "_raw": true })
+pub(super) fn decode_model_info(data: &[u8]) -> Node {
+    fn raw(data: &[u8]) -> Node {
+        Node::raw(data)
     }
     fn read_u32(data: &[u8], off: usize) -> Option<u32> {
         data.get(off..off + 4)
             .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
     }
     // A file entry is { File Hash: u32, Extension: char[4], Folder Hash: u32 } — 12 bytes.
-    fn read_file_entry(data: &[u8], off: usize) -> Value {
+    fn read_file_entry(data: &[u8], off: usize) -> Node {
         let file_hash = read_u32(data, off).unwrap_or(0);
         let ext = data.get(off + 4..off + 8).unwrap_or(&[]);
         let folder_hash = read_u32(data, off + 8).unwrap_or(0);
-        json!({
-            "File Hash": format!("0x{:08X}", file_hash),
-            "Extension": String::from_utf8_lossy(ext).trim_end_matches('\0').to_string(),
-            "Folder Hash": format!("0x{:08X}", folder_hash),
-        })
+        Node::obj([
+            ("File Hash", Node::Str(format!("0x{:08X}", file_hash))),
+            (
+                "Extension",
+                Node::str(String::from_utf8_lossy(ext).trim_end_matches('\0')),
+            ),
+            ("Folder Hash", Node::Str(format!("0x{:08X}", folder_hash))),
+        ])
     }
 
     let Some(num_counters) = read_u32(data, 0) else {
@@ -84,28 +85,28 @@ pub(super) fn decode_model_info(data: &[u8]) -> Value {
     }
 
     let counter_names = ["Textures", "Addon Nodes", "SRGB", "Materials"];
-    let mut counters_obj = Map::new();
+    let mut counters_obj = Fields::new();
     for (i, &c) in counters.iter().enumerate() {
         let name = counter_names.get(i).copied().unwrap_or("Unknown");
-        counters_obj.insert(name.to_string(), json!(c));
+        counters_obj.insert(name.to_string(), Node::Int(c as i64));
     }
 
     let mut off = header_len;
-    let textures: Vec<Value> = (0..num_textures)
+    let textures: Vec<Node> = (0..num_textures)
         .map(|_| {
             let entry = read_file_entry(data, off);
             off += 12;
             entry
         })
         .collect();
-    let addon_nodes: Vec<Value> = (0..num_addon_nodes)
+    let addon_nodes: Vec<Node> = (0..num_addon_nodes)
         .map(|_| {
-            let v = json!(read_u32(data, off).unwrap_or(0));
+            let v = Node::int(read_u32(data, off).unwrap_or(0));
             off += 4;
             v
         })
         .collect();
-    let materials: Vec<Value> = (0..num_materials)
+    let materials: Vec<Node> = (0..num_materials)
         .map(|_| {
             let entry = read_file_entry(data, off);
             off += 12;
@@ -113,10 +114,10 @@ pub(super) fn decode_model_info(data: &[u8]) -> Value {
         })
         .collect();
 
-    json!({
-        "Counters": Value::Object(counters_obj),
-        "Textures": textures,
-        "Addon Nodes": addon_nodes,
-        "Materials": materials,
-    })
+    Node::obj([
+        ("Counters", Node::Struct(counters_obj)),
+        ("Textures", Node::Array(textures)),
+        ("Addon Nodes", Node::Array(addon_nodes)),
+        ("Materials", Node::Array(materials)),
+    ])
 }

@@ -19,7 +19,7 @@ Run commands from `esm/`; `justfile` owns the complete recipe list.
 ## Architecture
 
 `docs/architecture.md` owns the full picture: record read flow (bytes → schema decode →
-`serde_json::Value`), cache lifecycle, process topology (CLI, `esm batch`, N-API, Python
+typed `Node` tree → `serde_json::Value`), cache lifecycle, process topology (CLI, `esm batch`, N-API, Python
 pipeline), and the feature-layer modules (`diff`, `walk`, `chase`, `lvli`, `refs`).
 Its "Where to tweak what" table is the fastest way to find the right edit point for a given
 change; domain vocabulary lives in `CONTEXT.md`, and design decisions are recorded in

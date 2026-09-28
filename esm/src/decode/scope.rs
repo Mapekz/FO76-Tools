@@ -165,7 +165,7 @@ pub(super) fn element_terminator_sig(element: &MemberDef) -> Option<&str> {
 
 pub(super) fn rarray_count(
     count: Option<&ArrayCount>,
-    out: &Map<String, Value>,
+    out: &node::Fields,
     ctx: &DecodeContext<'_>,
 ) -> Option<usize> {
     match count {

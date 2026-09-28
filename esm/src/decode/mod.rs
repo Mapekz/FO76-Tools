@@ -13,6 +13,7 @@ pub(crate) mod leaf_values;
 /// the path walker) stays `pub(crate)`.
 pub mod level_curves;
 mod model_info;
+pub mod node;
 mod rules;
 mod scalars;
 mod scope;
@@ -138,7 +139,7 @@ pub struct DecodeContext<'a> {
     /// Already-decoded fields of the enclosing struct, set when decoding array
     /// elements so that `FieldValue` deciders in element structs can reach parent
     /// fields (e.g. "Form Type" for OMOD property enum selection).
-    pub outer_struct: Option<Map<String, Value>>,
+    pub outer_struct: Option<node::Fields>,
     /// Signature of the record type currently being decoded (e.g. `"QUST"`, `"NPC_"`).
     /// Set at the top of `decode_record` so record-type-aware sub-decoders can
     /// branch on it (e.g. `decode_vmad_qust` vs `decode_vmad`).
@@ -186,7 +187,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Return a new context identical to `self` but with `outer_struct` set.
-    fn with_outer_struct(&self, outer: Map<String, Value>) -> DecodeContext<'a> {
+    fn with_outer_struct(&self, outer: node::Fields) -> DecodeContext<'a> {
         DecodeContext {
             outer_struct: Some(outer),
             ..self.clone()
@@ -220,7 +221,7 @@ impl<'a> DecodeContext<'a> {
 
 /// Render a curve's points as a JSON array of `{"x", "y"}` objects.
 ///
-/// Shared by [`resolve_formid`]'s inline curve branch and the CURV-record's own
+/// Shared by [`render_formid`]'s inline curve branch and the CURV-record's own
 /// `"Curve"` field injection (`Database::record_at_meta_with_depth`) so both
 /// render identically.
 pub(crate) fn curve_points_value(curve: &crate::curves::ArchivedCurve) -> Value {
@@ -233,25 +234,36 @@ pub(crate) fn curve_points_value(curve: &crate::curves::ArchivedCurve) -> Value 
     )
 }
 
-/// Resolve a FormID field to its JSON representation.
-///
-/// If the field's `valid_refs` includes a value-bearing leaf type whose
-/// [`InlineSource`] is [`InlineSource::CurveIndex`] (currently only `"CURV"`)
-/// and a curve index is loaded, the curve's EditorID, path, and point data
-/// are inlined into the output object — this fires independently of
-/// `resolve_depth` because it needs no resolver (see `leaf_values`'s module
-/// doc for why this can't merge with the resolver-path branch below: no
-/// resolver exists at `ResolveDepth::None`, so the declaring field's
-/// `valid_refs` is the only signature signal available there). When
-/// `ctx.resolve_depth` is `Stub` or `Full` and a resolver is present, the
-/// referenced record is expanded inline (a `Stub` also checks the *target's*
-/// own signature for a value-bearing leaf, via
-/// [`FormIdRefResolver::leaf_inline`]). Otherwise, a bare hex string is
-/// returned.
-pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
-    if valid_refs
+/// Whether a FormID field's `valid_refs` include a value-bearing leaf type
+/// whose [`InlineSource`] is [`InlineSource::CurveIndex`] (currently only
+/// `"CURV"`); such a reference renders its curve inline (see [`render_formid`]).
+pub(crate) fn refs_curve(valid_refs: &[String]) -> bool {
+    valid_refs
         .iter()
         .any(|r| matches!(leaf_values::lookup(r), Some(InlineSource::CurveIndex)))
+}
+
+/// [`render_formid`] for a field declaring `valid_refs`.
+#[cfg(test)]
+pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id: FormId) -> Value {
+    render_formid(ctx, refs_curve(valid_refs), id)
+}
+
+/// Render a FormID reference to its JSON representation.
+///
+/// For a `curve` reference (see [`refs_curve`]) with a curve index loaded, the
+/// curve's EditorID, path, and point data are inlined into the output object —
+/// this fires independently of `resolve_depth` because it needs no resolver
+/// (see `leaf_values`'s module doc for why this can't merge with the
+/// resolver-path branch below: no resolver exists at `ResolveDepth::None`, so
+/// the declaring field's `valid_refs` is the only signature signal available
+/// there). When `ctx.resolve_depth` is `Stub` or `Full` and a resolver is
+/// present, the referenced record is expanded inline (a `Stub` also checks the
+/// *target's* own signature for a value-bearing leaf, via
+/// [`FormIdRefResolver::leaf_inline`]). Otherwise, a bare hex string is
+/// returned.
+pub(crate) fn render_formid(ctx: &DecodeContext<'_>, curve: bool, id: FormId) -> Value {
+    if curve
         && let Some(curves) = ctx.curves
         && let Some(curve) = curves.get(id)
     {
@@ -296,42 +308,50 @@ pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id:
     json!(id.display())
 }
 
+/// Decode a record's subrecords and render the result to JSON.
 pub fn decode_record(
     ctx: &DecodeContext<'_>,
     signature: &str,
     subrecords: &[OwnedSubrecord],
 ) -> Value {
-    // Pre-scan the EDID subrecord for EdidPrefix union deciders (e.g. GMST value type).
-    let edid_char = subrecords
-        .iter()
-        .find(|sr| sr.signature.as_str() == "EDID")
-        .and_then(|sr| std::str::from_utf8(&sr.data).ok())
-        .and_then(|s| s.trim_end_matches('\0').chars().next());
+    let ctx = ctx.for_signature(signature, subrecords);
+    record_node(&ctx, signature, subrecords).into_json(&ctx)
+}
 
-    // Shadow ctx with an updated context that carries the EDID first char.
-    let ctx_with_meta;
-    let ctx: &DecodeContext<'_> =
-        if edid_char != ctx.record_edid_char || ctx.record_signature != Some(signature) {
-            ctx_with_meta = DecodeContext {
-                record_signature: Some(signature),
-                record_edid_char: edid_char,
-                schema: ctx.schema,
-                form_version: ctx.form_version,
-                is_localized: ctx.is_localized,
-                localization: ctx.localization,
-                curves: ctx.curves,
-                resolve_depth: ctx.resolve_depth,
-                resolver: ctx.resolver,
-                outer_struct: None,
-                scope_min_doc_index: ctx.scope_min_doc_index,
-                scope_max_doc_index: ctx.scope_max_doc_index,
-            };
-            &ctx_with_meta
-        } else {
-            ctx
-        };
+impl<'a> DecodeContext<'a> {
+    /// This context with the record-level fields (`record_signature`,
+    /// `record_edid_char`) set for a record of `signature`, and no enclosing
+    /// struct.
+    fn for_signature(
+        &self,
+        signature: &'a str,
+        subrecords: &[OwnedSubrecord],
+    ) -> DecodeContext<'a> {
+        // Pre-scan the EDID subrecord for EdidPrefix union deciders (e.g. GMST value type).
+        let record_edid_char = subrecords
+            .iter()
+            .find(|sr| sr.signature.as_str() == "EDID")
+            .and_then(|sr| std::str::from_utf8(&sr.data).ok())
+            .and_then(|s| s.trim_end_matches('\0').chars().next());
+        DecodeContext {
+            record_signature: Some(signature),
+            record_edid_char,
+            outer_struct: None,
+            ..self.clone()
+        }
+    }
+}
 
-    let mut out = Map::new();
+/// Decode a record's subrecords into a [`node::Node`] tree. `ctx` must come
+/// from [`DecodeContext::for_signature`].
+fn record_node(
+    ctx: &DecodeContext<'_>,
+    signature: &str,
+    subrecords: &[OwnedSubrecord],
+) -> node::Node {
+    use node::{Fields, Node};
+
+    let mut out = Fields::new();
     let record_def = ctx.schema.record(signature);
 
     let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
@@ -343,41 +363,44 @@ pub fn decode_record(
     }
 
     if let Some(def) = record_def {
-        out.insert("_record_type".into(), json!(def.name));
+        out.insert("_record_type".into(), Node::str(&def.name));
         for member in &def.members {
             decode_member(ctx, member, &mut out, &mut by_sig, None);
         }
     } else {
-        out.insert("_record_type".into(), json!(signature));
-        out.insert(markers::UNKNOWN_RECORD.into(), json!(true));
+        out.insert("_record_type".into(), Node::str(signature));
+        out.insert(markers::UNKNOWN_RECORD.into(), Node::Bool(true));
     }
 
-    // Emit any subrecords not consumed
-    let mut raw_remaining = Map::new();
-    for (sig, subs) in &by_sig {
-        if !subs.is_empty() {
-            let entries: Vec<Value> = subs
+    // Emit any subrecords not consumed, by signature in document order.
+    let mut leftover: Vec<(&String, &VecDeque<&OwnedSubrecord>)> =
+        by_sig.iter().filter(|(_, subs)| !subs.is_empty()).collect();
+    leftover.sort_by_key(|(_, subs)| subs.front().map(|sr| sr.doc_index));
+    let raw_remaining: Fields = leftover
+        .into_iter()
+        .map(|(sig, subs)| {
+            let entries = subs
                 .iter()
                 .map(|sr| {
-                    json!({
-                        "signature": sig,
-                        "hex": hex::encode(&sr.data),
-                        "_raw": true
-                    })
+                    Node::obj([
+                        ("signature", Node::str(sig.as_str())),
+                        ("hex", Node::Str(hex::encode(&sr.data))),
+                        (markers::RAW, Node::Bool(true)),
+                    ])
                 })
                 .collect();
-            raw_remaining.insert(sig.clone(), Value::Array(entries));
-        }
-    }
+            (sig.clone(), Node::Array(entries))
+        })
+        .collect();
     if !raw_remaining.is_empty() {
-        out.insert(markers::UNMAPPED.into(), Value::Object(raw_remaining));
+        out.insert(markers::UNMAPPED.into(), Node::Struct(raw_remaining));
     }
 
     if signature == "WEAP" {
-        apply_post_decode_rules(PostDecodeTarget::Record(&mut out));
+        apply_post_decode_rules(PostDecodeTarget::Record(&mut out), ctx);
     }
 
-    Value::Object(out)
+    Node::Struct(out)
 }
 
 fn lstring_table_to_kind(
@@ -950,7 +973,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_info(&ctx, &data);
+        let v = decode_vmad_info(&ctx, &data).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -965,7 +988,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_pack(&ctx, &data);
+        let v = decode_vmad_pack(&ctx, &data).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -976,7 +999,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_perk(&ctx, &data);
+        let v = decode_vmad_perk(&ctx, &data).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -987,7 +1010,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_scen(&ctx, &data);
+        let v = decode_vmad_scen(&ctx, &data).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -998,7 +1021,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_qust(&ctx, &data);
+        let v = decode_vmad_qust(&ctx, &data).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -1016,27 +1039,80 @@ mod tests {
         })
     }
 
+    /// A decoded-node stand-in for `value`: numbers become `Int`/`Float`,
+    /// objects `Struct`, so it renders back to `value`.
+    fn node_from_json(value: &Value) -> node::Node {
+        use node::Node;
+        match value {
+            Value::Null => Node::Null,
+            Value::Bool(b) => Node::Bool(*b),
+            Value::Number(n) => match n.as_i64() {
+                Some(i) => Node::Int(i),
+                None => Node::Float(n.as_f64().unwrap() as f32),
+            },
+            Value::String(s) => Node::Str(s.clone()),
+            Value::Array(items) => Node::Array(items.iter().map(node_from_json).collect()),
+            Value::Object(map) => Node::Struct(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), node_from_json(v)))
+                    .collect(),
+            ),
+        }
+    }
+
     fn weap_bash_fixture(
         weapon_type: &str,
         secondary: f64,
         damage_curve: Value,
-        keywords: Option<Value>,
-    ) -> Map<String, Value> {
-        let mut out = Map::new();
-        let mut data = Map::new();
+        keywords: Option<Vec<FormId>>,
+    ) -> node::Fields {
+        use node::{Fields, Node};
+        let mut out = Fields::new();
+        let mut data = Fields::new();
         data.insert(
             "Weapon Type".to_string(),
-            json!({"value": 0, "name": weapon_type}),
+            Node::Enum {
+                value: 0,
+                name: weapon_type.to_string(),
+            },
         );
         if secondary != 0.0 {
-            data.insert("Secondary Damage".to_string(), json!(secondary));
+            data.insert(
+                "Secondary Damage".to_string(),
+                Node::Float(secondary as f32),
+            );
         }
-        out.insert("Data".to_string(), Value::Object(data));
+        out.insert("Data".to_string(), Node::Struct(data));
+        let damage_curve = match damage_curve {
+            Value::String(s) => Node::FormId {
+                id: crate::formid::parse_formid(&s).unwrap(),
+                curve: true,
+            },
+            v => node_from_json(&v),
+        };
         out.insert("Damage Curve".to_string(), damage_curve);
         if let Some(kw) = keywords {
-            out.insert("Keywords".to_string(), json!({"Keywords": kw}));
+            let kw = kw
+                .into_iter()
+                .map(|id| Node::FormId { id, curve: false })
+                .collect();
+            out.insert(
+                "Keywords".to_string(),
+                Node::obj([("Keywords", Node::Array(kw))]),
+            );
         }
         out
+    }
+
+    /// Run the WEAP bash rule over `out` and render the result.
+    fn bash(mut out: node::Fields) -> Map<String, Value> {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        apply_weapon_bash_curve(&mut out, &ctx);
+        match node::Node::Struct(out).into_json(&ctx) {
+            Value::Object(map) => map,
+            _ => unreachable!(),
+        }
     }
 
     fn bash_damage_source(out: &Map<String, Value>) -> Option<&str> {
@@ -1047,8 +1123,12 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_gun_computes_table() {
-        let mut out = weap_bash_fixture("Gun", 5.0, sample_bash_damage_curve(), None);
-        apply_weapon_bash_curve(&mut out);
+        let out = bash(weap_bash_fixture(
+            "Gun",
+            5.0,
+            sample_bash_damage_curve(),
+            None,
+        ));
         assert_eq!(bash_damage_source(&out), Some("curve"));
         let curve = out
             .get("Bash Damage")
@@ -1064,13 +1144,12 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_automatic_melee_keyword_computes_table() {
-        let mut out = weap_bash_fixture(
+        let out = bash(weap_bash_fixture(
             "HandToHandMelee",
             8.0,
             sample_bash_damage_curve(),
-            Some(json!(["0x006D5081"])),
-        );
-        apply_weapon_bash_curve(&mut out);
+            Some(vec![FormId::new(0x006D5081)]),
+        ));
         assert_eq!(bash_damage_source(&out), Some("curve"));
         let damage = out
             .get("Bash Damage")
@@ -1083,31 +1162,41 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_melee_without_keyword_is_ineligible() {
-        let mut out = weap_bash_fixture("TwoHandAxe", 5.0, sample_bash_damage_curve(), None);
-        apply_weapon_bash_curve(&mut out);
+        let out = bash(weap_bash_fixture(
+            "TwoHandAxe",
+            5.0,
+            sample_bash_damage_curve(),
+            None,
+        ));
         assert_eq!(bash_damage_source(&out), Some("ineligible"));
     }
 
     #[test]
     fn weapon_bash_curve_grenade_is_ineligible() {
-        let mut out = weap_bash_fixture("Grenade", 3.0, sample_bash_damage_curve(), None);
-        apply_weapon_bash_curve(&mut out);
+        let out = bash(weap_bash_fixture(
+            "Grenade",
+            3.0,
+            sample_bash_damage_curve(),
+            None,
+        ));
         assert_eq!(bash_damage_source(&out), Some("ineligible"));
     }
 
     #[test]
     fn weapon_bash_curve_zero_secondary_stays_silent() {
-        let mut absent = weap_bash_fixture("Gun", 0.0, sample_bash_damage_curve(), None);
-        absent
-            .get_mut("Data")
-            .and_then(Value::as_object_mut)
-            .expect("Data")
-            .remove("Secondary Damage");
-        apply_weapon_bash_curve(&mut absent);
+        let absent = bash(weap_bash_fixture(
+            "Gun",
+            0.0,
+            sample_bash_damage_curve(),
+            None,
+        ));
         assert!(!absent.contains_key("Bash Damage"));
 
         let mut zero = weap_bash_fixture("Gun", 0.0, sample_bash_damage_curve(), None);
-        apply_weapon_bash_curve(&mut zero);
+        if let Some(node::Node::Struct(data)) = zero.get_mut("Data") {
+            data.insert("Secondary Damage".into(), node::Node::Float(0.0));
+        }
+        let zero = bash(zero);
         assert!(!zero.contains_key("Bash Damage"));
     }
 
@@ -1120,8 +1209,7 @@ mod tests {
                 {"x": 50.0, "y": 20.0}
             ]
         });
-        let mut out = weap_bash_fixture("Gun", 5.0, curve, None);
-        apply_weapon_bash_curve(&mut out);
+        let out = bash(weap_bash_fixture("Gun", 5.0, curve, None));
         assert_eq!(bash_damage_source(&out), Some("curve_zero_reference"));
         assert!(
             out.get("Bash Damage")
@@ -1132,8 +1220,7 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_unresolved_curve_marker() {
-        let mut out = weap_bash_fixture("Gun", 5.0, json!("0x0080F217"), None);
-        apply_weapon_bash_curve(&mut out);
+        let out = bash(weap_bash_fixture("Gun", 5.0, json!("0x0080F217"), None));
         assert_eq!(bash_damage_source(&out), Some("unresolved_curve"));
     }
 
@@ -1147,8 +1234,7 @@ mod tests {
                 {"x": 540.0, "y": 540.0}
             ]
         });
-        let mut out = weap_bash_fixture("Gun", 2.0, curve, None);
-        apply_weapon_bash_curve(&mut out);
+        let out = bash(weap_bash_fixture("Gun", 2.0, curve, None));
         let curve = out
             .get("Bash Damage")
             .and_then(|v| v.get("curve"))

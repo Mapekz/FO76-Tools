@@ -25,6 +25,7 @@ byteorder = "1.5"
 clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 flate2 = "1"
+indexmap = "2"
 fs2 = "0.4"
 getrandom = "0.4"
 lz4_flex = "0.14"

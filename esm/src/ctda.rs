@@ -4,10 +4,11 @@
 //! type byte, resolves the function index to a human-readable name, and decodes
 //! each parameter field according to the function's declared parameter types.
 
-use crate::decode::{DecodeContext, hex, json_f32, resolve_formid};
+use crate::decode::node::{Fields, Node};
+use crate::decode::{DecodeContext, refs_curve};
 use crate::formid::FormId;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::Value;
 use std::sync::OnceLock;
 
 // Comparison operators encoded in bits 5-7 of the CTDA type byte.
@@ -262,38 +263,49 @@ fn avif_refs() -> &'static [String] {
     AVIF_REFS.get_or_init(|| vec!["AVIF".into(), "NULL".into()])
 }
 
-fn decode_param(bytes: &[u8; 4], class: char, ctx: &DecodeContext<'_>) -> Value {
+fn decode_param(bytes: &[u8; 4], class: char, ctx: &DecodeContext<'_>) -> Node {
     match class {
-        'N' | 'S' => json!(null),
-        'F' => json_f32(f32::from_le_bytes(*bytes)),
-        'I' => json!(i32::from_le_bytes(*bytes)),
+        'N' | 'S' => Node::Null,
+        'F' => Node::Float(f32::from_le_bytes(*bytes)),
+        'I' => Node::int(i32::from_le_bytes(*bytes)),
         'A' => {
             if ctx.form_version >= 77 {
-                let id = FormId(u32::from_le_bytes(*bytes));
-                resolve_formid(ctx, avif_refs(), id)
+                Node::FormId {
+                    id: FormId(u32::from_le_bytes(*bytes)),
+                    curve: refs_curve(avif_refs()),
+                }
             } else {
-                json!(u32::from_le_bytes(*bytes))
+                Node::int(u32::from_le_bytes(*bytes))
             }
         }
-        'R' => {
-            let id = FormId(u32::from_le_bytes(*bytes));
-            resolve_formid(ctx, &[], id)
-        }
+        'R' => formid(u32::from_le_bytes(*bytes)),
         'T' => {
-            let idx = u32::from_le_bytes(*bytes) as usize;
-            match CONDITION_FORM_TYPES.get(idx) {
-                Some(name) => json!(name),
-                None => json!(idx),
+            let idx = u32::from_le_bytes(*bytes);
+            match CONDITION_FORM_TYPES.get(idx as usize) {
+                Some(name) => Node::str(*name),
+                None => Node::int(idx),
             }
         }
-        _ => json!(u32::from_le_bytes(*bytes)),
+        _ => Node::int(u32::from_le_bytes(*bytes)),
     }
 }
 
-/// Decode a 32-byte CTDA data block into a structured JSON object.
+fn formid(raw: u32) -> Node {
+    Node::FormId {
+        id: FormId(raw),
+        curve: false,
+    }
+}
+
+/// Decode a 32-byte CTDA data block into its boundary JSON.
 pub fn decode_ctda(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
+    ctda_node(data, ctx).into_json(ctx)
+}
+
+/// Decode a 32-byte CTDA data block into a structured value.
+pub(crate) fn ctda_node(data: &[u8], ctx: &DecodeContext<'_>) -> Node {
     if data.len() < 32 {
-        return json!({"hex": hex::encode(data), "_raw": true});
+        return Node::raw(data);
     }
 
     let type_byte = data[0];
@@ -308,10 +320,10 @@ pub fn decode_ctda(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
 
     // Bytes 4-7: comparison value.
     let comp_bytes: [u8; 4] = data[4..8].try_into().unwrap();
-    let comp_value: Value = if use_global {
-        resolve_formid(ctx, &[], FormId(u32::from_le_bytes(comp_bytes)))
+    let comp_value = if use_global {
+        formid(u32::from_le_bytes(comp_bytes))
     } else {
-        json_f32(f32::from_le_bytes(comp_bytes))
+        Node::Float(f32::from_le_bytes(comp_bytes))
     };
 
     // Bytes 8-9: function index.
@@ -329,13 +341,13 @@ pub fn decode_ctda(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
     // Bytes 24-27: Reference (FormID, used when Run On = Reference).
     let ref_id = FormId(u32::from_le_bytes(data[24..28].try_into().unwrap()));
 
-    let mut out = Map::new();
-    out.insert("Operator".into(), json!(operator));
-    out.insert("AND/OR".into(), json!(if is_or { "OR" } else { "AND" }));
+    let mut out = Fields::new();
+    out.insert("Operator".into(), Node::str(operator));
+    out.insert("AND/OR".into(), Node::str(if is_or { "OR" } else { "AND" }));
     out.insert("Comparison Value".into(), comp_value);
 
     if let Some((name, c1, c2, c3)) = lookup(func_idx) {
-        out.insert("Function".into(), json!(name));
+        out.insert("Function".into(), Node::str(name));
         if c1 != 'N' {
             out.insert("Parameter 1".into(), decode_param(&p1, c1, ctx));
         }
@@ -346,17 +358,17 @@ pub fn decode_ctda(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
             out.insert("Parameter 3".into(), decode_param(&p3, c3, ctx));
         }
     } else {
-        out.insert("Function".into(), json!(func_idx));
+        out.insert("Function".into(), Node::int(func_idx));
         // Unknown function: emit all three params as raw hex.
-        out.insert("Parameter 1".into(), json!({"hex": hex::encode(&p1)}));
-        out.insert("Parameter 2".into(), json!({"hex": hex::encode(&p2)}));
-        out.insert("Parameter 3".into(), json!({"hex": hex::encode(&p3)}));
+        out.insert("Parameter 1".into(), Node::Bytes(p1.to_vec()));
+        out.insert("Parameter 2".into(), Node::Bytes(p2.to_vec()));
+        out.insert("Parameter 3".into(), Node::Bytes(p3.to_vec()));
     }
 
-    out.insert("Run On".into(), json!(run_on));
+    out.insert("Run On".into(), Node::str(run_on));
     if ref_id.0 != 0 {
-        out.insert("Reference".into(), resolve_formid(ctx, &[], ref_id));
+        out.insert("Reference".into(), formid(ref_id.0));
     }
 
-    Value::Object(out)
+    Node::Struct(out)
 }

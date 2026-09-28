@@ -20,6 +20,9 @@ SeventySix.esm (mmap)
 Vec<OwnedSubrecord>   — one raw (signature, bytes) pair per subrecord
   │  src/decode/mod.rs  decode_record(ctx, signature, subrecords)
   ▼
+decode::node::Node  — typed value tree (FormIds, lstring ids, enums, flags stay typed)
+  │  Node::into_json(ctx)  resolves FormIDs (--resolve) and lstrings while rendering
+  ▼
 serde_json::Value   — one JSON object per record
 ```
 
@@ -27,17 +30,24 @@ serde_json::Value   — one JSON object per record
 loaded once via `Schema::load_embedded()` from the compiled-in `schema/fo76.json`) and walks
 its `MemberDef` tree with `decode/walk.rs`'s `decode_member`/`decode_struct_fields` (one giant
 match per member kind, `RArray`/`Union` broken further into named `decode_*_member` helpers),
-dispatching per field kind: leaf scalar codecs (`json_f32`, `scalar_int`, …) in `decode/scalars.rs`,
+dispatching per field kind into a `decode::node::Node` tree: leaf scalar codecs (`scalar_int`,
+`scalar_formid`, …) in `decode/scalars.rs`,
 self-describing Model Information blobs in `decode/model_info.rs`, `VMAD` script-attachment blobs to
 `src/decode/vmad.rs` (`decode_vmad`, plus type-specific `decode_vmad_{qust,info,pack,perk,scen}`
 for each record type's Script Fragments tail), and `CTDA` condition blocks to `src/ctda.rs`'s
 `decode_ctda`, which looks up the condition function by index in a compiled-in table
 (`schema/fo76.ctda.json`) and decodes each parameter by its class character. After a record's
 fields are in, `src/decode/rules.rs`'s `apply_post_decode_rules` runs a small, named set of
-FO76-specific post-passes over the assembled map — `apply_crafting_quantity` (struct-level,
+FO76-specific post-passes over the assembled fields — `apply_crafting_quantity` (struct-level,
 resolves a component's `Count` + `Curve Table` into an effective `Quantity`) and
 `apply_weapon_bash_curve` (record-level, WEAP only, synthesizes `Bash Damage` from `Damage
 Curve` + `Secondary Damage`).
+
+A FormID stays `Node::FormId` and a localized string stays `Node::LString` until
+`Node::into_json` renders it at the caller's `--resolve` depth. Union deciders and post-passes
+that read a sibling field take integers, enum values and FormIDs from the typed node; the
+`FormIdTargetType` decider asks the resolver for the target's record type, so it only picks a
+variant at `--resolve stub`/`full`.
 
 The decoder **never panics**: unknown record types get `_unknown_record: true`, unmapped
 leftover subrecords land under `_unmapped`, malformed bytes fall back to `_raw` hex, and an

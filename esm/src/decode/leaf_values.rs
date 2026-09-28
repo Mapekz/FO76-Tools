@@ -20,7 +20,7 @@
 //!   path strings; the actual points live in an external curve-table JSON
 //!   loaded from the Startup BA2 (`crate::curves`). Nothing else can ever
 //!   surface them, so this variant is consulted even at `ResolveDepth::None`
-//!   (see `resolve_formid`'s first branch) — it needs no resolver at all.
+//!   (see `render_formid`'s first branch) — it needs no resolver at all.
 //! - [`InlineSource::Fields`] (GLOB) lifts data that is already *inside* the
 //!   record — it exists purely to save a second `get` round-trip. It fires
 //!   only at `Stub`/`Full`, which requires a resolver. Firing it at `None`
