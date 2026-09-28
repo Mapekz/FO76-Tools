@@ -152,10 +152,16 @@ macro_rules! ops {
             }
         }
 
-        /// Run a single-database op and serialize its output.
+        /// Run a single-database op and serialize its output. Each op's
+        /// result is bound to its declared output type, so a declaration
+        /// that disagrees with its function (and would export a wrong
+        /// TypeScript `OpOutput`) doesn't compile.
         pub fn run(db: &Database, op: &Op) -> anyhow::Result<Value> {
             match op {
-                $( Op::$variant(args) => Ok(serde_json::to_value($run(db, args)?)?), )*
+                $( Op::$variant(args) => {
+                    let out: $out = $run(db, args)?;
+                    Ok(serde_json::to_value(out)?)
+                } )*
             }
         }
 
