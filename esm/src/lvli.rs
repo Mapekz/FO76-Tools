@@ -306,7 +306,9 @@ const MIN_LEVEL: ScalarFields = ScalarFields {
 /// `ActorTier02`–`12` on `CT_Creatures_Tier_*`'s 1–12). A flat value beside a
 /// Global mostly repeats it (`LL_Chems_High_ChanceNone_ECON` = 75 with flat
 /// 75); the Global is the tunable source. A source that can't be read (a
-/// curve not loaded, a Global naming a non-GLOB) is noted and skipped.
+/// curve not loaded, a Global naming a non-GLOB) is noted; a curve that
+/// can't be evaluated falls back to the flat value, since its Global is its
+/// input.
 /// `None` when no source is set.
 fn resolve_scalar(
     node: &Value,
@@ -325,19 +327,28 @@ fn resolve_scalar(
         });
     }
     if let Some(curve) = node.get(fields.curve).filter(|v| v.is_object()) {
-        let x = global.or_else(|| fields.curve_reads_level.then_some(f64::from(level)));
-        match x.map(|x| eval_curve(curve, x as f32)) {
+        // Beside a curve, the Global is the curve's input: without a
+        // readable one the input is unknown (an unreadable Global was noted
+        // above), and it is never the scalar itself.
+        let x = match (global_ref, global) {
+            (Some(_), Some(g)) => Some(g as f32),
+            (Some(_), None) => None,
+            (None, _) => fields.curve_reads_level.then_some(level),
+        };
+        match x.map(|x| eval_curve(curve, x)) {
             Some(Some(y)) => return Some(y),
             Some(None) => notes.push(DropNote::Unresolved {
                 reason: format!("{} isn't loaded", fields.curve),
             }),
-            None => notes.push(DropNote::Unresolved {
+            None if global_ref.is_none() => notes.push(DropNote::Unresolved {
                 reason: format!(
                     "{} has no Global to read its tier from, so it isn't evaluated",
                     fields.curve
                 ),
             }),
+            None => {}
         }
+        return node.get(fields.flat).and_then(Value::as_f64);
     }
     global.or_else(|| node.get(fields.flat).and_then(Value::as_f64))
 }
@@ -1243,6 +1254,38 @@ mod tests {
             Some(3.0)
         );
         assert_eq!(notes.len(), 2, "{notes:?}");
+    }
+
+    /// A curve that can't be read falls back to the flat value, never to the
+    /// Global that is its tier input (a `*_Tier` 15 is not a 15% chance).
+    #[test]
+    fn an_unreadable_curve_falls_back_to_flat_not_its_tier_global() {
+        let tier = glob_stub(FormId::new(0x1000), "ItemTwo_Medium_ChanceNone_Tier", 15.0);
+        let unloaded = json!({"formid": "0x00001005", "editor_id": "Container_Item2_ChanceNone"});
+        let node = json!({
+            "Chance None Value": 0.0,
+            "Chance None Global": tier,
+            "Chance None Curve Table": unloaded,
+        });
+        let mut notes = Vec::new();
+        assert_eq!(
+            resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes),
+            Some(0.0)
+        );
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        // An unreadable Global beside a curve leaves its input unknown: not
+        // evaluated at the level either.
+        let avif = json!({"formid": "0x00001004", "editor_id": "SomeAV", "record_type": "AVIF"});
+        let node = json!({
+            "Chance None Value": 5.0,
+            "Chance None Global": avif,
+            "Chance None Curve Table": falling_curve(),
+        });
+        let mut notes = Vec::new();
+        assert_eq!(
+            resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes),
+            Some(5.0)
+        );
     }
 
     /// Flat 0.0 with a GLOB of 85 is an 85% chance-none (esm-cli SKILL.md's
