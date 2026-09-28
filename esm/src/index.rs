@@ -838,9 +838,8 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     // advisory build lock: another process can finish building both
     // sections in that gap, and this recheck is what lets this call return
     // the just-finished sections (`Acquired::AlreadyBuilt`) instead of
-    // racing a second walk of the whole ESM. See `crate::Database::
-    // build_lazy_section`'s doc comment for the same shape on the three lazy
-    // single-section builds.
+    // racing a second walk of the whole ESM. `rkyvcache::map_or_build` is
+    // the same shape for every single-section build.
     let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
         &esm.path,
         crate::progress::BuildStage::Forms,
@@ -1043,6 +1042,12 @@ fn section_spec_fingerprint_for(kind: SectionKind) -> u64 {
         SectionKind::Edid => <rkyv::Archived<EdidSection> as SectionSpec>::LAYOUT_FINGERPRINT,
         SectionKind::Search => <rkyv::Archived<SearchSection> as SectionSpec>::LAYOUT_FINGERPRINT,
         SectionKind::Xref => <rkyv::Archived<XrefSection> as SectionSpec>::LAYOUT_FINGERPRINT,
+        SectionKind::Strings => {
+            <crate::strings::ArchivedStringsSection as SectionSpec>::LAYOUT_FINGERPRINT
+        }
+        SectionKind::Curves => {
+            <crate::curves::ArchivedCurvesSection as SectionSpec>::LAYOUT_FINGERPRINT
+        }
     }
 }
 

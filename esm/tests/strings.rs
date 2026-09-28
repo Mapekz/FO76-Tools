@@ -58,8 +58,8 @@ fn from_ba2_resolves_backslash_separated_archive() {
         loc.lookup(StringKind::Strings, 0xDEADBEEF),
         Some("Test String")
     );
-    assert!(loc.dlstrings.is_empty());
-    assert!(loc.ilstrings.is_empty());
+    assert_eq!(loc.len(StringKind::DlStrings), 0);
+    assert_eq!(loc.len(StringKind::IlStrings), 0);
 }
 
 /// Regression test: a single Localization BA2 can bundle more than one
@@ -96,4 +96,49 @@ fn from_ba2_picks_requested_prefix_not_first_match() {
         Some("Correct String")
     );
     assert_eq!(loc.lookup(StringKind::Strings, 0x1), None);
+}
+
+/// `Database::open` serves the discovered string tables from the `lstrings`
+/// cache section, and rebuilds that section when the source files change.
+#[test]
+fn cached_tables_rebuild_when_the_source_files_change() {
+    let dir = std::env::temp_dir().join(format!(
+        "esm_strings_cache_{}_{}",
+        std::process::id(),
+        line!()
+    ));
+    let strings_dir = dir.join("strings");
+    std::fs::create_dir_all(&strings_dir).unwrap();
+    let esm_path = dir.join("Foo.esm");
+    std::fs::write(&esm_path, common::make_minimal_esm()).unwrap();
+    let write_tables = |text: &str| {
+        std::fs::write(
+            strings_dir.join("Foo_en.strings"),
+            make_strings_table(&[(0x10, text)]),
+        )
+        .unwrap();
+        for ext in ["dlstrings", "ilstrings"] {
+            std::fs::write(
+                strings_dir.join(format!("Foo_en.{ext}")),
+                make_empty_table(),
+            )
+            .unwrap();
+        }
+    };
+
+    write_tables("before");
+    let db = esm::Database::open(&esm_path).unwrap();
+    let loc = db.localization().expect("loose tables are discovered");
+    assert_eq!(loc.lookup(StringKind::Strings, 0x10), Some("before"));
+    assert!(dir.join("esm_cache/Foo.esm.lstrings").exists());
+    drop(db);
+
+    write_tables("after, and longer");
+    let db = esm::Database::open(&esm_path).unwrap();
+    assert_eq!(
+        db.localization().unwrap().lookup(StringKind::Strings, 0x10),
+        Some("after, and longer")
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

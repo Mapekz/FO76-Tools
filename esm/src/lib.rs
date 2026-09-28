@@ -705,50 +705,17 @@ impl Database {
         let index = Index::build(&esm)?;
         let schema = Schema::load_embedded().context("load embedded schema")?;
 
-        let localization = match resolved.strings {
-            Some(crate::discover::StringsSrc::Ba2(ref ba2_path)) => {
-                match Localization::from_ba2(ba2_path, &resolved.locale, &resolved.loose_prefix) {
-                    Ok(loc) => Some(loc),
-                    Err(e) => {
-                        log::warn!("failed to load localization from BA2: {}", e);
-                        None
-                    }
-                }
-            }
-            Some(crate::discover::StringsSrc::Loose(ref dir)) => {
-                match Localization::from_loose_files(dir, &resolved.locale, &resolved.loose_prefix)
-                {
-                    Ok(loc) => Some(loc),
-                    Err(e) => {
-                        log::warn!("failed to load localization from loose files: {}", e);
-                        None
-                    }
-                }
-            }
-            None => None,
-        };
+        let localization = resolved.strings.as_ref().and_then(|src| {
+            Localization::cached(&esm.path, src, &resolved.locale, &resolved.loose_prefix)
+                .inspect_err(|e| log::warn!("failed to load string tables: {e:#}"))
+                .ok()
+        });
 
-        let curves = match resolved.curves {
-            Some(crate::discover::CurvesSrc::LooseBase(ref base)) => {
-                match crate::curves::CurveIndex::build_from_dir(&esm, &index, base) {
-                    Ok(ci) => Some(ci),
-                    Err(e) => {
-                        log::warn!("failed to load curves from loose dir: {}", e);
-                        None
-                    }
-                }
-            }
-            Some(crate::discover::CurvesSrc::Ba2(ref ba2_path)) => {
-                match crate::curves::CurveIndex::build(&esm, &index, ba2_path) {
-                    Ok(ci) => Some(ci),
-                    Err(e) => {
-                        log::warn!("failed to load curves from BA2: {}", e);
-                        None
-                    }
-                }
-            }
-            None => None,
-        };
+        let curves = resolved.curves.as_ref().and_then(|src| {
+            crate::curves::CurveIndex::cached(&esm, &index, src)
+                .inspect_err(|e| log::warn!("failed to load curve tables: {e:#}"))
+                .ok()
+        });
 
         let is_localized = esm.file_info().map(|i| i.is_localized).unwrap_or(false);
 
@@ -819,112 +786,47 @@ impl Database {
     // `build_xref_section` — this crate-internal data/orchestration split
     // keeps each section's construction logic colocated with its type in
     // `index.rs`, while the shared acquire/recheck/write/publish protocol
-    // lives once, in `build_lazy_section` below.
-
-    /// The acquire/recheck/build/publish skeleton shared by all three lazy
-    /// single-section builds (`ensure_edid_index`/`ensure_search_index`/
-    /// `ensure_xref_index`) — each call site differs only in *what* it
-    /// builds (a `build_*_section` closure over `&self.index`/`&self.esm`
-    /// plus whatever else that section's build needs) and the tick-count
-    /// `total` that closure's progress reporting is denominated in; the
-    /// surrounding protocol is identical and lives here once.
-    ///
-    /// `T`'s archived type is the section itself: [`crate::rkyvcache::SectionSpec`]
-    /// (ADR 0007) supplies both the on-disk file
-    /// ([`crate::rkyvcache::section_path_for_spec`]) and the
-    /// [`crate::progress::BuildStage`] this call's progress heartbeat
-    /// reports under, so — unlike the pre-Stage-C shape this replaced, where
-    /// `section_path_for`'s explicit [`crate::rkyvcache::SectionKind`]
-    /// argument and the generic `Section<Archived<_>>` type parameter were
-    /// two independently-suppliable values that had to be kept in sync by
-    /// convention — there is only one place a caller can go wrong: passing
-    /// the wrong `T`.
-    ///
-    /// Uses [`crate::progress::BuildLease::acquire_or_recheck`], which folds
-    /// the "did another process finish this while I waited for the lock"
-    /// recheck into the acquire call itself. That recheck's
-    /// [`crate::rkyvcache::map_section_if_present`] call is a SECOND
-    /// on-disk validation of the same section this method's caller already
-    /// checked once via the cheap in-memory `is_mapped()` early return
-    /// (`ensure_edid_index` etc., before calling in here) — not a redundant
-    /// repeat of that check, but the one that closes the TOCTOU window
-    /// between "found not yet mapped in this process's `Index`" and
-    /// "actually acquired the advisory build lock": another process (or a
-    /// concurrent call in this one) can finish the exact same build in that
-    /// gap, and this recheck is what lets that caller return the
-    /// just-finished section instead of racing a second build of the same
-    /// data. There is no code path that obtains a live
-    /// [`crate::progress::BuildLease`] without this recheck having already
-    /// run and found the section still missing.
-    fn build_lazy_section<T>(
-        &self,
-        total: u64,
-        build: impl FnOnce(&mut crate::progress::BuildLease) -> anyhow::Result<T>,
-    ) -> anyhow::Result<crate::rkyvcache::Section<rkyv::Archived<T>>>
-    where
-        T: rkyv::Archive,
-        rkyv::Archived<T>: crate::rkyvcache::SectionSpec,
-        T: for<'a> rkyv::Serialize<
-                rkyv::api::high::HighSerializer<
-                    rkyv::ser::writer::IoWriter<std::io::BufWriter<std::fs::File>>,
-                    rkyv::ser::allocator::ArenaHandle<'a>,
-                    rkyv::rancor::Error,
-                >,
-            >,
-    {
-        let stage = <rkyv::Archived<T> as crate::rkyvcache::SectionSpec>::KIND;
-        let sig = crate::rkyvcache::CacheSig::read(&self.esm.path)?;
-        let path = crate::rkyvcache::section_path_for_spec::<rkyv::Archived<T>>(&self.esm.path)?;
-
-        let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
-            &self.esm.path,
-            stage,
-            1,
-            1,
-            total,
-            || {
-                crate::rkyvcache::map_section_if_present::<rkyv::Archived<T>>(
-                    &path,
-                    sig,
-                    crate::index::CACHE_VERSION,
-                )
-            },
-        )? {
-            crate::progress::Acquired::AlreadyBuilt(section) => return Ok(section),
-            crate::progress::Acquired::NeedsBuild(lease) => lease,
-        };
-
-        let data = build(&mut lease)?;
-        lease.writing();
-        crate::rkyvcache::write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)
-    }
+    // lives once, in `rkyvcache::map_or_build`.
 
     /// Build the lazy EditorID index on first call, writing it to its own
     /// `edid` section so a later call — in this process (the `is_mapped()`
     /// early-return below) or a fresh one (see [`Index::build`]'s doc
     /// comment) — reuses it rather than rebuilding. See
-    /// [`Self::build_lazy_section`] for the shared acquire/recheck/publish
+    /// [`crate::rkyvcache::map_or_build`] for the shared acquire/recheck/publish
     /// protocol this and its two siblings below delegate to.
     pub fn ensure_edid_index(&self) -> anyhow::Result<()> {
         let total = self.index.len() as u64;
         self.index.edid.get_or_build(|| {
-            self.build_lazy_section(total, |lease| {
-                crate::index::build_edid_section(&self.index, &self.esm, lease)
-            })
+            crate::rkyvcache::map_or_build(
+                &self.esm.path,
+                total,
+                |_| true,
+                |lease| crate::index::build_edid_section(&self.index, &self.esm, lease),
+            )
         })?;
         Ok(())
     }
 
     /// Build the lazy search index (EditorID + name/description) on first
     /// call, then cache it to its own `search` section. See
-    /// [`Self::build_lazy_section`] for the acquire/recheck protocol this
+    /// [`crate::rkyvcache::map_or_build`] for the acquire/recheck protocol this
     /// shares.
     pub fn ensure_search_index(&self) -> anyhow::Result<()> {
         let total = self.index.len() as u64;
         self.index.search.get_or_build(|| {
-            self.build_lazy_section(total, |lease| {
-                crate::index::build_search_section(&self.index, &self.esm, self.is_localized, lease)
-            })
+            crate::rkyvcache::map_or_build(
+                &self.esm.path,
+                total,
+                |_| true,
+                |lease| {
+                    crate::index::build_search_section(
+                        &self.index,
+                        &self.esm,
+                        self.is_localized,
+                        lease,
+                    )
+                },
+            )
         })?;
         Ok(())
     }
@@ -932,22 +834,27 @@ impl Database {
     /// Build the reverse-reference (`xref`) index on first call, then cache
     /// it to its own `xref` section. The most expensive of the three lazy
     /// builds (a full schema decode of every record). See
-    /// [`Self::build_lazy_section`] for the acquire/recheck protocol this
+    /// [`crate::rkyvcache::map_or_build`] for the acquire/recheck protocol this
     /// shares.
     pub fn ensure_xref_index(&self) -> anyhow::Result<()> {
         let total = self.esm.data().len() as u64;
         self.index.xref.get_or_build(|| {
-            self.build_lazy_section(total, |lease| {
-                crate::index::build_xref_section(
-                    &self.index,
-                    &self.esm,
-                    &self.schema,
-                    self.is_localized,
-                    self.localization.as_ref(),
-                    self.curves.as_ref(),
-                    lease,
-                )
-            })
+            crate::rkyvcache::map_or_build(
+                &self.esm.path,
+                total,
+                |_| true,
+                |lease| {
+                    crate::index::build_xref_section(
+                        &self.index,
+                        &self.esm,
+                        &self.schema,
+                        self.is_localized,
+                        self.localization.as_ref(),
+                        self.curves.as_ref(),
+                        lease,
+                    )
+                },
+            )
         })?;
         Ok(())
     }
@@ -1936,8 +1843,8 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
                 let curve = self.db.curves.as_ref()?.get(id)?;
                 Some(serde_json::json!({
                     "formid": id.display(),
-                    "editor_id": curve.edid,
-                    "curve_path": curve.path,
+                    "editor_id": curve.edid(),
+                    "curve_path": curve.path(),
                     "curve": crate::decode::curve_points_value(curve),
                 }))
             }

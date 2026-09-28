@@ -98,6 +98,12 @@ pub enum BuildStage {
     Edid = 3,
     Search = 4,
     Xref = 5,
+    /// The localization string tables (`lstrings`), built from the ESM's
+    /// sibling `strings/` or Localization BA2.
+    Strings = 6,
+    /// The curve tables (`curves`), built from the ESM's CURV records plus
+    /// the loose `curvetables/json/` or Startup BA2.
+    Curves = 7,
 }
 
 impl BuildStage {
@@ -109,6 +115,8 @@ impl BuildStage {
             BuildStage::Edid => "edid",
             BuildStage::Search => "search",
             BuildStage::Xref => "xref",
+            BuildStage::Strings => "lstrings",
+            BuildStage::Curves => "curves",
         }
     }
 
@@ -118,12 +126,15 @@ impl BuildStage {
     fn unit(self) -> ProgressUnit {
         match self {
             BuildStage::Forms | BuildStage::Tree | BuildStage::Xref => ProgressUnit::Bytes,
-            BuildStage::Edid | BuildStage::Search => ProgressUnit::Records,
+            BuildStage::Edid | BuildStage::Search | BuildStage::Strings | BuildStage::Curves => {
+                ProgressUnit::Records
+            }
         }
     }
 
-    /// All five stages, in the fixed order [`crate::index::cache_inventory`]
-    /// reports them.
+    /// The five index stages, in the fixed order
+    /// [`crate::index::cache_inventory`] reports them. The source caches
+    /// (`Strings`, `Curves`) are built at open and are not part of it.
     pub const ALL: [BuildStage; 5] = [
         BuildStage::Forms,
         BuildStage::Tree,

@@ -1,4 +1,3 @@
-use crate::curves::Curve;
 use crate::formid::FormId;
 use crate::reader::OwnedSubrecord;
 use crate::schema::{ArrayCount, LStringTable, MemberDef, Schema};
@@ -224,10 +223,10 @@ impl<'a> DecodeContext<'a> {
 /// Shared by [`resolve_formid`]'s inline curve branch and the CURV-record's own
 /// `"Curve"` field injection (`Database::record_at_meta_with_depth`) so both
 /// render identically.
-pub(crate) fn curve_points_value(curve: &Curve) -> Value {
+pub(crate) fn curve_points_value(curve: &crate::curves::ArchivedCurve) -> Value {
     Value::Array(
         curve
-            .points
+            .points()
             .iter()
             .map(|p| json!({"x": json_f32(p.x), "y": json_f32(p.y)}))
             .collect(),
@@ -258,8 +257,8 @@ pub(crate) fn resolve_formid(ctx: &DecodeContext<'_>, valid_refs: &[String], id:
     {
         return json!({
             "formid": id.display(),
-            "editor_id": curve.edid,
-            "curve_path": curve.path,
+            "editor_id": curve.edid(),
+            "curve_path": curve.path(),
             "curve": curve_points_value(curve)
         });
     }
@@ -452,7 +451,7 @@ mod tests {
             path: r"LegendaryMods\Weapon_DamagePerKill.json".to_string(),
             points: vec![crate::curves::CurvePoint { x: 0.0, y: 0.0 }],
         };
-        let curves = crate::curves::CurveIndex::from_entries(vec![(0x1, curve)]);
+        let curves = crate::curves::CurveIndex::from_curves([(FormId::new(0x1), curve)]).unwrap();
         let schema = empty_schema();
         let mut ctx = bare_ctx(&schema);
         ctx.curves = Some(&curves);
@@ -466,7 +465,8 @@ mod tests {
             path: "Foo.json".to_string(),
             points: vec![],
         };
-        let curves_no_edid = crate::curves::CurveIndex::from_entries(vec![(0x2, curve_no_edid)]);
+        let curves_no_edid =
+            crate::curves::CurveIndex::from_curves([(FormId::new(0x2), curve_no_edid)]).unwrap();
         let mut ctx2 = bare_ctx(&schema);
         ctx2.curves = Some(&curves_no_edid);
         let result2 = resolve_formid(&ctx2, &["CURV".to_string()], FormId::new(0x2));
@@ -487,7 +487,7 @@ mod tests {
             path: "Test.json".to_string(),
             points: vec![crate::curves::CurvePoint { x: 1.0, y: 2.0 }],
         };
-        let curves = crate::curves::CurveIndex::from_entries(vec![(0x3, curve)]);
+        let curves = crate::curves::CurveIndex::from_curves([(FormId::new(0x3), curve)]).unwrap();
         let schema = empty_schema();
         let mut ctx = bare_ctx(&schema);
         assert_eq!(ctx.resolve_depth, ResolveDepth::None);

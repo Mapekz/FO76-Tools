@@ -4,20 +4,22 @@
 //! CURV records from an ESM and loading the JSON point data from the
 //! Startup BA2 archive.
 
+use crate::discover::CurvesSrc;
+use crate::rkyvcache::{ArchiveBuf, SectionKind, SectionSpec};
 use crate::{ba2::Ba2Archive, formid::FormId, reader::EsmFile};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 
 /// A single point in a curve table.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
 pub struct CurvePoint {
     pub x: f32,
     pub y: f32,
 }
 
 /// A parsed curve table: EditorID, source path, and interpolatable points.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, rkyv::Archive, rkyv::Serialize)]
 pub struct Curve {
     pub edid: Option<String>,
     pub path: String,
@@ -117,28 +119,101 @@ pub fn sum_range(points: &[CurvePoint], start: f32, end: f32, step: f32) -> Resu
     Ok(total)
 }
 
+impl ArchivedCurve {
+    pub fn edid(&self) -> Option<&str> {
+        self.edid.as_ref().map(|s| s.as_str())
+    }
+
+    pub fn path(&self) -> &str {
+        self.path.as_str()
+    }
+
+    pub fn points(&self) -> Vec<CurvePoint> {
+        self.points
+            .iter()
+            .map(|p| CurvePoint {
+                x: p.x.to_native(),
+                y: p.y.to_native(),
+            })
+            .collect()
+    }
+
+    pub fn eval(&self, x: f32) -> Option<f32> {
+        eval(&self.points(), x)
+    }
+}
+
+/// Every CURV record's curve, sorted by FormID, plus a stamp of the curve
+/// files it was read from — the `curves` cache section.
+#[derive(rkyv::Archive, rkyv::Serialize)]
+pub(crate) struct CurvesSection {
+    source: u64,
+    ids: Vec<u32>,
+    curves: Vec<Curve>,
+}
+
+impl CurvesSection {
+    fn new(source: u64, mut entries: Vec<(u32, Curve)>) -> Self {
+        entries.sort_by_key(|(id, _)| *id);
+        entries.dedup_by_key(|(id, _)| *id);
+        let (ids, curves) = entries.into_iter().unzip();
+        CurvesSection {
+            source,
+            ids,
+            curves,
+        }
+    }
+}
+
+const CURVES_LAYOUT_FINGERPRINT: u64 = {
+    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
+    let acc = fnv1a_u64(
+        FNV_OFFSET_BASIS,
+        core::mem::size_of::<ArchivedCurvesSection>() as u64,
+    );
+    let acc = fnv1a_u64(acc, core::mem::align_of::<ArchivedCurvesSection>() as u64);
+    let acc = fnv1a_u64(acc, core::mem::size_of::<ArchivedCurve>() as u64);
+    let acc = fnv1a_u64(acc, core::mem::align_of::<ArchivedCurve>() as u64);
+    let acc = fnv1a_u64(acc, core::mem::size_of::<ArchivedCurvePoint>() as u64);
+    fnv1a_u64(acc, core::mem::align_of::<ArchivedCurvePoint>() as u64)
+};
+
+impl SectionSpec for ArchivedCurvesSection {
+    const KIND: SectionKind = SectionKind::Curves;
+    const LAYOUT_FINGERPRINT: u64 = CURVES_LAYOUT_FINGERPRINT;
+}
+
 /// Index of CURV FormID → parsed curve.
-#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct CurveIndex {
-    by_formid: HashMap<u32, Curve>,
+    section: ArchiveBuf<ArchivedCurvesSection>,
+}
+
+impl std::fmt::Debug for CurveIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CurveIndex")
+            .field("curves", &self.section.get().ids.len())
+            .finish()
+    }
 }
 
 impl CurveIndex {
     /// Look up a curve by FormID.
-    pub fn get(&self, id: FormId) -> Option<&Curve> {
-        self.by_formid.get(&id.raw())
+    pub fn get(&self, id: FormId) -> Option<&ArchivedCurve> {
+        let section = self.section.get();
+        let i = section
+            .ids
+            .binary_search_by_key(&id.raw(), |x| x.to_native())
+            .ok()?;
+        section.curves.get(i)
     }
 
-    /// Build a `CurveIndex` directly from `(form_id, Curve)` pairs, bypassing
-    /// the loose-dir/BA2 file I/O in [`Self::build`]/[`Self::build_from_dir`]
-    /// (already covered by `tests/curves.rs`). For unit tests in `decode.rs`
-    /// that only need a populated index to exercise `resolve_formid`'s CURV
-    /// branch.
-    #[cfg(test)]
-    pub(crate) fn from_entries(entries: Vec<(u32, Curve)>) -> CurveIndex {
-        CurveIndex {
-            by_formid: entries.into_iter().collect(),
-        }
+    /// Build an index in memory from `(form_id, Curve)` pairs, with no ESM or
+    /// curve files involved.
+    pub fn from_curves(curves: impl IntoIterator<Item = (FormId, Curve)>) -> Result<CurveIndex> {
+        let entries = curves.into_iter().map(|(id, c)| (id.raw(), c)).collect();
+        Ok(CurveIndex {
+            section: ArchiveBuf::serialize(&CurvesSection::new(0, entries))?,
+        })
     }
 
     /// Build the curve index from a live ESM + loose curve JSON files.
@@ -150,64 +225,10 @@ impl CurveIndex {
         index: &crate::index::Index,
         misc_dir: &Path,
     ) -> Result<CurveIndex> {
-        let json_root = misc_dir.join("curvetables/json");
-        if !json_root.is_dir() {
-            anyhow::bail!(
-                "curves directory missing curvetables/json/: {}",
-                json_root.display()
-            );
-        }
-
-        let curv_records = index.records_by_type("CURV");
-        let mut by_formid = HashMap::new();
-
-        for (form_id, meta) in curv_records {
-            let parsed = match esm.parse_record_at(meta.offset) {
-                Ok(p) => p,
-                Err(e) => {
-                    log::warn!("failed to parse CURV {}: {}", form_id.display(), e);
-                    continue;
-                }
-            };
-
-            let edid = crate::reader::edid_from_subrecords(&parsed.subrecords);
-
-            let path_sub = parsed
-                .subrecords
-                .iter()
-                .find(|s| s.signature.as_str() == "CRVE" || s.signature.as_str() == "JASF");
-            let Some(path_sub) = path_sub else {
-                continue;
-            };
-
-            let raw = &path_sub.data;
-            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-            let curv_path = match std::str::from_utf8(&raw[..end]) {
-                Ok(s) => s.to_owned(),
-                Err(_) => continue,
-            };
-
-            let normalized = curv_path.replace('\\', "/").to_lowercase();
-            let file_path = json_root.join(&normalized);
-
-            let bytes = match std::fs::read(&file_path) {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
-
-            let points = parse_curve_json(&bytes).unwrap_or_default();
-
-            by_formid.insert(
-                form_id.raw(),
-                Curve {
-                    edid,
-                    path: curv_path,
-                    points,
-                },
-            );
-        }
-
-        Ok(CurveIndex { by_formid })
+        let section = CurvesSection::new(0, read_loose(esm, index, misc_dir)?);
+        Ok(CurveIndex {
+            section: ArchiveBuf::serialize(&section)?,
+        })
     }
 
     /// Build the curve index from a live ESM + Startup BA2.
@@ -216,64 +237,119 @@ impl CurveIndex {
         index: &crate::index::Index,
         ba2_path: &Path,
     ) -> Result<CurveIndex> {
-        let ba2 = Ba2Archive::open(ba2_path)
-            .with_context(|| format!("opening Startup BA2: {}", ba2_path.display()))?;
-
-        let curv_records = index.records_by_type("CURV");
-        let mut by_formid = HashMap::new();
-
-        for (form_id, meta) in curv_records {
-            let parsed = match esm.parse_record_at(meta.offset) {
-                Ok(p) => p,
-                Err(e) => {
-                    log::warn!("failed to parse CURV {}: {}", form_id.display(), e);
-                    continue;
-                }
-            };
-
-            let edid = crate::reader::edid_from_subrecords(&parsed.subrecords);
-
-            // Find the path subrecord — try CRVE first, then JASF
-            let path_sub = parsed
-                .subrecords
-                .iter()
-                .find(|s| s.signature.as_str() == "CRVE" || s.signature.as_str() == "JASF");
-            let Some(path_sub) = path_sub else {
-                continue;
-            };
-
-            // Read as NUL-terminated string
-            let raw = &path_sub.data;
-            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
-            let curv_path = match std::str::from_utf8(&raw[..end]) {
-                Ok(s) => s.to_owned(),
-                Err(_) => continue,
-            };
-
-            // Map to BA2 internal path
-            let internal = ba2_internal_path(&curv_path);
-
-            // Read and parse curve JSON
-            let points = match ba2.read(&internal) {
-                Ok(bytes) => parse_curve_json(&bytes).unwrap_or_default(),
-                Err(_) => {
-                    // Path not in this BA2 — skip silently (common)
-                    continue;
-                }
-            };
-
-            by_formid.insert(
-                form_id.raw(),
-                Curve {
-                    edid,
-                    path: curv_path,
-                    points,
-                },
-            );
-        }
-
-        Ok(CurveIndex { by_formid })
+        let section = CurvesSection::new(0, read_ba2(esm, index, ba2_path)?);
+        Ok(CurveIndex {
+            section: ArchiveBuf::serialize(&section)?,
+        })
     }
+
+    /// The curves `Database::open` discovered for `esm`, served from the
+    /// `curves` cache section: read and published on first use, then mapped.
+    /// A section built from a different curve source is rebuilt. A loose
+    /// `curvetables/json/` directory is stamped by its own metadata, so
+    /// rewriting a curve file inside it in place is not detected.
+    pub(crate) fn cached(
+        esm: &EsmFile,
+        index: &crate::index::Index,
+        src: &CurvesSrc,
+    ) -> Result<CurveIndex> {
+        let source_path = match src {
+            CurvesSrc::LooseBase(base) => base.join("curvetables/json"),
+            CurvesSrc::Ba2(path) => path.clone(),
+        };
+        let stamp = crate::rkyvcache::source_stamp(&[source_path], "curves")?;
+        let section = crate::rkyvcache::map_or_build::<CurvesSection>(
+            &esm.path,
+            index.count_by_type("CURV") as u64,
+            |cached| cached.source.to_native() == stamp,
+            |_lease| {
+                let entries = match src {
+                    CurvesSrc::LooseBase(base) => read_loose(esm, index, base)?,
+                    CurvesSrc::Ba2(path) => read_ba2(esm, index, path)?,
+                };
+                Ok(CurvesSection::new(stamp, entries))
+            },
+        )?;
+        Ok(CurveIndex {
+            section: ArchiveBuf::Mapped(section),
+        })
+    }
+}
+
+fn read_loose(
+    esm: &EsmFile,
+    index: &crate::index::Index,
+    misc_dir: &Path,
+) -> Result<Vec<(u32, Curve)>> {
+    let json_root = misc_dir.join("curvetables/json");
+    if !json_root.is_dir() {
+        anyhow::bail!(
+            "curves directory missing curvetables/json/: {}",
+            json_root.display()
+        );
+    }
+    Ok(read_curves(esm, index, |curv_path| {
+        let normalized = curv_path.replace('\\', "/").to_lowercase();
+        std::fs::read(json_root.join(normalized)).ok()
+    }))
+}
+
+fn read_ba2(
+    esm: &EsmFile,
+    index: &crate::index::Index,
+    ba2_path: &Path,
+) -> Result<Vec<(u32, Curve)>> {
+    let ba2 = Ba2Archive::open(ba2_path)
+        .with_context(|| format!("opening Startup BA2: {}", ba2_path.display()))?;
+    Ok(read_curves(esm, index, |curv_path| {
+        ba2.read(&ba2_internal_path(curv_path)).ok()
+    }))
+}
+
+/// Pair every CURV record with its curve file: the record's CRVE (or JASF)
+/// path is handed to `read`, and a record whose file `read` cannot supply is
+/// skipped.
+fn read_curves(
+    esm: &EsmFile,
+    index: &crate::index::Index,
+    mut read: impl FnMut(&str) -> Option<Vec<u8>>,
+) -> Vec<(u32, Curve)> {
+    let mut entries = Vec::new();
+    for (form_id, meta) in index.records_by_type("CURV") {
+        let parsed = match esm.parse_record_at(meta.offset) {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("failed to parse CURV {}: {}", form_id.display(), e);
+                continue;
+            }
+        };
+        let edid = crate::reader::edid_from_subrecords(&parsed.subrecords);
+        let Some(path_sub) = parsed
+            .subrecords
+            .iter()
+            .find(|s| s.signature.as_str() == "CRVE" || s.signature.as_str() == "JASF")
+        else {
+            continue;
+        };
+        let raw = &path_sub.data;
+        let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+        let Ok(curv_path) = std::str::from_utf8(&raw[..end]) else {
+            continue;
+        };
+        let Some(bytes) = read(curv_path) else {
+            continue;
+        };
+        let points = parse_curve_json(&bytes).unwrap_or_default();
+        entries.push((
+            form_id.raw(),
+            Curve {
+                edid,
+                path: curv_path.to_owned(),
+                points,
+            },
+        ));
+    }
+    entries
 }
 
 /// Map a CURV path string to a BA2 internal path.

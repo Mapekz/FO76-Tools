@@ -432,8 +432,9 @@ where
         match self {
             Section::Absent => None,
             Section::Mapped { mmap, payload, .. } => {
-                // SAFETY: this is the only call to `access_unchecked` in the
-                // crate — keep it that way. Its preconditions were
+                // SAFETY: one of two `access_unchecked` calls in the crate
+                // (the other is `ArchiveBuf::get`'s in-process buffer). Its
+                // preconditions were
                 // established by `Section::map`, above, and hold together as
                 // follows:
                 //
@@ -880,6 +881,138 @@ where
         path.display()
     );
     Ok(section)
+}
+
+/// Map `T`'s section for `esm_path`, or build and publish it.
+///
+/// A section already on disk is reused only when it passes the usual header
+/// checks and `is_current` accepts its content — the hook a section derived
+/// from more than the ESM (string tables, curve files) uses to compare the
+/// source stamp it recorded against the sources present now. Otherwise the
+/// caller takes the per-ESM build lease, re-checks (another process may have
+/// finished the same build while this one waited), and only then runs
+/// `build` and publishes the result.
+pub(crate) fn map_or_build<T>(
+    esm_path: &Path,
+    total: u64,
+    is_current: impl Fn(&rkyv::Archived<T>) -> bool,
+    build: impl FnOnce(&mut crate::progress::BuildLease) -> anyhow::Result<T>,
+) -> anyhow::Result<Section<rkyv::Archived<T>>>
+where
+    T: rkyv::Archive,
+    rkyv::Archived<T>: SectionSpec,
+    T: for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::ser::writer::IoWriter<BufWriter<fs::File>>,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
+{
+    let sig = CacheSig::read(esm_path)?;
+    let path = section_path_for_spec::<rkyv::Archived<T>>(esm_path)?;
+    let current = || -> anyhow::Result<Option<Section<rkyv::Archived<T>>>> {
+        Ok(
+            map_section_if_present::<rkyv::Archived<T>>(&path, sig, crate::index::CACHE_VERSION)?
+                .filter(|section| section.get().is_some_and(&is_current)),
+        )
+    };
+    if let Some(section) = current()? {
+        return Ok(section);
+    }
+    let stage = <rkyv::Archived<T> as SectionSpec>::KIND;
+    let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
+        esm_path, stage, 1, 1, total, current,
+    )? {
+        crate::progress::Acquired::AlreadyBuilt(section) => return Ok(section),
+        crate::progress::Acquired::NeedsBuild(lease) => lease,
+    };
+    let data = build(&mut lease)?;
+    lease.writing();
+    write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)
+}
+
+/// A stamp of the files a section was derived from besides the ESM: FNV-1a
+/// over `salt` and each path's name, size, mtime and (on Unix) inode. A
+/// directory contributes its own metadata only, which changes when entries
+/// are added, removed or the tree is re-extracted, but not when a file inside
+/// it is rewritten in place.
+pub(crate) fn source_stamp(paths: &[PathBuf], salt: &str) -> anyhow::Result<u64> {
+    let mut acc = FNV_OFFSET_BASIS;
+    let fold_bytes = |acc: &mut u64, bytes: &[u8]| {
+        for b in bytes {
+            *acc = fnv1a_u64(*acc, u64::from(*b));
+        }
+    };
+    fold_bytes(&mut acc, salt.as_bytes());
+    for path in paths {
+        let meta = fs::metadata(path).with_context(|| format!("stat {}", path.display()))?;
+        fold_bytes(&mut acc, path.as_os_str().as_encoded_bytes());
+        acc = fnv1a_u64(acc, meta.len());
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .unwrap_or_default();
+        acc = fnv1a_u64(acc, mtime.as_secs());
+        acc = fnv1a_u64(acc, u64::from(mtime.subsec_nanos()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            acc = fnv1a_u64(acc, meta.ino());
+        }
+    }
+    Ok(acc)
+}
+
+/// An archived root held either in a mapped cache section or in bytes
+/// serialized in this process — for a source the on-disk cache does not
+/// cover (a command-line override) or a test.
+pub(crate) enum ArchiveBuf<A> {
+    Mapped(Section<A>),
+    Owned {
+        bytes: rkyv::util::AlignedVec,
+        _pd: PhantomData<fn() -> A>,
+    },
+}
+
+impl<A> ArchiveBuf<A>
+where
+    A: rkyv::Portable
+        + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>,
+{
+    /// Serialize `value` in memory, validating the result once.
+    pub(crate) fn serialize<T>(value: &T) -> anyhow::Result<Self>
+    where
+        T: rkyv::Archive<Archived = A>
+            + for<'a> rkyv::Serialize<
+                rkyv::api::high::HighSerializer<
+                    rkyv::util::AlignedVec,
+                    rkyv::ser::allocator::ArenaHandle<'a>,
+                    rkyv::rancor::Error,
+                >,
+            >,
+    {
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(value)?;
+        rkyv::access::<A, rkyv::rancor::Error>(&bytes)?;
+        Ok(ArchiveBuf::Owned {
+            bytes,
+            _pd: PhantomData,
+        })
+    }
+
+    pub(crate) fn get(&self) -> &A {
+        match self {
+            ArchiveBuf::Mapped(section) => section
+                .get()
+                .expect("ArchiveBuf::Mapped is only built from a mapped section"),
+            // SAFETY: `bytes` came from `rkyv::to_bytes` for this exact `A`
+            // in this process and passed a checked `rkyv::access` in
+            // `serialize`; `AlignedVec` keeps the archive aligned, and the
+            // buffer is never mutated after construction.
+            ArchiveBuf::Owned { bytes, .. } => unsafe { rkyv::access_unchecked::<A>(bytes) },
+        }
+    }
 }
 
 #[cfg(test)]

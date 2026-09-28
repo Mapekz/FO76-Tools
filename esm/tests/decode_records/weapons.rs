@@ -698,19 +698,18 @@ fn weap_bash_damage_post_pass_sees_record_level_fields() {
     use esm::curves::CurveIndex;
 
     let schema = Schema::load_embedded().expect("embedded schema must load");
-    let curves: CurveIndex = serde_json::from_value(json!({
-        "by_formid": {
-            "8450583": {
-                "edid": "CT_Test_Bash",
-                "path": "Test.json",
-                "points": [
-                    {"x": 1.0, "y": 10.0},
-                    {"x": 50.0, "y": 50.0}
-                ]
-            }
-        }
-    }))
-    .expect("test curve index must deserialize");
+    let curves = CurveIndex::from_curves([(
+        esm::FormId::new(8_450_583),
+        esm::curves::Curve {
+            edid: Some("CT_Test_Bash".into()),
+            path: "Test.json".into(),
+            points: vec![
+                esm::curves::CurvePoint { x: 1.0, y: 10.0 },
+                esm::curves::CurvePoint { x: 50.0, y: 50.0 },
+            ],
+        },
+    )])
+    .expect("in-memory curve index");
 
     let mut ctx = bare_ctx_fv(&schema, 209);
     ctx.curves = Some(&curves);
