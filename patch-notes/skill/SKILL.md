@@ -17,7 +17,7 @@ Arguments: `[old-snapshot] [new-snapshot] [--out-dir DIR] [--official-notes URL_
 You are the orchestrator for the narrative stage of the FO76 patch-notes pipeline. The
 mechanical stage (diffing, bundling, linting, triage) is deterministic Python; your job is
 steps 1-8 below. Run every command from the repo root: the pipeline scripts are
-`python3 patch-notes/pn/<script>.py` and the `esm` binary is `esm/target/release/esm`.
+`python3 patch-notes/cli.py <verb>` and the `esm` binary is `esm/target/release/esm`.
 
 Use the client's available delegation capability for the roles below; tool names
 are not part of this procedure. If delegation is unavailable, perform triage and
@@ -83,7 +83,7 @@ OUT="$FO76_DATA_DIR/notes/${OLD_TOKEN}_to_${NEW_TOKEN}"
 If `--official-notes` was given: a URL or a saved `.html` →
 
 ```sh
-python3 patch-notes/pn/fetch_official_notes.py "<url-or-html>" "$OUT/work/official-notes.txt"
+python3 patch-notes/cli.py fetch-notes "<url-or-html>" "$OUT/work/official-notes.txt"
 ```
 
 It keeps only the newest section — the text before the first horizontal rule; Bethesda's
@@ -125,7 +125,7 @@ fi
 If `REUSE=no` or `--force-pipeline` was passed:
 
 ```sh
-python3 patch-notes/pn/make_patch_notes.py "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT" ${FORCE_PIPELINE:+--force-pipeline}
+python3 patch-notes/cli.py run "$OLD_DIR" "$NEW_DIR" --out-dir "$OUT" ${FORCE_PIPELINE:+--force-pipeline}
 ```
 
 Pass `--force-pipeline` through only when the user asked for it: the script refuses to
@@ -156,7 +156,7 @@ esm/target/release/esm --esm "$NEW_ESM" cache build
 ## 4. Triage
 
 ```sh
-python3 patch-notes/pn/triage_bundles.py "$OUT"
+python3 patch-notes/cli.py triage "$OUT"
 ```
 
 This writes `$OUT/work/triage.json` (tier assignment + per-bundle reasons),
@@ -196,7 +196,7 @@ If `ambiguous.json` has entries, spawn **one assessor subagent** pointed at
 Then merge:
 
 ```sh
-python3 patch-notes/pn/triage_bundles.py "$OUT" --merge-assessment "$OUT/work/assessment.json"
+python3 patch-notes/cli.py triage "$OUT" --merge-assessment "$OUT/work/assessment.json"
 ```
 
 A digest that hit the size cap is flagged `truncated`; the merge promotes a `drop` verdict on
@@ -247,8 +247,8 @@ Record each writer's token usage for Step 8 only if the client reports it.
 ### Gates — run before reading a single draft
 
 ```sh
-python3 patch-notes/pn/check_claims.py "$OUT" --old-esm "$OLD_ESM" --new-esm "$NEW_ESM"
-python3 patch-notes/pn/check_coverage.py "$OUT"
+python3 patch-notes/cli.py claims "$OUT" --old-esm "$OLD_ESM" --new-esm "$NEW_ESM"
+python3 patch-notes/cli.py coverage "$OUT"
 ```
 
 `check_claims.py` re-derives every `claims[]` entry from `comprehensive.json` (and live `esm`
@@ -304,7 +304,7 @@ Read every draft + report. Then, in order:
    `{"cuts": [{"bundle_id": "B0123", "reason": "<why>"}]}` — then:
 
    ```sh
-   python3 patch-notes/pn/check_coverage.py "$OUT" --summary
+   python3 patch-notes/cli.py coverage "$OUT" --summary
    ```
 
    Loop until it exits 0: a DEEP anchor absent from the summary and absent from `cuts.json`
@@ -322,7 +322,7 @@ token usage for Step 8 only if the client reports it.
 ## 7. Chunk for Discord
 
 ```sh
-python3 patch-notes/pn/discord_chunker.py "$OUT/patch-summary.md" "$OUT/discord"
+python3 patch-notes/cli.py chunk "$OUT/patch-summary.md" "$OUT/discord"
 ```
 
 The chunker exits 1 when any chunk had to be hard-truncated (content lost): fix the summary
@@ -338,7 +338,7 @@ placeholder. If none is reported, omit the file. On reruns, replace or remove th
 previous usage file so old counts cannot be attributed to this run. Then:
 
 ```sh
-python3 patch-notes/pn/update_manifest.py "$OUT"
+python3 patch-notes/cli.py manifest "$OUT"
 ```
 
 Print: tier counts (deep/brief/drop/rollout, how many the assessor promoted/demoted, how many

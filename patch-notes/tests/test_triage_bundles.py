@@ -13,21 +13,15 @@ behaves as documented.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Callable, cast
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+from pn import triage_bundles as tb
+from tests import builders
+from tests.builders import TempOutDir, load_json, run_pn
 
-import builders  # noqa: E402
-import triage_bundles as tb  # noqa: E402
-from builders import TempOutDir, load_json  # noqa: E402
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "pn" / "triage_bundles.py"
 REAL_TIERS_PATH = Path(__file__).resolve().parents[1] / "pn" / "patch_notes_tiers.json"
 
 
@@ -1592,10 +1586,7 @@ class TestCli(unittest.TestCase):
     def test_subprocess_smoke_test_with_real_config(self):
         bundles_data, comprehensive_data = _sample_pipeline_output()
         with TempOutDir(bundles_data, comprehensive_data) as out_dir:
-            result = subprocess.run(
-                [sys.executable, str(SCRIPT_PATH), str(out_dir)],
-                capture_output=True, text=True, timeout=30,
-            )
+            result = run_pn("triage", str(out_dir))
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertTrue((out_dir / "work" / "triage.json").is_file())
             self.assertIn("deep", result.stderr)

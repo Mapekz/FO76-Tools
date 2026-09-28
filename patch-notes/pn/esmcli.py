@@ -33,9 +33,9 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import IO, Any, Iterable, Mapping, Sequence, Union
+from typing import IO, Any, Iterable, Mapping, Sequence
 
-FormIdLike = Union[int, str]
+from pn import formids
 
 
 class EsmError(Exception):
@@ -44,46 +44,9 @@ class EsmError(Exception):
     is available."""
 
 
-# ─── FormID helpers (mirror src/formid.rs) ──────────────────────────────────
-
-
-def formid_to_int(value: FormIdLike) -> int:
-    """Accept an int, a "0x..." hex string, or a bare hex-digit string, and
-    return the raw u32.
-
-    Mirrors `parse_formid` in src/formid.rs: a bare (`0x`-prefix-free) token
-    of at most 8 hex digits is read as hex first -- including one that is
-    also plain-decimal-looking, e.g. "00568635" is hex 0x00568635, not
-    decimal 568635. Only a token longer than 8 hex digits, or one that isn't
-    all hex digits, falls through to plain decimal, matching `parse_formid`'s
-    `else` branch. (Previously this had no bare-hex branch at all, so
-    `formid_to_int("463F")` raised where the Rust side already accepted it --
-    fixed to actually mirror src/formid.rs as documented.)
-    """
-    if isinstance(value, int):
-        return value
-    s = value.strip()
-    if s.lower().startswith("0x"):
-        return int(s, 16)
-    if s and len(s) <= 8 and all(c in "0123456789abcdefABCDEF" for c in s):
-        return int(s, 16)
-    return int(s)
-
-
-def formid_to_hex(value: FormIdLike) -> str:
-    """Match `FormId`'s `Display` impl in src/formid.rs exactly:
-
-        pub fn display(self) -> String { format!("0x{:08X}", self.0) }
-
-    i.e. "0x" + 8 uppercase hex digits (NOT lowercase -- verified against the
-    Rust source, which uses `{:08X}`).
-    """
-    return f"0x{formid_to_int(value):08X}"
-
-
-def _sel_for_formid(formid: FormIdLike) -> dict:
+def _sel_for_formid(formid: formids.FormIdLike) -> dict:
     """Build a `RecordSel::FormId` wire value: `{"kind":"form_id","value":<u32>}`."""
-    return {"kind": "form_id", "value": formid_to_int(formid)}
+    return {"kind": "form_id", "value": formids.to_int(formid)}
 
 
 def _sel_for_edid(edid: str) -> dict:
@@ -91,16 +54,7 @@ def _sel_for_edid(edid: str) -> dict:
     return {"kind": "edid", "value": edid}
 
 
-def _looks_like_formid(s: str) -> bool:
-    """Mirror `looks_like_formid` in src/lib.rs exactly: a `0x`-prefixed hex
-    value, or a bare run of only hex digits up to 8 chars (which also covers
-    pure-decimal input), is a FormID; anything else is an EditorID."""
-    s = s.strip()
-    body = s[2:] if s[:2].lower() == "0x" else s
-    return bool(body) and len(body) <= 8 and all(c in "0123456789abcdefABCDEF" for c in body)
-
-
-def _sel_for_input(value: FormIdLike) -> dict:
+def _sel_for_input(value: formids.FormIdLike) -> dict:
     """Build a `RecordSel` wire value from one ambiguous token, auto-detecting
     FormID vs EditorID via `_looks_like_formid` -- mirrors `RecordSel::from_input`
     in src/ops/sel.rs. Used by `bulk_get`, whose selectors may be a mix of both
@@ -109,7 +63,7 @@ def _sel_for_input(value: FormIdLike) -> dict:
     FormIDs)."""
     if isinstance(value, int):
         return _sel_for_formid(value)
-    return _sel_for_formid(value) if _looks_like_formid(value) else _sel_for_edid(value)
+    return _sel_for_formid(value) if formids.looks_like_formid(value) else _sel_for_edid(value)
 
 
 def _sel_kind(sel: Mapping[str, Any]) -> tuple[str, Any]:
@@ -121,13 +75,13 @@ def _sel_display(sel: Mapping[str, Any]) -> str:
     (`0x0000463F`) for a `form_id` selector, or the literal EditorID text for
     an `edid` selector."""
     kind, value = _sel_kind(sel)
-    return formid_to_hex(value) if kind == "form_id" else value
+    return formids.display(value) if kind == "form_id" else value
 
 
 # ─── esm binary discovery (the one find_esm_binary, shared by ─────────────
 # ─── make_patch_notes.py/build_bundles.py) ─────────────────────────────────
 
-#: The esm crate's directory -- this file lives at patch-notes/pn/esm_gateway.py.
+#: The esm crate's directory -- this file lives at patch-notes/pn/esmcli.py.
 ESM_CRATE_DIR = Path(__file__).resolve().parents[2] / "esm"
 
 
@@ -309,7 +263,7 @@ class EsmGateway:
     def file_info(self, esm: str) -> dict:
         return self.op(esm, {"op": "file_info"})
 
-    def record(self, esm: str, formid: FormIdLike, *, resolve: str = "stub") -> dict:
+    def record(self, esm: str, formid: formids.FormIdLike, *, resolve: str = "stub") -> dict:
         """`Op::Record { sel: FormId, depth }`. `resolve` is one of
         "none" | "stub" | "full" (`ResolveDepth` in src/decode/mod.rs, default "stub")."""
         return self.op(
@@ -321,7 +275,7 @@ class EsmGateway:
         return self.op(esm, {"op": "record", "sel": _sel_for_edid(edid), "depth": resolve})
 
     def bulk_get(
-        self, esm: str, sels: Iterable[FormIdLike], *, resolve: str = "stub"
+        self, esm: str, sels: Iterable[formids.FormIdLike], *, resolve: str = "stub"
     ) -> list[dict]:
         """`Op::RecordBulk { sels: Vec<RecordSel>, depth }` -- the bulk
         counterpart to `record`/`record_by_edid`: resolves every selector in
@@ -389,7 +343,7 @@ class EsmGateway:
     def refs(
         self,
         esm: str,
-        formid: FormIdLike,
+        formid: formids.FormIdLike,
         *,
         depth: int = 2,
         limit: int = 0,
@@ -437,7 +391,7 @@ class EsmGateway:
             op["paths"] = paths
         return self.op(esm, op)
 
-    def exists(self, esm: str, formid: FormIdLike) -> bool:
+    def exists(self, esm: str, formid: formids.FormIdLike) -> bool:
         """True iff `formid` resolves to a record, via a cheap `resolve=none` lookup."""
         try:
             self.record(esm, formid, resolve="none")

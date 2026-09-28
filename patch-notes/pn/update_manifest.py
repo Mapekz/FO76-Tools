@@ -24,7 +24,7 @@ the triage tier counts, keyed under `stages.narrative.schema_version` so
 any downstream consumer can tell the shapes apart.
 
 Usage:
-    python3 pn/update_manifest.py OUT_DIR [--max-chunk-chars 2000]
+    python3 -m pn manifest OUT_DIR [--max-chunk-chars 2000]
 
 Python 3, stdlib only.
 """
@@ -37,11 +37,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-import layout  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
+from pn import jsonio, layout
+from pn import patchnotes_lib as pl
 
 #: stages.narrative's own schema version (independent of the pipeline-wide
 #: pl.SCHEMA_VERSION, which covers diff/comprehensive/bundles/lints shapes
@@ -91,8 +88,7 @@ def load_triage_stats(out_dir: Path) -> dict | None:
     if not path.is_file():
         return None
     try:
-        with path.open(encoding="utf-8") as f:
-            data = json.load(f)
+        data = jsonio.read(path)
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
@@ -123,8 +119,7 @@ def load_usage(out_dir: Path) -> dict | None:
     if not path.is_file():
         return None
     try:
-        with path.open(encoding="utf-8") as f:
-            data = json.load(f)
+        data = jsonio.read(path)
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(data, dict):
@@ -177,7 +172,7 @@ def print_summary(narrative: dict, stream=sys.stderr):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="update_manifest.py",
+        prog="pn manifest",
         description="Fill in manifest.json's narrative stage from patch-summary.md + discord/ + work/triage.json.",
     )
     ap.add_argument("out_dir", help="Pipeline output directory (must already contain manifest.json).")

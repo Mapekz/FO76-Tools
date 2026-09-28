@@ -5,11 +5,11 @@ pn/update_manifest.py (narrative-stage manifest updater).
 The orchestrator end-to-end tests never spawn a real `esm`: the
 diff step is satisfied by a tiny generated shell script that ignores its
 arguments and `cat`s `tests/fixtures/diff_small.json` verbatim, and the
-bundles/lints stages run against `esm_gateway.FakeGateway` backed by
-`tests/fixtures/refs_graph.json` (`--offline --refs-fixture`). No real
+bundles/lints stages run against `esmcli.FakeGateway` backed by
+`tests/fixtures/refs_graph.json` (an injected `FakeGateway`). No real
 ESM is touched.
 
-(`esm_gateway`'s own tests cover the stricter JSON-parsing contract this fake
+(`esmcli`'s own tests cover the stricter JSON-parsing contract this fake
 binary complies with -- see `test_esm_gateway.py`'s
 `test_trailing_garbage_after_json_is_rejected`.)
 """
@@ -18,19 +18,16 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import unittest
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import make_patch_notes as mpn  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
-import update_manifest as um  # noqa: E402
-from builders import TempDirTestCase, fake_esm_script  # noqa: E402
+from pn import make_patch_notes as mpn
+from pn import patchnotes_lib as pl
+from pn import update_manifest as um
+from tests.builders import TempDirTestCase, fake_esm_script
+from tests.fake_gateway import FakeGateway
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 DIFF_SMALL = FIXTURES_DIR / "diff_small.json"
@@ -198,10 +195,9 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         return mpn.main([
             str(self.old_esm), str(self.new_esm),
             "--esm-bin", str(self.fake_esm),
-            "--offline", "--refs-fixture", str(REFS_GRAPH),
             "--out-dir", str(out_dir),
             *extra_args,
-        ])
+        ], client=FakeGateway(REFS_GRAPH))
 
     def test_full_run_writes_all_files(self):
         out_dir = self.tmp_dir / "out"
@@ -284,8 +280,7 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         rc = mpn.main([
             str(self.old_esm), str(self.new_esm),
             "--esm-bin", str(self.fake_esm),
-            "--offline", "--refs-fixture", str(REFS_GRAPH),
-        ])
+        ], client=FakeGateway(REFS_GRAPH))
         self.assertEqual(rc, 0)
         expected = self.new_esm.parent / "patch_20260626_to_20260703"
         self.assertTrue((expected / "manifest.json").is_file())
@@ -316,17 +311,6 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         self.assertNotIn("lints", manifest["stages"]["mechanical"]["files"])
         self.assertIn("bundles", manifest["counts"])
         self.assertNotIn("lints", manifest["counts"])
-
-    def test_offline_without_fixture_is_input_validation_error(self):
-        out_dir = self.tmp_dir / "out_bad"
-        with self.assertRaises(SystemExit) as cm:
-            mpn.main([
-                str(self.old_esm), str(self.new_esm),
-                "--esm-bin", str(self.fake_esm),
-                "--offline",
-                "--out-dir", str(out_dir),
-            ])
-        self.assertEqual(cm.exception.code, 1)
 
 
 # ---------------------------------------------------------------------------

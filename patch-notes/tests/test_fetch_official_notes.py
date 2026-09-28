@@ -5,17 +5,12 @@ mocked via urllib.request.urlopen."""
 
 from __future__ import annotations
 
-import sys
 import unittest
 import urllib.error
-from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import fetch_official_notes as fon  # noqa: E402
-from builders import TempDirTestCase  # noqa: E402
+from pn import fetch_official_notes as fon
+from tests.builders import TempDirTestCase
 
 PAGE = """<html><head><title>Inside the Vault</title><style>.x{}</style>
 <script>window.__x = 1;</script></head><body>

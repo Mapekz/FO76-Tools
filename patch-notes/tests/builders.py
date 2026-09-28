@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Shared fixture builders and test-case bases for the pn/ test suite.
 
-Not a test module -- `unittest discover` ignores it (no `test_` prefix); the
-test files that use it add `tests/` to `sys.path` and `import builders`,
-the same way they already `from fake_gateway import FakeGateway`.
+Not a test module -- `unittest discover` ignores it (no `test_` prefix); test
+files import it as `tests.builders`.
 
 The dict builders are **partial-override**: each returns a complete, valid
 payload of its kind, with `overrides` merged over sensible defaults, so a test
@@ -23,6 +22,8 @@ from __future__ import annotations
 
 import json
 import stat
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -221,3 +222,14 @@ def fake_esm_script(
     script.write_text(body)
     script.chmod(script.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return script
+
+
+#: patch-notes/, the directory `python3 -m pn` runs from.
+PN_ROOT = Path(__file__).resolve().parents[1]
+
+
+def run_pn(*args: str) -> subprocess.CompletedProcess:
+    """Run `python3 -m pn <args>` as a subprocess from `PN_ROOT`."""
+    return subprocess.run(
+        [sys.executable, "-m", "pn", *args], cwd=PN_ROOT, capture_output=True, text=True
+    )

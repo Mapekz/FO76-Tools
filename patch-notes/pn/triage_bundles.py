@@ -40,11 +40,11 @@ all_removed) is DROP, never BRIEF -- drop_rules and deep_rules are the two
 "always" tiers (unconditional once matched); brief_rules is softer
 bucketing for whatever's left.
 
-    python3 pn/triage_bundles.py <out_dir>
+    python3 -m pn triage <out_dir>
         Tier every bundle in <out_dir>/bundles.json, writing the five files
         above.
 
-    python3 pn/triage_bundles.py <out_dir> --merge-assessment ASSESSMENT.json
+    python3 -m pn triage <out_dir> --merge-assessment ASSESSMENT.json
         Re-tiers using an assessor's `{"tiers": {bundle_id: {"tier":
         "deep"|"brief"|"drop", "reason": "..."}}}` output to resolve every
         bundle rule-tiering left `ambiguous`, then re-emits all five files
@@ -78,13 +78,10 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
+from pn import jsonio, layout
+from pn import patchnotes_lib as pl
 
-import layout  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
-
-DEFAULT_TIERS_PATH = SCRIPT_DIR / "patch_notes_tiers.json"
+DEFAULT_TIERS_PATH = Path(__file__).resolve().parent / "patch_notes_tiers.json"
 
 #: Fallback defaults for tiers-config `settings`. The digest caps are
 #: generous (the assessor runs on the session model, not a small one) but
@@ -120,13 +117,8 @@ def eprint(*args, **kwargs):
 # --------------------------------------------------------------------------
 
 
-def load_json(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
 def load_bundles(out_dir):
-    return pl.validate_bundles_payload(load_json(layout.bundles_json(out_dir)))
+    return pl.validate_bundles_payload(jsonio.read(layout.bundles_json(out_dir)))
 
 
 def load_lints(out_dir):
@@ -134,15 +126,15 @@ def load_lints(out_dir):
     path = layout.lints_json(out_dir)
     if not path.exists():
         return []
-    return load_json(path).get("lints") or []
+    return jsonio.read(path).get("lints") or []
 
 
 def load_comprehensive(out_dir):
-    return pl.validate_comprehensive_payload(load_json(layout.comprehensive_json(out_dir)))
+    return pl.validate_comprehensive_payload(jsonio.read(layout.comprehensive_json(out_dir)))
 
 
 def load_tiers_config(path):
-    return load_json(path)
+    return jsonio.read(path)
 
 
 # --------------------------------------------------------------------------
@@ -1071,17 +1063,11 @@ def assemble_outputs(bundles, records, lints_by_id, tiers_by_id, rollout_shapes,
     }
 
 
-def _write_json(path, payload):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-
-
 def write_outputs(out_dir, result):
     layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
-    _write_json(layout.work_triage_json(out_dir), result["triage"])
-    _write_json(layout.work_deep_slice_json(out_dir), result["deep_slice"])
-    _write_json(layout.work_ambiguous_json(out_dir), result["ambiguous"])
+    jsonio.write(layout.work_triage_json(out_dir), result["triage"])
+    jsonio.write(layout.work_deep_slice_json(out_dir), result["deep_slice"])
+    jsonio.write(layout.work_ambiguous_json(out_dir), result["ambiguous"])
     layout.work_brief_lines_md(out_dir).write_text(result["brief_lines_md"], encoding="utf-8")
     layout.work_rollouts_md(out_dir).write_text(result["rollouts_md"], encoding="utf-8")
 
@@ -1147,7 +1133,7 @@ def load_truncated_ids(out_dir) -> set[str]:
     if not path.is_file():
         return set()
     try:
-        payload = load_json(path)
+        payload = jsonio.read(path)
     except (OSError, json.JSONDecodeError):
         return set()
     return {
@@ -1163,7 +1149,7 @@ def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH
     bundles_data = load_bundles(out_dir)
     comp_data = load_comprehensive(out_dir)
     config = load_tiers_config(tiers_path)
-    assessment = load_json(assessment_path)
+    assessment = jsonio.read(assessment_path)
 
     lints = load_lints(out_dir)
     bundles = pl.attach_lints(bundles_data.get("bundles") or [], lints)
@@ -1201,7 +1187,7 @@ def print_summary(triage_payload, stream=sys.stderr):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="triage_bundles.py",
+        prog="pn triage",
         description="Mechanical-triage stage: assign every bundles.json bundle a tier "
                      "(rollout/deep/brief/drop/ambiguous) via pn/patch_notes_tiers.json, and "
                      "write OUT/work/{triage.json,deep-slice.json,ambiguous.json,"

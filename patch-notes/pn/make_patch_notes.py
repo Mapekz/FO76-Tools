@@ -18,7 +18,7 @@ narrative stage (triage, deep writers, gates, Discord chunking,
 `../skill/SKILL.md`.
 
 Usage:
-    python3 pn/make_patch_notes.py OLD.esm NEW.esm [options]
+    python3 -m pn run OLD.esm NEW.esm [options]
 
 Options:
     Without source flags, `esm diff` discovers each side's strings and curve
@@ -51,9 +51,6 @@ Options:
     --refs-depth N        Override the bundles stage's base reverse-ref BFS depth.
     --skip-bundles        Skip bundles.json (and, necessarily, lints.json).
     --skip-lints          Skip lints.json (bundles.json is still built).
-    --offline             Use a fixture-backed FakeGateway (tests/fake_gateway.py) instead of live esm lookups
-                          for the bundles/lints stages (requires --refs-fixture).
-    --refs-fixture F      FakeGateway fixture JSON (required with --offline).
     -v, --verbose         Show full diff command + esm output.
 
 Exit codes:
@@ -64,15 +61,15 @@ Exit codes:
 
 Examples:
     # Two snapshot folders; each side's strings and curves are discovered there.
-    python3 pn/make_patch_notes.py /path/to/v1/ /path/to/v2/
+    python3 -m pn run /path/to/v1/ /path/to/v2/
 
     # One strings directory for both sides.
-    python3 pn/make_patch_notes.py /path/to/old/ /path/to/new/ \\
+    python3 -m pn run /path/to/old/ /path/to/new/ \\
         --strings-dir /path/to/strings
 
     # With Startup BA2 for curve-table detail:
     STARTUP_BA2="/path/to/startup.ba2" \\
-    python3 pn/make_patch_notes.py /path/to/v1/ /path/to/v2/
+    python3 -m pn run /path/to/v1/ /path/to/v2/
 
     # Via justfile:
     just run /path/to/v1/ /path/to/v2/
@@ -90,18 +87,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import NoReturn
 
+from pn import build_bundles as bb
+from pn import esmcli as eg
+
 # Locate the esm/ workspace root (directory containing this script's parent).
-SCRIPT_DIR = Path(__file__).resolve().parent
-
 # Sibling pipeline-tool modules live next to this script.
-sys.path.insert(0, str(SCRIPT_DIR))
-
-import build_bundles as bb  # noqa: E402
-import esm_gateway as eg  # noqa: E402
-import layout  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
-import render_comprehensive as rc  # noqa: E402
-import run_lints as rl  # noqa: E402
+from pn import jsonio, layout
+from pn import patchnotes_lib as pl
+from pn import render_comprehensive as rc
+from pn import run_lints as rl
 
 build_diff_cmd = eg.build_diff_cmd
 
@@ -226,9 +220,9 @@ def source_args(args: argparse.Namespace) -> list[str]:
 # Step 2: Run esm diff
 # --------------------------------------------------------------------------
 
-# `build_diff_cmd` lives in esm_gateway.py (re-exported above via
-# `from esm_gateway import build_diff_cmd` so call sites/tests reach it as
-# `mpn.build_diff_cmd`); this stage's transport is `esm_gateway.EsmGateway.diff`
+# `build_diff_cmd` lives in esmcli.py (re-exported above via
+# `from pn.esmcli import build_diff_cmd` so call sites/tests reach it as
+# `mpn.build_diff_cmd`); this stage's transport is `esmcli.EsmGateway.diff`
 # (see its docstring for why it is a subprocess, not an `Op::Diff` request).
 
 
@@ -304,6 +298,7 @@ def run_esm_diff(
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
+        prog="pn run",
         description="ESM diff -> comprehensive.json -> bundles.json -> lints.json "
                      "-> manifest.json. The mechanical (deterministic) half of the "
                      "patch-notes pipeline; no LLM involved.",
@@ -350,17 +345,14 @@ def build_arg_parser():
                     help="Skip bundles.json (and, necessarily, lints.json)")
     ap.add_argument("--skip-lints", action="store_true",
                     help="Skip lints.json (bundles.json is still built)")
-    ap.add_argument("--offline", action="store_true",
-                    help="Use esm_gateway.FakeGateway instead of live esm lookups for the "
-                         "bundles/lints stages (requires --refs-fixture)")
-    ap.add_argument("--refs-fixture", default=None, metavar="F",
-                    help="FakeGateway fixture JSON (required with --offline)")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="Show full commands + esm output")
     return ap
 
 
-def main(argv=None):
+def main(argv=None, *, client=None):
+    """`client` replaces the live `esmcli.EsmGateway` for the bundles and
+    lints stages (tests pass a fixture-backed stand-in)."""
     args = build_arg_parser().parse_args(argv)
 
     t0 = time.time()
@@ -381,11 +373,6 @@ def main(argv=None):
     except eg.EsmError as exc:
         die(1, str(exc))
     eprint(f"  esm binary: {esm_bin}")
-
-    if args.offline and not args.refs_fixture:
-        die(1, "--offline requires --refs-fixture")
-    if args.refs_fixture and not Path(args.refs_fixture).is_file():
-        die(1, f"--refs-fixture not found: {args.refs_fixture}")
 
     sources = source_args(args)
     if sources:
@@ -441,9 +428,7 @@ def main(argv=None):
             old_label=old_label, new_label=new_label, patch_date=patch_date,
         )
         comp_json_path = layout.comprehensive_json(out_dir)
-        with comp_json_path.open("w", encoding="utf-8") as f:
-            json.dump(comp, f, indent=2, ensure_ascii=False)
-            f.write("\n")
+        jsonio.write(comp_json_path, comp)
     except Exception as e:
         die(3, f"building comprehensive.json failed: {e}")
     files_written["comprehensive_json"] = comp_json_path.name
@@ -456,7 +441,7 @@ def main(argv=None):
     # ---- Steps 4 + 5: bundles.json / lints.json ------------------------------
     bundles_result = None
     lints_payload = None
-    client = None
+    owns_client = client is None
     try:
         if args.skip_bundles:
             eprint("\nSkipping bundles.json and lint checks (--skip-bundles)")
@@ -464,21 +449,11 @@ def main(argv=None):
             banner("Step 4: Building bundles.json")
             t_start = time.time()
             try:
-                if args.offline:
-                    # FakeGateway is a test double (tests/fake_gateway.py,
-                    # not pn/) -- lazily imported only on this opt-in path so
-                    # a normal (non---offline) run never touches tests/.
-                    sys.path.insert(0, str(SCRIPT_DIR.parent / "tests"))
-                    from fake_gateway import FakeGateway  # noqa: E402
-
-                    client = FakeGateway(args.refs_fixture)
-                else:
+                if client is None:
                     client = eg.EsmGateway(esm_bin)
                 bundles_result = bb.build_bundles(comp, client, str(esm_a), str(esm_b), overrides)
                 bundles_json_path = layout.bundles_json(out_dir)
-                with bundles_json_path.open("w", encoding="utf-8") as f:
-                    json.dump(bundles_result, f, indent=2, ensure_ascii=False)
-                    f.write("\n")
+                jsonio.write(bundles_json_path, bundles_result)
             except Exception as e:
                 die(3, f"building bundles.json failed: {e}")
             files_written["bundles"] = bundles_json_path.name
@@ -497,9 +472,7 @@ def main(argv=None):
                         new_esm=str(esm_b),
                     )
                     lints_json_path = layout.lints_json(out_dir)
-                    with lints_json_path.open("w", encoding="utf-8") as f:
-                        json.dump(lints_payload, f, indent=2)
-                        f.write("\n")
+                    jsonio.write(lints_json_path, lints_payload)
                 except Exception as e:
                     die(3, f"running lint checks failed: {e}")
                 files_written["lints"] = lints_json_path.name
@@ -507,7 +480,7 @@ def main(argv=None):
                 eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
                        f"(error={lc['error']} warn={lc['warn']} info={lc['info']})")
     finally:
-        if client is not None:
+        if owns_client and client is not None:
             client.close()
 
     # ---- Step 6: manifest.json -----------------------------------------------

@@ -21,16 +21,12 @@ fake_gateway.py, previously guaranteed only by that class's own docstring.
 from __future__ import annotations
 
 import os
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import esm_gateway  # noqa: E402
-from esm_gateway import EsmError, formid_to_hex  # noqa: E402
-from fake_gateway import FakeGateway  # noqa: E402
+from pn import esmcli, formids
+from pn.esmcli import EsmError
+from tests.fake_gateway import FakeGateway
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "refs_graph.json"
 
@@ -59,7 +55,7 @@ class FakeGatewayRefsTests(unittest.TestCase):
         self.assertEqual(result["total"], 4)
         self.assertEqual(
             self._form_ids(result["rows"]),
-            {formid_to_hex(self.OMOD1), formid_to_hex(self.OMOD2), formid_to_hex(self.LVLI), formid_to_hex(self.COBJ)},
+            {formids.display(self.OMOD1), formids.display(self.OMOD2), formids.display(self.LVLI), formids.display(self.COBJ)},
         )
         for r in result["rows"]:
             self.assertEqual(r["depth"], 1)
@@ -68,27 +64,27 @@ class FakeGatewayRefsTests(unittest.TestCase):
     def test_depth_2_adds_lvli_referencers(self):
         result = self.client.refs("esm", self.WEAP, depth=2)
         ids = self._form_ids(result["rows"])
-        self.assertIn(formid_to_hex(self.NPC), ids)
-        self.assertIn(formid_to_hex(self.CONT), ids)
+        self.assertIn(formids.display(self.NPC), ids)
+        self.assertIn(formids.display(self.CONT), ids)
         self.assertEqual(result["total"], 6)  # 4 depth-1 + NPC_ + CONT
 
-        npc_row = next(r for r in result["rows"] if r["form_id"] == formid_to_hex(self.NPC))
+        npc_row = next(r for r in result["rows"] if r["form_id"] == formids.display(self.NPC))
         self.assertEqual(npc_row["depth"], 2)
-        self.assertEqual(npc_row["path"], [{"form_id": formid_to_hex(self.LVLI), "record_type": "LVLI", "editor_id": "LVLI_TestList"}])
+        self.assertEqual(npc_row["path"], [{"form_id": formids.display(self.LVLI), "record_type": "LVLI", "editor_id": "LVLI_TestList"}])
 
     def test_depth_3_adds_qust_via_cont(self):
         result = self.client.refs("esm", self.WEAP, depth=3)
         ids = self._form_ids(result["rows"])
-        self.assertIn(formid_to_hex(self.QUST), ids)
+        self.assertIn(formids.display(self.QUST), ids)
         self.assertEqual(result["total"], 7)  # 6 from depth 2 + QUST
 
-        qust_row = next(r for r in result["rows"] if r["form_id"] == formid_to_hex(self.QUST))
+        qust_row = next(r for r in result["rows"] if r["form_id"] == formids.display(self.QUST))
         self.assertEqual(qust_row["depth"], 3)
         self.assertEqual(
             qust_row["path"],
             [
-                {"form_id": formid_to_hex(self.LVLI), "record_type": "LVLI", "editor_id": "LVLI_TestList"},
-                {"form_id": formid_to_hex(self.CONT), "record_type": "CONT", "editor_id": "CONT_TestContainer"},
+                {"form_id": formids.display(self.LVLI), "record_type": "LVLI", "editor_id": "LVLI_TestList"},
+                {"form_id": formids.display(self.CONT), "record_type": "CONT", "editor_id": "CONT_TestContainer"},
             ],
         )
 
@@ -104,7 +100,7 @@ class FakeGatewayRefsTests(unittest.TestCase):
         # must terminate rather than looping forever.
         result = self.client.refs("esm", self.WEAP, depth=6)
         ids = self._form_ids(result["rows"])
-        self.assertNotIn(formid_to_hex(self.WEAP), ids)
+        self.assertNotIn(formids.display(self.WEAP), ids)
         # Every form_id appears at most once.
         self.assertEqual(len(result["rows"]), len(ids))
 
@@ -115,7 +111,7 @@ class FakeGatewayRefsTests(unittest.TestCase):
         # No duplicates even though the graph loops back toward the KYWD's
         # own referencer chain via WEAP <-> LVLI.
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertIn(formid_to_hex(self.WEAP), ids)
+        self.assertIn(formids.display(self.WEAP), ids)
 
     def test_accepts_int_and_hex_string_formid_interchangeably(self):
         by_int = self.client.refs("esm", self.WEAP, depth=1)
@@ -170,25 +166,25 @@ class FakeGatewayRefsTests(unittest.TestCase):
         # them NPC_ -- type_filter must drop all four from the emitted rows
         # while still traversing through LVLI to reach the depth-2 NPC_.
         result = self.client.refs("esm", self.WEAP, depth=2, type_filter="NPC_")
-        self.assertEqual(self._form_ids(result["rows"]), {formid_to_hex(self.NPC)})
+        self.assertEqual(self._form_ids(result["rows"]), {formids.display(self.NPC)})
         self.assertEqual(result["total"], 1)
 
     def test_type_filter_is_case_insensitive(self):
         result = self.client.refs("esm", self.WEAP, depth=1, type_filter="omod")
         self.assertEqual(
-            self._form_ids(result["rows"]), {formid_to_hex(self.OMOD1), formid_to_hex(self.OMOD2)}
+            self._form_ids(result["rows"]), {formids.display(self.OMOD1), formids.display(self.OMOD2)}
         )
 
     def test_list_type_returns_records_of_that_type_sorted_by_formid(self):
         result = self.client.list_type("esm", "OMOD")
-        self.assertEqual([r["form_id"] for r in result], [formid_to_hex(self.OMOD1), formid_to_hex(self.OMOD2)])
+        self.assertEqual([r["form_id"] for r in result], [formids.display(self.OMOD1), formids.display(self.OMOD2)])
         for r in result:
             self.assertEqual(r["record_type"], "OMOD")
 
     def test_list_type_is_case_insensitive_and_respects_limit(self):
         result = self.client.list_type("esm", "omod", limit=1)
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["form_id"], formid_to_hex(self.OMOD1))
+        self.assertEqual(result[0]["form_id"], formids.display(self.OMOD1))
 
     def test_list_type_unknown_type_returns_empty(self):
         self.assertEqual(self.client.list_type("esm", "ZZZZ"), [])
@@ -368,7 +364,7 @@ class FakeGatewayConformanceTests(unittest.TestCase):
     """
 
     esm_path: str
-    gateway: esm_gateway.EsmGateway
+    gateway: esmcli.EsmGateway
     target: str
 
     @classmethod
@@ -379,11 +375,11 @@ class FakeGatewayConformanceTests(unittest.TestCase):
                 "FO76_ESM_PATH not set (or not a file) -- skipping real-ESM conformance test"
             )
         try:
-            esm_bin = esm_gateway.find_esm_binary(None)
+            esm_bin = esmcli.find_esm_binary(None)
         except EsmError as exc:
             raise unittest.SkipTest(f"esm binary not found -- skipping: {exc}")
         cls.esm_path = esm_path
-        cls.gateway = esm_gateway.EsmGateway(esm_bin)
+        cls.gateway = esmcli.EsmGateway(esm_bin)
 
         target = None
         for stub in cls.gateway.search(esm_path, "*", record_type="OMOD", limit=40):

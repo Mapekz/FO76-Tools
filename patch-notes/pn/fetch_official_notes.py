@@ -9,7 +9,7 @@ BEFORE the first `<hr>`) is the comparison baseline for a snapshot pair.
 An LLM-mediated fetch (WebFetch) summarizes the whole page and blends the
 weeks together, so this script does the cut mechanically:
 
-    python3 pn/fetch_official_notes.py <URL-or-local-.html> <out.txt>
+    python3 -m pn fetch-notes <URL-or-local-.html> <out.txt>
 
 1. Download the page (browser-like User-Agent, 30 s timeout), or read a
    local HTML file.
@@ -129,7 +129,7 @@ def extract_newest_section(html: str) -> tuple[str, bool]:
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="fetch_official_notes.py",
+        prog="pn fetch-notes",
         description="Fetch an official patch-notes page, keep only the newest section "
                     "(before the first <hr>), strip tags, write plain text.",
     )

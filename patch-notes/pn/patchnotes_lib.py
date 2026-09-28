@@ -46,16 +46,11 @@ Python 3, stdlib only.
 
 from __future__ import annotations
 
-import json
-import re
-import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import layout  # noqa: E402
+from pn import jsonio, layout
 
 # --------------------------------------------------------------------------
 # Pipeline wire shapes (comprehensive.json / bundles.json / triage / lints)
@@ -195,10 +190,10 @@ class RuleContext(TypedDict):
     when they swallow a per-record/per-check error, and `run_lints.run_lints`
     folds it into `lints.json`'s `meta.notes` afterward.
 
-    `client` is an `esm_gateway.EsmGateway | esm_gateway.FakeGateway`-shaped
+    `client` is an `esmcli.EsmGateway | esmcli.FakeGateway`-shaped
     object (duck-typed as `Any` here -- this module is a dependency-free
     leaf imported by every pipeline stage, including ones with no reason to
-    also import esm_gateway.py, so it does not import that sibling module
+    also import esmcli.py, so it does not import that sibling module
     just to spell this one field's type)."""
 
     records: dict[str, Any]
@@ -232,7 +227,6 @@ SCHEMA_VERSION = 1
 NARRATIVE_SCHEMA_VERSION = 3
 
 
-_FORMID_RE = re.compile(r"^0x[0-9A-Fa-f]{8}$")
 
 
 # --------------------------------------------------------------------------
@@ -254,14 +248,6 @@ def is_curve(v):
     """True if val is a decoded FormID reference with inlined curve points:
     `{"formid", "curve_path", "curve": [{x,y}, ...]}`."""
     return isinstance(v, dict) and isinstance(v.get("curve"), list)
-
-
-def is_formid_str(v):
-    """True if v is a bare FormID hex string as produced by FormId::display():
-    exactly "0x" followed by 8 hex digits (case-insensitive). Shape only: a
-    flags value or Model Information hash matches too, so decoded values use
-    `is_ref` instead."""
-    return isinstance(v, str) and bool(_FORMID_RE.match(v))
 
 
 def is_ref(v, ref_names):
@@ -539,8 +525,7 @@ def load_manifest(out_dir):
     path = layout.manifest_json(out_dir)
     if not path.exists():
         return None
-    with path.open(encoding="utf-8") as f:
-        return json.load(f)
+    return jsonio.read(path)
 
 
 def write_manifest(out_dir, manifest):
@@ -549,9 +534,7 @@ def write_manifest(out_dir, manifest):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = layout.manifest_json(out_dir)
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(manifest, f, indent=2)
-        f.write("\n")
+    jsonio.write(path, manifest)
 
 
 def esm_is_localized(esm_path) -> bool | None:

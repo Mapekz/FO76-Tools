@@ -32,13 +32,9 @@ Python 3, stdlib only.
 from __future__ import annotations
 
 import json
-import sys
 from collections import defaultdict
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import patchnotes_lib as pl  # noqa: E402
+from pn import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
 # Constants scoped to this engine

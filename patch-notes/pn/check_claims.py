@@ -7,7 +7,7 @@ Deep-writer subagents list each figure they state in the draft as a
 structured claim in `drafts/deep[.partN].report.json` (`claims: [...]`, see
 `patchnotes_lib.Claim`). This script re-derives every claim from the data:
 
-    python3 pn/check_claims.py <out_dir> [--old-esm P --new-esm P]
+    python3 -m pn claims <out_dir> [--old-esm P --new-esm P]
                                             [--esm-bin P] [--no-esm]
 
 Claim kinds (exactly one per claim):
@@ -47,18 +47,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-import esm_gateway as eg  # noqa: E402
-import layout  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
-from triage_bundles import _numeric_value  # noqa: E402
+from pn import esmcli as eg
+from pn import formids, jsonio, layout
+from pn import patchnotes_lib as pl
+from pn.triage_bundles import _numeric_value
 
 PATH_SEP = " / "
 REL_TOL = 1e-6
 _ROW_RE = re.compile(r"^\[(.*)\]$")
-_FORMID_RE = re.compile(r"^0x[0-9A-Fa-f]{1,8}$")
 _MIN_INTERESTING_INT = 10
 
 
@@ -80,9 +76,7 @@ def canon_formid(value: Any) -> str | None:
         return f"0x{value:08X}"
     if isinstance(value, dict):
         return canon_formid(value.get("form_id"))
-    if isinstance(value, str) and _FORMID_RE.match(value.strip()):
-        return f"0x{int(value.strip(), 16):08X}"
-    return None
+    return formids.canonical(value)
 
 
 def split_path(path: str) -> list[str]:
@@ -477,8 +471,7 @@ def find_unbacked_numbers(draft: str, claims: list[dict]) -> list[str]:
 
 
 def check_report(report_path: Path, index: RecordIndex, live: LiveLookup) -> dict:
-    with report_path.open(encoding="utf-8") as f:
-        report = json.load(f)
+    report = jsonio.read(report_path)
     claims = report.get("claims") if isinstance(report, dict) else None
     if not isinstance(claims, list):
         claims = []
@@ -501,8 +494,7 @@ def run_check(out_dir: Path, gateway=None, old_esm: str | None = None, new_esm: 
     """Verify every report under `<out_dir>/drafts/`; write
     `work/claims-check.json`; return the payload (`ok` is the gate)."""
     comp_path = layout.comprehensive_json(out_dir)
-    with comp_path.open(encoding="utf-8") as f:
-        comp = pl.validate_comprehensive_payload(json.load(f))
+    comp = pl.validate_comprehensive_payload(jsonio.read(comp_path))
     index = RecordIndex(comp.get("records") or {})
     live = LiveLookup(gateway, old_esm, new_esm)
     reports = [check_report(p, index, live) for p in layout.drafts_deep_reports(out_dir)]
@@ -516,9 +508,7 @@ def run_check(out_dir: Path, gateway=None, old_esm: str | None = None, new_esm: 
     }
     payload["ok"] = bool(reports) and payload["mismatch_count"] == 0 and payload["unverifiable_count"] == 0
     layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
-    with layout.work_claims_check_json(out_dir).open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    jsonio.write(layout.work_claims_check_json(out_dir), payload)
     return payload
 
 
@@ -543,7 +533,7 @@ def print_summary(payload: dict, stream=sys.stderr):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="check_claims.py",
+        prog="pn claims",
         description="Re-verify every structured claim in drafts/deep*.report.json against "
                     "comprehensive.json (and, optionally, live esm lookups).",
     )

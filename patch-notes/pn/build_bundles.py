@@ -30,8 +30,8 @@ Algorithm (see module docstring sections below for each step):
 
 `build_bundles(comp, client, old_esm, new_esm, overrides) -> dict` is the
 library entry point; `main()` is a thin CLI wrapper. `client` is anything
-implementing `esm_gateway.EsmGateway`'s `refs()`/`record()` surface —
-normally an `esm_gateway.EsmGateway`,
+implementing `esmcli.EsmGateway`'s `refs()`/`record()` surface —
+normally an `esmcli.EsmGateway`,
 or `tests/fake_gateway.FakeGateway` for `--offline` / tests.
 
 Python 3, stdlib only.
@@ -45,11 +45,10 @@ import json
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import cast
 
-import esm_gateway
-import patchnotes_lib as pl
+from pn import esmcli, formids, jsonio
+from pn import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
 # Tunables (CLI flags override a few; see resolve_settings)
@@ -99,18 +98,6 @@ _STATUS_WEIGHT = {"added": 2, "changed": 1, "removed": 0}
 
 def _iso_now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _int_fid(fid):
-    """Parse a '0x...'-or-decimal FormID string to an int; 0 on anything
-    unparsable (defensive -- never raises on malformed input)."""
-    if isinstance(fid, int):
-        return fid
-    try:
-        s = str(fid).strip()
-        return int(s, 16) if s.lower().startswith("0x") else int(s)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _priority_rank(record_type, anchor_rank, unlisted_rank):
@@ -254,7 +241,7 @@ def gather_reverse_edges(u, client, old_esm, new_esm, refs_depth, special_depth_
             continue
         try:
             result = client.refs(esm_path, fid, depth=depth, limit=0)
-        except esm_gateway.EsmError:
+        except esmcli.EsmError:
             continue
         for row in (result or {}).get("rows") or []:
             rf = row.get("form_id")
@@ -447,7 +434,7 @@ def _anchor_key(fid, rec, degree, anchor_rank, unlisted_rank):
         _STATUS_WEIGHT.get((rec or {}).get("status"), -1),
         1 if (rec or {}).get("name") else 0,
         degree,
-        -_int_fid(fid),
+        -formids.sort_key(fid),
     )
 
 
@@ -509,7 +496,7 @@ def split_oversized(component, u, edges, max_members, anchor_rank=None, unlisted
     def _anchor_sort_key(fid):
         return (
             _priority_rank((u[fid] or {}).get("record_type"), anchor_rank, unlisted_rank),
-            _int_fid(fid),
+            formids.sort_key(fid),
         )
 
     dist = {a: 0 for a in anchor_candidates}
@@ -578,7 +565,7 @@ def merge_by_overlap(groups, threshold=None):
     Iterates to a fixpoint (a 3-way merge can create a new overlap)."""
     if threshold is None:
         threshold = cast(float, DEFAULT_SETTINGS["overlap_merge_threshold"])
-    groups = [set(g) for g in sorted(groups, key=lambda g: min(_int_fid(f) for f in g))]
+    groups = [set(g) for g in sorted(groups, key=lambda g: min(formids.sort_key(f) for f in g))]
     changed = True
     while changed:
         changed = False
@@ -705,7 +692,7 @@ def attach_context(
             context_preferred_types,
             context_top_tier_relations,
         )
-        + (_int_fid(c),),
+        + (formids.sort_key(c),),
     )
     chosen = ordered[:cap]
 
@@ -805,7 +792,7 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
                     "role": "anchor" if fid == anchor_fid else "satellite",
                 }
             )
-        member_dicts.sort(key=lambda m: (0 if m["role"] == "anchor" else 1, _int_fid(m["form_id"])))
+        member_dicts.sort(key=lambda m: (0 if m["role"] == "anchor" else 1, formids.sort_key(m["form_id"])))
 
         context_members, context_edges = attach_context(
             member_fids, context_incidence, context_stubs,
@@ -842,7 +829,7 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
             }
         )
 
-    raw_bundles.sort(key=lambda b: _int_fid(b["_anchor_fid"]))
+    raw_bundles.sort(key=lambda b: formids.sort_key(b["_anchor_fid"]))
     for i, b in enumerate(raw_bundles, start=1):
         b["id"] = f"B{i:04d}"
         del b["_anchor_fid"]
@@ -886,7 +873,6 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
 # CLI
 # --------------------------------------------------------------------------
 
-SCRIPT_DIR = Path(__file__).resolve().parent
 
 
 def eprint(*args, **kwargs):
@@ -895,7 +881,7 @@ def eprint(*args, **kwargs):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="build_bundles.py",
+        prog="pn bundles",
         description="Tool 2: cluster comprehensive.json diff records into narrative bundles.json.",
     )
     ap.add_argument("comprehensive_json", help="Path to comprehensive.json (Tool 1 output).")
@@ -906,24 +892,16 @@ def build_arg_parser():
     ap.add_argument("--hub-degree", type=int, default=None, help="Override the hub-degree threshold.")
     ap.add_argument("--max-members", type=int, default=None, help="Override the oversized-split threshold.")
     ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live mode only).")
-    ap.add_argument(
-        "--offline", action="store_true",
-        help="Use a fixture-backed FakeGateway (--refs-fixture) instead of live esm lookups.",
-    )
-    ap.add_argument("--refs-fixture", default=None, help="FakeGateway fixture JSON (required with --offline).")
     return ap
 
 
-def main(argv=None):
+def main(argv=None, *, client=None):
+    """`client` replaces the live `esmcli.EsmGateway` (tests pass a
+    fixture-backed stand-in)."""
     args = build_arg_parser().parse_args(argv)
 
-    if args.offline and not args.refs_fixture:
-        eprint("error: --offline requires --refs-fixture")
-        return 1
-
     try:
-        with open(args.comprehensive_json, encoding="utf-8") as f:
-            comp = pl.validate_comprehensive_payload(json.load(f), label=args.comprehensive_json)
+        comp = pl.validate_comprehensive_payload(jsonio.read(args.comprehensive_json), label=args.comprehensive_json)
     except (OSError, json.JSONDecodeError, TypeError, KeyError, ValueError) as e:
         eprint(f"error: failed to load {args.comprehensive_json}: {e}")
         return 1
@@ -938,27 +916,22 @@ def main(argv=None):
         if value is not None
     }
 
-    if args.offline:
-        # FakeGateway is a test double (tests/fake_gateway.py, not
-        # pn/) -- lazily imported only on this opt-in path so a normal
-        # (non---offline) run never touches tests/.
-        sys.path.insert(0, str(SCRIPT_DIR.parent / "tests"))
-        from fake_gateway import FakeGateway  # noqa: E402
-
-        client = FakeGateway(args.refs_fixture)
-    else:
+    owns_client = client is None
+    if client is None:
         try:
-            esm_bin = esm_gateway.find_esm_binary(args.esm_bin)
-        except esm_gateway.EsmError as exc:
+            esm_bin = esmcli.find_esm_binary(args.esm_bin)
+        except esmcli.EsmError as exc:
             eprint(f"error: {exc}")
             return 1
-        client = esm_gateway.EsmGateway(esm_bin)
+        client = esmcli.EsmGateway(esm_bin)
 
-    result = build_bundles(comp, client, args.old_esm, args.new_esm, overrides)
+    try:
+        result = build_bundles(comp, client, args.old_esm, args.new_esm, overrides)
+    finally:
+        if owns_client:
+            client.close()
 
-    with open(args.out, "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    jsonio.write(args.out, result)
 
     counts = result["meta"]["counts"]
     eprint(

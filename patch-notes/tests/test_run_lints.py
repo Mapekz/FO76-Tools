@@ -3,7 +3,7 @@
 
 Uses hand-built minimal comprehensive.json/bundles.json dicts (rather than
 loading the full diff_small.json fixture for every case) plus
-`esm_gateway.FakeGateway` backed by the shared `refs_graph.json` fixture for
+`esmcli.FakeGateway` backed by the shared `refs_graph.json` fixture for
 the rules that need a reverse-reference walk (orphaned_unique,
 unreferenced_perk_rank). No real `esm` or ESM is touched.
 """
@@ -11,19 +11,15 @@ unreferenced_perk_rank). No real `esm` or ESM is touched.
 from __future__ import annotations
 
 import json
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import builders  # noqa: E402
-import change_entries  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
-import run_lints as rl  # noqa: E402
-from builders import TempOutDir  # noqa: E402
-from fake_gateway import FakeGateway  # noqa: E402
+from pn import change_entries, formids
+from pn import patchnotes_lib as pl
+from pn import run_lints as rl
+from tests import builders
+from tests.builders import TempOutDir
+from tests.fake_gateway import FakeGateway
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 REFS_GRAPH_FIXTURE = FIXTURES_DIR / "refs_graph.json"
@@ -845,14 +841,7 @@ class TestEndToEndCli(unittest.TestCase):
         bundles = make_bundles([bundle])
 
         with TempOutDir(bundles_data=bundles, comprehensive_data=comp) as out_dir:
-            rc = rl.main(
-                [
-                    str(out_dir),
-                    "--offline",
-                    "--refs-fixture",
-                    str(REFS_GRAPH_FIXTURE),
-                ]
-            )
+            rc = rl.main([str(out_dir), "--new-esm", "new.esm"], client=FakeGateway(REFS_GRAPH_FIXTURE))
             self.assertEqual(rc, 0)
 
             lints_path = out_dir / "lints.json"
@@ -869,11 +858,11 @@ class TestEndToEndCli(unittest.TestCase):
             # lints.json is run_lints' only output.
             self.assertEqual(json.loads((out_dir / "bundles.json").read_text(encoding="utf-8")), bundles)
 
-    def test_offline_requires_refs_fixture(self):
+    def test_new_esm_is_required(self):
         comp = make_comp([])
         bundles = make_bundles()
         with TempOutDir(bundles_data=bundles, comprehensive_data=comp) as out_dir:
-            rc = rl.main([str(out_dir), "--offline"])
+            rc = rl.main([str(out_dir)], client=FakeGateway(REFS_GRAPH_FIXTURE))
             self.assertEqual(rc, 1)
 
     def test_rules_filter_runs_subset_only(self):
@@ -896,14 +885,8 @@ class TestEndToEndCli(unittest.TestCase):
 
         with TempOutDir(bundles_data=bundles, comprehensive_data=comp) as out_dir:
             rc = rl.main(
-                [
-                    str(out_dir),
-                    "--offline",
-                    "--refs-fixture",
-                    str(REFS_GRAPH_FIXTURE),
-                    "--rules",
-                    "cut_newly_deprecated",
-                ]
+                [str(out_dir), "--new-esm", "new.esm", "--rules", "cut_newly_deprecated"],
+                client=FakeGateway(REFS_GRAPH_FIXTURE),
             )
             self.assertEqual(rc, 0)
             lints_payload = json.loads((out_dir / "lints.json").read_text(encoding="utf-8"))
@@ -933,9 +916,8 @@ class RefsFailGateway(FakeGateway):
         self.fail_formid = fail_formid
 
     def refs(self, esm, formid, **kwargs):
-        from esm_gateway import formid_to_hex
 
-        if formid_to_hex(formid) == self.fail_formid:
+        if formids.display(formid) == self.fail_formid:
             raise RuntimeError("refs exploded")
         return super().refs(esm, formid, **kwargs)
 

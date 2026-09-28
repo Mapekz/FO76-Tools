@@ -10,15 +10,21 @@ Run commands from `patch-notes/`; `justfile` owns the recipes.
 - `just` runs `test` (the hermetic unittest suite: no game data, no `esm` binary) and `lint`
   (ruff + ty, pinned to CI's versions). CI runs both.
 - `just run OLD NEW` runs the mechanical stage; the `/patch-notes` skill drives the whole run.
-- `pn/` is stdlib-only at runtime. `pn/esm_gateway.py` finds the `esm` binary at
+- Every stage is a verb: `python3 -m pn <verb>` from here, or `python3 patch-notes/cli.py
+  <verb>` from anywhere; `python3 -m pn --help` lists them.
+- `pn/` is stdlib-only at runtime. `pn/esmcli.py` finds the `esm` binary at
   `../esm/target/release/esm`, then on `PATH`.
+- Tests import `pn` and `tests` as packages; a stage that talks to `esm` takes its gateway as a
+  `client=` argument, so tests pass `tests/fake_gateway.FakeGateway` and production code never
+  imports `tests/`.
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
-| `pn/` | Pipeline stages (scripts) and the tier rules (`patch_notes_tiers.json`); bundling tunables are `build_bundles.DEFAULT_SETTINGS` |
-| `tests/` | unittest suite, `fixtures/`, `builders.py`, and `fake_gateway.py` (the `--offline` test double) |
+| `pn/` | The package: one module per stage, `__main__.py` (verbs), shared `esmcli` (the `esm` gateway), `formids`, `jsonio`, `layout` (artifact paths), `patchnotes_lib`; the tier rules (`patch_notes_tiers.json`); bundling tunables are `build_bundles.DEFAULT_SETTINGS` |
+| `cli.py` | Launcher for running verbs from outside `patch-notes/` |
+| `tests/` | unittest suite, `fixtures/`, `builders.py`, and `fake_gateway.py` (the fixture-backed gateway) |
 | `skill/` | The `/patch-notes` skill: `SKILL.md`, the writer and review prompts, `style-guide.md`, and `kb/` |
 
 ## Pipeline

@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """Tests for pn/patchnotes_lib.py."""
 
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import patchnotes_lib as pl  # noqa: E402
-from builders import load_fixture  # noqa: E402
+from pn import patchnotes_lib as pl
+from tests.builders import load_fixture
 
 # ---------------------------------------------------------------------------
 # annotate_ref

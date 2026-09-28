@@ -34,21 +34,16 @@ FakeGateway and the checked-in fixtures.
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import build_bundles as bb  # noqa: E402
-from builders import load_json  # noqa: E402
-from fake_gateway import FakeGateway  # noqa: E402
+from pn import build_bundles as bb
+from pn import formids
+from tests.builders import load_json
+from tests.fake_gateway import FakeGateway
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "pn" / "build_bundles.py"
 REFS_FIXTURE_PATH = FIXTURES_DIR / "refs_graph.json"
 COMPREHENSIVE_MINI_PATH = FIXTURES_DIR / "comprehensive_mini.json"
 
@@ -430,7 +425,7 @@ class TestAttachContext(unittest.TestCase):
         # generic candidates.
         self.assertEqual(got_ids[:4], preferred_fids)
         self.assertEqual(got_ids[4], kw_fid)
-        self.assertEqual(kept_others, sorted(other_fids, key=bb._int_fid)[:7])
+        self.assertEqual(kept_others, sorted(other_fids, key=formids.sort_key)[:7])
         for m in members_result:
             self.assertEqual(m["status"], "unchanged")
             self.assertEqual(m["role"], "context")
@@ -739,7 +734,7 @@ class TestBundleShapeContract(unittest.TestCase):
         self.assertEqual(ids, [f"B{i:04d}" for i in range(1, len(ids) + 1)])
 
     def test_bundle_sort_order_is_anchor_form_id(self):
-        keys = [bb._int_fid(b["anchor"]["form_id"]) for b in self.result["bundles"]]
+        keys = [formids.sort_key(b["anchor"]["form_id"]) for b in self.result["bundles"]]
         self.assertEqual(keys, sorted(keys))
 
 
@@ -749,37 +744,17 @@ class TestBundleShapeContract(unittest.TestCase):
 
 
 class TestCli(unittest.TestCase):
-    def _run(self, *extra_args):
-        return subprocess.run(
-            [
-                sys.executable, str(SCRIPT_PATH), str(COMPREHENSIVE_MINI_PATH),
-                "--old-esm", "old.esm", "--new-esm", "new.esm",
-                *extra_args,
-            ],
-            capture_output=True, text=True,
-        )
-
-    def test_offline_requires_refs_fixture(self):
-        result = self._run("--offline")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("--refs-fixture", result.stderr)
+    def _main(self, *extra_args, comprehensive=COMPREHENSIVE_MINI_PATH):
+        argv = [str(comprehensive), "--old-esm", "old.esm", "--new-esm", "new.esm", *extra_args]
+        return bb.main(argv, client=FakeGateway(REFS_FIXTURE_PATH))
 
     def test_missing_comprehensive_json_is_hard_error(self):
-        result = subprocess.run(
-            [
-                sys.executable, str(SCRIPT_PATH), "/nonexistent/comprehensive.json",
-                "--old-esm", "old.esm", "--new-esm", "new.esm",
-                "--offline", "--refs-fixture", str(REFS_FIXTURE_PATH),
-            ],
-            capture_output=True, text=True,
-        )
-        self.assertNotEqual(result.returncode, 0)
+        self.assertNotEqual(self._main(comprehensive=Path("/nonexistent/comprehensive.json")), 0)
 
-    def test_full_subprocess_run_writes_valid_bundles_json(self):
+    def test_full_run_writes_valid_bundles_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "bundles.json"
-            result = self._run("--offline", "--refs-fixture", str(REFS_FIXTURE_PATH), "--out", str(out_path))
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self._main("--out", str(out_path)), 0)
             data = json.loads(out_path.read_text())
             self.assertEqual(data["schema_version"], 1)
             self.assertIn("bundles", data)
@@ -788,11 +763,7 @@ class TestCli(unittest.TestCase):
     def test_cli_flag_overrides_default_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "bundles.json"
-            result = self._run(
-                "--offline", "--refs-fixture", str(REFS_FIXTURE_PATH),
-                "--hub-degree", "1000", "--out", str(out_path),
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self._main("--hub-degree", "1000", "--out", str(out_path)), 0)
             data = json.loads(out_path.read_text())
             self.assertEqual(data["meta"]["hub_degree"], 1000)
             # With no hub exemption, the 12 hub-keyword referrers all

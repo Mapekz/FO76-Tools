@@ -3,7 +3,7 @@
 check_coverage.py — DEEP-tier coverage gate for the FO76 patch-notes
 pipeline: every DEEP bundle is accounted for by id, never by hope.
 
-    python3 pn/check_coverage.py <out_dir> [--summary]
+    python3 -m pn coverage <out_dir> [--summary]
 
 Inputs: `work/triage.json` (the DEEP id list), `work/deep-slice.json`
 (each bundle's anchor and members), every `drafts/deep[.partN].report.json`
@@ -31,18 +31,11 @@ Python 3, stdlib only.
 from __future__ import annotations
 
 import argparse
-import json
-import re
 import sys
 from pathlib import Path
 from typing import Any
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-import layout  # noqa: E402
-
-_FORMID_RE = re.compile(r"^0x[0-9A-Fa-f]{1,8}$")
+from pn import formids, jsonio, layout
 
 
 def eprint(*args, **kwargs):
@@ -50,14 +43,11 @@ def eprint(*args, **kwargs):
 
 
 def _load(path: Path) -> Any:
-    with path.open(encoding="utf-8") as f:
-        return json.load(f)
+    return jsonio.read(path)
 
 
 def canon_formid(value: Any) -> str | None:
-    if isinstance(value, str) and _FORMID_RE.match(value.strip()):
-        return f"0x{int(value.strip(), 16):08X}"
-    return None
+    return formids.canonical(value)
 
 
 def anchor_terms(bundle: dict) -> list[tuple[str, str]]:
@@ -222,9 +212,7 @@ def run_check(out_dir: Path, summary: bool = False) -> dict:
         "ok": not violations,
     }
     layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
-    with layout.work_coverage_json(out_dir).open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    jsonio.write(layout.work_coverage_json(out_dir), payload)
     return payload
 
 
@@ -241,7 +229,7 @@ def print_summary(payload: dict, stream=sys.stderr):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="check_coverage.py",
+        prog="pn coverage",
         description="Assert every DEEP bundle is covered by exactly one draft (or deferred to one), "
                     "and -- with --summary -- reaches patch-summary.md or is cut with a reason.",
     )

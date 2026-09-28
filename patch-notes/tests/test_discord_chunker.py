@@ -11,15 +11,10 @@ a code block, and no source content is lost or a chunk left oversized.
 
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import discord_chunker as dc  # noqa: E402
-from builders import TempDirTestCase  # noqa: E402
+from pn import discord_chunker as dc
+from tests.builders import TempDirTestCase
 
 MAX_CHARS = dc.MAX_CHARS
 

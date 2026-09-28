@@ -1,17 +1,11 @@
 #!/usr/bin/env python3
 """Tests for pn/change_entries.py."""
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import change_entries  # noqa: E402
-import lvli_entry  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
-from builders import load_fixture  # noqa: E402
+from pn import change_entries, lvli_entry
+from pn import patchnotes_lib as pl
+from tests.builders import load_fixture
 
 
 def find_changed(diff_data, form_id):

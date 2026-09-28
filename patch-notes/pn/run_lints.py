@@ -43,12 +43,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import esm_gateway  # noqa: E402
-import layout  # noqa: E402
-import lvli_entry  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
+from pn import esmcli, formids, jsonio, layout, lvli_entry
+from pn import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
 # Tunables / defaults
@@ -79,7 +75,6 @@ DANGLING_REF_SKIP_TYPES = {"NAVI", "LAYR", "RFGP", "ACHR"}
 #: introduced the record" (as opposed to `"removed"`/`"unchanged"`).
 _ADDED_OR_CHANGED = ("added", "changed")
 
-_FORMID_IN_TEXT_RE = re.compile(r"0x[0-9A-Fa-f]{8}")
 _DESC_PATH_RE = re.compile(r"description|\bdesc\b", re.IGNORECASE)
 _NUMBER_IN_TEXT_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
@@ -119,11 +114,11 @@ def _ref_formid(ref):
     """Extract a bare FormID hex string from a leveled-list entry's
     Reference/Item value, whether it's already a bare string or a resolved
     stub dict."""
-    if isinstance(ref, str) and pl.is_formid_str(ref):
+    if isinstance(ref, str) and formids.is_rendered(ref):
         return ref
     if isinstance(ref, dict):
         fid = ref.get("formid")
-        if isinstance(fid, str) and pl.is_formid_str(fid):
+        if isinstance(fid, str) and formids.is_rendered(fid):
             return fid
     return None
 
@@ -150,7 +145,7 @@ def _blocked_reason_text(reason, *, new=False):
 def _extract_formid_from_text(s):
     if not isinstance(s, str):
         return None
-    m = _FORMID_IN_TEXT_RE.search(s)
+    m = formids.IN_TEXT_RE.search(s)
     return m.group(0) if m else None
 
 
@@ -934,30 +929,28 @@ def print_summary(lints_payload, rule_names, stream=sys.stderr):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="run_lints.py",
+        prog="pn lints",
         description="Run automated lint checks over the patch-notes pipeline's "
         "comprehensive.json + bundles.json, writing lints.json.",
     )
     ap.add_argument("out_dir", help="Pipeline output directory (contains comprehensive.json, bundles.json).")
     ap.add_argument("--new-esm", help="Path to the new-snapshot ESM (required unless --offline).")
     ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live mode only).")
-    ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeGateway instead of live esm lookups.")
-    ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see tests/fake_gateway.FakeGateway).")
     ap.add_argument("--rules", help="Comma-separated subset of rules to run (default: all).")
     return ap
 
 
-def main(argv=None):
+def main(argv=None, *, client=None):
+    """`client` replaces the live `esmcli.EsmGateway` (tests pass a
+    fixture-backed stand-in)."""
     args = build_arg_parser().parse_args(argv)
     out_dir = Path(args.out_dir)
 
     try:
         comprehensive_path = layout.comprehensive_json(out_dir)
-        with open(comprehensive_path, encoding="utf-8") as f:
-            comp = pl.validate_comprehensive_payload(json.load(f), label=str(comprehensive_path))
+        comp = pl.validate_comprehensive_payload(jsonio.read(comprehensive_path), label=str(comprehensive_path))
         bundles_path = layout.bundles_json(out_dir)
-        with open(bundles_path, encoding="utf-8") as f:
-            bundles = pl.validate_bundles_payload(json.load(f), label=str(bundles_path))
+        bundles = pl.validate_bundles_payload(jsonio.read(bundles_path), label=str(bundles_path))
     except (OSError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
         print(f"error: failed to read pipeline output from {out_dir}: {exc}", file=sys.stderr)
         return 1
@@ -969,42 +962,28 @@ def main(argv=None):
             if r not in RULES:
                 print(f"warning: unknown rule '{r}' in --rules", file=sys.stderr)
 
-    client = None
+    owns_client = client is None
     try:
-        if args.offline:
-            if not args.refs_fixture:
-                print("error: --offline requires --refs-fixture", file=sys.stderr)
-                return 1
-            # FakeGateway is a test double (tests/fake_gateway.py, not
-            # pn/) -- lazily imported only on this opt-in path so a
-            # normal (non---offline) run never touches tests/.
-            sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tests"))
-            from fake_gateway import FakeGateway  # noqa: E402
-
-            client = FakeGateway(args.refs_fixture)
-            new_esm = args.new_esm or "new.esm"
-        else:
-            if not args.new_esm:
-                print("error: --new-esm is required unless --offline", file=sys.stderr)
-                return 1
+        if not args.new_esm:
+            print("error: --new-esm is required", file=sys.stderr)
+            return 1
+        new_esm = args.new_esm
+        if client is None:
             try:
-                esm_bin = esm_gateway.find_esm_binary(args.esm_bin)
-            except esm_gateway.EsmError as exc:
+                esm_bin = esmcli.find_esm_binary(args.esm_bin)
+            except esmcli.EsmError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1
-            client = esm_gateway.EsmGateway(esm_bin)
-            new_esm = args.new_esm
+            client = esmcli.EsmGateway(esm_bin)
 
         lints_payload = run_lints(
             comp, bundles, client, new_esm, rules=rule_names
         )
     finally:
-        if client is not None:
+        if owns_client and client is not None:
             client.close()
 
-    with open(layout.lints_json(out_dir), "w", encoding="utf-8") as f:
-        json.dump(lints_payload, f, indent=2)
-        f.write("\n")
+    jsonio.write(layout.lints_json(out_dir), lints_payload)
 
     print_summary(lints_payload, rule_names or RULE_ORDER)
     return 0

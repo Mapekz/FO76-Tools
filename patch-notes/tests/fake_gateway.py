@@ -1,25 +1,13 @@
 #!/usr/bin/env python3
 """
 `FakeGateway` -- an in-memory, fixture-backed stand-in for
-`esm_gateway.EsmGateway`, used by tests and by every pipeline stage's
-`--offline` mode (see `make_patch_notes.py`/`build_bundles.py`/
-`run_lints.py`).
+`esmcli.EsmGateway`. Tests pass it as the `client=` of a stage's `main()`
+or library entry point; production code never imports it.
 
-This lives under `tests/`, not `pn/`, because it is a test double,
-not an `esm` client: it never runs a real `esm`, it replays a JSON
-fixture (see `FakeGateway`'s own docstring below for the fixture shape).
-`esm_gateway.py` (the real seam) is intentionally kept free of it -- see
-that module's docstring for the "one seam" property this split preserves.
-
-The `--offline` code paths in `make_patch_notes.py`/`build_bundles.py`/
-`run_lints.py` import this module lazily (only inside their `if
-args.offline:` branch) with a small `sys.path` shim, so production code
-importing from a test module is confined to that one opt-in code path --
-see those modules' own comments at the import site. This is a deliberate,
-accepted tradeoff (production code depending on a test module) rather than
-duplicating this ~250-line class in two places; `test_fake_gateway.py`'s
-conformance test is what keeps this class honest against the real
-`ops::referenced_by_enriched` BFS it reimplements in Python.
+It replays a JSON fixture (see `FakeGateway`'s own docstring below for the
+fixture shape) instead of running `esm`. `test_fake_gateway.py`'s
+conformance test keeps it honest against the real
+`ops::referenced_by_enriched` BFS it reimplements.
 
 Python 3, stdlib only.
 """
@@ -27,23 +15,18 @@ Python 3, stdlib only.
 from __future__ import annotations
 
 import json
-import sys
 from collections import deque
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence, Union
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-
-from esm_gateway import (  # noqa: E402
+from pn import formids
+from pn.esmcli import (
     EsmError,
-    FormIdLike,
     _sel_display,
     _sel_for_edid,
     _sel_for_formid,
     _sel_for_input,
     _sel_kind,
-    formid_to_hex,
-    formid_to_int,
 )
 
 # Matches `ops::DEFAULT_MAX_DEPTH`, the refs walk's hop cap.
@@ -149,14 +132,14 @@ class FakeGateway:
             raise EsmError("FakeGateway does not support op 'search' (no search index in fixture)")
         raise EsmError(f"FakeGateway does not support op {kind!r}")
 
-    def record(self, esm: str, formid: FormIdLike, *, resolve: str = "stub") -> dict:
+    def record(self, esm: str, formid: formids.FormIdLike, *, resolve: str = "stub") -> dict:
         return self.op(esm, {"op": "record", "sel": _sel_for_formid(formid), "depth": resolve})
 
     def record_by_edid(self, esm: str, edid: str, *, resolve: str = "stub") -> dict:
         return self.op(esm, {"op": "record", "sel": _sel_for_edid(edid), "depth": resolve})
 
     def bulk_get(
-        self, esm: str, sels: Iterable[FormIdLike], *, resolve: str = "stub"
+        self, esm: str, sels: Iterable[formids.FormIdLike], *, resolve: str = "stub"
     ) -> list[dict]:
         """Fixture-backed counterpart to `EsmGateway.bulk_get`: resolves each
         selector against `self.records`, isolating a lookup failure to its
@@ -174,7 +157,7 @@ class FakeGateway:
     def refs(
         self,
         esm: str,
-        formid: FormIdLike,
+        formid: formids.FormIdLike,
         *,
         depth: int = 2,
         limit: int = 0,
@@ -214,7 +197,7 @@ class FakeGateway:
             f"FakeGateway does not support 'file_info' (fixture has no header data): esm={esm!r}"
         )
 
-    def exists(self, esm: str, formid: FormIdLike) -> bool:
+    def exists(self, esm: str, formid: formids.FormIdLike) -> bool:
         """True iff `formid` resolves to a record, via a cheap `resolve=none`
         lookup -- mirrors `EsmGateway.exists`."""
         try:
@@ -238,17 +221,17 @@ class FakeGateway:
     def _resolve_sel(self, sel: Mapping[str, Any]) -> int:
         kind, value = _sel_kind(sel)
         if kind == "form_id":
-            return formid_to_int(value)
+            return formids.to_int(value)
         if kind == "edid":
             for key, meta in self.records.items():
                 if meta.get("editor_id") == value:
-                    return formid_to_int(key)
+                    return formids.to_int(key)
             raise EsmError(f"EditorID '{value}' not found")
         raise EsmError(f"unknown RecordSel kind {kind!r}")
 
     def _record(self, sel: Mapping[str, Any]) -> dict:
         fid = self._resolve_sel(sel)
-        key = formid_to_hex(fid)
+        key = formids.display(fid)
         rec = self.records.get(key)
         if rec is None:
             raise EsmError(f"FormID {key} not found")
@@ -294,7 +277,7 @@ class FakeGateway:
             for fid, meta in self.records.items()
             if (meta.get("record_type") or "").upper() == sig_upper
         ]
-        rows.sort(key=lambda r: formid_to_int(r["form_id"]))
+        rows.sort(key=lambda r: formids.to_int(r["form_id"]))
         sliced = rows[offset:]
         return sliced[:limit] if limit > 0 else sliced
 
@@ -316,7 +299,7 @@ class FakeGateway:
         requested_depth = depth
         max_depth: int | None = None if depth == 0 else max(1, min(depth, DEFAULT_MAX_DEPTH))
         effective_depth = max_depth
-        target_hex = formid_to_hex(target)
+        target_hex = formids.display(target)
         type_filter_upper = type_filter.upper() if type_filter else None
 
         seen: set[int] = {target}
@@ -333,14 +316,14 @@ class FakeGateway:
 
         while queue:
             current, path_here = queue.popleft()
-            current_hex = formid_to_hex(current)
+            current_hex = formids.display(current)
             for row in self.refs_adj.get(current_hex, []):
-                fid = formid_to_int(row["form_id"])
+                fid = formids.to_int(row["form_id"])
                 if fid in seen:
                     continue  # already emitted via a shorter or equal-length path
                 seen.add(fid)
 
-                fid_hex = formid_to_hex(fid)
+                fid_hex = formids.display(fid)
                 meta = self.records.get(fid_hex, {})
                 record_type = meta.get("record_type", row.get("record_type"))
                 editor_id = meta.get("editor_id", row.get("editor_id"))
@@ -385,7 +368,7 @@ class FakeGateway:
                 else:
                     frontier_remaining += 1
 
-        rows.sort(key=lambda r: formid_to_int(r["form_id"]))
+        rows.sort(key=lambda r: formids.to_int(r["form_id"]))
 
         # per_depth_totals: row count per hop depth (index = depth), over the
         # emitted (type-filtered) rows, BEFORE --limit truncation -- mirrors

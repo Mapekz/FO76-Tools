@@ -79,8 +79,8 @@ jobs:
         include:
           - project: patch-notes
             dir: patch-notes
-            tests: tests
-            lint: pn/ tests/
+            tests: tests -t .
+            lint: pn/ tests/ cli.py
           - project: esm-tools
             dir: esm
             tests: tools/tests

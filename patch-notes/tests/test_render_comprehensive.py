@@ -2,23 +2,17 @@
 """Tests for pn/render_comprehensive.py."""
 
 import json
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import change_entries  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
-import render_comprehensive as rc  # noqa: E402
-from builders import load_fixture  # noqa: E402
+from pn import change_entries
+from pn import patchnotes_lib as pl
+from pn import render_comprehensive as rc
+from tests.builders import load_fixture, run_pn
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 GOLDEN_DIR = FIXTURES_DIR / "golden"
-SCRIPT = Path(__file__).resolve().parents[1] / "pn" / "render_comprehensive.py"
 
 
 # ---------------------------------------------------------------------------
@@ -375,12 +369,9 @@ class TestCliEndToEnd(unittest.TestCase):
             diff_path = tmp / "diff.json"
             diff_path.write_text(json.dumps(load_fixture("diff_small.json")), encoding="utf-8")
             out_dir = tmp / "out"
-            result = subprocess.run(
-                [
-                    sys.executable, str(SCRIPT), str(diff_path), "--out-dir", str(out_dir),
-                    "--old-label", "20260626", "--new-label", "20260703", "--patch-date", "2026-07-03",
-                ],
-                capture_output=True, text=True,
+            result = run_pn(
+                "render", str(diff_path), "--out-dir", str(out_dir),
+                "--old-label", "20260626", "--new-label", "20260703", "--patch-date", "2026-07-03",
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((out_dir / "comprehensive.json").exists())
@@ -396,10 +387,7 @@ class TestCliEndToEnd(unittest.TestCase):
             diff_path = tmp / "diff_20260703.json"
             diff_path.write_text(json.dumps(load_fixture("diff_small.json")), encoding="utf-8")
             out_dir = tmp / "out"
-            result = subprocess.run(
-                [sys.executable, str(SCRIPT), str(diff_path), "--out-dir", str(out_dir)],
-                capture_output=True, text=True,
-            )
+            result = run_pn("render", str(diff_path), "--out-dir", str(out_dir))
             self.assertEqual(result.returncode, 0, result.stderr)
             comp = json.loads((out_dir / "comprehensive.json").read_text(encoding="utf-8"))
             self.assertEqual(comp["meta"]["old_label"], "old")
@@ -409,10 +397,7 @@ class TestCliEndToEnd(unittest.TestCase):
     def test_main_reports_error_on_missing_diff_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "out"
-            result = subprocess.run(
-                [sys.executable, str(SCRIPT), str(Path(tmp) / "does_not_exist.json"), "--out-dir", str(out_dir)],
-                capture_output=True, text=True,
-            )
+            result = run_pn("render", str(Path(tmp) / "does_not_exist.json"), "--out-dir", str(out_dir))
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("error", result.stderr)
 

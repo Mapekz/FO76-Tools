@@ -7,8 +7,3 @@ ignore = ["E501"]
 
 [tool.ty.environment]
 python-version = "3.14"
-# pn/ is flat scripts that put their own directory on sys.path, and the tests
-# put pn/ and tests/ there; ty needs both declared to resolve those imports.
-# `--offline` mode imports tests/fake_gateway.py from production code the
-# same way (see its docstring).
-extra-paths = ["pn", "tests"]

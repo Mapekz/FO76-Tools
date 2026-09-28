@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for pn/esm_gateway.py.
+"""Tests for pn/esmcli.py.
 
 Covers:
   - The `esm batch` protocol, against a stub executable that logs each
@@ -25,24 +25,18 @@ from __future__ import annotations
 import json
 import os
 import stat
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, cast
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import esm_gateway  # noqa: E402
-from builders import TempDirTestCase, fake_esm_script  # noqa: E402
-from esm_gateway import (  # noqa: E402
+from pn import esmcli, formids
+from pn.esmcli import (
     EsmError,
     EsmGateway,
-    formid_to_hex,
-    formid_to_int,
 )
+from tests.builders import TempDirTestCase, fake_esm_script
 
 # ─── Stub `esm batch` ─────────────────────────────────────────────────────────
 
@@ -261,32 +255,32 @@ class WireFormatTests(TempDirTestCase):
 
 class FormIdHelperTests(unittest.TestCase):
     def test_formid_to_int_accepts_hex_string(self):
-        self.assertEqual(formid_to_int("0x00463F"), 0x463F)
-        self.assertEqual(formid_to_int("0X00463F"), 0x463F)
+        self.assertEqual(formids.to_int("0x00463F"), 0x463F)
+        self.assertEqual(formids.to_int("0X00463F"), 0x463F)
 
     def test_formid_to_int_accepts_int(self):
-        self.assertEqual(formid_to_int(0x463F), 0x463F)
+        self.assertEqual(formids.to_int(0x463F), 0x463F)
 
     def test_formid_to_int_reads_bare_all_digit_token_as_hex_first(self):
         # Mirrors src/formid.rs's parse_formid: a bare token is hex first,
         # even one that's also plain-decimal-looking. "00568635" is hex
         # 0x00568635, not decimal 568635.
-        self.assertEqual(formid_to_int("00568635"), 0x00568635)
-        self.assertEqual(formid_to_int("18000"), 0x18000)
+        self.assertEqual(formids.to_int("00568635"), 0x00568635)
+        self.assertEqual(formids.to_int("18000"), 0x18000)
 
     def test_formid_to_int_accepts_bare_hex_with_letters(self):
         # Previously raised: formid_to_int had no bare-hex branch at all.
-        self.assertEqual(formid_to_int("463F"), 0x463F)
-        self.assertEqual(formid_to_int("DEADBEEF"), 0xDEADBEEF)
+        self.assertEqual(formids.to_int("463F"), 0x463F)
+        self.assertEqual(formids.to_int("DEADBEEF"), 0xDEADBEEF)
 
     def test_formid_to_int_falls_through_to_decimal_past_8_digits(self):
-        self.assertEqual(formid_to_int("123456789"), 123456789)
+        self.assertEqual(formids.to_int("123456789"), 123456789)
 
     def test_formid_to_hex_matches_rust_display_format(self):
         # src/formid.rs: `format!("0x{:08X}", self.0)` -- uppercase, 8 digits.
-        self.assertEqual(formid_to_hex(0x463F), "0x0000463F")
-        self.assertEqual(formid_to_hex(0x00ABCDEF), "0x00ABCDEF")
-        self.assertEqual(formid_to_hex("0x00abcdef"), "0x00ABCDEF")
+        self.assertEqual(formids.display(0x463F), "0x0000463F")
+        self.assertEqual(formids.display(0x00ABCDEF), "0x00ABCDEF")
+        self.assertEqual(formids.display("0x00abcdef"), "0x00ABCDEF")
 
 
 # ─── find_esm_binary tests ───────────────────────────────────────────────────
@@ -298,20 +292,20 @@ class FindEsmBinaryTests(unittest.TestCase):
             not_exec = Path(tmp) / "esm"
             not_exec.write_text("not executable")
             with self.assertRaises(EsmError):
-                esm_gateway.find_esm_binary(str(not_exec))
+                esmcli.find_esm_binary(str(not_exec))
 
     def test_explicit_executable_path_is_returned(self):
         with tempfile.TemporaryDirectory() as tmp:
             exe = Path(tmp) / "esm"
             exe.write_text("#!/bin/sh\n")
             exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
-            self.assertEqual(esm_gateway.find_esm_binary(str(exe)), exe)
+            self.assertEqual(esmcli.find_esm_binary(str(exe)), exe)
 
     def test_nothing_found_raises(self):
-        with mock.patch.object(esm_gateway, "ESM_CRATE_DIR", Path("/nonexistent-esm-crate")):
+        with mock.patch.object(esmcli, "ESM_CRATE_DIR", Path("/nonexistent-esm-crate")):
             with mock.patch("shutil.which", return_value=None):
                 with self.assertRaises(EsmError):
-                    esm_gateway.find_esm_binary(None)
+                    esmcli.find_esm_binary(None)
 
 
 # ─── build_diff_cmd / EsmGateway.diff tests ─────────────────────────────────
@@ -324,14 +318,14 @@ class BuildDiffCmdTests(unittest.TestCase):
             bodies="full", keep_noise=False, exclude_type="LAND,NAVM",
         )
         kwargs.update(overrides)
-        return esm_gateway.build_diff_cmd(
+        return esmcli.build_diff_cmd(
             Path("esm"), Path("a.esm"), Path("b.esm"), **cast(Any, kwargs)
         )
 
     # The flag-mapping cases (--exclude-type, source flags, --bodies, --type,
     # --keep-noise, --pretty) live in test_orchestrator.TestBuildDiffCmd: it
     # calls the same function object via make_patch_notes' re-export of
-    # esm_gateway.build_diff_cmd.
+    # esmcli.build_diff_cmd.
 
     def test_runs_the_diff_subcommand(self):
         # diff() shells out to `esm diff` -- see EsmGateway.diff's docstring
@@ -353,7 +347,7 @@ class EsmGatewayDiffTests(TempDirTestCase):
         return fake_esm_script(self.tmp, stdout_text=stdout_text, exit_code=exit_code)
 
     def _diff(self, esm_bin):
-        return esm_gateway.EsmGateway.diff(
+        return esmcli.EsmGateway.diff(
             esm_bin, Path("a.esm"), Path("b.esm"),
             sources=["--strings-dir", "/strings"],
             lang="en", record_type=None, bodies="full", keep_noise=False,
@@ -428,7 +422,7 @@ class RealEsmIntegrationTests(unittest.TestCase):
             )
         cls.esm_path = esm_path
         try:
-            cls.esm_bin = esm_gateway.find_esm_binary(None)
+            cls.esm_bin = esmcli.find_esm_binary(None)
         except EsmError as exc:
             raise unittest.SkipTest(f"esm binary not found -- skipping: {exc}")
         cls.gateway = EsmGateway(cls.esm_bin)

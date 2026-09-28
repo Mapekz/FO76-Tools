@@ -6,17 +6,12 @@ and -- with --summary -- in patch-summary.md unless cut with a reason."""
 from __future__ import annotations
 
 import json
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import builders  # noqa: E402
-import check_coverage as cv  # noqa: E402
-import layout  # noqa: E402
-from builders import TempDirTestCase  # noqa: E402
+from pn import check_coverage as cv
+from pn import layout
+from tests import builders
+from tests.builders import TempDirTestCase
 
 
 def bundle(bid, fid, edid, name):

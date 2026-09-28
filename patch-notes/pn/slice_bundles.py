@@ -5,7 +5,7 @@ On-demand record extraction from comprehensive.json for the FO76 patch-notes pip
 The patch-notes pipeline writes comprehensive.json (large, full per-record detail keyed
 by FormID). A writer subagent invokes this script to fetch per-record detail on demand:
 
-    python3 pn/slice_bundles.py --extract <out_dir> <FORMID> [<FORMID> ...]
+    python3 -m pn extract <out_dir> <FORMID> [<FORMID> ...]
         Reads `<out_dir>/comprehensive.json` and prints a small JSON object
         with just the requested records (and any `ref_names` entries they
         reference) to stdout.
@@ -15,13 +15,9 @@ Python 3, standard library only.
 import argparse
 import json
 import sys
-from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-import layout  # noqa: E402
-import patchnotes_lib as pl  # noqa: E402
+from pn import formids, jsonio, layout
+from pn import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
 # Tunables
@@ -39,24 +35,10 @@ MAX_REF_NAMES = 200
 # On-demand record extraction from comprehensive.json
 # --------------------------------------------------------------------------
 
-def _canonical_hex(s):
-    """Strip an optional 0x/0X prefix and uppercase the remaining hex
-    digits, for case-insensitive FormID matching."""
-    s = s.strip()
-    if s.lower().startswith("0x"):
-        s = s[2:]
-    return s.upper()
-
-def _looks_like_formid(s):
-    if not isinstance(s, str) or not s.lower().startswith("0x"):
-        return False
-    hexpart = s[2:]
-    return 1 <= len(hexpart) <= 8 and all(c in "0123456789abcdefABCDEF" for c in hexpart)
-
 def build_formid_lookup(keyed_dict):
     """Map canonical-hex -> actual dict key, inspecting the dict's real
     keys at runtime rather than assuming a fixed case/zero-padding format."""
-    return {_canonical_hex(k): k for k in keyed_dict}
+    return {formids.canonical(k) or k: k for k in keyed_dict}
 
 def _collect_formid_strings(value, out=None):
     """Recursively collect every 0x-hex-looking string found anywhere
@@ -70,11 +52,11 @@ def _collect_formid_strings(value, out=None):
     elif isinstance(value, list):
         for v in value:
             _collect_formid_strings(v, out)
-    elif _looks_like_formid(value):
-        out.add(_canonical_hex(value))
+    elif formids.canonical(value):
+        out.add(formids.canonical(value))
     return out
 
-def extract_records(comprehensive_data, formids):
+def extract_records(comprehensive_data, requested):
     """
     Core of --extract: given the parsed comprehensive.json dict and a list
     of requested FormID strings (case-insensitive 0x-hex), return
@@ -90,8 +72,8 @@ def extract_records(comprehensive_data, formids):
 
     out_records = {}
     matched_keys = []
-    for fid in formids:
-        actual_key = records_lookup.get(_canonical_hex(fid))
+    for fid in requested:
+        actual_key = records_lookup.get(formids.canonical(fid) or fid)
         if actual_key is not None:
             out_records[fid] = records[actual_key]
             matched_keys.append(actual_key)
@@ -113,7 +95,7 @@ def extract_records(comprehensive_data, formids):
 
     return {"records": out_records, "ref_names": out_ref_names}
 
-def run_extract(out_dir, formids):
+def run_extract(out_dir, requested):
     """
     Mode 2 entry point. Returns a process exit code (0 on success — even if
     some/all requested formids were missing — 1 on hard errors) and prints
@@ -133,13 +115,12 @@ def run_extract(out_dir, formids):
                 "loading it fully into memory anyway",
                 file=sys.stderr,
             )
-        with open(path, "r", encoding="utf-8") as f:
-            data = pl.validate_comprehensive_payload(json.load(f), label=str(path))
+        data = pl.validate_comprehensive_payload(jsonio.read(path), label=str(path))
     except (OSError, json.JSONDecodeError) as e:
         print(f"error: failed to load {path}: {e}", file=sys.stderr)
         return 1
 
-    result = extract_records(data, formids)
+    result = extract_records(data, requested)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -149,35 +130,14 @@ def run_extract(out_dir, formids):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="slice_bundles.py",
-        description="Extract on-demand record detail from comprehensive.json.",
-    )
-    ap.add_argument(
-        "--extract", action="store_true",
-        help="Extract mode: print per-FormID record detail (from "
-             "comprehensive.json) as JSON to stdout instead of slicing.",
+        prog="pn extract",
+        description="Print record detail from comprehensive.json as JSON.",
     )
     ap.add_argument("out_dir", help="Pipeline output directory.")
-    ap.add_argument(
-        "formids", nargs="*",
-        help="FormIDs to extract (--extract mode only; ignored/rejected otherwise).",
-    )
+    ap.add_argument("formids", nargs="+", help="FormIDs to extract.")
     return ap
+
 
 def main(argv=None):
     args = build_arg_parser().parse_args(argv)
-
-    if args.extract:
-        if not args.formids:
-            print("error: --extract requires at least one FORMID", file=sys.stderr)
-            return 1
-        return run_extract(args.out_dir, args.formids)
-
-    print(
-        "error: mode 1 (category slicing) is retired; use --extract instead",
-        file=sys.stderr,
-    )
-    return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
+    return run_extract(args.out_dir, args.formids)

@@ -11,7 +11,7 @@ summarization) consume it — its shape is a stable contract, see
 build_comprehensive().
 
 Usage:
-    python3 pn/render_comprehensive.py DIFF_JSON --out-dir DIR \\
+    python3 -m pn render DIFF_JSON --out-dir DIR \\
         [--old-esm PATH] [--new-esm PATH] \\
         [--old-label LABEL] [--new-label LABEL] [--patch-date YYYY-MM-DD] \\
         [--common-threshold N]
@@ -32,9 +32,8 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-import change_entries
-import layout
-import patchnotes_lib as pl
+from pn import change_entries, jsonio, layout
+from pn import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
 # Small helpers
@@ -323,7 +322,7 @@ def build_comprehensive(
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="render_comprehensive.py",
+        prog="pn render",
         description="Render an `esm diff --json` file into comprehensive.json.",
     )
     ap.add_argument("diff_json", help="Path to the raw `esm diff --json` output file.")
@@ -346,8 +345,7 @@ def main(argv=None):
 
     diff_path = Path(args.diff_json)
     try:
-        with diff_path.open(encoding="utf-8") as f:
-            diff = json.load(f)
+        diff = jsonio.read(diff_path)
     except (OSError, json.JSONDecodeError) as e:
         eprint(f"error: failed to load {diff_path}: {e}")
         return 1
@@ -369,9 +367,7 @@ def main(argv=None):
     out_dir.mkdir(parents=True, exist_ok=True)
     json_path = layout.comprehensive_json(out_dir)
 
-    with json_path.open("w", encoding="utf-8") as f:
-        json.dump(comp, f, indent=2, ensure_ascii=False)
-        f.write("\n")
+    jsonio.write(json_path, comp)
 
     counts = comp["meta"]["counts"]
     eprint(

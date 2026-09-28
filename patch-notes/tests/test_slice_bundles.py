@@ -2,19 +2,12 @@
 """Tests for pn/slice_bundles.py."""
 
 import json
-import subprocess
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-import builders  # noqa: E402
-import slice_bundles as sb  # noqa: E402
-from builders import TempOutDir  # noqa: E402
-
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "pn" / "slice_bundles.py"
+from pn import slice_bundles as sb
+from tests import builders
+from tests.builders import TempOutDir, run_pn
 
 
 def minimal_comprehensive_record(**overrides):
@@ -149,9 +142,8 @@ class TestExtract(unittest.TestCase):
 
 class TestCli(unittest.TestCase):
     def test_main_extract_requires_formids(self):
-        with TempOutDir() as out_dir:
-            code = sb.main(["--extract", str(out_dir)])
-            self.assertEqual(code, 1)
+        with TempOutDir() as out_dir, self.assertRaises(SystemExit):
+            sb.main([str(out_dir)])
 
     def test_main_extract_mode(self):
         comp = minimal_comprehensive_doc({
@@ -163,7 +155,7 @@ class TestCli(unittest.TestCase):
 
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
-                code = sb.main(["--extract", str(out_dir), "0x00000001"])
+                code = sb.main([str(out_dir), "0x00000001"])
             self.assertEqual(code, 0)
             printed = json.loads(buf.getvalue())
             self.assertEqual(printed["records"]["0x00000001"]["editor_id"], "Foo")
@@ -175,10 +167,7 @@ class TestSubprocessSmoke(unittest.TestCase):
             "0x00000001": minimal_comprehensive_record(form_id="0x00000001", editor_id="Foo"),
         })
         with TempOutDir(comprehensive_data=comp) as out_dir:
-            result = subprocess.run(
-                [sys.executable, str(SCRIPT_PATH), "--extract", str(out_dir), "0x00000001"],
-                capture_output=True, text=True, timeout=30,
-            )
+            result = run_pn("extract", str(out_dir), "0x00000001")
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             printed = json.loads(result.stdout)
             self.assertEqual(printed["records"]["0x00000001"]["editor_id"], "Foo")

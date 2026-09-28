@@ -16,7 +16,7 @@ whole sections are greedily packed into chunks so a Discord post is a
 self-contained section (or run of small sections) rather than an arbitrary
 blank-line-bounded slice. See split_into_chunks() for the packing rules.
 
-Usage: python3 pn/discord_chunker.py <input.md> [output_dir] [--allow-oversize]
+Usage: python3 -m pn chunk <input.md> [output_dir] [--allow-oversize]
 
 Exit code 1 when any chunk had to be hard-truncated (content lost) unless
 --allow-oversize is passed -- the orchestrator treats that as a gate.
@@ -26,12 +26,8 @@ import argparse
 import os
 import re
 import sys
-from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR))
-
-import layout  # noqa: E402
+from pn import layout
 
 MAX_CHARS = 1900
 #: Discord's own per-message ceiling; a chunk over this is cut to fit it exactly.
@@ -367,7 +363,7 @@ def split_into_chunks(lines, heading_indices, max_chars=MAX_CHARS):
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        prog="discord_chunker.py",
+        prog="pn chunk",
         description=f"Split a Markdown file into Discord-sized (<= {MAX_CHARS} chars) chunks.",
     )
     ap.add_argument("input", help="Markdown file to chunk (normally patch-summary.md)")

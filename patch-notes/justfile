@@ -5,7 +5,8 @@
 # Usage:
 #   just          -> test + lint (the local CI pass for this project)
 #   just test     -> unittest suite (hermetic: no game data, no esm binary)
-#   just lint     -> ruff + ty over pn/ and tests/
+#   python3 -m pn --help -> every pipeline verb
+#   just lint     -> ruff + ty over pn/, tests/ and cli.py
 #   just run OLD NEW -> mechanical stage for two snapshot directories
 
 default: check
@@ -13,40 +14,40 @@ default: check
 check: test lint
 
 test:
-    python3 -m unittest discover -s tests
+    python3 -m unittest discover -s tests -t .
 
 # ruff and ty run through uvx and are never imported by the pipeline, so pn/
 # stays stdlib-only at runtime. Versions are pinned to match CI exactly (ty is
 # a 0.0.x preview — an unpinned upgrade could disagree with CI). Config lives
 # in pyproject.toml ([tool.ruff] / [tool.ty] only).
-lint:
-    uvx ruff@0.15.22 check pn/ tests/
-    uvx ty@0.0.62 check pn/ tests/
-
-# Mechanical patch-notes stage: diff.json + comprehensive.{md,json} + bundles.json
-# + lints.json + manifest.json into the output dir. The narrative stage (per-category
-# notes + Discord chunks) is the /patch-notes skill (`skill/SKILL.md`).
 #
-# Strings are auto-detected from <esm_parent>/strings/ for each ESM.
-# If both ESMs share a parent directory, the shared strings/ there is tried first.
-# Use STRINGS_DIR to pass an explicit shared path.
+# Lint and typecheck pn/, tests/ and cli.py.
+lint:
+    uvx ruff@0.15.22 check pn/ tests/ cli.py
+    uvx ty@0.0.62 check pn/ tests/ cli.py
+
+# Mechanical patch-notes stage: diff.json, comprehensive.json, bundles.json,
+# lints.json and manifest.json into the output dir. The narrative stage is the
+# /patch-notes skill (`skill/SKILL.md`).
+#
+# `esm diff` finds each snapshot's strings and curve tables in its own folder;
+# the env vars below override that for both sides.
 #
 # Usage:
 #   just run /path/to/v1/ /path/to/v2/
 #   OUT_DIR=/path/to/out just run /path/to/old/ /path/to/new/
 #
 # Env vars (all optional):
-#   STRINGS_DIR    Shared strings directory for both ESMs. If omitted, auto-detected
-#                  from <esm_parent>/strings/ (or <esm_parent> itself).
-#   STARTUP_BA2    Path to a Startup BA2 — enables curve-table detail and
-#                  crafting-quantity evaluation. Mutually exclusive with CURVES_DIR.
-#   CURVES_DIR     misc/ directory extracted from Startup BA2 — loose alternative to
-#                  STARTUP_BA2. Auto-detected from <new_esm_parent>/misc/ if omitted.
+#   STRINGS_DIR    Strings directory for both ESMs.
+#   STARTUP_BA2    Startup BA2 for curve tables, both ESMs.
+#   CURVES_DIR     Loose misc/ directory for curve tables, both ESMs.
 #   ESM_LANG       Localization language code (default: en). Named ESM_LANG to
 #                  avoid collision with the system $LANG locale variable.
 #   OUT_DIR        Output directory (default: patch_<old>_to_<new>/ next to NEW).
+#
+# Run the mechanical stage for two snapshot directories.
 run old new:
-    python3 pn/make_patch_notes.py \
+    python3 -m pn run \
         "{{old}}" "{{new}}" \
         ${STRINGS_DIR:+--strings-dir "$STRINGS_DIR"} \
         ${STARTUP_BA2:+--startup-ba2 "$STARTUP_BA2"} \
