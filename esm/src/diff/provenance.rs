@@ -140,11 +140,11 @@ fn walk_array(envelope: &Map<String, Value>, a: Side<'_>, b: Side<'_>, out: &mut
         }
         walk(changes, a.element(from), b.element(to), out);
     }
-    for (key, side) in [("removed", a), ("added", b)] {
+    for (key, side, other) in [("removed", a, b), ("added", b, a)] {
         let Some(elements) = envelope.get(key).and_then(Value::as_array) else {
             continue;
         };
-        let mut positions = element_positions(side);
+        let mut positions = element_positions(side, other);
         for element in elements {
             let found = positions
                 .get_mut(&element.to_string())
@@ -170,21 +170,43 @@ fn key_body(element: Side<'_>) -> Side<'_> {
 
 /// The indices of `side`'s array elements, grouped by their rendering, so
 /// an added or removed element (a copy of one) finds where it came from.
-fn element_positions(side: Side<'_>) -> HashMap<String, VecDeque<usize>> {
-    let mut positions: HashMap<String, VecDeque<usize>> = HashMap::new();
-    for (i, element) in side
-        .json
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .enumerate()
-    {
-        positions
-            .entry(element.to_string())
-            .or_default()
-            .push_back(i);
+/// Elements that render alike can differ in type (a string and a FormID
+/// both render `"0x…"`), so within a rendering the positions whose typed
+/// content `other` has fewer of — the ones the diff can have added or
+/// removed — come first.
+fn element_positions(side: Side<'_>, other: Side<'_>) -> HashMap<String, VecDeque<usize>> {
+    let elements = |s: Side<'_>| {
+        let count = s.json.and_then(Value::as_array).map_or(0, Vec::len);
+        (0..count)
+            .map(|i| {
+                let e = s.element(i);
+                let rendering = e.json.map(Value::to_string).unwrap_or_default();
+                let typed = e.node.map(|n| format!("{n:?}")).unwrap_or_default();
+                (rendering, typed)
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut other_counts: HashMap<(String, String), usize> = HashMap::new();
+    for key in elements(other) {
+        *other_counts.entry(key).or_default() += 1;
     }
-    positions
+    let mut seen: HashMap<(String, String), usize> = HashMap::new();
+    let mut unmatched: HashMap<String, VecDeque<usize>> = HashMap::new();
+    let mut matched: HashMap<String, VecDeque<usize>> = HashMap::new();
+    for (i, key) in elements(side).into_iter().enumerate() {
+        let n = seen.entry(key.clone()).or_default();
+        let bucket = if *n >= other_counts.get(&key).copied().unwrap_or(0) {
+            &mut unmatched
+        } else {
+            &mut matched
+        };
+        *n += 1;
+        bucket.entry(key.0).or_default().push_back(i);
+    }
+    for (rendering, rest) in matched {
+        unmatched.entry(rendering).or_default().extend(rest);
+    }
+    unmatched
 }
 
 #[cfg(test)]
@@ -267,6 +289,36 @@ mod tests {
             changed_refs(&diff, Side::new(&ja, &na), Side::new(&jb, &nb)),
             HashSet::from([FormId(0x10)])
         );
+    }
+
+    /// A string and a FormID that render alike: the diff's removed
+    /// `"0x12345678"` is the one of the two that the other side lacks.
+    #[test]
+    fn a_removed_element_is_told_from_a_kept_one_that_renders_alike() {
+        let text = || Node::str("0x12345678");
+        let both = (
+            json!({"Items": ["0x12345678", "0x12345678"]}),
+            Node::obj([("Items", Node::Array(vec![text(), formid(0x1234_5678)]))]),
+        );
+        for (kept, want) in [
+            (text(), HashSet::from([FormId(0x1234_5678)])),
+            (formid(0x1234_5678), HashSet::new()),
+        ] {
+            let one = (
+                json!({"Items": ["0x12345678"]}),
+                Node::obj([("Items", Node::Array(vec![kept]))]),
+            );
+            let diff = json_diff(&both.0, &one.0);
+            assert!(diff.get("Items").is_some(), "{diff}");
+            assert_eq!(
+                changed_refs(
+                    &diff,
+                    Side::new(&both.0, &both.1),
+                    Side::new(&one.0, &one.1)
+                ),
+                want
+            );
+        }
     }
 
     #[test]

@@ -161,12 +161,21 @@ pub struct RecordDiff {
     /// engine-hardcoded forms), sorted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dangling_refs: Vec<String>,
-    /// The FormIDs of the typed references `field_changes` touched before
-    /// the cross-record noise pass; filters `refs` once that pass has
-    /// settled `field_changes`.
+    /// The FormIDs of the typed references `field_changes` touches (see
+    /// `provenance`); recomputed for a restamped record once the
+    /// cross-record noise pass has settled its `field_changes`.
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
     pub(crate) ref_ids: HashSet<FormId>,
+    /// The record's FormID.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) id: FormId,
+    /// Whether the record's form version changed (the cross-record noise
+    /// pass applies only to these).
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) restamp: bool,
     /// The FormIDs only the B-side record references.
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
@@ -477,6 +486,8 @@ pub fn diff_databases_with(
             refs: Vec::new(),
             dangling_refs: Vec::new(),
             ref_ids,
+            id,
+            restamp,
             new_ref_ids,
         });
         changed_restamp.push(restamp);
@@ -494,6 +505,13 @@ pub fn diff_databases_with(
     } else {
         Vec::new()
     };
+    // That pass pruned restamped records' changes: find which typed
+    // references the final changes still touch.
+    if opts.suppress_noise {
+        for rd in changed.iter_mut().filter(|rd| rd.restamp) {
+            rd.ref_ids = final_changed_refs(a, b, rd)?;
+        }
+    }
 
     if flip_text_stripped > 0 {
         suppressed_counts.insert("localization_flip_text".to_owned(), flip_text_stripped);
@@ -505,9 +523,7 @@ pub fn diff_databases_with(
     // its (now final) field_changes; the new ones that resolve nowhere are
     // its `dangling_refs`.
     for rd in &mut changed {
-        let mut refs = HashSet::new();
-        collect_typed_refs(&rd.field_changes, &rd.ref_ids, &mut refs);
-        let mut refs: Vec<FormId> = refs.into_iter().collect();
+        let mut refs: Vec<FormId> = rd.ref_ids.iter().copied().collect();
         refs.sort_by_key(|id| id.raw());
         rd.dangling_refs = refs
             .iter()
@@ -607,30 +623,27 @@ pub(crate) fn is_formid_str(s: &str) -> bool {
     s.len() == 10 && b[0] == b'0' && b[1] == b'x' && b[2..].iter().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Collect the FormIDs in `ids` (the typed references a record's diff
-/// touched, see `provenance`) that still appear as FormID strings in the
-/// rendered `val`, once noise suppression has pruned it.
-fn collect_typed_refs(val: &Value, ids: &HashSet<FormId>, out: &mut HashSet<FormId>) {
-    match val {
-        Value::String(s) if is_formid_str(s) => {
-            if let Ok(id) = parse_formid(s)
-                && ids.contains(&id)
-            {
-                out.insert(id);
-            }
-        }
-        Value::Object(map) => {
-            for v in map.values() {
-                collect_typed_refs(v, ids, out);
-            }
-        }
-        Value::Array(arr) => {
-            for v in arr {
-                collect_typed_refs(v, ids, out);
-            }
-        }
-        _ => {}
-    }
+/// The typed references a record's final `field_changes` touch, from both
+/// sides decoded again (see `provenance`).
+fn final_changed_refs(
+    a: &Database,
+    b: &Database,
+    rd: &RecordDiff,
+) -> anyhow::Result<HashSet<FormId>> {
+    let decode = |db: &Database| {
+        let meta = db
+            .index
+            .get_by_formid(rd.id)
+            .with_context(|| format!("{} vanished", rd.id))?;
+        db.record_at_meta_with_node(&meta, ResolveDepth::None)
+    };
+    let (ra, node_a) = decode(a)?;
+    let (rb, node_b) = decode(b)?;
+    Ok(provenance::changed_refs(
+        &rd.field_changes,
+        provenance::Side::new(&ra.fields, &node_a),
+        provenance::Side::new(&rb.fields, &node_b),
+    ))
 }
 
 /// Whether `id` names a record in either snapshot or an engine-hardcoded form.

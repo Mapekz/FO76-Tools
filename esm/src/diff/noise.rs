@@ -1283,6 +1283,8 @@ mod tests {
             refs: Vec::new(),
             dangling_refs: Vec::new(),
             ref_ids: Default::default(),
+            id: Default::default(),
+            restamp: false,
             new_ref_ids: Default::default(),
         }
     }
