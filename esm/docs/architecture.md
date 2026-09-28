@@ -267,7 +267,7 @@ only through the CLI.
 | Want to... | Look in |
 |---|---|
 | Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py` (member order and the `unordered`/`any_member` binding flags decide which subrecord a member binds), then `src/decode/bind.rs` for binding, `src/decode/walk.rs` for payload decoding, `src/decode/derived.rs` for a derived value |
-| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too |
+| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too (ADR 0017) |
 | Change diff noise suppression | `src/diff/noise.rs` (`suppress_record` and the stage it names) / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
 | Make an op reachable from the viewer | nothing in `bindings/napi/`: `EsmHost::run` takes any `Op`; run `just gen-types` and add it to the viewer's `RUNNABLE_OPS` (see the root validation map) |

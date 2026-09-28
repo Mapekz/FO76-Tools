@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 /// what opening a database cost. The embedded schema arrives already split
 /// per record type, each definition parsed and validated by `build.rs`, so
 /// an invalid one fails the build; a schema loaded from a file is parsed
-/// and validated eagerly.
+/// and validated eagerly. See `docs/adr/0016-schema-parses-per-record-on-first-use.md`.
 #[derive(Debug)]
 pub struct Schema {
     records: HashMap<Cow<'static, str>, LazyRecord>,

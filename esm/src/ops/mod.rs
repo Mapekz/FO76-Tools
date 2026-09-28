@@ -130,7 +130,9 @@ impl Response {
 pub struct NoArgs {}
 
 /// Declares every op once: its wire tag (the `snake_case` of its variant),
-/// its arguments, its output type, and the function that runs it.
+/// its arguments, its output type, and the function that runs it. The CLI's
+/// arguments are declared beside it, not derived from it (see
+/// `docs/adr/0017-cli-arguments-are-declared-beside-the-registry.md`).
 macro_rules! ops {
     ($( $tag:ident => $variant:ident($args:ty) -> $out:ty = $run:path; )*) => {
         /// Every operation routable through [`run`] / [`crate::host::Host::run`].
