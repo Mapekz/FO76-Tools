@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import builders  # noqa: E402
 import slice_bundles as sb  # noqa: E402
-from builders import TempOutDir, load_fixture  # noqa: E402
+from builders import TempOutDir  # noqa: E402
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "pn" / "slice_bundles.py"
 
@@ -45,29 +45,7 @@ def minimal_comprehensive_doc(records, **overrides):
 
 
 # --------------------------------------------------------------------------
-# _lints_index / lints_for_bundles
-# --------------------------------------------------------------------------
-
-class TestLints(unittest.TestCase):
-    def setUp(self):
-        self.data = load_fixture("bundles_small.json")
-
-    def test_lints_for_bundles_filters_by_lint_ids(self):
-        lints_by_id = sb._lints_index(self.data["lints"])
-        # Build a minimal bundles structure to test lints_for_bundles
-        bundles_subset = [b for b in self.data["bundles"] if b["id"] == "B0001"]
-        lints = sb.lints_for_bundles(bundles_subset, lints_by_id)
-        self.assertEqual([lint["id"] for lint in lints], ["L0001"])
-
-    def test_lints_for_bundles_matches_via_bundle_id_even_if_not_in_lint_ids(self):
-        lints_by_id = {"L9": {"id": "L9", "bundle_id": "B0001", "rule": "x"}}
-        bundle = {"id": "B0001", "lint_ids": []}
-        result = sb.lints_for_bundles([bundle], lints_by_id)
-        self.assertEqual([lint["id"] for lint in result], ["L9"])
-
-
-# --------------------------------------------------------------------------
-# extract_records / run_extract (Mode 2)
+# extract_records / run_extract
 # --------------------------------------------------------------------------
 
 class TestExtract(unittest.TestCase):

@@ -130,16 +130,13 @@ def anchor_of(member_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 def bundle(**overrides: Any) -> dict[str, Any]:
-    """A bundles.json bundle (`patchnotes_lib.Bundle` shape), including the
-    `bug_watch`/`lint_ids` keys `validate_bundle` insists on."""
+    """A bundles.json bundle (`patchnotes_lib.Bundle` shape)."""
     return {
         "id": "B0001",
         "title": "Bundle",
         "anchor": anchor(),
         "members": [],
         "edges": [],
-        "bug_watch": False,
-        "lint_ids": [],
         **overrides,
     }
 

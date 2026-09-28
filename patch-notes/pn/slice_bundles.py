@@ -36,49 +36,7 @@ COMPREHENSIVE_WARN_BYTES = 200 * 1024 * 1024
 MAX_REF_NAMES = 200
 
 # --------------------------------------------------------------------------
-# Lint index utilities (used by triage_bundles.py)
-# --------------------------------------------------------------------------
-
-def _lints_index(lints):
-    """Map lint id -> lint dict, preserving insertion (declaration) order."""
-    by_id = {}
-    for lint in lints:
-        lid = lint.get("id")
-        if lid is not None:
-            by_id[lid] = lint
-    return by_id
-
-def lints_for_bundles(bundles_subset, lints_by_id):
-    """
-    Return the lints relevant to `bundles_subset`: any lint whose id is
-    listed in one of these bundles' `lint_ids`, plus (defensively) any lint
-    whose own `bundle_id` names one of these bundles even if that bundle's
-    `lint_ids` omitted it. Order follows first reference; deduplicated.
-    """
-    bundle_ids = {b.get("id") for b in bundles_subset}
-    result = []
-    seen = set()
-
-    for b in bundles_subset:
-        for lid in b.get("lint_ids") or []:
-            if lid in seen:
-                continue
-            lint = lints_by_id.get(lid)
-            if lint is not None:
-                result.append(lint)
-                seen.add(lid)
-
-    for lid, lint in lints_by_id.items():
-        if lid in seen:
-            continue
-        if lint.get("bundle_id") in bundle_ids:
-            result.append(lint)
-            seen.add(lid)
-
-    return result
-
-# --------------------------------------------------------------------------
-# Mode 2: on-demand record extraction from comprehensive.json
+# On-demand record extraction from comprehensive.json
 # --------------------------------------------------------------------------
 
 def _canonical_hex(s):

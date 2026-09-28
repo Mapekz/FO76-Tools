@@ -36,7 +36,7 @@ render_comprehensive.py  (Tool 1)     → comprehensive.json
 build_bundles.py         (Tool 2)     → bundles.json
   │   clusters related records (weapon + mod slots + drop list + unique keyword)
   ▼
-run_lints.py              (Tool 3)    → lints.json, rewrites bundles.json's lint_ids/bug_watch
+run_lints.py              (Tool 3)    → lints.json (each lint names its bundle_id)
   │   rule registry, consults esm_gateway.py's EsmGateway for reference-graph checks
   ▼
 patchnotes_lib.py manifest helpers    → manifest.json

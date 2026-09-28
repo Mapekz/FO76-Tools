@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import builders  # noqa: E402
 import change_entries  # noqa: E402
+import patchnotes_lib as pl  # noqa: E402
 import run_lints as rl  # noqa: E402
 from builders import TempOutDir  # noqa: E402
 from fake_gateway import FakeGateway  # noqa: E402
@@ -92,7 +93,7 @@ def make_bundle(bundle_id, anchor_fid, anchor_type, members=None, edges=None, **
 
 
 def make_bundles(bundles=None):
-    return {"schema_version": 1, "bundles": bundles or [], "lints": []}
+    return {"schema_version": 1, "bundles": bundles or []}
 
 
 def no_op_client():
@@ -670,7 +671,7 @@ class TestCutNewlyDeprecated(TestRunLintsBase):
 
 
 # ---------------------------------------------------------------------------
-# Injection: bundles.json lint_ids / bug_watch
+# attach_lints: joining lints.json onto bundles.json
 # ---------------------------------------------------------------------------
 
 
@@ -695,14 +696,14 @@ class TestInjection(unittest.TestCase):
         )
         bundles = make_bundles([matching_bundle, untouched_bundle])
 
-        lints_payload, updated = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
+        lints_payload = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
 
-        by_id = {b["id"]: b for b in updated["bundles"]}
+        by_id = {b["id"]: b for b in pl.attach_lints(bundles["bundles"], lints_payload["lints"])}
         self.assertGreaterEqual(len(by_id["B0001"]["lint_ids"]), 1)
         self.assertTrue(by_id["B0001"]["bug_watch"])
 
-        # B0002 has no matching lint this run: recomputed to empty/false, and
-        # every OTHER field (title, anchor, ...) is left exactly as-is.
+        # B0002 has no matching lint: recomputed to empty/false, and every
+        # OTHER field (title, anchor, ...) is left exactly as-is.
         self.assertEqual(by_id["B0002"]["lint_ids"], [])
         self.assertFalse(by_id["B0002"]["bug_watch"])
         self.assertEqual(by_id["B0002"]["title"], "Bundle B0002")
@@ -710,7 +711,6 @@ class TestInjection(unittest.TestCase):
             by_id["B0002"]["anchor"], {"form_id": "0x09999999", "record_type": "WEAP", "status": "changed"}
         )
 
-        self.assertEqual(updated["lints"], lints_payload["lints"])
 
     def test_lint_ids_populated_for_member_not_just_anchor(self):
         weap_rec = make_record("0x00100091", "WEAP", "added", editor_id="WEAP_HubRef01")
@@ -728,11 +728,12 @@ class TestInjection(unittest.TestCase):
         client = refs_graph_client()
         settings = {"unique_keyword_patterns": ["*Keyword"]}
 
-        lints_payload, updated = rl.run_lints(comp, bundles, client, "new.esm", settings)
+        lints_payload = rl.run_lints(comp, bundles, client, "new.esm", settings)
 
         self.assertEqual(len(lints_payload["lints"]), 1)
-        self.assertEqual(updated["bundles"][0]["lint_ids"], [lints_payload["lints"][0]["id"]])
-        self.assertTrue(updated["bundles"][0]["bug_watch"])
+        attached = pl.attach_lints(bundles["bundles"], lints_payload["lints"])
+        self.assertEqual(attached[0]["lint_ids"], [lints_payload["lints"][0]["id"]])
+        self.assertTrue(attached[0]["bug_watch"])
 
 
 # ---------------------------------------------------------------------------
@@ -769,7 +770,7 @@ class TestDeterminism(unittest.TestCase):
         comp = self._mixed_comp()
         bundles = make_bundles()
         client = no_op_client()
-        lints_payload, _ = rl.run_lints(comp, bundles, client, "new.esm", {})
+        lints_payload = rl.run_lints(comp, bundles, client, "new.esm", {})
 
         lints = lints_payload["lints"]
         self.assertTrue(lints, "expected at least one lint from the mixed fixture")
@@ -782,8 +783,8 @@ class TestDeterminism(unittest.TestCase):
     def test_repeated_runs_produce_identical_output(self):
         comp = self._mixed_comp()
         bundles = make_bundles()
-        run1, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
-        run2, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
+        run1 = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
+        run2 = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
         ids1 = [(lint["rule"], lint["form_id"], lint["id"]) for lint in run1["lints"]]
         ids2 = [(lint["rule"], lint["form_id"], lint["id"]) for lint in run2["lints"]]
         self.assertEqual(ids1, ids2)
@@ -838,9 +839,7 @@ class TestEndToEndCli(unittest.TestCase):
             self.assertEqual(rc, 0)
 
             lints_path = out_dir / "lints.json"
-            bundles_path = out_dir / "bundles.json"
             self.assertTrue(lints_path.exists())
-            self.assertTrue(bundles_path.exists())
 
             lints_payload = json.loads(lints_path.read_text(encoding="utf-8"))
             self.assertEqual(lints_payload["schema_version"], 1)
@@ -850,11 +849,8 @@ class TestEndToEndCli(unittest.TestCase):
             # 2 per-entry + 1 all_blocked (LVLI) + 1 cut_newly_deprecated == 4.
             self.assertEqual(len(lints_payload["lints"]), 4)
 
-            updated_bundles = json.loads(bundles_path.read_text(encoding="utf-8"))
-            b0001 = next(b for b in updated_bundles["bundles"] if b["id"] == "B0001")
-            self.assertTrue(b0001["bug_watch"])
-            self.assertGreaterEqual(len(b0001["lint_ids"]), 1)
-            self.assertEqual(updated_bundles["lints"], lints_payload["lints"])
+            # lints.json is run_lints' only output.
+            self.assertEqual(json.loads((out_dir / "bundles.json").read_text(encoding="utf-8")), bundles)
 
     def test_offline_requires_refs_fixture(self):
         comp = make_comp([])
@@ -955,7 +951,7 @@ class TestPerRecordErrorNotes(TestRunLintsBase):
         comp = make_comp([bad])
         bundles = make_bundles()
 
-        lints_payload, _ = rl.run_lints(
+        lints_payload = rl.run_lints(
             comp,
             bundles,
             no_op_client(),

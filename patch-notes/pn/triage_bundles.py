@@ -2,7 +2,7 @@
 """
 triage_bundles.py — mechanical-triage stage for the FO76 patch-notes pipeline.
 
-Reads `<out_dir>/bundles.json` + `<out_dir>/comprehensive.json` and a rule
+Reads `<out_dir>/bundles.json`, `lints.json` (when present) and `comprehensive.json`, and a rule
 config (`pn/patch_notes_tiers.json` by default) and assigns each bundle a
 tier -- `rollout` (one bulk data-shape change across many records), `deep` (a
 real writeup), `brief` (a templated one-liner -- existence is the story),
@@ -81,7 +81,6 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import layout  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
-import slice_bundles as sb  # noqa: E402
 
 DEFAULT_TIERS_PATH = SCRIPT_DIR / "patch_notes_tiers.json"
 
@@ -126,6 +125,14 @@ def load_json(path):
 
 def load_bundles(out_dir):
     return pl.validate_bundles_payload(load_json(layout.bundles_json(out_dir)))
+
+
+def load_lints(out_dir):
+    """lints.json's lints, or none when the run skipped the lint stage."""
+    path = layout.lints_json(out_dir)
+    if not path.exists():
+        return []
+    return load_json(path).get("lints") or []
 
 
 def load_comprehensive(out_dir):
@@ -699,6 +706,49 @@ def build_triage_payload(bundles, tiers_by_id, rollout_shapes, extra_stats=None)
 
 
 # --------------------------------------------------------------------------
+# Lints
+# --------------------------------------------------------------------------
+
+def lints_index(lints):
+    """Map lint id -> lint dict, preserving insertion (declaration) order."""
+    by_id = {}
+    for lint in lints:
+        lid = lint.get("id")
+        if lid is not None:
+            by_id[lid] = lint
+    return by_id
+
+def lints_for_bundles(bundles_subset, lints_by_id):
+    """
+    Return the lints relevant to `bundles_subset`: any lint whose id is
+    listed in one of these bundles' `lint_ids`, plus (defensively) any lint
+    whose own `bundle_id` names one of these bundles even if that bundle's
+    `lint_ids` omitted it. Order follows first reference; deduplicated.
+    """
+    bundle_ids = {b.get("id") for b in bundles_subset}
+    result = []
+    seen = set()
+
+    for b in bundles_subset:
+        for lid in b.get("lint_ids") or []:
+            if lid in seen:
+                continue
+            lint = lints_by_id.get(lid)
+            if lint is not None:
+                result.append(lint)
+                seen.add(lid)
+
+    for lid, lint in lints_by_id.items():
+        if lid in seen:
+            continue
+        if lint.get("bundle_id") in bundle_ids:
+            result.append(lint)
+            seen.add(lid)
+
+    return result
+
+
+# --------------------------------------------------------------------------
 # deep-slice.json
 # --------------------------------------------------------------------------
 
@@ -712,7 +762,7 @@ def _strip_bundle_for_deep_slice(bundle):
 
 
 def build_deep_slice_payload(deep_bundles, lints_by_id):
-    lints = sb.lints_for_bundles(deep_bundles, lints_by_id)
+    lints = lints_for_bundles(deep_bundles, lints_by_id)
     return {
         "schema_version": 1,
         "bundles": [_strip_bundle_for_deep_slice(b) for b in deep_bundles],
@@ -1011,9 +1061,10 @@ def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):
     comp_data = load_comprehensive(out_dir)
     config = load_tiers_config(tiers_path)
 
-    bundles = bundles_data.get("bundles") or []
+    lints = load_lints(out_dir)
+    bundles = pl.attach_lints(bundles_data.get("bundles") or [], lints)
     records = comp_data.get("records") or {}
-    lints_by_id = sb._lints_index(bundles_data.get("lints") or [])
+    lints_by_id = lints_index(lints)
 
     tiers_by_id, rollout_shapes = compute_bundle_tiers(bundles, records, config)
     result = assemble_outputs(bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config)
@@ -1082,9 +1133,10 @@ def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH
     config = load_tiers_config(tiers_path)
     assessment = load_json(assessment_path)
 
-    bundles = bundles_data.get("bundles") or []
+    lints = load_lints(out_dir)
+    bundles = pl.attach_lints(bundles_data.get("bundles") or [], lints)
     records = comp_data.get("records") or {}
-    lints_by_id = sb._lints_index(bundles_data.get("lints") or [])
+    lints_by_id = lints_index(lints)
 
     tiers_by_id, rollout_shapes = compute_bundle_tiers(bundles, records, config)
     resolved = merge_assessment(tiers_by_id, assessment, load_truncated_ids(out_dir))

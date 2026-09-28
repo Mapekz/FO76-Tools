@@ -8,8 +8,9 @@ FormID — see `change_entries.py` for the `ChangeEntry` shape each record's
 `changes` list is made of) and `<out_dir>/bundles.json` (per-bundle
 groupings), runs a fixed registry of rule functions against them (optionally
 consulting a live or fake `esm` gateway for reference-graph checks), and
-writes `<out_dir>/lints.json`. It also rewrites `bundles.json` in place so
-each bundle's `lint_ids`/`bug_watch` reflect this run's results.
+writes `<out_dir>/lints.json`, its only output. Each lint names its
+`bundle_id`; `patchnotes_lib.attach_lints` joins lints onto bundles when a
+later stage reads both.
 
 Each rule is a function `rule_name(ctx) -> Iterable[dict]` returning partial
 lint dicts (no `id`/`bundle_id` yet — those are assigned centrally after
@@ -37,7 +38,7 @@ import fnmatch
 import json
 import re
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -844,58 +845,11 @@ def assign_bundle_id(form_id, bundles):
     return b.get("id") if b else None
 
 
-def inject_into_bundles(lints, bundles_data):
-    """Return a copy of `bundles_data` with its top-level `lints` replaced by
-    `lints`, and each bundle's `lint_ids`/`bug_watch` recomputed from
-    scratch: `lint_ids` = ids of lints whose `form_id` is one of that
-    bundle's members (anchor included); `bug_watch` = True iff any of those
-    lints has severity error or warn. Bundles with no matching lint end up
-    with `lint_ids: []`, `bug_watch: False` -- everything else about each
-    bundle dict is left untouched."""
-    bundles_data = dict(bundles_data or {})
-    bundles_list = list(bundles_data.get("bundles") or [])
-
-    member_to_bundle_ids = defaultdict(list)
-    for b in bundles_list:
-        fids = set()
-        anchor = b.get("anchor") or {}
-        if anchor.get("form_id"):
-            fids.add(anchor["form_id"])
-        for m in b.get("members") or []:
-            if isinstance(m, dict) and m.get("form_id"):
-                fids.add(m["form_id"])
-        for fid in fids:
-            member_to_bundle_ids[fid].append(b.get("id"))
-
-    lint_ids_by_bundle = defaultdict(list)
-    severities_by_bundle = defaultdict(set)
-    for lint in lints:
-        for bid in member_to_bundle_ids.get(lint.get("form_id"), []):
-            lint_ids_by_bundle[bid].append(lint["id"])
-            severities_by_bundle[bid].add(lint.get("severity"))
-
-    new_bundles = []
-    for b in bundles_list:
-        nb = dict(b)
-        bid = nb.get("id")
-        nb["lint_ids"] = lint_ids_by_bundle.get(bid, [])
-        nb["bug_watch"] = any(s in ("error", "warn") for s in severities_by_bundle.get(bid, ()))
-        new_bundles.append(nb)
-
-    bundles_data["bundles"] = new_bundles
-    bundles_data["lints"] = lints
-    return bundles_data
-
-
 def run_lints(comp, bundles, client, new_esm=None, settings=None, rules=None):
     """Run the requested rules (default: all of `RULE_ORDER`) over `comp` /
-    `bundles`, and return `(lints_payload, updated_bundles)`:
-
-    - `lints_payload`: the full `lints.json` document —
-      `{"schema_version", "meta": {"generated_at", "rules_run", "counts",
-      "notes"?}, "lints": [...]}`.
-    - `updated_bundles`: `bundles` with `lints`/`lint_ids`/`bug_watch`
-      refreshed (see `inject_into_bundles`).
+    `bundles`, and return the full `lints.json` document:
+    `{"schema_version", "meta": {"generated_at", "rules_run", "counts",
+    "notes"?}, "lints": [...]}`.
 
     Never raises: an individual rule that throws is caught, skipped, and
     noted in `meta.notes` rather than aborting the whole run.
@@ -943,9 +897,7 @@ def run_lints(comp, bundles, client, new_esm=None, settings=None, rules=None):
         "lints": all_lints,
     }
 
-    updated_bundles = inject_into_bundles(all_lints, bundles)
-
-    return lints_payload, updated_bundles
+    return lints_payload
 
 
 # --------------------------------------------------------------------------
@@ -978,14 +930,11 @@ def build_arg_parser():
     ap = argparse.ArgumentParser(
         prog="run_lints.py",
         description="Run automated lint checks over the patch-notes pipeline's "
-        "comprehensive.json + bundles.json, writing lints.json and updating "
-        "bundles.json in place.",
+        "comprehensive.json + bundles.json, writing lints.json.",
     )
     ap.add_argument("out_dir", help="Pipeline output directory (contains comprehensive.json, bundles.json).")
     ap.add_argument("--new-esm", help="Path to the new-snapshot ESM (required unless --offline).")
-    ap.add_argument(
-        "--esm-bin", default="target/release/esm", help="Path to the esm CLI binary."
-    )
+    ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live mode only).")
     ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeGateway instead of live esm lookups.")
     ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see tests/fake_gateway.FakeGateway).")
     ap.add_argument("--rules", help="Comma-separated subset of rules to run (default: all).")
@@ -1032,10 +981,15 @@ def main(argv=None):
             if not args.new_esm:
                 print("error: --new-esm is required unless --offline", file=sys.stderr)
                 return 1
-            client = esm_gateway.EsmGateway(args.esm_bin)
+            try:
+                esm_bin = esm_gateway.find_esm_binary(args.esm_bin)
+            except esm_gateway.EsmError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+            client = esm_gateway.EsmGateway(esm_bin)
             new_esm = args.new_esm
 
-        lints_payload, updated_bundles = run_lints(
+        lints_payload = run_lints(
             comp, bundles, client, new_esm, rules=rule_names
         )
     finally:
@@ -1044,9 +998,6 @@ def main(argv=None):
 
     with open(layout.lints_json(out_dir), "w", encoding="utf-8") as f:
         json.dump(lints_payload, f, indent=2)
-        f.write("\n")
-    with open(layout.bundles_json(out_dir), "w", encoding="utf-8") as f:
-        json.dump(updated_bundles, f, indent=2)
         f.write("\n")
 
     print_summary(lints_payload, rule_names or RULE_ORDER)

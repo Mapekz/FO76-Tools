@@ -65,8 +65,7 @@ def comprehensive_json(out_dir: Path) -> Path:
 
 
 def bundles_json(out_dir: Path) -> Path:
-    """`build_bundles.py`'s narrative groupings -- rewritten in place by
-    `run_lints.py` once lint findings are attached (`lint_ids`/`bug_watch`)."""
+    """`build_bundles.py`'s narrative groupings."""
     return Path(out_dir) / "bundles.json"
 
 

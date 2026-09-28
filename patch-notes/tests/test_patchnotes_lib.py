@@ -140,8 +140,6 @@ class TestWireShapeValidation(unittest.TestCase):
                 "role": "not_a_role",
             }],
             "edges": [],
-            "bug_watch": False,
-            "lint_ids": [],
             "id": "B0001",
         }
         with self.assertRaises(ValueError) as ctx:

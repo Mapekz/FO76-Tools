@@ -9,7 +9,7 @@ raw `esm diff --json` into a reviewable, bundled, linted output directory:
     1. `esm diff` (subprocess)              -> diff.json
     2. render_comprehensive.py (library)    -> comprehensive.json
     3. build_bundles.py (library)           -> bundles.json
-    4. run_lints.py (library)               -> lints.json + updated bundles.json
+    4. run_lints.py (library)               -> lints.json
     5. patchnotes_lib.py (manifest helpers) -> manifest.json
 
 This is the **mechanical** stage only — deterministic, no LLM involved. The
@@ -492,16 +492,13 @@ def main(argv=None):
                 banner("Step 5: Running lint checks")
                 t_start = time.time()
                 try:
-                    lints_payload, updated_bundles = rl.run_lints(
+                    lints_payload = rl.run_lints(
                         comp, bundles_result, client,
                         new_esm=str(esm_b),
                     )
                     lints_json_path = layout.lints_json(out_dir)
                     with lints_json_path.open("w", encoding="utf-8") as f:
                         json.dump(lints_payload, f, indent=2)
-                        f.write("\n")
-                    with layout.bundles_json(out_dir).open("w", encoding="utf-8") as f:
-                        json.dump(updated_bundles, f, indent=2)
                         f.write("\n")
                 except Exception as e:
                     die(3, f"running lint checks failed: {e}")

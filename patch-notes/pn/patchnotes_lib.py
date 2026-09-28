@@ -49,6 +49,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
@@ -120,8 +121,6 @@ class Bundle(TypedDict):
     anchor: BundleAnchor
     members: list[Member]
     edges: list[Edge]
-    bug_watch: bool
-    lint_ids: list[str]
     id: str
 
 
@@ -388,12 +387,6 @@ def _require_optional_str(value: object, path: str) -> str | None:
     return _require_str(value, path)
 
 
-def _require_bool(value: object, path: str) -> bool:
-    if not isinstance(value, bool):
-        raise TypeError(f"{path}: expected bool, got {_validation_type_name(value)}")
-    return value
-
-
 def _require_key(mapping: dict[str, Any], key: str, path: str) -> Any:
     if key not in mapping:
         raise KeyError(f"{path}: missing required key {key!r}")
@@ -481,16 +474,11 @@ def validate_bundle(value: object, *, path: str = "bundle") -> Bundle:
     members = [validate_member(m, path=f"{path}.members[{i}]") for i, m in enumerate(members_raw)]
     edges_raw = _require_list(_require_key(bundle, "edges", path), f"{path}.edges")
     edges = [validate_edge(e, path=f"{path}.edges[{i}]") for i, e in enumerate(edges_raw)]
-    lint_ids_raw = _require_list(_require_key(bundle, "lint_ids", path), f"{path}.lint_ids")
-    for i, lid in enumerate(lint_ids_raw):
-        _require_str(lid, f"{path}.lint_ids[{i}]")
     return {
         "title": _require_str(_require_key(bundle, "title", path), f"{path}.title"),
         "anchor": validate_bundle_anchor(_require_key(bundle, "anchor", path), path=f"{path}.anchor"),
         "members": members,
         "edges": edges,
-        "bug_watch": _require_bool(_require_key(bundle, "bug_watch", path), f"{path}.bug_watch"),
-        "lint_ids": lint_ids_raw,
         "id": _require_str(_require_key(bundle, "id", path), f"{path}.id"),
     }
 
@@ -509,6 +497,36 @@ def validate_comprehensive_payload(value: object, *, label: str = "comprehensive
     for fid, rec in records.items():
         validate_record_entry(rec, path=f"{label}.records[{fid!r}]")
     return root
+
+
+def attach_lints(bundles, lints):
+    """Copies of `bundles`, each with `lint_ids` (the lints whose `form_id`
+    is one of its members, anchor included) and `bug_watch` (any of those
+    lints is an error or warn). bundles.json and lints.json are separate
+    artifacts; stages that need both join them here."""
+    bundle_ids_by_member = defaultdict(list)
+    for b in bundles:
+        fids = {m["form_id"] for m in b.get("members") or [] if isinstance(m, dict) and m.get("form_id")}
+        if (b.get("anchor") or {}).get("form_id"):
+            fids.add(b["anchor"]["form_id"])
+        for fid in fids:
+            bundle_ids_by_member[fid].append(b.get("id"))
+
+    lint_ids = defaultdict(list)
+    severities = defaultdict(set)
+    for lint in lints:
+        for bid in bundle_ids_by_member.get(lint.get("form_id"), ()):
+            lint_ids[bid].append(lint["id"])
+            severities[bid].add(lint.get("severity"))
+
+    return [
+        {
+            **b,
+            "lint_ids": lint_ids.get(b.get("id"), []),
+            "bug_watch": any(s in ("error", "warn") for s in severities.get(b.get("id"), ())),
+        }
+        for b in bundles
+    ]
 
 
 # --------------------------------------------------------------------------

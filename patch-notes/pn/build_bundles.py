@@ -11,7 +11,7 @@ an LLM writer subagent, see `slice_bundles.py`) should describe together
 rather than as N disconnected bullet points.
 
 Pipeline position: render_comprehensive.py -> **build_bundles.py** ->
-run_lints.py (fills `bug_watch`/`lint_ids`/`lints`) -> triage_bundles.py.
+run_lints.py (lints.json) -> triage_bundles.py.
 
 Algorithm (see module docstring sections below for each step):
   1. Universe = diff records minus WRLD/CELL (excluded upstream already, but
@@ -838,8 +838,6 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
                 },
                 "members": all_members,
                 "edges": bundle_edges,
-                "bug_watch": False,
-                "lint_ids": [],
                 "_anchor_fid": anchor_fid,
             }
         )
@@ -881,7 +879,7 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
         },
     }
 
-    return {"schema_version": 1, "meta": meta, "bundles": raw_bundles, "lints": []}
+    return {"schema_version": 1, "meta": meta, "bundles": raw_bundles}
 
 
 # --------------------------------------------------------------------------

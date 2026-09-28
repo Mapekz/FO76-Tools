@@ -916,6 +916,23 @@ class TestRolloutTier(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 
+class TestLintsForBundles(unittest.TestCase):
+    LINTS = [
+        {"id": "L0001", "bundle_id": "B0001", "rule": "x"},
+        {"id": "L0002", "bundle_id": "B0002", "rule": "x"},
+    ]
+
+    def test_filters_by_lint_ids(self):
+        bundle = {"id": "B0001", "lint_ids": ["L0001"]}
+        lints = tb.lints_for_bundles([bundle], tb.lints_index(self.LINTS))
+        self.assertEqual([lint["id"] for lint in lints], ["L0001"])
+
+    def test_matches_via_bundle_id_even_if_not_in_lint_ids(self):
+        bundle = {"id": "B0001", "lint_ids": []}
+        lints = tb.lints_for_bundles([bundle], tb.lints_index(self.LINTS))
+        self.assertEqual([lint["id"] for lint in lints], ["L0001"])
+
+
 class TestDeepSlicePayload(unittest.TestCase):
     def test_bundle_dicts_stripped_to_writer_contract_keys(self):
         bundle = make_bundle("B0001", [make_member("0x01", "OMOD", "mod_Custom_Foo")])

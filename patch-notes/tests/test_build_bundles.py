@@ -703,10 +703,8 @@ class TestBundleShapeContract(unittest.TestCase):
         cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm")
 
     def test_top_level_shape(self):
-        for key in ("schema_version", "meta", "bundles", "lints"):
-            self.assertIn(key, self.result)
+        self.assertEqual(set(self.result), {"schema_version", "meta", "bundles"})
         self.assertEqual(self.result["schema_version"], 1)
-        self.assertEqual(self.result["lints"], [])
 
     def test_meta_shape(self):
         meta = self.result["meta"]
@@ -720,12 +718,10 @@ class TestBundleShapeContract(unittest.TestCase):
         for b in self.result["bundles"]:
             for key in (
                 "id", "title",
-                "anchor", "members", "edges", "bug_watch", "lint_ids",
+                "anchor", "members", "edges",
             ):
                 self.assertIn(key, b)
             self.assertRegex(b["id"], r"^B\d{4}$")
-            self.assertFalse(b["bug_watch"])
-            self.assertEqual(b["lint_ids"], [])
             for key in ("form_id", "record_type", "editor_id", "name", "status"):
                 self.assertIn(key, b["anchor"])
             for m in b["members"]:
