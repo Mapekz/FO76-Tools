@@ -26,8 +26,10 @@ runtime assessor agent) -- then writes five files under
 
 Rules are ordered lists of small declarative dicts (see
 pn/patch_notes_tiers.json), evaluated top-down, first-match-wins, within
-a fixed priority: rollout > deep_rules > drop_rules > brief_rules >
-(ambiguous fallback). Rollout is data-driven: every changed, non-context
+a fixed priority: reorder-only > rollout > deep_rules > drop_rules >
+brief_rules > (ambiguous fallback). A bundle whose members only reorder
+arrays (esm's `reorder_only`) drops before any rule. Rollout is data-driven:
+every changed, non-context
 member must have a change shape recurring at least `settings.
 rollout_min_records` times. For every non-rollout bundle, the existing rule
 priority is unchanged: a bundle that would satisfy both a deep_rules and a
@@ -258,6 +260,10 @@ def compute_rollout_shapes(records, threshold, numeric_excluded=None) -> list[pl
         if record.get("status") != "changed":
             continue
         shape = record_change_shape(record)
+        if not shape[1]:
+            # Only suppressed changes (reorders, redundant counts, raw
+            # blobs): nothing to call a data-shape change.
+            continue
         if form_id in numeric_excluded:
             excluded_by_shape[shape] += 1
             continue
@@ -572,18 +578,44 @@ def rule_matches(rule, bundle, records, drop_patterns, narrative_patterns):
 # --------------------------------------------------------------------------
 
 
+#: Suppression reasons that mean "nothing changed": the same elements in a
+#: new order, or a count field mirroring an array. A raw-blob change is not
+#: one of these (it can hide an undecoded edit).
+_NO_CHANGE_REASONS = {"reorder", "redundant_count"}
+
+
+def _only_reordered(bundle, records):
+    """True when every non-context member is a changed record whose every
+    change is a reorder or a redundant count."""
+    members = _non_context_members(bundle)
+    if not members:
+        return False
+    for member in members:
+        record = records.get(member.get("form_id")) or {}
+        changes = record.get("changes") or []
+        if record.get("status") != "changed" or not changes:
+            return False
+        if any(ce.get("suppressed") not in _NO_CHANGE_REASONS for ce in changes if isinstance(ce, dict)):
+            return False
+    return True
+
+
 def assign_tier(bundle, records, config, bulk_shapes=None, numeric_excluded=None):
     """Return (tier, reason, bucket) for one bundle: `tier` is one of
     "rollout"/"deep"/"brief"/"drop"/"ambiguous"; `reason` is
     "rollout:<type>/<paths>", "<tier>:<rule id>", or None (ambiguous);
     `bucket` is the brief_rules bucket or None (non-brief). Priority:
-    rollout > deep_rules > drop_rules > brief_rules -- see module docstring.
+    rollout > deep_rules > drop_rules > brief_rules -- see module docstring. A
+    bundle whose members only reorder drops first (`drop:reorder_only`).
 
     `bulk_shapes` and `numeric_excluded` are precomputed by
     compute_bundle_tiers. Both default empty so matcher-level callers can
     exercise only the declarative rule tiers. A member in `numeric_excluded`
     (a real value delta) keeps its whole bundle out of ROLLOUT.
     """
+    if _only_reordered(bundle, records):
+        return "drop", "drop:reorder_only", None
+
     bulk_shapes = bulk_shapes or set()
     numeric_excluded = numeric_excluded or set()
     members = _non_context_members(bundle)

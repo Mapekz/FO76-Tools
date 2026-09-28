@@ -503,6 +503,21 @@ class TestKeyDictDisplay(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
+class TestReorderOnly(unittest.TestCase):
+    def test_reorder_only_array_is_suppressed(self):
+        fc = {"Cells": {"_array_diff": {"strategy": "positional", "count_from": 2, "count_to": 2,
+                                        "reorder_only": True, "changed": []}}}
+        e = find_entry(change_entries.extract_changes(fc, {}), "Cells")
+        self.assertEqual(e["suppressed"], "reorder")
+        self.assertTrue(e["array"]["reorder_only"])
+
+    def test_real_array_edit_is_not_suppressed(self):
+        fc = {"Cells": {"_array_diff": {"strategy": "positional", "count_from": 2, "count_to": 2, "changed": []}}}
+        e = find_entry(change_entries.extract_changes(fc, {}), "Cells")
+        self.assertIsNone(e["suppressed"])
+        self.assertFalse(e["array"]["reorder_only"])
+
+
 class TestPresenceArrayDiff(unittest.TestCase):
     def test_disappearing_struct_array_lists_every_element_removed(self):
         effects = [{"Effect": {"Base Effect": "0x00AA0001"}}, {"Effect": {"Base Effect": "0x00AA0002"}}]

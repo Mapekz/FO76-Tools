@@ -64,23 +64,6 @@ strings matched that snapshot's own table exactly.
 
 # Tiering noise: phantom changes that reach DEEP
 
-## Reorder-only diffs tier DEEP through `substantive_change_major_record_type`
-
-Triage tiers by record type and field path, never by value. An `unkeyed` `_array_diff` (QUST
-`Virtual Machine Adapter / aliases`) renders a reordered element as one `removed` plus one `added`,
-and a `positional` one (RACE `Bone Scale Data`, `Attacks`, VMAD `AnimationStates`) as a wave of
-`changed` indices. Both read as substantive, and the QUSTs' satellite chains keep them out of
-ROLLOUT.
-
-**Symptom:** every DEEP bundle's only top-level path is `Virtual Machine Adapter`, `Bone Scale
-Data` or `Attacks`, with the same names and values on both halves.
-**Fix, before spawning writers:** apply `diff-traps.md`'s permutation test to each bundle
-(canonicalize order-insensitively: sort dict items and lists of dicts, round floats); set-equal
-bundles go to the Under-the-hood line, not to a writer.
-**Example:** 20260814→20260821, all 7 DEEP bundles, 43 ROLLOUT QUSTs, 18 RACE records and the
-Disturbed Grave ACTI were set-equal. No writer was spawned.
-*found 2026-08-28*
-
 ## An array keyed on an unstable field reports as wholly rewritten
 
 `array_diff` pairs elements by a key derived from their shape (`esm/src/diff/array_diff.rs`,
@@ -106,8 +89,8 @@ build re-serializes most records.
 **Symptom:** ROLLOUT > 50K bundles, DEEP > 300 after rules, and `esm info` shows different
 `Version` lines for the two ESMs.
 **Fix:**
-1. Value-level scan with a per-leaf multiset check, so positional reorders (SCOL parts, MSWP/MDSP
-   swap lists, ARMA sculpt, VMAD fragments) cancel out.
+1. Value-level scan. Pure reorders (SCOL parts, MSWP/MDSP swap lists, ARMA sculpt, VMAD
+   fragments) arrive as `reorder_only` arrays and are already suppressed.
 2. Drop the signatures in `diff-traps.md`'s "Cross-build pairs carry fixed re-serialization
    signatures".
 3. Branch-drift check: a `--bodies none` diff of two *older* snapshots against the new one (~20 s

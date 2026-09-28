@@ -347,6 +347,7 @@
           "common_group": null,
           "array": {
             "strategy": "keyed",
+            "reorder_only": false,
             "key_fields": [
               "Function Type",
               "Property"
@@ -477,6 +478,7 @@
           "common_group": null,
           "array": {
             "strategy": "keyed",
+            "reorder_only": false,
             "key_fields": [
               "Reference",
               "Minimum Level"
@@ -610,6 +612,7 @@
           "common_group": null,
           "array": {
             "strategy": "keyed",
+            "reorder_only": false,
             "key_fields": [
               "name"
             ],
@@ -667,6 +670,7 @@
                     "common_group": null,
                     "array": {
                       "strategy": "keyed",
+                      "reorder_only": false,
                       "key_fields": [
                         "name"
                       ],

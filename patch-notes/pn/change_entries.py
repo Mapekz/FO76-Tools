@@ -128,7 +128,9 @@ CUT_MARKERS = ["ZZZ", "CUT", "POST", "DEPRECATED", "DELETE"]
 # "noise" is retained for wire-schema compatibility (run_lints skips it;
 # fixtures/historical JSON may still carry it) but extract_changes no longer
 # assigns it.
-SUPPRESSED_REASONS = {"redundant_count", "noise", "raw"}
+# "reorder" marks an array whose two sides hold the same elements in a
+# different order (esm's `_array_diff.reorder_only`).
+SUPPRESSED_REASONS = {"redundant_count", "noise", "raw", "reorder"}
 
 # Minimum number of "changed" records of the same record_type sharing an
 # identical (path, from, to) scalar delta before compute_common_changes()
@@ -379,6 +381,7 @@ def _normalize_new_array_diff(ad, ref_names):
         )
     return {
         "strategy": ad.get("strategy", "positional"),
+        "reorder_only": bool(ad.get("reorder_only")),
         "key_fields": key_fields,
         "count_from": ad.get("count_from"),
         "count_to": ad.get("count_to"),
@@ -507,6 +510,8 @@ def _make_array_diff_entry(path, ad, ref_names):
     entry = _blank_entry(path, "array")
     entry["to"] = ad
     entry["array"] = _normalize_new_array_diff(ad, ref_names)
+    if ad.get("reorder_only"):
+        entry["suppressed"] = "reorder"
     return entry
 
 
@@ -588,7 +593,7 @@ def extract_changes(field_changes, ref_names=None):
                                             array|raw",
          "from": <raw json>, "to": <raw json>,
          "from_display": "`10`", "to_display": "`14`",
-         "suppressed": None | "redundant_count" | "noise" | "raw",
+         "suppressed": None | "redundant_count" | "noise" | "raw" | "reorder",
          "common_group": None,
          "array": {...} | None}   # kind == "array"
 

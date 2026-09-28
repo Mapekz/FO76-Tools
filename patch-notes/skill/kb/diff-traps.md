@@ -9,19 +9,20 @@ live there.
 
 # Serialization & schema-population churn
 
-## Run the permutation test before reading any array diff
+## `reorder_only` arrays are permutations
 
-Positional and keyed `_array_diff` entries often only move elements between slots. **Permutation
-test:** serialize each changed element (or each subpath's from/to values) into a multiset per
-side; matching multisets mean nothing changed. Seen on VMAD `scripts[]`/`script_fragments`/alias
-slots, RACE `Attacks[]`/`Bone Scale Data[]`, LCTN `Master Reference`/`Master Unique NPCs`, NPC_
-`Attacks[]` and PERK `Effects`. RACE shows mirrored numeric pairs (a `Damage Mult` 1.0 → 1.5 at
-one index, the reverse at another); NPC_ `Attacks[]` shows only `Attack Event` string changes, so
-a missing mirrored pair proves nothing.
+An `_array_diff` with `reorder_only: true` holds the same elements on both sides in a new order,
+compared order-insensitively at every depth; a CTDA condition list never qualifies, because its
+order is semantic. The pipeline suppresses these (`suppressed: "reorder"`) and triage drops a
+bundle that only reorders. Seen on VMAD `scripts[]`/`script_fragments`/alias slots, RACE
+`Attacks[]`/`Bone Scale Data[]`, LCTN `Master Worldspace Cells`/`Master Reference`, NPC_
+`Attacks[]` and PERK `Effects`. An array without the flag differs for real, though a mirrored
+pair (a `Damage Mult` 1.0 → 1.5 at one index, the reverse at another) can be a partial reorder
+beside the real change.
 
-**Example:** 20260717→20260724, 17 creature NPC_ records (e.g. EncMolerat03 0x001832F8) had
-`Attacks` as their only changed path; both sides held identical multisets.
-*verified 2026-07-24 vs 20260724*
+**Example:** 20260903→20260914, 876 bundles whose members only reordered arrays (RACE `Bone Scale
+Data`, LCTN `Master Worldspace Cells`) tier DROP.
+*verified 2026-09-28 vs 20260914*
 
 ## VMAD `scripts[]` compares as a name multiset, never by index
 
@@ -37,7 +38,7 @@ counts 3, 6, 12, 2, 5, 5) reordered; its `Burn_BountyHunt_RecentHeadhuntGang_0N`
 
 ## PERK effect `Rank`, `Tab Count` and `Actor Value, Float` are bookkeeping
 
-After the permutation test, three PERK effect fields are noise either way. `Entry Point / Perk
+Three PERK effect fields are noise either way. `Entry Point / Perk
 Condition Tab Count` shifting is editor metadata. `Actor Value, Float` appearing while `Float` and
 `Function Parameter 3 (Actor Value)` go null is one schema struct replacing two fields. `Effect
 Header / Rank` is not a rank gate: live single-rank perks carry 0, 1, 10, 40, 70/71 or 153
@@ -75,8 +76,8 @@ When the two snapshots' TES4 header `Version` differs (e.g. 279 → 283), skip t
   `Effect Flags`, `Cooldown Duration`, `Effect ID` and the record's `Max Item ID` go null. The
   rows' magnitudes, durations and conditions stay byte-identical, so a move there is a real
   candidate; `Area` is unreliable (heterogeneous values landing on one number is the tell).
-- PERK effect rows: `Float`/`Perk Entry ID` "changes" are fake until the permutation test or a
-  live `get` says otherwise; `Perk Condition Tab Count` 4 → 3.
+- PERK effect rows: `Float`/`Perk Entry ID` "changes" are fake until a live `get` says
+  otherwise; `Perk Condition Tab Count` 4 → 3.
 - OMOD `Properties[] / Value 2` 2 → 3; script `extra_bind_data_version` 4 → 3 and script-name
   case normalization; QUST objective flag bit 0x10 cleared; INFO `Previous INFO` and REFR `Layer`
   relinks.

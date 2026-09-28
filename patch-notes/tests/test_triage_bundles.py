@@ -916,6 +916,28 @@ class TestRolloutTier(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 
+class TestReorderOnlyTier(unittest.TestCase):
+    def _records(self, *suppressed):
+        changes = [{"path": f"P{i}", "kind": "array", "suppressed": r} for i, r in enumerate(suppressed)]
+        return {"0x01": {"form_id": "0x01", "record_type": "LCTN", "status": "changed", "changes": changes}}
+
+    def test_a_bundle_that_only_reorders_drops(self):
+        bundle = make_bundle("B0001", [make_member("0x01", "LCTN", "LocX")])
+        tier, reason, _ = tb.assign_tier(bundle, self._records("reorder", "redundant_count"), {})
+        self.assertEqual((tier, reason), ("drop", "drop:reorder_only"))
+
+    def test_a_raw_blob_change_is_not_a_reorder(self):
+        bundle = make_bundle("B0001", [make_member("0x01", "LCTN", "LocX")])
+        tier, _, _ = tb.assign_tier(bundle, self._records("reorder", "raw"), {})
+        self.assertEqual(tier, "ambiguous")
+
+    def test_reorder_only_records_form_no_rollout_shape(self):
+        records = {f"0x{i:02X}": {"form_id": f"0x{i:02X}", "record_type": "LCTN", "status": "changed",
+                                  "changes": [{"path": "Cells", "kind": "array", "suppressed": "reorder"}]}
+                   for i in range(1, 30)}
+        self.assertEqual(tb.compute_rollout_shapes(records, 5), [])
+
+
 class TestLintsForBundles(unittest.TestCase):
     LINTS = [
         {"id": "L0001", "bundle_id": "B0001", "rule": "x"},
