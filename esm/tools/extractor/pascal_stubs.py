@@ -415,7 +415,8 @@ BUILTIN_HELPERS: dict[str, str] = {
         "wbStruct('Weather Activate',["
         "wbFormIDCk('Spell',[SPEL,NULL]),"
         "wbFloat('Threshold')"
-        "])"
+        "]),"
+        "wbFromVersion(130, wbUnused(8))"
         "])"
     ),
     # wbRagdoll — wbDefinitionsCommon.pas:8694-8710
@@ -906,6 +907,23 @@ def _expand_wbFloatRGBA(args: str, ctx: ExpandContext) -> str | None:
     return ctx.vars.get("wbFloatRGBA", ctx.raw_expr)
 
 
+def _expand_wbFloatColors(args: str, ctx: ExpandContext) -> str | None:
+    # wbFloatColors([SIG,] ['name']) → 12-byte struct of Red/Green/Blue floats.
+    # wbDefinitionsCommon.pas:6421-6448 (the defaults are display-only).
+    fc_parts = ctx.split_top_level(args)
+    sig2 = fc_parts[0].strip() if fc_parts and ctx.sig_id(fc_parts[0].strip()) else None
+    name_parts = fc_parts[1:] if sig2 else fc_parts
+    fc_name = (
+        ctx.unquote(name_parts[0])
+        if name_parts and name_parts[0].strip().startswith("'")
+        else "Color"
+    )
+    fields = "[wbFloat('Red'),wbFloat('Green'),wbFloat('Blue')]"
+    if sig2:
+        return f"wbStruct({sig2},'{fc_name}',{fields})"
+    return f"wbStruct('{fc_name}',{fields})"
+
+
 def _expand_wbByteColors(args: str, ctx: ExpandContext) -> str | None:
     # wbByteColors([SIG,] ['name']) → 4-byte struct (R u8, G u8, B u8, Unused u8).
     # wbDefinitionsCommon.pas:6291-6305.  The no-arg/bare form falls through to
@@ -1159,6 +1177,7 @@ CALL_EXPANSIONS: dict[str, str | Callable[[str, ExpandContext], str | None]] = {
     "wbStructs": _expand_wbStructs,
     "wbClimateTiming": _WB_CLIMATE_TIMING,
     "wbRFloatColors": _expand_wbRFloatColors,
+    "wbFloatColors": _expand_wbFloatColors,
     "wbNPCTemplateActorEntry": _expand_wbNPCTemplateActorEntry,
     "wbFaceMorphs": _expand_wbFaceMorphs,
     "wbMorphGroups": _expand_wbMorphGroups,

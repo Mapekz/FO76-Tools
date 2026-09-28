@@ -630,6 +630,11 @@ def sig_id(token: str) -> str | None:
 # Binding flags
 # ---------------------------------------------------------------------------
 
+# xEdit array counter callbacks whose count is a fixed share of the subrecord
+# size (wbDefinitionsFO76.pas: `wbRDOTCountCallback` = DataSize div 76).
+_CALLBACK_COUNTS: dict[str, dict] = {"wbRDOTCountCallback": {"payload_div": 76}}
+
+
 def _close_unordered_element(elem: dict | None) -> None:
     """An unordered rstruct only ends when one of its members repeats, so as
     an rarray element it would run into the next element whenever the current
@@ -1350,6 +1355,11 @@ class Extractor:
                 out["count"] = {"count_prefix": width}
             elif cval is not None and cval > 0:
                 out["count"] = {"fixed": cval}
+            elif count_str.startswith("["):
+                # A list of element names: one element per name.
+                out["count"] = {"fixed": len(split_top_level(count_str[1:-1]))}
+            elif count_str in _CALLBACK_COUNTS:
+                out["count"] = dict(_CALLBACK_COUNTS[count_str])
         return out
 
     def _parse_union(self, expr: str) -> dict:

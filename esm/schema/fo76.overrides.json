@@ -358,6 +358,12 @@
                   "kind": "integer",
                   "name": "Rank",
                   "width": "u8"
+                },
+                {
+                  "kind": "integer",
+                  "name": "Priority",
+                  "width": "u8",
+                  "below_version": 181
                 }
               ]
             },
@@ -1176,7 +1182,7 @@
             },
             {
               "kind": "unused",
-              "bytes": 0,
+              "bytes": 1,
               "below_version": 208
             }
           ]
@@ -1433,6 +1439,63 @@
             "GLOB"
           ],
           "sig": "LVOC"
+        }
+      }
+    ],
+    "BOOK": [
+      {
+        "_comment": "fv 210+ DNAM is 14 bytes: a trailing u8 (0 or 1 on the 20260918 snapshot, e.g. HIDELeadMedium 0x008EFC79 = 1) that xEdit doesn't declare.",
+        "path": [
+          "DNAM",
+          "Text Offset"
+        ],
+        "op": "insert_after",
+        "node": {
+          "kind": "integer",
+          "name": "Unknown",
+          "width": "u8",
+          "signed": false,
+          "from_version": 210
+        }
+      }
+    ],
+    "CSTY": [
+      {
+        "_comment": "CSGD is 52 bytes on 38 fv 208+ records (48 elsewhere); the extra 4 bytes are CURV FormIDs such as HIDE_crDrifter_EquipmentSwitch_ScoreFallOff (0x008F4E5F). xEdit stops at 12 floats.",
+        "path": [
+          "General",
+          "Evade Threat Chance"
+        ],
+        "op": "insert_after",
+        "node": {
+          "kind": "formid",
+          "name": "Equipment Switch Score Falloff Curve",
+          "valid_refs": [
+            "CURV",
+            "NULL"
+          ],
+          "from_size": 52
+        }
+      }
+    ],
+    "MATO": [
+      {
+        "_comment": "xEdit gates Single Pass at fv 31, but fv 25/26 records carry it too (0x00035094: DATA is 48 bytes, the full struct). An integer field decodes only when its bytes are present, so the ungated field is right for shorter DATA as well.",
+        "path": [
+          "Directional Material Data",
+          "Single Pass"
+        ],
+        "node": {
+          "kind": "integer",
+          "name": "Single Pass",
+          "width": "u32",
+          "signed": false,
+          "format": {
+            "enum": [
+              "False",
+              "True"
+            ]
+          }
         }
       }
     ]

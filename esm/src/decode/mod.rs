@@ -47,6 +47,8 @@ pub mod markers {
     pub const UNMAPPED: &str = "_unmapped";
     /// Emitted on an LString field whose ID had no match in the loaded string tables.
     pub const UNRESOLVED: &str = "_unresolved";
+    /// Emitted inside a struct whose subrecord has bytes left after its fields.
+    pub const TRAILING: &str = "_trailing";
 }
 
 /// Controls how deeply FormID references are followed during decode.

@@ -17,6 +17,33 @@ use crate::strings::StringKind;
 /// A struct's decoded fields, in decode order.
 pub type Fields = IndexMap<String, Node>;
 
+/// Why bytes decode as `_raw` instead of fields.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RawReason {
+    /// The schema itself declares the bytes unknown (xEdit `wbUnknown`).
+    Unknown,
+    /// The extractor could not model this part of the schema.
+    Unmodelled(String),
+    /// No union variant could be chosen for the bytes.
+    UnresolvedUnion,
+    /// The bytes don't fit their declared layout (truncated or inconsistent).
+    Malformed(String),
+    /// Bytes left after the schema's fields ran out.
+    Trailing,
+}
+
+impl RawReason {
+    /// The rendered `reason`.
+    pub fn text(&self) -> &str {
+        match self {
+            RawReason::Unknown => "unknown",
+            RawReason::Unmodelled(reason) | RawReason::Malformed(reason) => reason,
+            RawReason::UnresolvedUnion => "union decider unresolved",
+            RawReason::Trailing => "trailing bytes",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Null,
@@ -48,10 +75,10 @@ pub enum Node {
     },
     /// Opaque bytes: `{"hex"}`.
     Bytes(Vec<u8>),
-    /// Bytes the schema couldn't decode: `{"hex"?, "_raw": true, "reason"?}`.
+    /// Bytes that don't decode to fields: `{"hex"?, "_raw": true, "reason"}`.
     Raw {
         bytes: Option<Vec<u8>>,
-        reason: Option<String>,
+        reason: RawReason,
     },
     Struct(Fields),
     Array(Vec<Node>),
@@ -71,20 +98,12 @@ impl Node {
         Node::Int(v.into())
     }
 
-    /// `{"hex", "_raw": true}`.
-    pub fn raw(bytes: &[u8]) -> Node {
-        Node::Raw {
-            bytes: Some(bytes.to_vec()),
-            reason: None,
-        }
-    }
-
     /// `{"hex", "_raw": true, "reason"}`, or `{"_raw": true, "reason"}`
     /// without bytes.
-    pub fn raw_reason(bytes: Option<&[u8]>, reason: impl Into<String>) -> Node {
+    pub fn raw(bytes: Option<&[u8]>, reason: RawReason) -> Node {
         Node::Raw {
             bytes: bytes.map(<[u8]>::to_vec),
-            reason: Some(reason.into()),
+            reason,
         }
     }
 
@@ -170,9 +189,7 @@ impl Node {
                     map.insert("hex".into(), json!(hex::encode(&bytes)));
                 }
                 map.insert(markers::RAW.into(), json!(true));
-                if let Some(reason) = reason {
-                    map.insert("reason".into(), json!(reason));
-                }
+                map.insert("reason".into(), json!(reason.text()));
                 Value::Object(map)
             }
             Node::Struct(fields) => Value::Object(

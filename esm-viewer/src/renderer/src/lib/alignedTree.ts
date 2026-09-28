@@ -41,11 +41,12 @@ export function coverageBadges(obj: Record<string, unknown>): string[] {
   if (obj[MARKERS.RAW] === true) badges.push('raw')
   if (isNonEmptyObject(obj[MARKERS.UNMAPPED])) badges.push('unmapped')
   if (obj[MARKERS.UNRESOLVED] === true) badges.push('unresolved')
+  if (MARKERS.TRAILING in obj) badges.push('trailing bytes')
   return badges
 }
 
 /** Recursively checks a decoded `fields` tree for any schema decode-coverage gap
- * marker (`_unknown_record`, `_raw`, `_unmapped`, `_unresolved`) — see
+ * marker (`_unknown_record`, `_raw`, `_unmapped`, `_unresolved`, `_trailing`) — see
  * esm/AGENTS.md "Decode output key conventions". Used to auto-default the
  * raw/decoded toggle and to drive inline coverage badges. */
 export function hasCoverageMarkers(value: unknown): boolean {

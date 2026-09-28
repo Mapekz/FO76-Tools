@@ -191,8 +191,7 @@ item's odds are `100 − Chance None`, so a feeding GLOB going **up** is a **ner
 sibling entries each carry their own `Chance None Global` and the list's `Use All` flag is cleared
 (replaced by an undecoded bit such as `0x200`), the globals are relative weights for one pick,
 often summing to a round total; read them as a ratio (`HTO_crLLS_Rewards_Legendary_Mob_Weapons_Melee`
-0x008F2B1A: 470/330/200). LVLN lists do the same, but their per-entry `LVOC` globals decode under
-`_unmapped` as little-endian GLOB FormIDs (`HIDE_LChar_RobotWildcard` 0x0094F8E4: 85/15).
+0x008F2B1A: 470/330/200). LVLN lists do the same (`HIDE_LChar_RobotWildcard` 0x0094F8E4: 85/15).
 
 **Example:** `UniqueWeaponSkinDropChance` (0x008FF251) 80.0 → 90.0: the skin recipe's odds fell
 20% → 10%.

@@ -6,7 +6,7 @@ use crate::schema::{ArrayCount, CountPath, FieldDef, MemberDef, UnionDecider};
 
 use super::DecodeContext;
 use super::model_info::decode_model_info;
-use super::node::{Fields, Node, insert_unique};
+use super::node::{Fields, Node, RawReason, insert_unique};
 use super::rules::{PostDecodeTarget, apply_post_decode_rules};
 use super::scalars::{
     choose_union_variant, count_path_value, field_int_value, field_value_key, int_size,
@@ -104,7 +104,13 @@ pub(crate) fn decode_member(
             name,
             reason,
         } => {
-            out.insert(name.clone(), Node::raw_reason(None, reason));
+            out.insert(
+                name.clone(),
+                Node::raw(None, RawReason::Unmodelled(reason.clone())),
+            );
+        }
+        MemberDef::String { name, sized, .. } => {
+            out.insert(name.clone(), scalar_string(data, sized));
         }
         MemberDef::Ctda { name, .. } => {
             out.insert(name.clone(), crate::ctda::ctda_node(data, ctx));
@@ -114,8 +120,7 @@ pub(crate) fn decode_member(
         }
         // Subrecord-level kinds: they only ever decode a whole subrecord of
         // their own (see bind.rs).
-        MemberDef::String { .. }
-        | MemberDef::LString { .. }
+        MemberDef::LString { .. }
         | MemberDef::ByteRgba { .. }
         | MemberDef::Empty { .. }
         | MemberDef::Unused { .. }
@@ -207,10 +212,7 @@ pub(super) fn decode_union(
 ) {
     let chosen = choose_variant(ctx, decider, variants.len(), out, payload);
     let Some(variant) = chosen.and_then(|idx| variants.get(idx)) else {
-        out.insert(
-            name.to_owned(),
-            Node::raw_reason(None, "union decider unresolved"),
-        );
+        out.insert(name.to_owned(), Node::raw(None, RawReason::UnresolvedUnion));
         return;
     };
     // Decode into a temporary map first: some variants are anonymous (Pascal
@@ -422,7 +424,10 @@ pub(crate) fn decode_struct_fields(
             }
             MemberDef::RawFallback { name, reason, .. } => {
                 if pos < data.len() {
-                    struct_out.insert(name.clone(), Node::raw_reason(Some(&data[pos..]), reason));
+                    struct_out.insert(
+                        name.clone(),
+                        Node::raw(Some(&data[pos..]), RawReason::Unmodelled(reason.clone())),
+                    );
                 }
                 pos = data.len();
                 break;
@@ -455,7 +460,10 @@ pub(crate) fn decode_struct_fields(
                         pos = advance_union(ctx, variant, &data[pos..], pos);
                     }
                 } else {
-                    struct_out.insert(name.clone(), Node::raw(&data[pos..]));
+                    struct_out.insert(
+                        name.clone(),
+                        Node::raw(Some(&data[pos..]), RawReason::UnresolvedUnion),
+                    );
                     pos = data.len();
                     break;
                 }
@@ -466,7 +474,9 @@ pub(crate) fn decode_struct_fields(
                 count,
                 ..
             } => {
-                let n: usize = match count {
+                // `None`: no count — the array fills the rest of the data
+                // (xEdit's count 0).
+                let n: Option<usize> = match count {
                     Some(ArrayCount::CountPrefix(width)) => {
                         // The prefix byte width comes from the xEdit wbArray count arg:
                         //   -1 → 4 bytes (u32), -2 → 2 bytes (u16), -4 → 1 byte (u8).
@@ -478,19 +488,26 @@ pub(crate) fn decode_struct_fields(
                                 n |= (data[pos + i] as usize) << (8 * i);
                             }
                             pos += w;
-                            n
+                            Some(n)
                         } else {
-                            0
+                            Some(0)
                         }
                     }
                     Some(ArrayCount::CountPath(path)) => {
-                        count_path_value(&struct_out, ctx, path).unwrap_or(0) as usize
+                        Some(count_path_value(&struct_out, ctx, path).unwrap_or(0) as usize)
                     }
-                    Some(ArrayCount::Fixed(n)) => *n,
-                    _ => 0,
+                    Some(ArrayCount::Fixed(n)) => Some(*n),
+                    Some(ArrayCount::PayloadDiv(div)) => Some(data.len() / (*div).max(1)),
+                    Some(ArrayCount::FillToEnd) | None => None,
+                };
+                let elem_size = field_byte_size(ctx, element).filter(|&size| size > 0);
+                let n = match (n, elem_size) {
+                    (Some(n), _) => n,
+                    (None, Some(size)) => data.len().saturating_sub(pos) / size,
+                    (None, None) => 0,
                 };
                 if n > 0
-                    && let Some(elem_size) = field_byte_size(ctx, element)
+                    && let Some(elem_size) = elem_size
                 {
                     let mut items = Vec::with_capacity(n.min(4096));
                     // Snapshot current fields so element structs can resolve
@@ -513,8 +530,13 @@ pub(crate) fn decode_struct_fields(
             }
             MemberDef::Unknown { name, .. } => {
                 if pos < data.len() {
-                    insert_unique(&mut struct_out, name.clone(), Node::raw(&data[pos..]));
+                    insert_unique(
+                        &mut struct_out,
+                        name.clone(),
+                        Node::raw(Some(&data[pos..]), RawReason::Unknown),
+                    );
                 }
+                pos = data.len();
                 break;
             }
             _ => {}
@@ -542,6 +564,10 @@ fn field_byte_size(ctx: &DecodeContext<'_>, field: &FieldDef) -> Option<usize> {
         MemberDef::Unused { bytes, .. } => Some(*bytes),
         MemberDef::Empty { .. } => Some(0),
         MemberDef::Bytes { len: Some(n), .. } => Some(*n),
+        MemberDef::String {
+            sized: Some(n @ 1..),
+            ..
+        } => Some(*n as usize),
         MemberDef::Struct { fields, .. } => {
             let mut total = 0usize;
             for f in fields {
@@ -1470,6 +1496,121 @@ mod tests {
         let (out, unbound) = bind(&ctx, members, &subrecords);
         assert!(unbound.is_empty(), "{unbound:?}");
         assert_eq!(out["Keywords"], json!([1, 2, 3]));
+    }
+
+    fn struct_member(sig: &str, name: &str, fields: Vec<MemberDef>) -> MemberDef {
+        MemberDef::Struct {
+            sig: Some(sig.into()),
+            name: name.into(),
+            fields,
+            from_version: None,
+            below_version: None,
+        }
+    }
+
+    /// Bytes a struct subrecord has left after its fields surface as
+    /// `_trailing` instead of vanishing.
+    #[test]
+    fn struct_subrecord_trailing_bytes_are_marked() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let data = struct_member("DATA", "Data", vec![int_field("Value", IntegerWidth::U8)]);
+        let (out, _) = bind(
+            &ctx,
+            vec![data],
+            &[subrecord("DATA", vec![7, 0xAA, 0xBB], 0)],
+        );
+        assert_eq!(
+            out["Data"],
+            json!({"Value": 7, "_trailing": {"hex": "aabb", "_raw": true, "reason": "trailing bytes"}})
+        );
+    }
+
+    /// An array field with no count fills the rest of its struct (xEdit's
+    /// count 0); a `payload_div` count is the subrecord size over the divisor.
+    #[test]
+    fn uncounted_and_payload_div_arrays() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let array = |name: &str, count: Option<ArrayCount>| MemberDef::Array {
+            sig: None,
+            name: name.into(),
+            element: Box::new(int_field("V", IntegerWidth::U16)),
+            count,
+        };
+        let fill = struct_member(
+            "XESP",
+            "Parents",
+            vec![int_field("Head", IntegerWidth::U8), array("Refs", None)],
+        );
+        let (out, _) = bind(
+            &ctx,
+            vec![fill],
+            &[subrecord("XESP", vec![1, 2, 0, 3, 0], 0)],
+        );
+        assert_eq!(out["Parents"], json!({"Head": 1, "Refs": [2, 3]}));
+
+        // 8 bytes, divisor 4: two 2-byte elements, then two more.
+        let div = struct_member(
+            "RDOT",
+            "Objects",
+            vec![
+                array("First", Some(ArrayCount::PayloadDiv(4))),
+                array("Second", Some(ArrayCount::PayloadDiv(4))),
+            ],
+        );
+        let (out, _) = bind(
+            &ctx,
+            vec![div],
+            &[subrecord("RDOT", vec![1, 0, 2, 0, 3, 0, 4, 0], 0)],
+        );
+        assert_eq!(out["Objects"], json!({"First": [1, 2], "Second": [3, 4]}));
+    }
+
+    /// A fixed-size string can be a payload union's variant, and the union
+    /// advances past it.
+    #[test]
+    fn fixed_string_decodes_as_a_union_variant() {
+        use crate::schema::UnionDecider;
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let topic = struct_member(
+            "PDTO",
+            "Topic Data",
+            vec![
+                int_field("Type", IntegerWidth::U32),
+                MemberDef::Union {
+                    sig: None,
+                    name: "Data".into(),
+                    decider: UnionDecider::FieldValue {
+                        field: "Type".into(),
+                        default_variant: None,
+                        map: std::collections::HashMap::from([("0".into(), 0), ("1".into(), 1)]),
+                        bits: vec![],
+                    },
+                    variants: vec![
+                        MemberDef::FormId {
+                            sig: None,
+                            name: "Topic".into(),
+                            valid_refs: vec![],
+                            from_version: None,
+                            below_version: None,
+                            from_size: None,
+                        },
+                        MemberDef::String {
+                            sig: None,
+                            name: "Subtype".into(),
+                            sized: Some(4),
+                            keep_case: false,
+                        },
+                    ],
+                },
+            ],
+        );
+        let mut data = 1u32.to_le_bytes().to_vec();
+        data.extend_from_slice(b"CUST");
+        let (out, _) = bind(&ctx, vec![topic], &[subrecord("PDTO", data, 0)]);
+        assert_eq!(out["Topic Data"], json!({"Type": 1, "Subtype": "CUST"}));
     }
 
     /// A sig-bearing `Unused` member (Pascal `wbUnused(INDX, 0)` — an entire

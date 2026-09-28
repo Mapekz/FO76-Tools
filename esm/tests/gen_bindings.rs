@@ -98,6 +98,10 @@ fn export_bindings_markers() {
         "  UNRESOLVED: {},\n",
         ts_string_literal(markers::UNRESOLVED)
     ));
+    out.push_str(&format!(
+        "  TRAILING: {},\n",
+        ts_string_literal(markers::TRAILING)
+    ));
     out.push_str("} as const\n");
 
     let dir = export_dir();

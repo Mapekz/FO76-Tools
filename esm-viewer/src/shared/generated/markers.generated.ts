@@ -7,4 +7,5 @@ export const MARKERS = {
   RAW: "_raw",
   UNMAPPED: "_unmapped",
   UNRESOLVED: "_unresolved",
+  TRAILING: "_trailing",
 } as const

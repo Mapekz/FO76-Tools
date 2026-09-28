@@ -8,14 +8,15 @@ import { colors, panelStyle, inputStyle } from '../theme'
 const DEFAULT_SAMPLE = 200
 const ALL_TYPES = ''
 
-/** Sums every `Markers` field except `records` — that field is the sample
- * count, not a gap counter. Deriving the sum this way (rather than naming
- * each gap field) means a newly added marker field joins the total for
- * free. Mirrors Rust `Markers::total()` in `esm/src/ops/coverage.rs`, which excludes
- * `records` from its own sum the same way. */
+/** Fields of `Markers` that aren't gap counters: the sample count, and the
+ * schema-declared unknown bytes (informational). */
+const NOT_GAPS: ReadonlySet<keyof Markers> = new Set(['records', 'unknown_bytes'])
+
+/** Sums every gap counter in `Markers`, so a newly added marker field joins the
+ * total for free. Mirrors Rust `Markers::total()` in `esm/src/ops/coverage.rs`. */
 function totalGaps(m: Markers): number {
   return (Object.entries(m) as [keyof Markers, number][])
-    .filter(([key]) => key !== 'records')
+    .filter(([key]) => !NOT_GAPS.has(key))
     .reduce((sum, [, value]) => sum + value, 0)
 }
 
@@ -135,6 +136,8 @@ export function CoveragePanel() {
                 <th style={{ padding: '2px 6px' }}>Records</th>
                 <th style={{ padding: '2px 6px' }}>Unknown</th>
                 <th style={{ padding: '2px 6px' }}>Raw fallback</th>
+                <th style={{ padding: '2px 6px' }}>Malformed</th>
+                <th style={{ padding: '2px 6px' }}>Trailing</th>
                 <th style={{ padding: '2px 6px' }}>Unmapped</th>
                 <th style={{ padding: '2px 6px' }}>Unresolved</th>
                 <th style={{ padding: '2px 6px' }}>Total gaps</th>
@@ -154,6 +157,8 @@ export function CoveragePanel() {
                   <td style={{ padding: '2px 6px' }}>{m.records}</td>
                   <td style={{ padding: '2px 6px' }}>{m.unknown_record}</td>
                   <td style={{ padding: '2px 6px' }}>{m.raw_fallback}</td>
+                  <td style={{ padding: '2px 6px' }}>{m.malformed}</td>
+                  <td style={{ padding: '2px 6px' }}>{m.trailing}</td>
                   <td style={{ padding: '2px 6px' }}>{m.unmapped}</td>
                   <td style={{ padding: '2px 6px' }}>{m.unresolved}</td>
                   <td
@@ -180,6 +185,8 @@ export function CoveragePanel() {
                 <td style={{ padding: '4px 6px' }}>{report.totals.records}</td>
                 <td style={{ padding: '4px 6px' }}>{report.totals.unknown_record}</td>
                 <td style={{ padding: '4px 6px' }}>{report.totals.raw_fallback}</td>
+                <td style={{ padding: '4px 6px' }}>{report.totals.malformed}</td>
+                <td style={{ padding: '4px 6px' }}>{report.totals.trailing}</td>
                 <td style={{ padding: '4px 6px' }}>{report.totals.unmapped}</td>
                 <td style={{ padding: '4px 6px' }}>{report.totals.unresolved}</td>
                 <td style={{ padding: '4px 6px' }}>{totalGaps(report.totals)}</td>

@@ -9674,8 +9674,22 @@
               }
             },
             {
-              "kind": "float",
-              "name": "Default Color"
+              "kind": "struct",
+              "name": "Default Color",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Red"
+                },
+                {
+                  "kind": "float",
+                  "name": "Green"
+                },
+                {
+                  "kind": "float",
+                  "name": "Blue"
+                }
+              ]
             },
             {
               "kind": "float",
@@ -10628,6 +10642,13 @@
                   "signed": true
                 }
               ]
+            },
+            {
+              "kind": "integer",
+              "name": "Unknown",
+              "width": "u8",
+              "signed": false,
+              "from_version": 210
             }
           ],
           "sig": "DNAM"
@@ -16727,6 +16748,15 @@
             {
               "kind": "float",
               "name": "Evade Threat Chance"
+            },
+            {
+              "kind": "formid",
+              "name": "Equipment Switch Score Falloff Curve",
+              "valid_refs": [
+                "CURV",
+                "NULL"
+              ],
+              "from_size": 52
             }
           ],
           "sig": "CSGD"
@@ -25826,12 +25856,40 @@
           "name": "Data",
           "fields": [
             {
-              "kind": "float",
-              "name": "Back Color"
+              "kind": "struct",
+              "name": "Back Color",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Red"
+                },
+                {
+                  "kind": "float",
+                  "name": "Green"
+                },
+                {
+                  "kind": "float",
+                  "name": "Blue"
+                }
+              ]
             },
             {
-              "kind": "float",
-              "name": "Fwd Color"
+              "kind": "struct",
+              "name": "Fwd Color",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Red"
+                },
+                {
+                  "kind": "float",
+                  "name": "Green"
+                },
+                {
+                  "kind": "float",
+                  "name": "Blue"
+                }
+              ]
             },
             {
               "kind": "float",
@@ -25854,8 +25912,22 @@
               "name": "Back Phase"
             },
             {
-              "kind": "float",
-              "name": "Air Color"
+              "kind": "struct",
+              "name": "Air Color",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Red"
+                },
+                {
+                  "kind": "float",
+                  "name": "Green"
+                },
+                {
+                  "kind": "float",
+                  "name": "Blue"
+                }
+              ]
             },
             {
               "kind": "float",
@@ -30131,8 +30203,22 @@
               "name": "Amount"
             },
             {
-              "kind": "float",
-              "name": "Color"
+              "kind": "struct",
+              "name": "Color",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Red"
+                },
+                {
+                  "kind": "float",
+                  "name": "Green"
+                },
+                {
+                  "kind": "float",
+                  "name": "Blue"
+                }
+              ]
             }
           ],
           "sig": "TNAM"
@@ -34648,8 +34734,22 @@
                 "name": "Lens Flare Data",
                 "fields": [
                   {
-                    "kind": "float",
-                    "name": "Tint"
+                    "kind": "struct",
+                    "name": "Tint",
+                    "fields": [
+                      {
+                        "kind": "float",
+                        "name": "Red"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Green"
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Blue"
+                      }
+                    ]
                   },
                   {
                     "kind": "float",
@@ -39813,8 +39913,22 @@
               "from_version": 19
             },
             {
-              "kind": "float",
+              "kind": "struct",
               "name": "Single Pass Color",
+              "fields": [
+                {
+                  "kind": "float",
+                  "name": "Red"
+                },
+                {
+                  "kind": "float",
+                  "name": "Green"
+                },
+                {
+                  "kind": "float",
+                  "name": "Blue"
+                }
+              ],
               "from_version": 25
             },
             {
@@ -39827,8 +39941,7 @@
                   "False",
                   "True"
                 ]
-              },
-              "from_version": 31
+              }
             }
           ],
           "sig": "DATA"
@@ -39861,8 +39974,22 @@
           "sig": "MNAM"
         },
         {
-          "kind": "float",
+          "kind": "struct",
           "name": "Havok Display Color",
+          "fields": [
+            {
+              "kind": "float",
+              "name": "Red"
+            },
+            {
+              "kind": "float",
+              "name": "Green"
+            },
+            {
+              "kind": "float",
+              "name": "Blue"
+            }
+          ],
           "sig": "CNAM"
         },
         {
@@ -51164,7 +51291,7 @@
             },
             {
               "kind": "unused",
-              "bytes": 0,
+              "bytes": 1,
               "below_version": 208
             }
           ]
@@ -51538,6 +51665,12 @@
                     "kind": "integer",
                     "name": "Rank",
                     "width": "u8"
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Priority",
+                    "width": "u8",
+                    "below_version": 181
                   }
                 ]
               },
@@ -60917,7 +61050,10 @@
               "VTYP"
             ]
           },
-          "sig": "VTCK"
+          "sig": "VTCK",
+          "count": {
+            "fixed": 2
+          }
         },
         {
           "kind": "array",
@@ -60930,7 +61066,10 @@
               "CLFM"
             ]
           },
-          "sig": "HCLF"
+          "sig": "HCLF",
+          "count": {
+            "fixed": 2
+          }
         },
         {
           "kind": "integer",
@@ -67905,7 +68044,10 @@
               "NULL"
             ]
           },
-          "sig": "XORD"
+          "sig": "XORD",
+          "count": {
+            "fixed": 4
+          }
         },
         {
           "kind": "bytes",
@@ -70451,6 +70593,9 @@
                           "len": 2
                         }
                       ]
+                    },
+                    "count": {
+                      "payload_div": 76
                     }
                   },
                   {
@@ -70460,6 +70605,9 @@
                       "kind": "bytes",
                       "name": "Unknown",
                       "len": 2
+                    },
+                    "count": {
+                      "payload_div": 76
                     }
                   }
                 ],
@@ -73727,6 +73875,9 @@
                     "signed": false
                   }
                 ]
+              },
+              "count": {
+                "fixed": 3
               }
             }
           ],
@@ -87272,6 +87423,11 @@
                   "name": "Threshold"
                 }
               ]
+            },
+            {
+              "kind": "unused",
+              "bytes": 8,
+              "from_version": 130
             }
           ],
           "sig": "UNAM"

@@ -1,4 +1,4 @@
-use super::node::{Fields, Node};
+use super::node::{Fields, Node, RawReason};
 
 /// Decodes the structured `wbModelInfo` (FO4/FO76 non-TES5) layout shared by every "Model
 /// Information" subrecord (`MODT`, `DMDT`, `MO2T`..`MO5T`, `NAM2`, `NAM5`):
@@ -21,13 +21,17 @@ use super::node::{Fields, Node};
 /// Because the layout isn't expressible in the static schema model (it's a self-describing
 /// blob, not a signature-keyed struct), the extractor stubs every "Model Information" member
 /// as a byte array, and this function is dispatched from the `MemberDef::Bytes` arm by field
-/// name. Falls back to `{"hex": ..., "_raw": true}` whenever the declared counters don't
-/// exactly account for the subrecord's length — covering the TES5-style 2-counter layout,
+/// name. An empty subrecord decodes to `null`. Falls back to a `_raw` value (reason: the
+/// counters don't match the size) whenever the declared counters don't exactly account
+/// for the subrecord's length — covering the TES5-style 2-counter layout,
 /// corrupt data, and any record this heuristic doesn't actually fit — rather than panicking,
 /// consistent with the decoder-must-never-panic invariant.
 pub(super) fn decode_model_info(data: &[u8]) -> Node {
     fn raw(data: &[u8]) -> Node {
-        Node::raw(data)
+        Node::raw(
+            Some(data),
+            RawReason::Malformed("counters don't match the model information size".into()),
+        )
     }
     fn read_u32(data: &[u8], off: usize) -> Option<u32> {
         data.get(off..off + 4)
@@ -48,6 +52,10 @@ pub(super) fn decode_model_info(data: &[u8]) -> Node {
         ])
     }
 
+    if data.is_empty() {
+        // An empty subrecord: no model information, not a malformed one.
+        return Node::Null;
+    }
     let Some(num_counters) = read_u32(data, 0) else {
         return raw(data);
     };

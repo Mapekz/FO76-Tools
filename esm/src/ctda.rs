@@ -4,7 +4,7 @@
 //! type byte, resolves the function index to a human-readable name, and decodes
 //! each parameter field according to the function's declared parameter types.
 
-use crate::decode::node::{Fields, Node};
+use crate::decode::node::{Fields, Node, RawReason};
 use crate::decode::{DecodeContext, refs_curve};
 use crate::formid::FormId;
 use serde::Deserialize;
@@ -305,7 +305,10 @@ pub fn decode_ctda(data: &[u8], ctx: &DecodeContext<'_>) -> Value {
 /// Decode a 32-byte CTDA data block into a structured value.
 pub(crate) fn ctda_node(data: &[u8], ctx: &DecodeContext<'_>) -> Node {
     if data.len() < 32 {
-        return Node::raw(data);
+        return Node::raw(
+            Some(data),
+            RawReason::Malformed("CTDA shorter than 32 bytes".into()),
+        );
     }
 
     let type_byte = data[0];

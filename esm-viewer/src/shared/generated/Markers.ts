@@ -3,4 +3,24 @@
 /**
  * Counts of schema-coverage markers per record type.
  */
-export type Markers = { unknown_record: number, raw_fallback: number, unmapped: number, unresolved: number, records: number, };
+export type Markers = { unknown_record: number, 
+/**
+ * `_raw` values the schema couldn't decode: members the extractor
+ * couldn't model, and unions with no variant for their bytes.
+ */
+raw_fallback: number, 
+/**
+ * `_raw` values whose bytes don't fit their declared layout (truncated
+ * VMAD, short CTDA, inconsistent Model Information).
+ */
+malformed: number, 
+/**
+ * `_trailing` markers: struct subrecords with bytes left after their
+ * fields.
+ */
+trailing: number, unmapped: number, unresolved: number, 
+/**
+ * `_raw` values the schema itself declares unknown (xEdit `wbUnknown`).
+ * Informational: not a coverage gap.
+ */
+unknown_bytes: number, records: number, };

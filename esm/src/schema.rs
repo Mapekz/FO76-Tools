@@ -374,6 +374,9 @@ pub enum ArrayCount {
     /// `-1` → 4 bytes (u32), `-2` → 2 bytes (u16), `-4` → 1 byte (u8).
     /// See `TwbArrayDef::GetPrefixLength` in `TES5Edit/Core/wbInterface.pas`.
     CountPrefix(usize),
+    /// The count is the enclosing subrecord's size divided by this (xEdit
+    /// counter callbacks such as `wbRDOTCountCallback`).
+    PayloadDiv(usize),
 }
 
 /// Where an array's element count lives: an integer field already decoded

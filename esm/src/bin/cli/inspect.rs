@@ -106,30 +106,41 @@ pub(crate) fn cmd_coverage(
         let mut rows: Vec<(&String, &Markers)> = report.by_type.iter().collect();
         rows.sort_by(|a, b| b.1.total().cmp(&a.1.total()).then(a.0.cmp(b.0)));
 
+        let row = |sig: &str, m: &Markers| {
+            println!(
+                "{:<6}  {:>10}  {:>12}  {:>9}  {:>8}  {:>8}  {:>10}  {:>8}  {:>13}",
+                sig,
+                m.records,
+                m.raw_fallback,
+                m.malformed,
+                m.trailing,
+                m.unmapped,
+                m.unresolved,
+                m.unknown_record,
+                m.unknown_bytes
+            )
+        };
         println!(
-            "{:<6}  {:>10}  {:>12}  {:>8}  {:>10}  {:>8}",
-            "SIG", "records", "raw_fallback", "unmapped", "unresolved", "unknown"
+            "{:<6}  {:>10}  {:>12}  {:>9}  {:>8}  {:>8}  {:>10}  {:>8}  {:>13}",
+            "SIG",
+            "records",
+            "raw_fallback",
+            "malformed",
+            "trailing",
+            "unmapped",
+            "unresolved",
+            "unknown",
+            "unknown_bytes"
         );
-        println!("{}", "-".repeat(64));
+        println!("{}", "-".repeat(105));
         for (sig, m) in &rows {
             if m.total() > 0 || record_type.is_some() {
-                println!(
-                    "{:<6}  {:>10}  {:>12}  {:>8}  {:>10}  {:>8}",
-                    sig, m.records, m.raw_fallback, m.unmapped, m.unresolved, m.unknown_record
-                );
+                row(sig, m);
             }
         }
-        println!("{}", "-".repeat(64));
+        println!("{}", "-".repeat(105));
         let totals = &report.totals;
-        println!(
-            "{:<6}  {:>10}  {:>12}  {:>8}  {:>10}  {:>8}",
-            "TOTAL",
-            totals.records,
-            totals.raw_fallback,
-            totals.unmapped,
-            totals.unresolved,
-            totals.unknown_record
-        );
+        row("TOTAL", totals);
         if totals.total() == 0 {
             println!("\n✓ Zero coverage markers — all records fully decoded.");
         }
@@ -142,6 +153,12 @@ pub(crate) fn cmd_coverage(
         let mut failures = Vec::new();
         if totals.raw_fallback > 0 {
             failures.push(format!("{} raw_fallback", totals.raw_fallback));
+        }
+        if totals.malformed > 0 {
+            failures.push(format!("{} malformed", totals.malformed));
+        }
+        if totals.trailing > 0 {
+            failures.push(format!("{} trailing", totals.trailing));
         }
         if totals.unmapped > 0 {
             failures.push(format!("{} unmapped", totals.unmapped));

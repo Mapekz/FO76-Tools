@@ -161,11 +161,12 @@ in a decoded record, after bundles and drafts are built on it.
 **Symptom:** `esm get`/`esm chase` returns `_unknown_record` or `_unmapped` keys; nothing upstream
 flagged it.
 **Fix:** after the new `Data/<date>/` lands, run `esm coverage --gate` (via `FO76_ESM_PATH` or
-`--esm`); it walks every record (~2 min). Non-zero: `esm coverage` shows which SIG rows carry `raw_fallback`/`unmapped`/
-`unknown_record`; fix the schema in `esm/` (a type TES5Edit defines in full goes in
+`--esm`); it walks every record (~2 min). Non-zero: `esm coverage` shows which SIG rows carry
+`raw_fallback`/`malformed`/`trailing`/`unmapped`/`unknown_record`; fix the schema in `esm/` (a type TES5Edit defines in full goes in
 `esm/tools/extractor/extract.py`'s `SAFELIST`; anything else is an entry in
 `esm/schema/fo76.overrides.json`) and re-run until clean. `unresolved` counts are missing
-localization, not schema gaps, and never block the gate.
+localization, not schema gaps, and never block the gate; `unknown_bytes` counts fields the schema
+itself declares unknown and never blocks it either.
 **Example:** 20260903 (Pets PTS): `unknown_record=7, unmapped=2380` from PGTR and MSCS (new types)
 and RACE `CMDE`/`PGTF`; MSCS needed a `SAFELIST` addition, the rest `fo76.overrides.json` entries.
 *found 2026-09-04*

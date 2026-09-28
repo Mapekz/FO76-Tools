@@ -1,9 +1,9 @@
 //! Schema decode coverage: marker counts per record type.
 
-use crate::{Database, ResolveDepth};
+use crate::Database;
+use crate::decode::node::{Node, RawReason};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Decode every record (or a sample of each type) and count decode markers.
@@ -25,22 +25,43 @@ pub(super) fn coverage(db: &Database, args: &CoverageArgs) -> anyhow::Result<Cov
 #[cfg_attr(test, ts(export))]
 pub struct Markers {
     pub unknown_record: u64,
+    /// `_raw` values the schema couldn't decode: members the extractor
+    /// couldn't model, and unions with no variant for their bytes.
     pub raw_fallback: u64,
+    /// `_raw` values whose bytes don't fit their declared layout (truncated
+    /// VMAD, short CTDA, inconsistent Model Information).
+    pub malformed: u64,
+    /// `_trailing` markers: struct subrecords with bytes left after their
+    /// fields.
+    pub trailing: u64,
     pub unmapped: u64,
     pub unresolved: u64,
+    /// `_raw` values the schema itself declares unknown (xEdit `wbUnknown`).
+    /// Informational: not a coverage gap.
+    pub unknown_bytes: u64,
     pub records: u64,
 }
 
 impl Markers {
+    /// Every marker that means the decode is incomplete (all but
+    /// `unknown_bytes`).
     pub fn total(&self) -> u64 {
-        self.unknown_record + self.raw_fallback + self.unmapped + self.unresolved
+        self.unknown_record
+            + self.raw_fallback
+            + self.malformed
+            + self.trailing
+            + self.unmapped
+            + self.unresolved
     }
 
     pub fn add(&mut self, other: &Markers) {
         self.unknown_record += other.unknown_record;
         self.raw_fallback += other.raw_fallback;
+        self.malformed += other.malformed;
+        self.trailing += other.trailing;
         self.unmapped += other.unmapped;
         self.unresolved += other.unresolved;
+        self.unknown_bytes += other.unknown_bytes;
         self.records += other.records;
     }
 }
@@ -54,36 +75,41 @@ pub struct CoverageReport {
     pub totals: Markers,
 }
 
-fn count_markers(v: &Value, m: &mut Markers) {
+/// Count the markers in a record's decoded tree.
+fn count_markers(db: &Database, node: &Node, m: &mut Markers) {
     use crate::decode::markers;
-    match v {
-        Value::Object(obj) => {
-            if obj.get(markers::UNKNOWN_RECORD) == Some(&Value::Bool(true)) {
-                m.unknown_record += 1;
-            }
-            if obj.get(markers::RAW) == Some(&Value::Bool(true)) && obj.contains_key("reason") {
-                m.raw_fallback += 1;
-            }
-            if obj.get(markers::UNRESOLVED) == Some(&Value::Bool(true)) {
-                m.unresolved += 1;
-            }
-            if let Some(Value::Object(unmapped)) = obj.get(markers::UNMAPPED) {
-                for subs in unmapped.values() {
-                    if let Value::Array(arr) = subs {
-                        m.unmapped += arr.len() as u64;
+    match node {
+        Node::Struct(fields) => {
+            for (key, child) in fields {
+                if key == markers::UNKNOWN_RECORD {
+                    m.unknown_record += 1;
+                } else if key == markers::UNMAPPED {
+                    if let Node::Struct(by_sig) = child {
+                        m.unmapped += by_sig
+                            .values()
+                            .filter_map(Node::as_array)
+                            .map(|subs| subs.len() as u64)
+                            .sum::<u64>();
                     }
+                } else {
+                    count_markers(db, child, m);
                 }
-            }
-            for (key, child) in obj {
-                if key == markers::UNMAPPED {
-                    continue;
-                }
-                count_markers(child, m);
             }
         }
-        Value::Array(arr) => {
-            for child in arr {
-                count_markers(child, m);
+        Node::Array(items) => items.iter().for_each(|item| count_markers(db, item, m)),
+        Node::Raw { reason, .. } => match reason {
+            RawReason::Unknown => m.unknown_bytes += 1,
+            RawReason::Unmodelled(_) | RawReason::UnresolvedUnion => m.raw_fallback += 1,
+            RawReason::Malformed(_) => m.malformed += 1,
+            RawReason::Trailing => m.trailing += 1,
+        },
+        Node::LString { id, kind } => {
+            let text = db
+                .localization
+                .as_ref()
+                .and_then(|loc| loc.lookup(*kind, *id));
+            if text.is_none() {
+                m.unresolved += 1;
             }
         }
         _ => {}
@@ -125,12 +151,10 @@ pub fn coverage_report(
 
         let mut type_markers = Markers::default();
         for meta in &metas {
-            match db.record_at_meta_with_depth(meta, ResolveDepth::None) {
-                Ok(result) => {
+            match db.record_node_at_meta(meta) {
+                Ok((_, node)) => {
                     type_markers.records += 1;
-                    let mut rec_markers = Markers::default();
-                    count_markers(&result.fields, &mut rec_markers);
-                    type_markers.add(&rec_markers);
+                    count_markers(db, &node, &mut type_markers);
                 }
                 Err(e) => {
                     eprintln!("Warning: failed to decode {} record: {}", sig, e);

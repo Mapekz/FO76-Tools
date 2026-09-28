@@ -26,7 +26,7 @@ use crate::reader::OwnedSubrecord;
 use crate::schema::{LStringTable, MemberDef, RecordDef, UnionDecider};
 
 use super::model_info::decode_model_info;
-use super::node::{Fields, Node, insert_unique};
+use super::node::{Fields, Node, RawReason, insert_unique};
 use super::scalars::{
     choose_union_variant, field_int_value, field_value_key, member_version_ok, scalar_bytes,
     scalar_float, scalar_formid, scalar_int, scalar_rgba, scalar_string, scalar_vec3,
@@ -39,7 +39,7 @@ use super::walk::{
     contains_field_value_union, counts_from_enclosing_scope, decode_array_payloads,
     decode_struct_fields, decode_union,
 };
-use super::{DecodeContext, lstring_table_to_kind};
+use super::{DecodeContext, lstring_table_to_kind, markers};
 
 /// A record's subrecords in file order, consumed front to back. Subrecords
 /// no member takes are kept, in order, for `_unmapped`.
@@ -245,7 +245,10 @@ fn add_raw_fallback_markers(members: &[MemberDef], out: &mut Fields, origin: &mu
         } = member
             && !out.contains_key(name)
         {
-            out.insert(name.clone(), Node::raw_reason(None, reason));
+            out.insert(
+                name.clone(),
+                Node::raw(None, RawReason::Unmodelled(reason.clone())),
+            );
             origin.push(j);
         }
     }
@@ -430,10 +433,7 @@ fn bind_runion(
         None => variants.iter().position(|v| can_handle(ctx, v, sig)),
     };
     let Some(variant) = chosen.and_then(|i| variants.get(i)) else {
-        out.insert(
-            name.to_owned(),
-            Node::raw_reason(None, "union decider unresolved"),
-        );
+        out.insert(name.to_owned(), Node::raw(None, RawReason::UnresolvedUnion));
         return;
     };
     // Some variants are anonymous (Pascal `wbInteger('', ...)` reusing the
@@ -460,7 +460,19 @@ fn decode_subrecord(
                 .iter()
                 .any(|f| contains_field_value_union(f) || counts_from_enclosing_scope(f))
                 .then(|| ctx.with_outer_struct(out.clone()));
-            decode_struct_fields(child_ctx.as_ref().unwrap_or(ctx), name, fields, data, out);
+            let consumed =
+                decode_struct_fields(child_ctx.as_ref().unwrap_or(ctx), name, fields, data, out);
+            if let Some(rest) = data.get(consumed..).filter(|rest| !rest.is_empty()) {
+                let trailing = Node::raw(Some(rest), RawReason::Trailing);
+                match out.get_mut(name.as_str()) {
+                    Some(Node::Struct(fields)) => {
+                        fields.insert(markers::TRAILING.to_owned(), trailing);
+                    }
+                    _ => {
+                        out.insert(name.clone(), Node::obj([(markers::TRAILING, trailing)]));
+                    }
+                }
+            }
         }
         MemberDef::Integer {
             name,
@@ -510,10 +522,13 @@ fn decode_subrecord(
         }
         MemberDef::Unused { .. } => {}
         MemberDef::Unknown { name, .. } => {
-            out.insert(name.clone(), Node::raw(data));
+            out.insert(name.clone(), Node::raw(Some(data), RawReason::Unknown));
         }
         MemberDef::RawFallback { name, reason, .. } => {
-            out.insert(name.clone(), Node::raw_reason(Some(data), reason));
+            out.insert(
+                name.clone(),
+                Node::raw(Some(data), RawReason::Unmodelled(reason.clone())),
+            );
         }
         MemberDef::Vmad { name, .. } => {
             let decoded = match ctx.record_signature {

@@ -1,14 +1,10 @@
-use super::node::Node;
+use super::node::{Node, RawReason};
 use super::*;
 
-/// The `{"_raw", "reason": "VMAD truncated", "hex"}` fallback for VMAD data
+/// The `_raw` fallback (reason "VMAD truncated") for VMAD data
 /// that ends early.
 fn vmad_truncated(rest: &[u8]) -> Node {
-    Node::obj([
-        (markers::RAW, Node::Bool(true)),
-        ("reason", Node::str("VMAD truncated")),
-        ("hex", Node::Str(hex::encode(rest))),
-    ])
+    Node::raw(Some(rest), RawReason::Malformed("VMAD truncated".into()))
 }
 
 /// Decode a VMAD (Papyrus scripts) subrecord into its boundary JSON.

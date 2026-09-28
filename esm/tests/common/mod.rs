@@ -314,13 +314,19 @@ fn collect_decode_problems_inner(v: &Value, path: &str, out: &mut Vec<String>) {
                     .unwrap_or("<unknown>");
                 out.push(format!("[{path}] _unknown_record for signature '{sig}'"));
             }
-            // raw_fallback: _raw=true AND reason key present (but NOT inside _unmapped)
-            if map.get("_raw") == Some(&Value::Bool(true)) && map.contains_key("reason") {
+            // `_raw` that isn't schema-declared unknown bytes (reason "unknown"),
+            // outside `_unmapped`.
+            if map.get("_raw") == Some(&Value::Bool(true)) {
                 let reason = map
                     .get("reason")
                     .and_then(|v| v.as_str())
                     .unwrap_or("<no reason>");
-                out.push(format!("[{path}] raw_fallback: {reason}"));
+                if reason != "unknown" {
+                    out.push(format!("[{path}] raw_fallback: {reason}"));
+                }
+            }
+            if let Some(trailing) = map.get("_trailing") {
+                out.push(format!("[{path}] _trailing bytes: {trailing}"));
             }
             // _unmapped: count the entry sigs, don't recurse into their raw hex
             if let Some(Value::Object(unmapped)) = map.get("_unmapped") {
@@ -360,8 +366,9 @@ fn collect_decode_problems_inner(v: &Value, path: &str, out: &mut Vec<String>) {
     }
 }
 
-/// Assert that `decoded` contains no `_unknown_record`, `raw_fallback`, or
-/// `_unmapped` markers anywhere in its JSON tree.  Panics with a detailed
+/// Assert that `decoded` contains no `_unknown_record`, `_unmapped` or
+/// `_trailing` markers, and no `_raw` other than schema-declared unknown
+/// bytes, anywhere in its JSON tree.  Panics with a detailed
 /// listing of every problem found.
 pub fn assert_fully_decoded(decoded: &Value) {
     let problems = collect_decode_problems(decoded);
