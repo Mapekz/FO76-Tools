@@ -762,13 +762,21 @@ pub(crate) fn array_diff(a: &[Value], b: &[Value]) -> Value {
 /// clears the mark by field name, since [`array_diff`] sees only elements.
 pub(crate) const ORDER_SIGNIFICANT_FIELDS: &[&str] = &["Points", "Vertices", "Names"];
 
-/// Whether the array at `key` of `parent` is a Papyrus array: a script
-/// property's or struct member's `value` (`{"name", "type", "value"}`, the
-/// VMAD decoder's shape) or a variable array's `items`. Scripts read these
-/// by index, so they diff position by position ([`indexed_array_diff`]).
+/// Whether the array at `key` of `parent` is a Papyrus array: the `value`
+/// of a script property or struct member (`{"name", "type", "value"}`, the
+/// VMAD decoder's shape) whose type is an array type (11–15, or 17 for an
+/// array of structs), or a variable array's `items`. Scripts read these by
+/// index, so they diff position by position ([`indexed_array_diff`]). A
+/// struct's (type 7) members are named, not indexed.
 pub(crate) fn is_indexed_array(key: &str, parent: &serde_json::Map<String, Value>) -> bool {
     match key {
-        "value" => parent.contains_key("name") && parent.get("type").is_some_and(Value::is_number),
+        "value" => {
+            parent.contains_key("name")
+                && parent
+                    .get("type")
+                    .and_then(Value::as_u64)
+                    .is_some_and(|t| (11..=15).contains(&t) || t == 17)
+        }
         "items" => parent.get("_variable_array") == Some(&Value::Bool(true)),
         _ => false,
     }
@@ -1020,6 +1028,14 @@ mod tests {
             value["_array_diff"]["changed"].as_array().map(Vec::len),
             Some(2)
         );
+    }
+
+    #[test]
+    fn a_reordered_papyrus_struct_s_named_members_are_not_a_change() {
+        let member = |name: &str, n: i64| json!({"name": name, "type": 3, "value": n});
+        let a = vmad_with(7, json!([member("A", 1), member("B", 2)]));
+        let b = vmad_with(7, json!([member("B", 2), member("A", 1)]));
+        assert_eq!(super::super::json_diff(&a, &b), json!({}));
     }
 
     #[test]
