@@ -27,10 +27,9 @@ use std::path::PathBuf;
 // hold different derived values). A layout change bumps that section's own
 // `*_LAYOUT_FINGERPRINT` version instead, which its layout golden test
 // enforces; `xref`'s dependency on the embedded schema is folded into its
-// fingerprint. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
-// share this one constant, so a bump rebuilds all five even when only one
-// changed.
-pub(crate) const CACHE_VERSION: u32 = 20;
+// fingerprint. Every cache section shares this one constant, so a bump
+// rebuilds all of them even when only one changed.
+pub(crate) const CACHE_VERSION: u32 = 21;
 
 /// Per-record data stored in the lazy search index.
 ///
