@@ -80,6 +80,29 @@ fn zlib_round_trip() {
 
 // ── Edge cases ────────────────────────────────────────────────────────────
 
+/// Writing over an existing archive replaces the file instead of rewriting
+/// it, so a reader that still has the old one open keeps reading it whole.
+#[test]
+fn rewriting_an_archive_leaves_an_open_reader_intact() {
+    let src = TempDir::new().unwrap();
+    let file = src.path().join("a.txt");
+    let out = src.path().join("out.ba2");
+    let write = |content: &[u8]| {
+        std::fs::write(&file, content).unwrap();
+        let files = vec![("data/a.txt".to_string(), file.clone())];
+        write_ba2(&out, &files, &WriteOptions::default()).unwrap();
+    };
+    write(&b"first version ".repeat(64));
+    let old = Ba2Archive::open(&out).unwrap();
+    write(b"second");
+    assert_eq!(
+        old.read("data/a.txt", ReadCodec::Auto).unwrap(),
+        b"first version ".repeat(64)
+    );
+    let new = Ba2Archive::open(&out).unwrap();
+    assert_eq!(new.read("data/a.txt", ReadCodec::Auto).unwrap(), b"second");
+}
+
 /// An empty file list must produce a valid empty archive.
 #[test]
 fn empty_file_list() {

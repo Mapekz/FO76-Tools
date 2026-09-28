@@ -106,19 +106,52 @@ fn create_temp_blob_file(
     Ok((tmp_guard, tmp_path, tmp_writer))
 }
 
-/// Create the output archive file and write its 24-byte header.
+/// Create the output archive and write its 24-byte header. It is a temporary
+/// file beside `output` until [`publish`] renames it over `output`, so an
+/// existing archive at `output` is replaced whole, never rewritten in place:
+/// a reader that has it mapped keeps the old file.
 fn create_output_with_header(
     output: &Path,
     kind: ArchiveKind,
     file_count: u32,
     name_table_offset: u64,
-) -> Result<BufWriter<File>> {
-    let out_file =
-        File::create(output).with_context(|| format!("failed to create '{}'", output.display()))?;
-    let mut out = BufWriter::new(out_file);
+) -> Result<(tempfile::NamedTempFile, BufWriter<File>)> {
+    let dir = output
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let guard = tempfile::NamedTempFile::new_in(dir)
+        .with_context(|| format!("failed to create '{}'", output.display()))?;
+    #[cfg(unix)]
+    {
+        // The default for a new file, rather than the temporary's private 0600.
+        use std::os::unix::fs::PermissionsExt;
+        guard
+            .as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o644))
+            .context("failed to set the output archive's permissions")?;
+    }
+    let mut out = BufWriter::new(
+        guard
+            .as_file()
+            .try_clone()
+            .context("failed to clone output file descriptor")?,
+    );
     out.write_all(&write_header(1, kind, file_count, name_table_offset))
         .context("failed to write BA2 header")?;
-    Ok(out)
+    Ok((guard, out))
+}
+
+/// Finish the archive [`create_output_with_header`] started and rename it
+/// over `output`.
+fn publish(guard: tempfile::NamedTempFile, mut out: BufWriter<File>, output: &Path) -> Result<()> {
+    out.flush().context("failed to flush output archive")?;
+    drop(out);
+    guard
+        .persist(output)
+        .map_err(|e| e.error)
+        .with_context(|| format!("failed to replace '{}'", output.display()))?;
+    Ok(())
 }
 
 /// Pass 2's "data blobs" step: stream the finished Pass-1 temp file into `out`.
@@ -232,7 +265,7 @@ fn write_gnrl(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
         .checked_add(blob_cursor)
         .ok_or_else(|| anyhow::anyhow!("name_table_offset overflow"))?;
 
-    let mut out = create_output_with_header(
+    let (guard, mut out) = create_output_with_header(
         output,
         ArchiveKind::Gnrl,
         file_count as u32,
@@ -263,8 +296,7 @@ fn write_gnrl(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
     // Name table.
     write_name_table(&mut out, metas.iter().map(|m| m.archive_path.as_str()))?;
 
-    out.flush().context("failed to flush output archive")?;
-    Ok(())
+    publish(guard, out, output)
 }
 
 // ── DX10 ─────────────────────────────────────────────────────────────────────
@@ -421,7 +453,7 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
         .checked_add(blob_cursor)
         .ok_or_else(|| anyhow::anyhow!("name_table_offset overflow"))?;
 
-    let mut out = create_output_with_header(
+    let (guard, mut out) = create_output_with_header(
         output,
         ArchiveKind::Dx10,
         file_count as u32,
@@ -451,8 +483,7 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
 
     write_name_table(&mut out, metas.iter().map(|m| m.archive_path.as_str()))?;
 
-    out.flush().context("failed to flush output archive")?;
-    Ok(())
+    publish(guard, out, output)
 }
 
 fn write_name(out: &mut impl Write, archive_path: &str) -> Result<()> {

@@ -113,8 +113,10 @@ impl Ba2Archive {
             File::open(path).with_context(|| format!("failed to open BA2: {}", path.display()))?;
         // SAFETY: the mapping is only sound while nothing truncates or
         // rewrites the file, which the OS doesn't prevent. BA2s are game
-        // data written by an installer or `write_ba2` (to a temp file then
-        // renamed over, never in place), not while a reader has them open.
+        // data written by an installer, not while a reader has them open,
+        // or by `write_ba2`, which writes a temporary file and renames it
+        // over the destination, so a mapped archive is never rewritten in
+        // place.
         let mmap = unsafe { Mmap::map(&file)? };
         let data = &*mmap;
 
