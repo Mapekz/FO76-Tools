@@ -17,6 +17,7 @@
 
 mod array_diff;
 mod noise;
+mod provenance;
 
 use crate::Database;
 use crate::decode::ResolveDepth;
@@ -160,8 +161,9 @@ pub struct RecordDiff {
     /// engine-hardcoded forms), sorted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dangling_refs: Vec<String>,
-    /// Every FormID either side's record references; filters `refs` once
-    /// noise suppression has settled `field_changes`.
+    /// The FormIDs of the typed references `field_changes` touched before
+    /// the cross-record noise pass; filters `refs` once that pass has
+    /// settled `field_changes`.
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
     pub(crate) ref_ids: HashSet<FormId>,
@@ -399,11 +401,11 @@ pub fn diff_databases_with(
         }
 
         // Decode both and field-diff
-        let (ra, refs_a) = a
-            .record_at_meta_with_refs(&meta_a, ResolveDepth::None)
+        let (ra, node_a) = a
+            .record_at_meta_with_node(&meta_a, ResolveDepth::None)
             .with_context(|| format!("decode A for {}", id))?;
-        let (rb, refs_b) = b
-            .record_at_meta_with_refs(&meta_b, ResolveDepth::None)
+        let (rb, node_b) = b
+            .record_at_meta_with_node(&meta_b, ResolveDepth::None)
             .with_context(|| format!("decode B for {}", id))?;
 
         let mut field_changes = json_diff(&ra.fields, &rb.fields);
@@ -453,14 +455,21 @@ pub fn diff_databases_with(
             None
         };
 
-        let refs_a: HashSet<FormId> = refs_a.into_iter().collect();
-        let new_ref_ids: HashSet<FormId> = refs_b
-            .iter()
-            .copied()
-            .filter(|id| !refs_a.contains(id))
-            .collect();
-        let mut ref_ids = refs_a;
-        ref_ids.extend(refs_b);
+        let ref_ids = provenance::changed_refs(
+            &field_changes,
+            provenance::Side::new(&ra.fields, &node_a),
+            provenance::Side::new(&rb.fields, &node_b),
+        );
+        let mut refs_a = HashSet::new();
+        node_a.for_each_formid(&mut |id| {
+            refs_a.insert(id);
+        });
+        let mut new_ref_ids = HashSet::new();
+        node_b.for_each_formid(&mut |id| {
+            if !id.is_null() && !refs_a.contains(&id) {
+                new_ref_ids.insert(id);
+            }
+        });
         changed.push(RecordDiff {
             stub,
             field_changes,
@@ -598,10 +607,9 @@ pub(crate) fn is_formid_str(s: &str) -> bool {
     s.len() == 10 && b[0] == b'0' && b[1] == b'x' && b[2..].iter().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Collect the FormIDs in `ids` (a record's typed references) that appear as
-/// FormID strings anywhere in the rendered `val`. A FormID field renders as
-/// its `0x…` display string, so a string counts only when the record really
-/// references that FormID — a flags value or hash with the same shape does not.
+/// Collect the FormIDs in `ids` (the typed references a record's diff
+/// touched, see `provenance`) that still appear as FormID strings in the
+/// rendered `val`, once noise suppression has pruned it.
 fn collect_typed_refs(val: &Value, ids: &HashSet<FormId>, out: &mut HashSet<FormId>) {
     match val {
         Value::String(s) if is_formid_str(s) => {

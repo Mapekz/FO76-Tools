@@ -829,6 +829,28 @@ impl Database {
         Ok((parsed.header, editor_id, fields))
     }
 
+    /// [`Self::record_at_meta_with_depth`] plus the typed tree its fields
+    /// render.
+    pub(crate) fn record_at_meta_with_node(
+        &self,
+        meta: &crate::reader::RecordMeta,
+        depth: crate::decode::ResolveDepth,
+    ) -> anyhow::Result<(RecordResult, crate::decode::node::Node)> {
+        let parsed = self.esm.parse_record_at(meta.offset)?;
+        let editor_id = edid_from_subrecords(&parsed.subrecords);
+        let mut tree = None;
+        let fields = self.decode_parsed_with(&parsed, depth, |node| tree = Some(node.clone()));
+        let tree = tree.context("decoder produced no tree")?;
+        Ok((
+            RecordResult {
+                header: parsed.header,
+                editor_id,
+                fields,
+            },
+            tree,
+        ))
+    }
+
     /// Decode an already-parsed record into its typed tree under `ctx`.
     fn node_parsed(
         &self,
