@@ -67,10 +67,10 @@
 //! in-process through the [`RecordSource`] seam — no new `Op` variant; the
 //! pure logic here doesn't know where its records come from.
 
-use crate::fields::{dedup_sorted, is_ref_stub, is_truthy, named, stub_formid};
+use crate::fields::{dedup_sorted, is_truthy, is_truthy_json, named};
 use crate::ops::{RecordSel, RefDepth};
-use crate::source::{RecordSource, bulk_fetch_map};
-use crate::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
+use crate::source::{RecordSource, SourceRecord, bulk_fetch_map};
+use crate::{FormId, RefList, RefRow, Resolved};
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -155,32 +155,36 @@ pub(crate) fn include_role(record_flags: u32) -> IncludeRole {
 pub struct IncludeAlternative {
     #[cfg_attr(test, ts(type = "unknown"))]
     pub omod: Value,
+    /// `omod`'s FormID, for in-process consumers (walk). Not serialized.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub id: FormId,
     pub minimum_level: u64,
 }
 
 /// The alternatives a `Mod Collection`/`Mod Selector` OMOD's decoded
 /// `fields` include, in order.
-pub(crate) fn include_alternatives(fields: &Value) -> Vec<IncludeAlternative> {
+pub(crate) fn include_alternatives(fields: &Resolved) -> Vec<IncludeAlternative> {
     fields
         .pointer("/Data/Includes")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
+        .map(Resolved::items)
+        .unwrap_or_default()
+        .iter()
         .filter_map(|inc| {
-            let omod = inc.get("Mod").filter(|v| is_ref_stub(v))?.clone();
+            let omod = inc.get("Mod")?;
+            let id = omod.stub_id()?;
             let minimum_level = inc
                 .get("Minimum Level")
-                .and_then(Value::as_u64)
+                .and_then(Resolved::as_u64)
                 .unwrap_or(0);
             Some(IncludeAlternative {
-                omod,
+                omod: omod.to_json(),
+                id,
                 minimum_level,
             })
         })
         .collect()
 }
-
-// ─── fetch seam ─────────────────────────────────────────────────────────────
 
 // ─── output types ───────────────────────────────────────────────────────────
 
@@ -281,6 +285,10 @@ pub struct Hop {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(type = "unknown"))]
     pub target: Option<Value>,
+    /// `target`'s FormID, for in-process consumers (walk). Not serialized.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub target_id: Option<FormId>,
     /// Which direction `esm::chase` fetched this hop's evidence — forward
     /// `get` (the target's own Description/Effects) or reverse `refs` (who
     /// points at the target). `None` for a [`HopKind::TagKeyword`]
@@ -611,10 +619,10 @@ fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::E
     Value::deserialize(d).map(Some)
 }
 
-// ─── schema helpers (pure `serde_json::Value` walking) ─────────────────────
+// ─── record-body helpers ────────────────────────────────────────────────────
 
-fn field_or_null(field: Option<&Value>) -> Value {
-    field.cloned().unwrap_or(Value::Null)
+fn field_or_null(field: Option<&Resolved>) -> Value {
+    field.map_or(Value::Null, Resolved::to_json)
 }
 
 /// `Node::formid_paths` (`src/decode/node.rs`) builds paths as dot-joined JSON
@@ -662,8 +670,8 @@ pub(crate) fn first_array_container(path: &str) -> Option<String> {
     None
 }
 
-/// Descend into a decoded record's `fields` value along a dot/`[N]` path.
-fn walk_path<'v>(fields: &'v Value, path: &str) -> Option<&'v Value> {
+/// Descend into a decoded record's `fields` along a dot/`[N]` path.
+fn walk_path<'v>(fields: &'v Resolved, path: &str) -> Option<&'v Resolved> {
     let mut cur = fields;
     for part in path.split('.') {
         let (key, indices) = split_token(part)?;
@@ -677,87 +685,109 @@ fn walk_path<'v>(fields: &'v Value, path: &str) -> Option<&'v Value> {
     Some(cur)
 }
 
-fn slice_effect<'v>(fields: &'v Value, path: &str) -> Option<&'v Value> {
+fn slice_effect<'v>(fields: &'v Resolved, path: &str) -> Option<&'v Resolved> {
     let container = first_array_container(path)?;
     walk_path(fields, &container)
 }
 
-/// Scan an `Effects[]` array for `Effect."Base Effect"` formid-stub targets
-/// whose `record_type` is `"MGEF"` (present on SPEL/ALCH/ENCH-shaped Effects;
-/// absent on PERK's Ability/Quest/Item union — this check is naturally a
-/// no-op there, no type-specific gating needed), deduped by formid.
-fn mgef_targets_in_effects_array(effects: &[Value]) -> Vec<Value> {
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut out = Vec::new();
-    for entry in effects {
-        let Some(inner) = entry.get("Effect").and_then(Value::as_object) else {
-            continue;
-        };
-        let Some(base) = inner.get("Base Effect") else {
-            continue;
-        };
-        if !is_ref_stub(base) {
-            continue;
-        }
-        let rt = base
+/// A reference the chase follows: the target's FormID, and its stub as the
+/// output shows it (`{"formid", "editor_id", "record_type"}`).
+#[derive(Debug, Clone)]
+struct Target {
+    id: FormId,
+    stub: Value,
+}
+
+impl Target {
+    /// The target of a reference that resolved to a stub.
+    fn of(reference: &Resolved) -> Option<Target> {
+        let id = reference.stub_id()?;
+        Some(Target {
+            id,
+            stub: json!({
+                "formid": id.display(),
+                "editor_id": field_or_null(reference.get("editor_id")),
+                "record_type": field_or_null(reference.get("record_type")),
+            }),
+        })
+    }
+
+    fn record_type(&self) -> &str {
+        self.stub
             .get("record_type")
             .and_then(Value::as_str)
-            .unwrap_or("");
-        if rt != "MGEF" {
-            continue;
-        }
-        let fid = base
-            .get("formid")
-            .and_then(Value::as_str)
             .unwrap_or("")
-            .to_string();
-        if fid.is_empty() || !seen.insert(fid) {
+    }
+}
+
+/// A reverse-reference row's stub, in the same shape as [`Target::stub`].
+fn row_stub(row: &RefRow) -> Value {
+    json!({
+        "formid": row.form_id,
+        "editor_id": row.editor_id,
+        "record_type": row.record_type,
+    })
+}
+
+/// Scan an `Effects[]` array for `Effect."Base Effect"` reference stubs
+/// whose `record_type` is `"MGEF"` (present on SPEL/ALCH/ENCH-shaped Effects;
+/// absent on PERK's Ability/Quest/Item union — this check is naturally a
+/// no-op there, no type-specific gating needed), deduped by FormID.
+fn mgef_targets_in_effects_array(effects: &[Resolved]) -> Vec<Target> {
+    let mut seen: HashSet<FormId> = HashSet::new();
+    let mut out = Vec::new();
+    for entry in effects {
+        let Some(target) = entry
+            .get("Effect")
+            .and_then(Resolved::as_object)
+            .and_then(|inner| inner.get("Base Effect"))
+            .and_then(Target::of)
+        else {
             continue;
+        };
+        if target.record_type() == "MGEF" && seen.insert(target.id) {
+            out.push(target);
         }
-        out.push(stub(base));
     }
     out
 }
 
-/// Records fetched by FormID (see [`fetch_stubs`]).
-type Fetched = HashMap<FormId, BulkRecordEntry>;
+/// Records fetched by FormID (see [`fetch_targets`]).
+type Fetched = HashMap<FormId, SourceRecord>;
 
-/// Fetch, once each, the records these reference stubs name.
-fn fetch_stubs<'v>(
+/// Fetch, once each, the records these targets name.
+fn fetch_targets<'t>(
     f: &mut impl RecordSource,
-    stubs: impl IntoIterator<Item = &'v Value>,
+    targets: impl IntoIterator<Item = &'t Target>,
 ) -> anyhow::Result<Fetched> {
-    let mut fids: Vec<FormId> = stubs
-        .into_iter()
-        .filter_map(|s| stub_formid(Some(s)))
-        .collect();
+    let mut fids: Vec<FormId> = targets.into_iter().map(|t| t.id).collect();
     dedup_sorted(&mut fids);
     bulk_fetch_map(f, &fids)
 }
 
-/// The fetched record a reference stub names.
-fn fetched<'a>(by_fid: &'a Fetched, stub: &Value) -> Option<&'a BulkRecordEntry> {
-    by_fid.get(&stub_formid(Some(stub))?)
+/// The fetched record a target names.
+fn fetched<'a>(by_fid: &'a Fetched, target: &Target) -> Option<&'a SourceRecord> {
+    by_fid.get(&target.id)
 }
 
 /// Given an already-bulk-fetched MGEF target, extract `"Perk to Apply"`/`"Equip Ability"` into a compact
 /// [`Evidence`]. `None` if the MGEF wasn't found/failed to fetch, or has
 /// neither field set — the common case, most magic effects are plain
 /// damage/buff effects with nothing further to chase.
-fn mgef_pass_through_evidence(mgef_target: &Value, by_fid: &Fetched) -> Option<Evidence> {
+fn mgef_pass_through_evidence(mgef_target: &Target, by_fid: &Fetched) -> Option<Evidence> {
     let entry = fetched(by_fid, mgef_target)?;
     let fields = entry.fields.as_ref()?;
     let perk_to_apply = walk_path(fields, "Magic Effect Data.Data.Perk to Apply")
         .filter(|v| is_truthy(Some(*v)))
-        .cloned();
+        .map(Resolved::to_json);
     let equip_ability = walk_path(fields, "Magic Effect Data.Data.Equip Ability")
         .filter(|v| is_truthy(Some(*v)))
-        .cloned();
+        .map(Resolved::to_json);
     if perk_to_apply.is_none() && equip_ability.is_none() {
         return None;
     }
     Some(Evidence {
-        source: stub(mgef_target),
+        source: mgef_target.stub.clone(),
         via: Some("Base Effect".to_string()),
         detail: EvidenceDetail::PassThrough(PassThroughDetail {
             perk_to_apply,
@@ -770,84 +800,73 @@ fn mgef_pass_through_evidence(mgef_target: &Value, by_fid: &Fetched) -> Option<E
 
 // ─── the chase ───────────────────────────────────────────────────────────────
 
-/// Normalize a FormID-stub-shaped value (`{"formid"/"form_id", "editor_id",
-/// "record_type"}`) to the canonical `{"formid", "editor_id", "record_type"}`
-/// shape. Accepts either key spelling for the FormID itself so it can stub
-/// both a decoded FormID reference (`"formid"`, from [`crate::FormIdStub`])
-/// and a `RefRow` (`"form_id"`) with the same helper.
-fn stub(v: &Value) -> Value {
-    let formid = v
-        .get("formid")
-        .or_else(|| v.get("form_id"))
-        .cloned()
-        .unwrap_or(Value::Null);
-    json!({
-        "formid": formid,
-        "editor_id": v.get("editor_id").cloned().unwrap_or(Value::Null),
-        "record_type": v.get("record_type").cloned().unwrap_or(Value::Null),
-    })
-}
-
 fn note(text: impl Into<String>) -> EvidenceDetail {
     EvidenceDetail::Note { note: text.into() }
 }
 
-fn forward_evidence(target: &Value, by_fid: &Fetched) -> Evidence {
-    let entry = match fetched(by_fid, target) {
-        None => {
-            return Evidence {
-                source: stub(target),
-                via: None,
-                detail: note("fetch failed: no response"),
-                hop_depth: None,
-                path_chain: None,
-            };
-        }
-        Some(e) => e,
-    };
-    if let Some(err) = &entry.error {
-        return Evidence {
-            source: stub(target),
-            via: None,
-            detail: note(format!("fetch failed: {err}")),
-            hop_depth: None,
-            path_chain: None,
-        };
-    }
-    let fields = entry.fields.clone().unwrap_or(Value::Null);
-    let mut detail = RecordDetail::default();
-    if is_truthy(fields.get("Description")) {
-        detail.description = Some(fields["Description"].clone());
-    }
-    if let Some(effects) = fields.get("Effects").and_then(Value::as_array)
-        && !effects.is_empty()
-    {
-        let capped: Vec<Value> = effects.iter().take(12).cloned().collect();
-        let truncated = effects.len().saturating_sub(capped.len());
-        detail.effects = Some(capped);
-        detail.effects_truncated = (truncated > 0).then_some(truncated);
-    }
-    let detail = if detail.description.is_none() && detail.effects.is_none() {
-        note("no Description/Effects field on this record")
-    } else {
-        EvidenceDetail::Record(detail)
-    };
-    Evidence {
-        source: stub(target),
+/// Cap on the `Effects[]` rows a forward-fetched record's evidence shows.
+const EVIDENCE_EFFECTS_CAP: usize = 12;
+
+fn forward_evidence(target: &Target, by_fid: &Fetched) -> Evidence {
+    let evidence = |detail| Evidence {
+        source: target.stub.clone(),
         via: None,
         detail,
         hop_depth: None,
         path_chain: None,
+    };
+    let Some(entry) = fetched(by_fid, target) else {
+        return evidence(note("fetch failed: no response"));
+    };
+    if let Some(err) = &entry.error {
+        return evidence(note(format!("fetch failed: {err}")));
     }
+    let fields = entry.fields.as_ref().unwrap_or(&Resolved::Null);
+    let mut detail = RecordDetail::default();
+    if is_truthy(fields.get("Description")) {
+        detail.description = Some(fields["Description"].to_json());
+    }
+    let effects = fields
+        .get("Effects")
+        .map(Resolved::items)
+        .unwrap_or_default();
+    if !effects.is_empty() {
+        let capped: Vec<Value> = effects
+            .iter()
+            .take(EVIDENCE_EFFECTS_CAP)
+            .map(Resolved::to_json)
+            .collect();
+        let truncated = effects.len().saturating_sub(capped.len());
+        detail.effects = Some(capped);
+        detail.effects_truncated = (truncated > 0).then_some(truncated);
+    }
+    evidence(
+        if detail.description.is_none() && detail.effects.is_none() {
+            note("no Description/Effects field on this record")
+        } else {
+            EvidenceDetail::Record(detail)
+        },
+    )
+}
+
+/// The `Effects[]` rows [`forward_evidence`] shows for `target`.
+fn forward_effects<'a>(target: &Target, by_fid: &'a Fetched) -> &'a [Resolved] {
+    let effects = fetched(by_fid, target)
+        .filter(|entry| entry.error.is_none())
+        .and_then(|entry| entry.fields.as_ref())
+        .and_then(|fields| fields.get("Effects"))
+        .map(Resolved::items)
+        .unwrap_or_default();
+    &effects[..effects.len().min(EVIDENCE_EFFECTS_CAP)]
 }
 
 /// Min/max `y` across an inline-resolved curve table's `curve` points, if any.
-fn curve_y_range(curve_table: &Value) -> Option<(f64, f64)> {
+fn curve_y_range(curve_table: &Resolved) -> Option<(f64, f64)> {
     let points = curve_table.get("curve")?.as_array()?;
     let mut min_y = f64::INFINITY;
     let mut max_y = f64::NEG_INFINITY;
     for p in points {
-        let Some(y) = p.get("y").and_then(Value::as_f64) else {
+        let Some(y) = p.get("y").and_then(Resolved::as_f64) else {
             continue;
         };
         min_y = min_y.min(y);
@@ -866,68 +885,64 @@ fn curve_y_range(curve_table: &Value) -> Option<(f64, f64)> {
 /// `Data.Damage`, or none) plus utility fields so a JSON consumer can read
 /// damage without guessing which shape is present. `pub(crate)` so
 /// `esm::walk`'s EXPL digest arm reuses the same logic.
-pub(crate) fn summarize_explosion(fields: &Value) -> ExplosionSummary {
+pub(crate) fn summarize_explosion(fields: &Resolved) -> ExplosionSummary {
     let data = fields.get("Data");
     let mut summary = ExplosionSummary::default();
     let mut damage = Vec::new();
 
     if let Some(d) = data {
-        let inner = d.get("Inner Radius").cloned().unwrap_or(Value::Null);
-        let outer = d.get("Outer Radius").cloned().unwrap_or(Value::Null);
+        let inner = field_or_null(d.get("Inner Radius"));
+        let outer = field_or_null(d.get("Outer Radius"));
         if !inner.is_null() || !outer.is_null() {
             summary.radius = Some([inner, outer]);
         }
         if is_truthy(d.get("Force")) {
-            summary.force = Some(d["Force"].clone());
+            summary.force = Some(d["Force"].to_json());
         }
         let stagger = named(d.get("Stagger"));
-        if is_truthy(Some(&stagger)) {
+        if is_truthy_json(Some(&stagger)) {
             summary.stagger = Some(stagger);
         }
-        if let Some(ipds) = d.get("Impact Data Set").filter(|v| is_ref_stub(v)) {
-            summary.impact_data_set = Some(
-                ipds.get("editor_id")
-                    .cloned()
-                    .unwrap_or_else(|| stub(ipds).get("formid").cloned().unwrap_or(Value::Null)),
-            );
+        if let Some(ipds) = d.get("Impact Data Set").and_then(Target::of) {
+            summary.impact_data_set = Some(match &ipds.stub["editor_id"] {
+                Value::Null => json!(ipds.id.display()),
+                edid => edid.clone(),
+            });
         }
         summary.chain = Some(
             d.pointer("/Flags1/flags")
-                .and_then(Value::as_array)
+                .and_then(Resolved::as_array)
                 .is_some_and(|flags| flags.iter().any(|f| f.as_str() == Some("Chain"))),
         );
-        summary.placed_object = d.get("Placed Object").filter(|v| is_ref_stub(v)).map(stub);
+        summary.placed_object = d.get("Placed Object").and_then(Target::of).map(|t| t.stub);
         summary.spawn_projectile = d
             .get("Spawn Projectile")
-            .filter(|v| is_ref_stub(v))
-            .map(stub);
+            .and_then(Target::of)
+            .map(|t| t.stub);
     }
 
-    let curve_row = |ct: &Value, kind: Option<Value>| ExplosionDamage {
+    let curve_row = |ct: &Resolved, kind: Option<Value>| ExplosionDamage {
         kind,
-        curve: Some(ct.get("editor_id").cloned().unwrap_or(Value::Null)),
+        curve: Some(field_or_null(ct.get("editor_id"))),
         range: curve_y_range(ct).map(|(lo, hi)| [lo, hi]),
         ..ExplosionDamage::default()
     };
-    if let Some(types) = fields.get("Damage Types").and_then(Value::as_array) {
-        for entry in types {
-            let kind = Some(
-                entry
-                    .pointer("/Type/editor_id")
-                    .cloned()
-                    .unwrap_or(Value::Null),
-            );
-            damage.push(
-                match entry.get("Curve Table").filter(|v| is_truthy(Some(*v))) {
-                    Some(ct) => curve_row(ct, kind),
-                    None => ExplosionDamage {
-                        kind,
-                        amount: is_truthy(entry.get("Amount")).then(|| entry["Amount"].clone()),
-                        ..ExplosionDamage::default()
-                    },
+    for entry in fields
+        .get("Damage Types")
+        .map(Resolved::items)
+        .unwrap_or_default()
+    {
+        let kind = Some(field_or_null(entry.pointer("/Type/editor_id")));
+        damage.push(
+            match entry.get("Curve Table").filter(|v| is_truthy(Some(*v))) {
+                Some(ct) => curve_row(ct, kind),
+                None => ExplosionDamage {
+                    kind,
+                    amount: is_truthy(entry.get("Amount")).then(|| entry["Amount"].to_json()),
+                    ..ExplosionDamage::default()
                 },
-            );
-        }
+            },
+        );
     }
     if let Some(d) = data {
         if let Some(ct) = d.get("Damage Curve Table").filter(|v| is_truthy(Some(*v))) {
@@ -935,13 +950,13 @@ pub(crate) fn summarize_explosion(fields: &Value) -> ExplosionSummary {
         }
         if is_truthy(d.get("Base Weapon Damage Mult")) {
             damage.push(ExplosionDamage {
-                base_weapon_mult: Some(d["Base Weapon Damage Mult"].clone()),
+                base_weapon_mult: Some(d["Base Weapon Damage Mult"].to_json()),
                 ..ExplosionDamage::default()
             });
         }
         if is_truthy(d.get("Damage")) {
             damage.push(ExplosionDamage {
-                flat: Some(d["Damage"].clone()),
+                flat: Some(d["Damage"].to_json()),
                 ..ExplosionDamage::default()
             });
         }
@@ -952,28 +967,28 @@ pub(crate) fn summarize_explosion(fields: &Value) -> ExplosionSummary {
 
 /// Build forward evidence for a PROJ-targeting OMOD property: speed/type plus
 /// the linked EXPL's radius/force/stagger/chain/damage summary when present.
-fn projectile_evidence(target: &Value, proj_fields: &Value, expl_by_fid: &Fetched) -> Evidence {
+fn projectile_evidence(target: &Target, proj_fields: &Resolved, expl_by_fid: &Fetched) -> Evidence {
     let mut detail = ProjectileDetail::default();
     if let Some(data) = proj_fields.get("Data") {
         if is_truthy(data.get("Speed")) {
-            detail.speed = Some(data["Speed"].clone());
+            detail.speed = Some(data["Speed"].to_json());
         }
         let proj_type = named(data.get("Type"));
-        if is_truthy(Some(&proj_type)) {
+        if is_truthy_json(Some(&proj_type)) {
             detail.kind = Some(proj_type);
         }
-        if let Some(expl) = data.get("Explosion").filter(|v| is_ref_stub(v)) {
-            detail.explosion = Some(stub(expl));
-            if let Some(entry) = fetched(expl_by_fid, expl)
+        if let Some(expl) = data.get("Explosion").and_then(Target::of) {
+            if let Some(entry) = fetched(expl_by_fid, &expl)
                 && entry.error.is_none()
             {
-                let expl_fields = entry.fields.as_ref().unwrap_or(&Value::Null);
+                let expl_fields = entry.fields.as_ref().unwrap_or(&Resolved::Null);
                 detail.summary = summarize_explosion(expl_fields);
             }
+            detail.explosion = Some(expl.stub);
         }
     }
     Evidence {
-        source: stub(target),
+        source: target.stub.clone(),
         via: None,
         detail: EvidenceDetail::Projectile(Box::new(detail)),
         hop_depth: None,
@@ -983,14 +998,17 @@ fn projectile_evidence(target: &Value, proj_fields: &Value, expl_by_fid: &Fetche
 
 /// Synthetic evidence for a [`HopKind::TagKeyword`]: the KYWD's own Notes/Type,
 /// not a reverse-chased consumer.
-fn tag_keyword_evidence(target: &Value, kywd_fields: Option<&Value>, type_name: Value) -> Evidence {
+fn tag_keyword_evidence(
+    target: &Target,
+    kywd_fields: Option<&Resolved>,
+    type_name: Value,
+) -> Evidence {
     let notes = kywd_fields
         .and_then(|f| f.get("Notes"))
         .filter(|n| !n.is_null())
-        .cloned()
-        .unwrap_or(Value::Null);
+        .map_or(Value::Null, Resolved::to_json);
     Evidence {
-        source: stub(target),
+        source: target.stub.clone(),
         via: None,
         detail: EvidenceDetail::Tag(TagDetail {
             tag: true,
@@ -1003,7 +1021,7 @@ fn tag_keyword_evidence(target: &Value, kywd_fields: Option<&Value>, type_name: 
 }
 
 /// A successfully-fetched KYWD's decoded fields.
-fn kywd_fields_from_map<'a>(by_fid: &'a Fetched, target: &Value) -> Option<&'a Value> {
+fn kywd_fields_from_map<'a>(by_fid: &'a Fetched, target: &Target) -> Option<&'a Resolved> {
     let entry = fetched(by_fid, target)?;
     if entry.error.is_some() {
         return None;
@@ -1014,7 +1032,7 @@ fn kywd_fields_from_map<'a>(by_fid: &'a Fetched, target: &Value) -> Option<&'a V
 /// True when a KYWD's `Type.name` is a populated enum other than `"None"` —
 /// those are categorically item-policy / UI tags, never SPEL/PERK gates.
 fn is_populated_kywd_type(type_name: &Value) -> bool {
-    is_truthy(Some(type_name)) && type_name.as_str() != Some("None")
+    is_truthy_json(Some(type_name)) && type_name.as_str() != Some("None")
 }
 
 /// Classify one OMOD `Data.Properties[]` row into a [`Hop`] plus an optional
@@ -1022,45 +1040,36 @@ fn is_populated_kywd_type(type_name: &Value) -> bool {
 /// by include-expanded rows so the KYWD/PERK/AVIF/PROJ/forward-type dispatch
 /// lives in one place.
 fn classify_property_row(
-    prop: &Value,
+    prop: &Resolved,
     property_index: usize,
     source_omod: Option<Value>,
     kywd_by_fid: &Fetched,
 ) -> (Hop, Option<FetchDest>) {
-    let prop_name = named(prop.get("Property"));
-    let function = named(prop.get("Function Type"));
-    let value1 = field_or_null(prop.get("Value 1"));
-    let value2 = field_or_null(prop.get("Value 2"));
-    let curve_table = prop
-        .get("Curve Table")
-        .filter(|v| is_truthy(Some(*v)))
-        .cloned();
-
+    let value1 = prop.get("Value 1");
     let mut hop = Hop {
         property_index,
-        property: prop_name,
-        function,
-        value1: value1.clone(),
-        value2,
-        curve_table,
+        property: named(prop.get("Property")),
+        function: named(prop.get("Function Type")),
+        value1: field_or_null(value1),
+        value2: field_or_null(prop.get("Value 2")),
+        curve_table: prop
+            .get("Curve Table")
+            .filter(|v| is_truthy(Some(*v)))
+            .map(Resolved::to_json),
         kind: HopKind::DirectProperty,
         target: None,
+        target_id: None,
         resolution: None,
         source_omod,
         evidence: Vec::new(),
     };
 
-    if !is_ref_stub(&value1) {
+    let Some(target) = value1.and_then(Target::of) else {
         return (hop, None);
-    }
-
-    let target = stub(&value1);
-    let rt = target
-        .get("record_type")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    hop.target = Some(target.clone());
+    };
+    let rt = target.record_type().to_string();
+    hop.target = Some(target.stub.clone());
+    hop.target_id = Some(target.id);
 
     let dest = if rt == "KYWD" {
         if let Some(fields) = kywd_fields_from_map(kywd_by_fid, &target) {
@@ -1107,8 +1116,8 @@ fn classify_property_row(
 
 /// Where a classified property row still needs a follow-up fetch.
 enum FetchDest {
-    Forward(Value),
-    Reverse(Value),
+    Forward(Target),
+    Reverse(Target),
 }
 
 /// Collect `(properties, source_omod)` batches for the root plus a bounded
@@ -1118,25 +1127,27 @@ enum FetchDest {
 /// properties.
 fn collect_property_sources(
     f: &mut impl RecordSource,
-    root_fields: &Value,
+    root_fields: &Resolved,
     root_flags: u32,
-) -> anyhow::Result<Vec<(Vec<Value>, Option<Value>)>> {
-    let root_properties: Vec<Value> = root_fields
-        .pointer("/Data/Properties")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    let mut sources: Vec<(Vec<Value>, Option<Value>)> = vec![(root_properties, None)];
+) -> anyhow::Result<Vec<(Vec<Resolved>, Option<Value>)>> {
+    let properties = |fields: &Resolved| -> Vec<Resolved> {
+        fields
+            .pointer("/Data/Properties")
+            .map(Resolved::items)
+            .unwrap_or_default()
+            .to_vec()
+    };
+    let mut sources: Vec<(Vec<Resolved>, Option<Value>)> = vec![(properties(root_fields), None)];
 
     // The mod templates an OMOD's `Data.Includes[]` names, capped per level.
-    let included = |fields: &Value| -> Vec<FormId> {
+    let included = |fields: &Resolved| -> Vec<FormId> {
         fields
             .pointer("/Data/Includes")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
+            .map(Resolved::items)
+            .unwrap_or_default()
+            .iter()
             .take(OMOD_INCLUDE_ENQUEUE_CAP)
-            .filter_map(|inc| stub_formid(inc.get("Mod")))
+            .filter_map(|inc| inc.get("Mod").and_then(Resolved::stub_id))
             .collect()
     };
     let mut visited: HashSet<FormId> = HashSet::new();
@@ -1153,25 +1164,20 @@ fn collect_property_sources(
         if depth > OMOD_INCLUDE_MAX_DEPTH {
             continue;
         }
-        let fetched = f.bulk_get(&[RecordSel::FormId(fid)], ResolveDepth::Stub)?;
+        let fetched = f.bulk_get(&[RecordSel::FormId(fid)])?;
         let Some(entry) = fetched.into_iter().next() else {
             continue;
         };
         if entry.error.is_some() {
             continue;
         }
-        let fields = entry.fields.clone().unwrap_or(Value::Null);
+        let fields = entry.fields.unwrap_or(Resolved::Null);
         let omod_stub = json!({
             "formid": fid.display(),
-            "editor_id": entry.editor_id.clone().unwrap_or_default(),
+            "editor_id": entry.editor_id.unwrap_or_default(),
             "record_type": entry.header.as_ref().map(|h| h.signature.clone()).unwrap_or_else(|| "OMOD".to_string()),
         });
-        let properties: Vec<Value> = fields
-            .pointer("/Data/Properties")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        sources.push((properties, Some(omod_stub)));
+        sources.push((properties(&fields), Some(omod_stub)));
 
         let flags = entry.header.as_ref().map_or(0, |h| h.flags);
         if depth < OMOD_INCLUDE_MAX_DEPTH && include_role(flags) == IncludeRole::Compose {
@@ -1212,15 +1218,11 @@ pub(crate) fn consumer_refs_by_type(
 /// module docs, pattern 1/3).
 fn reverse_chase(
     f: &mut impl RecordSource,
-    target: &Value,
+    target: &Target,
     depth: RefDepth,
     limit: usize,
 ) -> anyhow::Result<Vec<Evidence>> {
-    let formid_str = target.get("formid").and_then(Value::as_str).unwrap_or("");
-    let target_fid = crate::parse_form_id_input(formid_str)
-        .with_context(|| format!("invalid target FormID {formid_str:?} on reverse-chase target"))?;
-
-    let rows: Vec<RefRow> = consumer_refs_by_type(f, target_fid, depth, limit)?
+    let rows: Vec<RefRow> = consumer_refs_by_type(f, target.id, depth, limit)?
         .into_iter()
         .flat_map(|(_, ref_list)| ref_list.rows)
         .collect();
@@ -1228,25 +1230,25 @@ fn reverse_chase(
         return Ok(Vec::new());
     }
 
-    let row_fid = |row: &RefRow| crate::parse_form_id_input(&row.form_id).ok();
-    let mut fids: Vec<FormId> = rows.iter().filter_map(row_fid).collect();
+    let mut fids: Vec<FormId> = rows.iter().map(|row| row.id).collect();
     dedup_sorted(&mut fids);
     let by_fid = bulk_fetch_map(f, &fids)?;
 
     let mut evidence = Vec::new();
     for row in &rows {
-        let entry = row_fid(row).and_then(|fid| by_fid.get(&fid));
-        let fields = entry.and_then(|e| e.fields.clone()).unwrap_or(Value::Null);
+        let fields = by_fid
+            .get(&row.id)
+            .and_then(|e| e.fields.as_ref())
+            .unwrap_or(&Resolved::Null);
         let paths: Vec<Option<&str>> = match &row.field_paths {
             Some(p) if !p.is_empty() => p.iter().map(|s| Some(s.as_str())).collect(),
             _ => vec![None],
         };
-        let row_value = serde_json::to_value(row).unwrap_or(Value::Null);
         for path in paths {
-            let sliced = path.and_then(|p| slice_effect(&fields, p));
+            let sliced = path.and_then(|p| slice_effect(fields, p));
             let detail = match sliced {
                 Some(effect) => EvidenceDetail::Effect {
-                    effect: effect.clone(),
+                    effect: effect.to_json(),
                 },
                 None => note(
                     "reference confirmed but the exact effect could not be isolated from the \
@@ -1262,7 +1264,7 @@ fn reverse_chase(
                 (None, None)
             };
             evidence.push(Evidence {
-                source: stub(&row_value),
+                source: row_stub(row),
                 via: path.map(str::to_string),
                 detail,
                 hop_depth,
@@ -1277,22 +1279,22 @@ fn reverse_chase(
 /// one bounded extra forward hop, batched into a single `bulk_get` regardless
 /// of how many `sources` are scanned. `sources` pairs a hop-vector index with
 /// the `Effects[]` array to scan for that hop (a forward-fetched target's own
-/// `detail.effects`, or a root's own Base-Effect-shaped entry). Returns
+/// effects, or a root's own Base-Effect-shaped entry). Returns
 /// `(index, Evidence)` pairs for the caller to push onto the right hop's
 /// evidence list; a source with no MGEF carrying a pass-through field
 /// contributes nothing.
 fn mgef_pass_through(
     f: &mut impl RecordSource,
-    sources: &[(usize, Vec<Value>)],
+    sources: &[(usize, Vec<Resolved>)],
 ) -> anyhow::Result<Vec<(usize, Evidence)>> {
-    let all_targets: Vec<Value> = sources
+    let all_targets: Vec<Target> = sources
         .iter()
         .flat_map(|(_, effects)| mgef_targets_in_effects_array(effects))
         .collect();
     if all_targets.is_empty() {
         return Ok(Vec::new());
     }
-    let by_fid = fetch_stubs(f, &all_targets)?;
+    let by_fid = fetch_targets(f, &all_targets)?;
 
     let mut out = Vec::new();
     for (idx, effects) in sources {
@@ -1305,16 +1307,19 @@ fn mgef_pass_through(
     Ok(out)
 }
 
-fn build_root_stub(entry: &BulkRecordEntry, fields: &Value) -> RootStub {
+fn build_root_stub(entry: &SourceRecord, fields: &Resolved) -> RootStub {
     RootStub {
         formid: entry.header.as_ref().map(|h| h.form_id.display()),
         record_type: entry.header.as_ref().map(|h| h.signature.clone()),
         editor_id: entry.editor_id.clone(),
-        name: fields.get("Name").filter(|v| is_truthy(Some(*v))).cloned(),
+        name: fields
+            .get("Name")
+            .filter(|v| is_truthy(Some(*v)))
+            .map(Resolved::to_json),
         description: fields
             .get("Description")
             .filter(|v| is_truthy(Some(*v)))
-            .cloned(),
+            .map(Resolved::to_json),
     }
 }
 
@@ -1332,7 +1337,7 @@ pub fn chase(
     opts: &ChaseOptions,
 ) -> anyhow::Result<ChaseTree> {
     let selector_display = selector.display();
-    let entries = f.bulk_get(std::slice::from_ref(&selector), ResolveDepth::Stub)?;
+    let entries = f.bulk_get(std::slice::from_ref(&selector))?;
     let entry = entries
         .into_iter()
         .next()
@@ -1341,8 +1346,8 @@ pub fn chase(
         bail!("failed to resolve {selector_display:?}: {err}");
     }
 
-    let fields = entry.fields.clone().unwrap_or(Value::Null);
-    let record_type = fields.get("_record_type").and_then(Value::as_str);
+    let fields = entry.fields.clone().unwrap_or(Resolved::Null);
+    let record_type = fields.get("_record_type").and_then(Resolved::as_str);
     let root = build_root_stub(&entry, &fields);
 
     if let Some(rt) = record_type {
@@ -1381,26 +1386,24 @@ pub fn chase(
 pub(crate) fn omod_chase(
     f: &mut impl RecordSource,
     root: RootStub,
-    fields: &Value,
+    fields: &Resolved,
     root_flags: u32,
     opts: &ChaseOptions,
 ) -> anyhow::Result<ChaseTree> {
     let sources = collect_property_sources(f, fields, root_flags)?;
 
     // ---- one bulk_get for every KYWD-typed property target (Type/Notes) ----
-    let kywd_targets: Vec<Value> = sources
+    let kywd_targets: Vec<Target> = sources
         .iter()
         .flat_map(|(properties, _)| properties)
-        .map(|prop| field_or_null(prop.get("Value 1")))
-        .filter(|value1| {
-            is_ref_stub(value1) && value1.get("record_type").and_then(Value::as_str) == Some("KYWD")
-        })
+        .filter_map(|prop| prop.get("Value 1").and_then(Target::of))
+        .filter(|target| target.record_type() == "KYWD")
         .collect();
-    let kywd_by_fid = fetch_stubs(f, &kywd_targets)?;
+    let kywd_by_fid = fetch_targets(f, &kywd_targets)?;
 
     let mut hops: Vec<Hop> = Vec::new();
-    let mut forward_targets: Vec<(usize, Value)> = Vec::new();
-    let mut reverse_targets: Vec<(usize, Value)> = Vec::new();
+    let mut forward_targets: Vec<(usize, Target)> = Vec::new();
+    let mut reverse_targets: Vec<(usize, Target)> = Vec::new();
 
     for (properties, source_omod) in &sources {
         for (i, prop) in properties.iter().enumerate() {
@@ -1417,25 +1420,24 @@ pub(crate) fn omod_chase(
 
     // ---- forward fetch (perk_grant + direct ENCH/SPEL/PROJ attachments) ----
     if !forward_targets.is_empty() {
-        let by_fid = fetch_stubs(f, forward_targets.iter().map(|(_, t)| t))?;
+        let by_fid = fetch_targets(f, forward_targets.iter().map(|(_, t)| t))?;
 
         // One batched follow-up fetch for every PROJ target's Data.Explosion
         // (PROJ evidence needs the linked explosion).
-        let is_proj =
-            |target: &Value| target.get("record_type").and_then(Value::as_str) == Some("PROJ");
-        let explosions: Vec<&Value> = forward_targets
+        let is_proj = |target: &Target| target.record_type() == "PROJ";
+        let explosions: Vec<Target> = forward_targets
             .iter()
             .filter(|(_, target)| is_proj(target))
             .filter_map(|(_, target)| fetched(&by_fid, target)?.fields.as_ref())
-            .filter_map(|fields| fields.pointer("/Data/Explosion"))
+            .filter_map(|fields| fields.pointer("/Data/Explosion").and_then(Target::of))
             .collect();
-        let expl_by_fid = fetch_stubs(f, explosions)?;
+        let expl_by_fid = fetch_targets(f, &explosions)?;
 
         for (i, target) in &forward_targets {
             if is_proj(target) {
                 let proj_fields = fetched(&by_fid, target)
                     .and_then(|e| e.fields.as_ref())
-                    .unwrap_or(&Value::Null);
+                    .unwrap_or(&Resolved::Null);
                 hops[*i].evidence = vec![projectile_evidence(target, proj_fields, &expl_by_fid)];
             } else {
                 hops[*i].evidence = vec![forward_evidence(target, &by_fid)];
@@ -1446,19 +1448,11 @@ pub(crate) fn omod_chase(
         // a Base Effect resolving to an MGEF with "Perk to Apply"/"Equip
         // Ability" set (the ENCH -> MGEF -> PERK "tech migration" pattern from
         // the mechanics KB), surface it as one more Evidence entry on the hop.
-        let mgef_sources: Vec<(usize, Vec<Value>)> = forward_targets
+        let mgef_sources: Vec<(usize, Vec<Resolved>)> = forward_targets
             .iter()
-            .filter_map(|(i, target)| {
-                let rt = target
-                    .get("record_type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
-                if rt == "PROJ" {
-                    return None;
-                }
-                let effects = hops[*i].evidence.first()?.detail.effects()?.to_vec();
-                Some((*i, effects))
-            })
+            .filter(|(_, target)| !is_proj(target))
+            .map(|(i, target)| (*i, forward_effects(target, &by_fid).to_vec()))
+            .filter(|(_, effects)| !effects.is_empty())
             .collect();
         for (idx, ev) in mgef_pass_through(f, &mgef_sources)? {
             hops[idx].evidence.push(ev);
@@ -1475,9 +1469,10 @@ pub(crate) fn omod_chase(
         if hop.kind != HopKind::KeywordHook || !hop.evidence.is_empty() {
             continue;
         }
-        let Some(target) = hop.target.clone() else {
+        let (Some(id), Some(stub)) = (hop.target_id, hop.target.clone()) else {
             continue;
         };
+        let target = Target { id, stub };
         // Only demote when we successfully fetched the KYWD's own record —
         // without Type/Notes we can't build the synthetic tag evidence the
         // walk renderer expects, and a failed lookup leaves the hop as a
@@ -1517,78 +1512,74 @@ pub(crate) fn omod_chase(
 fn effect_chase(
     f: &mut impl RecordSource,
     root: RootStub,
-    fields: &Value,
+    fields: &Resolved,
 ) -> anyhow::Result<ChaseTree> {
-    let effects: Vec<Value> = fields
+    let effects = fields
         .get("Effects")
-        .and_then(Value::as_array)
-        .cloned()
+        .map(Resolved::items)
         .unwrap_or_default();
 
     let mut hops: Vec<EffectHop> = Vec::with_capacity(effects.len());
-    let mut forward_targets: Vec<(usize, Value)> = Vec::new();
+    let mut forward_targets: Vec<(usize, Target)> = Vec::new();
 
     for (i, entry) in effects.iter().enumerate() {
-        let inner_obj = entry.get("Effect").and_then(Value::as_object);
+        let inner_obj = entry.get("Effect").and_then(Resolved::as_object);
 
         let mut kind = EffectHopKind::NoTarget;
-        let mut target: Option<Value> = None;
+        let mut target: Option<Target> = None;
 
         if let Some(inner) = inner_obj {
-            if let Some(base) = inner.get("Base Effect")
-                && is_ref_stub(base)
-            {
+            if let Some(base) = inner.get("Base Effect").and_then(Target::of) {
                 kind = EffectHopKind::BaseEffect;
-                target = Some(stub(base));
+                target = Some(base);
             }
-            if target.is_none() {
-                for key in PERK_EFFECT_TARGET_KEYS {
-                    if let Some(t) = inner.get(key)
-                        && is_ref_stub(t)
-                    {
-                        kind = EffectHopKind::ForwardTarget;
-                        target = Some(stub(t));
-                        break;
-                    }
-                }
+            if target.is_none()
+                && let Some(t) = PERK_EFFECT_TARGET_KEYS
+                    .iter()
+                    .find_map(|key| inner.get(*key).and_then(Target::of))
+            {
+                kind = EffectHopKind::ForwardTarget;
+                target = Some(t);
             }
         }
 
-        if kind == EffectHopKind::ForwardTarget {
-            forward_targets.push((i, target.clone().unwrap()));
+        if kind == EffectHopKind::ForwardTarget
+            && let Some(t) = &target
+        {
+            forward_targets.push((i, t.clone()));
         }
 
         hops.push(EffectHop {
             effect_index: i,
             kind,
-            effect: entry.clone(),
-            target,
+            effect: entry.to_json(),
+            target: target.map(|t| t.stub),
             evidence: Vec::new(),
         });
     }
 
+    // ---- MGEF pass-through sources: the root's own Base-Effect-shaped
+    // entries, plus any forward-fetched target's own Effects[] (e.g. a PERK
+    // rank granting a SPEL Ability whose Base Effect -> MGEF carries "Perk
+    // to Apply"). ----
+    let mut mgef_sources: Vec<(usize, Vec<Resolved>)> = hops
+        .iter()
+        .filter(|hop| hop.kind == EffectHopKind::BaseEffect)
+        .map(|hop| (hop.effect_index, vec![effects[hop.effect_index].clone()]))
+        .collect();
+
     // ---- forward fetch (PERK's Ability/Quest/Spell/Item/Leveled Item targets): 1 bulk call ----
     if !forward_targets.is_empty() {
-        let by_fid = fetch_stubs(f, forward_targets.iter().map(|(_, t)| t))?;
+        let by_fid = fetch_targets(f, forward_targets.iter().map(|(_, t)| t))?;
         for (i, target) in &forward_targets {
             hops[*i].evidence = vec![forward_evidence(target, &by_fid)];
+            let effects = forward_effects(target, &by_fid);
+            if !effects.is_empty() {
+                mgef_sources.push((*i, effects.to_vec()));
+            }
         }
     }
 
-    // ---- MGEF pass-through: the root's own Base-Effect-shaped entries, plus
-    // any forward-fetched target's own Effects[] (e.g. a PERK rank granting a
-    // SPEL Ability whose Base Effect -> MGEF carries "Perk to Apply"). ----
-    let mut mgef_sources: Vec<(usize, Vec<Value>)> = Vec::new();
-    for hop in &hops {
-        if hop.kind == EffectHopKind::BaseEffect {
-            mgef_sources.push((hop.effect_index, vec![hop.effect.clone()]));
-        }
-    }
-    for (i, _) in &forward_targets {
-        if let Some(effects) = hops[*i].evidence.first().and_then(|ev| ev.detail.effects()) {
-            mgef_sources.push((*i, effects.to_vec()));
-        }
-    }
     for (idx, ev) in mgef_pass_through(f, &mgef_sources)? {
         hops[idx].evidence.push(ev);
     }
@@ -1632,73 +1623,93 @@ mod tests {
         );
     }
 
+    fn r(v: Value) -> Resolved {
+        Resolved::from_stub_json(&v)
+    }
+
+    fn target(v: Value) -> Target {
+        Target::of(&r(v)).expect("a reference stub")
+    }
+
     #[test]
     fn walk_path_descends_through_objects_and_arrays() {
-        let fields = json!({
+        let fields = r(json!({
             "Effects": [
                 {"Effect": {"Base Effect": {"formid": "0x1"}}},
                 {"Effect": {"Base Effect": {"formid": "0x2"}}},
             ]
-        });
-        let found = walk_path(&fields, "Effects[1].Effect.Base Effect.formid");
-        assert_eq!(found, Some(&json!("0x2")));
+        }));
+        let found = walk_path(&fields, "Effects[1].Effect.Base Effect");
+        assert_eq!(found.and_then(Resolved::stub_id), Some(FormId(2)));
     }
 
     #[test]
     fn walk_path_returns_none_on_missing_key_or_out_of_range_index() {
-        let fields = json!({"Effects": [{"a": 1}]});
+        let fields = r(json!({"Effects": [{"a": 1}]}));
         assert_eq!(walk_path(&fields, "Effects[5].a"), None);
         assert_eq!(walk_path(&fields, "Missing.Key"), None);
     }
 
     #[test]
     fn slice_effect_returns_the_containing_array_element() {
-        let fields = json!({
+        let fields = r(json!({
             "Effects": [
                 {"Effect": {"x": 1}},
                 {"Effect": {"x": 2, "Conditions": {"Conditions": []}}},
             ]
-        });
+        }));
         let sliced = slice_effect(
             &fields,
             "Effects[1].Effect.Conditions.Conditions[0].Parameter 1",
         );
         assert_eq!(
-            sliced,
-            Some(&json!({"Effect": {"x": 2, "Conditions": {"Conditions": []}}}))
+            sliced.map(Resolved::to_json),
+            Some(json!({"Effect": {"x": 2, "Conditions": {"Conditions": []}}}))
         );
     }
 
     #[test]
-    fn stub_normalizes_formid_and_form_id_keys() {
-        let from_value1 = json!({"formid": "0x1", "editor_id": "e", "record_type": "KYWD"});
+    fn target_and_row_stubs_share_one_shape() {
+        let t =
+            target(json!({"formid": "0x1", "editor_id": "e", "record_type": "KYWD", "Value": 1}));
+        assert_eq!(t.id, FormId(1));
         assert_eq!(
-            stub(&from_value1),
-            json!({"formid": "0x1", "editor_id": "e", "record_type": "KYWD"})
+            t.stub,
+            json!({"formid": "0x00000001", "editor_id": "e", "record_type": "KYWD"})
         );
+        let row = RefRow {
+            form_id: "0x00000002".into(),
+            id: FormId(2),
+            editor_id: Some("f".into()),
+            record_type: Some("SPEL".into()),
+            ..RefRow::default()
+        };
+        assert_eq!(
+            row_stub(&row),
+            json!({"formid": "0x00000002", "editor_id": "f", "record_type": "SPEL"})
+        );
+    }
 
-        let from_ref_row = json!({"form_id": "0x2", "editor_id": "f", "record_type": "SPEL"});
-        assert_eq!(
-            stub(&from_ref_row),
-            json!({"formid": "0x2", "editor_id": "f", "record_type": "SPEL"})
-        );
+    #[test]
+    fn an_unresolved_reference_is_not_a_target() {
+        assert!(Target::of(&Resolved::unresolved(FormId(0x10))).is_none());
     }
 
     #[test]
     fn mgef_targets_in_effects_array_finds_mgef_base_effect() {
-        let effects = vec![json!({
+        let effects = vec![r(json!({
             "Effect": {"Base Effect": {"formid": "0x1", "editor_id": "e", "record_type": "MGEF"}}
-        })];
+        }))];
         let targets = mgef_targets_in_effects_array(&effects);
         assert_eq!(targets.len(), 1);
-        assert_eq!(targets[0]["formid"], json!("0x1"));
+        assert_eq!(targets[0].id, FormId(1));
     }
 
     #[test]
     fn mgef_targets_in_effects_array_dedupes_repeated_mgef() {
         let effects = vec![
-            json!({"Effect": {"Base Effect": {"formid": "0x1", "record_type": "MGEF"}}}),
-            json!({"Effect": {"Base Effect": {"formid": "0x1", "record_type": "MGEF"}}}),
+            r(json!({"Effect": {"Base Effect": {"formid": "0x1", "record_type": "MGEF"}}})),
+            r(json!({"Effect": {"Base Effect": {"formid": "0x1", "record_type": "MGEF"}}})),
         ];
         assert_eq!(mgef_targets_in_effects_array(&effects).len(), 1);
     }
@@ -1706,23 +1717,23 @@ mod tests {
     #[test]
     fn mgef_targets_in_effects_array_no_ops_on_perk_shaped_entries() {
         // PERK's Ability-shaped effect has no "Base Effect" key at all.
-        let effects = vec![json!({
+        let effects = vec![r(json!({
             "Effect": {"Ability": {"formid": "0x1", "record_type": "SPEL"}}
-        })];
+        }))];
         assert!(mgef_targets_in_effects_array(&effects).is_empty());
     }
 
     #[test]
     fn mgef_targets_in_effects_array_ignores_non_mgef_base_effect() {
-        let effects = vec![json!({
+        let effects = vec![r(json!({
             "Effect": {"Base Effect": {"formid": "0x1", "record_type": "SPEL"}}
-        })];
+        }))];
         assert!(mgef_targets_in_effects_array(&effects).is_empty());
     }
 
     #[test]
     fn mgef_pass_through_evidence_extracts_perk_to_apply_and_equip_ability() {
-        let mgef_target = json!({"formid": "0x1", "editor_id": "e", "record_type": "MGEF"});
+        let mgef_target = target(json!({"formid": "0x1", "editor_id": "e", "record_type": "MGEF"}));
         let entry = ok_test_entry(
             "0x1",
             json!({
@@ -1774,18 +1785,18 @@ mod tests {
 
     #[test]
     fn mgef_pass_through_evidence_returns_none_when_neither_field_set() {
-        let mgef_target = json!({"formid": "0x1", "record_type": "MGEF"});
+        let mgef_target = target(json!({"formid": "0x1", "record_type": "MGEF"}));
         let entry = ok_test_entry("0x1", json!({"Magic Effect Data": {"Data": {}}}));
         let by_fid: Fetched = [(FormId::new(1), entry)].into_iter().collect();
         assert!(mgef_pass_through_evidence(&mgef_target, &by_fid).is_none());
     }
 
-    fn ok_test_entry(sel: &str, fields: Value) -> BulkRecordEntry {
-        BulkRecordEntry {
+    fn ok_test_entry(sel: &str, fields: Value) -> SourceRecord {
+        SourceRecord {
             sel: sel.to_string(),
             header: None,
             editor_id: None,
-            fields: Some(fields),
+            fields: Some(r(fields)),
             error: None,
         }
     }

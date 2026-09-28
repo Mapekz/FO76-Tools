@@ -189,7 +189,7 @@ pub(super) fn record_resolved(
 /// reference of a `--resolve stub|full` decode or `coverage`/`diff` sweep —
 /// paths that can hit it millions of times — for a hint two of those three
 /// callers throw away.
-fn explain_hardcoded_miss(form_id: FormId, err: anyhow::Error) -> anyhow::Error {
+pub(super) fn explain_hardcoded_miss(form_id: FormId, err: anyhow::Error) -> anyhow::Error {
     let Some(form) = crate::hardcoded::lookup(form_id) else {
         return err;
     };

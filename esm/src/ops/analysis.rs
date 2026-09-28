@@ -1,8 +1,9 @@
 //! The mechanism digests: `walk`, `chase` and LVLI drop tables.
 
-use super::records::{bulk_record_entry, record_resolved};
-use super::{BulkRecordEntry, RecordSel, RefDepth, RefList, RefSort};
-use crate::{Database, FormId, ResolveDepth, SearchField};
+use super::records::explain_hardcoded_miss;
+use super::{RecordSel, RefDepth, RefList, RefSort, resolve_sel};
+use crate::source::SourceRecord;
+use crate::{Database, FormId, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +42,7 @@ pub(super) fn walk(db: &Database, args: &WalkArgs) -> anyhow::Result<crate::walk
     } else if args.want_refs
         && let Some(root) = result.nodes.first()
     {
-        let root_fid = crate::parse_form_id_input(&root.formid)?;
+        let root_fid = root.id;
         let ref_list = crate::refs::referenced_by_enriched(
             db,
             root_fid,
@@ -103,12 +104,12 @@ pub(super) fn drop_table(
     db: &Database,
     args: &DropTableArgs,
 ) -> anyhow::Result<crate::lvli::DropTable> {
-    let result = record_resolved(db, &args.sel, ResolveDepth::Stub)?;
-    if result.header.signature != "LVLI" {
+    let (header, _, fields) = record_body(db, resolve_sel(db, &args.sel)?)?;
+    if header.signature != "LVLI" {
         bail!(
             "{:?} resolves to a {:?} record — drop-table only supports LVLI selectors",
             args.sel.display(),
-            result.header.signature
+            header.signature
         );
     }
     let opts = crate::lvli::DropOptions {
@@ -117,12 +118,37 @@ pub(super) fn drop_table(
         strict: args.strict,
         tree_depth: 0,
     };
-    crate::lvli::drop_table(
-        &mut DbSource { db },
-        result.header.form_id,
-        &result.fields,
-        &opts,
-    )
+    crate::lvli::drop_table(&mut DbSource { db }, header.form_id, &fields, &opts)
+}
+
+/// Decode the record `fid` for the analysis layers (see [`crate::Resolved`]).
+fn record_body(
+    db: &Database,
+    fid: FormId,
+) -> anyhow::Result<(
+    crate::reader::RecordHeaderInfo,
+    Option<String>,
+    crate::Resolved,
+)> {
+    db.get_formid_meta(fid)
+        .and_then(|meta| db.record_resolved_at_meta(&meta))
+        .map_err(|e| explain_hardcoded_miss(fid, e))
+}
+
+/// Fetch the record `sel` names as a [`SourceRecord`].
+fn source_record(db: &Database, sel: &RecordSel) -> SourceRecord {
+    let display = sel.display();
+    let fetched = resolve_sel(db, sel).and_then(|fid| record_body(db, fid));
+    match fetched {
+        Ok((header, editor_id, fields)) => SourceRecord {
+            sel: display,
+            header: Some(header),
+            editor_id,
+            fields: Some(fields),
+            error: None,
+        },
+        Err(e) => SourceRecord::failed(display, format!("{e:#}")),
+    }
 }
 
 /// [`crate::source::RecordSource`] over an open `Database`, so the walk,
@@ -133,15 +159,8 @@ struct DbSource<'a> {
 }
 
 impl crate::source::RecordSource for DbSource<'_> {
-    fn bulk_get(
-        &mut self,
-        sels: &[RecordSel],
-        depth: ResolveDepth,
-    ) -> anyhow::Result<Vec<BulkRecordEntry>> {
-        Ok(sels
-            .iter()
-            .map(|sel| bulk_record_entry(self.db, sel, depth))
-            .collect())
+    fn bulk_get(&mut self, sels: &[RecordSel]) -> anyhow::Result<Vec<SourceRecord>> {
+        Ok(sels.iter().map(|sel| source_record(self.db, sel)).collect())
     }
 
     fn refs(

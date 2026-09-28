@@ -807,6 +807,28 @@ impl Database {
         ))
     }
 
+    /// Decode the record at `meta` for the analysis layers: rendered at
+    /// [`crate::ResolveDepth::Stub`] with its FormID references kept typed
+    /// (see [`crate::Resolved`]). Returns the parsed header and EditorID
+    /// alongside.
+    pub(crate) fn record_resolved_at_meta(
+        &self,
+        meta: &crate::reader::RecordMeta,
+    ) -> anyhow::Result<(
+        crate::reader::RecordHeaderInfo,
+        Option<String>,
+        crate::Resolved,
+    )> {
+        let parsed = self.esm.parse_record_at(meta.offset)?;
+        let editor_id = edid_from_subrecords(&parsed.subrecords);
+        let resolver = DatabaseResolver::new(self, 2);
+        let ctx = self
+            .decode_env(crate::decode::ResolveDepth::Stub, Some(&resolver))
+            .for_record(parsed.header.form_version);
+        let fields = self.node_parsed(&ctx, &parsed).into_resolved(&ctx);
+        Ok((parsed.header, editor_id, fields))
+    }
+
     /// Decode an already-parsed record into its typed tree under `ctx`.
     fn node_parsed(
         &self,

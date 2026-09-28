@@ -5,7 +5,6 @@
 //! answers per `(target, type_filter)`, the exact two calls `chase()`'s
 //! reverse-chase makes (one per `CONSUMER_TYPES` entry).
 
-use esm::ResolveDepth;
 use esm::chase::{ChaseOptions, EffectHopKind, FetchDirection, HopKind, chase};
 use esm::ops::RecordSel;
 use esm::reader::RecordHeaderInfo;
@@ -366,6 +365,7 @@ fn fixture() -> MemorySource {
             target: KYWD_FID.to_string(),
             rows: vec![RefRow {
                 form_id: SPEL_FID.to_string(),
+                id: SPEL_FID.parse().unwrap(),
                 record_type: Some("SPEL".to_string()),
                 editor_id: Some("TestGatedSpell".to_string()),
                 name: None,
@@ -750,11 +750,8 @@ fn unresolvable_selector_surfaces_as_an_error_not_a_panic() {
 #[test]
 fn omod_with_no_properties_has_empty_hops() {
     let mut f = fixture();
-    let entry = f
-        .bulk_get(&[sel(OMOD_FID)], ResolveDepth::Stub)
-        .unwrap()
-        .remove(0);
-    let mut fields = entry.fields.unwrap();
+    let entry = f.bulk_get(&[sel(OMOD_FID)]).unwrap().remove(0);
+    let mut fields = entry.fields.unwrap().to_json();
     fields["Data"]["Properties"] = json!([]);
     f.insert(
         OMOD_FID.parse().unwrap(),

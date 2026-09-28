@@ -61,10 +61,10 @@
 //! the output. Sublists are never separate BFS nodes; the tree covers them.
 //! The flat `rows` still recurse fully for `--json` consumers.
 //!
-//! Every record is fetched at [`ResolveDepth::Stub`], so every direct FormID
-//! reference on a fetched record's own fields already arrives pre-annotated
-//! as `{"formid", "editor_id", "record_type"}` (the same annotation
-//! `esm get --resolve stub` produces) — no follow-up per-reference fetch
+//! Every record arrives as a [`Resolved`] tree, so every direct FormID
+//! reference on a fetched record's own fields already carries its typed
+//! FormID and renders as `{"formid", "editor_id", "record_type"}` (the same
+//! annotation `esm get --resolve stub` produces) — no follow-up per-reference fetch
 //! needed, including for a GLOB reference's own `Value` (a value-bearing
 //! leaf type, see `src/decode/leaf_values.rs`), which Stub resolution
 //! inlines directly onto the reference too.
@@ -95,10 +95,10 @@ pub use render::{render_digest, render_text};
 use crate::chase::{
     ChaseOptions, Hop, HopKind, RootStub, consumer_refs_by_type, omod_chase, summarize_explosion,
 };
-use crate::fields::{dedup_sorted, flatten_condition_rows, is_ref_stub, stub_formid};
+use crate::fields::{dedup_sorted, flatten_condition_rows};
 use crate::ops::RecordSel;
 use crate::source::{RecordSource, bulk_fetch_map};
-use crate::{FormId, RecordRow, RefRow, ResolveDepth};
+use crate::{FormId, RecordRow, RefRow, Resolved};
 use anyhow::Context as _;
 use level_curves::LevelCurveRow;
 use serde::{Deserialize, Serialize};
@@ -244,6 +244,10 @@ pub struct WalkNode {
     pub depth: usize,
     pub sig: String,
     pub formid: String,
+    /// `formid`, typed, for in-process consumers. Not serialized.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub id: FormId,
     pub editor_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -420,6 +424,10 @@ pub struct ScriptLeveledList {
     /// The LVLI's ref stub.
     #[cfg_attr(test, ts(type = "unknown"))]
     pub list: Value,
+    /// `list`'s FormID, for in-process consumers. Not serialized.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub id: FormId,
 }
 
 /// One `Effects[]` entry of a [`MagicItemDigest`] (SPEL/ENCH/ALCH share this
@@ -660,27 +668,24 @@ pub struct ArmoDigest {
 /// Flatten a PERK "Perk Conditions" node (tabbed) into raw condition rows.
 /// Tab-index 2 conditions run on the target, so their `Run On` is forced to
 /// `"Target"`.
-fn flatten_perk_condition_rows(node: &Value) -> Vec<Value> {
+fn flatten_perk_condition_rows(node: &Resolved) -> Vec<Value> {
     let mut out = Vec::new();
-    let Some(tabs) = node.as_array() else {
-        return out;
-    };
-    for tab in tabs {
+    for tab in node.items() {
         let Some(pc) = tab.get("Perk Condition") else {
             continue;
         };
         let tab_index = pc
             .get("Run On (Tab Index)")
-            .and_then(Value::as_i64)
+            .and_then(Resolved::as_i64)
             .unwrap_or(0);
-        let Some(conditions) = pc.get("Conditions").and_then(Value::as_array) else {
+        let Some(conditions) = pc.get("Conditions").and_then(Resolved::as_array) else {
             continue;
         };
         for item in conditions {
             let Some(data) = item.pointer("/Condition/Condition Data") else {
                 continue;
             };
-            let mut row = data.clone();
+            let mut row = data.to_json();
             if tab_index == 2
                 && let Value::Object(map) = &mut row
             {
@@ -694,24 +699,24 @@ fn flatten_perk_condition_rows(node: &Value) -> Vec<Value> {
 
 // ─── per-type digests ───────────────────────────────────────────────────────
 
-fn digest_glob(fields: &Value) -> GlobDigest {
+fn digest_glob(fields: &Resolved) -> GlobDigest {
     GlobDigest {
-        value: fields.get("Value").cloned(),
+        value: fields.get("Value").map(Resolved::to_json),
     }
 }
 
 fn digest_avif(
     f: &mut impl RecordSource,
     formid: FormId,
-    fields: &Value,
+    fields: &Resolved,
 ) -> anyhow::Result<AvifDigest> {
     Ok(AvifDigest {
         abbreviation: fields
             .get("Abbreviation")
-            .and_then(Value::as_str)
+            .and_then(Resolved::as_str)
             .map(str::to_string),
-        default_value: fields.get("Default Value").cloned(),
-        maximum_value: fields.get("Maximum Value").cloned(),
+        default_value: fields.get("Default Value").map(Resolved::to_json),
+        maximum_value: fields.get("Maximum Value").map(Resolved::to_json),
         consumers: digest_keyword_or_av(f, formid)?,
     })
 }
@@ -757,39 +762,40 @@ fn digest_keyword_or_av(
 struct MgefSummary<'v> {
     archetype: Option<&'v str>,
     casting_type: Option<&'v str>,
-    actor_value: Option<&'v Value>,
-    resist_value: Option<&'v Value>,
-    perk_to_apply: Option<&'v Value>,
-    equip_ability: Option<&'v Value>,
-    description: Option<&'v Value>,
+    actor_value: Option<&'v Resolved>,
+    resist_value: Option<&'v Resolved>,
+    perk_to_apply: Option<&'v Resolved>,
+    equip_ability: Option<&'v Resolved>,
+    description: Option<&'v Resolved>,
 }
 
 /// Every LVLI ref stub under a record's `Virtual Machine Adapter` script
 /// properties. A property value may be a single object (type 1), an object
 /// array (type 11), or a struct, so the whole value is searched.
-fn script_leveled_lists(fields: &Value) -> Vec<ScriptLeveledList> {
-    fn collect(v: &Value, out: &mut Vec<Value>) {
-        match v {
-            Value::Object(obj) if is_ref_stub(v) => {
-                if obj.get("record_type").and_then(Value::as_str) == Some("LVLI") {
-                    out.push(v.clone());
-                }
+fn script_leveled_lists(fields: &Resolved) -> Vec<ScriptLeveledList> {
+    fn collect(v: &Resolved, out: &mut Vec<(FormId, Value)>) {
+        if let Some(id) = v.stub_id() {
+            if v.get("record_type").and_then(Resolved::as_str) == Some("LVLI") {
+                out.push((id, v.to_json()));
             }
-            Value::Object(obj) => obj.values().for_each(|c| collect(c, out)),
-            Value::Array(arr) => arr.iter().for_each(|c| collect(c, out)),
+            return;
+        }
+        match v {
+            Resolved::Object(obj) => obj.values().for_each(|c| collect(c, out)),
+            Resolved::Array(arr) => arr.iter().for_each(|c| collect(c, out)),
             _ => {}
         }
     }
     let Some(scripts) = fields
         .pointer("/Virtual Machine Adapter/scripts")
-        .and_then(Value::as_array)
+        .and_then(Resolved::as_array)
     else {
         return Vec::new();
     };
     let mut rows = Vec::new();
     for script in scripts {
-        let script_name = script.get("name").and_then(Value::as_str).unwrap_or("?");
-        let Some(props) = script.get("properties").and_then(Value::as_array) else {
+        let script_name = script.get("name").and_then(Resolved::as_str).unwrap_or("?");
+        let Some(props) = script.get("properties").and_then(Resolved::as_array) else {
             continue;
         };
         for prop in props {
@@ -797,11 +803,12 @@ fn script_leveled_lists(fields: &Value) -> Vec<ScriptLeveledList> {
             if let Some(value) = prop.get("value") {
                 collect(value, &mut lists);
             }
-            let property = prop.get("name").and_then(Value::as_str).unwrap_or("?");
-            rows.extend(lists.into_iter().map(|list| ScriptLeveledList {
+            let property = prop.get("name").and_then(Resolved::as_str).unwrap_or("?");
+            rows.extend(lists.into_iter().map(|(id, list)| ScriptLeveledList {
                 script: script_name.to_string(),
                 property: property.to_string(),
                 list,
+                id,
             }));
         }
     }
@@ -812,41 +819,39 @@ fn script_leveled_lists(fields: &Value) -> Vec<ScriptLeveledList> {
 /// drop odds land in the same walk as the item that hands it out.
 fn script_leveled_lists_enqueue(rows: &[ScriptLeveledList], enqueue: &mut Vec<EnqueueTarget>) {
     for row in rows {
-        if let Some(fid) = stub_formid(Some(&row.list)) {
-            enqueue.push((fid, format!("script {}.{}", row.script, row.property)));
-        }
+        enqueue.push((row.id, format!("script {}.{}", row.script, row.property)));
     }
 }
 
 /// Pull the handful of fields both [`digest_mgef`] (a directly-visited MGEF
 /// node) and [`digest_magic_item`] (an MGEF reached via a SPEL/ENCH/ALCH
 /// effect's `Base Effect`) need out of an MGEF record's own decoded fields.
-fn mgef_summary(fields: &Value) -> MgefSummary<'_> {
+fn mgef_summary(fields: &Resolved) -> MgefSummary<'_> {
     let data = fields.pointer("/Magic Effect Data/Data");
     let get = |key: &str| data.and_then(|d| d.get(key));
     MgefSummary {
         archetype: data
             .and_then(|d| d.pointer("/Archetype/name"))
-            .and_then(Value::as_str),
+            .and_then(Resolved::as_str),
         casting_type: data
             .and_then(|d| d.pointer("/Casting Type/name"))
-            .and_then(Value::as_str),
-        actor_value: get("Actor Value").filter(|v| is_ref_stub(v)),
-        resist_value: get("Resist Value").filter(|v| is_ref_stub(v)),
-        perk_to_apply: get("Perk to Apply").filter(|v| is_ref_stub(v)),
-        equip_ability: get("Equip Ability").filter(|v| is_ref_stub(v)),
+            .and_then(Resolved::as_str),
+        actor_value: get("Actor Value").filter(|v| v.is_stub()),
+        resist_value: get("Resist Value").filter(|v| v.is_stub()),
+        perk_to_apply: get("Perk to Apply").filter(|v| v.is_stub()),
+        equip_ability: get("Equip Ability").filter(|v| v.is_stub()),
         description: fields
             .get("Magic Item Description")
             .filter(|v| !v.is_null()),
     }
 }
 
-fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
+fn digest_mgef(fields: &Resolved, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
     let summary = mgef_summary(fields);
-    if let Some(fid) = summary.perk_to_apply.and_then(|p| stub_formid(Some(p))) {
+    if let Some(fid) = summary.perk_to_apply.and_then(Resolved::stub_id) {
         enqueue.push((fid, "Perk to Apply".to_string()));
     }
-    if let Some(fid) = summary.equip_ability.and_then(|eq| stub_formid(Some(eq))) {
+    if let Some(fid) = summary.equip_ability.and_then(Resolved::stub_id) {
         enqueue.push((fid, "Equip Ability".to_string()));
     }
     let script_leveled_lists = script_leveled_lists(fields);
@@ -854,13 +859,13 @@ fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
     MgefDigest {
         archetype: summary.archetype.map(str::to_string),
         casting_type: summary.casting_type.map(str::to_string),
-        target_av: summary.actor_value.cloned(),
-        resist_av: summary.resist_value.cloned(),
-        perk_to_apply: summary.perk_to_apply.cloned(),
-        equip_ability: summary.equip_ability.cloned(),
+        target_av: summary.actor_value.map(Resolved::to_json),
+        resist_av: summary.resist_value.map(Resolved::to_json),
+        perk_to_apply: summary.perk_to_apply.map(Resolved::to_json),
+        equip_ability: summary.equip_ability.map(Resolved::to_json),
         description: summary
             .description
-            .and_then(Value::as_str)
+            .and_then(Resolved::as_str)
             .filter(|s| !s.is_empty())
             .map(str::to_string),
         script_leveled_lists,
@@ -875,15 +880,14 @@ fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
 fn digest_magic_item(
     f: &mut impl RecordSource,
     sig: &str,
-    fields: &Value,
+    fields: &Resolved,
     level: f32,
     enqueue: &mut Vec<EnqueueTarget>,
 ) -> anyhow::Result<MagicItemDigest> {
-    let empty = Vec::new();
     let effects = fields
         .get("Effects")
-        .and_then(Value::as_array)
-        .unwrap_or(&empty);
+        .map(Resolved::items)
+        .unwrap_or_default();
     if effects.is_empty() {
         return Ok(MagicItemDigest {
             effects: Vec::new(),
@@ -900,7 +904,7 @@ fn digest_magic_item(
         let Some(e) = item.get("Effect") else {
             continue;
         };
-        if let Some(fid) = stub_formid(e.get("Base Effect")) {
+        if let Some(fid) = e.get("Base Effect").and_then(Resolved::stub_id) {
             want.push(fid);
         }
     }
@@ -912,10 +916,9 @@ fn digest_magic_item(
         let Some(e) = item.get("Effect") else {
             continue;
         };
-        let base_effect = e.get("Base Effect").cloned();
+        let base_effect = e.get("Base Effect");
         let mgef_fields = base_effect
-            .as_ref()
-            .and_then(|b| stub_formid(Some(b)))
+            .and_then(Resolved::stub_id)
             .and_then(|fid| by_sel.get(&fid))
             .and_then(|entry| entry.fields.as_ref());
         let summary = mgef_fields.map(mgef_summary);
@@ -923,30 +926,39 @@ fn digest_magic_item(
             .as_ref()
             .and_then(|s| s.archetype)
             .map(str::to_string);
-        let actor_value = summary.as_ref().and_then(|s| s.actor_value).cloned();
+        let actor_value = summary
+            .as_ref()
+            .and_then(|s| s.actor_value)
+            .map(Resolved::to_json);
 
         let item_data = e.get("Effect Item Data");
         let magnitude = item_data
             .and_then(|d| d.get("Magnitude"))
-            .cloned()
-            .unwrap_or(json!(0));
+            .map_or(json!(0), Resolved::to_json);
         let duration = item_data
             .and_then(|d| d.get("Duration"))
-            .cloned()
-            .unwrap_or(json!(0));
+            .map_or(json!(0), Resolved::to_json);
 
-        let magnitude_glob = e.get("Magnitude").filter(|v| is_ref_stub(v)).cloned();
-        let duration_glob = e.get("Duration").filter(|v| is_ref_stub(v)).cloned();
+        let magnitude_glob = e
+            .get("Magnitude")
+            .filter(|v| v.is_stub())
+            .map(Resolved::to_json);
+        let duration_glob = e
+            .get("Duration")
+            .filter(|v| v.is_stub())
+            .map(Resolved::to_json);
 
-        let curve_table = e.get("Curve Table").cloned();
-        let curve_input_av = e.get("Actor Value").filter(|v| is_ref_stub(v)).cloned();
+        let curve_table = e.get("Curve Table");
+        let curve_input_av = e
+            .get("Actor Value")
+            .filter(|v| v.is_stub())
+            .map(Resolved::to_json);
         // Reuse `level_curves`'s own registered guard for this (sig, path)
         // rather than re-deriving the "Actor Value: None/absent" rule here
         // — `LEVEL_KEYED_CURVES` is the single source of truth for it.
         let curve_at_level =
             level_curves::field_for(sig, "Effects[].Effect.Curve Table").and_then(|field_def| {
-                let ct = curve_table.as_ref()?;
-                let points = crate::curves::points_from_json(ct)?;
+                let points = crate::curves::points_from_resolved(curve_table?)?;
                 if points.is_empty() {
                     return None;
                 }
@@ -961,14 +973,17 @@ fn digest_magic_item(
         let conditions = e
             .get("Conditions")
             .map(flatten_condition_rows)
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .iter()
+            .map(Resolved::to_json)
+            .collect();
 
-        let perk_to_apply = summary.as_ref().and_then(|s| s.perk_to_apply).cloned();
-        let equip_ability = summary.as_ref().and_then(|s| s.equip_ability).cloned();
-        if let Some(fid) = perk_to_apply.as_ref().and_then(|p| stub_formid(Some(p))) {
+        let perk_to_apply = summary.as_ref().and_then(|s| s.perk_to_apply);
+        let equip_ability = summary.as_ref().and_then(|s| s.equip_ability);
+        if let Some(fid) = perk_to_apply.and_then(Resolved::stub_id) {
             enqueue.push((fid, "Perk to Apply".to_string()));
         }
-        if let Some(fid) = equip_ability.as_ref().and_then(|eq| stub_formid(Some(eq))) {
+        if let Some(fid) = equip_ability.and_then(Resolved::stub_id) {
             enqueue.push((fid, "Equip Ability".to_string()));
         }
         let script_leveled_lists = mgef_fields.map(script_leveled_lists).unwrap_or_default();
@@ -976,19 +991,19 @@ fn digest_magic_item(
 
         rows.push(MagicEffectRow {
             index: i,
-            base_effect,
+            base_effect: base_effect.map(Resolved::to_json),
             archetype,
             actor_value,
             magnitude,
             duration,
             magnitude_glob,
             duration_glob,
-            curve_table,
+            curve_table: curve_table.map(Resolved::to_json),
             curve_input_av,
             curve_at_level,
             conditions,
-            perk_to_apply,
-            equip_ability,
+            perk_to_apply: perk_to_apply.map(Resolved::to_json),
+            equip_ability: equip_ability.map(Resolved::to_json),
             script_leveled_lists,
         });
     }
@@ -999,21 +1014,24 @@ fn digest_magic_item(
 /// Entry Point (fn/value/AV + perk conditions), or `NO effects` when the
 /// bonus is engine/script-side. The decoder attributes perk-entry fields
 /// correctly, so no repair shim is needed here.
-fn digest_perk(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Result<PerkDigest> {
+fn digest_perk(fields: &Resolved, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Result<PerkDigest> {
     let data = fields.get("Data");
     let description = fields
         .get("Description")
-        .and_then(Value::as_str)
+        .and_then(Resolved::as_str)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
     let playable = data
         .and_then(|d| d.pointer("/Playable/name"))
-        .and_then(Value::as_str)
+        .and_then(Resolved::as_str)
         .map(str::to_string);
-    let num_ranks = data.and_then(|d| d.get("Num Ranks")).cloned();
-    let next_perk = fields.get("Next Perk").filter(|v| is_ref_stub(v)).cloned();
+    let num_ranks = data.and_then(|d| d.get("Num Ranks")).map(Resolved::to_json);
+    let next_perk = fields
+        .get("Next Perk")
+        .filter(|v| v.is_stub())
+        .map(Resolved::to_json);
 
-    let Some(effects) = fields.get("Effects").and_then(Value::as_array) else {
+    let Some(effects) = fields.get("Effects").and_then(Resolved::as_array) else {
         return Ok(PerkDigest {
             description,
             num_ranks,
@@ -1030,17 +1048,17 @@ fn digest_perk(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Resu
         };
         let type_name = e
             .pointer("/Effect Header/Effect Type/name")
-            .and_then(Value::as_str)
+            .and_then(Resolved::as_str)
             .unwrap_or("?");
         match type_name {
             "Ability" => {
                 if let Some(ability) = e.get("Ability") {
-                    if let Some(fid) = stub_formid(Some(ability)) {
+                    if let Some(fid) = ability.stub_id() {
                         enqueue.push((fid, "Ability".to_string()));
                     }
                     rows.push(PerkEffectRow::Ability {
                         index: i,
-                        target: ability.clone(),
+                        target: ability.to_json(),
                     });
                 }
             }
@@ -1048,17 +1066,20 @@ fn digest_perk(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Resu
                 let ep = e.get("Entry Point");
                 let entry_point_name = ep
                     .and_then(|v| v.pointer("/Entry Point/name"))
-                    .and_then(Value::as_str)
+                    .and_then(Resolved::as_str)
                     .map(str::to_string);
                 let function_name = ep
                     .and_then(|v| v.pointer("/Function/name"))
-                    .and_then(Value::as_str)
+                    .and_then(Resolved::as_str)
                     .map(str::to_string);
-                let float_value = e.get("Float").filter(|v| v.as_f64().is_some()).cloned();
+                let float_value = e
+                    .get("Float")
+                    .filter(|v| v.as_f64().is_some())
+                    .map(Resolved::to_json);
                 let actor_value = e
                     .get("Function Parameter 3 (Actor Value)")
-                    .filter(|v| is_ref_stub(v))
-                    .cloned();
+                    .filter(|v| v.is_stub())
+                    .map(Resolved::to_json);
                 let conditions = e
                     .get("Perk Conditions")
                     .map(flatten_perk_condition_rows)
@@ -1087,16 +1108,15 @@ fn digest_perk(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Resu
     })
 }
 
-fn digest_weap(fields: &Value, level: f32) -> WeapDigest {
+fn digest_weap(fields: &Resolved, level: f32) -> WeapDigest {
     let data = fields.get("Data");
     let keyword_ids = fields
         .pointer("/Keywords/Keywords")
-        .and_then(Value::as_array)
-        .cloned()
+        .map(Resolved::items)
         .unwrap_or_default();
     let mut relevant_keywords = Vec::new();
-    for k in &keyword_ids {
-        if let Some(edid) = k.get("editor_id").and_then(Value::as_str)
+    for k in keyword_ids {
+        if let Some(edid) = k.get("editor_id").and_then(Resolved::as_str)
             && (edid.starts_with("WeaponType")
                 || edid.starts_with("HasLegendary")
                 || edid.starts_with("ma_"))
@@ -1106,20 +1126,23 @@ fn digest_weap(fields: &Value, level: f32) -> WeapDigest {
     }
     let eligible_levels = fields
         .get("Eligible Levels")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+        .map(Resolved::items)
+        .unwrap_or_default()
+        .iter()
+        .map(Resolved::to_json)
+        .collect();
     let attach_slots = fields
         .get("Attach Parent Slots")
-        .and_then(Value::as_array)
+        .and_then(Resolved::as_array)
         .map(Vec::len)
         .unwrap_or(0);
     let has_object_template = fields.get("Object Template").is_some_and(|v| !v.is_null());
+    let data_field = |key: &str| data.and_then(|d| d.get(key)).map(Resolved::to_json);
     WeapDigest {
         relevant_keywords,
-        ap_cost: data.and_then(|d| d.get("Action Point Cost")).cloned(),
-        speed: data.and_then(|d| d.get("Speed")).cloned(),
-        reload_speed: data.and_then(|d| d.get("Reload Speed")).cloned(),
+        ap_cost: data_field("Action Point Cost"),
+        speed: data_field("Speed"),
+        reload_speed: data_field("Reload Speed"),
         eligible_levels,
         attach_slots,
         has_object_template,
@@ -1128,12 +1151,12 @@ fn digest_weap(fields: &Value, level: f32) -> WeapDigest {
     }
 }
 
-fn is_generic_noise_value(v: &Value) -> bool {
-    matches!(v, Value::Null) || matches!(v, Value::String(s) if s.is_empty())
+fn is_generic_noise_value(v: &Resolved) -> bool {
+    v.is_null() || v.as_str() == Some("")
 }
 
-fn has_raw_marker(v: &Value) -> bool {
-    matches!(v, Value::Object(m) if m.contains_key("_raw"))
+fn has_raw_marker(v: &Resolved) -> bool {
+    v.as_object().is_some_and(|m| m.contains_key("_raw"))
 }
 
 /// Trimmed field tree for any record type without a dedicated digest: drop
@@ -1143,12 +1166,9 @@ fn has_raw_marker(v: &Value) -> bool {
 /// round-trip needed — so the trimmed tree is itself the computed
 /// [`GenericDigest`] payload; `render` owns turning it into a capped
 /// pretty-printed dump.
-fn trim_generic_fields(fields: &Value) -> Value {
-    if is_ref_stub(fields) {
-        return fields.clone();
-    }
+fn trim_generic_fields(fields: &Resolved) -> Value {
     match fields {
-        Value::Object(map) => {
+        Resolved::Object(map) => {
             let mut out = serde_json::Map::new();
             for (k, v) in map {
                 if k == "_record_type" || k == "Editor ID" || k == "Unknown" {
@@ -1164,12 +1184,12 @@ fn trim_generic_fields(fields: &Value) -> Value {
             }
             Value::Object(out)
         }
-        Value::Array(arr) => Value::Array(arr.iter().map(trim_generic_fields).collect()),
-        other => other.clone(),
+        Resolved::Array(arr) => Value::Array(arr.iter().map(trim_generic_fields).collect()),
+        other => other.to_json(),
     }
 }
 
-fn digest_generic(fields: &Value) -> GenericDigest {
+fn digest_generic(fields: &Resolved) -> GenericDigest {
     GenericDigest {
         trimmed: trim_generic_fields(fields),
     }
@@ -1182,7 +1202,7 @@ fn digest_generic(fields: &Value) -> GenericDigest {
 /// evaluation.
 fn digest_generic_leveled(
     sig: &str,
-    fields: &Value,
+    fields: &Resolved,
     level: f32,
 ) -> (Vec<LevelCurveRow>, GenericDigest) {
     (
@@ -1191,7 +1211,7 @@ fn digest_generic_leveled(
     )
 }
 
-fn digest_npc(fields: &Value, level: f32) -> NpcDigest {
+fn digest_npc(fields: &Resolved, level: f32) -> NpcDigest {
     let (level_curves, generic) = digest_generic_leveled("NPC_", fields, level);
     NpcDigest {
         level,
@@ -1200,7 +1220,7 @@ fn digest_npc(fields: &Value, level: f32) -> NpcDigest {
     }
 }
 
-fn digest_race(fields: &Value, level: f32) -> RaceDigest {
+fn digest_race(fields: &Resolved, level: f32) -> RaceDigest {
     let (level_curves, generic) = digest_generic_leveled("RACE", fields, level);
     RaceDigest {
         level,
@@ -1209,7 +1229,7 @@ fn digest_race(fields: &Value, level: f32) -> RaceDigest {
     }
 }
 
-fn digest_armo(fields: &Value, level: f32) -> ArmoDigest {
+fn digest_armo(fields: &Resolved, level: f32) -> ArmoDigest {
     let (level_curves, generic) = digest_generic_leveled("ARMO", fields, level);
     ArmoDigest {
         level,
@@ -1231,7 +1251,7 @@ fn digest_omod_mechanisms(
     f: &mut impl RecordSource,
     header: &crate::reader::RecordHeaderInfo,
     editor_id: &str,
-    fields: &Value,
+    fields: &Resolved,
     ref_limit: usize,
 ) -> anyhow::Result<crate::chase::ChaseTree> {
     // `tree.root` is discarded below (walk already knows the root's identity
@@ -1261,17 +1281,14 @@ fn digest_omod_mechanisms(
 /// with the template.
 fn omod_hops_enqueue(hops: &[Hop], enqueue: &mut Vec<EnqueueTarget>) {
     for hop in hops {
-        let Some(target) = &hop.target else {
+        let (Some(target), Some(fid)) = (&hop.target, hop.target_id) else {
             continue;
         };
         let target_rt = target
             .get("record_type")
             .and_then(Value::as_str)
             .unwrap_or("");
-        if hop.kind == HopKind::DirectProperty
-            && (target_rt == "PROJ" || target_rt == "ENCH")
-            && let Some(fid) = stub_formid(Some(target))
-        {
+        if hop.kind == HopKind::DirectProperty && (target_rt == "PROJ" || target_rt == "ENCH") {
             let via = match hop.source_omod.as_ref().and_then(|t| t.get("editor_id")) {
                 Some(Value::String(template)) => format!("OMOD property via {template}"),
                 _ => "OMOD property".to_string(),
@@ -1291,35 +1308,33 @@ fn digest_omod_alternatives(
     let total = alternatives.len();
     alternatives.truncate(OMOD_INCLUDE_ENQUEUE_CAP);
     for alt in &alternatives {
-        if let Some(fid) = stub_formid(Some(&alt.omod)) {
-            enqueue.push((fid, format!("alternative in {editor_id}")));
-        }
+        enqueue.push((alt.id, format!("alternative in {editor_id}")));
     }
     (alternatives, total)
 }
 
-fn digest_proj(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> ProjDigest {
+fn digest_proj(fields: &Resolved, enqueue: &mut Vec<EnqueueTarget>) -> ProjDigest {
     let Some(data) = fields.get("Data") else {
         return ProjDigest::default();
     };
     let proj_type = data
         .get("Type")
         .and_then(|v| v.get("name"))
-        .and_then(Value::as_str)
+        .and_then(Resolved::as_str)
         .map(str::to_string);
-    let speed = data.get("Speed").cloned();
-    let explosion = data.get("Explosion").filter(|v| is_ref_stub(v)).cloned();
-    if let Some(fid) = explosion.as_ref().and_then(|expl| stub_formid(Some(expl))) {
+    let speed = data.get("Speed").map(Resolved::to_json);
+    let explosion = data.get("Explosion").filter(|v| v.is_stub());
+    if let Some(fid) = explosion.and_then(Resolved::stub_id) {
         enqueue.push((fid, "projectile explosion".to_string()));
     }
     ProjDigest {
         proj_type,
         speed,
-        explosion,
+        explosion: explosion.map(Resolved::to_json),
     }
 }
 
-fn digest_expl(fields: &Value, level: f32) -> ExplDigest {
+fn digest_expl(fields: &Resolved, level: f32) -> ExplDigest {
     ExplDigest {
         detail: summarize_explosion(fields),
         level,
@@ -1334,7 +1349,7 @@ fn digest_expl(fields: &Value, level: f32) -> ExplDigest {
 fn digest_lvli(
     f: &mut impl RecordSource,
     formid: FormId,
-    fields: &Value,
+    fields: &Resolved,
     level: f32,
     tree_depth: usize,
 ) -> anyhow::Result<LvliDigest> {
@@ -1409,7 +1424,7 @@ fn digest_node(
     f: &mut impl RecordSource,
     header: &crate::reader::RecordHeaderInfo,
     editor_id: &str,
-    fields: &Value,
+    fields: &Resolved,
     opts: &WalkOptions,
     remaining_depth: usize,
 ) -> anyhow::Result<(Digest, Vec<EnqueueTarget>)> {
@@ -1487,7 +1502,7 @@ pub fn walk(
 
     while let Some((sel, depth, via)) = queue.pop_front() {
         let entry = f
-            .bulk_get(std::slice::from_ref(&sel), ResolveDepth::Stub)?
+            .bulk_get(std::slice::from_ref(&sel))?
             .into_iter()
             .next()
             .context("bulk_get returned no entries for the walk target")?;
@@ -1523,11 +1538,11 @@ pub fn walk(
             continue;
         }
 
-        let fields = entry.fields.clone().unwrap_or(Value::Null);
-        let editor_id = entry.editor_id.clone().unwrap_or_default();
+        let fields = entry.fields.unwrap_or(Resolved::Null);
+        let editor_id = entry.editor_id.unwrap_or_default();
         let name = fields
             .get("Name")
-            .and_then(Value::as_str)
+            .and_then(Resolved::as_str)
             .filter(|s| !s.is_empty())
             .map(str::to_string);
 
@@ -1544,6 +1559,7 @@ pub fn walk(
             depth,
             sig: header.signature,
             formid: formid.display(),
+            id: formid,
             editor_id,
             name,
             via,

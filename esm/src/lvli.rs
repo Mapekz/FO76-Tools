@@ -38,12 +38,11 @@
 //! to just the top one" behavior (classic in older Bethesda engines) is
 //! flagged unverified rather than assumed — see [`DropOptions::level`].
 
-use crate::FormId;
 use crate::curves::eval as curve_eval;
-use crate::fields::{dedup_sorted, flatten_condition_rows, stub_formid};
+use crate::fields::{dedup_sorted, flatten_condition_rows};
 use crate::source::{RecordSource, bulk_fetch_map};
+use crate::{FormId, Resolved};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 /// Default player level assumed for Curve Table evaluation and Minimum
@@ -219,45 +218,43 @@ impl Default for DropOptions {
 
 // ─── field access ───────────────────────────────────────────────────────────
 
-fn entries(fields: &Value) -> Vec<&Value> {
+fn entries(fields: &Resolved) -> Vec<&Resolved> {
     fields
         .get("Leveled List Entries")
-        .and_then(Value::as_array)
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|item| item.get("Leveled List Entry"))
-                .collect()
-        })
+        .map(Resolved::items)
         .unwrap_or_default()
+        .iter()
+        .filter_map(|item| item.get("Leveled List Entry"))
+        .collect()
 }
 
 /// `Reference` (form_version >= 174) or the legacy `Base Data.Item`.
-fn entry_target(entry: &Value) -> Option<&Value> {
+fn entry_target(entry: &Resolved) -> Option<&Resolved> {
     entry
         .get("Reference")
         .or_else(|| entry.pointer("/Base Data/Item"))
 }
 
-fn is_legacy_entry(entry: &Value) -> bool {
+fn is_legacy_entry(entry: &Resolved) -> bool {
     entry.get("Reference").is_none()
 }
 
 /// A GLOB reference's own `Value` field, already inlined onto the stub by
 /// `--resolve stub` (see `src/decode/leaf_values.rs`) — no separate fetch
 /// needed (see `docs/adr/0011-value-bearing-leaf-inlining.md`).
-fn glob_stub_value(stub: Option<&Value>) -> Option<f64> {
+fn glob_stub_value(stub: Option<&Resolved>) -> Option<f64> {
     let obj = stub?.as_object()?;
-    if obj.get("record_type").and_then(Value::as_str) != Some("GLOB") {
+    if obj.get("record_type").and_then(Resolved::as_str) != Some("GLOB") {
         return None;
     }
     obj.get("Value")?.as_f64()
 }
 
 /// A CURV reference's points are inlined onto the field regardless of
-/// resolve depth (see `crate::decode::resolve_formid`'s CURV branch) — no
+/// resolve depth (see `crate::decode::render_formid`'s curve branch) — no
 /// fetch needed, just evaluate at `x`. `None` when the curve isn't loaded.
-fn eval_curve(v: &Value, x: f32) -> Option<f64> {
-    let points = crate::curves::points_from_json(v)?;
+fn eval_curve(v: &Resolved, x: f32) -> Option<f64> {
+    let points = crate::curves::points_from_resolved(v)?;
     curve_eval(&points, x).map(f64::from)
 }
 
@@ -309,22 +306,26 @@ const MIN_LEVEL: ScalarFields = ScalarFields {
 /// input.
 /// `None` when no source is set.
 fn resolve_scalar(
-    node: &Value,
+    node: &Resolved,
     fields: &ScalarFields,
     level: f32,
     notes: &mut Vec<DropNote>,
 ) -> Option<f64> {
-    let global_ref = node.get(fields.global).filter(|v| v.is_object());
+    let is_set = |v: &&Resolved| v.is_object();
+    let global_ref = node.get(fields.global).filter(is_set);
     let global = glob_stub_value(global_ref);
-    if let Some(stub) = global_ref
+    if let Some(reference) = global_ref
         && global.is_none()
     {
-        let edid = stub.get("editor_id").and_then(Value::as_str).unwrap_or("?");
+        let name = reference
+            .get("editor_id")
+            .and_then(Resolved::as_str)
+            .unwrap_or("?");
         notes.push(DropNote::Unresolved {
-            reason: format!("{} {edid} has no GLOB value", fields.global),
+            reason: format!("{} {name} has no GLOB value", fields.global),
         });
     }
-    if let Some(curve) = node.get(fields.curve).filter(|v| v.is_object()) {
+    if let Some(curve) = node.get(fields.curve).filter(is_set) {
         // Beside a curve, the Global is the curve's input: without a
         // readable one the input is unknown (an unreadable Global was noted
         // above), and it is never the scalar itself.
@@ -346,24 +347,24 @@ fn resolve_scalar(
             }),
             None => {}
         }
-        return node.get(fields.flat).and_then(Value::as_f64);
+        return node.get(fields.flat).and_then(Resolved::as_f64);
     }
-    global.or_else(|| node.get(fields.flat).and_then(Value::as_f64))
+    global.or_else(|| node.get(fields.flat).and_then(Resolved::as_f64))
 }
 
 /// A list's chance-none as a probability in `[0, 1]` ([`resolve_scalar`]).
-fn list_chance_none(fields: &Value, level: f32, notes: &mut Vec<DropNote>) -> f64 {
+fn list_chance_none(fields: &Resolved, level: f32, notes: &mut Vec<DropNote>) -> f64 {
     percent_to_probability(resolve_scalar(fields, &CHANCE_NONE, level, notes))
 }
 
 /// An entry's chance-none as a probability in `[0, 1]`: [`resolve_scalar`],
 /// or the `Base Data.Chance None` u8 on a legacy entry (which has no Global
 /// or curve).
-fn entry_chance_none(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> f64 {
+fn entry_chance_none(entry: &Resolved, level: f32, notes: &mut Vec<DropNote>) -> f64 {
     percent_to_probability(if is_legacy_entry(entry) {
         entry
             .pointer("/Base Data/Chance None")
-            .and_then(Value::as_f64)
+            .and_then(Resolved::as_f64)
     } else {
         resolve_scalar(entry, &CHANCE_NONE, level, notes)
     })
@@ -375,11 +376,11 @@ fn percent_to_probability(percent: Option<f64>) -> f64 {
 
 /// An entry's Minimum Level ([`resolve_scalar`], or `Base Data.Level` on a
 /// legacy entry). `None` means no level gate.
-fn resolve_min_level(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> Option<f32> {
+fn resolve_min_level(entry: &Resolved, level: f32, notes: &mut Vec<DropNote>) -> Option<f32> {
     if is_legacy_entry(entry) {
         return entry
             .pointer("/Base Data/Level")
-            .and_then(Value::as_f64)
+            .and_then(Resolved::as_f64)
             .map(|v| v as f32);
     }
     resolve_scalar(entry, &MIN_LEVEL, level, notes).map(|v| v as f32)
@@ -388,9 +389,9 @@ fn resolve_min_level(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> Op
 /// An entry's Quantity ([`resolve_scalar`], or `Base Data.Count` on a legacy
 /// entry). `Quantity: 0` means "use the sublist's own count", not disabled —
 /// normalized to `1.0` here.
-fn resolve_quantity(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> f64 {
+fn resolve_quantity(entry: &Resolved, level: f32, notes: &mut Vec<DropNote>) -> f64 {
     let raw = if is_legacy_entry(entry) {
-        entry.pointer("/Base Data/Count").and_then(Value::as_f64)
+        entry.pointer("/Base Data/Count").and_then(Resolved::as_f64)
     } else {
         resolve_scalar(entry, &QUANTITY, level, notes)
     }
@@ -406,7 +407,7 @@ fn resolve_quantity(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> f64
 /// plain `"Flags"` when `"Flags 2"` is absent — reading *both* keys and
 /// filtering by name would misfire on `"Item Dispenser"`, which is a real
 /// flag name in *both* XALG's and LVLF's vocabularies.
-fn lvlf_flags(fields: &Value) -> HashSet<String> {
+fn lvlf_flags(fields: &Resolved) -> HashSet<String> {
     let key = if fields.get("Flags 2").is_some() {
         "Flags 2"
     } else {
@@ -415,7 +416,7 @@ fn lvlf_flags(fields: &Value) -> HashSet<String> {
     fields
         .get(key)
         .and_then(|f| f.get("flags"))
-        .and_then(Value::as_array)
+        .and_then(Resolved::as_array)
         .map(|arr| {
             arr.iter()
                 .filter_map(|v| v.as_str().map(str::to_string))
@@ -439,10 +440,10 @@ fn selection_model(flags: &HashSet<String>) -> SelectionModel {
 /// One condition row's pass probability. Only `GetRandomPercent` is a real
 /// probability (a uniform 0-100 roll); anything else is a genuine gate this
 /// engine can't compute, so it's noted and defaulted per `strict`.
-fn condition_row_prob(row: &Value, strict: bool, notes: &mut Vec<DropNote>) -> f64 {
+fn condition_row_prob(row: &Resolved, strict: bool, notes: &mut Vec<DropNote>) -> f64 {
     let function = row
         .get("Function")
-        .and_then(Value::as_str)
+        .and_then(Resolved::as_str)
         .unwrap_or("?")
         .to_string();
     let fallback = if strict { 0.0 } else { 1.0 };
@@ -450,7 +451,10 @@ fn condition_row_prob(row: &Value, strict: bool, notes: &mut Vec<DropNote>) -> f
         notes.push(DropNote::Gated { function });
         return fallback;
     }
-    let operator = row.get("Operator").and_then(Value::as_str).unwrap_or("?");
+    let operator = row
+        .get("Operator")
+        .and_then(Resolved::as_str)
+        .unwrap_or("?");
     let cmp = match row.get("Comparison Value") {
         Some(v) if v.is_object() => glob_stub_value(Some(v)),
         Some(v) => v.as_f64(),
@@ -473,7 +477,7 @@ fn condition_row_prob(row: &Value, strict: bool, notes: &mut Vec<DropNote>) -> f
 /// An entry's overall gate-pass probability: OR-groups (a run of rows joined
 /// by a trailing `"AND/OR": "OR"`) combine via `1 - Π(1 - p)`, then groups AND
 /// together. No conditions at all means always-eligible (`1.0`).
-fn entry_gate_prob(rows: &[Value], strict: bool, notes: &mut Vec<DropNote>) -> f64 {
+fn entry_gate_prob(rows: &[Resolved], strict: bool, notes: &mut Vec<DropNote>) -> f64 {
     if rows.is_empty() {
         return 1.0;
     }
@@ -485,7 +489,7 @@ fn entry_gate_prob(rows: &[Value], strict: bool, notes: &mut Vec<DropNote>) -> f
             let row = &rows[i];
             let p = condition_row_prob(row, strict, notes);
             group_fail *= 1.0 - p;
-            let is_or = row.get("AND/OR").and_then(Value::as_str) == Some("OR");
+            let is_or = row.get("AND/OR").and_then(Resolved::as_str) == Some("OR");
             i += 1;
             if !is_or || i >= rows.len() {
                 break;
@@ -549,12 +553,12 @@ struct Target {
 
 impl Target {
     /// `None` without a usable, non-null FormID.
-    fn of(entry: &Value) -> Option<Target> {
+    fn of(entry: &Resolved) -> Option<Target> {
         let stub = entry_target(entry)?;
-        let fid = stub_formid(Some(stub)).filter(|fid| fid.raw() != 0)?;
+        let fid = stub.stub_id().filter(|fid| fid.raw() != 0)?;
         let text = |key: &str| {
             stub.get(key)
-                .and_then(Value::as_str)
+                .and_then(Resolved::as_str)
                 .unwrap_or("")
                 .to_string()
         };
@@ -593,7 +597,7 @@ struct ResolvedList {
     sublists: Vec<FormId>,
 }
 
-fn resolve_list(fields: &Value, opts: &DropOptions) -> ResolvedList {
+fn resolve_list(fields: &Resolved, opts: &DropOptions) -> ResolvedList {
     let flags = lvlf_flags(fields);
     let model = selection_model(&flags);
 
@@ -831,7 +835,7 @@ impl Reach {
 /// recursive call — see call site).
 fn walk_node(
     f: &mut impl RecordSource,
-    fields: &Value,
+    fields: &Resolved,
     opts: &DropOptions,
     depth: usize,
     path: &mut Vec<FormId>,
@@ -1012,7 +1016,7 @@ fn walk_node(
 pub fn drop_table(
     f: &mut impl RecordSource,
     root_formid: FormId,
-    fields: &Value,
+    fields: &Resolved,
     opts: &DropOptions,
 ) -> anyhow::Result<DropTable> {
     let model = selection_model(&lvlf_flags(fields));
@@ -1057,8 +1061,12 @@ pub fn drop_table(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn r(v: &Value) -> Resolved {
+        Resolved::from_stub_json(v)
+    }
     use crate::source::MemorySource;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn glob_stub(fid: FormId, edid: &str, value: f64) -> Value {
         json!({"formid": fid.display(), "editor_id": edid, "record_type": "GLOB", "Value": value})
@@ -1144,9 +1152,9 @@ mod tests {
     fn condition_row_prob_reads_lower_and_upper_operator_families() {
         let mut notes = Vec::new();
         let ge = json!({"Function": "GetRandomPercent", "Operator": "Greater Than Or Equal To", "Comparison Value": 92.0});
-        assert!((condition_row_prob(&ge, false, &mut notes) - 0.08).abs() < 1e-9);
+        assert!((condition_row_prob(&r(&ge), false, &mut notes) - 0.08).abs() < 1e-9);
         let lt = json!({"Function": "GetRandomPercent", "Operator": "Less Than", "Comparison Value": 10.0});
-        assert!((condition_row_prob(&lt, false, &mut notes) - 0.10).abs() < 1e-9);
+        assert!((condition_row_prob(&r(&lt), false, &mut notes) - 0.10).abs() < 1e-9);
         assert!(notes.is_empty());
     }
 
@@ -1155,13 +1163,13 @@ mod tests {
         let has_recipe = json!({"Function": "HasLearnedRecipe", "Operator": "Equal To", "Comparison Value": 0.0});
         let mut lenient_notes = Vec::new();
         assert_eq!(
-            condition_row_prob(&has_recipe, false, &mut lenient_notes),
+            condition_row_prob(&r(&has_recipe), false, &mut lenient_notes),
             1.0
         );
         assert_eq!(lenient_notes.len(), 1);
         let mut strict_notes = Vec::new();
         assert_eq!(
-            condition_row_prob(&has_recipe, true, &mut strict_notes),
+            condition_row_prob(&r(&has_recipe), true, &mut strict_notes),
             0.0
         );
     }
@@ -1169,7 +1177,7 @@ mod tests {
     #[test]
     fn eval_curve_linearly_interpolates_between_points() {
         let v = json!({"curve": [{"x": 0.0, "y": 0.0}, {"x": 100.0, "y": 100.0}]});
-        assert!((eval_curve(&v, 50.0).unwrap() - 50.0).abs() < 1e-4);
+        assert!((eval_curve(&r(&v), 50.0).unwrap() - 50.0).abs() < 1e-4);
     }
 
     /// A curve over x = 0..100 with y = 100 - x.
@@ -1206,7 +1214,7 @@ mod tests {
         ];
         for (label, node, want) in cases {
             let mut notes = Vec::new();
-            let got = resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes);
+            let got = resolve_scalar(&r(&node), &CHANCE_NONE, 50.0, &mut notes);
             assert_eq!(got.map(|v| (v * 1e6).round() / 1e6), want, "{label}");
             assert!(notes.is_empty(), "{label}: {notes:?}");
         }
@@ -1229,8 +1237,8 @@ mod tests {
             "Quantity Global": glob_stub(FormId::new(0x1003), "Reward_Count", 10.0),
         });
         let mut notes = Vec::new();
-        assert_eq!(resolve_min_level(&entry, 50.0, &mut notes), Some(20.0));
-        assert_eq!(resolve_quantity(&entry, 50.0, &mut notes), 10.0);
+        assert_eq!(resolve_min_level(&r(&entry), 50.0, &mut notes), Some(20.0));
+        assert_eq!(resolve_quantity(&r(&entry), 50.0, &mut notes), 10.0);
         assert!(notes.is_empty(), "{notes:?}");
     }
 
@@ -1243,12 +1251,12 @@ mod tests {
         let mut notes = Vec::new();
         let node = json!({"Quantity": 6.0, "Quantity Global": avif});
         assert_eq!(
-            resolve_scalar(&node, &QUANTITY, 50.0, &mut notes),
+            resolve_scalar(&r(&node), &QUANTITY, 50.0, &mut notes),
             Some(6.0)
         );
         let node = json!({"Quantity": 3.0, "Quantity Curve Table": unloaded_curve});
         assert_eq!(
-            resolve_scalar(&node, &QUANTITY, 50.0, &mut notes),
+            resolve_scalar(&r(&node), &QUANTITY, 50.0, &mut notes),
             Some(3.0)
         );
         assert_eq!(notes.len(), 2, "{notes:?}");
@@ -1267,7 +1275,7 @@ mod tests {
         });
         let mut notes = Vec::new();
         assert_eq!(
-            resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes),
+            resolve_scalar(&r(&node), &CHANCE_NONE, 50.0, &mut notes),
             Some(0.0)
         );
         assert_eq!(notes.len(), 1, "{notes:?}");
@@ -1281,7 +1289,7 @@ mod tests {
         });
         let mut notes = Vec::new();
         assert_eq!(
-            resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes),
+            resolve_scalar(&r(&node), &CHANCE_NONE, 50.0, &mut notes),
             Some(5.0)
         );
     }
@@ -1294,7 +1302,7 @@ mod tests {
             "Chance None Value": 0.0,
             "Chance None Global": glob_stub(FormId::new(0x1000), "SomeGlobal", 85.0),
         });
-        assert!((list_chance_none(&node, 50.0, &mut Vec::new()) - 0.85).abs() < 1e-9);
+        assert!((list_chance_none(&r(&node), 50.0, &mut Vec::new()) - 0.85).abs() < 1e-9);
     }
 
     // ─── full tree resolution ───────────────────────────────────────────
@@ -1334,7 +1342,7 @@ mod tests {
                 entry_ref(target_stub(FormId::new(0x6), "ALCH", "FirecapCookedSoup")),
             ],
         );
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert_eq!(table.model, SelectionModel::Pool);
         assert!((table.p_nothing).abs() < 1e-9);
 
@@ -1368,7 +1376,7 @@ mod tests {
                 entry_ref(target_stub(FormId::new(0x12), "MISC", "AlwaysB")),
             ],
         );
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert_eq!(table.model, SelectionModel::UseAll);
         // Both entries are unconditioned -> both always dispensed.
         assert!((row(&table, "AlwaysA").p_at_least_one - 1.0).abs() < 1e-9);
@@ -1393,7 +1401,7 @@ mod tests {
                 entry_ref(target_stub(FormId::new(0x22), "WEAP", "Fallback")),
             ],
         );
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert_eq!(table.model, SelectionModel::UseFirstMatch);
         assert!((row(&table, "Recipe").p_at_least_one - 0.10).abs() < 1e-9);
         assert!((row(&table, "Fallback").p_at_least_one - 0.90).abs() < 1e-9);
@@ -1418,7 +1426,7 @@ mod tests {
         );
         fields["Flags"] = json!({"value": "0x10", "flags": ["Item Dispenser"]}); // XALG's own
         fields["Flags 2"] = json!({"value": "0x4", "flags": ["Use All"]}); // LVLF's real flags
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert_eq!(table.model, SelectionModel::UseAll);
         assert!((row(&table, "A").p_at_least_one - 1.0).abs() < 1e-9);
         assert!((row(&table, "B").p_at_least_one - 1.0).abs() < 1e-9);
@@ -1437,7 +1445,7 @@ mod tests {
             },
         }});
         let fields = lvli_fields(&[], vec![legacy_entry]);
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         let r = row(&table, "OldStyleItem");
         // Sole entry in a pool of one -> always chosen; 20% legacy chance-none.
         assert!((r.p_at_least_one - 0.80).abs() < 1e-9);
@@ -1463,7 +1471,7 @@ mod tests {
             &[],
             vec![entry_ref(target_stub(child_fid, "LVLI", "Sublist"))],
         );
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         let r = row(&table, "Leaf");
         assert_eq!(r.record_type, "WEAP");
         // Sole entry, always chosen; sublist also has a sole always-chosen
@@ -1482,7 +1490,7 @@ mod tests {
                 entry_ref(target_stub(FormId::new(0x61), "MISC", "RealItem")),
             ],
         );
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         // The self-referencing entry contributes nothing (flagged Cycle,
         // not expanded) rather than looping forever.
         assert!(table.rows.iter().all(|r| r.editor_id != "SelfReference"));
@@ -1507,7 +1515,7 @@ mod tests {
             level: 50.0,
             ..Default::default()
         };
-        let table = drop_table(&mut f, root, &fields, &opts).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &opts).unwrap();
         assert!(table.rows.iter().any(|r| r.editor_id == "LowLevelItem"));
         assert!(table.rows.iter().all(|r| r.editor_id != "HighLevelItem"));
         // Only one entry was actually eligible -> it's a pool of one.
@@ -1528,7 +1536,7 @@ mod tests {
             })
             .collect();
         let fields = lvli_fields(&[], entries);
-        let table = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert!(table.truncated);
         assert!(
             table
@@ -1621,7 +1629,7 @@ mod tests {
             tree_depth: MAX_RECURSION_DEPTH,
             ..Default::default()
         };
-        let table = drop_table(&mut f, root, &fields, &opts).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &opts).unwrap();
         let tree = table.tree.as_ref().unwrap();
         let mut sums = HashMap::new();
         sum_tree_leaves(tree.entries.as_ref().unwrap(), &mut sums);
@@ -1645,7 +1653,7 @@ mod tests {
             tree_depth: 1,
             ..Default::default()
         };
-        let table = drop_table(&mut f, root, &fields, &opts).unwrap();
+        let table = drop_table(&mut f, root, &r(&fields), &opts).unwrap();
         let entries = table.tree.as_ref().unwrap().entries.as_ref().unwrap();
         let mid = entries.iter().find(|b| b.editor_id == "Mid").unwrap();
         let mid_list = mid.sublist.as_ref().unwrap();
@@ -1657,7 +1665,7 @@ mod tests {
             .sum();
         assert!((mid.expected_count - flat).abs() < 1e-9);
 
-        let no_tree = drop_table(&mut f, root, &fields, &DropOptions::default()).unwrap();
+        let no_tree = drop_table(&mut f, root, &r(&fields), &DropOptions::default()).unwrap();
         assert!(no_tree.tree.is_none());
         assert!(
             serde_json::to_value(&no_tree)

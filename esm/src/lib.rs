@@ -35,6 +35,7 @@ pub mod tree;
 pub mod walk;
 pub mod wildcard;
 
+pub use decode::resolved::Resolved;
 pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
 pub use diff::{BodyDetail, DiffOptions, DiffResult, RecordDiff, RecordStub, RefName};
 pub use formid::{FormId, FormIdBase};

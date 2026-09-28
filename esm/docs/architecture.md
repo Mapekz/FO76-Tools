@@ -218,9 +218,12 @@ dropped. With `DropOptions::tree_depth > 0` it also returns `DropTable::tree`, t
 
 **`src/source.rs`** — `RecordSource`, the bulk-get and reverse-refs seam walk, chase and the
 drop table fetch through: `ops::analysis`'s `DbSource` reads the open `Database`, and
-`MemorySource` answers from records supplied up front (every traversal test uses it).
-**`src/fields.rs`** holds the decoded-JSON readers the three share (reference stubs, schema
-enums, condition rows), so none of them imports another for a helper.
+`MemorySource` answers from records supplied up front (every traversal test uses it). Records
+arrive as `Resolved` trees (`src/decode/resolved.rs`): the stub-depth rendering with every
+FormID reference kept typed, so traversal follows `Resolved::stub_id`/`ref_id` and never parses
+a FormID out of a string; `Resolved::to_json` renders exactly what `--resolve stub` prints, which
+is what their output embeds. **`src/fields.rs`** holds the readers the three share (schema
+enums, condition rows, truthiness), so none of them imports another for a helper.
 
 **`src/refs/`** (`mod.rs`, with the entry-point/OMOD-property carrier seeds in `seeds.rs`) — the reverse-reference graph engine: `referenced_by_enriched`/
 `_multi` (BFS from one or more seeds) and `find_ref_path` (bidirectional path search between two

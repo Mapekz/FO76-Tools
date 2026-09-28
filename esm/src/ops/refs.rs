@@ -124,6 +124,11 @@ pub struct RefPathNode {
 #[cfg_attr(test, ts(export))]
 pub struct RefRow {
     pub form_id: String,
+    /// `form_id`, typed, for in-process consumers (chase, walk). Not
+    /// serialized: a row read back from JSON has the null FormID here.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub id: crate::FormId,
     pub record_type: Option<String>,
     pub editor_id: Option<String>,
     pub name: Option<String>,

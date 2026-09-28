@@ -12,7 +12,7 @@
 //!   `Minimum Level Global` supplies, not level; `lvli::resolve_scalar`
 //!   evaluates it there.
 
-use serde_json::Value;
+use crate::Resolved;
 
 /// How a [`LevelCurveField`]'s x-axis is confirmed to be level.
 #[derive(Debug, Clone, Copy)]
@@ -198,14 +198,15 @@ pub(crate) fn field_for(sig: &str, path: &str) -> Option<&'static LevelCurveFiel
 /// Apply an [`AxisGuard`] to `row` (the JSON object that owns both the curve
 /// field and the guard's sibling key, if any): `None` means "evaluation is
 /// permitted", `Some(axis)` means "suppressed — this is the real axis name".
-pub(crate) fn guard_axis(guard: &AxisGuard, row: &Value) -> Option<String> {
+pub(crate) fn guard_axis(guard: &AxisGuard, row: &Resolved) -> Option<String> {
     match guard {
         AxisGuard::Always => None,
-        AxisGuard::SiblingIsNoneOrAbsent(key) => match row.get(*key) {
-            None | Some(Value::Null) => None,
-            Some(Value::String(s)) if s == "None" => None,
-            Some(Value::Object(m))
-                if m.get("editor_id").and_then(Value::as_str) == Some("None") =>
+        AxisGuard::SiblingIsNoneOrAbsent(key) => match row.get(key) {
+            None => None,
+            Some(v) if v.is_null() || v.as_str() == Some("None") => None,
+            Some(v)
+                if v.is_object()
+                    && v.get("editor_id").and_then(Resolved::as_str) == Some("None") =>
             {
                 None
             }
@@ -216,15 +217,17 @@ pub(crate) fn guard_axis(guard: &AxisGuard, row: &Value) -> Option<String> {
 
 /// Render a non-level axis value (a resolved ref stub's `editor_id`, or a
 /// bare string/number) as the text `render_level_curves` shows the reader.
-fn axis_label(v: &Value) -> String {
-    match v {
-        Value::Object(m) => m
+fn axis_label(v: &Resolved) -> String {
+    if v.is_object() {
+        return v
             .get("editor_id")
-            .and_then(Value::as_str)
+            .and_then(Resolved::as_str)
             .map(str::to_string)
-            .unwrap_or_else(|| "?".to_string()),
-        Value::String(s) => s.clone(),
-        other => other.to_string(),
+            .unwrap_or_else(|| "?".to_string());
+    }
+    match v.as_str() {
+        Some(s) => s.to_string(),
+        None => v.to_json().to_string(),
     }
 }
 
@@ -235,8 +238,8 @@ fn axis_label(v: &Value) -> String {
 /// static label across multiple rows — see [`LevelCurveField::label_from`]).
 struct MatchedLeaf<'a> {
     field_path: String,
-    leaf: &'a Value,
-    row: &'a Value,
+    leaf: &'a Resolved,
+    row: &'a Resolved,
     array_index: Option<usize>,
 }
 
@@ -245,10 +248,10 @@ struct MatchedLeaf<'a> {
 /// `fields`, returning every matched leaf. Intentionally minimal: it does
 /// not support nested arrays, wildcards, or any JSONPath feature beyond
 /// what this crate's verified field paths actually need.
-fn navigate<'a>(fields: &'a Value, path: &str) -> Vec<MatchedLeaf<'a>> {
+fn navigate<'a>(fields: &'a Resolved, path: &str) -> Vec<MatchedLeaf<'a>> {
     struct Frame<'a> {
         path: String,
-        value: &'a Value,
+        value: &'a Resolved,
         array_index: Option<usize>,
     }
 
@@ -267,7 +270,7 @@ fn navigate<'a>(fields: &'a Value, path: &str) -> Vec<MatchedLeaf<'a>> {
         let mut next = Vec::new();
         if let Some(key) = seg.strip_suffix("[]") {
             for f in &frames {
-                let Some(arr) = f.value.get(key).and_then(Value::as_array) else {
+                let Some(arr) = f.value.get(key).and_then(Resolved::as_array) else {
                     continue;
                 };
                 for (i, elem) in arr.iter().enumerate() {
@@ -285,7 +288,7 @@ fn navigate<'a>(fields: &'a Value, path: &str) -> Vec<MatchedLeaf<'a>> {
             }
         } else {
             for f in &frames {
-                let Some(child) = f.value.get(*seg) else {
+                let Some(child) = f.value.get(seg) else {
                     continue;
                 };
                 let p = if f.path.is_empty() {
@@ -305,7 +308,7 @@ fn navigate<'a>(fields: &'a Value, path: &str) -> Vec<MatchedLeaf<'a>> {
 
     let mut out = Vec::new();
     for f in frames {
-        let Some(leaf) = f.value.get(*last) else {
+        let Some(leaf) = f.value.get(last) else {
             continue;
         };
         let field_path = if f.path.is_empty() {
@@ -326,14 +329,12 @@ fn navigate<'a>(fields: &'a Value, path: &str) -> Vec<MatchedLeaf<'a>> {
 fn resolve_label(entry: &LevelCurveField, m: &MatchedLeaf<'_>) -> String {
     if let Some(key) = entry.label_from {
         if let Some(v) = m.row.get(key) {
-            match v {
-                Value::Object(o) => {
-                    if let Some(e) = o.get("editor_id").and_then(Value::as_str) {
-                        return e.to_string();
-                    }
+            if v.is_object() {
+                if let Some(e) = v.get("editor_id").and_then(Resolved::as_str) {
+                    return e.to_string();
                 }
-                Value::String(s) => return s.clone(),
-                _ => {}
+            } else if let Some(s) = v.as_str() {
+                return s.to_string();
             }
         }
         return entry.label.to_string();
@@ -369,16 +370,16 @@ pub struct LevelCurveRow {
 /// `level`, for the given record `sig`nature. Empty vec for signatures with
 /// no rows in [`LEVEL_KEYED_CURVES`].
 ///
-/// A matched leaf with no curve loaded/present at all (`points_from_json`
+/// A matched leaf with no curve loaded/present at all (`points_from_resolved`
 /// returns `None`, or `Some(vec![])` — a curve reference that resolved but
 /// carries zero points) produces no row: this is the normal case for the
 /// overwhelming majority of fields on the overwhelming majority of records,
 /// not a decode failure worth flagging.
-pub fn eval_level_curves(sig: &str, fields: &Value, level: f32) -> Vec<LevelCurveRow> {
+pub fn eval_level_curves(sig: &str, fields: &Resolved, level: f32) -> Vec<LevelCurveRow> {
     let mut out = Vec::new();
     for entry in LEVEL_KEYED_CURVES.iter().filter(|e| e.sig == sig) {
         for m in navigate(fields, entry.path) {
-            let Some(points) = crate::curves::points_from_json(m.leaf) else {
+            let Some(points) = crate::curves::points_from_resolved(m.leaf) else {
                 continue;
             };
             if points.is_empty() {
@@ -387,7 +388,7 @@ pub fn eval_level_curves(sig: &str, fields: &Value, level: f32) -> Vec<LevelCurv
             let curve_edid = m
                 .leaf
                 .get("editor_id")
-                .and_then(Value::as_str)
+                .and_then(Resolved::as_str)
                 .map(str::to_string);
             let label = resolve_label(entry, &m);
             let (value, axis) = match guard_axis(&entry.guard, m.row) {
@@ -409,7 +410,11 @@ pub fn eval_level_curves(sig: &str, fields: &Value, level: f32) -> Vec<LevelCurv
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
+
+    fn r(v: &Value) -> Resolved {
+        Resolved::from_stub_json(v)
+    }
 
     #[test]
     fn evaluates_plain_top_level_curve_field() {
@@ -419,7 +424,7 @@ mod tests {
                 "curve": [{"x": 1.0, "y": 10.0}, {"x": 50.0, "y": 100.0}],
             }
         });
-        let rows = eval_level_curves("WEAP", &fields, 50.0);
+        let rows = eval_level_curves("WEAP", &r(&fields), 50.0);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].field, "Damage Curve");
         assert_eq!(rows[0].label, "damage");
@@ -439,7 +444,7 @@ mod tests {
                 }},
             ]
         });
-        let rows = eval_level_curves("NPC_", &fields, 10.0);
+        let rows = eval_level_curves("NPC_", &r(&fields), 10.0);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].field, "Properties[0].Curve Table");
         assert_eq!(rows[0].label, "Health");
@@ -458,7 +463,7 @@ mod tests {
                 }},
             ]
         });
-        let rows = eval_level_curves("ARMO", &fields, 5.0);
+        let rows = eval_level_curves("ARMO", &r(&fields), 5.0);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].label, "dtEnergy");
     }
@@ -466,7 +471,7 @@ mod tests {
     #[test]
     fn missing_intermediate_key_yields_no_rows() {
         let fields = json!({"SomeOtherKey": 1});
-        let rows = eval_level_curves("EXPL", &fields, 10.0);
+        let rows = eval_level_curves("EXPL", &r(&fields), 10.0);
         assert!(rows.is_empty());
     }
 
@@ -477,14 +482,14 @@ mod tests {
                 {"Type": {"formid": "0x1", "editor_id": "dtEnergy"}, "Curve Table": null},
             ]
         });
-        let rows = eval_level_curves("ARMO", &fields, 5.0);
+        let rows = eval_level_curves("ARMO", &r(&fields), 5.0);
         assert!(rows.is_empty());
     }
 
     #[test]
     fn empty_curve_points_yields_no_row() {
         let fields = json!({"Damage Curve": {"curve": []}});
-        let rows = eval_level_curves("WEAP", &fields, 5.0);
+        let rows = eval_level_curves("WEAP", &r(&fields), 5.0);
         assert!(rows.is_empty());
     }
 
@@ -492,7 +497,7 @@ mod tests {
     fn guard_permits_evaluation_when_actor_value_absent() {
         let row = json!({"Curve Table": {"curve": [{"x": 0.0, "y": 1.0}]}});
         assert_eq!(
-            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &row),
+            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &r(&row)),
             None
         );
     }
@@ -501,7 +506,7 @@ mod tests {
     fn guard_permits_evaluation_when_actor_value_null() {
         let row = json!({"Actor Value": null, "Curve Table": {"curve": [{"x": 0.0, "y": 1.0}]}});
         assert_eq!(
-            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &row),
+            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &r(&row)),
             None
         );
     }
@@ -510,7 +515,7 @@ mod tests {
     fn guard_permits_evaluation_when_actor_value_literal_none_string() {
         let row = json!({"Actor Value": "None"});
         assert_eq!(
-            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &row),
+            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &r(&row)),
             None
         );
     }
@@ -519,7 +524,7 @@ mod tests {
     fn guard_permits_evaluation_when_actor_value_literal_none_stub() {
         let row = json!({"Actor Value": {"editor_id": "None"}});
         assert_eq!(
-            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &row),
+            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &r(&row)),
             None
         );
     }
@@ -528,7 +533,7 @@ mod tests {
     fn guard_suppresses_evaluation_and_names_axis_when_actor_value_named() {
         let row = json!({"Actor Value": {"formid": "0x1", "editor_id": "Perception", "record_type": "AVIF"}});
         assert_eq!(
-            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &row),
+            guard_axis(&AxisGuard::SiblingIsNoneOrAbsent("Actor Value"), &r(&row)),
             Some("Perception".to_string())
         );
     }
@@ -547,7 +552,7 @@ mod tests {
                 }},
             ]
         });
-        let rows = eval_level_curves("ENCH", &fields, 50.0);
+        let rows = eval_level_curves("ENCH", &r(&fields), 50.0);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].field, "Effects[0].Effect.Curve Table");
         assert_eq!(rows[0].label, "effect[0]");
@@ -564,7 +569,7 @@ mod tests {
         let fields = json!({
             "Components": [{"Count": 3, "Curve Table": {"curve": [{"x": 1.0, "y": 1.0}, {"x": 5.0, "y": 5.0}]}}],
         });
-        let rows = eval_level_curves("COBJ", &fields, 10.0);
+        let rows = eval_level_curves("COBJ", &r(&fields), 10.0);
         assert!(
             rows.is_empty(),
             "COBJ has no LEVEL_KEYED_CURVES rows at all"
@@ -576,7 +581,7 @@ mod tests {
         let fields = json!({
             "Minimim Level Curve Table": {"curve": [{"x": 0.0, "y": 1.0}, {"x": 3.0, "y": 4.0}]},
         });
-        let rows = eval_level_curves("LVLI", &fields, 50.0);
+        let rows = eval_level_curves("LVLI", &r(&fields), 50.0);
         assert!(
             rows.is_empty(),
             "LVLI has no LEVEL_KEYED_CURVES rows at all"

@@ -14,6 +14,7 @@ mod derived;
 pub(crate) mod leaf_values;
 mod model_info;
 pub mod node;
+pub mod resolved;
 mod scalars;
 mod vmad;
 mod walk;

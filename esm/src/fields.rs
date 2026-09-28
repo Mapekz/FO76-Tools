@@ -1,14 +1,24 @@
-//! Readers for decoded record JSON shared by chase, walk and the drop table:
-//! schema enums, FormID stubs at [`crate::ResolveDepth::Stub`], condition
-//! rows, and Python-style truthiness.
+//! Readers for decoded record bodies shared by chase, walk and the drop
+//! table: schema enums, condition rows, and Python-style truthiness — over
+//! the [`Resolved`] records they traverse, and over the JSON they render
+//! (`walk`'s text renderer reads its own digests back).
 
 use serde_json::Value;
 
-use crate::FormId;
+use crate::{FormId, Resolved};
 
-/// Extract the human name from a `{"value":.., "name":..}` schema enum
-/// object, or return the value unchanged if it isn't wrapped that way.
-pub(crate) fn named(field: Option<&Value>) -> Value {
+/// The human name of a `{"value":.., "name":..}` schema enum object, or the
+/// value itself if it isn't wrapped that way, rendered.
+pub(crate) fn named(field: Option<&Resolved>) -> Value {
+    match field {
+        Some(v) if v.is_object() => v.get("name").unwrap_or(v).to_json(),
+        Some(other) => other.to_json(),
+        None => Value::Null,
+    }
+}
+
+/// [`named`] over rendered JSON.
+pub(crate) fn named_json(field: Option<&Value>) -> Value {
     match field {
         Some(Value::Object(map)) => map
             .get("name")
@@ -19,9 +29,22 @@ pub(crate) fn named(field: Option<&Value>) -> Value {
     }
 }
 
-/// Python-truthiness for a JSON value (`None`/`0`/`""`/`[]`/`{}`/`false` are
-/// falsy, as in a bare Python `if x:`).
-pub(crate) fn is_truthy(v: Option<&Value>) -> bool {
+/// Python-truthiness for a value (`None`/`0`/`""`/`[]`/`{}`/`false` are
+/// falsy, as in a bare Python `if x:`). A reference is truthy.
+pub(crate) fn is_truthy(v: Option<&Resolved>) -> bool {
+    match v {
+        None | Some(Resolved::Null) => false,
+        Some(Resolved::Ref { .. }) => true,
+        Some(Resolved::Bool(b)) => *b,
+        Some(Resolved::Number(n)) => n.as_f64().map(|f| f != 0.0).unwrap_or(true),
+        Some(Resolved::String(s)) => !s.is_empty(),
+        Some(Resolved::Array(a)) => !a.is_empty(),
+        Some(Resolved::Object(o)) => !o.is_empty(),
+    }
+}
+
+/// [`is_truthy`] over rendered JSON.
+pub(crate) fn is_truthy_json(v: Option<&Value>) -> bool {
     match v {
         None => false,
         Some(Value::Null) => false,
@@ -33,17 +56,10 @@ pub(crate) fn is_truthy(v: Option<&Value>) -> bool {
     }
 }
 
-/// A decoded FormID reference at [`crate::ResolveDepth::Stub`] is a
-/// `{"formid", "editor_id", "record_type"}` object.
-pub(crate) fn is_ref_stub(v: &Value) -> bool {
+/// Whether rendered JSON is a reference stub
+/// (`{"formid", "editor_id", "record_type"}`).
+pub(crate) fn is_stub_json(v: &Value) -> bool {
     matches!(v, Value::Object(map) if map.contains_key("formid"))
-}
-
-/// The FormID of a reference stub.
-pub(crate) fn stub_formid(v: Option<&Value>) -> Option<FormId> {
-    let obj = v?.as_object()?;
-    let s = obj.get("formid")?.as_str()?;
-    crate::parse_form_id_input(s).ok()
 }
 
 pub(crate) fn dedup_sorted(fids: &mut Vec<FormId>) {
@@ -53,11 +69,11 @@ pub(crate) fn dedup_sorted(fids: &mut Vec<FormId>) {
 
 /// Pull the flat condition rows out of a SPEL/ENCH/ALCH/MGEF-style
 /// `Conditions` node; LVLI entries decode `Conditions` into the same shape.
-pub(crate) fn flatten_condition_rows(node: &Value) -> Vec<Value> {
+pub(crate) fn flatten_condition_rows(node: &Resolved) -> Vec<Resolved> {
     node.get("Conditions")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
+        .map(Resolved::items)
+        .unwrap_or_default()
+        .iter()
         .filter_map(|item| item.pointer("/Condition/Condition Data").cloned())
         .collect()
 }
@@ -67,35 +83,51 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn r(v: Value) -> Resolved {
+        Resolved::from_stub_json(&v)
+    }
+
     #[test]
     fn named_extracts_name_from_enum_object() {
-        let v = json!({"value": 31, "name": "Keywords"});
-        assert_eq!(named(Some(&v)), json!("Keywords"));
+        assert_eq!(
+            named(Some(&r(json!({"value": 31, "name": "Keywords"})))),
+            json!("Keywords")
+        );
+        assert_eq!(
+            named_json(Some(&json!({"value": 31, "name": "Keywords"}))),
+            json!("Keywords")
+        );
     }
 
     #[test]
     fn named_passes_through_non_enum_values() {
-        assert_eq!(named(Some(&json!(1.5))), json!(1.5));
+        assert_eq!(named(Some(&r(json!(1.5)))), json!(1.5));
         assert_eq!(named(None), Value::Null);
     }
 
     #[test]
-    fn is_ref_stub_detects_formid_key() {
-        assert!(is_ref_stub(
+    fn is_stub_json_detects_formid_key() {
+        assert!(is_stub_json(
             &json!({"formid": "0x123", "record_type": "KYWD"})
         ));
-        assert!(!is_ref_stub(&json!(1.5)));
+        assert!(!is_stub_json(&json!(1.5)));
     }
 
     #[test]
     fn is_truthy_matches_python_semantics() {
+        for (v, want) in [
+            (json!(null), false),
+            (json!(0), false),
+            (json!(""), false),
+            (json!([]), false),
+            (json!({}), false),
+            (json!(1), true),
+            (json!("x"), true),
+        ] {
+            assert_eq!(is_truthy(Some(&r(v.clone()))), want, "{v}");
+            assert_eq!(is_truthy_json(Some(&v)), want, "{v}");
+        }
         assert!(!is_truthy(None));
-        assert!(!is_truthy(Some(&Value::Null)));
-        assert!(!is_truthy(Some(&json!(0))));
-        assert!(!is_truthy(Some(&json!(""))));
-        assert!(!is_truthy(Some(&json!([]))));
-        assert!(!is_truthy(Some(&json!({}))));
-        assert!(is_truthy(Some(&json!(1))));
-        assert!(is_truthy(Some(&json!("x"))));
+        assert!(is_truthy(Some(&Resolved::unresolved(FormId(0x10)))));
     }
 }

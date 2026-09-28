@@ -210,6 +210,7 @@ fn referenced_by_walk(
             if type_matches(&row.record_type) {
                 seed_rows.push(RefRow {
                     form_id: row.form_id,
+                    id: seed,
                     record_type: row.record_type,
                     editor_id: row.editor_id,
                     name: row.name,
@@ -281,6 +282,7 @@ fn referenced_by_walk(
                     fid,
                     RefRow {
                         form_id: r.form_id.clone(),
+                        id: fid,
                         record_type: record_type.clone(),
                         editor_id: r.editor_id.clone(),
                         name: r.name.clone(),

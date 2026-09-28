@@ -17,7 +17,7 @@ use crate::chase::{
     Evidence, EvidenceDetail, ExplosionDamage, ExplosionSummary, FetchDirection, Hop, HopKind,
     first_array_container,
 };
-use crate::fields::{is_ref_stub, is_truthy, named};
+use crate::fields::{is_stub_json, is_truthy_json, named_json};
 use serde_json::{Value, json};
 
 /// Display cap on rendered KYWD/AVIF consumer rows per record-type group —
@@ -162,10 +162,10 @@ fn fmt_curve(v: &Value) -> Option<String> {
 /// `a or b` (Python truthiness), rendered as text — used for the
 /// `editor_id`-else-`formid` fallback in [`summarize_effect`]/[`fmt_stub`].
 fn py_or_display(a: Option<&Value>, b: Option<&Value>) -> String {
-    if is_truthy(a) {
+    if is_truthy_json(a) {
         return pyish(a.unwrap());
     }
-    if is_truthy(b) {
+    if is_truthy_json(b) {
         return pyish(b.unwrap());
     }
     "None".to_string()
@@ -264,10 +264,10 @@ fn summarize_effect(effect_entry: &Value) -> String {
     }
 
     if let Some(entry_point) = inner_map.get("Entry Point").and_then(Value::as_object) {
-        let ep_name = named(entry_point.get("Entry Point"));
-        let fn_name = named(entry_point.get("Function"));
-        if is_truthy(Some(&ep_name)) {
-            if is_truthy(Some(&fn_name)) {
+        let ep_name = named_json(entry_point.get("Entry Point"));
+        let fn_name = named_json(entry_point.get("Function"));
+        if is_truthy_json(Some(&ep_name)) {
+            if is_truthy_json(Some(&fn_name)) {
                 parts.push(format!("{}/{}", pyish(&ep_name), pyish(&fn_name)));
             } else {
                 parts.push(pyish(&ep_name));
@@ -281,7 +281,7 @@ fn summarize_effect(effect_entry: &Value) -> String {
         {
             parts.push(format!("Magnitude={}", pyish(mag)));
         }
-        if is_truthy(item_data.get("Duration")) {
+        if is_truthy_json(item_data.get("Duration")) {
             parts.push(format!(
                 "Duration={}",
                 pyish(item_data.get("Duration").unwrap())
@@ -313,11 +313,11 @@ fn summarize_effect(effect_entry: &Value) -> String {
     let mut text = parts.join("  ");
     let conditions_src = inner_map
         .get("Conditions")
-        .filter(|v| is_truthy(Some(*v)))
+        .filter(|v| is_truthy_json(Some(*v)))
         .or_else(|| {
             inner_map
                 .get("Perk Conditions")
-                .filter(|v| is_truthy(Some(*v)))
+                .filter(|v| is_truthy_json(Some(*v)))
         });
     if let Some(cs) = conditions_src {
         let mut acc = Vec::new();
@@ -345,17 +345,17 @@ fn summarize_effect(effect_entry: &Value) -> String {
 fn fmt_stub(stub: &Value) -> String {
     let rt = stub
         .get("record_type")
-        .filter(|v| is_truthy(Some(*v)))
+        .filter(|v| is_truthy_json(Some(*v)))
         .map(pyish)
         .unwrap_or_else(|| "?".to_string());
     let fid = stub
         .get("formid")
-        .filter(|v| is_truthy(Some(*v)))
+        .filter(|v| is_truthy_json(Some(*v)))
         .map(pyish)
         .unwrap_or_else(|| "?".to_string());
     let edid = stub
         .get("editor_id")
-        .filter(|v| is_truthy(Some(*v)))
+        .filter(|v| is_truthy_json(Some(*v)))
         .map(pyish)
         .unwrap_or_default();
     format!("{rt} {fid} {edid}").trim_end().to_string()
@@ -705,10 +705,10 @@ fn render_explosion_detail_lines(detail: &ExplosionSummary, lines: &mut Vec<Stri
     if chain {
         lines.push(format!("{indent}chain"));
     }
-    if let Some(placed) = detail.placed_object.as_ref().filter(|v| is_ref_stub(v)) {
+    if let Some(placed) = detail.placed_object.as_ref().filter(|v| is_stub_json(v)) {
         lines.push(format!("{indent}placed object → {}", fmt_stub(placed)));
     }
-    if let Some(spawn) = detail.spawn_projectile.as_ref().filter(|v| is_ref_stub(v)) {
+    if let Some(spawn) = detail.spawn_projectile.as_ref().filter(|v| is_stub_json(v)) {
         lines.push(format!("{indent}spawn projectile → {}", fmt_stub(spawn)));
     }
     match detail.damage.as_deref() {
@@ -1190,7 +1190,7 @@ fn render_projectile_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
         if !parts.is_empty() {
             lines.push(format!("  {}", parts.join("  ")));
         }
-        if let Some(expl) = d.explosion.as_ref().filter(|v| is_ref_stub(v)) {
+        if let Some(expl) = d.explosion.as_ref().filter(|v| is_stub_json(v)) {
             lines.push(format!("  explosion → {}", fmt_stub(expl)));
         }
         render_explosion_detail_lines(&d.summary, lines, "  ");

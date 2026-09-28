@@ -94,6 +94,21 @@ pub fn points_from_json(v: &serde_json::Value) -> Option<Vec<CurvePoint>> {
     Some(points)
 }
 
+/// [`points_from_json`] over an analysis-layer record body.
+pub(crate) fn points_from_resolved(v: &crate::Resolved) -> Option<Vec<CurvePoint>> {
+    let raw = v.get("Curve").or_else(|| v.get("curve"))?;
+    Some(
+        raw.items()
+            .iter()
+            .filter_map(|p| {
+                let x = p.get("x").and_then(crate::Resolved::as_f64)? as f32;
+                let y = p.get("y").and_then(crate::Resolved::as_f64)? as f32;
+                Some(CurvePoint { x, y })
+            })
+            .collect(),
+    )
+}
+
 /// Sum [`eval`] over x stepping from `start` to `end` inclusive.
 ///
 /// Steps are *counted* (`n = round((end - start) / step)`) rather than accumulated in

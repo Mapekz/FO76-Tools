@@ -359,6 +359,7 @@ fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
             target: KYWD_FID.to_string(),
             rows: vec![RefRow {
                 form_id: SPEL_CONSUMER_FID.to_string(),
+                id: SPEL_CONSUMER_FID.parse().unwrap(),
                 record_type: Some("SPEL".to_string()),
                 editor_id: Some("TestGatedSpell".to_string()),
                 name: None,
@@ -759,6 +760,7 @@ fn omod_mixed_property_renders_keyword_hook_slice() {
             target: KYWD_HOOK_FID.to_string(),
             rows: vec![RefRow {
                 form_id: GATING_PERK_FID.to_string(),
+                id: GATING_PERK_FID.parse().unwrap(),
                 record_type: Some("PERK".to_string()),
                 editor_id: Some("GatingPerkBACKUP".to_string()),
                 name: None,
@@ -896,6 +898,7 @@ fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
             }),
         );
         rows.push(RefRow {
+            id: fid.parse().unwrap(),
             form_id: fid,
             record_type: Some("PERK".to_string()),
             editor_id: Some(format!("HubConsumer{i}")),
@@ -1690,7 +1693,11 @@ fn cobj_curve_table_not_in_level_curves_allowlist() {
     let fields = json!({
         "Components": [{"Count": 3, "Curve Table": {"curve": [{"x": 1.0, "y": 1.0}, {"x": 5.0, "y": 5.0}]}}],
     });
-    let rows = esm::walk::level_curves::eval_level_curves("COBJ", &fields, 50.0);
+    let rows = esm::walk::level_curves::eval_level_curves(
+        "COBJ",
+        &esm::Resolved::from_stub_json(&fields),
+        50.0,
+    );
     assert!(
         rows.is_empty(),
         "COBJ has no LEVEL_KEYED_CURVES rows — its Curve Table is count-keyed"
@@ -1707,7 +1714,12 @@ fn lvli_minimim_level_curve_table_without_a_global_is_noted_not_evaluated() {
         "Minimim Level Curve Table": {"curve": [{"x": 0.0, "y": 1.0}, {"x": 3.0, "y": 4.0}]},
     });
     assert!(
-        esm::walk::level_curves::eval_level_curves("LVLI", &fields_direct, 50.0).is_empty(),
+        esm::walk::level_curves::eval_level_curves(
+            "LVLI",
+            &esm::Resolved::from_stub_json(&fields_direct),
+            50.0
+        )
+        .is_empty(),
         "LVLI has no LEVEL_KEYED_CURVES rows at all"
     );
 

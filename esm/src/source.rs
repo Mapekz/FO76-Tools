@@ -2,7 +2,8 @@
 //!
 //! [`RecordSource`] keeps their traversal logic free of I/O: the database
 //! implements it in `ops::analysis`, and [`MemorySource`] answers from
-//! records supplied up front (tests use it with no ESM involved).
+//! records supplied up front (tests use it with no ESM involved). Records
+//! arrive as [`Resolved`] trees, so traversal reads FormIDs typed.
 
 use std::collections::HashMap;
 
@@ -10,18 +11,40 @@ use serde_json::Value;
 
 use crate::ops::{RecordSel, RefDepth};
 use crate::reader::RecordHeaderInfo;
-use crate::{BulkRecordEntry, FormId, RefList, ResolveDepth};
+use crate::{FormId, RefList, Resolved};
 
-/// A bulk record fetch (`Op::RecordBulk`) and a reverse-reference walk
-/// (`Op::ReferencedBy`). `bulk_get` returns exactly one entry per selector,
-/// in selector order (an error entry for one that doesn't resolve):
-/// callers pair results with their selectors by position.
+/// One record a [`RecordSource`] fetched for a selector: the record, or why
+/// the selector didn't resolve.
+#[derive(Debug, Clone)]
+pub struct SourceRecord {
+    /// The selector, rendered for display (see [`RecordSel::display`]).
+    pub sel: String,
+    pub header: Option<RecordHeaderInfo>,
+    pub editor_id: Option<String>,
+    pub fields: Option<Resolved>,
+    /// Set instead of the others when the selector didn't resolve.
+    pub error: Option<String>,
+}
+
+impl SourceRecord {
+    /// An entry for a selector that didn't resolve.
+    pub fn failed(sel: String, error: String) -> Self {
+        SourceRecord {
+            sel,
+            header: None,
+            editor_id: None,
+            fields: None,
+            error: Some(error),
+        }
+    }
+}
+
+/// A bulk record fetch and a reverse-reference walk (`Op::ReferencedBy`).
+/// `bulk_get` returns exactly one entry per selector, in selector order (an
+/// error entry for one that doesn't resolve): callers pair results with
+/// their selectors by position.
 pub trait RecordSource {
-    fn bulk_get(
-        &mut self,
-        sels: &[RecordSel],
-        depth: ResolveDepth,
-    ) -> anyhow::Result<Vec<BulkRecordEntry>>;
+    fn bulk_get(&mut self, sels: &[RecordSel]) -> anyhow::Result<Vec<SourceRecord>>;
 
     fn refs(
         &mut self,
@@ -33,28 +56,26 @@ pub trait RecordSource {
     ) -> anyhow::Result<RefList>;
 }
 
-/// Batch-fetch `fids` at [`ResolveDepth::Stub`] and return them keyed by
-/// FormID.
+/// Batch-fetch `fids` and return them keyed by FormID.
 pub(crate) fn bulk_fetch_map(
     f: &mut impl RecordSource,
     fids: &[FormId],
-) -> anyhow::Result<HashMap<FormId, BulkRecordEntry>> {
+) -> anyhow::Result<HashMap<FormId, SourceRecord>> {
     if fids.is_empty() {
         return Ok(HashMap::new());
     }
     let sels: Vec<RecordSel> = fids.iter().map(|fid| RecordSel::FormId(*fid)).collect();
-    let entries = f.bulk_get(&sels, ResolveDepth::Stub)?;
+    let entries = f.bulk_get(&sels)?;
     Ok(fids.iter().copied().zip(entries).collect())
 }
 
 /// A [`RecordSource`] over records and reverse-reference lists supplied up
-/// front. Records are returned as given at every resolve depth; an unknown
-/// selector gets an error entry, and `refs` answers with the list inserted
+/// front. An unknown selector gets an error entry, and `refs` answers with the list inserted
 /// for its `(target, type filter)` pair (empty otherwise), truncated to
 /// `limit` like the database's.
 #[derive(Debug, Default)]
 pub struct MemorySource {
-    records: HashMap<FormId, BulkRecordEntry>,
+    records: HashMap<FormId, SourceRecord>,
     refs: HashMap<(FormId, String), RefList>,
 }
 
@@ -64,7 +85,8 @@ impl MemorySource {
     }
 
     /// Add a record with header `signature`/`flags`, its EditorID and its
-    /// decoded fields.
+    /// decoded fields as `--resolve stub` JSON (read with
+    /// [`Resolved::from_stub_json`]).
     pub fn insert(
         &mut self,
         formid: FormId,
@@ -73,9 +95,27 @@ impl MemorySource {
         flags: u32,
         fields: Value,
     ) {
+        self.insert_resolved(
+            formid,
+            signature,
+            editor_id,
+            flags,
+            Resolved::from_stub_json(&fields),
+        );
+    }
+
+    /// [`Self::insert`] with the fields already a [`Resolved`] tree.
+    pub fn insert_resolved(
+        &mut self,
+        formid: FormId,
+        signature: &str,
+        editor_id: &str,
+        flags: u32,
+        fields: Resolved,
+    ) {
         self.records.insert(
             formid,
-            BulkRecordEntry {
+            SourceRecord {
                 sel: formid.display(),
                 header: Some(RecordHeaderInfo {
                     signature: signature.to_string(),
@@ -97,7 +137,7 @@ impl MemorySource {
         self.refs.insert((target, type_filter.to_string()), list);
     }
 
-    fn lookup(&self, sel: &RecordSel) -> Option<&BulkRecordEntry> {
+    fn lookup(&self, sel: &RecordSel) -> Option<&SourceRecord> {
         let by_edid = |edid: &str| {
             self.records
                 .values()
@@ -118,27 +158,17 @@ impl MemorySource {
 }
 
 impl RecordSource for MemorySource {
-    fn bulk_get(
-        &mut self,
-        sels: &[RecordSel],
-        _depth: ResolveDepth,
-    ) -> anyhow::Result<Vec<BulkRecordEntry>> {
+    fn bulk_get(&mut self, sels: &[RecordSel]) -> anyhow::Result<Vec<SourceRecord>> {
         Ok(sels
             .iter()
             .map(|sel| {
                 let display = sel.display();
                 match self.lookup(sel) {
-                    Some(entry) => BulkRecordEntry {
+                    Some(entry) => SourceRecord {
                         sel: display,
                         ..entry.clone()
                     },
-                    None => BulkRecordEntry {
-                        sel: display.clone(),
-                        header: None,
-                        editor_id: None,
-                        fields: None,
-                        error: Some(format!("not found: {display}")),
-                    },
+                    None => SourceRecord::failed(display.clone(), format!("not found: {display}")),
                 }
             })
             .collect())
