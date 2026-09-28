@@ -34,9 +34,9 @@ use super::scalars::{
 use super::vmad::vmad_node;
 use super::walk::{
     contains_field_value_union, counts_from_enclosing_scope, decode_array_payloads,
-    decode_struct_fields, decode_union,
+    decode_struct_fields, decode_union, mark_trailing,
 };
-use super::{DecodeContext, lstring_table_to_kind, markers};
+use super::{DecodeContext, lstring_table_to_kind};
 
 /// A record's subrecords in file order, consumed front to back. Subrecords
 /// no member takes are kept, in order, for `_unmapped`.
@@ -439,15 +439,7 @@ fn decode_subrecord(
             let consumed =
                 decode_struct_fields(child_ctx.as_ref().unwrap_or(ctx), name, fields, data, out);
             if let Some(rest) = data.get(consumed..).filter(|rest| !rest.is_empty()) {
-                let trailing = Node::raw(Some(rest), RawReason::Trailing);
-                match out.get_mut(name.as_str()) {
-                    Some(Node::Struct(fields)) => {
-                        fields.insert(markers::TRAILING.to_owned(), trailing);
-                    }
-                    _ => {
-                        out.insert(name.clone(), Node::obj([(markers::TRAILING, trailing)]));
-                    }
-                }
+                mark_trailing(out, name, rest);
             }
         }
         MemberDef::Integer {
@@ -516,7 +508,7 @@ fn decode_subrecord(
             decider,
             variants,
             ..
-        } => decode_union(ctx, name, decider, variants, out, data),
+        } => decode_union(ctx, name, decider, variants, out, data, true),
         // Bound by `bind_member` (a signature-bearing array takes a run of
         // subrecords) or never bound (no signature of their own).
         MemberDef::Array { .. } | MemberDef::RStruct { .. } | MemberDef::RArray { .. } => {}

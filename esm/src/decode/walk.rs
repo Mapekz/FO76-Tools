@@ -15,19 +15,20 @@ use super::scalars::{
 };
 
 /// Decode `member` from `data`, a payload slice already in hand: a union
-/// variant or an array element inside a subrecord.
+/// variant or an array element inside a subrecord. Returns how many bytes a
+/// struct consumed (see [`decode_struct_fields`]); `None` for other kinds.
 pub(crate) fn decode_member(
     ctx: &DecodeContext<'_>,
     member: &MemberDef,
     out: &mut Fields,
     data: &[u8],
-) {
+) -> Option<usize> {
     if !member_version_ok(ctx.form_version, member) {
-        return;
+        return None;
     }
     match member {
         MemberDef::Struct { name, fields, .. } => {
-            decode_struct_fields(ctx, name, fields, data, out);
+            return Some(decode_struct_fields(ctx, name, fields, data, out));
         }
         MemberDef::Integer {
             name,
@@ -99,7 +100,7 @@ pub(crate) fn decode_member(
             decider,
             variants,
             ..
-        } => decode_union(ctx, name, decider, variants, out, data),
+        } => decode_union(ctx, name, decider, variants, out, data, false),
         MemberDef::String { name, sized, .. } => {
             out.insert(name.clone(), scalar_string(data, sized));
         }
@@ -121,6 +122,7 @@ pub(crate) fn decode_member(
         | MemberDef::RStruct { .. }
         | MemberDef::RArray { .. } => {}
     }
+    None
 }
 
 /// Pick a union's variant. `fields` are the already-decoded siblings (read by
@@ -192,6 +194,9 @@ pub(super) fn choose_variant(
 
 /// Decode a union whose bytes are `payload` (its own subrecord, or a payload
 /// variant), inserting the chosen variant's value under the union's name.
+/// When `payload` is a whole subrecord (`subrecord`), bytes a struct
+/// variant leaves unread are marked `_trailing` in it, as for a struct
+/// subrecord.
 pub(super) fn decode_union(
     ctx: &DecodeContext<'_>,
     name: &str,
@@ -199,6 +204,7 @@ pub(super) fn decode_union(
     variants: &[MemberDef],
     out: &mut Fields,
     payload: &[u8],
+    subrecord: bool,
 ) {
     let chosen = choose_variant(ctx, decider, variants.len(), out, payload);
     let Some(variant) = chosen.and_then(|idx| variants.get(idx)) else {
@@ -210,10 +216,34 @@ pub(super) fn decode_union(
     // their decoded value would otherwise land under the empty-string key
     // instead of the union's own (correctly-deduped) name.
     let mut tmp = Fields::new();
-    decode_member(ctx, variant, &mut tmp, payload);
+    let consumed = decode_member(ctx, variant, &mut tmp, payload);
+    if subrecord
+        && let Some(rest) = consumed
+            .and_then(|n| payload.get(n..))
+            .filter(|rest| !rest.is_empty())
+    {
+        mark_trailing(&mut tmp, variant.name(), rest);
+    }
     for (k, v) in tmp {
         let key = if k.is_empty() { name.to_owned() } else { k };
         insert_unique(out, key, v);
+    }
+}
+
+/// Mark `rest`, the bytes a struct subrecord's fields left unread, as
+/// `_trailing` inside the struct decoded under `name` in `out`.
+pub(super) fn mark_trailing(out: &mut Fields, name: &str, rest: &[u8]) {
+    let trailing = Node::raw(Some(rest), RawReason::Trailing);
+    match out.get_mut(name) {
+        Some(Node::Struct(fields)) => {
+            fields.insert(super::markers::TRAILING.to_owned(), trailing);
+        }
+        _ => {
+            out.insert(
+                name.to_owned(),
+                Node::obj([(super::markers::TRAILING, trailing)]),
+            );
+        }
     }
 }
 
@@ -481,6 +511,24 @@ pub(crate) fn decode_struct_fields(
                     None => None,
                 };
                 let elem_size = field_byte_size(ctx, element).filter(|&size| size > 0);
+                if elem_size.is_none() {
+                    // Elements of varying size (a count-prefixed array, a
+                    // struct holding one): each takes what it reads.
+                    let child_ctx = ctx.with_outer_struct(struct_out.clone());
+                    let mut items = Vec::new();
+                    while pos < data.len() && n.is_none_or(|n| items.len() < n) {
+                        let (value, consumed) = decode_measured(&child_ctx, element, &data[pos..]);
+                        if consumed == 0 {
+                            break;
+                        }
+                        items.push(value);
+                        pos += consumed;
+                    }
+                    if !items.is_empty() {
+                        struct_out.insert(name.clone(), Node::Array(items));
+                    }
+                    continue;
+                }
                 let n = match (n, elem_size) {
                     (Some(n), _) => n,
                     (None, Some(size)) => data.len().saturating_sub(pos) / size,
@@ -527,6 +575,23 @@ pub(crate) fn decode_struct_fields(
         out.insert(struct_name.to_string(), Node::Struct(struct_out));
     }
     pos
+}
+
+/// Decode one element of varying size from the start of `data`: its value
+/// (an empty array or `null` when it holds nothing) and the bytes it took, 0
+/// when none could be read.
+fn decode_measured(ctx: &DecodeContext<'_>, element: &FieldDef, data: &[u8]) -> (Node, usize) {
+    let mut out = Fields::new();
+    let consumed = decode_struct_fields(ctx, "", std::slice::from_ref(element), data, &mut out);
+    let value = match out.swap_remove("") {
+        Some(Node::Struct(mut fields)) => fields.swap_remove(element.name()),
+        _ => None,
+    };
+    let empty = || match element {
+        MemberDef::Array { .. } => Node::Array(Vec::new()),
+        _ => Node::Null,
+    };
+    (value.unwrap_or_else(empty), consumed)
 }
 
 /// Returns the fixed byte size of a field when it can be determined statically.
@@ -697,6 +762,41 @@ mod tests {
             below_version: None,
             from_size: None,
         }
+    }
+
+    /// A union subrecord whose chosen variant is a struct keeps the bytes
+    /// the struct leaves unread, marked `_trailing`, as a struct subrecord
+    /// does.
+    #[test]
+    fn a_union_struct_variant_marks_its_trailing_bytes() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let union = MemberDef::Union {
+            sig: Some("DATA".into()),
+            name: "Union".into(),
+            decider: UnionDecider::PayloadSize {
+                payload_size: std::collections::HashMap::new(),
+                default_variant: Some(0),
+            },
+            variants: vec![MemberDef::Struct {
+                sig: None,
+                name: "Variant".into(),
+                fields: vec![int_field("Count", IntegerWidth::U8)],
+                from_version: None,
+                below_version: None,
+            }],
+            from_version: None,
+            below_version: None,
+        };
+        let (fields, unbound) = bind(&ctx, vec![union], &[subrecord("DATA", vec![0x07, 0xaa], 0)]);
+        assert!(unbound.is_empty());
+        assert_eq!(
+            Value::Object(fields),
+            json!({"Variant": {
+                "Count": 7,
+                "_trailing": {"hex": "aa", "_raw": true, "reason": "trailing bytes"},
+            }})
+        );
     }
 
     fn subrecord(sig: &str, data: Vec<u8>, doc_index: usize) -> OwnedSubrecord {
