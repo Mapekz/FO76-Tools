@@ -320,7 +320,7 @@ class FindEsmBinaryTests(unittest.TestCase):
 class BuildDiffCmdTests(unittest.TestCase):
     def _cmd(self, **overrides: Any):
         kwargs: dict[str, Any] = dict(
-            lang="en", strings_dir_a=None, strings_dir_b=None, record_type=None,
+            lang="en", record_type=None,
             bodies="full", keep_noise=False, exclude_type="LAND,NAVM",
         )
         kwargs.update(overrides)
@@ -328,11 +328,10 @@ class BuildDiffCmdTests(unittest.TestCase):
             Path("esm"), Path("a.esm"), Path("b.esm"), **cast(Any, kwargs)
         )
 
-    # The flag-mapping cases (--exclude-type, --strings-dir, --bodies, --type,
+    # The flag-mapping cases (--exclude-type, source flags, --bodies, --type,
     # --keep-noise, --pretty) live in test_orchestrator.TestBuildDiffCmd: it
     # calls the same function object via make_patch_notes' re-export of
-    # esm_gateway.build_diff_cmd, and its strings-dir case asserts strictly
-    # more than this one did.
+    # esm_gateway.build_diff_cmd.
 
     def test_runs_the_diff_subcommand(self):
         # diff() shells out to `esm diff` -- see EsmGateway.diff's docstring
@@ -356,7 +355,7 @@ class EsmGatewayDiffTests(TempDirTestCase):
     def _diff(self, esm_bin):
         return esm_gateway.EsmGateway.diff(
             esm_bin, Path("a.esm"), Path("b.esm"),
-            strings_dir_a=Path("/strings"), strings_dir_b=Path("/strings"),
+            sources=["--strings-dir", "/strings"],
             lang="en", record_type=None, bodies="full", keep_noise=False,
             exclude_type="LAND,NAVM",
         )
@@ -412,14 +411,8 @@ class RealEsmIntegrationTests(unittest.TestCase):
     this must be a no-op in CI/sandboxes.
 
     Deliberately does not exercise `EsmGateway.diff` here: `diff` needs a
-    *second* snapshot with strings resolvable by the Rust CLI's exact
-    `<esm-stem>_<lang>.strings` match (see `cli.rs::resolve_localization_or_bail`),
-    which not every `$FO76_DATA_DIR` snapshot layout satisfies (e.g. an
-    undated `SeventySix.esm` next to date-stamped `SeventySix_<date>_en.strings`
-    -- a real, pre-existing mismatch between `make_patch_notes.py`'s lenient
-    glob-based `locate_strings_dirs` and the Rust CLI's strict stem match,
-    unrelated to this refactor). `bulk_get`/`refs`/`record`/`file_info` need
-    no strings and are exercised below.
+    second snapshot. `bulk_get`/`refs`/`record`/`file_info` need only one and
+    are exercised below.
     """
 
     esm_path: str

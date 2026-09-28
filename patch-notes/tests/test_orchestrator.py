@@ -17,10 +17,12 @@ binary complies with -- see `test_esm_gateway.py`'s
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
 from typing import Any, cast
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -48,9 +50,8 @@ def make_fake_esm(tmp_dir: Path, diff_json: Path = DIFF_SMALL) -> Path:
 
 def make_snapshot(tmp_dir: Path, token: str, lang: str = "en") -> Path:
     """A dummy `<tmp_dir>/<token>/SeventySix_<token>.esm` plus a sibling
-    `strings/` dir holding a matching `*_en.strings` stub -- satisfies
-    make_patch_notes.locate_strings_dirs' per-side auto-detect (see
-    has_any_strings(): `*{tok}*_{lang}.strings`)."""
+    `strings/` dir holding a matching `*_en.strings` stub, the layout
+    `esm diff` discovers each side's sources from."""
     snap_dir = tmp_dir / token
     snap_dir.mkdir()
     esm_path = snap_dir / f"SeventySix_{token}.esm"
@@ -95,102 +96,27 @@ class TestEsmTokenAndOutDir(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Unit: strings-dir resolution
+# Unit: source flags pass through to esm diff
 # ---------------------------------------------------------------------------
 
 
-class TestLocateStringsDirs(TempDirTestCase):
-    """Regression cover for the per-side string-table resolution.
+class TestSourceArgs(unittest.TestCase):
+    def _args(self, *argv: str):
+        # $STARTUP_BA2 / $CURVES_DIR feed the parser's defaults.
+        with mock.patch.dict(os.environ, clear=True):
+            return mpn.build_arg_parser().parse_args(["a.esm", "b.esm", *argv])
 
-    The production snapshot layout dates the *parent directory* and leaves both
-    ESM stems identical (`<token>/SeventySix.esm`), with plain, undated string
-    tables (`strings/SeventySix_en.strings`). `has_any_strings()` then answers
-    the same for both sides, so the shared-dir shortcut used to accept the OLD
-    snapshot's strings/ for BOTH -- resolving new lstring ids against the old
-    table and hiding every localized rename. `make_snapshot()` above uses dated
-    stems, so only these tests exercise that shape.
-    """
+    def test_no_flags_leave_discovery_to_esm(self):
+        self.assertEqual(mpn.source_args(self._args()), [])
 
-    def _snapshot(self, token: str, *, dated_stem: bool = False,
-                  strings: bool = True) -> Path:
-        snap = self.tmp / token
-        snap.mkdir(parents=True, exist_ok=True)
-        esm = snap / (f"SeventySix_{token}.esm" if dated_stem else "SeventySix.esm")
-        esm.write_bytes(b"FAKE")
-        if strings:
-            sd = snap / "strings"
-            sd.mkdir(exist_ok=True)
-            stem = f"SeventySix_{token}_en" if dated_stem else "SeventySix_en"
-            (sd / f"{stem}.strings").write_bytes(b"")
-        return esm
-
-    def _locate(self, a: Path, b: Path, **kw: Any):
-        kwargs: dict[str, Any] = dict(explicit=None, explicit_a=None, explicit_b=None, lang="en")
-        kwargs.update(kw)
-        return mpn.locate_strings_dirs(a, b, **cast(Any, kwargs))
-
-    def test_undated_stems_in_separate_dirs_resolve_per_side(self):
-        a = self._snapshot("20260710")
-        b = self._snapshot("20260717")
-        da, db = self._locate(a, b)
-        self.assertEqual(da, (self.tmp / "20260710" / "strings").resolve())
-        self.assertEqual(db, (self.tmp / "20260717" / "strings").resolve())
-        self.assertNotEqual(da, db)
-
-    def test_dated_stems_still_allow_a_shared_dir(self):
-        # Both ESMs in one dir, dated stems, one strings/ holding both tables.
-        snap = self.tmp / "both"
-        snap.mkdir()
-        sd = snap / "strings"
-        sd.mkdir()
-        esms = []
-        for token in ("20260710", "20260717"):
-            p = snap / f"SeventySix_{token}.esm"
-            p.write_bytes(b"FAKE")
-            esms.append(p)
-            (sd / f"SeventySix_{token}_en.strings").write_bytes(b"")
-        da, db = self._locate(*esms)
-        self.assertEqual(da, sd.resolve())
-        self.assertEqual(db, sd.resolve())
-
-    def test_undated_stems_missing_one_side_fails_loudly(self):
-        # The old shared-dir shortcut would have papered over this by handing
-        # the present side's dir to both. It must die instead.
-        a = self._snapshot("20260710")
-        b = self._snapshot("20260717", strings=False)
-        with self.assertRaises(SystemExit) as cm:
-            self._locate(a, b)
-        self.assertEqual(cm.exception.code, 1)
-
-    def test_explicit_shared_dir_refused_when_both_sides_have_their_own(self):
-        # The gotcha this guards: one --strings-dir silently resolves the
-        # newer snapshot's text against the older table. When each side
-        # has its own strings/, a shared dir is an error, not a warning.
-        a = self._snapshot("20260710")
-        b = self._snapshot("20260717")
-        shared = self.tmp / "20260710" / "strings"
-        with self.assertRaises(SystemExit) as cm:
-            self._locate(a, b, explicit=str(shared))
-        self.assertEqual(cm.exception.code, 1)
-
-    def test_explicit_shared_dir_honoured_when_one_side_has_no_table(self):
-        a = self._snapshot("20260710")
-        b = self._snapshot("20260717", strings=False)
-        shared = self.tmp / "20260710" / "strings"
-        da, db = self._locate(a, b, explicit=str(shared))
-        self.assertEqual(da, shared.resolve())
-        self.assertEqual(db, shared.resolve())
-
-    def test_explicit_per_side_flags_take_precedence(self):
-        a = self._snapshot("20260710")
-        b = self._snapshot("20260717")
-        da, db = self._locate(
-            a, b,
-            explicit_a=str(self.tmp / "20260717" / "strings"),
-            explicit_b=str(self.tmp / "20260710" / "strings"),
+    def test_flags_pass_through_as_absolute_paths(self):
+        args = self._args("--strings-dir-a", "old/strings", "--strings-dir-b", "/new/strings",
+                          "--curves-dir", "/misc")
+        self.assertEqual(
+            mpn.source_args(args),
+            ["--strings-dir-a", str(Path("old/strings").resolve()),
+             "--strings-dir-b", "/new/strings", "--curves-dir", "/misc"],
         )
-        self.assertEqual(da, (self.tmp / "20260717" / "strings").resolve())
-        self.assertEqual(db, (self.tmp / "20260710" / "strings").resolve())
 
 
 # ---------------------------------------------------------------------------
@@ -202,8 +128,6 @@ class TestBuildDiffCmd(unittest.TestCase):
     def _cmd(self, **overrides: Any):
         kwargs: dict[str, Any] = dict(
             lang="en",
-            strings_dir_a=None,
-            strings_dir_b=None,
             record_type=None,
             bodies="full",
             keep_noise=False,
@@ -241,18 +165,11 @@ class TestBuildDiffCmd(unittest.TestCase):
         # of other flags.
         self.assertNotIn("--pretty", self._cmd())
 
-    def test_shared_strings_dir_uses_single_flag(self):
-        d = Path("/strings")
-        cmd = self._cmd(strings_dir_a=d, strings_dir_b=d)
-        self.assertIn("--strings-dir", cmd)
-        self.assertNotIn("--strings-dir-a", cmd)
-        self.assertNotIn("--strings-dir-b", cmd)
-
-    def test_differing_strings_dirs_use_per_side_flags(self):
-        cmd = self._cmd(strings_dir_a=Path("/a"), strings_dir_b=Path("/b"))
-        self.assertIn("--strings-dir-a", cmd)
-        self.assertIn("--strings-dir-b", cmd)
-        self.assertNotIn("--strings-dir", cmd)
+    def test_source_flags_pass_through_verbatim(self):
+        cmd = self._cmd(sources=["--strings-dir-a", "/a", "--curves-dir", "/misc"])
+        self.assertEqual(cmd[cmd.index("--strings-dir-a"):][:4],
+                         ["--strings-dir-a", "/a", "--curves-dir", "/misc"])
+        self.assertNotIn("--strings-dir", self._cmd())
 
     def test_argparse_default_exclude_type(self):
         args = mpn.build_arg_parser().parse_args(["a.esm", "b.esm"])
@@ -409,24 +326,6 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
                 "--esm-bin", str(self.fake_esm),
                 "--offline",
                 "--out-dir", str(out_dir),
-            ])
-        self.assertEqual(cm.exception.code, 1)
-
-    def test_missing_strings_dir_is_input_validation_error(self):
-        # A fresh, strings-less snapshot pair -> locate_strings_dirs must
-        # fail loud with exit code 1 (never silently diff without strings).
-        bare_dir = self.tmp_dir / "bare"
-        bare_dir.mkdir()
-        old_bare = bare_dir / "old_20260101.esm"
-        old_bare.write_bytes(b"X")
-        new_bare = bare_dir / "new_20260102.esm"
-        new_bare.write_bytes(b"X")
-        with self.assertRaises(SystemExit) as cm:
-            mpn.main([
-                str(old_bare), str(new_bare),
-                "--esm-bin", str(self.fake_esm),
-                "--offline", "--refs-fixture", str(REFS_GRAPH),
-                "--out-dir", str(self.tmp_dir / "out_bare"),
             ])
         self.assertEqual(cm.exception.code, 1)
 

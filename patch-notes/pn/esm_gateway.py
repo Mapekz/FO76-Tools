@@ -173,14 +173,11 @@ def build_diff_cmd(
     esm_b: Path,
     *,
     lang: str,
-    strings_dir_a: Path | None,
-    strings_dir_b: Path | None,
+    sources: Sequence[str] = (),
     record_type: str | None,
     bodies: str,
     keep_noise: bool,
     exclude_type: str,
-    startup_ba2: Path | None = None,
-    curves_dir: Path | None = None,
 ) -> list[str]:
     """Build the `esm diff ...` argv list. Pure / side-effect-free so
     it can be unit-tested directly without spawning a subprocess (see
@@ -195,23 +192,11 @@ def build_diff_cmd(
         cmd.append("--keep-noise")
     if exclude_type:
         cmd += ["--exclude-type", exclude_type]
-    # Pass string dirs: shared if identical, per-side if different.
-    if strings_dir_a and strings_dir_b:
-        if strings_dir_a == strings_dir_b:
-            cmd += ["--strings-dir", str(strings_dir_a)]
-        else:
-            cmd += ["--strings-dir-a", str(strings_dir_a),
-                    "--strings-dir-b", str(strings_dir_b)]
-    elif strings_dir_a:
-        cmd += ["--strings-dir-a", str(strings_dir_a)]
-    elif strings_dir_b:
-        cmd += ["--strings-dir-b", str(strings_dir_b)]
+    # Explicit string/curve source flags, verbatim; without them `esm diff`
+    # discovers each side's sources from its own folder.
+    cmd += list(sources)
     if record_type:
         cmd += ["--type", record_type]
-    if startup_ba2:
-        cmd += ["--startup-ba2", str(startup_ba2)]
-    elif curves_dir:
-        cmd += ["--curves-dir", str(curves_dir)]
 
     return cmd
 
@@ -468,23 +453,19 @@ class EsmGateway:
         esm_a: Path,
         esm_b: Path,
         *,
-        strings_dir_a: Path | None,
-        strings_dir_b: Path | None,
+        sources: Sequence[str] = (),
         lang: str,
         record_type: str | None,
         bodies: str,
         keep_noise: bool,
         exclude_type: str,
-        startup_ba2: Path | None = None,
-        curves_dir: Path | None = None,
     ) -> "DiffResult":
         """Run `esm diff <A> <B> --json ...` as a one-shot subprocess and
         return a `DiffResult` (parsed JSON + the exact raw JSON text + the argv
         + captured stderr).
 
-        A `@staticmethod` that bypasses the `esm batch` child: the pipeline
-        always passes explicit per-side string and curve sources, which are
-        `esm diff` flags rather than `Op::Diff` fields, and one diff runs once
+        A `@staticmethod` that bypasses the `esm batch` child: source
+        overrides are `esm diff` flags rather than `Op::Diff` fields, and one diff runs once
         per pipeline run, so a subprocess costs nothing extra. Callers reach it
         as `EsmGateway.diff(...)` without constructing a gateway.
 
@@ -498,14 +479,11 @@ class EsmGateway:
             esm_a,
             esm_b,
             lang=lang,
-            strings_dir_a=strings_dir_a,
-            strings_dir_b=strings_dir_b,
+            sources=sources,
             record_type=record_type,
             bodies=bodies,
             keep_noise=keep_noise,
             exclude_type=exclude_type,
-            startup_ba2=startup_ba2,
-            curves_dir=curves_dir,
         )
 
         result = subprocess.run(
