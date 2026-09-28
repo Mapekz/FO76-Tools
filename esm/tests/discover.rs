@@ -164,3 +164,24 @@ fn file_input_is_not_scanned_even_when_its_directory_would_be_ambiguous() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `Database::open` canonicalizes its input itself, so a caller that reaches
+/// the ESM through a symlink shares the real file's `esm_cache/` and build
+/// lock instead of creating a second cache next to the symlink.
+#[cfg(unix)]
+#[test]
+fn database_open_through_a_symlink_uses_the_real_path() {
+    let real_dir = fixture_dir("open_real");
+    let real = real_dir.join("Real.esm");
+    write_esm(&real);
+    let link_dir = fixture_dir("open_link");
+    let link = link_dir.join("Link.esm");
+    std::os::unix::fs::symlink(&real, &link).expect("symlink");
+
+    let db = esm::Database::open(&link).expect("open through symlink");
+    assert_eq!(db.file_info().unwrap().path, real.canonicalize().unwrap());
+    assert!(
+        !link_dir.join("esm_cache").exists(),
+        "no cache may be built next to the symlink"
+    );
+}

@@ -676,7 +676,10 @@ impl Database {
     ///
     /// When `path` is a **directory**, it is scanned for exactly one `.esm`
     /// file; zero or multiple ESMs produce a clear error.  When `path` is a
-    /// **file**, it is used directly.
+    /// **file**, it is used directly. Either way the ESM path is canonicalized
+    /// first ([`crate::discover::resolve_esm_path`]), so every caller that
+    /// names the same file (through a folder, a relative path or a symlink)
+    /// shares one `esm_cache/`, one build lock and one progress heartbeat.
     ///
     /// After locating the ESM, sibling sources are loaded automatically when
     /// present (missing sources are silently skipped; load failures are
@@ -688,8 +691,8 @@ impl Database {
     /// - **Curves**: `misc/curvetables/json/` or `curvetables/json/` in the
     ///   folder, else any `*startup*.ba2` in the folder.
     pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let path = path.as_ref();
-        let resolved = crate::discover::resolve_sources(path, "en")?;
+        let esm_path = crate::discover::resolve_esm_path(path.as_ref())?;
+        let resolved = crate::discover::resolve_sources(&esm_path, "en")?;
 
         let esm = EsmFile::open(&resolved.esm)?;
         let index = Index::build(&esm)?;

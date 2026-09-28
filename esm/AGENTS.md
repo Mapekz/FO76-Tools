@@ -58,7 +58,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `Resol
 - **FormID layout**: high byte = master-file index, low 24 bits = object ID. All values little-endian.
 - **Decode output key conventions** (must stay consistent): `_record_type`, `_unknown_record`, `_unmapped`, `_raw`, `_unresolved`, and (diff output only) `_array_diff`. These are the flags the `coverage` subcommand, MCP server, and patch-notes tooling rely on. Which record types get extra keys inlined onto a `--resolve stub` FormID reference (currently GLOB's `Value`, CURV's `curve_path`/`curve`) is a separate registry, `src/decode/leaf_values.rs` — see `docs/adr/0011-value-bearing-leaf-inlining.md`.
 - **`advance_union` / `RArray` decoder paths**: struct union variants advance by real decoded byte counts; fixed scalars still use `field_byte_size`. Change with extra care and verify against real ESM output.
-- **Path canonicalization must stay consistent across every consumer of a build lease.** `Registry`, the CLI's progress watcher, and `backend.rs`'s `building_progress`/`watch_path` all key a build by the same canonicalized path (`discover::resolve_esm_path`) — a caller that opens `Database` directly instead of going through `Registry` breaks that invariant. `bindings/napi`'s `EsmDatabase::open_database` already routes through a throwaway `Registry` for this; keep any new direct-open path doing the same.
+- **Every consumer of a build lease keys it by the canonical ESM path** (`discover::resolve_esm_path`). `Database::open` canonicalizes its input itself; anything that watches a build without opening a `Database` (the CLI's progress watcher, `backend.rs`'s `building_progress`/`watch_path`) must call `resolve_esm_path` too.
 
 ## N-API Binding and Electron App
 
