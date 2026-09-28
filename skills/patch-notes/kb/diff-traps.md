@@ -111,7 +111,7 @@ No other currency has been observed there; it is not an economy story.
 
 Unrelated ARMO/ARMA records' `Biped Body Template / First Person Flags` collapsing from
 heterogeneous multi-flag sets to one identical value in one patch is schema population, not a
-clipping fix. The field is a bitfield, so its `dangling_ref` hits are false positives too.
+clipping fix.
 
 **Example:** 20260814, Wading Jacket (0x0089A8B2) and Enclave Scientist Outfit (0x008D502D) both
 land on `0x8000000` from different values.
@@ -337,22 +337,19 @@ ceiling (Strength, Endurance, Agility and Luck moved from float-max).
 
 # Lint false positives
 
-## `dangling_ref` on values that aren't FormIDs
+## `dangling_ref` on engine forms and navmesh links
 
-These decode as numbers the lint mistakes for references:
-- NPC_ `Attacks[].Attack.Attack Data.Attack Flags` (`0x80000000` = `Override Data`, plus
-  `0x80000002/04/10`), ARMO/ARMA `First Person Flags`, and AVIF `Flags` (`0x80000800` on
-  `FollowerState` 0x00000344 = "Default to 1.0" + "Hardcoded"), NPC_ `Configuration / Flags`
-  (`0xA800807A` on pet actor 0x0090ABCB) and FURN `Active Markers / Flags` are bitfields.
-- `0xFFFFFFFF` on INFO `Responses[].Response Data.Emotion` is an enum sentinel (0x0092C628–2B).
-- `0x00000014` is the engine's hardcoded PlayerRef, so a `Run On: Reference` condition targeting it
-  lints (`PowerArmorImpactEnchantment` 0x0011D53B, `DLC01Bot_KnockdownSpell` 0x0010EB2A).
+The lint reads `esm diff`'s typed `dangling_refs`: FormID fields a record newly points at that
+resolve in neither snapshot. Bitfields, enum sentinels and hashes never lint. Two typed
+references resolve nowhere without being broken:
+- `0x00000014` is the engine's hardcoded PlayerRef, so a new `Run On: Reference` condition
+  targeting it lints (`PowerArmorImpactEnchantment` 0x0011D53B, `DLC01Bot_KnockdownSpell`
+  0x0010EB2A).
 - NAVI `Navmesh Info / Edge Links` and `Preferred Edge Links` hold navmesh-local link ids (NAVI
   0x00000FF1).
 
-**Example:** 32 of 116 lints in one deep slice were NPC_ `Attack Flags` (verified on
-0x005751A0, 0x0078C584, 0x0080100A).
-*verified 2026-07-24 vs 20260724; AVIF 2026-09-03; PlayerRef and NAVI 2026-09-14; NPC_/FURN 2026-09-20*
+**Example:** a new SPEL condition `Run On: Reference` → `0x00000014` lints; it is the player.
+*verified 2026-09-14 vs 20260914; typed lint 2026-09-27*
 
 ## `desc_changed_stats_same` fires on records with no description change
 

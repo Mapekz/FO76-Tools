@@ -44,6 +44,7 @@ def make_record(
     cut=None,
     fields=None,
     refs_out=None,
+    dangling_refs=None,
     changes=None,
 ):
     # `fields` defaults to {} here, not builders.record's None: these records
@@ -59,6 +60,7 @@ def make_record(
         cut=cut,
         fields=fields if fields is not None else {},
         refs_out=refs_out if refs_out is not None else [],
+        dangling_refs=dangling_refs if dangling_refs is not None else [],
         changes=changes if changes is not None else [],
     )
 
@@ -108,8 +110,8 @@ def refs_graph_client():
 
 
 class TestRunLintsBase(unittest.TestCase):
-    def ctx_for(self, comp, bundles=None, client=None, new_esm="new.esm", old_esm="old.esm", settings=None):
-        return rl.build_context(comp, bundles or make_bundles(), client or no_op_client(), new_esm, old_esm, settings)
+    def ctx_for(self, comp, bundles=None, client=None, new_esm="new.esm", settings=None):
+        return rl.build_context(comp, bundles or make_bundles(), client or no_op_client(), new_esm, settings)
 
 
 # ---------------------------------------------------------------------------
@@ -320,108 +322,44 @@ class TestLvliBlockedEntry(TestRunLintsBase):
 
 
 class TestDanglingRef(TestRunLintsBase):
-    def test_dangling_formid_in_refs_out_is_flagged(self):
+    def test_dangling_ref_is_flagged(self):
         rec = make_record(
             "0x02000001",
             "WEAP",
             "changed",
             editor_id="WEAP_Test",
             refs_out=[{"formid": "0x0BADF00D", "path": "Data / Ammo"}],
+            dangling_refs=["0x0BADF00D"],
         )
-        client = FakeGateway({"records": {}, "refs": {}})  # 0x0BADF00D resolves nowhere
-        ctx = self.ctx_for(make_comp([rec]), client=client)
-        lints = rl.RULES["dangling_ref"](ctx)
+        lints = rl.RULES["dangling_ref"](self.ctx_for(make_comp([rec])))
         self.assertEqual(len(lints), 1)
         self.assertEqual(lints[0]["form_id"], "0x02000001")
         self.assertEqual(lints[0]["data"]["dangling_formid"], "0x0BADF00D")
+        self.assertIn("`WEAP_Test`", lints[0]["message"])
 
-    def test_ref_in_ref_names_not_flagged(self):
+    def test_refs_out_alone_never_flag(self):
+        # `esm diff` decides what dangles; an unresolved-looking refs_out
+        # entry without a matching dangling_refs entry is not a lint.
         rec = make_record(
             "0x02000002",
             "WEAP",
             "changed",
             editor_id="WEAP_Test2",
-            refs_out=[{"formid": "0x00AA0001", "path": "Data / Ammo"}],
+            refs_out=[{"formid": "0x0BADF00D", "path": "Data / Ammo"}],
         )
-        ref_names = {"0x00AA0001": {"record_type": "AMMO", "editor_id": "Ammo1"}}
-        client = FakeGateway({"records": {}, "refs": {}})
-        ctx = self.ctx_for(make_comp([rec], ref_names), client=client)
-        self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
-
-    def test_ref_resolving_in_new_or_old_esm_not_flagged(self):
-        rec = make_record(
-            "0x02000003",
-            "WEAP",
-            "changed",
-            editor_id="WEAP_Test3",
-            refs_out=[{"formid": "0x00AA0009", "path": "Data / Ammo"}],
-        )
-        client = FakeGateway({"records": {"0x00AA0009": {"record_type": "AMMO"}}, "refs": {}})
-        ctx = self.ctx_for(make_comp([rec]), client=client)
-        self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
-
-    def test_null_formid_skipped(self):
-        rec = make_record(
-            "0x02000004", "WEAP", "changed", editor_id="WEAP_Test4", refs_out=[{"formid": "0x00000000", "path": "x"}]
-        )
-        client = FakeGateway({"records": {}, "refs": {}})
-        ctx = self.ctx_for(make_comp([rec]), client=client)
-        self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
-
-    def test_to_side_change_entry_harvested_not_from_side(self):
-        rec = make_record(
-            "0x02000005",
-            "WEAP",
-            "changed",
-            editor_id="WEAP_Test5",
-            changes=[
-                {
-                    "path": "Data / Ammo",
-                    "kind": "formid",
-                    "from": "0x00111111",  # stale from-side ref: must NOT be flagged
-                    "to": "0x00222222",  # dangling to-side ref: must be flagged
-                    "suppressed": None,
-                }
-            ],
-        )
-        client = FakeGateway({"records": {}, "refs": {}})
-        ctx = self.ctx_for(make_comp([rec]), client=client)
-        lints = rl.RULES["dangling_ref"](ctx)
-        self.assertEqual(len(lints), 1)
-        self.assertEqual(lints[0]["data"]["dangling_formid"], "0x00222222")
-
-    def test_missing_esm_paths_never_flag(self):
-        rec = make_record(
-            "0x02000006",
-            "WEAP",
-            "changed",
-            editor_id="WEAP_Test6",
-            refs_out=[{"formid": "0x0BADF00D", "path": "x"}],
-        )
-        client = FakeGateway({"records": {}, "refs": {}})
-        ctx = self.ctx_for(make_comp([rec]), client=client, new_esm=None, old_esm=None)
-        self.assertEqual(rl.RULES["dangling_ref"](ctx), [])
+        self.assertEqual(rl.RULES["dangling_ref"](self.ctx_for(make_comp([rec]))), [])
 
     def test_cap_at_50_lints_and_notes_it(self):
-        records = []
-        for i in range(60):
-            fid = f"0x0300{i:04X}"
-            dangling = f"0x0400{i:04X}"
-            records.append(
-                make_record(
-                    fid, "WEAP", "changed", editor_id=f"WEAP_{i}", refs_out=[{"formid": dangling, "path": "x"}]
-                )
+        records = [
+            make_record(
+                f"0x0300{i:04X}", "WEAP", "changed", editor_id=f"WEAP_{i}", dangling_refs=[f"0x0400{i:04X}"]
             )
-        client = FakeGateway({"records": {}, "refs": {}})
-        ctx = self.ctx_for(make_comp(records), client=client)
+            for i in range(60)
+        ]
+        ctx = self.ctx_for(make_comp(records))
         lints = rl.RULES["dangling_ref"](ctx)
         self.assertEqual(len(lints), 50)
         self.assertTrue(any("cap" in note for note in ctx["_notes"]))
-
-
-# ---------------------------------------------------------------------------
-# Rule 3: orphaned_unique
-# ---------------------------------------------------------------------------
 
 
 class TestOrphanedUnique(TestRunLintsBase):
@@ -762,7 +700,7 @@ class TestInjection(unittest.TestCase):
         )
         bundles = make_bundles([matching_bundle, untouched_bundle])
 
-        lints_payload, updated = rl.run_lints(comp, bundles, no_op_client(), "new.esm", "old.esm", {})
+        lints_payload, updated = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
 
         by_id = {b["id"]: b for b in updated["bundles"]}
         self.assertGreaterEqual(len(by_id["B0001"]["lint_ids"]), 1)
@@ -796,7 +734,7 @@ class TestInjection(unittest.TestCase):
         client = refs_graph_client()
         settings = {"unique_keyword_patterns": ["*Keyword"]}
 
-        lints_payload, updated = rl.run_lints(comp, bundles, client, "new.esm", "old.esm", settings)
+        lints_payload, updated = rl.run_lints(comp, bundles, client, "new.esm", settings)
 
         self.assertEqual(len(lints_payload["lints"]), 1)
         self.assertEqual(updated["bundles"][0]["lint_ids"], [lints_payload["lints"][0]["id"]])
@@ -837,7 +775,7 @@ class TestDeterminism(unittest.TestCase):
         comp = self._mixed_comp()
         bundles = make_bundles()
         client = no_op_client()
-        lints_payload, _ = rl.run_lints(comp, bundles, client, "new.esm", "old.esm", {})
+        lints_payload, _ = rl.run_lints(comp, bundles, client, "new.esm", {})
 
         lints = lints_payload["lints"]
         self.assertTrue(lints, "expected at least one lint from the mixed fixture")
@@ -850,8 +788,8 @@ class TestDeterminism(unittest.TestCase):
     def test_repeated_runs_produce_identical_output(self):
         comp = self._mixed_comp()
         bundles = make_bundles()
-        run1, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", "old.esm", {})
-        run2, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", "old.esm", {})
+        run1, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
+        run2, _ = rl.run_lints(comp, bundles, no_op_client(), "new.esm", {})
         ids1 = [(lint["rule"], lint["form_id"], lint["id"]) for lint in run1["lints"]]
         ids2 = [(lint["rule"], lint["form_id"], lint["id"]) for lint in run2["lints"]]
         self.assertEqual(ids1, ids2)
@@ -995,21 +933,6 @@ class RefsFailGateway(FakeGateway):
         return super().refs(esm, formid, **kwargs)
 
 
-class ExistsFailGateway(FakeGateway):
-    """Raises on ``exists()`` for one FormID; otherwise delegates."""
-
-    def __init__(self, fixture, fail_formid):
-        super().__init__(fixture)
-        self.fail_formid = fail_formid
-
-    def exists(self, esm, formid):
-        from esm_gateway import formid_to_hex
-
-        if formid_to_hex(formid) == self.fail_formid:
-            raise RuntimeError("exists exploded")
-        return super().exists(esm, formid)
-
-
 class TestPerRecordErrorNotes(TestRunLintsBase):
     def test_lvli_rule_loop_failure_surfaces_note_and_keeps_processing(self):
         good = make_record(
@@ -1043,7 +966,6 @@ class TestPerRecordErrorNotes(TestRunLintsBase):
             bundles,
             no_op_client(),
             "new.esm",
-            "old.esm",
             {},
             rules=["lvli_blocked_entry"],
         )
@@ -1068,25 +990,6 @@ class TestPerRecordErrorNotes(TestRunLintsBase):
         note = ctx["_notes"][0]
         self.assertTrue(note.startswith("orphaned_unique: skipped 1/1 records due to errors"))
         self.assertIn("RuntimeError: refs exploded", note)
-
-    def test_dangling_ref_exists_helper_failure_is_fail_open_and_surfaces_note(self):
-        rec = make_record(
-            "0x02000001",
-            "WEAP",
-            "changed",
-            editor_id="WEAP_Test",
-            refs_out=[{"formid": "0x0BADF00D", "path": "Data / Ammo"}],
-        )
-        client = ExistsFailGateway({"records": {}, "refs": {}}, "0x0BADF00D")
-        ctx = self.ctx_for(make_comp([rec]), client=client)
-
-        lints = rl.RULES["dangling_ref"](ctx)
-
-        self.assertEqual(lints, [])
-        self.assertEqual(len(ctx["_notes"]), 1)
-        note = ctx["_notes"][0]
-        self.assertTrue(note.startswith("dangling_ref: skipped 1/1 records due to errors"))
-        self.assertIn("RuntimeError: exists exploded", note)
 
 
 if __name__ == "__main__":

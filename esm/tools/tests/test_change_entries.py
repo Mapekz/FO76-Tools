@@ -163,7 +163,9 @@ class TestExtractChangesKinds(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.diff_data = load_fixture("diff_small.json")
-        cls.ref_names = cls.diff_data["ref_names"]
+        # As build_comprehensive passes it: every typed reference is a key.
+        dangling = [fid for rec in cls.diff_data["changed"] for fid in rec.get("dangling_refs", [])]
+        cls.ref_names = pl.with_dangling_refs(cls.diff_data["ref_names"], dangling)
 
     def _entries(self, form_id):
         rec = find_changed(self.diff_data, form_id)
@@ -214,8 +216,14 @@ class TestExtractChangesKinds(unittest.TestCase):
         self.assertEqual(e["kind"], "formid")
         self.assertEqual(e["from"], None)
         self.assertEqual(e["to"], "0x00099999")
-        # Dangling: absent from ref_names, so display is just the bare hex.
-        self.assertEqual(e["to_display"], "`0x00099999`")
+        # Dangling: the diff reported it as resolving nowhere.
+        self.assertEqual(e["to_display"], "`0x00099999` *(dangling)*")
+
+    def test_formid_shaped_string_not_a_ref_is_a_string(self):
+        entries = change_entries.extract_changes(
+            {"Model": {"File Hash": {"from": "0x1234ABCD", "to": "0x5678EF01"}}}, self.ref_names
+        )
+        self.assertEqual(entries[0]["kind"], "string")
 
     def test_object_bounds_not_suppressed_in_python(self):
         # Object Bounds noise is stripped in esm/src/diff.rs; when --keep-noise
@@ -734,7 +742,7 @@ class TestCollectRefsOut(unittest.TestCase):
     def test_harvests_from_added_record_fields(self):
         diff_data = load_fixture("diff_small.json")
         added_weap = next(r for r in diff_data["added"] if r["form_id"] == "0x0100A001")
-        refs = change_entries.collect_refs_out(added_weap["fields"])
+        refs = change_entries.collect_refs_out(added_weap["fields"], added_weap["refs"])
         formids = {r["formid"] for r in refs}
         self.assertIn("0x00050001", formids)
         self.assertIn("0x00050002", formids)
@@ -745,32 +753,39 @@ class TestCollectRefsOut(unittest.TestCase):
     def test_harvests_from_field_changes_tree(self):
         diff_data = load_fixture("diff_small.json")
         rec = find_changed(diff_data, "0x01001001")
-        refs = change_entries.collect_refs_out(rec["field_changes"])
+        refs = change_entries.collect_refs_out(rec["field_changes"], rec["refs"])
         formids = {r["formid"] for r in refs}
         self.assertIn("0x00123456", formids)
         self.assertIn("0x00654321", formids)
         self.assertIn("0x00099999", formids)
 
+    def test_only_typed_refs_are_harvested(self):
+        # A FormID-shaped string the diff didn't list as a reference (a
+        # flags value, a Model Information hash) is not harvested.
+        tree = {"Model": {"File Hash": "0x1234ABCD"}, "Ammo": "0x00000002"}
+        refs = change_entries.collect_refs_out(tree, ["0x00000002"])
+        self.assertEqual(refs, [{"formid": "0x00000002", "path": "Ammo"}])
+
     def test_dedupes_by_formid_and_path(self):
         tree = {"A": "0x00000001", "B": {"C": "0x00000001"}}
-        refs = change_entries.collect_refs_out(tree)
+        refs = change_entries.collect_refs_out(tree, ["0x00000001"])
         self.assertEqual(len(refs), 2)  # same formid, different paths -> kept
         tree2 = {"A": {"nested": "0x00000001"}}
-        refs2 = change_entries.collect_refs_out(tree2)
-        refs2b = change_entries.collect_refs_out(tree2)
+        refs2 = change_entries.collect_refs_out(tree2, ["0x00000001"])
+        refs2b = change_entries.collect_refs_out(tree2, ["0x00000001"])
         self.assertEqual(refs2, refs2b)
 
     def test_harvests_from_change_entry_list(self):
         diff_data = load_fixture("diff_small.json")
         rec = find_changed(diff_data, "0x01001001")
         entries = change_entries.extract_changes(rec["field_changes"], diff_data["ref_names"])
-        refs = change_entries.collect_refs_out(entries)
+        refs = change_entries.collect_refs_out(entries, rec["refs"])
         formids = {r["formid"] for r in refs}
         self.assertIn("0x00123456", formids)
         self.assertIn("0x00099999", formids)
 
     def test_no_refs_in_plain_scalar_tree(self):
-        self.assertEqual(change_entries.collect_refs_out({"Foo": 1, "Bar": "hello"}), [])
+        self.assertEqual(change_entries.collect_refs_out({"Foo": 1, "Bar": "hello"}, []), [])
 
 
 if __name__ == "__main__":

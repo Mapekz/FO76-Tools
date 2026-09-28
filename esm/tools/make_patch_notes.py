@@ -687,7 +687,7 @@ def main(argv=None):
                 try:
                     lints_payload, updated_bundles = rl.run_lints(
                         comp, bundles_result, client,
-                        new_esm=str(esm_b), old_esm=str(esm_a),
+                        new_esm=str(esm_b),
                         settings=config.get("settings"),
                     )
                     lints_json_path = layout.lints_json(out_dir)

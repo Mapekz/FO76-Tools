@@ -77,7 +77,6 @@ DANGLING_REF_CAP = 50
 #: introduced the record" (as opposed to `"removed"`/`"unchanged"`).
 _ADDED_OR_CHANGED = ("added", "changed")
 
-_FORMID_RE = re.compile(r"^0x[0-9A-Fa-f]{8}$")
 _FORMID_IN_TEXT_RE = re.compile(r"0x[0-9A-Fa-f]{8}")
 _DESC_PATH_RE = re.compile(r"description|\bdesc\b", re.IGNORECASE)
 _NUMBER_IN_TEXT_RE = re.compile(r"-?\d+(?:\.\d+)?")
@@ -86,13 +85,6 @@ _NUMBER_IN_TEXT_RE = re.compile(r"-?\d+(?:\.\d+)?")
 # --------------------------------------------------------------------------
 # Small shared helpers
 # --------------------------------------------------------------------------
-
-
-def _is_null_formid(cand):
-    try:
-        return int(cand, 16) == 0
-    except (TypeError, ValueError):
-        return False
 
 
 def _is_real_number(v):
@@ -158,49 +150,6 @@ def _extract_formid_from_text(s):
         return None
     m = _FORMID_IN_TEXT_RE.search(s)
     return m.group(0) if m else None
-
-
-def _walk_for_formids(value, out=None):
-    """Recursively collect every FormID-shaped value (bare `0x........`
-    string, or a resolved stub/curve dict carrying a `formid` key) found
-    anywhere inside `value`."""
-    if out is None:
-        out = []
-    if isinstance(value, str):
-        if pl.is_formid_str(value):
-            out.append(value)
-    elif isinstance(value, list):
-        for v in value:
-            _walk_for_formids(v, out)
-    elif isinstance(value, dict):
-        fid = value.get("formid")
-        if isinstance(fid, str) and pl.is_formid_str(fid):
-            out.append(fid)
-        else:
-            for v in value.values():
-                _walk_for_formids(v, out)
-    return out
-
-
-def _collect_to_side_refs(changes):
-    """Harvest every to-side FormID reference from an already-flattened
-    `changes` (ChangeEntry list) — ignores from-side values, since
-    `dangling_ref` only cares about references that are newly introduced or
-    still present after the patch, not ones disappearing."""
-    out = []
-    for ce in changes or []:
-        if not isinstance(ce, dict):
-            continue
-        if ce.get("kind") == "array":
-            arr = ce.get("array") or {}
-            for item in arr.get("added") or []:
-                _walk_for_formids(item.get("raw") if isinstance(item, dict) else None, out)
-            for item in arr.get("changed") or []:
-                if isinstance(item, dict):
-                    out.extend(_collect_to_side_refs(item.get("changes")))
-        else:
-            _walk_for_formids(ce.get("to"), out)
-    return out
 
 
 def _is_description_path(path):
@@ -525,66 +474,21 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
 
 
 def rule_dangling_ref(ctx: pl.RuleContext):
-    records = ctx["records"]
-    ref_names = ctx["ref_names"]
-    client = ctx["client"]
-    new_esm = ctx.get("new_esm")
-    old_esm = ctx.get("old_esm")
+    """One lint per reference a changed or added record introduces that
+    resolves in neither snapshot -- the record's `dangling_refs`, which
+    `esm diff` computes from the typed decode."""
     tally = _RuleRecordTally("dangling_ref")
-
-    exists_cache = {}
-
-    def _exists(esm, cand):
-        if esm is None:
-            # Can't verify -- prefer NOT emitting over a false positive.
-            return True
-        key = (esm, cand)
-        if key not in exists_cache:
-            try:
-                exists_cache[key] = bool(client.exists(esm, cand))
-            except Exception as exc:
-                tally.record_failure(exc)
-                exists_cache[key] = True
-        return exists_cache[key]
-
     lints = []
-    seen_pairs = set()
     capped = False
 
-    for fid, rec in sorted(records.items()):
+    for fid, rec in sorted(ctx["records"].items()):
         if not isinstance(rec, dict):
             continue
         tally.examined()
-        if capped:
-            break
-
-        candidates = []
-        for r in rec.get("refs_out") or []:
-            if isinstance(r, dict):
-                f = r.get("formid")
-                if f:
-                    candidates.append(f)
-        candidates.extend(_collect_to_side_refs(rec.get("changes")))
-
-        for cand in candidates:
-            if not isinstance(cand, str) or not pl.is_formid_str(cand):
-                continue
-            if _is_null_formid(cand):
-                continue
-            if cand in ref_names:
-                continue
-            key = (fid, cand)
-            if key in seen_pairs:
-                continue
-            seen_pairs.add(key)
-
+        for cand in rec.get("dangling_refs") or []:
             if len(lints) >= DANGLING_REF_CAP:
                 capped = True
                 break
-
-            if _exists(new_esm, cand) or _exists(old_esm, cand):
-                continue
-
             edid = rec.get("editor_id") or fid
             lints.append(
                 {
@@ -598,6 +502,8 @@ def rule_dangling_ref(ctx: pl.RuleContext):
                     "data": {"dangling_formid": cand},
                 }
             )
+        if capped:
+            break
 
     if capped:
         ctx.setdefault("_notes", []).append(
@@ -918,7 +824,7 @@ RULE_ORDER = [
 # --------------------------------------------------------------------------
 
 
-def build_context(comprehensive, bundles, client, new_esm=None, old_esm=None, settings=None) -> pl.RuleContext:
+def build_context(comprehensive, bundles, client, new_esm=None, settings=None) -> pl.RuleContext:
     """Build the `ctx` dict every rule function receives."""
     return {
         "records": (comprehensive or {}).get("records", {}) or {},
@@ -926,7 +832,6 @@ def build_context(comprehensive, bundles, client, new_esm=None, old_esm=None, se
         "bundles": (bundles or {}).get("bundles", []) or [],
         "client": client,
         "new_esm": new_esm,
-        "old_esm": old_esm,
         "settings": settings or {},
         "_notes": [],
     }
@@ -986,7 +891,7 @@ def inject_into_bundles(lints, bundles_data):
     return bundles_data
 
 
-def run_lints(comp, bundles, client, new_esm=None, old_esm=None, settings=None, rules=None):
+def run_lints(comp, bundles, client, new_esm=None, settings=None, rules=None):
     """Run the requested rules (default: all of `RULE_ORDER`) over `comp` /
     `bundles`, and return `(lints_payload, updated_bundles)`:
 
@@ -1000,7 +905,7 @@ def run_lints(comp, bundles, client, new_esm=None, old_esm=None, settings=None, 
     noted in `meta.notes` rather than aborting the whole run.
     """
     rule_names = list(rules) if rules else list(RULE_ORDER)
-    ctx = build_context(comp, bundles, client, new_esm, old_esm, settings)
+    ctx = build_context(comp, bundles, client, new_esm, settings)
 
     all_lints = []
     for name in rule_names:
@@ -1110,7 +1015,6 @@ def build_arg_parser():
     )
     ap.add_argument("out_dir", help="Pipeline output directory (contains comprehensive.json, bundles.json).")
     ap.add_argument("--new-esm", help="Path to the new-snapshot ESM (required unless --offline).")
-    ap.add_argument("--old-esm", help="Path to the old-snapshot ESM (optional; improves dangling_ref).")
     ap.add_argument(
         "--esm-bin", default="target/release/esm", help="Path to the esm CLI binary."
     )
@@ -1163,17 +1067,15 @@ def main(argv=None):
 
             client = FakeGateway(args.refs_fixture)
             new_esm = args.new_esm or "new.esm"
-            old_esm = args.old_esm or "old.esm"
         else:
             if not args.new_esm:
                 print("error: --new-esm is required unless --offline", file=sys.stderr)
                 return 1
             client = esm_gateway.EsmGateway(args.esm_bin)
             new_esm = args.new_esm
-            old_esm = args.old_esm
 
         lints_payload, updated_bundles = run_lints(
-            comp, bundles, client, new_esm, old_esm, settings, rules=rule_names
+            comp, bundles, client, new_esm, settings, rules=rule_names
         )
     finally:
         if client is not None:

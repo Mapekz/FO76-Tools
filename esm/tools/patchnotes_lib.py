@@ -77,6 +77,7 @@ class RecordEntry(TypedDict):
     cut: dict[str, Any] | None
     fields: Any
     refs_out: list[dict[str, str]]
+    dangling_refs: list[str]
     changes: list[dict[str, Any]]
 
 
@@ -205,7 +206,6 @@ class RuleContext(TypedDict):
     bundles: list[Bundle]
     client: Any
     new_esm: str | None
-    old_esm: str | None
     settings: dict[str, Any]
     _notes: list[str]
 
@@ -258,8 +258,26 @@ def is_curve(v):
 
 def is_formid_str(v):
     """True if v is a bare FormID hex string as produced by FormId::display():
-    exactly "0x" followed by 8 hex digits (case-insensitive)."""
+    exactly "0x" followed by 8 hex digits (case-insensitive). Shape only: a
+    flags value or Model Information hash matches too, so decoded values use
+    `is_ref` instead."""
     return isinstance(v, str) and bool(_FORMID_RE.match(v))
+
+
+def is_ref(v, ref_names):
+    """True if `v` is a FormID string the diff reported as a typed reference:
+    a `ref_names` key (see `with_dangling_refs` for the unresolvable ones)."""
+    return isinstance(v, str) and v in (ref_names or {})
+
+
+def with_dangling_refs(ref_names, dangling):
+    """`ref_names` plus a `{"dangling": True}` entry for each FormID in
+    `dangling` that has no name entry, so every typed reference -- resolved
+    or not -- is a key."""
+    out = dict(ref_names or {})
+    for fid in dangling:
+        out.setdefault(fid, {"dangling": True})
+    return out
 
 
 def _format_ref_info(fid, rtype, edid, label):
@@ -287,6 +305,8 @@ def annotate_ref(value, ref_names=None):
         info = ref_names.get(fid)
         if info is None:
             return f"`{fid}`"
+        if info.get("dangling"):
+            return f"`{fid}` *(dangling)*"
         rtype = info.get("record_type", "?")
         edid = info.get("editor_id")
         label = info.get("name") or info.get("description")
@@ -311,7 +331,7 @@ def format_scalar(v, ref_names=None):
     if isinstance(v, (int, float)):
         return f"`{v}`"
     if isinstance(v, str):
-        if is_formid_str(v):
+        if is_ref(v, ref_names):
             return annotate_ref(v, ref_names)
         s = v[:100] + ("…" if len(v) > 100 else "")
         return f"`{s}`"
@@ -409,6 +429,7 @@ def validate_record_entry(value: object, *, path: str = "record") -> RecordEntry
         "cut": rec.get("cut") if rec.get("cut") is None else _require_mapping(rec["cut"], f"{path}.cut"),
         "fields": _require_key(rec, "fields", path),
         "refs_out": _require_list(_require_key(rec, "refs_out", path), f"{path}.refs_out"),
+        "dangling_refs": _require_list(rec.get("dangling_refs", []), f"{path}.dangling_refs"),
         "changes": _require_list(_require_key(rec, "changes", path), f"{path}.changes"),
     }
     return entry

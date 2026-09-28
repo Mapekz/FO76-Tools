@@ -135,32 +135,10 @@ def derive_labels_and_date(diff_json_path, old_esm, new_esm, old_label, new_labe
     return old_label, new_label, patch_date
 
 
-def _strip_flags_values(value):
-    """
-    Return a deep copy of `value` with the bitmask `value` key of any
-    flags-shaped dict (`{"value": "0x00000005", "flags": [...]}`) removed.
-
-    A 32-bit flags bitmask is formatted as an 8-hex-digit `0x...` string —
-    byte-for-byte identical in shape to a genuine FormID — which would
-    otherwise cause change_entries.collect_refs_out()'s generic dict walk to
-    mis-harvest it as a dangling FormID reference (it isn't; it's just a
-    bitmask). This is the one documented decoded-value shape where that
-    false positive reliably occurs, so it's worth pre-filtering before
-    handing a tree to collect_refs_out().
-    """
-    if isinstance(value, dict):
-        if isinstance(value.get("flags"), list):
-            return {"flags": value["flags"]}
-        return {k: _strip_flags_values(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_strip_flags_values(v) for v in value]
-    return value
-
-
-def _collect_refs_out(tree):
-    """collect_refs_out(), guarded against the flags-bitmask false positive
-    described in _strip_flags_values()."""
-    return change_entries.collect_refs_out(_strip_flags_values(tree))
+def _collect_refs_out(tree, refs):
+    """change_entries.collect_refs_out() over `tree`, counting only the
+    record's typed references `refs` (its `refs` list from `esm diff`)."""
+    return change_entries.collect_refs_out(tree, refs)
 
 
 def _merge_refs(*ref_lists):
@@ -175,14 +153,14 @@ def _merge_refs(*ref_lists):
     return out
 
 
-def _refs_out_for_changes(changes):
+def _refs_out_for_changes(changes, refs):
     """
     Harvest FormID references from only the to-side (new/current state) of
     a changed record's ChangeEntry list — the record's outgoing references
-    *after* this patch, not what it used to reference. Delegates the actual
-    FormID-shape detection to change_entries.collect_refs_out() (wrapping
-    each value in a single-key dict so the path prefix survives), so this
-    stays in sync with the library's own ref-walking rules.
+    *after* this patch, not what it used to reference. `refs` is the
+    record's typed references from `esm diff`; the walk itself is
+    change_entries.collect_refs_out() (wrapping each value in a single-key
+    dict so the path prefix survives).
 
     - scalar/string/enum/flags/formid/vmad-hex kinds: walk `entry["to"]`.
     - array kind: walk `added` elements (new) and, for `changed` elements,
@@ -198,9 +176,9 @@ def _refs_out_for_changes(changes):
         if kind == "array" and entry.get("array"):
             arr = entry["array"]
             for a in arr.get("added") or []:
-                collected.append(_collect_refs_out({path: a.get("raw")}))
+                collected.append(_collect_refs_out({path: a.get("raw")}, refs))
             for c in arr.get("changed") or []:
-                collected.append(_refs_out_for_changes(c.get("changes") or []))
+                collected.append(_refs_out_for_changes(c.get("changes") or [], refs))
         elif kind == "vmad" and entry.get("vmad"):
             # NOTE: sorted() here isn't just cosmetic — decode_vmad_props()
             # dicts are built from a `set` union upstream (change_entries
@@ -210,11 +188,11 @@ def _refs_out_for_changes(changes):
             # across runs/processes.
             vmad = entry["vmad"]
             for name, v in sorted((vmad.get("added") or {}).items()):
-                collected.append(_collect_refs_out({f"{path} / {name}": v}))
+                collected.append(_collect_refs_out({f"{path} / {name}": v}, refs))
             for name, ch in sorted((vmad.get("changed") or {}).items()):
-                collected.append(_collect_refs_out({f"{path} / {name}": ch.get("to")}))
+                collected.append(_collect_refs_out({f"{path} / {name}": ch.get("to")}, refs))
         else:
-            collected.append(_collect_refs_out({path: entry.get("to")}))
+            collected.append(_collect_refs_out({path: entry.get("to")}, refs))
     return _merge_refs(*collected)
 
 
@@ -224,7 +202,7 @@ def _refs_out_for_changes(changes):
 
 
 def _record_entry(form_id, record_type, editor_id, name, description, status,
-                   prev_editor_id, cut, fields, refs_out, changes) -> pl.RecordEntry:
+                   prev_editor_id, cut, fields, refs_out, changes, dangling_refs=()) -> pl.RecordEntry:
     return {
         "form_id": form_id,
         "record_type": record_type,
@@ -236,6 +214,7 @@ def _record_entry(form_id, record_type, editor_id, name, description, status,
         "cut": cut,
         "fields": fields,
         "refs_out": refs_out,
+        "dangling_refs": list(dangling_refs),
         "changes": changes,
     }
 
@@ -258,7 +237,14 @@ def build_comprehensive(
     dropped from the returned `records` dict but tallied in
     `meta.counts_excluded`. Mutates nothing on `diff` itself.
     """
-    ref_names = diff.get("ref_names") or {}
+    # Every typed reference -- resolved or dangling -- is a ref_names key, so
+    # decoded values are classified by membership (pl.is_ref), not by shape.
+    dangling = [
+        fid
+        for rec in (diff.get("added") or []) + (diff.get("changed") or [])
+        for fid in rec.get("dangling_refs") or []
+    ]
+    ref_names = pl.with_dangling_refs(diff.get("ref_names"), dangling)
     records = {}
     counts = {"added": 0, "removed": 0, "changed": 0}
     counts_excluded = defaultdict(int)
@@ -273,8 +259,9 @@ def build_comprehensive(
         records[fid] = _record_entry(
             fid, rtype, stub.get("editor_id"), stub.get("name"), stub.get("description"),
             "added", None, change_entries.annotate_cut(stub), fields,
-            _collect_refs_out(fields) if fields is not None else [],
+            _collect_refs_out(fields, stub.get("refs") or []) if fields is not None else [],
             [],
+            stub.get("dangling_refs") or [],
         )
         counts["added"] += 1
 
@@ -288,7 +275,7 @@ def build_comprehensive(
         records[fid] = _record_entry(
             fid, rtype, stub.get("editor_id"), stub.get("name"), stub.get("description"),
             "removed", None, change_entries.annotate_cut(stub), fields,
-            _collect_refs_out(fields) if fields is not None else [],
+            _collect_refs_out(fields, stub.get("refs") or []) if fields is not None else [],
             [],
         )
         counts["removed"] += 1
@@ -304,13 +291,14 @@ def build_comprehensive(
         changes = change_entries.extract_changes(field_changes, ref_names)
         change_entries.mark_redundant_counts(changes)
         fields = stub.get("fields")
-        refs_out = _refs_out_for_changes(changes)
+        refs = rec.get("refs") or []
+        refs_out = _refs_out_for_changes(changes, refs)
         if fields is not None:
-            refs_out = _merge_refs(refs_out, _collect_refs_out(fields))
+            refs_out = _merge_refs(refs_out, _collect_refs_out(fields, refs))
         records[fid] = _record_entry(
             fid, rtype, stub.get("editor_id"), stub.get("name"), stub.get("description"),
             "changed", rec.get("prev_editor_id"), change_entries.annotate_cut(rec), fields,
-            refs_out, changes,
+            refs_out, changes, rec.get("dangling_refs") or [],
         )
         counts["changed"] += 1
 

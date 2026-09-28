@@ -365,8 +365,7 @@ def _numeric_value(v):
     """`float(v)` if `v` is numeric-ish (a real number, or a plain decimal
     numeric string), else None. Does NOT accept a "0x..."-prefixed string:
     that shape covers both FormID references and
-    flags bitmasks (see render_comprehensive.py's `_strip_flags_values`),
-    neither of which is a "numeric stat value" even though it's built from
+    flags bitmasks, neither of which is a "numeric stat value" even though it's built from
     hex digits -- and `_NUMERIC_STRING_RE` (decimal digits only) already
     rejects it without needing a separate hex-shape check."""
     if _is_real_number(v):

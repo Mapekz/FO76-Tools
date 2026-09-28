@@ -216,9 +216,9 @@ pub struct DiffResult {
     pub changed: Vec<RecordDiff>,
     /// One-hop resolved names for every typed FormID reference in
     /// `field_changes` (each changed record's `refs`) and in added/removed
-    /// bodies (each stub's `refs`). Keyed by the bare hex string (e.g.
-    /// `"0x00ABCDEF"`). Empty when no localization is available or no FormID
-    /// references exist.
+    /// bodies (each stub's `refs`) that resolves in either snapshot. Keyed by
+    /// the bare hex string (e.g. `"0x00ABCDEF"`). `name`/`description` need
+    /// the string tables when a side is localized.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ref_names: BTreeMap<String, RefName>,
     /// Count of `changed` records dropped entirely by noise suppression
@@ -282,8 +282,8 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 /// decompression or decode for that record.
 ///
 /// When either database has a localization table loaded, each `RecordStub`
-/// is enriched with `name` (FULL) and `description` (DESC), and `DiffResult`
-/// gains a `ref_names` sidecar mapping every typed FormID reference in
+/// is enriched with `name` (FULL) and `description` (DESC). `DiffResult`
+/// carries a `ref_names` sidecar mapping every typed FormID reference in
 /// `field_changes` (and in added/removed decoded bodies) to its resolved
 /// record type, EditorID, name, and description. Each changed record lists
 /// those references as `refs`, and the newly introduced ones that resolve
@@ -506,25 +506,16 @@ pub fn diff_databases_with(
     }
 
     // Build ref_names: one-hop FormID resolution for every typed reference in
-    // field_changes and added/removed records' decoded fields. Populated when
-    // either side has localization or curves loaded, or is non-localized
-    // (FULL/DESC are inline text there, so names resolve without any string
-    // table).
-    let ref_names =
-        if a.has_enrichment() || b.has_enrichment() || !a.is_localized || !b.is_localized {
-            let refs: HashSet<&String> = changed
-                .iter()
-                .flat_map(|rd| &rd.refs)
-                .chain(added.iter().chain(&removed).flat_map(|stub| &stub.refs))
-                .collect();
-            refs.into_iter()
-                .filter_map(|fid_str| {
-                    resolve_ref_name(fid_str, b, a).map(|rn| (fid_str.clone(), rn))
-                })
-                .collect()
-        } else {
-            BTreeMap::new()
-        };
+    // field_changes and added/removed records' decoded fields.
+    let refs: HashSet<&String> = changed
+        .iter()
+        .flat_map(|rd| &rd.refs)
+        .chain(added.iter().chain(&removed).flat_map(|stub| &stub.refs))
+        .collect();
+    let ref_names = refs
+        .into_iter()
+        .filter_map(|fid_str| resolve_ref_name(fid_str, b, a).map(|rn| (fid_str.clone(), rn)))
+        .collect();
 
     Ok(DiffResult {
         added,

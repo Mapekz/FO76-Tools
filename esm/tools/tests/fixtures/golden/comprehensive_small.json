@@ -58,6 +58,9 @@
           "path": "Keywords"
         }
       ],
+      "dangling_refs": [
+        "0x00050099"
+      ],
       "changes": []
     },
     "0x0100C001": {
@@ -101,6 +104,7 @@
           "path": "Entries / Leveled List Entry / Reference"
         }
       ],
+      "dangling_refs": [],
       "changes": []
     },
     "0x0100B001": {
@@ -127,6 +131,7 @@
           "path": "Keywords"
         }
       ],
+      "dangling_refs": [],
       "changes": []
     },
     "0x01001001": {
@@ -148,6 +153,9 @@
           "formid": "0x00099999",
           "path": "Data / Scope Attachment"
         }
+      ],
+      "dangling_refs": [
+        "0x00099999"
       ],
       "changes": [
         {
@@ -221,7 +229,7 @@
           "from": null,
           "to": "0x00099999",
           "from_display": "*(null)*",
-          "to_display": "`0x00099999`",
+          "to_display": "`0x00099999` *(dangling)*",
           "suppressed": null,
           "common_group": null,
           "array": null,
@@ -276,6 +284,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Data / Properties",
@@ -431,6 +440,7 @@
           "path": "Entries / Leveled List Entry / Reference"
         }
       ],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Entries",
@@ -561,6 +571,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Virtual Machine Adapter / hex",
@@ -576,13 +587,13 @@
             "added": {},
             "removed": {},
             "changed": {
-              "Flag": {
-                "from": false,
-                "to": true
-              },
               "Count": {
                 "from": 3,
                 "to": 5
+              },
+              "Flag": {
+                "from": false,
+                "to": true
               }
             }
           }
@@ -604,6 +615,7 @@
       },
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Data / Playable",
@@ -630,6 +642,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Stats / Confidence",
@@ -668,6 +681,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Stats / Confidence",
@@ -706,6 +720,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Stats / Confidence",
@@ -744,6 +759,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Stats / Confidence",
@@ -782,6 +798,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Stats / Confidence",
@@ -820,6 +837,7 @@
       "cut": null,
       "fields": null,
       "refs_out": [],
+      "dangling_refs": [],
       "changes": [
         {
           "path": "Stats / Confidence",
@@ -920,6 +938,12 @@
       "record_type": "MISC",
       "editor_id": "JunkItem06",
       "name": "Scrap Glass"
+    },
+    "0x00050099": {
+      "dangling": true
+    },
+    "0x00099999": {
+      "dangling": true
     }
   }
 }

@@ -23,9 +23,9 @@ changed: Array<RecordDiff>,
 /**
  * One-hop resolved names for every typed FormID reference in
  * `field_changes` (each changed record's `refs`) and in added/removed
- * bodies (each stub's `refs`). Keyed by the bare hex string (e.g.
- * `"0x00ABCDEF"`). Empty when no localization is available or no FormID
- * references exist.
+ * bodies (each stub's `refs`) that resolves in either snapshot. Keyed by
+ * the bare hex string (e.g. `"0x00ABCDEF"`). `name`/`description` need
+ * the string tables when a side is localized.
  */
 ref_names?: { [key in string]: RefName }, 
 /**

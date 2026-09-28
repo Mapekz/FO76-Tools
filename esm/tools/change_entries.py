@@ -907,8 +907,8 @@ def _either_matches(fv, tv, pred):
     return fv_ok and tv_ok and (pred(fv) or pred(tv))
 
 
-def _looks_like_formid(v):
-    if pl.is_formid_str(v):
+def _looks_like_formid(v, ref_names):
+    if pl.is_ref(v, ref_names):
         return True
     if isinstance(v, dict):
         if pl.is_curve(v):
@@ -918,8 +918,8 @@ def _looks_like_formid(v):
     return False
 
 
-def _is_formid_pair(fv, tv):
-    return _either_matches(fv, tv, _looks_like_formid)
+def _is_formid_pair(fv, tv, ref_names):
+    return _either_matches(fv, tv, lambda v: _looks_like_formid(v, ref_names))
 
 
 def _looks_like_enum(v):
@@ -1059,7 +1059,7 @@ def _make_leaf_entry(path, fv, tv, ref_names):
         entry["from_display"], entry["to_display"] = _flags_display(fv, tv)
         return entry
 
-    if _is_formid_pair(fv, tv):
+    if _is_formid_pair(fv, tv, ref_names):
         entry["kind"] = "formid"
         entry["from_display"] = pl.format_scalar(fv, ref_names)
         entry["to_display"] = pl.format_scalar(tv, ref_names)
@@ -1250,14 +1250,14 @@ def _emit_ref(fid, path, seen, out):
         out.append({"formid": fid, "path": path})
 
 
-def _walk_refs(value, path, seen, out):
+def _walk_refs(value, path, refs, seen, out):
     if isinstance(value, str):
-        if pl.is_formid_str(value):
+        if value in refs:
             _emit_ref(value, path, seen, out)
         return
     if isinstance(value, list):
         for item in value:
-            _walk_refs(item, path, seen, out)
+            _walk_refs(item, path, refs, seen, out)
         return
     if not isinstance(value, dict):
         return
@@ -1272,43 +1272,45 @@ def _walk_refs(value, path, seen, out):
     if "_array_diff" in value:
         ad = value["_array_diff"]
         for item in (ad.get("added") or []) + (ad.get("removed") or []):
-            _walk_refs(item, path, seen, out)
+            _walk_refs(item, path, refs, seen, out)
         for ch in ad.get("changed") or []:
-            _walk_refs(ch.get("changes", {}), path, seen, out)
+            _walk_refs(ch.get("changes", {}), path, refs, seen, out)
         return
     if _is_diff_leaf(value):
-        _walk_refs(value.get("from"), path, seen, out)
-        _walk_refs(value.get("to"), path, seen, out)
+        _walk_refs(value.get("from"), path, refs, seen, out)
+        _walk_refs(value.get("to"), path, refs, seen, out)
         return
     # Already-extracted ChangeEntry dict.
     if {"path", "kind", "from", "to"} <= value.keys():
         entry_path = value.get("path") or path
-        _walk_refs(value.get("from"), entry_path, seen, out)
-        _walk_refs(value.get("to"), entry_path, seen, out)
+        _walk_refs(value.get("from"), entry_path, refs, seen, out)
+        _walk_refs(value.get("to"), entry_path, refs, seen, out)
         arr = value.get("array")
         if arr:
             for item in (arr.get("added") or []) + (arr.get("removed") or []):
-                _walk_refs(item.get("raw"), entry_path, seen, out)
+                _walk_refs(item.get("raw"), entry_path, refs, seen, out)
             for ch in arr.get("changed") or []:
                 for nested in ch.get("changes") or []:
-                    _walk_refs(nested, entry_path, seen, out)
+                    _walk_refs(nested, entry_path, refs, seen, out)
         return
 
     for k, v in value.items():
         child_path = f"{path} / {k}" if path else k
-        _walk_refs(v, child_path, seen, out)
+        _walk_refs(v, child_path, refs, seen, out)
 
 
-def collect_refs_out(fields_or_changes):
+def collect_refs_out(fields_or_changes, refs):
     """
-    Recursively harvest every FormID-shaped reference from `fields_or_changes`
-    — a raw decoded record's `fields` tree (added/removed RecordStub), a
+    Recursively harvest the FormID references in `fields_or_changes` — a raw
+    decoded record's `fields` tree (added/removed RecordStub), a
     `field_changes` sparse-diff tree (changed record), or an already-built
-    list[ChangeEntry] — together with its " / "-joined path. Returns a
+    list[ChangeEntry] — together with each one's " / "-joined path. A string
+    counts only if it is in `refs`, the record's typed references from
+    `esm diff` (its `refs` list); resolved stub dicts always count. Returns a
     deduped list of `{"formid": "0x...", "path": "..."}` dicts, in
     first-seen order.
     """
     seen = set()
     out = []
-    _walk_refs(fields_or_changes, "", seen, out)
+    _walk_refs(fields_or_changes, "", set(refs), seen, out)
     return out

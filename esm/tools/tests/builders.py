@@ -66,6 +66,7 @@ def record(**overrides: Any) -> dict[str, Any]:
         "cut": None,
         "fields": None,
         "refs_out": [],
+        "dangling_refs": [],
         "changes": [],
         **overrides,
     }

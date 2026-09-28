@@ -445,16 +445,19 @@ class TestJsonSchemaKeys(unittest.TestCase):
             set(rec.keys()),
             {
                 "form_id", "record_type", "editor_id", "name", "description", "status",
-                "prev_editor_id", "cut", "fields", "refs_out", "changes",
+                "prev_editor_id", "cut", "fields", "refs_out", "dangling_refs", "changes",
             },
         )
 
     def test_schema_version_matches_library_constant(self):
         self.assertEqual(self.comp["schema_version"], pl.SCHEMA_VERSION)
 
-    def test_ref_names_passthrough_verbatim(self):
+    def test_ref_names_carry_diff_names_plus_dangling_refs(self):
         diff = load_fixture("diff_small.json")
-        self.assertEqual(self.comp["ref_names"], diff["ref_names"])
+        expected = dict(diff["ref_names"])
+        expected["0x00050099"] = {"dangling": True}
+        expected["0x00099999"] = {"dangling": True}
+        self.assertEqual(self.comp["ref_names"], expected)
 
 
 # ---------------------------------------------------------------------------
