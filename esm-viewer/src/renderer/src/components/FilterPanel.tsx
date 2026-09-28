@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { FilterOp, FilterResult, RecordRow } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
+import { applyUnlessCancelled } from '../lib/applyUnlessCancelled'
 import { listRecordTypeSigs } from '../lib/sigLists'
 import { useAsyncAction } from '../lib/useAsyncAction'
 import { RecordRef } from './RecordRef'
@@ -33,17 +34,17 @@ export function FilterPanel() {
   const { loading, error, run } = useAsyncAction()
   const result = filtered && openDbs.some((db) => db.id === filtered.dbId) ? filtered : null
 
+  // Each effect drops its response once its file (or type) changes, so a
+  // slow answer for the previous file never overwrites the current one's.
   useEffect(() => {
     if (!activeDbId) {
       setSigs([])
       return
     }
-    listRecordTypeSigs(window.api, activeDbId)
-      .then((list) => {
-        setSigs(list)
-        setSig((prev) => prev || list[0] || '')
-      })
-      .catch(console.error)
+    return applyUnlessCancelled(listRecordTypeSigs(window.api, activeDbId), (list) => {
+      setSigs(list)
+      setSig((prev) => prev || list[0] || '')
+    })
   }, [activeDbId])
 
   useEffect(() => {
@@ -51,10 +52,10 @@ export function FilterPanel() {
       setFieldPaths([])
       return
     }
-    window.api
-      .run(activeDbId, { op: 'list_type_field_paths', sig })
-      .then(setFieldPaths)
-      .catch(console.error)
+    return applyUnlessCancelled(
+      window.api.run(activeDbId, { op: 'list_type_field_paths', sig }),
+      setFieldPaths,
+    )
   }, [activeDbId, sig])
 
   if (!activeDbId) return null
