@@ -22,6 +22,9 @@ default = ["cli"]
 # (`default-features = false` for library-only use).
 cli = ["dep:clap", "dep:walkdir", "dep:libc"]
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"], optional = true }

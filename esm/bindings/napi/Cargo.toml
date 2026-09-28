@@ -10,6 +10,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[lints]
+workspace = true
+
 [dependencies]
 napi = { version = "3", default-features = false, features = ["napi8", "serde-json", "async"] }
 napi-derive = { version = "3", features = ["type-def"] }

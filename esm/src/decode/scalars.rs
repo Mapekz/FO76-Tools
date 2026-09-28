@@ -115,11 +115,11 @@ pub(super) fn scalar_rgba(bytes: &[u8]) -> Option<Node> {
 }
 
 pub(super) fn scalar_vec3(bytes: &[u8]) -> Option<Node> {
-    if bytes.len() < 12 {
-        return None;
-    }
-    let f = |i: usize| Node::Float(f32::from_le_bytes(bytes[i..i + 4].try_into().unwrap()));
-    Some(Node::obj([("x", f(0)), ("y", f(4)), ("z", f(8))]))
+    let f = |i: usize| {
+        let b = bytes.get(i..)?.first_chunk::<4>()?;
+        Some(Node::Float(f32::from_le_bytes(*b)))
+    };
+    Some(Node::obj([("x", f(0)?), ("y", f(4)?), ("z", f(8)?)]))
 }
 
 /// Fixed-size vs null-terminated string decode shared by `decode_member` (subrecord

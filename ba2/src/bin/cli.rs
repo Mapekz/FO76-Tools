@@ -152,14 +152,12 @@ impl From<ArchiveKindArg> for ArchiveKind {
 /// signal itself on the very first write to the closed pipe, matching
 /// `cat`/`rg`/`jq` (typically exit 141 under a shell, or `Killed by
 /// SIGPIPE` visible via the wait status) rather than printing an error.
-///
-/// SAFETY: `libc::signal` with `SIG_DFL` just restores the OS default
-/// handling for SIGPIPE; called once, synchronously, before any threads are
-/// spawned or any signal handlers installed, so there's no reentrancy or
-/// data-race hazard. No pointers are dereferenced other than the constant
-/// `SIG_DFL` sentinel value libc itself defines.
 #[cfg(unix)]
 fn reset_sigpipe_to_default() {
+    // SAFETY: `libc::signal` with `SIG_DFL` restores the OS default handling
+    // for SIGPIPE. It runs once, synchronously, before any thread is spawned or
+    // handler installed, so there is no reentrancy or data race, and the only
+    // values passed are libc's own constants.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }

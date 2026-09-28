@@ -2,6 +2,11 @@
 members = ["esm", "esm/bindings/napi", "ba2"]
 resolver = "3"
 
+# Invariants the code states in prose, enforced: every `unsafe` block carries a
+# `// SAFETY:` comment. Members opt in with `[lints] workspace = true`.
+[workspace.lints.clippy]
+undocumented_unsafe_blocks = "deny"
+
 # Profile used by .github/workflows/release.yml to build the published binaries.
 # Kept separate from `release` so the local `cargo build --release` that backs
 # ~/.local/bin/{esm,ba2} keeps its symbols and its faster link step.

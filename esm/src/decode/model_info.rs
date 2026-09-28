@@ -34,8 +34,9 @@ pub(super) fn decode_model_info(data: &[u8]) -> Node {
         )
     }
     fn read_u32(data: &[u8], off: usize) -> Option<u32> {
-        data.get(off..off + 4)
-            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+        data.get(off..)
+            .and_then(<[u8]>::first_chunk::<4>)
+            .map(|b| u32::from_le_bytes(*b))
     }
     // A file entry is { File Hash: u32, Extension: char[4], Folder Hash: u32 } — 12 bytes.
     fn read_file_entry(data: &[u8], off: usize) -> Node {

@@ -607,7 +607,7 @@ fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) ->
     let mut m = Fields::new();
     decode_member(ctx, field, &mut m, data);
     if m.len() == 1 {
-        m.into_values().next().unwrap()
+        m.into_values().next().unwrap_or(Node::Null)
     } else {
         Node::Struct(m)
     }

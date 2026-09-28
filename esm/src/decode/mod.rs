@@ -1,3 +1,7 @@
+// Decoding runs over untrusted bytes and must never panic: a malformed
+// record degrades to a raw or marked value instead. No `unwrap` outside tests.
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+
 use crate::formid::FormId;
 use crate::reader::OwnedSubrecord;
 use crate::schema::{LStringTable, Schema};

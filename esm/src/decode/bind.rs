@@ -534,10 +534,10 @@ fn lstring(ctx: &DecodeContext<'_>, table: &LStringTable, sr: &OwnedSubrecord) -
         return crate::reader::decode_inline_lstring(&sr.data).map_or(Node::Null, Node::Str);
     }
     // Localized ESM: field is a 4-byte ID into string tables.
-    let Some(bytes) = sr.data.get(0..4) else {
+    let Some(bytes) = sr.data.first_chunk::<4>() else {
         return Node::Null;
     };
-    let id = u32::from_le_bytes(bytes.try_into().unwrap());
+    let id = u32::from_le_bytes(*bytes);
     if id == 0 {
         // 0 is the engine's "no string" sentinel, not a missing table
         // entry — mirrors render_formid's null-FormID special case.
