@@ -110,11 +110,31 @@ def load_cuts(out_dir: Path) -> dict[str, str]:
     return {cut["bundle_id"]: cut["reason"] for cut in schemas.load(path, schemas.validate_cuts)["cuts"]}
 
 
+def write_payload(out_dir: Path, payload: dict) -> dict:
+    layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
+    jsonio.write(layout.work_coverage_json(out_dir), payload)
+    return payload
+
+
 def run_check(out_dir: Path, summary: bool = False) -> dict:
-    triage = _load(layout.work_triage_json(out_dir))
-    deep_ids: list[str] = sorted(triage.get("deep") or [])
-    slice_payload = _load(layout.work_deep_slice_json(out_dir))
-    bundles_by_id = {b["id"]: b for b in (slice_payload.get("bundles") or []) if isinstance(b, dict) and b.get("id")}
+    try:
+        triage = schemas.load(layout.work_triage_json(out_dir), schemas.validate_triage)
+        slice_payload = schemas.load(layout.work_deep_slice_json(out_dir), schemas.validate_deep_slice)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        # Nothing can be checked against a triage or slice that doesn't
+        # parse: that fails the gate, never passes it with nothing checked.
+        return write_payload(out_dir, {
+            "summary_checked": summary,
+            "deep_total": 0,
+            "reports": [],
+            "covered": {},
+            "deferred_resolved": {},
+            "cut": {},
+            "violations": [{"bundle_id": None, "kind": "invalid_triage", "detail": str(exc)}],
+            "ok": False,
+        })
+    deep_ids: list[str] = sorted(triage["deep"])
+    bundles_by_id = {b["id"]: b for b in slice_payload["bundles"]}
     bundle_by_fid: dict[str, str] = {}
     for bid, b in bundles_by_id.items():
         for m in b.get("members") or []:
@@ -142,6 +162,12 @@ def run_check(out_dir: Path, summary: bool = False) -> dict:
                     deferrals[bid].append(r["name"])
 
     violations: list[dict] = []
+    outside_deep = sorted(set(bundles_by_id) - set(deep_ids))
+    if outside_deep:
+        violations.append({
+            "bundle_id": None, "kind": "slice_mismatch",
+            "detail": f"deep-slice.json holds bundles triage.json doesn't put in DEEP: {', '.join(outside_deep)}",
+        })
     cuts: dict[str, str] = {}
     if summary:
         try:
@@ -217,9 +243,7 @@ def run_check(out_dir: Path, summary: bool = False) -> dict:
         "violations": violations,
         "ok": not violations,
     }
-    layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
-    jsonio.write(layout.work_coverage_json(out_dir), payload)
-    return payload
+    return write_payload(out_dir, payload)
 
 
 def print_summary(payload: dict, stream=sys.stderr):

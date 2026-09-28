@@ -1,7 +1,9 @@
 """The pipeline's artifact shapes and their strict validators.
 
-Mechanical artifacts that later stages parse (comprehensive.json, bundles.json)
-are validated on read. Agent-written artifacts -- the
+Mechanical artifacts that later stages parse (comprehensive.json and its
+records' change entries, bundles.json, triage.json, the DEEP slice) are
+validated on read and reject keys their shape doesn't have. Agent-written
+artifacts -- the
 deep writers' reports, the assessor's assessment, the orchestrator's cuts and
 usage, the reviewer's review -- follow the skill's prompts; their validators
 also reject unknown keys, so a misspelled or drifted field fails its gate
@@ -20,7 +22,7 @@ from typing import Any, Callable, Literal, NotRequired, TypedDict, TypeVar, cast
 from pn import jsonio
 
 #: Bumped whenever any artifact's shape changes.
-PIPELINE_VERSION = 3
+PIPELINE_VERSION = 4
 
 T = TypeVar("T")
 
@@ -194,8 +196,49 @@ def _require_member_role(value: object, path: str) -> MemberRole:
     return cast(MemberRole, s)
 
 
+def _reject_unknown_keys(mapping: dict[str, Any], allowed: set[str], path: str) -> None:
+    unknown = sorted(set(mapping) - allowed)
+    if unknown:
+        raise KeyError(f"{path}: unknown key(s) {unknown!r}")
+
+
+_RECORD_ENTRY_KEYS = set(RecordEntry.__annotations__)
+_CHANGE_ENTRY_KEYS = {
+    "path", "kind", "from", "to", "from_display", "to_display", "suppressed", "common_group", "array",
+}
+_CHANGE_KINDS = {"scalar", "string", "raw", "array", "enum", "flags", "formid"}
+_ARRAY_KEYS = {"strategy", "reorder_only", "key_fields", "count_from", "count_to", "added", "removed", "changed"}
+_ARRAY_ELEMENT_KEYS = {"key_display", "display", "raw"}
+
+
+def validate_change_entry(value: object, *, path: str = "change") -> dict[str, Any]:
+    """One ChangeEntry (see `change_entries.py`), nested array edits included."""
+    entry = _require_mapping(value, path)
+    _reject_unknown_keys(entry, _CHANGE_ENTRY_KEYS, path)
+    for key in _CHANGE_ENTRY_KEYS:
+        _require_key(entry, key, path)
+    _require_str(entry["path"], f"{path}.path")
+    _require_literal_str(entry["kind"], f"{path}.kind", _CHANGE_KINDS)
+    _require_optional_str(entry["suppressed"], f"{path}.suppressed")
+    if entry["array"] is not None:
+        array = _require_mapping(entry["array"], f"{path}.array")
+        _reject_unknown_keys(array, _ARRAY_KEYS, f"{path}.array")
+        for side in ("added", "removed"):
+            for i, elem in enumerate(_require_list(array.get(side) or [], f"{path}.array.{side}")):
+                elem_path = f"{path}.array.{side}[{i}]"
+                _reject_unknown_keys(_require_mapping(elem, elem_path), _ARRAY_ELEMENT_KEYS, elem_path)
+        for i, changed in enumerate(_require_list(array.get("changed") or [], f"{path}.array.changed")):
+            changed_path = f"{path}.array.changed[{i}]"
+            changed = _require_mapping(changed, changed_path)
+            _reject_unknown_keys(changed, {"key_display", "changes"}, changed_path)
+            for j, inner in enumerate(_require_list(_require_key(changed, "changes", changed_path), changed_path)):
+                validate_change_entry(inner, path=f"{changed_path}.changes[{j}]")
+    return entry
+
+
 def validate_record_entry(value: object, *, path: str = "record") -> RecordEntry:
     rec = _require_mapping(value, path)
+    _reject_unknown_keys(rec, _RECORD_ENTRY_KEYS, path)
     entry: RecordEntry = {
         "form_id": _require_str(_require_key(rec, "form_id", path), f"{path}.form_id"),
         "record_type": _require_str(_require_key(rec, "record_type", path), f"{path}.record_type"),
@@ -210,6 +253,8 @@ def validate_record_entry(value: object, *, path: str = "record") -> RecordEntry
         "dangling_refs": _require_list(rec.get("dangling_refs", []), f"{path}.dangling_refs"),
         "changes": _require_list(_require_key(rec, "changes", path), f"{path}.changes"),
     }
+    for i, change in enumerate(entry["changes"]):
+        validate_change_entry(change, path=f"{path}.changes[{i}]")
     return entry
 
 
@@ -280,6 +325,50 @@ def validate_comprehensive_payload(value: object, *, label: str = "comprehensive
     records = _require_mapping(_require_key(root, "records", label), f"{label}.records")
     for fid, rec in records.items():
         validate_record_entry(rec, path=f"{label}.records[{fid!r}]")
+    return root
+
+
+TIERS: tuple[TierName, ...] = ("rollout", "deep", "brief", "drop", "ambiguous")
+_TRIAGE_KEYS = {*TIERS, "stats", "reasons", "rollout_shapes"}
+_ROLLOUT_SHAPE_KEYS = set(RolloutShape.__annotations__)
+
+
+def validate_triage(value: object, *, label: str = "triage.json") -> dict[str, Any]:
+    """`work/triage.json`: every tier's bundle ids (each bundle in one tier),
+    the reasons, stats and rollout shapes. A missing or misspelled tier is
+    an error, never an empty tier."""
+    root = _require_mapping(value, label)
+    _reject_unknown_keys(root, _TRIAGE_KEYS, label)
+    seen: dict[str, str] = {}
+    for tier in TIERS:
+        for i, bid in enumerate(_require_list(_require_key(root, tier, label), f"{label}.{tier}")):
+            bid = _require_bundle_id(bid, f"{label}.{tier}[{i}]")
+            if bid in seen:
+                raise ValueError(f"{label}: {bid} is in both {seen[bid]} and {tier}")
+            seen[bid] = tier
+    reasons = _require_mapping(_require_key(root, "reasons", label), f"{label}.reasons")
+    for bid, reason in reasons.items():
+        _require_str(reason, f"{label}.reasons[{bid!r}]")
+    _require_mapping(_require_key(root, "stats", label), f"{label}.stats")
+    for i, shape in enumerate(_require_list(_require_key(root, "rollout_shapes", label), f"{label}.rollout_shapes")):
+        shape_path = f"{label}.rollout_shapes[{i}]"
+        _reject_unknown_keys(_require_mapping(shape, shape_path), _ROLLOUT_SHAPE_KEYS, shape_path)
+    return root
+
+
+_DEEP_SLICE_BUNDLE_KEYS = {"id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids"}
+
+
+def validate_deep_slice(value: object, *, label: str = "deep-slice.json") -> dict[str, Any]:
+    """`work/deep-slice.json` (or one of its parts): the DEEP bundles, as the
+    writers see them, and their lints."""
+    root = _require_mapping(value, label)
+    _reject_unknown_keys(root, {"bundles", "lints"}, label)
+    for i, bundle in enumerate(_require_list(_require_key(root, "bundles", label), f"{label}.bundles")):
+        bundle_path = f"{label}.bundles[{i}]"
+        _reject_unknown_keys(_require_mapping(bundle, bundle_path), _DEEP_SLICE_BUNDLE_KEYS, bundle_path)
+        validate_bundle(bundle, path=bundle_path)
+    _require_list(_require_key(root, "lints", label), f"{label}.lints")
     return root
 
 

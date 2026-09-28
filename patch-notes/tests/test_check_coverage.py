@@ -33,7 +33,7 @@ class TestCoverage(TempDirTestCase):
     def setUp(self):
         super().setUp()
         layout.work_dir(self.tmp).mkdir()
-        layout.work_triage_json(self.tmp).write_text(json.dumps({"deep": ["B0001", "B0002", "B0003"]}))
+        layout.work_triage_json(self.tmp).write_text(json.dumps(builders.triage(deep=["B0001", "B0002", "B0003"])))
         layout.work_deep_slice_json(self.tmp).write_text(json.dumps({"bundles": BUNDLES, "lints": []}))
         layout.drafts_dir(self.tmp).mkdir()
 
@@ -52,6 +52,22 @@ class TestCoverage(TempDirTestCase):
         self.assertTrue(payload["ok"], payload["violations"])
         self.assertEqual(payload["covered"], {"B0001": "deep.report.json", "B0002": "deep.report.json", "B0003": "deep.report.json"})
         self.assertTrue(layout.work_coverage_json(self.tmp).is_file())
+
+    def test_a_malformed_triage_fails_instead_of_checking_nothing(self):
+        for bad in (
+            {k: v for k, v in builders.triage(deep=["B0001"]).items() if k != "deep"} | {"depe": ["B0001"]},
+            builders.triage(deep=["B0001"], brief=["B0001"]),
+        ):
+            layout.work_triage_json(self.tmp).write_text(json.dumps(bad))
+            payload = cv.run_check(self.tmp)
+            self.assertFalse(payload["ok"])
+            self.assertEqual(self.kinds(payload), ["invalid_triage"])
+
+    def test_a_slice_bundle_outside_deep_is_a_violation(self):
+        layout.work_triage_json(self.tmp).write_text(json.dumps(builders.triage(deep=["B0001", "B0002"])))
+        self.report("deep", ["B0001", "B0002"], "Weapon A and Weapon B.")
+        payload = cv.run_check(self.tmp)
+        self.assertEqual(self.kinds(payload), ["slice_mismatch"])
 
     def test_no_reports_means_every_deep_id_uncovered(self):
         payload = cv.run_check(self.tmp)

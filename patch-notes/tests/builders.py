@@ -142,6 +142,18 @@ def bundle(**overrides: Any) -> dict[str, Any]:
     }
 
 
+def triage(**tiers: list[str]) -> dict[str, Any]:
+    """A work/triage.json payload: the named tiers' bundle ids, every other
+    tier empty."""
+    return {
+        **{tier: [] for tier in ("rollout", "deep", "brief", "drop", "ambiguous")},
+        "stats": {},
+        "reasons": {},
+        "rollout_shapes": [],
+        **tiers,
+    }
+
+
 # --------------------------------------------------------------------------
 # Temp-directory helpers
 # --------------------------------------------------------------------------
