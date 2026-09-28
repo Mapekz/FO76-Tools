@@ -10,7 +10,8 @@ use crate::output::{
 use crate::{Backend, SearchInArg};
 
 fn parse_resolve(s: &str) -> anyhow::Result<ResolveDepth> {
-    esm::query::resolve_depth(Some(s), ResolveDepth::None)
+    serde_json::from_value(serde_json::Value::from(s))
+        .map_err(|_| anyhow::anyhow!("unknown resolve depth '{s}'; expected none|stub|full"))
 }
 
 /// Build a selector from explicit `--formid`/`--edid`/positional-target CLI

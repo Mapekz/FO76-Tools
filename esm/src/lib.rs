@@ -22,7 +22,6 @@ pub mod logging;
 pub mod lvli;
 pub mod ops;
 pub mod progress;
-pub mod query;
 pub mod reader;
 pub mod refs;
 mod rkyvcache;

@@ -120,7 +120,12 @@ pub(crate) fn cmd_diff(
     exclude_type: Vec<String>,
     base: FormIdBase,
 ) -> anyhow::Result<()> {
-    let options = esm::query::diff_options(bodies, !keep_noise, &exclude_type);
+    let options = esm::DiffOptions {
+        bodies,
+        suppress_noise: !keep_noise,
+        exclude_types: exclude_type,
+        ..Default::default()
+    };
 
     // Coalesce per-side over shared for each source kind.
     let lba2_a = localization_ba2_a.or_else(|| localization_ba2.clone());
