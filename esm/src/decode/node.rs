@@ -28,6 +28,8 @@ pub enum RawReason {
     Malformed(String),
     /// Bytes left after the schema's fields ran out.
     Trailing,
+    /// Bytes in a format the decoder has no codec for; the text says which.
+    Unsupported(String),
 }
 
 impl RawReason {
@@ -35,7 +37,7 @@ impl RawReason {
     pub fn text(&self) -> &str {
         match self {
             RawReason::Unknown => "unknown",
-            RawReason::Malformed(reason) => reason,
+            RawReason::Malformed(reason) | RawReason::Unsupported(reason) => reason,
             RawReason::UnresolvedUnion => "union decider unresolved",
             RawReason::Trailing => "trailing bytes",
         }

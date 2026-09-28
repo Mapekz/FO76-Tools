@@ -367,6 +367,7 @@ fn record_node(
             ("signature", Node::str(sr.signature.as_str())),
             ("hex", Node::Str(hex::encode(&sr.data))),
             (markers::RAW, Node::Bool(true)),
+            ("reason", Node::str("no schema member takes this subrecord")),
         ]);
         match unmapped.get_mut(sr.signature.as_str()) {
             Some(Node::Array(entries)) => entries.push(entry),

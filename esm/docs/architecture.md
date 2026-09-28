@@ -63,9 +63,10 @@ that read a sibling field take integers, enum values and FormIDs from the typed 
 variant at `--resolve stub`/`full`.
 
 The decoder **never panics**: unknown record types get `_unknown_record: true`, unmapped
-leftover subrecords land under `_unmapped`, bytes that don't decode to fields fall back to
-`_raw` hex with a `reason` (`decode::node::RawReason`: schema-declared unknown bytes,
-unmodelled schema, an unresolved union, malformed data), a struct subrecord with bytes left
+leftover subrecords land under `_unmapped` (each with a `reason`), bytes that don't decode to
+fields fall back to `_raw` hex with a `reason` (`decode::node::RawReason`: schema-declared
+unknown bytes, unmodelled schema, an unresolved union, malformed data, or a format the decoder
+has no codec for, such as an unknown VMAD property type), a struct subrecord with bytes left
 after its fields gets `_trailing`, and an LString whose ID has no match in the loaded string
 tables gets `_unresolved`. The marker keys are the single source of truth in `decode::markers`;
 the `coverage` subcommand counts them from the typed tree by reason, and its `--gate` fails on

@@ -544,10 +544,16 @@ fn decode_vmad_property(
             }
             // Type 7 = Struct: u32 member count, then N × (name + type + status + value).
             7 => decode_vmad_struct(ctx, data, pos, obj_format),
-            _ => Node::obj([
-                (markers::RAW, Node::Bool(true)),
-                ("type", Node::int(base_type)),
-            ]),
+            // An unknown type's width is unknown too, so nothing after it
+            // can be located: the rest of the payload is raw.
+            _ => {
+                let rest = &data[*pos..];
+                *pos = data.len();
+                Node::raw(
+                    Some(rest),
+                    RawReason::Unsupported(format!("unsupported VMAD property type {base_type}")),
+                )
+            }
         }
     }
 

@@ -99,7 +99,7 @@ fn count_markers(db: &Database, node: &Node, m: &mut Markers) {
         Node::Array(items) => items.iter().for_each(|item| count_markers(db, item, m)),
         Node::Raw { reason, .. } => match reason {
             RawReason::Unknown => m.unknown_bytes += 1,
-            RawReason::UnresolvedUnion => m.raw_fallback += 1,
+            RawReason::UnresolvedUnion | RawReason::Unsupported(_) => m.raw_fallback += 1,
             RawReason::Malformed(_) => m.malformed += 1,
             RawReason::Trailing => m.trailing += 1,
         },
@@ -170,4 +170,72 @@ pub fn coverage_report(
     });
 
     Ok(CoverageReport { by_type, totals })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testkit::{
+        append_record, append_subrecord, cstr, tes4_header, wrap_grup, write_temp_esm,
+    };
+    use serde_json::Value;
+
+    /// Every rendered `_raw` value (and `_unmapped` entry) says why.
+    fn assert_every_raw_has_a_reason(v: &Value) {
+        match v {
+            Value::Object(map) => {
+                if map.get("_raw") == Some(&Value::Bool(true)) {
+                    assert!(map.get("reason").is_some_and(Value::is_string), "{v}");
+                }
+                map.values().for_each(assert_every_raw_has_a_reason);
+            }
+            Value::Array(items) => items.iter().for_each(assert_every_raw_has_a_reason),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn an_unsupported_vmad_property_is_a_counted_raw_fallback_with_a_reason() {
+        let wstring = |s: &str| {
+            let mut v = (s.len() as u16).to_le_bytes().to_vec();
+            v.extend_from_slice(s.as_bytes());
+            v
+        };
+        let mut vmad = Vec::new();
+        vmad.extend_from_slice(&6u16.to_le_bytes()); // version
+        vmad.extend_from_slice(&2u16.to_le_bytes()); // object format
+        vmad.extend_from_slice(&1u16.to_le_bytes()); // scripts
+        vmad.extend(wstring("S"));
+        vmad.push(0); // status
+        vmad.extend_from_slice(&1u16.to_le_bytes()); // properties
+        vmad.extend(wstring("P"));
+        vmad.extend_from_slice(&[99, 1, 0xaa, 0xbb]); // type 99, status, value
+        let mut subs = Vec::new();
+        append_subrecord(&mut subs, b"EDID", &cstr("Act"));
+        append_subrecord(&mut subs, b"VMAD", &vmad);
+        append_subrecord(&mut subs, b"XXXX", &[1]);
+        let mut records = Vec::new();
+        append_record(&mut records, b"ACTI", 0x800, &subs);
+        let mut buf = tes4_header();
+        buf.extend(wrap_grup(b"ACTI", &records));
+        let path = write_temp_esm(&buf, "coverage_vmad_raw");
+        let db = Database::open(&path).unwrap();
+
+        let fields = db
+            .record_by_formid_resolved(crate::FormId(0x800), crate::ResolveDepth::None)
+            .unwrap()
+            .fields;
+        let value = &fields["Virtual Machine Adapter"]["scripts"][0]["properties"][0]["value"];
+        assert_eq!(
+            value["reason"], "unsupported VMAD property type 99",
+            "{fields}"
+        );
+        assert_eq!(value["hex"], "aabb");
+        assert_every_raw_has_a_reason(&fields);
+
+        let totals = coverage_report(&db, Some("ACTI"), 0).unwrap().totals;
+        assert_eq!((totals.raw_fallback, totals.unmapped), (1, 1), "{totals:?}");
+        let _ = crate::progress::clear_cache(&path);
+        let _ = std::fs::remove_file(&path);
+    }
 }
