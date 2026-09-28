@@ -1,4 +1,4 @@
-use crate::formid::{FormId, parse_formid};
+use crate::formid::FormId;
 use crate::schema::{CountPath, EnumFormat, IntegerWidth, MemberDef, UnionDecider, ValueFormat};
 use serde_json::{Value, json};
 
@@ -292,23 +292,17 @@ fn json_value_key(val: &Value) -> String {
     }
 }
 
-/// Resolve the target record signature for a decoded sibling FormID field.
+/// The record signature a sibling FormID field points at.
 pub(super) fn sibling_target_sig(node: &Node, ctx: &DecodeContext<'_>) -> Option<String> {
-    let id = match node {
-        Node::FormId { id, .. } if id.0 != 0 => *id,
-        Node::Str(s) => parse_formid(s).ok()?,
-        Node::Struct(o) => {
-            if let Some(Node::Str(rt)) = o.get("record_type") {
-                return Some(rt.clone());
-            }
-            match o.get("formid") {
-                Some(Node::Str(s)) => parse_formid(s).ok()?,
-                _ => return None,
-            }
-        }
-        _ => return None,
+    let Node::FormId { id, .. } = node else {
+        return None;
     };
-    ctx.resolver.and_then(|r| r.stub(id).map(|s| s.record_type))
+    if id.0 == 0 {
+        return None;
+    }
+    ctx.types?
+        .record_type(*id)
+        .map(|sig| sig.as_str().to_owned())
 }
 
 pub(super) fn choose_union_variant(

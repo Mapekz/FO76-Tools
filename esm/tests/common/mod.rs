@@ -15,7 +15,7 @@
 #![allow(dead_code)]
 
 use esm::Database;
-use esm::decode::{DecodeContext, ResolveDepth};
+use esm::decode::DecodeContext;
 use esm::format::Signature;
 use esm::reader::OwnedSubrecord;
 use esm::schema::Schema;
@@ -50,18 +50,7 @@ pub fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
 /// DESC subrecords carry inline (optionally `<ID=…>`-prefixed) strings rather
 /// than string-table IDs.
 pub fn bare_ctx_fv(schema: &Schema, form_version: u16) -> DecodeContext<'_> {
-    DecodeContext {
-        schema,
-        form_version,
-        is_localized: false,
-        localization: None,
-        curves: None,
-        resolve_depth: ResolveDepth::None,
-        resolver: None,
-        outer_struct: None,
-        record_signature: None,
-        record_edid_char: None,
-    }
+    DecodeContext::bare(schema, form_version)
 }
 
 /// Build an `OwnedSubrecord` from a 4-char ASCII signature and a lowercase hex

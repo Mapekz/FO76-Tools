@@ -637,7 +637,7 @@ fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
+    use crate::decode::{FormIdRefResolver, FormIdStub};
     use serde_json::{Map, Value, json};
 
     /// Bind `members` against `subrecords` the way a record's members bind,
@@ -674,18 +674,7 @@ mod tests {
     use crate::schema::{IntegerWidth, LStringTable, Schema};
 
     fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
-        DecodeContext {
-            schema,
-            form_version: 208,
-            is_localized: false,
-            localization: None,
-            curves: None,
-            resolve_depth: crate::ResolveDepth::None,
-            resolver: None,
-            outer_struct: None,
-            record_signature: None,
-            record_edid_char: None,
-        }
+        DecodeContext::bare(schema, 208)
     }
 
     fn empty_schema() -> Schema {
@@ -956,7 +945,16 @@ mod tests {
         }
     }
 
-    /// COED owner-decider: NPC_ owner → Global Variable variant; no resolver → Unused.
+    impl crate::decode::RecordTypes for StubResolver {
+        fn record_type(&self, id: FormId) -> Option<crate::format::Signature> {
+            self.stubs
+                .get(&id)
+                .map(|s| crate::format::Signature::from_slice(s.record_type.as_bytes()))
+        }
+    }
+
+    /// COED owner-decider: NPC_ owner → Global Variable variant at every
+    /// resolve depth; with no record lookup, the default Unused variant.
     #[test]
     fn coed_owner_decider_selects_variant_by_target_signature() {
         use crate::schema::UnionDecider;
@@ -1026,9 +1024,9 @@ mod tests {
         payload[4..8].copy_from_slice(&glob_id.raw().to_le_bytes());
 
         let schema = empty_schema();
+        // The variant comes from the record lookup, not from --resolve.
         let mut ctx = bare_ctx(&schema);
-        ctx.resolve_depth = ResolveDepth::Stub;
-        ctx.resolver = Some(&resolver);
+        ctx.types = Some(&resolver);
 
         let mut out = Fields::new();
         decode_struct_fields(&ctx, "Extra Data", &fields, &payload, &mut out);
@@ -1042,7 +1040,7 @@ mod tests {
             Some(glob_id.display().as_str())
         );
 
-        // Without resolver, default variant 0 (Unused) — no Global Variable key.
+        // Without a record lookup, default variant 0 (Unused) — no Global Variable key.
         let ctx_no_resolver = bare_ctx(&schema);
         let mut out2 = Fields::new();
         decode_struct_fields(&ctx_no_resolver, "Extra Data", &fields, &payload, &mut out2);
@@ -1312,7 +1310,7 @@ mod tests {
 
         // Localized: the id==0 "no string" sentinel.
         let mut loc = bare_ctx(&schema);
-        loc.is_localized = true;
+        loc.env.is_localized = true;
         let out = decode_lstring(&loc, &subrecord("DESC", vec![0, 0, 0, 0], 0));
         assert_eq!(out.get("Description"), Some(&Value::Null));
 

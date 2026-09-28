@@ -1269,17 +1269,14 @@ impl Database {
         } else {
             None
         };
-        let ctx = DecodeContext::for_record(
-            &self.schema,
-            parsed.header.form_version,
-            self.is_localized,
-            self.localization.as_ref(),
-            self.curves.as_ref(),
-            depth,
-            resolver
-                .as_ref()
-                .map(|r| r as &dyn crate::decode::FormIdRefResolver),
-        );
+        let ctx = self
+            .decode_env(
+                depth,
+                resolver
+                    .as_ref()
+                    .map(|r| r as &dyn crate::decode::FormIdRefResolver),
+            )
+            .for_record(parsed.header.form_version);
         let node = self.node_parsed(&ctx, parsed);
         inspect(&node);
         node.into_json(&ctx)
@@ -1350,18 +1347,29 @@ impl Database {
         Ok((parsed, node))
     }
 
+    /// This database's decode environment, rendering FormIDs at `depth`
+    /// through `resolver`.
+    pub(crate) fn decode_env<'a>(
+        &'a self,
+        depth: crate::decode::ResolveDepth,
+        resolver: Option<&'a dyn crate::decode::FormIdRefResolver>,
+    ) -> crate::decode::DecodeEnv<'a> {
+        crate::decode::DecodeEnv {
+            schema: &self.schema,
+            is_localized: self.is_localized,
+            localization: self.localization.as_ref(),
+            curves: self.curves.as_ref(),
+            types: Some(&self.index),
+            resolve_depth: depth,
+            resolver,
+        }
+    }
+
     /// A decode context for this database with no FormID resolver
     /// (`ResolveDepth::None`).
     pub(crate) fn plain_ctx(&self, form_version: u16) -> DecodeContext<'_> {
-        DecodeContext::for_record(
-            &self.schema,
-            form_version,
-            self.is_localized,
-            self.localization.as_ref(),
-            self.curves.as_ref(),
-            crate::decode::ResolveDepth::None,
-            None,
-        )
+        self.decode_env(crate::decode::ResolveDepth::None, None)
+            .for_record(form_version)
     }
 
     /// Decode a record at `meta`'s offset with the given resolution depth.
@@ -1478,15 +1486,7 @@ impl Database {
         for (form_id, offset) in records {
             let parsed = self.esm.parse_record_at(offset)?;
             let editor_id = edid_from_subrecords(&parsed.subrecords);
-            let ctx = DecodeContext::for_record(
-                &self.schema,
-                parsed.header.form_version,
-                self.is_localized,
-                self.localization.as_ref(),
-                self.curves.as_ref(),
-                crate::decode::ResolveDepth::None,
-                None,
-            );
+            let ctx = self.plain_ctx(parsed.header.form_version);
             let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
             entries.push(FilterCacheEntry {
                 form_id,
@@ -1910,15 +1910,10 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
             db: self.db,
             remaining: self.remaining - 1,
         };
-        let ctx = DecodeContext::for_record(
-            &self.db.schema,
-            parsed.header.form_version,
-            self.db.is_localized,
-            self.db.localization.as_ref(),
-            self.db.curves.as_ref(),
-            crate::decode::ResolveDepth::Full,
-            Some(&nested_resolver),
-        );
+        let ctx = self
+            .db
+            .decode_env(crate::decode::ResolveDepth::Full, Some(&nested_resolver))
+            .for_record(parsed.header.form_version);
         let fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
         Some(serde_json::json!({
             "formid": id.display(),

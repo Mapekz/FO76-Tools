@@ -112,10 +112,28 @@ pub(crate) fn stub_map(stub: &FormIdStub) -> Map<String, Value> {
     map
 }
 
-#[derive(Clone)]
-pub struct DecodeContext<'a> {
+/// Looks up a referenced record's signature, for unions whose variant depends
+/// on what a sibling FormID points at. Independent of `--resolve`: the decoded
+/// structure is the same at every depth.
+pub trait RecordTypes: Sync {
+    fn record_type(&self, id: FormId) -> Option<crate::format::Signature>;
+}
+
+impl RecordTypes for crate::index::Index {
+    fn record_type(&self, id: FormId) -> Option<crate::format::Signature> {
+        self.get_by_formid(id)
+            .map(|meta| meta.signature)
+            .or_else(|| {
+                crate::hardcoded::lookup(id)
+                    .map(|form| crate::format::Signature::from_slice(form.record_type.as_bytes()))
+            })
+    }
+}
+
+/// What decoding needs from the database, fixed for the database's lifetime.
+#[derive(Clone, Copy)]
+pub struct DecodeEnv<'a> {
     pub schema: &'a Schema,
-    pub form_version: u16,
     /// Whether the ESM file has the Localized flag set in its TES4 header.
     ///
     /// When `false`, FULL/DESC and other `lstring` fields contain inline
@@ -126,10 +144,47 @@ pub struct DecodeContext<'a> {
     pub localization: Option<&'a Localization>,
     /// Optional curve index for inlining CURV record data on FormID fields.
     pub curves: Option<&'a crate::curves::CurveIndex>,
-    /// How to expand FormID references.
+    /// Signatures of referenced records, for FormID-target-type unions.
+    pub types: Option<&'a dyn RecordTypes>,
+    /// How to expand FormID references when rendering.
     pub resolve_depth: ResolveDepth,
-    /// Resolver implementation (None when resolve_depth == None).
+    /// Expands FormID references at `--resolve stub`/`full`.
     pub resolver: Option<&'a dyn FormIdRefResolver>,
+}
+
+impl<'a> DecodeEnv<'a> {
+    /// An environment with nothing but the schema: no string tables, curves,
+    /// record lookups or reference resolution.
+    pub fn new(schema: &'a Schema) -> Self {
+        DecodeEnv {
+            schema,
+            is_localized: false,
+            localization: None,
+            curves: None,
+            types: None,
+            resolve_depth: ResolveDepth::None,
+            resolver: None,
+        }
+    }
+
+    /// A context for decoding one record of form version `form_version`.
+    pub fn for_record(self, form_version: u16) -> DecodeContext<'a> {
+        DecodeContext {
+            env: self,
+            form_version,
+            outer_struct: None,
+            record_signature: None,
+            record_edid_char: None,
+        }
+    }
+}
+
+/// One record's decode: the database environment plus per-record and
+/// recursion state. Dereferences to its [`DecodeEnv`].
+#[derive(Clone)]
+pub struct DecodeContext<'a> {
+    pub env: DecodeEnv<'a>,
+    pub form_version: u16,
     /// Already-decoded fields of the enclosing struct, set when decoding array
     /// elements so that `FieldValue` deciders in element structs can reach parent
     /// fields (e.g. "Form Type" for OMOD property enum selection).
@@ -143,33 +198,25 @@ pub struct DecodeContext<'a> {
     pub record_edid_char: Option<char>,
 }
 
+impl<'a> std::ops::Deref for DecodeContext<'a> {
+    type Target = DecodeEnv<'a>;
+
+    fn deref(&self) -> &DecodeEnv<'a> {
+        &self.env
+    }
+}
+
+impl<'a> std::ops::DerefMut for DecodeContext<'a> {
+    fn deref_mut(&mut self) -> &mut DecodeEnv<'a> {
+        &mut self.env
+    }
+}
+
 impl<'a> DecodeContext<'a> {
-    /// Build a fresh top-level context for decoding a record: the
-    /// recursion-threading fields (`outer_struct`, `record_signature`,
-    /// `record_edid_char`) start unset. `decode_record` populates
-    /// `record_signature`/`record_edid_char` itself once it has scanned the
-    /// record's subrecords.
-    pub fn for_record(
-        schema: &'a Schema,
-        form_version: u16,
-        is_localized: bool,
-        localization: Option<&'a Localization>,
-        curves: Option<&'a crate::curves::CurveIndex>,
-        resolve_depth: ResolveDepth,
-        resolver: Option<&'a dyn FormIdRefResolver>,
-    ) -> DecodeContext<'a> {
-        DecodeContext {
-            schema,
-            form_version,
-            is_localized,
-            localization,
-            curves,
-            resolve_depth,
-            resolver,
-            outer_struct: None,
-            record_signature: None,
-            record_edid_char: None,
-        }
+    /// A context with nothing but the schema, at form version `form_version`
+    /// (see [`DecodeEnv::new`]).
+    pub fn bare(schema: &'a Schema, form_version: u16) -> Self {
+        DecodeEnv::new(schema).for_record(form_version)
     }
 
     /// Return a new context identical to `self` but with `outer_struct` set.
@@ -405,23 +452,8 @@ mod tests {
     use crate::schema::Schema;
     use serde_json::Map;
 
-    /// Build a minimal `DecodeContext` around a borrowed `Schema`.
-    ///
-    /// Private-side twin of `tests/common::bare_ctx` — if `DecodeContext` gains
-    /// or loses a field, update both copies.
     fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
-        DecodeContext {
-            schema,
-            form_version: 208,
-            is_localized: false,
-            localization: None,
-            curves: None,
-            resolve_depth: crate::ResolveDepth::None,
-            resolver: None,
-            outer_struct: None,
-            record_signature: None,
-            record_edid_char: None,
-        }
+        DecodeContext::bare(schema, 208)
     }
 
     fn empty_schema() -> Schema {
@@ -445,7 +477,7 @@ mod tests {
         let curves = crate::curves::CurveIndex::from_curves([(FormId::new(0x1), curve)]).unwrap();
         let schema = empty_schema();
         let mut ctx = bare_ctx(&schema);
-        ctx.curves = Some(&curves);
+        ctx.env.curves = Some(&curves);
 
         let result = resolve_formid(&ctx, &["CURV".to_string()], FormId::new(0x1));
         assert_eq!(result["editor_id"], json!("CT_Legendary_Weapon_Adrenal"));
@@ -459,7 +491,7 @@ mod tests {
         let curves_no_edid =
             crate::curves::CurveIndex::from_curves([(FormId::new(0x2), curve_no_edid)]).unwrap();
         let mut ctx2 = bare_ctx(&schema);
-        ctx2.curves = Some(&curves_no_edid);
+        ctx2.env.curves = Some(&curves_no_edid);
         let result2 = resolve_formid(&ctx2, &["CURV".to_string()], FormId::new(0x2));
         assert_eq!(result2["editor_id"], Value::Null);
     }
@@ -483,7 +515,7 @@ mod tests {
         let mut ctx = bare_ctx(&schema);
         assert_eq!(ctx.resolve_depth, ResolveDepth::None);
         assert!(ctx.resolver.is_none());
-        ctx.curves = Some(&curves);
+        ctx.env.curves = Some(&curves);
 
         let result = resolve_formid(&ctx, &["CURV".to_string()], FormId::new(0x3));
         let obj = result.as_object().expect("object");
@@ -524,8 +556,8 @@ mod tests {
             )]),
         };
         let mut ctx = bare_ctx(&schema);
-        ctx.resolve_depth = ResolveDepth::Stub;
-        ctx.resolver = Some(&resolver);
+        ctx.env.resolve_depth = ResolveDepth::Stub;
+        ctx.env.resolver = Some(&resolver);
 
         let result = resolve_formid(&ctx, &[], target_id);
         assert_eq!(result["Value"], json!(76.0));
@@ -552,8 +584,8 @@ mod tests {
             ..Default::default()
         };
         let mut ctx = bare_ctx(&schema);
-        ctx.resolve_depth = ResolveDepth::Stub;
-        ctx.resolver = Some(&resolver);
+        ctx.env.resolve_depth = ResolveDepth::Stub;
+        ctx.env.resolver = Some(&resolver);
 
         let result = resolve_formid(&ctx, &[], target_id);
         assert_eq!(
@@ -594,8 +626,8 @@ mod tests {
             )]),
         };
         let mut ctx = bare_ctx(&schema);
-        ctx.resolve_depth = ResolveDepth::Stub;
-        ctx.resolver = Some(&resolver);
+        ctx.env.resolve_depth = ResolveDepth::Stub;
+        ctx.env.resolver = Some(&resolver);
 
         let result = resolve_formid(&ctx, &[], target_id);
         assert_eq!(
@@ -789,8 +821,8 @@ mod tests {
             ..Default::default()
         };
         let mut ctx = bare_ctx(&schema);
-        ctx.resolve_depth = ResolveDepth::Stub;
-        ctx.resolver = Some(&resolver);
+        ctx.env.resolve_depth = ResolveDepth::Stub;
+        ctx.env.resolver = Some(&resolver);
 
         let mut data = vmad_header(2, 1);
         data.extend(vmad_wstring("AddMutationOnEffectScript"));

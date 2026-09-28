@@ -1,4 +1,4 @@
-use crate::decode::{DecodeContext, ResolveDepth, decode_record_node};
+use crate::decode::{DecodeEnv, ResolveDepth, decode_record_node};
 use crate::format::Signature;
 use crate::formid::FormId;
 use crate::reader::{
@@ -716,15 +716,16 @@ pub(crate) fn build_xref_section(
         if !index.contains(referencer) {
             return Ok(());
         }
-        let ctx = DecodeContext::for_record(
+        let ctx = DecodeEnv {
             schema,
-            rec.header.form_version,
             is_localized,
             localization,
             curves,
-            ResolveDepth::None,
-            None,
-        );
+            types: Some(index),
+            resolve_depth: ResolveDepth::None,
+            resolver: None,
+        }
+        .for_record(rec.header.form_version);
         let mut refs = Vec::new();
         decode_record_node(&ctx, &rec.header.signature, &rec.subrecords)
             .for_each_formid(&mut |id| refs.push(id));
