@@ -76,14 +76,14 @@ fn check_exact_size(codec: &str, out: Vec<u8>, expected_size: usize) -> Result<V
 }
 
 /// Sniff whether a compressed blob is zlib (vs LZ4) by checking the two-byte
-/// zlib header: first byte `0x78` and `(b0 as u16) << 8 | b1 as u16) % 31 == 0`.
+/// zlib header (RFC 1950): compression method 8 (deflate), a window of at
+/// most 32 KiB (CINFO ≤ 7), and `(b0 << 8 | b1) % 31 == 0`. The window is not
+/// always 32 KiB: FO76's Materials archive uses `0x48` (4 KiB).
 pub fn is_zlib(data: &[u8]) -> bool {
-    if data.len() < 2 {
+    let [b0, b1, ..] = *data else {
         return false;
-    }
-    let b0 = data[0] as u16;
-    let b1 = data[1] as u16;
-    b0 == 0x78 && (b0 << 8 | b1).is_multiple_of(31)
+    };
+    b0 & 0x0F == 8 && b0 >> 4 <= 7 && ((b0 as u16) << 8 | b1 as u16).is_multiple_of(31)
 }
 
 /// Decompress a blob according to `codec`.  `Auto` sniffs the first two bytes.
@@ -93,9 +93,12 @@ pub fn decompress(data: &[u8], unpacked_size: u32, codec: Codec) -> Result<Vec<u
         Codec::Store => Ok(data.to_vec()),
         Codec::Lz4 => decompress_lz4(data, expected),
         Codec::Zlib => decompress_zlib(data, expected),
+        // A raw LZ4 block can start with bytes that pass the zlib sniff, so a
+        // sniffed zlib blob that fails to inflate is retried as LZ4.
         Codec::Auto => {
             if is_zlib(data) {
                 decompress_zlib(data, expected)
+                    .or_else(|zlib_err| decompress_lz4(data, expected).map_err(|_| zlib_err))
             } else {
                 decompress_lz4(data, expected)
             }

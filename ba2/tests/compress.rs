@@ -94,6 +94,49 @@ fn is_zlib_boundary_valid_headers() {
     );
 }
 
+/// Smaller-window zlib streams have a different first byte (`0x48` is a
+/// 4 KiB window, as in FO76's Materials archive) and still sniff as zlib.
+#[test]
+fn is_zlib_accepts_smaller_windows() {
+    assert!(
+        is_zlib(&[0x48, 0xC7]),
+        "0x48C7 is a valid 4 KiB-window zlib header"
+    );
+    assert!(
+        is_zlib(&[0x08, 0x1D]),
+        "0x081D is a valid 256-byte-window zlib header"
+    );
+    assert!(
+        !is_zlib(&[0x88, 0x98]),
+        "CINFO 8 is not a valid zlib window"
+    );
+    assert!(
+        !is_zlib(&[0x49, 0xC6]),
+        "compression method 9 is not deflate"
+    );
+}
+
+#[test]
+fn auto_decompresses_small_window_zlib() {
+    use flate2::Compression;
+    use flate2::write::ZlibEncoder;
+    use std::io::Write;
+    let data = sample();
+    // flate2 always writes a 32 KiB window header; rewrite it to the 4 KiB
+    // header FO76 uses (the stream itself only needs a window ≤ 32 KiB, and
+    // the sample is small enough that 4 KiB covers every back-reference).
+    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+    enc.write_all(&data).unwrap();
+    let mut compressed = enc.finish().unwrap();
+    assert!(data.len() <= 4096, "sample must fit a 4 KiB window");
+    compressed[0] = 0x48;
+    let flg = compressed[1] & 0xE0;
+    compressed[1] = flg + (31 - ((0x48u16 << 8 | flg as u16) % 31) as u8) % 31;
+    assert!(is_zlib(&compressed));
+    let out = decompress(&compressed, data.len() as u32, Codec::Auto).unwrap();
+    assert_eq!(out, data);
+}
+
 /// Bytes that start with 0x78 but fail the % 31 check must NOT be detected.
 #[test]
 fn is_zlib_rejects_false_0x78_prefix() {

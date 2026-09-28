@@ -148,12 +148,12 @@ if let Some(t) = archive.list()[0].texture() {
 
 ## Tests
 
-~121 tests, all synthetic in-memory data — no real BA2 archive required. Run with `cargo test`.
-Real multi-GiB DX10 archives are spot-checked via the CLI when texture paths change (see
-`ba2/AGENTS.md` for the file-by-file breakdown).
+The suite runs on synthetic data, with writer goldens that pin exact output bytes. A real-archive
+baseline runs when `BA2_BASELINE_DIR` names a game `Data` folder (see `ba2/AGENTS.md`).
 
 ```sh
 cargo test
+just baseline-check "/path/to/Fallout 76/Data"
 ```
 
 ## BA2 Format Primer

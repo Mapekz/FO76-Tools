@@ -3,6 +3,8 @@
 #
 # Usage:
 #   just          -> fmt + clippy + test  (the full local CI pass)
+#   just baseline-check DIR -> compare DIR's real archives with tests/baselines/playtest.tsv
+#   just baseline DIR       -> rewrite that manifest from DIR's archives
 
 default: check
 
@@ -20,3 +22,12 @@ clippy:
 # Run all tests.
 test:
     cargo test
+
+# Compare the real archives in DIR (the Playtest install's Data folder) with
+# tests/baselines/playtest.tsv.
+baseline-check dir:
+    BA2_BASELINE_DIR="{{dir}}" cargo test --release --test baseline -- --nocapture
+
+# Rewrite tests/baselines/playtest.tsv from the archives in DIR.
+baseline dir:
+    BA2_BASELINE_DIR="{{dir}}" BA2_BASELINE_WRITE=1 cargo test --release --test baseline
