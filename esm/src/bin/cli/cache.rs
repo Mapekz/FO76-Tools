@@ -79,20 +79,23 @@ pub(crate) fn cmd_cache_status(esm: &Path, as_json: bool) -> anyhow::Result<()> 
 /// `esm cache build`: build `sections` (every section when empty) for `esm`
 /// in this process, under the usual build lease. Opening the database builds
 /// the eager sections (`forms`, `tree`, `lstrings`, `curves`); the lazy index
-/// sections are built on request.
+/// sections are built on request. Progress shows on stderr (the detached
+/// builder's stderr is null).
 pub(crate) fn cmd_cache_build(esm: &Path, sections: &[BuildStage]) -> anyhow::Result<()> {
-    let db = esm::Database::open(esm)?;
-    let wants = |stage| sections.is_empty() || sections.contains(&stage);
-    if wants(BuildStage::Edid) {
-        db.ensure_edid_index()?;
-    }
-    if wants(BuildStage::Search) {
-        db.ensure_search_index()?;
-    }
-    if wants(BuildStage::Xref) {
-        db.ensure_xref_index()?;
-    }
-    Ok(())
+    crate::progress_ui::watched(&[esm], || {
+        let db = esm::Database::open(esm)?;
+        let wants = |stage| sections.is_empty() || sections.contains(&stage);
+        if wants(BuildStage::Edid) {
+            db.ensure_edid_index()?;
+        }
+        if wants(BuildStage::Search) {
+            db.ensure_search_index()?;
+        }
+        if wants(BuildStage::Xref) {
+            db.ensure_xref_index()?;
+        }
+        Ok(())
+    })
 }
 
 /// `esm cache clear`: delete every cache section built for `esm`.

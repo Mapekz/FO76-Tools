@@ -11,8 +11,9 @@
 //! # Where this hooks in
 //!
 //! [`watched`] wraps each call that opens or queries an ESM — `main.rs`'s
-//! `Backend::run`, and the commands that open a `Database` themselves
-//! (`diff`, and `get`/`list`/`search`/`refs` with source overrides) — not
+//! `Backend::run`, each `batch` request, and the commands that open a
+//! `Database` themselves (`diff`, `cache build`, and `get`/`list`/`search`/
+//! `refs` with source overrides) — not
 //! `dispatch_command`, because every `cmd_*` function prints its result
 //! immediately after that call returns (see e.g. `cmd_info` in
 //! `inspect.rs`). Wrapping the call itself means `stop()` (which blocks

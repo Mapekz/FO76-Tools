@@ -579,12 +579,18 @@ struct Backend(esm::host::Host);
 
 impl Backend {
     fn run(&mut self, esm: &Path, op: esm::ops::Op) -> anyhow::Result<serde_json::Value> {
-        let mut esms = vec![esm];
-        if let esm::ops::Op::Diff(esm::ops::DiffArgs { b, .. }) = &op {
-            esms.push(b);
-        }
-        progress_ui::watched(&esms, || self.0.run(esm, &op))
+        progress_ui::watched(&op_esms(esm, &op), || self.0.run(esm, &op))
     }
+}
+
+/// Every ESM running `op` against `esm` may open: `esm`, plus a diff's
+/// second side.
+fn op_esms<'a>(esm: &'a Path, op: &'a esm::ops::Op) -> Vec<&'a Path> {
+    let mut esms = vec![esm];
+    if let esm::ops::Op::Diff(esm::ops::DiffArgs { b, .. }) = op {
+        esms.push(b);
+    }
+    esms
 }
 
 /// Resolves the ESM path from `--esm` (clap already applies the

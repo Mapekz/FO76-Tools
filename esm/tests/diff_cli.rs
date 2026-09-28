@@ -96,3 +96,39 @@ fn a_cache_build_in_progress_is_reported_on_stderr() {
     );
     cleanup(&[&a, &b]);
 }
+
+#[test]
+fn batch_reports_a_cache_build_in_progress_on_stderr() {
+    use std::io::Write;
+    let a = snapshot("batch_progress", false);
+    let esm_a = std::fs::canonicalize(a.join("SeventySix.esm")).unwrap();
+    let lease = esm::progress::BuildLease::acquire(&esm_a, esm::progress::BuildStage::Forms, 1)
+        .expect("hold the build lease");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_esm"))
+        .arg("batch")
+        .env_remove("ESM_NO_PROGRESS")
+        .env("ESM_PROGRESS_GRACE_MS", "0")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn esm batch");
+    let request = serde_json::json!({"esm": esm_a, "op": {"op": "file_info"}});
+    let mut stdin = child.stdin.take().unwrap();
+    writeln!(stdin, "{request}").unwrap();
+    drop(stdin);
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    drop(lease);
+    let out = child.wait_with_output().expect("wait for esm batch");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "batch failed: {stderr}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("\"ok\""),
+        "the request succeeds"
+    );
+    assert!(
+        stderr.contains("building index cache"),
+        "batch reports the build it waits on: {stderr}"
+    );
+    cleanup(&[&a]);
+}

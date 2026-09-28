@@ -21,7 +21,10 @@ pub(crate) fn cmd_batch() -> anyhow::Result<()> {
             continue;
         }
         let response = match serde_json::from_str::<Request>(&line) {
-            Ok(request) => Response::from_result(host.run(&request.esm, &request.op)),
+            Ok(request) => Response::from_result(crate::progress_ui::watched(
+                &crate::op_esms(&request.esm, &request.op),
+                || host.run(&request.esm, &request.op),
+            )),
             Err(e) => Response::Err {
                 error: format!("invalid request: {e}"),
             },
