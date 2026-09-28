@@ -55,13 +55,15 @@ Pass the positional arguments through: none means the newest two snapshots under
 date token or an absolute snapshot directory. The out-dir defaults to
 `$FO76_DATA_DIR/notes/<OLD>_to_<NEW>`. Pass `--force-pipeline` only when the user asked for it.
 
-`prepare` reuses the out-dir's mechanical output when its manifest matches the two tokens,
-the NEW ESM's size and mtime, the excluded types, and the pipeline version; otherwise it runs
-the pipeline. It then builds the new snapshot's `esm` cache so no writer's first query waits
-on it, triages (reused output keeps its triage, merged assessment included, unless
-`--retriage`), and slices the DEEP tier for the writers. From its JSON, take `out_dir`
-(`OUT`), `old`/`new` (`token`, `esm`: `OLD_ESM`/`NEW_ESM`), `tiers`, `deep_slices`,
-`official_notes`, and `warnings`.
+`prepare` reuses the out-dir's mechanical output when its manifest matches both snapshots
+(token, ESM size and mtime), the excluded types and the pipeline version, and every artifact
+it reads is present and well-formed; otherwise it runs the pipeline. It then builds the new
+snapshot's `esm` cache so no writer's first query waits on it, and runs `esm coverage --gate`
+on it: a decode gap stops `prepare` non-zero (see `kb/pipeline-gotchas.md`). It triages
+(reused output keeps a usable triage, merged assessment included, unless `--retriage`) and
+slices the DEEP tier for the writers. From its JSON, take `out_dir` (`OUT`), `old`/`new`
+(`token`, `esm`: `OLD_ESM`/`NEW_ESM`), `tiers`, `deep_slices`, `official_notes`, and
+`warnings`.
 
 `official_notes` reports the `--official-notes` input: `fetched`/`copied` (in
 `$OUT/work/official-notes.txt`), `client_rendered` (use an available browser or page-fetch

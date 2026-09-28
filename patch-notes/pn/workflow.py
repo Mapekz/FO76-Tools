@@ -126,20 +126,68 @@ def default_out_dir(old_esm: Path, new_esm: Path, root: Path | None) -> Path:
     return root / "notes" / name
 
 
-def reusable(out_dir: Path, old_esm: Path, new_esm: Path, exclude_type: str) -> bool:
-    """Whether `out_dir` already holds this pair's mechanical output, made
-    with the same excluded types at the current pipeline version."""
+#: The mechanical artifacts `prepare` goes on to read, by manifest key.
+REQUIRED_ARTIFACTS = {
+    "diff": layout.diff_json,
+    "comprehensive_json": layout.comprehensive_json,
+    "bundles": layout.bundles_json,
+    "lints": layout.lints_json,
+}
+
+
+def reuse_problem(out_dir: Path, old_esm: Path, new_esm: Path, exclude_type: str) -> str | None:
+    """Why `out_dir` doesn't hold this pair's finished mechanical output
+    (both snapshots as they are now, the same excluded types, the current
+    pipeline version, every artifact present and well-formed); `None` when
+    it does."""
     manifest = pl.load_manifest(out_dir)
-    inputs = (manifest or {}).get("inputs") or {}
-    stat = new_esm.stat()
-    return (
-        inputs.get("old_token") == mpn.esm_token(old_esm)
-        and inputs.get("new_token") == mpn.esm_token(new_esm)
-        and inputs.get("new_esm_size") == stat.st_size
-        and inputs.get("new_esm_mtime") == int(stat.st_mtime)
-        and inputs.get("pipeline_version") == schemas.PIPELINE_VERSION
-        and inputs.get("exclude_type") == exclude_type
-    )
+    if not manifest:
+        return "no manifest"
+    inputs = manifest.get("inputs") or {}
+    for side, esm in (("old", old_esm), ("new", new_esm)):
+        stat = esm.stat()
+        if (
+            inputs.get(f"{side}_token") != mpn.esm_token(esm)
+            or inputs.get(f"{side}_esm_size") != stat.st_size
+            or inputs.get(f"{side}_esm_mtime") != int(stat.st_mtime)
+        ):
+            return f"the {side} snapshot differs from the run's"
+    if inputs.get("pipeline_version") != schemas.PIPELINE_VERSION:
+        return "made by another pipeline version"
+    if inputs.get("exclude_type") != exclude_type:
+        return "made with other excluded types"
+    mechanical = (manifest.get("stages") or {}).get("mechanical") or {}
+    files = mechanical.get("files") or {}
+    if not mechanical.get("completed_at"):
+        return "the mechanical stage didn't finish"
+    for key, path_of in REQUIRED_ARTIFACTS.items():
+        if key not in files or not path_of(out_dir).is_file():
+            return f"{path_of(out_dir).name} is missing"
+    try:
+        schemas.load(layout.comprehensive_json(out_dir), schemas.validate_comprehensive_payload)
+        schemas.load(layout.bundles_json(out_dir), schemas.validate_bundles_payload)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return f"an artifact is malformed: {exc}"
+    return None
+
+
+def triage_problem(out_dir: Path) -> str | None:
+    """Why `work/triage.json` and its DEEP slice aren't a usable triage of
+    `bundles.json` (every bundle in exactly one tier); `None` when they are."""
+    if not layout.work_triage_json(out_dir).is_file():
+        return "no triage yet"
+    try:
+        triage = schemas.load(layout.work_triage_json(out_dir), schemas.validate_triage)
+        deep_slice = schemas.load(layout.work_deep_slice_json(out_dir), schemas.validate_deep_slice)
+        bundles = jsonio.read(layout.bundles_json(out_dir))["bundles"]
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return f"malformed: {exc}"
+    tiered = {bid for tier in schemas.TIERS for bid in triage[tier]}
+    if tiered != {b["id"] for b in bundles}:
+        return "its tiers don't cover exactly the bundles"
+    if {b["id"] for b in deep_slice["bundles"]} != set(triage["deep"]):
+        return "the DEEP slice doesn't match the DEEP tier"
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -202,6 +250,22 @@ def build_cache(esm_bin: Path, esm: Path) -> None:
     subprocess.run([str(esm_bin), "--esm", str(esm), "cache", "build"], check=True, stdout=subprocess.DEVNULL)
 
 
+def coverage_gate(esm_bin: Path, esm: Path) -> tuple[bool, dict | None, str]:
+    """`esm coverage --gate` over `esm`: whether every record decodes with
+    no gap (raw fallbacks, malformed or trailing bytes, unmapped subrecords,
+    unknown records), the marker totals, and the gate's error text."""
+    proc = subprocess.run(
+        [str(esm_bin), "--esm", str(esm), "coverage", "--gate", "--json"],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        totals = json.loads(proc.stdout).get("totals")
+    except (ValueError, AttributeError):
+        totals = None
+    return proc.returncode == 0, totals, proc.stderr.strip()
+
+
 # --------------------------------------------------------------------------
 # Verbs
 # --------------------------------------------------------------------------
@@ -244,15 +308,14 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
     out_dir = args.out_dir or default_out_dir(old_esm, new_esm, root)
 
     exclude_type = args.exclude_type.strip()
-    reused = not args.force_pipeline and reusable(out_dir, old_esm, new_esm, exclude_type)
+    problem = "--force-pipeline" if args.force_pipeline else reuse_problem(out_dir, old_esm, new_esm, exclude_type)
+    reused = problem is None
     if not reused:
+        eprint(f"running the mechanical stage ({problem})")
         run_args = [str(old_dir), str(new_dir), "--out-dir", str(out_dir), "--esm-bin", str(esm_bin)]
         run_args += ["--exclude-type", exclude_type]
         if args.force_pipeline:
             run_args.append("--force-pipeline")
-        # A fresh mechanical stage invalidates the old triage now, before any
-        # later step can fail and leave it looking reusable.
-        layout.work_triage_json(out_dir).unlink(missing_ok=True)
         rc = mpn.main(run_args, client=client)
         if rc:
             return rc, None
@@ -275,9 +338,19 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
     except subprocess.CalledProcessError as exc:
         eprint(f"error: esm cache build failed ({exc.returncode})")
         return 1, None
+    # A decode gap in the new snapshot would reach the writers as missing
+    # or wrong data (see skill/kb/pipeline-gotchas.md): stop here instead.
+    eprint("checking the new snapshot's decode coverage")
+    covered, coverage, coverage_error = coverage_gate(esm_bin, new_esm)
+    if not covered:
+        eprint(f"error: esm coverage --gate failed: {coverage_error or 'no detail'}")
+        return 1, None
     # Reused output keeps its triage, including a merged assessment, unless
-    # asked; the pipeline having run, or no triage yet, means triaging now.
-    retriaged = not reused or args.retriage or not layout.work_triage_json(out_dir).is_file()
+    # asked; the pipeline having run, or no usable triage, means triaging now.
+    stale_triage = triage_problem(out_dir) if reused else None
+    if stale_triage and stale_triage != "no triage yet":
+        eprint(f"re-triaging: the kept triage is unusable ({stale_triage})")
+    retriaged = not reused or args.retriage or stale_triage is not None
     if retriaged:
         triage_bundles.run_triage(out_dir)
     slices = split_deep_slice(out_dir)
@@ -289,6 +362,7 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
             "new": {"token": mpn.esm_token(new_esm), "esm": str(new_esm)},
             "reused": reused,
             "retriaged": retriaged,
+            "coverage": coverage,
             "official_notes": notes,
             "tiers": triage_summary(out_dir),
             "ambiguous_json": str(layout.work_ambiguous_json(out_dir)),

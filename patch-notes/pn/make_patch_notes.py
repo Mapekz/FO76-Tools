@@ -391,6 +391,11 @@ def main(argv=None, *, client=None):
             f"Pass --force-pipeline to overwrite it on purpose, or use a scratch --out-dir.")
     out_dir.mkdir(parents=True, exist_ok=True)
     eprint(f"  out dir: {out_dir}")
+    # This run replaces the directory's artifacts. Until it finishes, nothing
+    # here may pass for a finished run: the manifest marks a complete
+    # mechanical stage, and triage.json a triage of that stage's bundles.
+    layout.manifest_json(out_dir).unlink(missing_ok=True)
+    layout.work_triage_json(out_dir).unlink(missing_ok=True)
 
     old_token = esm_token(esm_a)
     new_token = esm_token(esm_b)
@@ -506,6 +511,8 @@ def main(argv=None, *, client=None):
         new_token=new_token,
         new_esm_size=esm_b.stat().st_size,
         new_esm_mtime=int(esm_b.stat().st_mtime),
+        old_esm_size=esm_a.stat().st_size,
+        old_esm_mtime=int(esm_a.stat().st_mtime),
         pipeline_version=schemas.PIPELINE_VERSION,
         counts=manifest_counts,
         localized=localized,

@@ -139,6 +139,69 @@ class TestPrepareGatePublish(TempDirTestCase):
         assert summary is not None
         self.assertTrue(summary["retriaged"])
 
+    def run_mechanical(self, **patches):
+        """The mechanical stage run directly (`pn run`), as a rerun outside
+        `prepare` would."""
+        from pn import make_patch_notes as mpn
+
+        args = [str(self.data / "20260626"), str(self.data / "20260703"), "--out-dir", str(self.out)]
+        args += ["--esm-bin", str(self.esm_bin)]
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            try:
+                return mpn.main(args, client=FakeGateway(REFS_GRAPH))
+            except SystemExit as exc:
+                return exc.code
+
+    def test_a_direct_mechanical_rerun_retires_the_triage(self):
+        self.prepare()
+        self.assertEqual(self.run_mechanical(), 0)
+        self.assertFalse(layout.work_triage_json(self.out).exists())
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["reused"])
+        self.assertTrue(summary["retriaged"])
+
+    def test_a_failed_mechanical_rerun_is_never_reused(self):
+        from pn import make_patch_notes as mpn
+
+        self.prepare()
+        with mock.patch.object(mpn.bb, "build_bundles", side_effect=RuntimeError("boom")):
+            self.assertEqual(self.run_mechanical(), 3)
+        self.assertFalse(layout.manifest_json(self.out).exists())
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertFalse(summary["reused"])
+
+    def test_missing_artifacts_or_a_changed_old_snapshot_are_not_reused(self):
+        self.prepare()
+        layout.lints_json(self.out).unlink()
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertFalse(summary["reused"])
+        (self.data / "20260626" / "SeventySix.esm").write_bytes(b"ANOTHER OLD ESM")
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertFalse(summary["reused"])
+
+    def test_an_unusable_kept_triage_is_retriaged(self):
+        self.prepare()
+        triage = jsonio.read(layout.work_triage_json(self.out))
+        triage["depe"] = triage.pop("deep")
+        jsonio.write(layout.work_triage_json(self.out), triage)
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["reused"])
+        self.assertTrue(summary["retriaged"])
+
+    def test_a_decode_coverage_gap_stops_prepare(self):
+        gap = (False, {"trailing": 3}, "gate check failed: 3 trailing")
+        with mock.patch.object(workflow, "coverage_gate", return_value=gap) as gate:
+            rc, summary = self.prepare()
+        self.assertEqual(rc, 1)
+        self.assertIsNone(summary)
+        gate.assert_called_once()
+        self.assertEqual(gate.call_args.args[1], self.data / "20260703" / "SeventySix.esm")
+
     def gate(self, *extra):
         esms = ["--old-esm", str(self.data / "20260626" / "SeventySix.esm")]
         esms += ["--new-esm", str(self.data / "20260703" / "SeventySix.esm")]

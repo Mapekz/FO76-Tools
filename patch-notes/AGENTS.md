@@ -59,7 +59,8 @@ cache build in `workflow.prepare`.
 
 The skill drives everything through four verbs in `pn/workflow.py`, each printing a JSON
 summary on stdout: `prepare` (snapshot resolution, the reuse check, the mechanical stage,
-the new snapshot's cache, triage, and the DEEP slices, split in two above 20 bundles),
+the new snapshot's cache and `esm coverage --gate`, triage, and the DEEP slices, split in two
+above 20 bundles),
 `merge-assessment` (the assessor's tiers, then re-slicing), `gate` (`check_claims.py`
 re-derives every number a writer claimed, from `comprehensive.json` or live `esm` lookups;
 `check_coverage.py` asserts every DEEP bundle id is covered by exactly one draft and, with
