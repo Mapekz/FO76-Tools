@@ -71,8 +71,8 @@ record definitions (`Core/wbDefinitionsFO76.pas`, `Core/wbDefinitionsCommon.pas`
 `schema/fo76.json` plus `schema/fo76.ctda.json` (the CTDA function table) and consults
 `schema/fo76.overrides.json` for subrecords TES5Edit doesn't define at all (see AGENTS.md's
 "Coverage drift handling" table — LVLI `LVLD`, REFR `MCND`, etc.). `tools/extractor/audit.py
---gate` is the parity gate: it fails the build when decode coverage regresses against the
-Pascal source. Fix decode coverage by changing the extractor or the overrides file — never by
+--gate` is the parity gate: it applies the same overrides to the Pascal-derived tree and fails
+when the shipped schema diverges from xEdit in a way no override (and its `reason`) explains. Fix decode coverage by changing the extractor or the overrides file — never by
 hand-editing the 2.3 MB generated JSON.
 
 ## Index & cache lifecycle
@@ -272,7 +272,7 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 **`tools/extractor/`** is the schema side of the pipeline, not the diff side: `extract.py`
 (schema generation, described above), `audit.py --gate` (the parity gate `just audit` runs),
 `hardcoded.py` (emits `schema/hardcoded_fo76.json` from xEdit's hardcoded pseudo-plugin, backing
-`src/hardcoded.rs`), and `pascal_stubs.py`/`parity-exceptions.json` (extractor support data).
+`src/hardcoded.rs`), and `pascal_stubs.py` (extractor support data).
 
 ## Where to tweak what
 

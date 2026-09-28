@@ -217,7 +217,7 @@ fn ench_firefly_ichor_decodes_correctly() {
 ///
 /// 12-subrecord record (EDID OBND FULL KSIZ KWDA ENIT EFID EFIT MAGA MAGF CODV
 /// MIID); form_version 209.  KSIZ/KWDA are absent from the Pascal reference but
-/// present in the live ESM — covered via `record_additions` override.  This test
+/// present in the live ESM — covered by an `append` override.  This test
 /// locks that path clean.
 #[test]
 fn ench_perk_concentrated_fire_decodes_correctly() {

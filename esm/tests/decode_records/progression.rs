@@ -68,7 +68,7 @@ fn reso_tea_wizard_resource_decodes_correctly() {
 }
 /// PCRD `DATA` decodes race eligibility, and the struct is named "Perk Card Data"
 /// (not "Unknown" — xEdit's placeholder name, carried over verbatim by the
-/// extractor before the `record_patches` override renamed it). Byte 6 is the
+/// extractor before an override renamed it). Byte 6 is the
 /// `Race Restriction` field: 0/1/2 = None/Human/Ghoul.
 ///
 /// Regression test for the reported bug where legendary perk cards

@@ -1,6 +1,7 @@
 # A record type TES5Edit doesn't define is hand-authored whole in `fo76.overrides.json`
 
-Status: accepted (2026-09-04)
+Status: accepted (2026-09-04); the `"records"` mechanism is now a record-level `replace`
+override (ADR 0015).
 
 `schema/fo76.json` is generated from TES5Edit's Pascal definitions, and the two override
 mechanisms the extractor had until now both presuppose a Pascal base: `record_patches` splices

@@ -12,8 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from extractor.extract import (
     Extractor,
-    _apply_patch,
     _normalize_count_paths,
+    _validate_override,
+    apply_overrides,
     format_overrides,
     write_schema_json,
 )
@@ -480,12 +481,12 @@ class TestFormatOverrides(unittest.TestCase):
             self.assertTrue(format_overrides(path, check=True))
 
 
-class TestApplyPatch(unittest.TestCase):
-    """record_patches splices: replace a node, or insert a sibling after it."""
+class TestApplyOverrides(unittest.TestCase):
+    """fo76.overrides.json entries: replace, insert_after and append."""
 
     @staticmethod
-    def record():
-        return {"members": [{
+    def records():
+        return {"QUST": {"name": "Quest", "members": [{
             "kind": "rarray",
             "name": "Objectives",
             "element": {"kind": "rstruct", "name": "Objective", "members": [
@@ -493,42 +494,81 @@ class TestApplyPatch(unittest.TestCase):
                 {"kind": "integer", "sig": "FNAM", "name": "Flags"},
                 {"kind": "lstring", "sig": "NNAM", "name": "Display Text"},
             ]},
-        }]}
+        }]}}
 
     @staticmethod
-    def sigs(record):
-        return [m["sig"] for m in record["members"][0]["element"]["members"]]
+    def sigs(records):
+        return [m["sig"] for m in records["QUST"]["members"][0]["element"]["members"]]
+
+    @staticmethod
+    def apply(records, op, path, node, record="QUST"):
+        entry = {"record": record, "op": op, "path": path, "reason": "test", "node": node}
+        _validate_override("test", entry)
+        return apply_overrides(records, [entry], ex=None)
 
     def test_replace_swaps_the_addressed_node(self):
-        rec = self.record()
-        _apply_patch(rec, ["Objectives", "element", "FNAM"], {"kind": "integer", "sig": "FNAM", "name": "New"})
-        self.assertEqual(self.sigs(rec), ["QOBJ", "FNAM", "NNAM"])
-        self.assertEqual(rec["members"][0]["element"]["members"][1]["name"], "New")
+        recs = self.records()
+        self.apply(recs, "replace", ["Objectives", "element", "FNAM"], {"kind": "integer", "sig": "FNAM", "name": "New"})
+        self.assertEqual(self.sigs(recs), ["QOBJ", "FNAM", "NNAM"])
+        self.assertEqual(recs["QUST"]["members"][0]["element"]["members"][1]["name"], "New")
 
-    def test_insert_after_keeps_the_node_and_adds_its_next_sibling(self):
-        rec = self.record()
-        _apply_patch(rec, ["Objectives", "element", "FNAM"], {"kind": "integer", "sig": "QOST"}, "insert_after")
-        self.assertEqual(self.sigs(rec), ["QOBJ", "FNAM", "QOST", "NNAM"])
+    def test_replace_with_an_empty_path_defines_the_record(self):
+        recs = self.records()
+        self.apply(recs, "replace", [], {"name": "Progression Track", "members": []}, record="PGTR")
+        self.assertEqual(recs["PGTR"], {"name": "Progression Track", "members": []})
 
-    def test_insert_after_rejects_an_element_target(self):
-        with self.assertRaises(ValueError):
-            _apply_patch(self.record(), ["Objectives", "element"], {"kind": "integer"}, "insert_after")
+    def test_insert_after_keeps_the_node_and_adds_the_new_ones_in_order(self):
+        recs = self.records()
+        self.apply(recs, "insert_after", ["Objectives", "element", "FNAM"], [
+            {"kind": "integer", "sig": "QOST"}, {"kind": "integer", "sig": "QOS2"},
+        ])
+        self.assertEqual(self.sigs(recs), ["QOBJ", "FNAM", "QOST", "QOS2", "NNAM"])
 
-    def test_unknown_op_is_rejected(self):
-        with self.assertRaises(ValueError):
-            _apply_patch(self.record(), ["Objectives", "element", "FNAM"], {"kind": "integer"}, "append")
+    def test_append_adds_members_to_the_addressed_node(self):
+        recs = self.records()
+        self.apply(recs, "append", ["Objectives", "element"], {"kind": "integer", "sig": "QOST"})
+        self.assertEqual(self.sigs(recs), ["QOBJ", "FNAM", "NNAM", "QOST"])
+        self.apply(recs, "append", [], {"kind": "integer", "sig": "EAMT"})
+        self.assertEqual(recs["QUST"]["members"][-1]["sig"], "EAMT")
+
+    def test_a_replace_that_changes_nothing_is_reported_redundant(self):
+        recs = self.records()
+        same = {"kind": "integer", "sig": "FNAM", "name": "Flags"}
+        self.assertEqual(len(self.apply(recs, "replace", ["Objectives", "element", "FNAM"], same)), 1)
 
     def test_path_descends_through_union_variants(self):
         dialogue = {"kind": "rstruct", "name": "Dialogue", "members": [{"kind": "array", "sig": "HTID"}]}
-        rec = {"members": [{"kind": "union", "name": "Type Specific Action", "variants": [
+        recs = {"SCEN": {"members": [{"kind": "union", "name": "Type Specific Action", "variants": [
             dialogue,
             {"kind": "rstruct", "name": "Start Scene", "members": [{"kind": "empty", "sig": "HTID"}]},
-        ]}]}
-        _apply_patch(rec, ["Type Specific Action", "Start Scene", "HTID"], {"kind": "lstring", "sig": "HTID"})
-        self.assertEqual(rec["members"][0]["variants"], [
+        ]}]}}
+        self.apply(recs, "replace", ["Type Specific Action", "Start Scene", "HTID"], {"kind": "lstring", "sig": "HTID"}, record="SCEN")
+        self.assertEqual(recs["SCEN"]["members"][0]["variants"], [
             dialogue,
             {"kind": "rstruct", "name": "Start Scene", "members": [{"kind": "lstring", "sig": "HTID"}]},
         ])
+
+    def test_malformed_entries_are_rejected(self):
+        good = {"record": "QUST", "op": "append", "path": [], "reason": "why", "node": {"kind": "empty"}}
+        for bad in (
+            {**good, "reason": ""},
+            {**good, "op": "delete"},
+            {**good, "extra": 1},
+            {k: v for k, v in good.items() if k != "path"},
+            {**good, "op": "insert_after", "path": []},
+            {**good, "op": "replace", "node": [{"kind": "empty"}]},
+            {**good, "node": []},
+        ):
+            with self.assertRaises(ValueError, msg=bad):
+                _validate_override("test", bad)
+
+    def test_insert_after_rejects_an_element_target(self):
+        with self.assertRaises(ValueError):
+            self.apply(self.records(), "insert_after", ["Objectives", "element"], {"kind": "integer"})
+
+    def test_a_missing_path_step_is_an_error(self):
+        with self.assertRaises(ValueError):
+            self.apply(self.records(), "replace", ["Objectives", "element", "XXXX"], {"kind": "integer"})
 
 
 def _count_of(nodes: list, name: str) -> dict:

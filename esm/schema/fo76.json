@@ -14924,7 +14924,6 @@
           "sig": "INTV"
         },
         {
-          "_comment": "ENAM \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. One FormID between CNAM (Created Object) and BNAM (Workbench Keyword), seen only on HIDE_co_Lead_Hard (0x008F531D), pointing at LVLI HIDE_LL_CriticalCrafting_HardLead (0x00948FB2, Override Name '(Rare Craft) Drifter Intel'). Name inferred from that list's EditorID and Override Name, hence the '?'.",
           "kind": "formid",
           "sig": "ENAM",
           "name": "ENAM (Rare Craft List?)",
@@ -15071,7 +15070,6 @@
           "any_member": true
         },
         {
-          "_comment": "ETGR \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A 0-byte marker between NNAM (Display Name) and ETIP on the 4 ATX_COEN_Character_LevelBoost_* entitlements (e.g. 0x008DC1E8); meaning unknown. The sig occurs at most once per record, so the unscoped 'empty' take is safe.",
           "kind": "empty",
           "sig": "ETGR",
           "name": "ETGR - Unknown"
@@ -37920,7 +37918,6 @@
           "any_member": true
         },
         {
-          "_comment": "LVLD (Chance None) is wbBelowVersion(174) in TES5Edit \u2014 live data (fv\u2265174) still carries an empty LVLD subrecord not covered by the below_version:174 schema member.",
           "kind": "empty",
           "sig": "LVLD",
           "name": "Chance None (unused)",
@@ -38602,7 +38599,6 @@
           "any_member": true
         },
         {
-          "_comment": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
           "kind": "empty",
           "sig": "LVLD",
           "name": "Chance None (unused)",
@@ -39000,7 +38996,6 @@
           "any_member": true
         },
         {
-          "_comment": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
           "kind": "empty",
           "sig": "LVLD",
           "name": "Chance None (unused)",
@@ -39327,7 +39322,6 @@
           "sig": "LVUO"
         },
         {
-          "_comment": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
           "kind": "empty",
           "sig": "LVLD",
           "name": "Chance None (unused)",
@@ -48135,14 +48129,12 @@
           "name": "AWPC"
         },
         {
-          "_comment": "AWPB \u2014 reverse-engineered: 4 bytes = FormID 0x008BA6D3 in test record ATX_CAMPPets_Actor_RadHog_Standard. Absent from TES5Edit FO76 reference.",
           "kind": "formid",
           "sig": "AWPB",
           "name": "AWPB",
           "valid_refs": []
         },
         {
-          "_comment": "NPC_ conditions block (CITC count + CTDA array). CTDA structure is reference-grounded (same 32-byte layout as PERK/QUST conditions).",
           "kind": "rstruct",
           "name": "Conditions",
           "members": [
@@ -67171,7 +67163,6 @@
           "sig": "TSLT"
         },
         {
-          "_comment": "Pet Commands \u2014 live-game drift, in no wbDefinitions*.pas. Shape read off the 6 CAMPPets_*Race records (Cat_Tabby, Cat_RoboPaw, Dog_GermanShepherd, Dog_RoboPaw, RadHog, Deathclaw), 4 commands each.",
           "kind": "rarray",
           "name": "Pet Commands",
           "element": {
@@ -67219,7 +67210,6 @@
           }
         },
         {
-          "_comment": "PGTF \u2014 new in 20260903 on the same 6 records; points at the species' WorldPets_ProgressionTrack_* PGTR.",
           "kind": "formid",
           "name": "Progression Track",
           "valid_refs": [
@@ -69690,7 +69680,6 @@
           "sig": "MNAM"
         },
         {
-          "_comment": "MCND \u2014 live-game drift; absent from TES5Edit REFR in FO76, FO4, and SF1 (checked all three wbDefinitions*.pas). Seen only on the map-marker REFR HighwayTownMapMarker (0x007E808C), which carries 2 occurrences of 4 zero bytes. Kept as unknown/hex, wrapped in an rarray (matching NOCM's wbRArray('Unknown Datas', wbUnknown(DATA)) precedent, wbDefinitionsFO76.pas:15884) since a plain (non-array) 'unknown' member only consumes one of the 2 instances from the shared by_sig queue, leaving the second as _unmapped.",
           "kind": "rarray",
           "name": "Unknown MCND",
           "element": {
@@ -70283,7 +70272,6 @@
           "sig": "NAM4"
         },
         {
-          "_comment": "NAM5 \u2014 reverse-engineered: 1 byte in test record ATX_Resource_TeaWizard_resource. Absent from TES5Edit RESO definition.",
           "kind": "integer",
           "sig": "NAM5",
           "name": "NAM5",
@@ -75611,7 +75599,6 @@
           "sig": "MNAM"
         },
         {
-          "_comment": "SNAM \u2014 live-game drift (20260702 snapshot, ATX_/SCORE_S26_ statics); absent from TES5Edit STAT. Verified FormID \u2192 SNDR on 0x008D2753; matches MSTT/ASPC/SCOL 'Looping Sound' wbFormIDCk(SNAM,[SNDR]) precedent (wbDefinitionsFO76.pas:9223).",
           "kind": "formid",
           "sig": "SNAM",
           "name": "Looping Sound",
@@ -75620,7 +75607,6 @@
           ]
         },
         {
-          "_comment": "ANLD \u2014 live-game drift; sig is '{ New To Fallout 76 }' in xEdit and only defined as wbUnknown(ANLD) on MSTT (wbDefinitionsFO76.pas:9224). 8 zero bytes in all observed records; kept as unknown/hex like MSTT's.",
           "kind": "unknown",
           "sig": "ANLD",
           "name": "Unknown"
@@ -86788,7 +86774,6 @@
       ]
     },
     "PGTR": {
-      "_comment": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed.",
       "name": "Progression Track",
       "members": [
         {

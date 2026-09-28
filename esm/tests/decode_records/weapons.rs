@@ -751,7 +751,7 @@ fn weap_bash_damage_post_pass_sees_record_level_fields() {
 ///
 /// 39-subrecord record; form_version 205.  EAMT (Enchantment Amount, u16) is
 /// absent from the Pascal WEAP definition but present in the live ESM — covered
-/// via `record_additions` override.  This test locks that path clean.
+/// by an `append` override.  This test locks that path clean.
 #[test]
 fn weap_animatronic_alien_blaster_decodes_correctly() {
     // Verbatim subrecords from `esm get <esm>

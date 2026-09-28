@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Static parity audit: Pascal (wbDefinitionsFO76.pas) ↔ schema/fo76.json.
 
-Imports the extractor, re-runs it (pre-override) with _raw_itype annotations,
-then walks both member trees in parallel and classifies divergences.
+Imports the extractor, re-runs it with _raw_itype annotations, applies
+schema/fo76.overrides.json (each override carries the reason it diverges from
+xEdit), then walks that tree and the shipped schema in parallel and classifies
+the divergences no override explains.
 
 Usage:
     python3 tools/extractor/audit.py [--json] [--gate] [--record SIG] [--min-sev SEV]
 
 Exit codes:
-    0 — all findings either clean or allowlisted
-    1 — any CRITICAL/HIGH un-allowlisted finding (when --gate is passed)
+    0 — no CRITICAL/HIGH findings
+    1 — any CRITICAL/HIGH finding (when --gate is passed)
 """
 
 from __future__ import annotations
@@ -30,24 +32,24 @@ from extract import (  # noqa: E402
     FO76_PAS,
     INT_MAP,
     OUT,
+    OVERRIDES,
     SAFELIST,
     Extractor,
     find_matching_paren,
+    finish_schema,
+    load_overrides,
     read_text,
     sig_id,
     split_top_level,
 )
-
-EXCEPTIONS_FILE = _DIR / "parity-exceptions.json"
 
 # ── Severity constants and ranking ────────────────────────────────────────
 CRIT = "CRITICAL"
 HIGH = "HIGH"
 MED = "MEDIUM"
 LOW = "LOW"
-ALLOWED = "ALLOWED"
 
-SEV_ORDER: dict[str, int] = {CRIT: 0, HIGH: 1, MED: 2, LOW: 3, ALLOWED: 99}
+SEV_ORDER: dict[str, int] = {CRIT: 0, HIGH: 1, MED: 2, LOW: 3}
 
 # Type alias for a finding dict.
 Finding = dict[str, Any]
@@ -414,54 +416,6 @@ def _check_stub_downgrades(ex: "AuditExtractor", findings: list[Finding]) -> Non
         ex.report.unrecognized_by_record = saved_unrecognized_by_record
 
 
-# ── Exceptions allowlist ──────────────────────────────────────────────────
-def _load_exceptions(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    return json.loads(path.read_text(encoding="utf-8")).get("exceptions", [])
-
-
-def _matches_exception(f: Finding, exc: dict) -> bool:
-    """Check if a finding matches an exception entry."""
-    # Record: exact match or "*" wildcard
-    exc_record = exc.get("record", "*")
-    if exc_record != "*" and exc_record != f.get("record"):
-        return False
-    # class_: exact match or "*"
-    exc_class = exc.get("class_", "*")
-    if exc_class != "*" and exc_class != f.get("class_"):
-        return False
-    # path: exact match, "*", or prefix wildcard (trailing "*")
-    exc_path = exc.get("path", "*")
-    if exc_path != "*":
-        if exc_path.endswith("*"):
-            if not f.get("path", "").startswith(exc_path[:-1]):
-                return False
-        elif exc_path != f.get("path"):
-            return False
-    return True
-
-
-def _apply_exceptions(
-    findings: list[Finding],
-    exceptions: list[dict],
-) -> tuple[list[Finding], int]:
-    """Downgrade matching findings to ALLOWED. Returns (updated_findings, count)."""
-    applied = 0
-    result = []
-    for f in findings:
-        matched_exc = None
-        for exc in exceptions:
-            if _matches_exception(f, exc):
-                matched_exc = exc
-                break
-        if matched_exc:
-            f = {**f, "sev": ALLOWED, "exception_reason": matched_exc.get("reason", "")}
-            applied += 1
-        result.append(f)
-    return result, applied
-
-
 # ── Main audit runner ─────────────────────────────────────────────────────
 def run_audit(
     record_filter: str | None = None,
@@ -485,6 +439,8 @@ def run_audit(
     finally:
         sys.stderr = _old_stderr
     extractor_stderr = _captured.getvalue()
+    overrides = load_overrides(OVERRIDES)
+    redundant = finish_schema(pascal_schema, overrides, ex)
 
     # Surface any extractor warnings (defaulted tokens, failures, etc.)
     warning_lines = [
@@ -505,9 +461,19 @@ def run_audit(
         sys.exit(1)
     shipped: dict = json.loads(OUT.read_text(encoding="utf-8"))
 
-    exceptions = _load_exceptions(EXCEPTIONS_FILE)
-
-    all_findings: list[Finding] = []
+    all_findings: list[Finding] = [
+        {
+            "record": entry["record"],
+            "path": "/".join([entry["record"], *entry["path"]]),
+            "class_": "redundant-override",
+            "sev": MED,
+            "detail": f"{entry['op']} leaves the extracted node unchanged; delete the override",
+            "pascal": None,
+            "schema": None,
+        }
+        for entry in redundant
+        if not record_filter or entry["record"] == record_filter
+    ]
     sigs = [record_filter] if record_filter else SAFELIST
 
     for sig in sigs:
@@ -517,12 +483,8 @@ def run_audit(
         if p_rec is None and s_rec is None:
             continue
         if p_rec is None:
-            # Record the extractor could not build from Pascal at all (e.g. no
-            # matching wbRecord(...) call found) — nothing to compare against;
-            # informational only. Records with a hand-authored record_patches
-            # entry still extract natively and fall through to the per-member
-            # comparison below (see parity-exceptions.json for their allowlisted
-            # divergences).
+            # Neither Pascal nor an override defines the record — nothing to
+            # compare against; informational only.
             continue
         if s_rec is None:
             # Pascal has a record but schema has nothing.
@@ -577,18 +539,14 @@ def run_audit(
                 "schema": None,
             })
 
-    all_findings, exc_count = _apply_exceptions(all_findings, exceptions)
-
     # ── Totals ─────────────────────────────────────────────────────────────
-    active = [f for f in all_findings if f["sev"] != ALLOWED]
     totals: dict[str, Any] = {
         "total": len(all_findings),
-        "exceptions_applied": exc_count,
-        "active": len(active),
+        "overrides_applied": len(overrides),
         "by_severity": {},
         "by_class": {},
     }
-    for f in active:
+    for f in all_findings:
         sev = f["sev"]
         cls = f["class_"]
         totals["by_severity"][sev] = totals["by_severity"].get(sev, 0) + 1
@@ -600,14 +558,14 @@ def run_audit(
 # ── Output ────────────────────────────────────────────────────────────────
 def _print_table(findings: list[Finding], totals: dict, min_sev_order: int = 3) -> None:
     """Print a human-readable sorted table of active findings."""
-    active = [
-        f for f in findings
-        if f["sev"] != ALLOWED and SEV_ORDER.get(f["sev"], 99) <= min_sev_order
-    ]
+    active = [f for f in findings if SEV_ORDER.get(f["sev"], 99) <= min_sev_order]
     active.sort(key=lambda f: (SEV_ORDER.get(f["sev"], 99), f["record"], f["path"]))
 
     if not active:
-        print("✓  No active parity findings (all clean or allowlisted)")
+        print(
+            f"✓  No parity findings beyond the {totals['overrides_applied']} "
+            "overrides in fo76.overrides.json"
+        )
         return
 
     W_SEV = 8
@@ -634,8 +592,7 @@ def _print_table(findings: list[Finding], totals: dict, min_sev_order: int = 3) 
     print()
     print(
         f"Findings: {totals['total']} total  "
-        f"{totals['active']} active  "
-        f"{totals['exceptions_applied']} exceptions applied"
+        f"{totals['overrides_applied']} overrides applied"
     )
     sev_str = "  ".join(f"{k}:{v}" for k, v in sorted(
         totals["by_severity"].items(), key=lambda x: SEV_ORDER.get(x[0], 99)
@@ -656,8 +613,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description=(
             "Static parity audit: Pascal definitions ↔ schema/fo76.json.\n"
-            "Classifies divergences by severity and applies an allowlist for "
-            "intentional differences."
+            "Classifies the divergences fo76.overrides.json doesn't explain."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -690,11 +646,7 @@ def main() -> None:
         for f in findings:
             by_record.setdefault(f["record"], []).append(f)
         print(json.dumps(
-            {
-                "by_record": by_record,
-                "totals": totals,
-                "exceptions_applied": totals["exceptions_applied"],
-            },
+            {"by_record": by_record, "totals": totals},
             indent=2,
         ))
     else:
@@ -708,7 +660,7 @@ def main() -> None:
         if n_crit_high > 0:
             print(
                 f"\nGATE FAILED: {n_crit_high} CRITICAL/HIGH finding(s) "
-                f"require resolution or allowlisting",
+                f"need a schema fix or an override with its reason",
                 file=sys.stderr,
             )
             sys.exit(1)

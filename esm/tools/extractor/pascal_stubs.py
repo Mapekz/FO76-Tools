@@ -68,7 +68,7 @@ _tint_slot_enum = (
 # FO76 uses a 32-layer cloud texture system with special 4-byte sigs.
 # Layers 0-9: "00TX"-"90TX" (alphanumeric, injectable directly).
 # Layers 17-31: "A0TX"-"O0TX" (alphanumeric, injectable directly).
-# Layers 10-16: ":0TX"-"@0TX" (non-alphanumeric, added via record_additions).
+# Layers 10-16: ":0TX"-"@0TX" (non-alphanumeric, inserted by fo76.overrides.json).
 _cloud_tex_parts: list[str] = []
 for _i in range(10):  # layers 0-9: sig = chr(0x30+i)+"0TX" = "00TX"-"90TX"
     _sig = f"{_i}0TX"

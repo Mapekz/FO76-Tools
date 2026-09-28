@@ -1,7 +1,71 @@
 {
-  "record_additions": {
-    "ENCH": [
-      {
+  "_comment": "Hand-authored schema fixes applied, in order, over the extractor's output: each entry names a record, an op (replace, insert_after, append), a path of member sigs/names ('element' enters an array element; [] is the record itself), the node (a list inserts or appends several), and the reason xEdit's definition doesn't match the game data. The parity audit applies the same entries, so every divergence from xEdit is one of these.",
+  "overrides": [
+    {
+      "record": "BOOK",
+      "op": "insert_after",
+      "path": [
+        "DNAM",
+        "Text Offset"
+      ],
+      "reason": "fv 210+ DNAM is 14 bytes: a trailing u8 (0 or 1 on the 20260918 snapshot, e.g. HIDELeadMedium 0x008EFC79 = 1) that xEdit doesn't declare.",
+      "node": {
+        "kind": "integer",
+        "name": "Unknown",
+        "width": "u8",
+        "signed": false,
+        "from_version": 210
+      }
+    },
+    {
+      "record": "COBJ",
+      "op": "append",
+      "path": [],
+      "reason": "ENAM \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. One FormID between CNAM (Created Object) and BNAM (Workbench Keyword), seen only on HIDE_co_Lead_Hard (0x008F531D), pointing at LVLI HIDE_LL_CriticalCrafting_HardLead (0x00948FB2, Override Name '(Rare Craft) Drifter Intel'). Name inferred from that list's EditorID and Override Name, hence the '?'.",
+      "node": {
+        "kind": "formid",
+        "sig": "ENAM",
+        "name": "ENAM (Rare Craft List?)",
+        "valid_refs": [
+          "LVLI"
+        ]
+      }
+    },
+    {
+      "record": "COEN",
+      "op": "append",
+      "path": [],
+      "reason": "ETGR \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A 0-byte marker between NNAM (Display Name) and ETIP on the 4 ATX_COEN_Character_LevelBoost_* entitlements (e.g. 0x008DC1E8); meaning unknown. The sig occurs at most once per record, so the unscoped 'empty' take is safe.",
+      "node": {
+        "kind": "empty",
+        "sig": "ETGR",
+        "name": "ETGR - Unknown"
+      }
+    },
+    {
+      "record": "CSTY",
+      "op": "insert_after",
+      "path": [
+        "General",
+        "Evade Threat Chance"
+      ],
+      "reason": "CSGD is 52 bytes on 38 fv 208+ records (48 elsewhere); the extra 4 bytes are CURV FormIDs such as HIDE_crDrifter_EquipmentSwitch_ScoreFallOff (0x008F4E5F). xEdit stops at 12 floats.",
+      "node": {
+        "kind": "formid",
+        "name": "Equipment Switch Score Falloff Curve",
+        "valid_refs": [
+          "CURV",
+          "NULL"
+        ],
+        "from_size": 52
+      }
+    },
+    {
+      "record": "ENCH",
+      "op": "append",
+      "path": [],
+      "reason": "KSIZ/KWDA (keywords) are absent from xEdit's ENCH definition but present in the live ESM, e.g. EnchPerkConcentratedFire (0x00900A5A, form_version 209).",
+      "node": {
         "kind": "rstruct",
         "name": "Keywords",
         "members": [
@@ -27,31 +91,150 @@
           }
         ]
       }
-    ],
-    "WEAP": [
-      {
-        "kind": "integer",
-        "name": "Enchantment Amount",
-        "width": "u16",
-        "signed": false,
-        "sig": "EAMT"
+    },
+    {
+      "record": "GMRW",
+      "op": "append",
+      "path": [],
+      "reason": "XALG \u2014 live-game drift subrecord absent from TES5Edit GMRW definition; expanded from wbXALG (u64 legendary flags).",
+      "node": {
+        "$pascal_var": "wbXALG"
       }
-    ],
-    "NPC_": [
-      {
+    },
+    {
+      "record": "INFO",
+      "op": "replace",
+      "path": [
+        "Responses",
+        "element",
+        "BNAM"
+      ],
+      "reason": "BNAM \u2014 xEdit mislabels as wbLStringKC(BNAM, 'Comment?') (wbDefinitionsFO76.pas:12120); the '?' was authorial doubt. Verified on SeventySix.esm: the 4-byte payload always equals the owning INFO record's own FormID (self-reference), not an lstring ID.",
+      "node": {
+        "kind": "formid",
+        "sig": "BNAM",
+        "name": "Comment?",
+        "valid_refs": [
+          "INFO"
+        ]
+      }
+    },
+    {
+      "record": "LVLI",
+      "op": "append",
+      "path": [],
+      "reason": "LVLD (Chance None) is wbBelowVersion(174) in TES5Edit \u2014 live data (fv\u2265174) still carries an empty LVLD subrecord not covered by the below_version:174 schema member.",
+      "node": {
+        "kind": "empty",
+        "sig": "LVLD",
+        "name": "Chance None (unused)",
+        "from_version": 174
+      }
+    },
+    {
+      "record": "LVLN",
+      "op": "insert_after",
+      "path": [
+        "Leveled List Entries",
+        "element",
+        "Chance None Value"
+      ],
+      "reason": "Per-entry Chance None Global (issue #41): LVLN entries carry LVOC like LVLI's; xEdit comments it out of the LVLN entry.",
+      "node": {
+        "kind": "formid",
+        "name": "Chance None Global",
+        "valid_refs": [
+          "GLOB"
+        ],
+        "sig": "LVOC"
+      }
+    },
+    {
+      "record": "LVLN",
+      "op": "append",
+      "path": [],
+      "reason": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
+      "node": {
+        "kind": "empty",
+        "sig": "LVLD",
+        "name": "Chance None (unused)",
+        "from_version": 174
+      }
+    },
+    {
+      "record": "LVLP",
+      "op": "append",
+      "path": [],
+      "reason": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
+      "node": {
+        "kind": "empty",
+        "sig": "LVLD",
+        "name": "Chance None (unused)",
+        "from_version": 174
+      }
+    },
+    {
+      "record": "LVPC",
+      "op": "append",
+      "path": [],
+      "reason": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
+      "node": {
+        "kind": "empty",
+        "sig": "LVLD",
+        "name": "Chance None (unused)",
+        "from_version": 174
+      }
+    },
+    {
+      "record": "MATO",
+      "op": "replace",
+      "path": [
+        "Directional Material Data",
+        "Single Pass"
+      ],
+      "reason": "xEdit gates Single Pass at fv 31, but fv 25/26 records carry it too (0x00035094: DATA is 48 bytes, the full struct). An integer field decodes only when its bytes are present, so the ungated field is right for shorter DATA as well.",
+      "node": {
+        "kind": "integer",
+        "name": "Single Pass",
+        "width": "u32",
+        "signed": false,
+        "format": {
+          "enum": [
+            "False",
+            "True"
+          ]
+        }
+      }
+    },
+    {
+      "record": "NPC_",
+      "op": "append",
+      "path": [],
+      "reason": "AWPC \u2014 a 0-byte subrecord after AWPB on camp-pet actors such as ATX_CAMPPets_Actor_RadHog_Standard. Absent from TES5Edit FO76 reference.",
+      "node": {
         "kind": "empty",
         "sig": "AWPC",
         "name": "AWPC"
-      },
-      {
-        "_comment": "AWPB \u2014 reverse-engineered: 4 bytes = FormID 0x008BA6D3 in test record ATX_CAMPPets_Actor_RadHog_Standard. Absent from TES5Edit FO76 reference.",
+      }
+    },
+    {
+      "record": "NPC_",
+      "op": "append",
+      "path": [],
+      "reason": "AWPB \u2014 reverse-engineered: 4 bytes = FormID 0x008BA6D3 in test record ATX_CAMPPets_Actor_RadHog_Standard. Absent from TES5Edit FO76 reference.",
+      "node": {
         "kind": "formid",
         "sig": "AWPB",
         "name": "AWPB",
         "valid_refs": []
-      },
-      {
-        "_comment": "NPC_ conditions block (CITC count + CTDA array). CTDA structure is reference-grounded (same 32-byte layout as PERK/QUST conditions).",
+      }
+    },
+    {
+      "record": "NPC_",
+      "op": "append",
+      "path": [],
+      "reason": "NPC_ conditions block (CITC count + CTDA array). CTDA structure is reference-grounded (same 32-byte layout as PERK/QUST conditions).",
+      "node": {
         "kind": "rstruct",
         "name": "Conditions",
         "members": [
@@ -163,10 +346,1186 @@
           }
         ]
       }
-    ],
-    "RACE": [
-      {
-        "_comment": "Pet Commands \u2014 live-game drift, in no wbDefinitions*.pas. Shape read off the 6 CAMPPets_*Race records (Cat_Tabby, Cat_RoboPaw, Dog_GermanShepherd, Dog_RoboPaw, RadHog, Deathclaw), 4 commands each.",
+    },
+    {
+      "record": "PCRD",
+      "op": "replace",
+      "path": [
+        "DATA"
+      ],
+      "reason": "xEdit names this struct 'Unknown' verbatim (wbDefinitionsFO76.pas: wbStruct(DATA, 'Unknown', [...])) even though every field is fully decoded \u2014 Value/Min Level/Special/Race Restriction. Renamed here so it stops reading as an undecoded blob. Race Restriction (offset 6) is the race-eligibility byte: 0=None, 1=Human, 2=Ghoul.",
+      "node": {
+        "kind": "struct",
+        "name": "Perk Card Data",
+        "sig": "DATA",
+        "fields": [
+          {
+            "kind": "float",
+            "name": "Value"
+          },
+          {
+            "kind": "integer",
+            "name": "Min Level",
+            "width": "u8",
+            "signed": false
+          },
+          {
+            "kind": "integer",
+            "name": "Special",
+            "width": "u8",
+            "signed": false,
+            "format": {
+              "enum": [
+                "Strength",
+                "Perception",
+                "Endurance",
+                "Charisma",
+                "Intelligence",
+                "Agility",
+                "Luck",
+                "Unknown"
+              ]
+            }
+          },
+          {
+            "kind": "integer",
+            "name": "Race Restriction",
+            "width": "u8",
+            "signed": false,
+            "format": {
+              "enum": [
+                "None",
+                "Human",
+                "Ghoul"
+              ]
+            }
+          },
+          {
+            "kind": "unused",
+            "bytes": 1,
+            "below_version": 208
+          }
+        ]
+      }
+    },
+    {
+      "record": "PERK",
+      "op": "replace",
+      "path": [
+        "Effects",
+        "element"
+      ],
+      "reason": "wbPerkEffect is a HARD_RAW_VAR (runtime Pascal decider) \u2014 extractor cannot statically resolve the Effect element. This hand-authored rstruct has been validated against real ESM data. All other PERK members (EDID, DURL, VMAD, FULL, DESC, ICON, Conditions, Data, SNAM, PRFS, NNAM, FNAM, PRFI, PFAC) come from native extraction.",
+      "node": {
+        "kind": "rstruct",
+        "name": "Effect",
+        "members": [
+          {
+            "kind": "struct",
+            "sig": "PRKE",
+            "name": "Effect Header",
+            "fields": [
+              {
+                "kind": "integer",
+                "name": "Effect Type",
+                "width": "u8",
+                "format": {
+                  "enum": [
+                    "Quest",
+                    "Ability",
+                    "Entry Point"
+                  ]
+                }
+              },
+              {
+                "kind": "integer",
+                "name": "Rank",
+                "width": "u8"
+              },
+              {
+                "kind": "integer",
+                "name": "Priority",
+                "width": "u8",
+                "below_version": 181
+              }
+            ]
+          },
+          {
+            "kind": "union",
+            "sig": "DATA",
+            "name": "Effect Data",
+            "decider": {
+              "field": "Effect Header.Effect Type",
+              "default_variant": 2,
+              "map": {
+                "0": 0,
+                "1": 1,
+                "2": 2
+              }
+            },
+            "variants": [
+              {
+                "kind": "struct",
+                "name": "Quest + Stage",
+                "fields": [
+                  {
+                    "kind": "formid",
+                    "name": "Quest",
+                    "valid_refs": [
+                      "QUST"
+                    ]
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Quest Stage",
+                    "width": "u16"
+                  }
+                ]
+              },
+              {
+                "kind": "formid",
+                "name": "Ability",
+                "valid_refs": [
+                  "SPEL"
+                ]
+              },
+              {
+                "kind": "struct",
+                "name": "Entry Point",
+                "fields": [
+                  {
+                    "kind": "integer",
+                    "name": "Entry Point",
+                    "width": "u8",
+                    "format": {
+                      "enum": [
+                        "Mod Breath Timer",
+                        "Mod My Critical Hit Chance",
+                        "Mod My Critical Hit Damage Mult",
+                        "Mod Mine Explode Chance",
+                        "Mod Incoming Limb Damage",
+                        "Mod Book Actor Value Bonus",
+                        "Mod Recovered Health",
+                        "Set Should Attack",
+                        "Mod Buy Prices",
+                        "Add Leveled List On Death",
+                        "Set Max Carry Weight",
+                        "Mod Addiction Chance",
+                        "Mod Addiction Duration",
+                        "Mod Positive Chem Duration",
+                        "Activate",
+                        "Ignore Running During Detection",
+                        "Ignore Broken Lock",
+                        "Mod Enemy Critical Hit Chance",
+                        "Mod Sneak Attack Mult",
+                        "Mod Max Placeable Mines",
+                        "Mod Bow Zoom",
+                        "Mod Recover Arrow Chance",
+                        "Mod Exp",
+                        "Mod Move Camp Cost",
+                        "Mod Shuffle Cost",
+                        "Mod Workshop Build Cost",
+                        "Mod Bashing Damage",
+                        "Mod Power Attack Action Points",
+                        "Mod Power Attack Damage",
+                        "Mod Spell Magnitude",
+                        "Mod Spell Duration",
+                        "Mod Secondary Value Weight",
+                        "Mod Armor Weight",
+                        "Mod Incoming Stagger",
+                        "Mod Target Stagger",
+                        "Mod Weapon Attack Damage",
+                        "Mod Incoming Weapon Damage",
+                        "Mod Target Damage Resistance",
+                        "Mod Spell Cost",
+                        "Mod Percent Blocked",
+                        "Mod Shield Deflect Arrow Chance",
+                        "Mod Incoming Spell Magnitude",
+                        "Mod Incoming Spell Duration",
+                        "Mod Player Intimidation",
+                        "Mod Ricochet Chance",
+                        "Mod Ricochet Damage",
+                        "Mod Bribe Amount",
+                        "Mod Detection Light",
+                        "Mod Detection Movement",
+                        "Mod Scrap Reward Mult",
+                        "Set Sweep Attack",
+                        "Apply Combat Hit Spell",
+                        "Apply Bashing Spell",
+                        "Apply Reanimate Spell",
+                        "Set Boolean Graph Variable",
+                        "Mod Spell Casting Sound Event",
+                        "Mod VATS Critical Cost",
+                        "Mod Detection Sneak Skill",
+                        "Mod Falling Damage",
+                        "Mod Lockpick Sweet Spot",
+                        "Mod Sell Prices",
+                        "Mod VATS Attacker Accuracy",
+                        "Set Player Gate Lockpick",
+                        "Set Lockpick Starting Arc",
+                        "Set Progression Picking",
+                        "Set Lockpicks Unbreakable",
+                        "Mod Alchemy Effectiveness",
+                        "Apply Weapon Swing Spell",
+                        "Mod Commanded Actor Limit",
+                        "Apply Sneaking Spell",
+                        "Mod Player Magic Slowdown",
+                        "Mod Ward Magicka Absorption Pct",
+                        "Mod Initial Ingredient Effects Learned",
+                        "Purify Alchemy Ingredients",
+                        "Set Filter Activation",
+                        "Set Dual Cast",
+                        "Mod Outgoing Explosion Limb Damage",
+                        "Mod Enchantment Power",
+                        "Mod Soul Pct Captured to Weapon",
+                        "Mod VATS Attack Action Points",
+                        "Mod Reflect Damage Chance",
+                        "Set Activate Label",
+                        "Mod Kill Experience",
+                        "Mod Poison Dose Count",
+                        "Set Apply Placed Item",
+                        "Mod Armor Rating",
+                        "Mod lockpicking crime chance",
+                        "Mod ingredients harvested",
+                        "Mod Spell Range (Target Loc.)",
+                        "Mod Critical Charge Mult on Ricochet",
+                        "Mod lockpicking key reward chance",
+                        "Mod Auto Lockpicking Chance",
+                        "Mod Auto Hacking Chance",
+                        "Mod Typed Weapon Attack Damage",
+                        "Mod Typed Incoming Weapon Damage",
+                        "Mod Charisma Challenge Chance",
+                        "Mod Sprint AP Drain Rate",
+                        "Mod Drawn Weapon Weight Speed Effect",
+                        "Set Player Gate Hacking",
+                        "Mod Player Explosion Damage",
+                        "Mod Player Explosion Scale",
+                        "Set Rads To Health Mult",
+                        "Mod Actor Scope Stability",
+                        "Mod Actor Grenade Speed Mult",
+                        "Mod Explosion Force",
+                        "Mod VATS Penetration Min Visibility",
+                        "Mod Rads for Rad Health Max",
+                        "Mod VATS Player AP On Kill Chance",
+                        "Set VATS Fill Critical Bar On Hit",
+                        "Mod VATS Concentrated Fire Chance Bonus",
+                        "Mod Crafting Dupe Chance",
+                        "Mod VATS Hold Em Steady Bonus",
+                        "Mod Typed Spell Magnitude",
+                        "Mod Typed Incoming Spell Magnitude",
+                        "Set VATS Gun-Fu",
+                        "Mod Outgoing Limb Damage",
+                        "Mod Restore Action Cost Value",
+                        "Mod VATS Splash Damage",
+                        "Mod Incoming Battery Damage",
+                        "Mod VATS Critical Charge",
+                        "Mod Exp Location",
+                        "Mod Exp Speech",
+                        "Mod VATS Head Shot Chance",
+                        "Mod VATS Hit Chance",
+                        "Mod Incoming Explosion Damage",
+                        "Mod Ammo Health Mult",
+                        "Mod Hacking Guesses",
+                        "Mod Terminal Lockout Time",
+                        "Set Undetectable",
+                        "Invest In Vendor",
+                        "Mod Outgoing Limb Bash Damage",
+                        "Set Run While Over Encumbered",
+                        "Get Component Radar Distance",
+                        "Show Grenade Trajectory",
+                        "Mod Cone-of-fire Mult",
+                        "Mod VATS Concentrated Fire Damage Mult",
+                        "Apply Bloody Mess Spell",
+                        "Iron-Sights Activate",
+                        "Mod VATS Critical Fill Chance On Use",
+                        "Set VATS Critical Fill On AP Reward",
+                        "Set VATS Critical Fill On Stranger",
+                        "Mod Gun Range Mult",
+                        "Mod Scope Hold Breath AP Drain Mult",
+                        "Set Force Decapitate",
+                        "Mod VATS Shoot Explosive Damage Mult",
+                        "Mod Scrounger Fill Ammo Chance",
+                        "Set Can Explode Pants",
+                        "Set VATS Penetration Full Damage",
+                        "Mod VATS Gun-Fu 2nd Target Dmg Mult",
+                        "Mod VATS Gun-Fu 3rd Target Dmg Mult",
+                        "Mod VATS Gun-Fu 4th+ Target Dmg Mult",
+                        "Mod VATS Blitz Max Distance",
+                        "Set VATS Blitz Max Dmg Mult",
+                        "Mod VATS Blitz Dmg Bonus Dist",
+                        "Mod Bash Critical Chance",
+                        "Mod Evasion Chance",
+                        "Mod Fatigue for Fatigue AP Max",
+                        "Set Fatigue to AP Mult",
+                        "Mod Item Weight",
+                        "Set Alt Revive Item",
+                        "Mod VATS Splash Damage Radius",
+                        "Apply VATS Splash Damage Spell",
+                        "Mod Bleedout Time",
+                        "Mod Item Condition Loss",
+                        "Mod Crafting Creation Recipe Level",
+                        "Mod Workshop Repair Cost",
+                        "Mod Item Repair Mult",
+                        "Mod Weapon DMG Bonus Mult",
+                        "Mod Mysterious Stranger Chance",
+                        "Mod Item Spawn Count",
+                        "Apply Weapon Attack Spell",
+                        "Mod Item Condition Curve Ratio",
+                        "Mod Ammo Used Count",
+                        "Apply Combat Melee Spell",
+                        "Mod Barter Charisma",
+                        "Mod Mysterious Savior Chance",
+                        "Mod Item Repair Condition",
+                        "Mod Crafting Return Quantity",
+                        "Mod Damaged Condition Regen Delay",
+                        "Set Consume Revive Item",
+                        "Set Consume Travel Ticket",
+                        "Mod Wanted Timer Mult",
+                        "Auto Fill Weapon Clip",
+                        "Mod Fast Travel Cost",
+                        "Apply Friendly Hit Spell",
+                        "Set VATS Target Limbs",
+                        "Set Team Medic",
+                        "Apply On Kill Spell",
+                        "Set Damage on Consecutive Hits",
+                        "Mod Damage on Consecutive Hits",
+                        "Mod Max Consecutive Hits Allowed",
+                        "Mod Crafted Item Bonus Health",
+                        "Set Cheat Death",
+                        "Apply Combat Hit Spell Taken",
+                        "Apply On Death Spell",
+                        "Mod Max Barter Currency",
+                        "Mod Body Part Damage Mult",
+                        "Apply On Kill Participation Spell",
+                        "Is Next Clip Last Shot",
+                        "Instant Reload Clip On Bash",
+                        "Mod Attack Damage On Striking Appendage",
+                        "Apply Spell On Actor When Limb Crippled",
+                        "Mod Rads to Health Mult",
+                        "Mod Rads to Radshield Mult",
+                        "Mod Weak Body Part Damage Mult",
+                        "Mod Projectile Bounce Count",
+                        "Mod NPC Normalized Min Level",
+                        "Mod NPC Normalized Max level",
+                        "Mod NPC Normalized Level",
+                        "Mod Ammo Spender Max Stack Count",
+                        "Mod Ammo Spender Max Reload Stack Mult",
+                        "Mod Add Bullet To Clip Chance",
+                        "Mod Chain Damage Falloff"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Function",
+                    "width": "u8",
+                    "format": {
+                      "enum": [
+                        "Null Function",
+                        "Set Value",
+                        "Add Value",
+                        "Multiply Value",
+                        "Add Range To Value",
+                        "Add Actor Value Mult",
+                        "Absolute Value",
+                        "Negative Absolute Value",
+                        "Add Leveled List",
+                        "Add Activate Choice",
+                        "Select Spell",
+                        "Select Text",
+                        "Set to Actor Value Mult",
+                        "Multiply Actor Value Mult",
+                        "Multiply 1 + Actor Value Mult",
+                        "Set Text",
+                        "Select Item",
+                        "Unknown 17"
+                      ]
+                    }
+                  },
+                  {
+                    "kind": "integer",
+                    "name": "Perk Condition Tab Count",
+                    "width": "u8"
+                  },
+                  {
+                    "kind": "unused",
+                    "bytes": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rarray",
+            "name": "Perk Conditions",
+            "element": {
+              "kind": "rstruct",
+              "name": "Perk Condition",
+              "members": [
+                {
+                  "kind": "integer",
+                  "sig": "PRKC",
+                  "name": "Run On (Tab Index)",
+                  "width": "s8",
+                  "signed": true
+                },
+                {
+                  "kind": "rarray",
+                  "name": "Conditions",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Condition",
+                    "members": [
+                      {
+                        "kind": "struct",
+                        "name": "Condition Data",
+                        "sig": "CTDA",
+                        "fields": [
+                          {
+                            "kind": "integer",
+                            "name": "Type",
+                            "width": "u8",
+                            "signed": false
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 3
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Comparison Value",
+                            "len": 4
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Function",
+                            "width": "u16",
+                            "signed": false
+                          },
+                          {
+                            "kind": "unused",
+                            "bytes": 2
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Parameter #1",
+                            "len": 4
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Parameter #2",
+                            "len": 4
+                          },
+                          {
+                            "kind": "integer",
+                            "name": "Run On",
+                            "width": "u32",
+                            "signed": false,
+                            "format": {
+                              "enum": [
+                                "Subject",
+                                "Target",
+                                "Reference",
+                                "Combat Target",
+                                "Linked Reference",
+                                "Quest Alias",
+                                "Package Data",
+                                "Event Data",
+                                "Unknown 8",
+                                "Command Target",
+                                "Event Camera Ref",
+                                "My Killer",
+                                "Active Players",
+                                "Potential Players",
+                                "Player Teammates",
+                                "Target List",
+                                "Instance Owner"
+                              ]
+                            }
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Reference",
+                            "len": 4
+                          },
+                          {
+                            "kind": "bytes",
+                            "name": "Parameter #3",
+                            "len": 4
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "string",
+                        "name": "Parameter #1",
+                        "sig": "CIS1"
+                      },
+                      {
+                        "kind": "string",
+                        "name": "Parameter #2",
+                        "sig": "CIS2"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "kind": "integer",
+            "sig": "EPFT",
+            "name": "Function Type",
+            "width": "u8",
+            "format": {
+              "enum": [
+                "None",
+                "Float",
+                "Float/AV,Float",
+                "Leveled List",
+                "Activate Choice",
+                "Spell Item",
+                "Boolean Graph Variable",
+                "Text",
+                "Actor Value and Value",
+                "Item"
+              ]
+            }
+          },
+          {
+            "kind": "integer",
+            "sig": "EPFB",
+            "name": "Perk Entry ID",
+            "width": "u16"
+          },
+          {
+            "kind": "union",
+            "name": "Function Parameter 2",
+            "decider": {
+              "field": "Function Type",
+              "default_variant": 0,
+              "map": {
+                "1": 1,
+                "4": 2,
+                "5": 3
+              }
+            },
+            "variants": [
+              {
+                "kind": "bytes",
+                "sig": "EPF2",
+                "name": "Function Parameter 2"
+              },
+              {
+                "kind": "formid",
+                "sig": "EPF2",
+                "name": "Curve Table",
+                "valid_refs": [
+                  "CURV"
+                ]
+              },
+              {
+                "kind": "lstring",
+                "sig": "EPF2",
+                "name": "Button Label"
+              },
+              {
+                "kind": "integer",
+                "sig": "EPF2",
+                "name": "Unknown Spell Value",
+                "width": "u32",
+                "signed": false
+              }
+            ]
+          },
+          {
+            "kind": "union",
+            "name": "Function Parameter 3",
+            "decider": {
+              "field": "Function Type",
+              "default_variant": 0,
+              "map": {
+                "8": 1
+              }
+            },
+            "variants": [
+              {
+                "kind": "integer",
+                "sig": "EPF3",
+                "name": "Script Flags",
+                "width": "u16",
+                "signed": false,
+                "format": {
+                  "flags": [
+                    "Run Immediately",
+                    "Replace Default"
+                  ]
+                }
+              },
+              {
+                "kind": "formid",
+                "sig": "EPF3",
+                "name": "Function Parameter 3 (Actor Value)",
+                "valid_refs": [
+                  "AVIF"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "union",
+            "name": "Function Data",
+            "decider": {
+              "field": "Function Type",
+              "default_variant": 0,
+              "map": {
+                "0": 0,
+                "1": 1,
+                "2": 2,
+                "3": 3,
+                "4": 4,
+                "5": 4,
+                "6": 5,
+                "7": 6,
+                "8": 7,
+                "9": 8
+              }
+            },
+            "variants": [
+              {
+                "kind": "bytes",
+                "sig": "EPFD",
+                "name": "Data"
+              },
+              {
+                "kind": "float",
+                "sig": "EPFD",
+                "name": "Float"
+              },
+              {
+                "kind": "struct",
+                "sig": "EPFD",
+                "name": "Float, Float",
+                "fields": [
+                  {
+                    "kind": "float",
+                    "name": "Float 1"
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Float 2"
+                  }
+                ]
+              },
+              {
+                "kind": "formid",
+                "sig": "EPFD",
+                "name": "Leveled Item",
+                "valid_refs": [
+                  "LVLI"
+                ]
+              },
+              {
+                "kind": "formid",
+                "sig": "EPFD",
+                "name": "Spell",
+                "valid_refs": [
+                  "SPEL"
+                ]
+              },
+              {
+                "kind": "string",
+                "sig": "EPFD",
+                "name": "Text"
+              },
+              {
+                "kind": "lstring",
+                "sig": "EPFD",
+                "name": "Text"
+              },
+              {
+                "kind": "union",
+                "sig": "EPFD",
+                "name": "Function Data",
+                "decider": {
+                  "payload_size": {
+                    "0": 1,
+                    "1": 1,
+                    "2": 1,
+                    "3": 1,
+                    "4": 1,
+                    "5": 1,
+                    "6": 1,
+                    "7": 1
+                  },
+                  "default_variant": 0
+                },
+                "variants": [
+                  {
+                    "kind": "struct",
+                    "name": "Actor Value, Float",
+                    "fields": [
+                      {
+                        "kind": "union",
+                        "name": "Actor Value",
+                        "decider": {
+                          "form_version": {
+                            "min": 77,
+                            "max": null
+                          }
+                        },
+                        "variants": [
+                          {
+                            "kind": "integer",
+                            "name": "Actor Value",
+                            "width": "u32",
+                            "signed": false,
+                            "format": {
+                              "enum": {
+                                "-1": "None"
+                              }
+                            }
+                          },
+                          {
+                            "kind": "formid",
+                            "name": "Actor Value",
+                            "valid_refs": [
+                              "AVIF",
+                              "NULL"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "float",
+                        "name": "Float"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "float",
+                    "name": "Float"
+                  }
+                ]
+              },
+              {
+                "kind": "formid",
+                "sig": "EPFD",
+                "name": "Item",
+                "valid_refs": [
+                  "ALCH"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "union",
+            "name": "Function Parameter 2",
+            "decider": {
+              "field": "Function Type",
+              "default_variant": 0,
+              "map": {
+                "1": 1,
+                "4": 2,
+                "5": 3
+              }
+            },
+            "variants": [
+              {
+                "kind": "bytes",
+                "sig": "EPF2",
+                "name": "Function Parameter 2"
+              },
+              {
+                "kind": "formid",
+                "sig": "EPF2",
+                "name": "Curve Table",
+                "valid_refs": [
+                  "CURV"
+                ]
+              },
+              {
+                "kind": "lstring",
+                "sig": "EPF2",
+                "name": "Button Label"
+              },
+              {
+                "kind": "integer",
+                "sig": "EPF2",
+                "name": "Unknown Spell Value",
+                "width": "u32",
+                "signed": false
+              }
+            ]
+          },
+          {
+            "kind": "union",
+            "name": "Function Parameter 3",
+            "decider": {
+              "field": "Function Type",
+              "default_variant": 0,
+              "map": {
+                "8": 1
+              }
+            },
+            "variants": [
+              {
+                "kind": "integer",
+                "sig": "EPF3",
+                "name": "Script Flags",
+                "width": "u16",
+                "signed": false,
+                "format": {
+                  "flags": [
+                    "Run Immediately",
+                    "Replace Default"
+                  ]
+                }
+              },
+              {
+                "kind": "formid",
+                "sig": "EPF3",
+                "name": "Function Parameter 3 (Actor Value)",
+                "valid_refs": [
+                  "AVIF"
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "formid",
+            "sig": "EPF4",
+            "name": "Function Parameter 4 (Actor Value)",
+            "valid_refs": [
+              "AVIF"
+            ]
+          },
+          {
+            "kind": "empty",
+            "sig": "PRKF",
+            "name": "Effect End"
+          }
+        ],
+        "_comment": ""
+      }
+    },
+    {
+      "record": "PGTR",
+      "op": "replace",
+      "path": [],
+      "reason": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed.",
+      "node": {
+        "name": "Progression Track",
+        "members": [
+          {
+            "kind": "string",
+            "name": "Editor ID",
+            "sized": 0,
+            "sig": "EDID"
+          },
+          {
+            "kind": "lstring",
+            "name": "Name",
+            "sig": "FULL"
+          },
+          {
+            "_comment": "PGT1 \u2014 resolves to the WorldPets_Img_<species> KYWDs (0x0092736F..72); the separate WorldPets_Icon_<species> set is not referenced from PGTR.",
+            "kind": "formid",
+            "name": "Track Image Keyword",
+            "valid_refs": [
+              "KYWD"
+            ],
+            "sig": "PGT1"
+          },
+          {
+            "kind": "integer",
+            "name": "Entry Count",
+            "width": "u32",
+            "signed": false,
+            "sig": "PGTE"
+          },
+          {
+            "_comment": "Track Entries \u2014 30 per track (PGTE). Each entry opens on PGTI, so the record-trailing NAM0/NAM1 bind to the record's own members, not to a 31st entry.",
+            "kind": "rarray",
+            "name": "Track Entries",
+            "count": {
+              "count_path": "Entry Count"
+            },
+            "element": {
+              "kind": "rstruct",
+              "name": "Track Entry",
+              "members": [
+                {
+                  "_comment": "PGTI \u2014 not a FormID. A little-endian u64 key stamped by the authoring tool: contiguous within a track (Cat: 0x6A47CB50..6D), tracks 100 apart, low bits a Unix timestamp (2026-07-03). The UI's claim event sends it as {UID.hi, UID.lo} (PetProgressionTrackMenu.as:139-142; ProgressionNode.as:39 names it UID). Referenced only by sibling entries' Prerequisite Entry UID in the same record \u2014 a byte-grep of the 20260903 ESM finds each value exactly as its own PGTI plus at most one NAME.",
+                  "kind": "integer",
+                  "name": "Entry UID",
+                  "width": "u64",
+                  "signed": false,
+                  "sig": "PGTI"
+                },
+                {
+                  "_comment": "NAM0 (entry) \u2014 PetProgressionTrackMenu.as:215 binds it as LevelThreshhold; 5..200 across the 30 entries.",
+                  "kind": "integer",
+                  "name": "Level Threshold",
+                  "width": "u32",
+                  "signed": false,
+                  "sig": "NAM0"
+                },
+                {
+                  "_comment": "NAM1 (entry) \u2014 0 in all 120 entries of 20260903; no name in xEdit or the UI model.",
+                  "kind": "integer",
+                  "name": "Unknown",
+                  "width": "u32",
+                  "signed": false,
+                  "sig": "NAM1"
+                },
+                {
+                  "_comment": "NAM2 (entry) \u2014 0-byte in all 120 entries; decodes null.",
+                  "kind": "lstring",
+                  "name": "Unknown 2",
+                  "sig": "NAM2"
+                },
+                {
+                  "_comment": "Rewards \u2014 one per entry except the 'already claimed' alternates (thresholds 25 and 80 on every track: 8 of 120 entries carry two). A reward opens on NAM1; the array ends at the entry's NAM4 (Has Prerequisite).",
+                  "kind": "rarray",
+                  "name": "Rewards",
+                  "element": {
+                    "kind": "rstruct",
+                    "name": "Reward",
+                    "members": [
+                      {
+                        "_comment": "NAM1..NAM5 \u2014 ProgressionNode.as:27-35 (name, descriptionTitle, descriptionText, imageKeyword, iconKeyword), bound at PetProgressionTrackMenu.as:216-220.",
+                        "kind": "lstring",
+                        "name": "Name",
+                        "sig": "NAM1"
+                      },
+                      {
+                        "_comment": "NAM2 \u2014 the details-panel title line (RewardDescriptionTitle_tf, PetProgressionTrackMenu.as:365). Observed values form a small closed set (Passive Buff, Currency, Player Title, Player Icon, Pet Cosmetic, Player Cosmetic, Carry Capacity, Combat Upgrade, plus '(upgrade)' variants) \u2014 a de-facto reward category, but the field is the title, not a category key.",
+                        "kind": "lstring",
+                        "name": "Description Title",
+                        "sig": "NAM2"
+                      },
+                      {
+                        "kind": "lstring",
+                        "name": "Description Text",
+                        "sig": "NAM3"
+                      },
+                      {
+                        "_comment": "NAM4 \u2014 WorldPets_Img_* KYWDs (per reward).",
+                        "kind": "formid",
+                        "name": "Image Keyword",
+                        "valid_refs": [
+                          "KYWD"
+                        ],
+                        "sig": "NAM4"
+                      },
+                      {
+                        "_comment": "NAM5 \u2014 WorldPets_Icon_* KYWDs (shared per reward type, e.g. WorldPets_Icon_All_Caps).",
+                        "kind": "formid",
+                        "name": "Icon Keyword",
+                        "valid_refs": [
+                          "KYWD"
+                        ],
+                        "sig": "NAM5"
+                      },
+                      {
+                        "_comment": "NAM6 \u2014 1 in all 128 rewards of 20260903; no name in xEdit or the UI model.",
+                        "kind": "integer",
+                        "name": "Unknown",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "NAM6"
+                      },
+                      {
+                        "_comment": "VPRI \u2014 1 in all 128 rewards. VPR* signatures occur nowhere in xEdit (any game) and nowhere else in fo76.json.",
+                        "kind": "integer",
+                        "name": "Unknown 2",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "VPRI"
+                      },
+                      {
+                        "_comment": "VPRF \u2014 0 in all 128 rewards.",
+                        "kind": "integer",
+                        "name": "Unknown 3",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "VPRF"
+                      },
+                      {
+                        "_comment": "VPRR \u2014 the GMRW pointer, named as xEdit names the same role in wbReward ('Reward Record', wbDefinitionsFO76.pas:7016; GMRW's own DNAM carries the same name in fo76.json). This struct is NOT wbReward \u2014 wbReward's NAM7 is 'XP Amount Global' (a GLOB FormID), here NAM7 is a constant 1 \u2014 so wbReward's other names must not be imported.",
+                        "kind": "formid",
+                        "name": "Reward Record",
+                        "valid_refs": [
+                          "GMRW"
+                        ],
+                        "sig": "VPRR"
+                      },
+                      {
+                        "_comment": "ITME x2 \u2014 xEdit uses ITME only as wbEmpty end markers (wbDefinitionsFO76.pas:7017 'Reward End Marker', :11796 and FO4 :9525 'Marker End'). The first closes the VPRI/VPRF/VPRR group, the second the reward. Both are kind 'empty', the one kind decoded with the unscoped take_first (src/decode/walk.rs), so they are matched positionally; a missing ITME would shift every later marker.",
+                        "kind": "empty",
+                        "name": "Reward Record End Marker",
+                        "sig": "ITME"
+                      },
+                      {
+                        "_comment": "NAM7 \u2014 1 in all 128 rewards; the NAM7 names elsewhere in fo76.json belong to other structs.",
+                        "kind": "integer",
+                        "name": "Unknown 4",
+                        "width": "u32",
+                        "signed": false,
+                        "sig": "NAM7"
+                      },
+                      {
+                        "kind": "empty",
+                        "name": "Reward End Marker",
+                        "sig": "ITME"
+                      },
+                      {
+                        "_comment": "NAM3 (0-byte) \u2014 present only between two rewards of the same entry (8 of 128). Deliberately 'lstring', not 'empty': 'empty' is the one kind decoded with the unscoped take_first (src/decode/walk.rs), which here stole the NEXT entry's Description Text (same sig) and corrupted every entry after the first two-reward one; lstring is element-scoped and renders the same null. Regression test: tests/decode_records/pet_tracks.rs pgtr_world_pets_radhog_track_decodes_correctly.",
+                        "kind": "lstring",
+                        "name": "Next Reward Present",
+                        "sig": "NAM3"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "_comment": "NAM4 (entry) \u2014 1 on 36 of 120 entries; NAME is present iff 1.",
+                  "kind": "integer",
+                  "name": "Has Prerequisite",
+                  "width": "u32",
+                  "signed": false,
+                  "format": {
+                    "enum": [
+                      "False",
+                      "True"
+                    ]
+                  },
+                  "sig": "NAM4"
+                },
+                {
+                  "_comment": "NAME \u2014 an Entry UID of the same record (all 36 resolve; Cat threshold 40 \u2192 threshold 5). Same u64 key space as PGTI, not a FormID.",
+                  "kind": "integer",
+                  "name": "Prerequisite Entry UID",
+                  "width": "u64",
+                  "signed": false,
+                  "sig": "NAME"
+                },
+                {
+                  "kind": "empty",
+                  "name": "Entry End Marker",
+                  "sig": "ITME"
+                }
+              ]
+            }
+          },
+          {
+            "_comment": "NAM0 (record tail, 1 byte) \u2014 1 on all 4 tracks.",
+            "kind": "integer",
+            "name": "Unknown 3",
+            "width": "u8",
+            "signed": false,
+            "sig": "NAM0"
+          },
+          {
+            "_comment": "NAM1 (record tail, 1 byte) \u2014 0 on all 4 tracks. A u8, not an empty string: every genuinely empty lstring in this record is a 0-byte subrecord; typed lstring this rendered null and hid the byte.",
+            "kind": "integer",
+            "name": "Unknown 4",
+            "width": "u8",
+            "signed": false,
+            "sig": "NAM1"
+          }
+        ]
+      }
+    },
+    {
+      "record": "PKIN",
+      "op": "replace",
+      "path": [
+        "Child Pack-In"
+      ],
+      "reason": "xEdit models Child Pack-In as a single GNAM/HNAM/INAM triple (wbDefinitionsFO76.pas wbRecord(PKIN)). The game writes GNAM once as a pair count, then that many HNAM (child PKIN) + INAM (its REFR list) pairs: zzz_TechTest_DB_PodCluster (0x0089ADC6, snapshot 20260914) carries GNAM=13 and 13 pairs, every HNAM naming 0x0089ADC5; xEdit's shape left 12 of them _unmapped. Single-pair PKINs (4 in 20260903) decode as a one-entry array.",
+      "node": {
+        "kind": "rstruct",
+        "name": "Child Pack-In",
+        "members": [
+          {
+            "kind": "integer",
+            "name": "Child Pack-In Count",
+            "width": "u32",
+            "signed": false,
+            "sig": "GNAM"
+          },
+          {
+            "kind": "rarray",
+            "name": "Child Pack-Ins",
+            "element": {
+              "kind": "rstruct",
+              "name": "Child Pack-In Entry",
+              "members": [
+                {
+                  "kind": "formid",
+                  "name": "Child Pack-In",
+                  "valid_refs": [
+                    "PKIN"
+                  ],
+                  "sig": "HNAM"
+                },
+                {
+                  "kind": "array",
+                  "name": "References",
+                  "element": {
+                    "kind": "formid",
+                    "name": "Reference",
+                    "valid_refs": [
+                      "REFR"
+                    ]
+                  },
+                  "sig": "INAM"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "record": "QUST",
+      "op": "replace",
+      "path": [
+        "QTFS"
+      ],
+      "reason": "xEdit leaves this as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) \u2014 undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Decoding the 2 bytes as one u16 is the natural low-level mapping; name hedged with '?' since the repeat-limit semantic is inferred, not confirmed. See the 'Seasonal content converts by rename' entry in skills/patch-notes/kb/mechanics.md.",
+      "node": {
+        "kind": "integer",
+        "name": "QTFS (Repeat Limit?)",
+        "sig": "QTFS",
+        "width": "u16",
+        "signed": false
+      }
+    },
+    {
+      "record": "QUST",
+      "op": "insert_after",
+      "path": [
+        "Objectives",
+        "element",
+        "FNAM"
+      ],
+      "reason": "QOST \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. 2 bytes per objective, between the objective's FNAM (Flags) and NNAM (Display Text). 20 objectives across 3 quests: 19 read 0, one reads 1 (HIDEHideoutQuest 0x008B2ED0, objective 200). Decoded as u16; meaning unknown.",
+      "node": {
+        "kind": "integer",
+        "name": "QOST - Unknown",
+        "sig": "QOST",
+        "width": "u16",
+        "signed": false
+      }
+    },
+    {
+      "record": "RACE",
+      "op": "append",
+      "path": [],
+      "reason": "Pet Commands \u2014 live-game drift, in no wbDefinitions*.pas. Shape read off the 6 CAMPPets_*Race records (Cat_Tabby, Cat_RoboPaw, Dog_GermanShepherd, Dog_RoboPaw, RadHog, Deathclaw), 4 commands each.",
+      "node": {
         "kind": "rarray",
         "name": "Pet Commands",
         "element": {
@@ -212,9 +1571,14 @@
             }
           ]
         }
-      },
-      {
-        "_comment": "PGTF \u2014 new in 20260903 on the same 6 records; points at the species' WorldPets_ProgressionTrack_* PGTR.",
+      }
+    },
+    {
+      "record": "RACE",
+      "op": "append",
+      "path": [],
+      "reason": "PGTF \u2014 new in 20260903 on the same 6 records; points at the species' WorldPets_ProgressionTrack_* PGTR.",
+      "node": {
         "kind": "formid",
         "name": "Progression Track",
         "valid_refs": [
@@ -222,79 +1586,13 @@
         ],
         "sig": "PGTF"
       }
-    ],
-    "GMRW": [
-      {
-        "_comment": "XALG \u2014 live-game drift subrecord absent from TES5Edit GMRW definition; expanded from wbXALG (u64 legendary flags).",
-        "$pascal_var": "wbXALG"
-      }
-    ],
-    "LVLI": [
-      {
-        "_comment": "LVLD (Chance None) is wbBelowVersion(174) in TES5Edit \u2014 live data (fv\u2265174) still carries an empty LVLD subrecord not covered by the below_version:174 schema member.",
-        "kind": "empty",
-        "sig": "LVLD",
-        "name": "Chance None (unused)",
-        "from_version": 174
-      }
-    ],
-    "LVLN": [
-      {
-        "_comment": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
-        "kind": "empty",
-        "sig": "LVLD",
-        "name": "Chance None (unused)",
-        "from_version": 174
-      }
-    ],
-    "LVPC": [
-      {
-        "_comment": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
-        "kind": "empty",
-        "sig": "LVLD",
-        "name": "Chance None (unused)",
-        "from_version": 174
-      }
-    ],
-    "LVLP": [
-      {
-        "_comment": "Same as LVLI \u2014 empty LVLD subrecord at fv\u2265174.",
-        "kind": "empty",
-        "sig": "LVLD",
-        "name": "Chance None (unused)",
-        "from_version": 174
-      }
-    ],
-    "RESO": [
-      {
-        "_comment": "NAM5 \u2014 reverse-engineered: 1 byte in test record ATX_Resource_TeaWizard_resource. Absent from TES5Edit RESO definition.",
-        "kind": "integer",
-        "sig": "NAM5",
-        "name": "NAM5",
-        "width": "u8",
-        "signed": false
-      }
-    ],
-    "STAT": [
-      {
-        "_comment": "SNAM \u2014 live-game drift (20260702 snapshot, ATX_/SCORE_S26_ statics); absent from TES5Edit STAT. Verified FormID \u2192 SNDR on 0x008D2753; matches MSTT/ASPC/SCOL 'Looping Sound' wbFormIDCk(SNAM,[SNDR]) precedent (wbDefinitionsFO76.pas:9223).",
-        "kind": "formid",
-        "sig": "SNAM",
-        "name": "Looping Sound",
-        "valid_refs": [
-          "SNDR"
-        ]
-      },
-      {
-        "_comment": "ANLD \u2014 live-game drift; sig is '{ New To Fallout 76 }' in xEdit and only defined as wbUnknown(ANLD) on MSTT (wbDefinitionsFO76.pas:9224). 8 zero bytes in all observed records; kept as unknown/hex like MSTT's.",
-        "kind": "unknown",
-        "sig": "ANLD",
-        "name": "Unknown"
-      }
-    ],
-    "REFR": [
-      {
-        "_comment": "MCND \u2014 live-game drift; absent from TES5Edit REFR in FO76, FO4, and SF1 (checked all three wbDefinitions*.pas). Seen only on the map-marker REFR HighwayTownMapMarker (0x007E808C), which carries 2 occurrences of 4 zero bytes. Kept as unknown/hex, wrapped in an rarray (matching NOCM's wbRArray('Unknown Datas', wbUnknown(DATA)) precedent, wbDefinitionsFO76.pas:15884) since a plain (non-array) 'unknown' member only consumes one of the 2 instances from the shared by_sig queue, leaving the second as _unmapped.",
+    },
+    {
+      "record": "REFR",
+      "op": "append",
+      "path": [],
+      "reason": "MCND \u2014 live-game drift; absent from TES5Edit REFR in FO76, FO4, and SF1 (checked all three wbDefinitions*.pas). Seen only on the map-marker REFR HighwayTownMapMarker (0x007E808C), which carries 2 occurrences of 4 zero bytes. Kept as unknown/hex, wrapped in an rarray (matching NOCM's wbRArray('Unknown Datas', wbUnknown(DATA)) precedent, wbDefinitionsFO76.pas:15884) since a plain (non-array) 'unknown' member only consumes one of the 2 instances from the shared by_sig queue, leaving the second as _unmapped.",
+      "node": {
         "kind": "rarray",
         "name": "Unknown MCND",
         "element": {
@@ -303,1423 +1601,149 @@
           "name": "Unknown"
         }
       }
-    ],
-    "COEN": [
-      {
-        "_comment": "ETGR \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A 0-byte marker between NNAM (Display Name) and ETIP on the 4 ATX_COEN_Character_LevelBoost_* entitlements (e.g. 0x008DC1E8); meaning unknown. The sig occurs at most once per record, so the unscoped 'empty' take is safe.",
-        "kind": "empty",
-        "sig": "ETGR",
-        "name": "ETGR - Unknown"
+    },
+    {
+      "record": "REGN",
+      "op": "insert_after",
+      "path": [
+        "Region Data Entries",
+        "element",
+        "RDWR"
+      ],
+      "reason": "RDWC \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A NUL-terminated .nif path under Sky/CubemapScenes/ (e.g. SundewGroveWeatherRegion 0x008B30A0 -> Sky/CubemapScenes/SundewGrove_CubemapScene01.nif), directly after RDWR in weather-type region data entries: 26 records, 16 distinct paths. Named after its asset directory.",
+      "node": {
+        "kind": "string",
+        "name": "Cubemap Scene",
+        "sig": "RDWC"
       }
-    ],
-    "COBJ": [
-      {
-        "_comment": "ENAM \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. One FormID between CNAM (Created Object) and BNAM (Workbench Keyword), seen only on HIDE_co_Lead_Hard (0x008F531D), pointing at LVLI HIDE_LL_CriticalCrafting_HardLead (0x00948FB2, Override Name '(Rare Craft) Drifter Intel'). Name inferred from that list's EditorID and Override Name, hence the '?'.",
+    },
+    {
+      "record": "RESO",
+      "op": "append",
+      "path": [],
+      "reason": "NAM5 \u2014 reverse-engineered: 1 byte in test record ATX_Resource_TeaWizard_resource. Absent from TES5Edit RESO definition.",
+      "node": {
+        "kind": "integer",
+        "sig": "NAM5",
+        "name": "NAM5",
+        "width": "u8",
+        "signed": false
+      }
+    },
+    {
+      "record": "SCEN",
+      "op": "replace",
+      "path": [
+        "Actions",
+        "element",
+        "Type Specific Action",
+        "Start Scene",
+        "HTID"
+      ],
+      "reason": "xEdit declares Start Scene's 0-byte 'End Scene Say Greeting' marker as wbEmpty(HTID). 'empty' is decoded with the unscoped take_first (src/decode/walk.rs), and HTID is also the Dialogue action's Player Headtracking and the Radio action's Play Sound, so a Start Scene action without its own marker took the next action's HTID: 90 spurious markers across 48 SCEN records in snapshot 20260914 (e.g. 0x0053AF54, whose Start Scene action at subrecords 39-46 carries no HTID), none of them a real marker. Declared 'lstring' instead: element-scoped, renders the same null.",
+      "node": {
+        "kind": "lstring",
+        "sig": "HTID",
+        "name": "End Scene Say Greeting"
+      }
+    },
+    {
+      "record": "STAT",
+      "op": "append",
+      "path": [],
+      "reason": "SNAM \u2014 live-game drift (20260702 snapshot, ATX_/SCORE_S26_ statics); absent from TES5Edit STAT. Verified FormID \u2192 SNDR on 0x008D2753; matches MSTT/ASPC/SCOL 'Looping Sound' wbFormIDCk(SNAM,[SNDR]) precedent (wbDefinitionsFO76.pas:9223).",
+      "node": {
         "kind": "formid",
-        "sig": "ENAM",
-        "name": "ENAM (Rare Craft List?)",
+        "sig": "SNAM",
+        "name": "Looping Sound",
         "valid_refs": [
-          "LVLI"
+          "SNDR"
         ]
       }
-    ]
-  },
-  "record_patches": {
-    "PERK": [
-      {
-        "path": [
-          "Effects",
-          "element"
-        ],
-        "node": {
-          "kind": "rstruct",
-          "name": "Effect",
-          "members": [
-            {
-              "kind": "struct",
-              "sig": "PRKE",
-              "name": "Effect Header",
-              "fields": [
-                {
-                  "kind": "integer",
-                  "name": "Effect Type",
-                  "width": "u8",
-                  "format": {
-                    "enum": [
-                      "Quest",
-                      "Ability",
-                      "Entry Point"
-                    ]
-                  }
-                },
-                {
-                  "kind": "integer",
-                  "name": "Rank",
-                  "width": "u8"
-                },
-                {
-                  "kind": "integer",
-                  "name": "Priority",
-                  "width": "u8",
-                  "below_version": 181
-                }
-              ]
-            },
-            {
-              "kind": "union",
-              "sig": "DATA",
-              "name": "Effect Data",
-              "decider": {
-                "field": "Effect Header.Effect Type",
-                "default_variant": 2,
-                "map": {
-                  "0": 0,
-                  "1": 1,
-                  "2": 2
-                }
-              },
-              "variants": [
-                {
-                  "kind": "struct",
-                  "name": "Quest + Stage",
-                  "fields": [
-                    {
-                      "kind": "formid",
-                      "name": "Quest",
-                      "valid_refs": [
-                        "QUST"
-                      ]
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Quest Stage",
-                      "width": "u16"
-                    }
-                  ]
-                },
-                {
-                  "kind": "formid",
-                  "name": "Ability",
-                  "valid_refs": [
-                    "SPEL"
-                  ]
-                },
-                {
-                  "kind": "struct",
-                  "name": "Entry Point",
-                  "fields": [
-                    {
-                      "kind": "integer",
-                      "name": "Entry Point",
-                      "width": "u8",
-                      "format": {
-                        "enum": [
-                          "Mod Breath Timer",
-                          "Mod My Critical Hit Chance",
-                          "Mod My Critical Hit Damage Mult",
-                          "Mod Mine Explode Chance",
-                          "Mod Incoming Limb Damage",
-                          "Mod Book Actor Value Bonus",
-                          "Mod Recovered Health",
-                          "Set Should Attack",
-                          "Mod Buy Prices",
-                          "Add Leveled List On Death",
-                          "Set Max Carry Weight",
-                          "Mod Addiction Chance",
-                          "Mod Addiction Duration",
-                          "Mod Positive Chem Duration",
-                          "Activate",
-                          "Ignore Running During Detection",
-                          "Ignore Broken Lock",
-                          "Mod Enemy Critical Hit Chance",
-                          "Mod Sneak Attack Mult",
-                          "Mod Max Placeable Mines",
-                          "Mod Bow Zoom",
-                          "Mod Recover Arrow Chance",
-                          "Mod Exp",
-                          "Mod Move Camp Cost",
-                          "Mod Shuffle Cost",
-                          "Mod Workshop Build Cost",
-                          "Mod Bashing Damage",
-                          "Mod Power Attack Action Points",
-                          "Mod Power Attack Damage",
-                          "Mod Spell Magnitude",
-                          "Mod Spell Duration",
-                          "Mod Secondary Value Weight",
-                          "Mod Armor Weight",
-                          "Mod Incoming Stagger",
-                          "Mod Target Stagger",
-                          "Mod Weapon Attack Damage",
-                          "Mod Incoming Weapon Damage",
-                          "Mod Target Damage Resistance",
-                          "Mod Spell Cost",
-                          "Mod Percent Blocked",
-                          "Mod Shield Deflect Arrow Chance",
-                          "Mod Incoming Spell Magnitude",
-                          "Mod Incoming Spell Duration",
-                          "Mod Player Intimidation",
-                          "Mod Ricochet Chance",
-                          "Mod Ricochet Damage",
-                          "Mod Bribe Amount",
-                          "Mod Detection Light",
-                          "Mod Detection Movement",
-                          "Mod Scrap Reward Mult",
-                          "Set Sweep Attack",
-                          "Apply Combat Hit Spell",
-                          "Apply Bashing Spell",
-                          "Apply Reanimate Spell",
-                          "Set Boolean Graph Variable",
-                          "Mod Spell Casting Sound Event",
-                          "Mod VATS Critical Cost",
-                          "Mod Detection Sneak Skill",
-                          "Mod Falling Damage",
-                          "Mod Lockpick Sweet Spot",
-                          "Mod Sell Prices",
-                          "Mod VATS Attacker Accuracy",
-                          "Set Player Gate Lockpick",
-                          "Set Lockpick Starting Arc",
-                          "Set Progression Picking",
-                          "Set Lockpicks Unbreakable",
-                          "Mod Alchemy Effectiveness",
-                          "Apply Weapon Swing Spell",
-                          "Mod Commanded Actor Limit",
-                          "Apply Sneaking Spell",
-                          "Mod Player Magic Slowdown",
-                          "Mod Ward Magicka Absorption Pct",
-                          "Mod Initial Ingredient Effects Learned",
-                          "Purify Alchemy Ingredients",
-                          "Set Filter Activation",
-                          "Set Dual Cast",
-                          "Mod Outgoing Explosion Limb Damage",
-                          "Mod Enchantment Power",
-                          "Mod Soul Pct Captured to Weapon",
-                          "Mod VATS Attack Action Points",
-                          "Mod Reflect Damage Chance",
-                          "Set Activate Label",
-                          "Mod Kill Experience",
-                          "Mod Poison Dose Count",
-                          "Set Apply Placed Item",
-                          "Mod Armor Rating",
-                          "Mod lockpicking crime chance",
-                          "Mod ingredients harvested",
-                          "Mod Spell Range (Target Loc.)",
-                          "Mod Critical Charge Mult on Ricochet",
-                          "Mod lockpicking key reward chance",
-                          "Mod Auto Lockpicking Chance",
-                          "Mod Auto Hacking Chance",
-                          "Mod Typed Weapon Attack Damage",
-                          "Mod Typed Incoming Weapon Damage",
-                          "Mod Charisma Challenge Chance",
-                          "Mod Sprint AP Drain Rate",
-                          "Mod Drawn Weapon Weight Speed Effect",
-                          "Set Player Gate Hacking",
-                          "Mod Player Explosion Damage",
-                          "Mod Player Explosion Scale",
-                          "Set Rads To Health Mult",
-                          "Mod Actor Scope Stability",
-                          "Mod Actor Grenade Speed Mult",
-                          "Mod Explosion Force",
-                          "Mod VATS Penetration Min Visibility",
-                          "Mod Rads for Rad Health Max",
-                          "Mod VATS Player AP On Kill Chance",
-                          "Set VATS Fill Critical Bar On Hit",
-                          "Mod VATS Concentrated Fire Chance Bonus",
-                          "Mod Crafting Dupe Chance",
-                          "Mod VATS Hold Em Steady Bonus",
-                          "Mod Typed Spell Magnitude",
-                          "Mod Typed Incoming Spell Magnitude",
-                          "Set VATS Gun-Fu",
-                          "Mod Outgoing Limb Damage",
-                          "Mod Restore Action Cost Value",
-                          "Mod VATS Splash Damage",
-                          "Mod Incoming Battery Damage",
-                          "Mod VATS Critical Charge",
-                          "Mod Exp Location",
-                          "Mod Exp Speech",
-                          "Mod VATS Head Shot Chance",
-                          "Mod VATS Hit Chance",
-                          "Mod Incoming Explosion Damage",
-                          "Mod Ammo Health Mult",
-                          "Mod Hacking Guesses",
-                          "Mod Terminal Lockout Time",
-                          "Set Undetectable",
-                          "Invest In Vendor",
-                          "Mod Outgoing Limb Bash Damage",
-                          "Set Run While Over Encumbered",
-                          "Get Component Radar Distance",
-                          "Show Grenade Trajectory",
-                          "Mod Cone-of-fire Mult",
-                          "Mod VATS Concentrated Fire Damage Mult",
-                          "Apply Bloody Mess Spell",
-                          "Iron-Sights Activate",
-                          "Mod VATS Critical Fill Chance On Use",
-                          "Set VATS Critical Fill On AP Reward",
-                          "Set VATS Critical Fill On Stranger",
-                          "Mod Gun Range Mult",
-                          "Mod Scope Hold Breath AP Drain Mult",
-                          "Set Force Decapitate",
-                          "Mod VATS Shoot Explosive Damage Mult",
-                          "Mod Scrounger Fill Ammo Chance",
-                          "Set Can Explode Pants",
-                          "Set VATS Penetration Full Damage",
-                          "Mod VATS Gun-Fu 2nd Target Dmg Mult",
-                          "Mod VATS Gun-Fu 3rd Target Dmg Mult",
-                          "Mod VATS Gun-Fu 4th+ Target Dmg Mult",
-                          "Mod VATS Blitz Max Distance",
-                          "Set VATS Blitz Max Dmg Mult",
-                          "Mod VATS Blitz Dmg Bonus Dist",
-                          "Mod Bash Critical Chance",
-                          "Mod Evasion Chance",
-                          "Mod Fatigue for Fatigue AP Max",
-                          "Set Fatigue to AP Mult",
-                          "Mod Item Weight",
-                          "Set Alt Revive Item",
-                          "Mod VATS Splash Damage Radius",
-                          "Apply VATS Splash Damage Spell",
-                          "Mod Bleedout Time",
-                          "Mod Item Condition Loss",
-                          "Mod Crafting Creation Recipe Level",
-                          "Mod Workshop Repair Cost",
-                          "Mod Item Repair Mult",
-                          "Mod Weapon DMG Bonus Mult",
-                          "Mod Mysterious Stranger Chance",
-                          "Mod Item Spawn Count",
-                          "Apply Weapon Attack Spell",
-                          "Mod Item Condition Curve Ratio",
-                          "Mod Ammo Used Count",
-                          "Apply Combat Melee Spell",
-                          "Mod Barter Charisma",
-                          "Mod Mysterious Savior Chance",
-                          "Mod Item Repair Condition",
-                          "Mod Crafting Return Quantity",
-                          "Mod Damaged Condition Regen Delay",
-                          "Set Consume Revive Item",
-                          "Set Consume Travel Ticket",
-                          "Mod Wanted Timer Mult",
-                          "Auto Fill Weapon Clip",
-                          "Mod Fast Travel Cost",
-                          "Apply Friendly Hit Spell",
-                          "Set VATS Target Limbs",
-                          "Set Team Medic",
-                          "Apply On Kill Spell",
-                          "Set Damage on Consecutive Hits",
-                          "Mod Damage on Consecutive Hits",
-                          "Mod Max Consecutive Hits Allowed",
-                          "Mod Crafted Item Bonus Health",
-                          "Set Cheat Death",
-                          "Apply Combat Hit Spell Taken",
-                          "Apply On Death Spell",
-                          "Mod Max Barter Currency",
-                          "Mod Body Part Damage Mult",
-                          "Apply On Kill Participation Spell",
-                          "Is Next Clip Last Shot",
-                          "Instant Reload Clip On Bash",
-                          "Mod Attack Damage On Striking Appendage",
-                          "Apply Spell On Actor When Limb Crippled",
-                          "Mod Rads to Health Mult",
-                          "Mod Rads to Radshield Mult",
-                          "Mod Weak Body Part Damage Mult",
-                          "Mod Projectile Bounce Count",
-                          "Mod NPC Normalized Min Level",
-                          "Mod NPC Normalized Max level",
-                          "Mod NPC Normalized Level",
-                          "Mod Ammo Spender Max Stack Count",
-                          "Mod Ammo Spender Max Reload Stack Mult",
-                          "Mod Add Bullet To Clip Chance",
-                          "Mod Chain Damage Falloff"
-                        ]
-                      }
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Function",
-                      "width": "u8",
-                      "format": {
-                        "enum": [
-                          "Null Function",
-                          "Set Value",
-                          "Add Value",
-                          "Multiply Value",
-                          "Add Range To Value",
-                          "Add Actor Value Mult",
-                          "Absolute Value",
-                          "Negative Absolute Value",
-                          "Add Leveled List",
-                          "Add Activate Choice",
-                          "Select Spell",
-                          "Select Text",
-                          "Set to Actor Value Mult",
-                          "Multiply Actor Value Mult",
-                          "Multiply 1 + Actor Value Mult",
-                          "Set Text",
-                          "Select Item",
-                          "Unknown 17"
-                        ]
-                      }
-                    },
-                    {
-                      "kind": "integer",
-                      "name": "Perk Condition Tab Count",
-                      "width": "u8"
-                    },
-                    {
-                      "kind": "unused",
-                      "bytes": 1
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "kind": "rarray",
-              "name": "Perk Conditions",
-              "element": {
-                "kind": "rstruct",
-                "name": "Perk Condition",
-                "members": [
-                  {
-                    "kind": "integer",
-                    "sig": "PRKC",
-                    "name": "Run On (Tab Index)",
-                    "width": "s8",
-                    "signed": true
-                  },
-                  {
-                    "kind": "rarray",
-                    "name": "Conditions",
-                    "element": {
-                      "kind": "rstruct",
-                      "name": "Condition",
-                      "members": [
-                        {
-                          "kind": "struct",
-                          "name": "Condition Data",
-                          "sig": "CTDA",
-                          "fields": [
-                            {
-                              "kind": "integer",
-                              "name": "Type",
-                              "width": "u8",
-                              "signed": false
-                            },
-                            {
-                              "kind": "unused",
-                              "bytes": 3
-                            },
-                            {
-                              "kind": "bytes",
-                              "name": "Comparison Value",
-                              "len": 4
-                            },
-                            {
-                              "kind": "integer",
-                              "name": "Function",
-                              "width": "u16",
-                              "signed": false
-                            },
-                            {
-                              "kind": "unused",
-                              "bytes": 2
-                            },
-                            {
-                              "kind": "bytes",
-                              "name": "Parameter #1",
-                              "len": 4
-                            },
-                            {
-                              "kind": "bytes",
-                              "name": "Parameter #2",
-                              "len": 4
-                            },
-                            {
-                              "kind": "integer",
-                              "name": "Run On",
-                              "width": "u32",
-                              "signed": false,
-                              "format": {
-                                "enum": [
-                                  "Subject",
-                                  "Target",
-                                  "Reference",
-                                  "Combat Target",
-                                  "Linked Reference",
-                                  "Quest Alias",
-                                  "Package Data",
-                                  "Event Data",
-                                  "Unknown 8",
-                                  "Command Target",
-                                  "Event Camera Ref",
-                                  "My Killer",
-                                  "Active Players",
-                                  "Potential Players",
-                                  "Player Teammates",
-                                  "Target List",
-                                  "Instance Owner"
-                                ]
-                              }
-                            },
-                            {
-                              "kind": "bytes",
-                              "name": "Reference",
-                              "len": 4
-                            },
-                            {
-                              "kind": "bytes",
-                              "name": "Parameter #3",
-                              "len": 4
-                            }
-                          ]
-                        },
-                        {
-                          "kind": "string",
-                          "name": "Parameter #1",
-                          "sig": "CIS1"
-                        },
-                        {
-                          "kind": "string",
-                          "name": "Parameter #2",
-                          "sig": "CIS2"
-                        }
-                      ]
-                    }
-                  }
-                ]
-              }
-            },
-            {
-              "kind": "integer",
-              "sig": "EPFT",
-              "name": "Function Type",
-              "width": "u8",
-              "format": {
-                "enum": [
-                  "None",
-                  "Float",
-                  "Float/AV,Float",
-                  "Leveled List",
-                  "Activate Choice",
-                  "Spell Item",
-                  "Boolean Graph Variable",
-                  "Text",
-                  "Actor Value and Value",
-                  "Item"
-                ]
-              }
-            },
-            {
-              "kind": "integer",
-              "sig": "EPFB",
-              "name": "Perk Entry ID",
-              "width": "u16"
-            },
-            {
-              "kind": "union",
-              "name": "Function Parameter 2",
-              "decider": {
-                "field": "Function Type",
-                "default_variant": 0,
-                "map": {
-                  "1": 1,
-                  "4": 2,
-                  "5": 3
-                }
-              },
-              "variants": [
-                {
-                  "kind": "bytes",
-                  "sig": "EPF2",
-                  "name": "Function Parameter 2"
-                },
-                {
-                  "kind": "formid",
-                  "sig": "EPF2",
-                  "name": "Curve Table",
-                  "valid_refs": [
-                    "CURV"
-                  ]
-                },
-                {
-                  "kind": "lstring",
-                  "sig": "EPF2",
-                  "name": "Button Label"
-                },
-                {
-                  "kind": "integer",
-                  "sig": "EPF2",
-                  "name": "Unknown Spell Value",
-                  "width": "u32",
-                  "signed": false
-                }
-              ]
-            },
-            {
-              "kind": "union",
-              "name": "Function Parameter 3",
-              "decider": {
-                "field": "Function Type",
-                "default_variant": 0,
-                "map": {
-                  "8": 1
-                }
-              },
-              "variants": [
-                {
-                  "kind": "integer",
-                  "sig": "EPF3",
-                  "name": "Script Flags",
-                  "width": "u16",
-                  "signed": false,
-                  "format": {
-                    "flags": [
-                      "Run Immediately",
-                      "Replace Default"
-                    ]
-                  }
-                },
-                {
-                  "kind": "formid",
-                  "sig": "EPF3",
-                  "name": "Function Parameter 3 (Actor Value)",
-                  "valid_refs": [
-                    "AVIF"
-                  ]
-                }
-              ]
-            },
-            {
-              "kind": "union",
-              "name": "Function Data",
-              "decider": {
-                "field": "Function Type",
-                "default_variant": 0,
-                "map": {
-                  "0": 0,
-                  "1": 1,
-                  "2": 2,
-                  "3": 3,
-                  "4": 4,
-                  "5": 4,
-                  "6": 5,
-                  "7": 6,
-                  "8": 7,
-                  "9": 8
-                }
-              },
-              "variants": [
-                {
-                  "kind": "bytes",
-                  "sig": "EPFD",
-                  "name": "Data"
-                },
-                {
-                  "kind": "float",
-                  "sig": "EPFD",
-                  "name": "Float"
-                },
-                {
-                  "kind": "struct",
-                  "sig": "EPFD",
-                  "name": "Float, Float",
-                  "fields": [
-                    {
-                      "kind": "float",
-                      "name": "Float 1"
-                    },
-                    {
-                      "kind": "float",
-                      "name": "Float 2"
-                    }
-                  ]
-                },
-                {
-                  "kind": "formid",
-                  "sig": "EPFD",
-                  "name": "Leveled Item",
-                  "valid_refs": [
-                    "LVLI"
-                  ]
-                },
-                {
-                  "kind": "formid",
-                  "sig": "EPFD",
-                  "name": "Spell",
-                  "valid_refs": [
-                    "SPEL"
-                  ]
-                },
-                {
-                  "kind": "string",
-                  "sig": "EPFD",
-                  "name": "Text"
-                },
-                {
-                  "kind": "lstring",
-                  "sig": "EPFD",
-                  "name": "Text"
-                },
-                {
-                  "kind": "union",
-                  "sig": "EPFD",
-                  "name": "Function Data",
-                  "decider": {
-                    "payload_size": {
-                      "0": 1,
-                      "1": 1,
-                      "2": 1,
-                      "3": 1,
-                      "4": 1,
-                      "5": 1,
-                      "6": 1,
-                      "7": 1
-                    },
-                    "default_variant": 0
-                  },
-                  "variants": [
-                    {
-                      "kind": "struct",
-                      "name": "Actor Value, Float",
-                      "fields": [
-                        {
-                          "kind": "union",
-                          "name": "Actor Value",
-                          "decider": {
-                            "form_version": {
-                              "min": 77,
-                              "max": null
-                            }
-                          },
-                          "variants": [
-                            {
-                              "kind": "integer",
-                              "name": "Actor Value",
-                              "width": "u32",
-                              "signed": false,
-                              "format": {
-                                "enum": {
-                                  "-1": "None"
-                                }
-                              }
-                            },
-                            {
-                              "kind": "formid",
-                              "name": "Actor Value",
-                              "valid_refs": [
-                                "AVIF",
-                                "NULL"
-                              ]
-                            }
-                          ]
-                        },
-                        {
-                          "kind": "float",
-                          "name": "Float"
-                        }
-                      ]
-                    },
-                    {
-                      "kind": "float",
-                      "name": "Float"
-                    }
-                  ]
-                },
-                {
-                  "kind": "formid",
-                  "sig": "EPFD",
-                  "name": "Item",
-                  "valid_refs": [
-                    "ALCH"
-                  ]
-                }
-              ]
-            },
-            {
-              "kind": "union",
-              "name": "Function Parameter 2",
-              "decider": {
-                "field": "Function Type",
-                "default_variant": 0,
-                "map": {
-                  "1": 1,
-                  "4": 2,
-                  "5": 3
-                }
-              },
-              "variants": [
-                {
-                  "kind": "bytes",
-                  "sig": "EPF2",
-                  "name": "Function Parameter 2"
-                },
-                {
-                  "kind": "formid",
-                  "sig": "EPF2",
-                  "name": "Curve Table",
-                  "valid_refs": [
-                    "CURV"
-                  ]
-                },
-                {
-                  "kind": "lstring",
-                  "sig": "EPF2",
-                  "name": "Button Label"
-                },
-                {
-                  "kind": "integer",
-                  "sig": "EPF2",
-                  "name": "Unknown Spell Value",
-                  "width": "u32",
-                  "signed": false
-                }
-              ]
-            },
-            {
-              "kind": "union",
-              "name": "Function Parameter 3",
-              "decider": {
-                "field": "Function Type",
-                "default_variant": 0,
-                "map": {
-                  "8": 1
-                }
-              },
-              "variants": [
-                {
-                  "kind": "integer",
-                  "sig": "EPF3",
-                  "name": "Script Flags",
-                  "width": "u16",
-                  "signed": false,
-                  "format": {
-                    "flags": [
-                      "Run Immediately",
-                      "Replace Default"
-                    ]
-                  }
-                },
-                {
-                  "kind": "formid",
-                  "sig": "EPF3",
-                  "name": "Function Parameter 3 (Actor Value)",
-                  "valid_refs": [
-                    "AVIF"
-                  ]
-                }
-              ]
-            },
-            {
-              "kind": "formid",
-              "sig": "EPF4",
-              "name": "Function Parameter 4 (Actor Value)",
-              "valid_refs": [
-                "AVIF"
-              ]
-            },
-            {
-              "kind": "empty",
-              "sig": "PRKF",
-              "name": "Effect End"
-            }
-          ],
-          "_comment": ""
-        },
-        "_comment": "wbPerkEffect is a HARD_RAW_VAR (runtime Pascal decider) \u2014 extractor cannot statically resolve the Effect element. This hand-authored rstruct has been validated against real ESM data. All other PERK members (EDID, DURL, VMAD, FULL, DESC, ICON, Conditions, Data, SNAM, PRFS, NNAM, FNAM, PRFI, PFAC) now come from native extraction \u2014 see parity-exceptions.json PERK[1:Effects][elem]."
+    },
+    {
+      "record": "STAT",
+      "op": "append",
+      "path": [],
+      "reason": "ANLD \u2014 live-game drift; sig is '{ New To Fallout 76 }' in xEdit and only defined as wbUnknown(ANLD) on MSTT (wbDefinitionsFO76.pas:9224). 8 zero bytes in all observed records; kept as unknown/hex like MSTT's.",
+      "node": {
+        "kind": "unknown",
+        "sig": "ANLD",
+        "name": "Unknown"
       }
-    ],
-    "PCRD": [
-      {
-        "path": [
-          "DATA"
-        ],
-        "node": {
-          "kind": "struct",
-          "name": "Perk Card Data",
-          "sig": "DATA",
-          "fields": [
-            {
-              "kind": "float",
-              "name": "Value"
-            },
-            {
-              "kind": "integer",
-              "name": "Min Level",
-              "width": "u8",
-              "signed": false
-            },
-            {
-              "kind": "integer",
-              "name": "Special",
-              "width": "u8",
-              "signed": false,
-              "format": {
-                "enum": [
-                  "Strength",
-                  "Perception",
-                  "Endurance",
-                  "Charisma",
-                  "Intelligence",
-                  "Agility",
-                  "Luck",
-                  "Unknown"
-                ]
-              }
-            },
-            {
-              "kind": "integer",
-              "name": "Race Restriction",
-              "width": "u8",
-              "signed": false,
-              "format": {
-                "enum": [
-                  "None",
-                  "Human",
-                  "Ghoul"
-                ]
-              }
-            },
-            {
-              "kind": "unused",
-              "bytes": 1,
-              "below_version": 208
-            }
-          ]
-        },
-        "_comment": "xEdit names this struct 'Unknown' verbatim (wbDefinitionsFO76.pas: wbStruct(DATA, 'Unknown', [...])) even though every field is fully decoded \u2014 Value/Min Level/Special/Race Restriction. Renamed here so it stops reading as an undecoded blob. Race Restriction (offset 6) is the race-eligibility byte: 0=None, 1=Human, 2=Ghoul."
+    },
+    {
+      "record": "WEAP",
+      "op": "replace",
+      "path": [
+        "Data",
+        "Min Power Per Shot"
+      ],
+      "reason": "xEdit still names this DNAM field 'Min Power Per Shot' (wbDefinitionsFO76.pas: wbFromVersion(105, wbFloat('Min Power Per Shot'))), but the engine repurposed it to the charge-weapon full-power-shot bonus (~2025) \u2014 same field, opposite name. Renamed 2026-07-14 to 'Max Power Per Shot' to fix the min/max direction, then renamed again 2026-07-15 to 'Full Power Damage Mult': 'Max' still implied a variable stat with an unstated minimum, when this is really a fixed bonus applied only at full charge. The new name pairs with the sibling field 'Full Power Seconds' (time to reach full charge) and matches the '...DamageMult' suffix used by real sibling OMOD properties (OutOfRangeDamageMult, CriticalDamageMult) \u2014 see _WEAPON_PROPERTIES in extract.py and the 'Charge weapons (Gauss family)' entry in skills/patch-notes/kb/mechanics.md.",
+      "node": {
+        "kind": "float",
+        "name": "Full Power Damage Mult",
+        "from_version": 105
       }
-    ],
-    "WEAP": [
-      {
-        "path": [
-          "Data",
-          "Min Power Per Shot"
-        ],
-        "node": {
-          "kind": "float",
-          "name": "Full Power Damage Mult",
-          "from_version": 105
-        },
-        "_comment": "xEdit still names this DNAM field 'Min Power Per Shot' (wbDefinitionsFO76.pas: wbFromVersion(105, wbFloat('Min Power Per Shot'))), but the engine repurposed it to the charge-weapon full-power-shot bonus (~2025) \u2014 same field, opposite name. Renamed 2026-07-14 to 'Max Power Per Shot' to fix the min/max direction, then renamed again 2026-07-15 to 'Full Power Damage Mult': 'Max' still implied a variable stat with an unstated minimum, when this is really a fixed bonus applied only at full charge. The new name pairs with the sibling field 'Full Power Seconds' (time to reach full charge) and matches the '...DamageMult' suffix used by real sibling OMOD properties (OutOfRangeDamageMult, CriticalDamageMult) \u2014 see _WEAPON_PROPERTIES in extract.py and the 'Charge weapons (Gauss family)' entry in skills/patch-notes/kb/mechanics.md."
+    },
+    {
+      "record": "WEAP",
+      "op": "append",
+      "path": [],
+      "reason": "EAMT (Enchantment Amount, u16) is absent from xEdit's WEAP definition but present in the live ESM, e.g. crDLC04AnimatronicAlienBlaster (0x00113083, form_version 205).",
+      "node": {
+        "kind": "integer",
+        "name": "Enchantment Amount",
+        "width": "u16",
+        "signed": false,
+        "sig": "EAMT"
       }
-    ],
-    "QUST": [
-      {
-        "path": [
-          "QTFS"
-        ],
-        "node": {
-          "kind": "integer",
-          "name": "QTFS (Repeat Limit?)",
-          "sig": "QTFS",
-          "width": "u16",
-          "signed": false
-        },
-        "_comment": "xEdit leaves this as wbByteArray(QTFS, 'QTFS - Unknown 2 bytes', 2) \u2014 undecoded. Observed 0xffff ('no limit') -> 50 on the seasonal-to-repeatable quest conversion SDOW_SQ01_Graves_Repeatable (0x008F1665) in snapshot 20260710, which reads cleanly as a little-endian u16 repeat limit. Decoding the 2 bytes as one u16 is the natural low-level mapping; name hedged with '?' since the repeat-limit semantic is inferred, not confirmed. See the 'Seasonal content converts by rename' entry in skills/patch-notes/kb/mechanics.md."
-      },
-      {
-        "path": [
-          "Objectives",
-          "element",
-          "FNAM"
-        ],
-        "op": "insert_after",
-        "node": {
-          "kind": "integer",
-          "name": "QOST - Unknown",
-          "sig": "QOST",
-          "width": "u16",
-          "signed": false
-        },
-        "_comment": "QOST \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. 2 bytes per objective, between the objective's FNAM (Flags) and NNAM (Display Text). 20 objectives across 3 quests: 19 read 0, one reads 1 (HIDEHideoutQuest 0x008B2ED0, objective 200). Decoded as u16; meaning unknown."
-      }
-    ],
-    "INFO": [
-      {
-        "path": [
-          "Responses",
-          "element",
-          "BNAM"
-        ],
-        "node": {
-          "kind": "formid",
-          "sig": "BNAM",
-          "name": "Comment?",
-          "valid_refs": [
-            "INFO"
-          ]
-        },
-        "_comment": "BNAM \u2014 xEdit mislabels as wbLStringKC(BNAM, 'Comment?') (wbDefinitionsFO76.pas:12120); the '?' was authorial doubt. Verified on SeventySix.esm: the 4-byte payload always equals the owning INFO record's own FormID (self-reference), not an lstring ID."
-      }
-    ],
-    "PKIN": [
-      {
-        "path": [
-          "Child Pack-In"
-        ],
-        "node": {
-          "kind": "rstruct",
-          "name": "Child Pack-In",
-          "members": [
-            {
-              "kind": "integer",
-              "name": "Child Pack-In Count",
-              "width": "u32",
-              "signed": false,
-              "sig": "GNAM"
-            },
-            {
-              "kind": "rarray",
-              "name": "Child Pack-Ins",
-              "element": {
-                "kind": "rstruct",
-                "name": "Child Pack-In Entry",
-                "members": [
-                  {
-                    "kind": "formid",
-                    "name": "Child Pack-In",
-                    "valid_refs": [
-                      "PKIN"
-                    ],
-                    "sig": "HNAM"
-                  },
-                  {
-                    "kind": "array",
-                    "name": "References",
-                    "element": {
-                      "kind": "formid",
-                      "name": "Reference",
-                      "valid_refs": [
-                        "REFR"
-                      ]
-                    },
-                    "sig": "INAM"
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "_comment": "xEdit models Child Pack-In as a single GNAM/HNAM/INAM triple (wbDefinitionsFO76.pas wbRecord(PKIN)). The game writes GNAM once as a pair count, then that many HNAM (child PKIN) + INAM (its REFR list) pairs: zzz_TechTest_DB_PodCluster (0x0089ADC6, snapshot 20260914) carries GNAM=13 and 13 pairs, every HNAM naming 0x0089ADC5; xEdit's shape left 12 of them _unmapped. Single-pair PKINs (4 in 20260903) decode as a one-entry array."
-      }
-    ],
-    "REGN": [
-      {
-        "path": [
-          "Region Data Entries",
-          "element",
-          "RDWR"
-        ],
-        "op": "insert_after",
-        "node": {
-          "kind": "string",
-          "name": "Cubemap Scene",
-          "sig": "RDWC"
-        },
-        "_comment": "RDWC \u2014 live-game drift (snapshot 20260914, header version 293); absent from every wbDefinitions*.pas. A NUL-terminated .nif path under Sky/CubemapScenes/ (e.g. SundewGroveWeatherRegion 0x008B30A0 -> Sky/CubemapScenes/SundewGrove_CubemapScene01.nif), directly after RDWR in weather-type region data entries: 26 records, 16 distinct paths. Named after its asset directory."
-      }
-    ],
-    "SCEN": [
-      {
-        "path": [
-          "Actions",
-          "element",
-          "Type Specific Action",
-          "Start Scene",
-          "HTID"
-        ],
-        "node": {
-          "kind": "lstring",
-          "sig": "HTID",
-          "name": "End Scene Say Greeting"
-        },
-        "_comment": "xEdit declares Start Scene's 0-byte 'End Scene Say Greeting' marker as wbEmpty(HTID). 'empty' is decoded with the unscoped take_first (src/decode/walk.rs), and HTID is also the Dialogue action's Player Headtracking and the Radio action's Play Sound, so a Start Scene action without its own marker took the next action's HTID: 90 spurious markers across 48 SCEN records in snapshot 20260914 (e.g. 0x0053AF54, whose Start Scene action at subrecords 39-46 carries no HTID), none of them a real marker. Declared 'lstring' instead: element-scoped, renders the same null."
-      }
-    ],
-    "WTHR": [
-      {
-        "path": [
-          "Cloud Textures",
-          "Layer #9"
-        ],
-        "op": "insert_after",
-        "node": {
+    },
+    {
+      "record": "WTHR",
+      "op": "insert_after",
+      "path": [
+        "Cloud Textures",
+        "Layer #9"
+      ],
+      "reason": "Game data carries cloud layers 10-16 (:0TX through @0TX) between layers 9 and 17; xEdit's Cloud Textures skips those signatures, so the struct would close at layer 10 and strand layers 17-31.",
+      "node": [
+        {
           "kind": "string",
           "sig": ":0TX",
           "name": "Layer #10"
-        }
-      },
-      {
-        "path": [
-          "Cloud Textures",
-          "Layer #10"
-        ],
-        "op": "insert_after",
-        "node": {
+        },
+        {
           "kind": "string",
           "sig": ";0TX",
           "name": "Layer #11"
-        }
-      },
-      {
-        "path": [
-          "Cloud Textures",
-          "Layer #11"
-        ],
-        "op": "insert_after",
-        "node": {
+        },
+        {
           "kind": "string",
           "sig": "<0TX",
           "name": "Layer #12"
-        }
-      },
-      {
-        "path": [
-          "Cloud Textures",
-          "Layer #12"
-        ],
-        "op": "insert_after",
-        "node": {
+        },
+        {
           "kind": "string",
           "sig": "=0TX",
           "name": "Layer #13"
-        }
-      },
-      {
-        "path": [
-          "Cloud Textures",
-          "Layer #13"
-        ],
-        "op": "insert_after",
-        "node": {
+        },
+        {
           "kind": "string",
           "sig": ">0TX",
           "name": "Layer #14"
-        }
-      },
-      {
-        "path": [
-          "Cloud Textures",
-          "Layer #14"
-        ],
-        "op": "insert_after",
-        "node": {
+        },
+        {
           "kind": "string",
           "sig": "?0TX",
           "name": "Layer #15"
-        }
-      },
-      {
-        "path": [
-          "Cloud Textures",
-          "Layer #15"
-        ],
-        "op": "insert_after",
-        "node": {
+        },
+        {
           "kind": "string",
           "sig": "@0TX",
           "name": "Layer #16"
         }
-      }
-    ],
-    "LVLN": [
-      {
-        "_comment": "Per-entry Chance None Global (issue #41): LVLN entries carry LVOC like LVLI's; xEdit comments it out of the LVLN entry.",
-        "path": [
-          "Leveled List Entries",
-          "element",
-          "Chance None Value"
-        ],
-        "op": "insert_after",
-        "node": {
-          "kind": "formid",
-          "name": "Chance None Global",
-          "valid_refs": [
-            "GLOB"
-          ],
-          "sig": "LVOC"
-        }
-      }
-    ],
-    "BOOK": [
-      {
-        "_comment": "fv 210+ DNAM is 14 bytes: a trailing u8 (0 or 1 on the 20260918 snapshot, e.g. HIDELeadMedium 0x008EFC79 = 1) that xEdit doesn't declare.",
-        "path": [
-          "DNAM",
-          "Text Offset"
-        ],
-        "op": "insert_after",
-        "node": {
-          "kind": "integer",
-          "name": "Unknown",
-          "width": "u8",
-          "signed": false,
-          "from_version": 210
-        }
-      }
-    ],
-    "CSTY": [
-      {
-        "_comment": "CSGD is 52 bytes on 38 fv 208+ records (48 elsewhere); the extra 4 bytes are CURV FormIDs such as HIDE_crDrifter_EquipmentSwitch_ScoreFallOff (0x008F4E5F). xEdit stops at 12 floats.",
-        "path": [
-          "General",
-          "Evade Threat Chance"
-        ],
-        "op": "insert_after",
-        "node": {
-          "kind": "formid",
-          "name": "Equipment Switch Score Falloff Curve",
-          "valid_refs": [
-            "CURV",
-            "NULL"
-          ],
-          "from_size": 52
-        }
-      }
-    ],
-    "MATO": [
-      {
-        "_comment": "xEdit gates Single Pass at fv 31, but fv 25/26 records carry it too (0x00035094: DATA is 48 bytes, the full struct). An integer field decodes only when its bytes are present, so the ungated field is right for shorter DATA as well.",
-        "path": [
-          "Directional Material Data",
-          "Single Pass"
-        ],
-        "node": {
-          "kind": "integer",
-          "name": "Single Pass",
-          "width": "u32",
-          "signed": false,
-          "format": {
-            "enum": [
-              "False",
-              "True"
-            ]
-          }
-        }
-      }
-    ]
-  },
-  "records": {
-    "PGTR": {
-      "_comment": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed.",
-      "name": "Progression Track",
-      "members": [
-        {
-          "kind": "string",
-          "name": "Editor ID",
-          "sized": 0,
-          "sig": "EDID"
-        },
-        {
-          "kind": "lstring",
-          "name": "Name",
-          "sig": "FULL"
-        },
-        {
-          "_comment": "PGT1 \u2014 resolves to the WorldPets_Img_<species> KYWDs (0x0092736F..72); the separate WorldPets_Icon_<species> set is not referenced from PGTR.",
-          "kind": "formid",
-          "name": "Track Image Keyword",
-          "valid_refs": [
-            "KYWD"
-          ],
-          "sig": "PGT1"
-        },
-        {
-          "kind": "integer",
-          "name": "Entry Count",
-          "width": "u32",
-          "signed": false,
-          "sig": "PGTE"
-        },
-        {
-          "_comment": "Track Entries \u2014 30 per track (PGTE). Each entry opens on PGTI, so the record-trailing NAM0/NAM1 bind to the record's own members, not to a 31st entry.",
-          "kind": "rarray",
-          "name": "Track Entries",
-          "count": {
-            "count_path": "Entry Count"
-          },
-          "element": {
-            "kind": "rstruct",
-            "name": "Track Entry",
-            "members": [
-              {
-                "_comment": "PGTI \u2014 not a FormID. A little-endian u64 key stamped by the authoring tool: contiguous within a track (Cat: 0x6A47CB50..6D), tracks 100 apart, low bits a Unix timestamp (2026-07-03). The UI's claim event sends it as {UID.hi, UID.lo} (PetProgressionTrackMenu.as:139-142; ProgressionNode.as:39 names it UID). Referenced only by sibling entries' Prerequisite Entry UID in the same record \u2014 a byte-grep of the 20260903 ESM finds each value exactly as its own PGTI plus at most one NAME.",
-                "kind": "integer",
-                "name": "Entry UID",
-                "width": "u64",
-                "signed": false,
-                "sig": "PGTI"
-              },
-              {
-                "_comment": "NAM0 (entry) \u2014 PetProgressionTrackMenu.as:215 binds it as LevelThreshhold; 5..200 across the 30 entries.",
-                "kind": "integer",
-                "name": "Level Threshold",
-                "width": "u32",
-                "signed": false,
-                "sig": "NAM0"
-              },
-              {
-                "_comment": "NAM1 (entry) \u2014 0 in all 120 entries of 20260903; no name in xEdit or the UI model.",
-                "kind": "integer",
-                "name": "Unknown",
-                "width": "u32",
-                "signed": false,
-                "sig": "NAM1"
-              },
-              {
-                "_comment": "NAM2 (entry) \u2014 0-byte in all 120 entries; decodes null.",
-                "kind": "lstring",
-                "name": "Unknown 2",
-                "sig": "NAM2"
-              },
-              {
-                "_comment": "Rewards \u2014 one per entry except the 'already claimed' alternates (thresholds 25 and 80 on every track: 8 of 120 entries carry two). A reward opens on NAM1; the array ends at the entry's NAM4 (Has Prerequisite).",
-                "kind": "rarray",
-                "name": "Rewards",
-                "element": {
-                  "kind": "rstruct",
-                  "name": "Reward",
-                  "members": [
-                    {
-                      "_comment": "NAM1..NAM5 \u2014 ProgressionNode.as:27-35 (name, descriptionTitle, descriptionText, imageKeyword, iconKeyword), bound at PetProgressionTrackMenu.as:216-220.",
-                      "kind": "lstring",
-                      "name": "Name",
-                      "sig": "NAM1"
-                    },
-                    {
-                      "_comment": "NAM2 \u2014 the details-panel title line (RewardDescriptionTitle_tf, PetProgressionTrackMenu.as:365). Observed values form a small closed set (Passive Buff, Currency, Player Title, Player Icon, Pet Cosmetic, Player Cosmetic, Carry Capacity, Combat Upgrade, plus '(upgrade)' variants) \u2014 a de-facto reward category, but the field is the title, not a category key.",
-                      "kind": "lstring",
-                      "name": "Description Title",
-                      "sig": "NAM2"
-                    },
-                    {
-                      "kind": "lstring",
-                      "name": "Description Text",
-                      "sig": "NAM3"
-                    },
-                    {
-                      "_comment": "NAM4 \u2014 WorldPets_Img_* KYWDs (per reward).",
-                      "kind": "formid",
-                      "name": "Image Keyword",
-                      "valid_refs": [
-                        "KYWD"
-                      ],
-                      "sig": "NAM4"
-                    },
-                    {
-                      "_comment": "NAM5 \u2014 WorldPets_Icon_* KYWDs (shared per reward type, e.g. WorldPets_Icon_All_Caps).",
-                      "kind": "formid",
-                      "name": "Icon Keyword",
-                      "valid_refs": [
-                        "KYWD"
-                      ],
-                      "sig": "NAM5"
-                    },
-                    {
-                      "_comment": "NAM6 \u2014 1 in all 128 rewards of 20260903; no name in xEdit or the UI model.",
-                      "kind": "integer",
-                      "name": "Unknown",
-                      "width": "u32",
-                      "signed": false,
-                      "sig": "NAM6"
-                    },
-                    {
-                      "_comment": "VPRI \u2014 1 in all 128 rewards. VPR* signatures occur nowhere in xEdit (any game) and nowhere else in fo76.json.",
-                      "kind": "integer",
-                      "name": "Unknown 2",
-                      "width": "u32",
-                      "signed": false,
-                      "sig": "VPRI"
-                    },
-                    {
-                      "_comment": "VPRF \u2014 0 in all 128 rewards.",
-                      "kind": "integer",
-                      "name": "Unknown 3",
-                      "width": "u32",
-                      "signed": false,
-                      "sig": "VPRF"
-                    },
-                    {
-                      "_comment": "VPRR \u2014 the GMRW pointer, named as xEdit names the same role in wbReward ('Reward Record', wbDefinitionsFO76.pas:7016; GMRW's own DNAM carries the same name in fo76.json). This struct is NOT wbReward \u2014 wbReward's NAM7 is 'XP Amount Global' (a GLOB FormID), here NAM7 is a constant 1 \u2014 so wbReward's other names must not be imported.",
-                      "kind": "formid",
-                      "name": "Reward Record",
-                      "valid_refs": [
-                        "GMRW"
-                      ],
-                      "sig": "VPRR"
-                    },
-                    {
-                      "_comment": "ITME x2 \u2014 xEdit uses ITME only as wbEmpty end markers (wbDefinitionsFO76.pas:7017 'Reward End Marker', :11796 and FO4 :9525 'Marker End'). The first closes the VPRI/VPRF/VPRR group, the second the reward. Both are kind 'empty', the one kind decoded with the unscoped take_first (src/decode/walk.rs), so they are matched positionally; a missing ITME would shift every later marker.",
-                      "kind": "empty",
-                      "name": "Reward Record End Marker",
-                      "sig": "ITME"
-                    },
-                    {
-                      "_comment": "NAM7 \u2014 1 in all 128 rewards; the NAM7 names elsewhere in fo76.json belong to other structs.",
-                      "kind": "integer",
-                      "name": "Unknown 4",
-                      "width": "u32",
-                      "signed": false,
-                      "sig": "NAM7"
-                    },
-                    {
-                      "kind": "empty",
-                      "name": "Reward End Marker",
-                      "sig": "ITME"
-                    },
-                    {
-                      "_comment": "NAM3 (0-byte) \u2014 present only between two rewards of the same entry (8 of 128). Deliberately 'lstring', not 'empty': 'empty' is the one kind decoded with the unscoped take_first (src/decode/walk.rs), which here stole the NEXT entry's Description Text (same sig) and corrupted every entry after the first two-reward one; lstring is element-scoped and renders the same null. Regression test: tests/decode_records/pet_tracks.rs pgtr_world_pets_radhog_track_decodes_correctly.",
-                      "kind": "lstring",
-                      "name": "Next Reward Present",
-                      "sig": "NAM3"
-                    }
-                  ]
-                }
-              },
-              {
-                "_comment": "NAM4 (entry) \u2014 1 on 36 of 120 entries; NAME is present iff 1.",
-                "kind": "integer",
-                "name": "Has Prerequisite",
-                "width": "u32",
-                "signed": false,
-                "format": {
-                  "enum": [
-                    "False",
-                    "True"
-                  ]
-                },
-                "sig": "NAM4"
-              },
-              {
-                "_comment": "NAME \u2014 an Entry UID of the same record (all 36 resolve; Cat threshold 40 \u2192 threshold 5). Same u64 key space as PGTI, not a FormID.",
-                "kind": "integer",
-                "name": "Prerequisite Entry UID",
-                "width": "u64",
-                "signed": false,
-                "sig": "NAME"
-              },
-              {
-                "kind": "empty",
-                "name": "Entry End Marker",
-                "sig": "ITME"
-              }
-            ]
-          }
-        },
-        {
-          "_comment": "NAM0 (record tail, 1 byte) \u2014 1 on all 4 tracks.",
-          "kind": "integer",
-          "name": "Unknown 3",
-          "width": "u8",
-          "signed": false,
-          "sig": "NAM0"
-        },
-        {
-          "_comment": "NAM1 (record tail, 1 byte) \u2014 0 on all 4 tracks. A u8, not an empty string: every genuinely empty lstring in this record is a 0-byte subrecord; typed lstring this rendered null and hid the byte.",
-          "kind": "integer",
-          "name": "Unknown 4",
-          "width": "u8",
-          "signed": false,
-          "sig": "NAM1"
-        }
       ]
     }
-  }
+  ]
 }

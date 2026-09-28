@@ -29,7 +29,7 @@ OVERRIDES = ROOT / "schema" / "fo76.overrides.json"
 # Record types present in the FO76 ESM.
 # Generated from: esm tree /path/to/data | jq '[.[].label.sig] | unique | sort | .[]'
 # Record types with no Pascal definition are deliberately NOT in this list — they are
-# supplied whole by fo76.overrides.json's "records" block (currently: PGTR) — so the jq
+# supplied whole by a record-level fo76.overrides.json entry (currently: PGTR) — so the jq
 # output above must not be pasted back verbatim, or it would re-add them and make
 # extract_record fail with a warning.
 SAFELIST = [
@@ -2237,7 +2237,7 @@ def emit_ctda_table(pas_text: str) -> dict:
     return {"functions": functions}
 
 
-def _expand_pascal_var(node: dict, ex: "Extractor") -> dict:
+def _expand_pascal_var(node: dict, ex: "Extractor | None") -> dict:
     """Expand ``{"$pascal_var": "wbXALG"}`` override nodes via the extractor.
 
     Lets an override addition reference a Pascal helper var by name so the
@@ -2247,6 +2247,8 @@ def _expand_pascal_var(node: dict, ex: "Extractor") -> dict:
     var = node.get("$pascal_var")
     if not var:
         return node
+    if ex is None:
+        raise ValueError(f"$pascal_var {var!r} needs an extractor to expand")
     expr = ex.vars.get(var)
     if not expr:
         raise ValueError(f"unknown Pascal var {var!r} for $pascal_var expansion")
@@ -2293,53 +2295,124 @@ def _patch_property_union(node: dict, dv: int) -> None:
 
 
 def _descend(node: dict, step: str) -> dict:
-    """Descend one step of a record_patches path: a member's (or a union
+    """Descend one step of an override path: a member's (or a union
     variant's) sig/name, or the literal 'element' to enter an array/rarray's
     element node."""
     if step == "element":
         if "element" not in node:
-            raise ValueError(f"patch step 'element': node has no element: {node.get('name')}")
+            raise ValueError(f"path step 'element': node has no element: {node.get('name')}")
         return node["element"]
     for child in node.get("members") or node.get("fields") or node.get("variants") or []:
         if child.get("sig") == step or child.get("name") == step:
             return child
-    raise ValueError(f"patch step {step!r} not found under {node.get('name')}")
+    raise ValueError(f"path step {step!r} not found under {node.get('name')}")
 
 
-def _apply_patch(record: dict, path: list[str], new_node: dict, op: str = "replace") -> None:
-    """Splice new_node into record at path (record_patches merge mode).
+OVERRIDE_OPS = ("replace", "insert_after", "append")
+_OVERRIDE_KEYS = {"record", "op", "path", "reason", "node"}
 
-    Each path step names a child by sig/name, or is the literal 'element' to
-    enter an array/rarray's element. op 'replace' swaps the last step's node
-    for new_node; op 'insert_after' keeps it and inserts new_node as its next
-    sibling (a subrecord absent from Pascal that belongs inside a nested
-    struct, where record_additions' top-level append can't reach). Everything
-    else in the record is left untouched.
+
+def load_overrides(path: Path) -> list[dict]:
+    """The validated override entries in `path` (see its `_comment`)."""
+    entries = json.loads(path.read_text(encoding="utf-8")).get("overrides")
+    if not isinstance(entries, list):
+        raise ValueError(f"{path.name}: expected an 'overrides' list")
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{path.name} entry {i}: not an object")
+        _validate_override(f"{path.name} entry {i}", entry)
+    return entries
+
+
+def _validate_override(where: str, entry: dict) -> None:
+    where = f"{where} ({entry.get('record', '?')})"
+    unknown = set(entry) - _OVERRIDE_KEYS
+    missing = _OVERRIDE_KEYS - set(entry)
+    if unknown or missing:
+        raise ValueError(f"{where}: unknown keys {sorted(unknown)}, missing {sorted(missing)}")
+    op, path, node = entry["op"], entry["path"], entry["node"]
+    if op not in OVERRIDE_OPS:
+        raise ValueError(f"{where}: op {op!r} is not one of {OVERRIDE_OPS}")
+    if not isinstance(entry["reason"], str) or not entry["reason"].strip():
+        raise ValueError(f"{where}: needs a reason")
+    if not isinstance(path, list) or not all(isinstance(step, str) for step in path):
+        raise ValueError(f"{where}: path must be a list of member sigs/names")
+    if op == "insert_after" and not path:
+        raise ValueError(f"{where}: insert_after needs a path to the preceding member")
+    nodes = node if isinstance(node, list) else [node]
+    if not nodes or not all(isinstance(n, dict) for n in nodes):
+        raise ValueError(f"{where}: node must be an object or a non-empty list of objects")
+    if isinstance(node, list) and op == "replace":
+        raise ValueError(f"{where}: replace takes one node")
+
+
+def apply_overrides(records: dict, entries: list[dict], ex: "Extractor | None") -> list[dict]:
+    """Apply override `entries` to `records` in order.
+
+    replace swaps the node at `path` (the whole record when `path` is empty,
+    which also defines a record xEdit lacks); insert_after keeps the node at
+    `path` and inserts the new nodes after it; append adds the new nodes to
+    the members of the node at `path` (the record when empty). Returns the
+    replace entries that changed nothing, which the audit reports as
+    redundant.
     """
-    if op not in ("replace", "insert_after"):
-        raise ValueError(f"unknown patch op {op!r}")
-    cur = record
-    for step in path[:-1]:
-        cur = _descend(cur, step)
-    last = path[-1]
-    if last == "element":
-        if op != "replace":
-            raise ValueError(f"patch op {op!r} needs a member target, not 'element'")
-        if "element" not in cur:
-            raise ValueError("patch target 'element' on non-array node")
-        cur["element"] = new_node
-        return
-    lst = cur.get("members") or cur.get("fields")
-    if lst is None:
-        raise ValueError(f"patch target {last!r}: parent has no members/fields")
-    for i, child in enumerate(lst):
-        if child.get("sig") == last or child.get("name") == last:
-            if op == "replace":
-                lst[i] = new_node
-            else:
-                lst.insert(i + 1, new_node)
-            return
-    raise ValueError(f"patch target {last!r} not found")
+    redundant = []
+    for entry in entries:
+        sig, op, path = entry["record"], entry["op"], entry["path"]
+        raw = entry["node"] if isinstance(entry["node"], list) else [entry["node"]]
+        nodes = [_expand_pascal_var(copy.deepcopy(n), ex) for n in raw]
+        if op == "replace" and not path:
+            if records.get(sig) == nodes[0]:
+                redundant.append(entry)
+            records[sig] = nodes[0]
+            continue
+        if sig not in records:
+            raise ValueError(f"override {op} {sig} {path}: no extracted {sig} record")
+        parent = records[sig]
+        for step in path[:-1] if op != "append" else path:
+            parent = _descend(parent, step)
+        if op == "append":
+            siblings = parent.get("members") if "members" in parent else parent.get("fields")
+            if siblings is None:
+                raise ValueError(f"override append {sig} {path}: target has no members/fields")
+            siblings.extend(nodes)
+            continue
+        last = path[-1]
+        if last == "element":
+            if op != "replace":
+                raise ValueError(f"override {op} {sig} {path}: needs a member, not 'element'")
+            if "element" not in parent:
+                raise ValueError(f"override {sig} {path}: 'element' on a non-array node")
+            if parent["element"] == nodes[0]:
+                redundant.append(entry)
+            parent["element"] = nodes[0]
+            continue
+        siblings = parent.get("members") or parent.get("fields") or []
+        index = next(
+            (i for i, child in enumerate(siblings) if last in (child.get("sig"), child.get("name"))),
+            None,
+        )
+        if index is None:
+            raise ValueError(f"override {op} {sig} {path}: {last!r} not found")
+        if op == "replace":
+            if siblings[index] == nodes[0]:
+                redundant.append(entry)
+            siblings[index] = nodes[0]
+        else:
+            siblings[index + 1 : index + 1] = nodes
+    return redundant
+
+
+def finish_schema(schema: dict, entries: list[dict], ex: "Extractor") -> list[dict]:
+    """Apply override `entries` to extracted `schema` and run the passes
+    override-sourced members need (they bypass the ones inside
+    Extractor.run(), and CTDA structs must not reach the decoder). Returns the
+    redundant entries (see apply_overrides)."""
+    redundant = apply_overrides(schema["records"], entries, ex)
+    for rec in schema["records"].values():
+        _apply_schema_kinds(rec.get("members", []))
+        _normalize_count_paths(rec.get("members", []))
+    return redundant
 
 
 def canonical_schema_text(obj: object) -> str:
@@ -2423,66 +2496,14 @@ def main() -> None:
     ex.report.strict = args.strict
     schema = ex.run()
 
-    # Merge overrides — hand-authored fixes that survive regeneration.
-    # Three mechanisms:
-    #   "records"          — whole-record replacement (wins over extractor output).
-    #   "record_patches"   — path-addressed splice: replaces one nested node inside
-    #                        the extractor-generated record (e.g. an array's element)
-    #                        without touching the rest of the record. Use when the
-    #                        extractor gets most of a record right but one nested
-    #                        node resists static extraction (a HARD_RAW_VAR).
-    #                        With "op": "insert_after", the addressed node stays and
-    #                        the patch node becomes its next sibling — the nested
-    #                        counterpart of record_additions.
-    #   "record_additions" — member-append: members are appended to the extractor-
-    #                        generated record's members list without replacing it.
-    #                        Use for genuine xEdit gaps (subrecords absent from Pascal).
-    if OVERRIDES.exists():
-        try:
-            overrides = json.loads(OVERRIDES.read_text(encoding="utf-8"))
-            merged = 0
-            for sig, rec in overrides.get("records", {}).items():
-                schema["records"][sig] = rec
-                merged += 1
-            patches = 0
-            for sig, patch_list in overrides.get("record_patches", {}).items():
-                if sig not in schema["records"]:
-                    raise ValueError(f"record_patches: no extractor record for {sig} to patch")
-                for patch in patch_list:
-                    _apply_patch(
-                        schema["records"][sig], patch["path"], patch["node"], patch.get("op", "replace")
-                    )
-                    patches += 1
-            additions = 0
-            for sig, extra_members in overrides.get("record_additions", {}).items():
-                expanded = [
-                    _expand_pascal_var(m, ex) if isinstance(m, dict) else m
-                    for m in extra_members
-                ]
-                if sig in schema["records"]:
-                    schema["records"][sig]["members"].extend(expanded)
-                    additions += len(expanded)
-                else:
-                    # No generated record to append to — treat as a full record.
-                    schema["records"][sig] = {"name": sig, "members": expanded}
-                    merged += 1
-            print(
-                f"merged {merged} override(s), {patches} patch(es), "
-                f"{additions} member addition(s) from {OVERRIDES.name}",
-                file=sys.stderr,
-            )
-        except Exception as e:
-            # Overrides are load-bearing (e.g. the hand-authored PERK Effect patch).
-            # A failure here means the shipped schema is missing critical members.
-            print(f"ERROR: failed to load overrides: {e}", file=sys.stderr)
-            sys.exit(1)
-
-    # Re-apply schema-kind conversion over the merged tree: override-sourced
-    # members (record replacements, patches, additions) bypass the pass that
-    # ran inside Extractor.run(), and CTDA structs must not reach the decoder.
-    for rec in schema["records"].values():
-        _apply_schema_kinds(rec.get("members", []))
-        _normalize_count_paths(rec.get("members", []))
+    # Hand-authored fixes that survive regeneration (fo76.overrides.json).
+    try:
+        entries = load_overrides(OVERRIDES)
+        finish_schema(schema, entries, ex)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: failed to apply overrides: {e}", file=sys.stderr)
+        sys.exit(1)
+    print(f"applied {len(entries)} override(s) from {OVERRIDES.name}", file=sys.stderr)
 
     # A raw_fallback is the extractor's placeholder for Pascal it cannot model;
     # the decoder has no such kind, so every one must be covered by an override.
