@@ -996,30 +996,45 @@ pub(crate) fn tree_stamp(root: &Path, subdirs: &[&str], salt: &str) -> anyhow::R
 }
 
 /// Every directory beneath `root`, as `/`-separated relative paths in name
-/// order.
+/// order, following directory symlinks as the curve reader does (each
+/// directory once, so a symlink cycle ends).
 pub(crate) fn subdirs(root: &Path) -> anyhow::Result<Vec<String>> {
-    fn walk(dir: &Path, rel: &str, out: &mut Vec<String>) -> anyhow::Result<()> {
+    fn walk(
+        dir: &Path,
+        rel: &str,
+        seen: &mut std::collections::HashSet<PathBuf>,
+        out: &mut Vec<String>,
+    ) -> anyhow::Result<()> {
         let mut names = Vec::new();
         for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
             let entry = entry?;
-            if entry.file_type()?.is_dir() {
+            // `metadata` follows a symlink; an unreadable entry isn't a
+            // directory the reader could use.
+            if fs::metadata(entry.path()).is_ok_and(|m| m.is_dir()) {
                 names.push(entry.file_name().to_string_lossy().into_owned());
             }
         }
         names.sort();
         for name in names {
+            let path = dir.join(&name);
+            if !seen.insert(fs::canonicalize(&path).unwrap_or_else(|_| path.clone())) {
+                continue;
+            }
             let rel = if rel.is_empty() {
                 name.clone()
             } else {
                 format!("{rel}/{name}")
             };
             out.push(rel.clone());
-            walk(&dir.join(&name), &rel, out)?;
+            walk(&path, &rel, seen, out)?;
         }
         Ok(())
     }
+    let mut seen = std::collections::HashSet::from([
+        fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf())
+    ]);
     let mut out = Vec::new();
-    walk(root, "", &mut out)?;
+    walk(root, "", &mut seen, &mut out)?;
     Ok(out)
 }
 
@@ -1117,6 +1132,25 @@ mod tests {
         fs::remove_file(root.join("sub/deeper/curve.json")).unwrap();
         assert_ne!(stamp(), added);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tree_stamp_follows_a_symlinked_subdirectory() {
+        let base = std::env::temp_dir().join(format!("esm_tree_symlink_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (root, target) = (base.join("root"), base.join("target"));
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(target.join("deeper")).unwrap();
+        std::os::unix::fs::symlink(&target, root.join("sub")).unwrap();
+        std::os::unix::fs::symlink(&root, target.join("loop")).unwrap();
+        let dirs = subdirs(&root).unwrap();
+        assert_eq!(dirs, ["sub", "sub/deeper"]);
+        let dirs: Vec<&str> = dirs.iter().map(String::as_str).collect();
+        let before = tree_stamp(&root, &dirs, "t").unwrap();
+        fs::write(target.join("deeper/curve.json"), "[]").unwrap();
+        assert_ne!(tree_stamp(&root, &dirs, "t").unwrap(), before);
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[derive(Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
