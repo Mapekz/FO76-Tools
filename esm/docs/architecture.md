@@ -108,11 +108,11 @@ both itself, so every caller that names the same file shares one cache and one b
 
 Every surface reaches the engine through `src/host.rs`'s `Host::run(esm, op)`, which keeps the
 databases a process has opened (keyed by canonical path, reopened if the file changes) and runs
-`src/ipc.rs`'s `dispatch_op` — driven by the `Op` enum (`Op::Record`, `Op::Search`, `Op::Walk`,
+`src/ops/mod.rs`'s `dispatch_op` — driven by the `Op` enum (`Op::Record`, `Op::Search`, `Op::Walk`,
 `Op::Chase`, `Op::DropTable`, …):
 
 ```
-                    src/host.rs  Host::run  →  src/ipc.rs  dispatch_op
+                    src/host.rs  Host::run  →  src/ops/mod.rs  dispatch_op
                                    │
          ┌─────────────────────────┼──────────────────────────┐
          ▼                         ▼                          ▼
@@ -132,8 +132,8 @@ heartbeat (`progress::read`) to stderr after a grace period, so a cold build sho
 progress instead of looking hung.
 
 `esm batch` is how scripts make many calls cheaply: `tools/esm_gateway.py`'s `EsmGateway` owns one
-`esm batch` child, sends it one `{"esm", "op"}` request per line (`ipc::Request`), and reads one
-`ipc::Response` envelope per line back.
+`esm batch` child, sends it one `{"esm", "op"}` request per line (`ops::Request`), and reads one
+`ops::Response` envelope per line back.
 
 **Source overrides** (`--localization-ba2`/`--strings-dir`/`--startup-ba2`/`--curves-dir` on
 `list`/`get`/`search`/`refs`/`diff`) open a `Database` configured with those sources for that one
@@ -256,7 +256,7 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 | Want to... | Look in |
 |---|---|
 | Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py`, then `src/decode/walk.rs`'s `decode_member` / `src/decode/rules.rs` for any post-decode synthesis |
-| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add an `Op` variant in `src/ipc.rs` if it needs `esm batch`/N-API reach too |
+| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add an `Op` variant in `src/ops/mod.rs` if it needs `esm batch`/N-API reach too |
 | Change diff noise suppression | `src/diff/noise.rs`'s `strip_noise_fields` / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
 | Add a new patch-notes lint rule | `tools/run_lints.py`'s rule registry |

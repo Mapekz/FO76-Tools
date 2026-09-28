@@ -5,7 +5,7 @@ use common::{
     wrap_grup,
 };
 use esm::host::Host;
-use esm::ipc::{Op, RecordSel, Request, Response};
+use esm::ops::{Op, RecordSel, Request, Response};
 use esm::{
     BodyDetail, BulkRecordEntry, Database, DiffOptions, DiffResult, ResolveDepth, SearchField,
 };
@@ -556,7 +556,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
         depth: 1,
         type_filter: Some("WEAP".to_string()),
         paths: true,
-        sort: esm::ipc::RefSort::Formid,
+        sort: esm::ops::RefSort::Formid,
     };
 
     // Round-trip check.
@@ -591,7 +591,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
         depth: 1,
         type_filter: Some("MISC".to_string()),
         paths: false,
-        sort: esm::ipc::RefSort::Formid,
+        sort: esm::ops::RefSort::Formid,
     };
     let req_no_match = Request {
         esm: tmp.clone(),

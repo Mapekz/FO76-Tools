@@ -1,7 +1,7 @@
 //! `refs` subcommand handler (both the reverse-reference walk and the
 //! `--to` bidirectional path search), plus its table-rendering logic.
 
-use esm::ipc::{Op, RecordSel};
+use esm::ops::{Op, RecordSel};
 use esm::{CarrierKind, Database, FormIdBase, RefList};
 use std::path::{Path, PathBuf};
 
@@ -50,7 +50,7 @@ pub(crate) fn cmd_refs(
     depth: usize,
     record_type: Option<String>,
     paths: bool,
-    sort: esm::ipc::RefSort,
+    sort: esm::ops::RefSort,
     json: bool,
     pretty: bool,
     localization_ba2: Option<PathBuf>,
@@ -90,7 +90,7 @@ pub(crate) fn cmd_refs(
             paths,
             sort,
         };
-        let v = esm::ipc::dispatch_op(&db, &op)?;
+        let v = esm::ops::dispatch_op(&db, &op)?;
         let mut ref_list: RefList = serde_json::from_value(v)?;
         convert_ref_list_form_ids(&mut ref_list, base);
         print_refs(&ref_list, sort, json, pretty);
@@ -180,7 +180,7 @@ fn ref_columns(ref_list: &RefList) -> RefColumns {
     }
 }
 
-fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: bool) {
+fn print_refs(ref_list: &RefList, sort: esm::ops::RefSort, json: bool, pretty: bool) {
     let columns = ref_columns(ref_list);
     if json {
         print_json(&serde_json::to_value(&ref_list.rows).unwrap(), pretty);
@@ -275,10 +275,10 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
         let Some(d) = ref_list.effective_depth else {
             unreachable!("an unbounded walk (effective_depth=None) never leaves a frontier");
         };
-        let escape = if d < esm::ipc::DEFAULT_MAX_DEPTH {
+        let escape = if d < esm::ops::DEFAULT_MAX_DEPTH {
             format!(
                 "raise --depth (up to {}) or pass --depth 0 for an unbounded walk",
-                esm::ipc::DEFAULT_MAX_DEPTH
+                esm::ops::DEFAULT_MAX_DEPTH
             )
         } else {
             "pass --depth 0 for an unbounded walk".to_string()
@@ -295,8 +295,8 @@ fn print_refs(ref_list: &RefList, sort: esm::ipc::RefSort, json: bool, pretty: b
             ref_list.rows.len(),
             ref_list.total,
             match sort {
-                esm::ipc::RefSort::Formid => "formid",
-                esm::ipc::RefSort::Depth => "depth",
+                esm::ops::RefSort::Formid => "formid",
+                esm::ops::RefSort::Depth => "depth",
             }
         );
         if let (Some(carrier_total), Some(tag_total)) = (ref_list.carrier_total, ref_list.tag_total)
@@ -448,7 +448,7 @@ mod tests {
     fn ref_columns_depth_beyond_one_shows_depth_and_via() {
         let deep_row = RefRow {
             depth: 2,
-            path: vec![esm::ipc::RefPathNode {
+            path: vec![esm::ops::RefPathNode {
                 form_id: "0x00001234".to_string(),
                 record_type: Some("WEAP".to_string()),
                 editor_id: None,

@@ -2,7 +2,7 @@
 //! just `output::print_json` on the raw `DiffResult`).
 
 use anyhow::Context as _;
-use esm::ipc::Op;
+use esm::ops::Op;
 use esm::{BodyDetail, Database, DiffResult, FormIdBase};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -198,7 +198,7 @@ pub(crate) fn cmd_diff(
         }
 
         let record_type_owned = record_type.map(str::to_string);
-        let v = esm::ipc::run_diff(&db_a, &db_b, &options, &record_type_owned)?;
+        let v = esm::ops::run_diff(&db_a, &db_b, &options, &record_type_owned)?;
         let mut result: DiffResult = serde_json::from_value(v)?;
         convert_diff_form_ids(&mut result, base);
 

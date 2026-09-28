@@ -11,7 +11,7 @@
 //! function, then print.
 
 use esm::curves::curve_query;
-use esm::ipc::{BulkRecordEntry, Op, RecordSel};
+use esm::ops::{BulkRecordEntry, Op, RecordSel};
 use esm::{FormIdBase, ResolveDepth};
 use std::path::Path;
 

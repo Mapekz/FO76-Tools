@@ -4,7 +4,7 @@ Status: accepted (2026-08-04)
 
 `esm refs` answers "what references this?" by resolving a selector to one or more BFS seed
 FormIDs, then walking the reverse-reference index. That resolution has exactly two shapes,
-expressed as `RefSeeds` in `src/ipc.rs` and dispatched from one function, `resolve_ref_seeds`:
+expressed as `RefSeeds` in `src/ops/mod.rs` and dispatched from one function, `resolve_ref_seeds`:
 
 - **Direct** — a FormID, a real EditorID, or an engine-hardcoded EditorID (the ~228-entry table
   in `src/hardcoded.rs`: FormIDs defined by the game executable rather than by an ESM record,

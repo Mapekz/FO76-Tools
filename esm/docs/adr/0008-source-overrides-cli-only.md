@@ -14,7 +14,7 @@ otherwise force an in-process `Database::open` plus the override, bypassing `Bac
 entirely.
 
 This looked, on the surface, like a gap — four commands reaching for the same daemon-bypassing
-workaround usually means the daemon's wire protocol (`Op` in `src/ipc.rs`) is missing a variant it
+workaround usually means the daemon's wire protocol (`Op` in `src/ops/mod.rs`) is missing a variant it
 should have. It is not.
 
 ## Decision

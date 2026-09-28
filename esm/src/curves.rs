@@ -403,7 +403,7 @@ fn parse_curve_json(bytes: &[u8]) -> Option<Vec<CurvePoint>> {
 /// - More than one entry: returns a JSON array, each object tagged with its
 ///   own `"sel"` key so callers can correlate results back to selectors.
 pub fn curve_query(
-    entries: &[crate::ipc::BulkRecordEntry],
+    entries: &[crate::ops::BulkRecordEntry],
     at: &[f32],
     sum: Option<(f32, f32)>,
     step: f32,
@@ -432,7 +432,7 @@ pub fn curve_query(
 /// One entry's result — everything `curve_query` needs except the `"sel"`
 /// wrapping, which only the multi-target case adds (see `curve_query`).
 fn curve_entry_result(
-    entry: &crate::ipc::BulkRecordEntry,
+    entry: &crate::ops::BulkRecordEntry,
     at: &[f32],
     sum: Option<(f32, f32)>,
     step: f32,

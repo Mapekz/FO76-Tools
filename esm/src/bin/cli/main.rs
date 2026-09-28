@@ -497,28 +497,28 @@ fn parse_ref_depth(s: &str) -> Result<usize, String> {
     let v: usize = s
         .parse()
         .map_err(|_| format!("invalid depth value '{s}'"))?;
-    if v > esm::ipc::DEFAULT_MAX_DEPTH {
+    if v > esm::ops::DEFAULT_MAX_DEPTH {
         Err(format!(
             "{v} is not in 0..={} (0 = unbounded)",
-            esm::ipc::DEFAULT_MAX_DEPTH
+            esm::ops::DEFAULT_MAX_DEPTH
         ))
     } else {
         Ok(v)
     }
 }
 
-/// CLI-facing mirror of `esm::ipc::RefSort` for `refs --sort <formid|depth>`.
+/// CLI-facing mirror of `esm::ops::RefSort` for `refs --sort <formid|depth>`.
 #[derive(Clone, Copy, ValueEnum)]
 enum RefSortArg {
     Formid,
     Depth,
 }
 
-impl From<RefSortArg> for esm::ipc::RefSort {
+impl From<RefSortArg> for esm::ops::RefSort {
     fn from(s: RefSortArg) -> Self {
         match s {
-            RefSortArg::Formid => esm::ipc::RefSort::Formid,
-            RefSortArg::Depth => esm::ipc::RefSort::Depth,
+            RefSortArg::Formid => esm::ops::RefSort::Formid,
+            RefSortArg::Depth => esm::ops::RefSort::Depth,
         }
     }
 }
@@ -534,9 +534,9 @@ impl From<RefSortArg> for esm::ipc::RefSort {
 struct Backend(esm::host::Host);
 
 impl Backend {
-    fn run(&mut self, esm: &Path, op: esm::ipc::Op) -> anyhow::Result<serde_json::Value> {
+    fn run(&mut self, esm: &Path, op: esm::ops::Op) -> anyhow::Result<serde_json::Value> {
         let mut watched = vec![progress_watch_path(esm)];
-        if let esm::ipc::Op::Diff { b, .. } = &op {
+        if let esm::ops::Op::Diff { b, .. } = &op {
             watched.push(progress_watch_path(b));
         }
         let watcher = progress_ui::Watcher::spawn(watched);

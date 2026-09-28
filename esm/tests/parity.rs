@@ -10,7 +10,7 @@ mod common;
 use common::{make_xref_esm, unique_temp_path};
 use esm::diff::DiffOptions;
 use esm::host::Host;
-use esm::ipc::{Op, RecordSel, dispatch_op, run_diff};
+use esm::ops::{Op, RecordSel, dispatch_op, run_diff};
 use esm::{Database, FormId, ResolveDepth, SearchField};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -141,7 +141,7 @@ fn referenced_by_parity() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     );
     let _ = std::fs::remove_file(&path);

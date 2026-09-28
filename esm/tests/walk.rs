@@ -3,7 +3,7 @@
 //! returns a canned `RefList` keyed by `(target, type_filter)`.
 
 use esm::chase::ChaseFetcher;
-use esm::ipc::RecordSel;
+use esm::ops::RecordSel;
 use esm::reader::RecordHeaderInfo;
 use esm::walk::{
     Digest, WalkOptions, WalkResult, build_refs_digest, render_digest, render_text, walk,

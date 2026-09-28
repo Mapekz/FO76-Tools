@@ -6,7 +6,7 @@ the `esm` CLI. It owns one `esm batch` child process and sends it JSON
 back (see `src/bin/cli/batch.rs`). The child keeps each ESM's database open
 for the gateway's lifetime, so a stage pays each ESM's open cost once, and it
 exits when the gateway closes. The request/response shapes are the `Op`,
-`Request` and `Response` types in `src/ipc.rs`.
+`Request` and `Response` types in `src/ops/mod.rs`.
 
 A full gateway, not just single-record lookups: `bulk_get` (`Op::RecordBulk`,
 one request for N selectors), `list_type` (`Op::ListTypeRecords`, the
@@ -103,7 +103,7 @@ def _looks_like_formid(s: str) -> bool:
 def _sel_for_input(value: FormIdLike) -> dict:
     """Build a `RecordSel` wire value from one ambiguous token, auto-detecting
     FormID vs EditorID via `_looks_like_formid` -- mirrors `RecordSel::from_input`
-    in src/ipc.rs. Used by `bulk_get`, whose selectors may be a mix of both
+    in src/ops/mod.rs. Used by `bulk_get`, whose selectors may be a mix of both
     (e.g. a caller's initial lookup token can be a FormID or an EditorID,
     while FormIDs discovered by a subsequent reverse-ref walk are always
     FormIDs)."""
@@ -117,7 +117,7 @@ def _sel_kind(sel: Mapping[str, Any]) -> tuple[str, Any]:
 
 
 def _sel_display(sel: Mapping[str, Any]) -> str:
-    """Mirror `RecordSel::display()` in src/ipc.rs: a FormID hex string
+    """Mirror `RecordSel::display()` in src/ops/mod.rs: a FormID hex string
     (`0x0000463F`) for a `form_id` selector, or the literal EditorID text for
     an `edid` selector."""
     kind, value = _sel_kind(sel)
@@ -319,14 +319,14 @@ class EsmGateway:
             raise EsmError(parsed.get("error", "unknown esm error"))
         raise EsmError(f"unrecognized response envelope: {parsed!r}")
 
-    # ---- convenience wrappers over Op variants (ipc.rs::Op) ----
+    # ---- convenience wrappers over Op variants (ops/mod.rs::Op) ----
 
     def file_info(self, esm: str) -> dict:
         return self.op(esm, {"op": "file_info"})
 
     def record(self, esm: str, formid: FormIdLike, *, resolve: str = "stub") -> dict:
         """`Op::Record { sel: FormId, depth }`. `resolve` is one of
-        "none" | "stub" | "full" (ipc.rs `ResolveDepth`, default "stub")."""
+        "none" | "stub" | "full" (ops/mod.rs `ResolveDepth`, default "stub")."""
         return self.op(
             esm, {"op": "record", "sel": _sel_for_formid(formid), "depth": resolve}
         )
@@ -343,12 +343,12 @@ class EsmGateway:
         one HTTP round-trip instead of N. Each element of `sels` may be a
         FormID (int or hex/decimal string) or an EditorID string; kind is
         auto-detected per-selector via `_looks_like_formid`, mirroring the
-        Rust CLI's own `RecordSel::from_input` (see ipc.rs).
+        Rust CLI's own `RecordSel::from_input` (see ops/mod.rs).
 
         Returns the raw list of `BulkRecordEntry` dicts, each shaped
         `{"sel": <selector display string>, "header"?, "editor_id"?,
         "fields"?, "error"?}` -- one bad selector produces an `error` entry
-        for itself only, it never fails the whole call (see ipc.rs's
+        for itself only, it never fails the whole call (see ops/mod.rs's
         `RecordBulk` docs). This lets a caller drop any single-vs-multi-target
         special case entirely: even a length-1 `sels` list gets the same
         per-selector error isolation a subprocess `esm get` with one bad
@@ -417,7 +417,7 @@ class EsmGateway:
         DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict: `{target, rows,
         total, capped, requested_depth, effective_depth, depth_capped,
         frontier_remaining, per_depth_totals, shown_max_depth}` (see
-        `RefList` in ipc.rs for each field's exact meaning; `effective_depth`
+        `RefList` in ops/mod.rs for each field's exact meaning; `effective_depth`
         is `None` when `requested_depth == 0`). `carrier_total`/`tag_total`
         are also part of the wire struct but only populated for
         entry-point/carrier-seeded walks, which this single-target method
@@ -431,13 +431,13 @@ class EsmGateway:
         true, annotates each emitted row with `field_paths`: the JSON field
         path(s) inside that row's decoded body referencing its predecessor in
         the hop chain -- opt-in because it requires a full decode per row.
-        Both mirror `esm refs --type SIG --paths` (see ipc.rs's
+        Both mirror `esm refs --type SIG --paths` (see ops/mod.rs's
         `Op::ReferencedBy` and cli.rs's `cmd_refs`).
 
         `type_filter`/`paths` are omitted from the wire request entirely
         when left at their defaults, keeping the request body byte-identical
         to the pre-existing wire shape for callers that never use them
-        (`ipc.rs`'s `#[serde(default)]` on both fields makes this safe for
+        (`ops/mod.rs`'s `#[serde(default)]` on both fields makes this safe for
         older/newer clients either way).
         """
         op: dict[str, Any] = {

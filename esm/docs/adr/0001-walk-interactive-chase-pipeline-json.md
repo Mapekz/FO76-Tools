@@ -38,10 +38,10 @@ Both consume one classifier core in `src/chase.rs` — the verbs differ in contr
 
 `walk`/`chase` run via `Op::Walk`/`Op::Chase` (plus `Op::DropTable` for
 `crate::lvli::drop_table`, reachable before this only through `walk`'s LVLI digest) in
-`src/ipc.rs`, dispatched against an already-open `Database` the same way every other `Op` variant
+`src/ops/mod.rs`, dispatched against an already-open `Database` the same way every other `Op` variant
 is. The BFS and the classifier run inside whatever process is already handling the op — the
 daemon, `--local`'s in-process `Database`, or the N-API addon's `EsmDatabase` — via an in-process
-`ChaseFetcher` adapter (`ipc.rs`'s `DbFetcher`) that reads straight off the open `Database`, no
+`ChaseFetcher` adapter (`ops/mod.rs`'s `DbFetcher`) that reads straight off the open `Database`, no
 serialization or round-trip per fetch. This is a relocation, not a reversal of this ADR's
 decision: `walk` is still the only interactive surface (its digest/rendering split, OMOD
 mechanism slicing, and LVLI drop-odds wrapping are unchanged), and `chase` still always emits the

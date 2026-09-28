@@ -10,7 +10,7 @@ Covers:
 Every test above uses only synthetic fixtures -- no real `esm` or game
 data. `FakeGatewayConformanceTests` at the bottom is the one exception: it
 asserts `FakeGateway`'s Python reimplementation of the reverse-reference BFS
-agrees with the REAL gateway/backend's own `ipc::referenced_by_enriched`
+agrees with the REAL gateway/backend's own `ops::referenced_by_enriched`
 walk. Gated on `$FO76_ESM_PATH` (see esm/CLAUDE.local.md) exactly like
 `test_esm_gateway.py`'s `RealEsmIntegrationTests` -- skips silently when
 unset, so it is a no-op in CI/sandboxes without game data. This is the
@@ -259,7 +259,7 @@ class FakeGatewayPathsAndBulkGetTests(unittest.TestCase):
         self.assertEqual(entries[1]["sel"], "0xFFFFFFFF")
         self.assertIn("error", entries[1])
         # EditorID selectors display as the literal input text (mirrors
-        # RecordSel::display() in ipc.rs), not the resolved FormID.
+        # RecordSel::display() in ops/mod.rs), not the resolved FormID.
         self.assertEqual(entries[2]["sel"], "mod_Custom_Test")
         self.assertEqual(entries[2]["fields"], {"Data": {"Properties": []}})
 
@@ -325,7 +325,7 @@ def _live_fixture_from_gateway(gateway, esm_path: str, target_hex: str, *, round
 
 class FakeGatewayConformanceTests(unittest.TestCase):
     """Asserts `FakeGateway.refs()`'s Python BFS reimplementation agrees
-    with the REAL gateway/backend's own `ipc::referenced_by_enriched` walk.
+    with the REAL gateway/backend's own `ops::referenced_by_enriched` walk.
 
     Gated on `$FO76_ESM_PATH`, mirroring `test_esm_gateway.py`'s
     `RealEsmIntegrationTests` silent-skip convention -- a no-op in

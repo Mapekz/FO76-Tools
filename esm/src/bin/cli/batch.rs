@@ -1,14 +1,14 @@
 //! `esm batch`: answer a stream of `Op` requests over stdin/stdout.
 //!
-//! Each input line is one JSON [`esm::ipc::Request`] (`{"esm": <path>,
+//! Each input line is one JSON [`esm::ops::Request`] (`{"esm": <path>,
 //! "op": {...}}`); each gets exactly one output line, the matching
-//! [`esm::ipc::Response`] envelope (`{"status": "ok", "data": ...}` or
+//! [`esm::ops::Response`] envelope (`{"status": "ok", "data": ...}` or
 //! `{"status": "err", "error": ...}`), in order. Databases stay open for the
 //! life of the process, so a script that owns one `esm batch` child pays the
 //! open cost once per ESM instead of once per call. The process exits when
 //! stdin closes.
 
-use esm::ipc::{Request, Response};
+use esm::ops::{Request, Response};
 use std::io::{BufRead, Write};
 
 pub(crate) fn cmd_batch() -> anyhow::Result<()> {

@@ -11,7 +11,7 @@ pub mod formid;
 pub mod hardcoded;
 pub mod host;
 pub mod index;
-pub mod ipc;
+pub mod ops;
 pub mod logging;
 pub mod lvli;
 pub mod progress;
@@ -40,7 +40,7 @@ pub use diff::{
 };
 pub use formid::{FormId, FormIdBase};
 pub use index::{CacheInventory, SearchMeta, cache_inventory};
-pub use ipc::{
+pub use ops::{
     BulkRecordEntry, CoverageReport, Markers, Op, RawRecordView, RawSubrecordView, RefList,
     RefPathNode, RefRow, Request, Response,
 };
@@ -473,7 +473,7 @@ pub enum CarrierKind {
 /// One tag a virtual-seed carrier matched under a selector (e.g. a PERK
 /// entry point under an [`EntryPointSpec`]).
 ///
-/// Carried on [`ipc::RefRow::tags`] so every reverse-ref row in a
+/// Carried on [`ops::RefRow::tags`] so every reverse-ref row in a
 /// carrier-seeded walk (such as `--entry-point`/`--ep`) can name which
 /// hook(s) it belongs to.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -1376,10 +1376,10 @@ impl Database {
 
     /// Decode a record by EditorID with the given resolution depth.
     ///
-    /// Only resolves against real ESM records — unlike `ipc::resolve_sel`
+    /// Only resolves against real ESM records — unlike `ops::resolve_sel`
     /// (the path every serving surface uses), this does not fall back to
     /// `crate::hardcoded`'s engine-hardcoded EditorID table. Prefer
-    /// `ipc::resolve_sel` + [`Self::record_by_formid_resolved`] for that
+    /// `ops::resolve_sel` + [`Self::record_by_formid_resolved`] for that
     /// broader precedence-aware resolution; this method stays as a narrower
     /// public building block rather than duplicating that fallback here.
     pub fn record_by_edid_resolved(
@@ -1591,7 +1591,7 @@ impl Database {
     /// Returns `(label, seeds)`: `label` is a human-readable description of
     /// what matched — e.g. `"entry point 39 (Mod Percent Blocked)"` or
     /// `"entry point 'Mod VATS*' (14 matched: 43 Mod VATS Attack Damage, …)"`
-    /// — meant for [`ipc::RefList::target`]; `seeds` are `(FormId, tags)`
+    /// — meant for [`ops::RefList::target`]; `seeds` are `(FormId, tags)`
     /// pairs tagging each carrier with the entry points it matched.
     pub fn perks_by_entry_point(
         &self,
@@ -1686,7 +1686,7 @@ impl Database {
     /// what matched — e.g. `"OMOD property weap:0 (Speed)"` or
     /// `"OMOD property 'Enchantments' (3 matched: weap:65 Enchantments, \
     /// armo:0 Enchantments, npc:3 Enchantments)"` — meant for
-    /// [`ipc::RefList::target`]; `seeds` are `(FormId, tags)` pairs tagging
+    /// [`ops::RefList::target`]; `seeds` are `(FormId, tags)` pairs tagging
     /// each carrier with the properties it matched.
     pub fn omods_by_property(&self, spec: &OmodPropertySpec) -> anyhow::Result<(String, Carriers)> {
         let sample = self.type_sample("OMOD")?;

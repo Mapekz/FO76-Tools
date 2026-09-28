@@ -5,7 +5,7 @@ import type { CarrierKind } from "./CarrierKind";
  * One tag a virtual-seed carrier matched under a selector (e.g. a PERK
  * entry point under an [`EntryPointSpec`]).
  *
- * Carried on [`ipc::RefRow::tags`] so every reverse-ref row in a
+ * Carried on [`ops::RefRow::tags`] so every reverse-ref row in a
  * carrier-seeded walk (such as `--entry-point`/`--ep`) can name which
  * hook(s) it belongs to.
  */

@@ -135,7 +135,7 @@ fn clamp_ref_depth_zero_passes_through_as_unbounded_sentinel() {
 fn clamp_ref_depth_clamps_to_range() {
     assert_eq!(clamp_ref_depth(Some(1)), 1);
     assert_eq!(clamp_ref_depth(Some(3)), 3);
-    assert_eq!(clamp_ref_depth(Some(1000)), esm::ipc::DEFAULT_MAX_DEPTH);
+    assert_eq!(clamp_ref_depth(Some(1000)), esm::ops::DEFAULT_MAX_DEPTH);
 }
 
 #[test]

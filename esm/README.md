@@ -107,7 +107,7 @@ parsing anything, so a warm `esm get` takes a few milliseconds end to end. Scrip
 calls can keep one `esm batch` child instead of launching one process per call: it reads one
 `{"esm": <path>, "op": {...}}` JSON request per stdin line, answers each with one
 `{"status": "ok"|"err", ...}` line, and keeps each ESM open until stdin closes. The request and
-response shapes are `Request`, `Op` and `Response` in `src/ipc.rs`.
+response shapes are `Request`, `Op` and `Response` in `src/ops/mod.rs`.
 
 ## Library API
 
@@ -136,7 +136,7 @@ let diff = esm::diff::diff_databases(&db_a, &db_b)?;
 ```
 
 Every query takes `&self`, so one `Database` can serve several threads. `esm::host::Host` keeps
-several databases open by canonical path and runs `esm::ipc::Op`s against them — the entry point the
+several databases open by canonical path and runs `esm::ops::Op`s against them — the entry point the
 CLI, `esm batch` and the N-API addon share.
 
 ## Schema

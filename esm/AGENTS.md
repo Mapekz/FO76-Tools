@@ -30,7 +30,7 @@ change; domain vocabulary lives in `CONTEXT.md`, and design decisions are record
 | Binary parsing | `src/reader.rs`, `src/format.rs` |
 | Schema-driven decode | `src/decode/mod.rs` (+ `decode/vmad.rs`, `src/ctda.rs`) |
 | Index & disk cache | `src/index.rs`, `src/rkyvcache.rs`, `src/progress.rs` |
-| Op dispatch (every surface) | `src/host.rs`, `src/ipc.rs` |
+| Op dispatch (every surface) | `src/host.rs`, `src/ops/mod.rs` |
 | CLI / N-API | `src/bin/cli/main.rs` (+ per-family handler modules), `bindings/napi/src/lib.rs` |
 | Diff / walk / chase / lvli / refs | `src/diff/`, `src/walk/`, `src/chase.rs`, `src/lvli.rs`, `src/refs.rs` |
 | Python patch-notes pipeline (mechanical stage) | `tools/` |
@@ -46,7 +46,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `Resol
 - **Serialization**: manual little-endian byte reads (`u*::from_le_bytes`, `byteorder::ReadBytesExt`) for fixed headers; `serde`/`serde_json` for output; zero-copy `rkyv` sections (`src/rkyvcache.rs`) for the index cache. No `binrw`/`nom`.
 - **Schema editing**: `schema/fo76.json` is embedded at compile time (`include_str!`). Change the extractor (`tools/extractor/extract.py`) or add overrides to `schema/fo76.overrides.json`; regenerate `fo76.json` rather than editing it directly.
 - **Decoder must never panic**: unknown/malformed bytes → raw hex fallback (`_raw`, `_unknown_record`, `_unmapped`). Do not add unwraps on untrusted input.
-- **Tests**: most tests live in `tests/` (one target per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_coverage.rs`). A target that outgrows one file becomes a directory with a `main.rs` declaring its submodules — `tests/decode_records/` splits its whole-record goldens by record family (`weapons.rs`, `perks.rs`, `races.rs`, …), and `cargo test --test decode_records` still selects the whole binary. Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode/mod.rs`, `host.rs`'s `Opener`/`FakeHost` reopen and race tests, `diff.rs`'s `lcs_align` alignment/safety-cap tests). Synthetic tests use in-memory byte buffers. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
+- **Tests**: most tests live in `tests/` (one target per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ops/mod.rs`, `decode_coverage.rs`). A target that outgrows one file becomes a directory with a `main.rs` declaring its submodules — `tests/decode_records/` splits its whole-record goldens by record family (`weapons.rs`, `perks.rs`, `races.rs`, …), and `cargo test --test decode_records` still selects the whole binary. Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode/mod.rs`, `host.rs`'s `Opener`/`FakeHost` reopen and race tests, `diff.rs`'s `lcs_align` alignment/safety-cap tests). Synthetic tests use in-memory byte buffers. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
 
 ## Critical Invariants — Do Not Break
 

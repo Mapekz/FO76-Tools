@@ -441,7 +441,7 @@ def run_esm_diff(
 
 def build_arg_parser():
     ap = argparse.ArgumentParser(
-        description="ESM diff -> comprehensive.json/.md -> bundles.json -> lints.json "
+        description="ESM diff -> comprehensive.json -> bundles.json -> lints.json "
                      "-> manifest.json. The mechanical (deterministic) half of the "
                      "patch-notes pipeline; no LLM involved.",
         formatter_class=argparse.RawDescriptionHelpFormatter,

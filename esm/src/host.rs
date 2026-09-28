@@ -7,7 +7,7 @@
 //! life of an open database.
 
 use crate::Database;
-use crate::ipc::Op;
+use crate::ops::Op;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -97,9 +97,9 @@ impl Host {
             } => {
                 let db_a = self.open(esm)?;
                 let db_b = self.open(b)?;
-                crate::ipc::run_diff(&db_a, &db_b, options, record_type)
+                crate::ops::run_diff(&db_a, &db_b, options, record_type)
             }
-            _ => crate::ipc::dispatch_op(&*self.open(esm)?, op),
+            _ => crate::ops::dispatch_op(&*self.open(esm)?, op),
         }
     }
 

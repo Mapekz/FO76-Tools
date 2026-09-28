@@ -1,6 +1,6 @@
 //! `get` / `list` / `search` subcommand handlers.
 
-use esm::ipc::{Op, RecordSel};
+use esm::ops::{Op, RecordSel};
 use esm::{Database, FormIdBase, RecordRow, ResolveDepth, SearchField};
 use std::path::{Path, PathBuf};
 
@@ -98,7 +98,7 @@ pub(crate) fn cmd_get(
         if let Some(ba2_path) = startup_ba2 {
             db.load_curves(&ba2_path)?;
         }
-        esm::ipc::dispatch_op(&db, &op)?
+        esm::ops::dispatch_op(&db, &op)?
     } else {
         backend.run(file, op)?
     };

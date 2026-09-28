@@ -1,7 +1,7 @@
 //! `info` / `tree` / `coverage` subcommand handlers — simple read-and-print
 //! commands that don't warrant their own module.
 
-use esm::ipc::Op;
+use esm::ops::Op;
 use esm::{CoverageReport, FormIdBase, Markers};
 use serde_json::Value;
 use std::path::Path;

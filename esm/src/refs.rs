@@ -1,18 +1,18 @@
 //! Reverse-reference graph engine: seed resolution, the depth-bounded BFS
 //! walk, and bidirectional path search over the reverse-reference index
-//! `Index` builds (`ipc.rs`'s `Op::ReferencedBy`/`Op::RefPath` are thin
+//! `Index` builds (`ops/mod.rs`'s `Op::ReferencedBy`/`Op::RefPath` are thin
 //! dispatch wrappers around this module).
 //!
 //! The wire protocol (`Op`, `dispatch`/`dispatch_op`, and the DTOs that
 //! cross the process boundary — `RefRow`, `RefList`, `RefSort`,
-//! `RefPathNode`) stays in `ipc.rs`; this module owns the
+//! `RefPathNode`) stays in `ops/mod.rs`; this module owns the
 //! seed-selector/walk/path-search *algorithm* those DTOs describe the
 //! result of. See
 //! [`docs/adr/0004-refs-seed-selectors.md`](https://github.com/Mapekz/FO76-Tools/blob/main/esm/docs/adr/0004-refs-seed-selectors.md)
 //! for the Direct/Carriers seed-selector vocabulary ([`RefSeeds`] is that
 //! ADR's central type).
 
-use crate::ipc::{
+use crate::ops::{
     DEFAULT_MAX_DEPTH, RecordSel, RefList, RefPathNode, RefRow, RefSort, resolve_sel,
 };
 use crate::{CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec, RecordRow};
@@ -668,7 +668,7 @@ fn ref_path_hop(
     })
 }
 
-/// Seeds resolved from a [`RecordSel`] for [`crate::ipc::Op::ReferencedBy`] — either a
+/// Seeds resolved from a [`RecordSel`] for [`crate::ops::Op::ReferencedBy`] — either a
 /// single direct target or every carrier matched by an entry-point or OMOD-
 /// property selector.
 pub enum RefSeeds {
@@ -683,7 +683,7 @@ pub enum RefSeeds {
     },
 }
 
-/// Resolve a [`RecordSel`] to BFS seeds for [`crate::ipc::Op::ReferencedBy`] specifically
+/// Resolve a [`RecordSel`] to BFS seeds for [`crate::ops::Op::ReferencedBy`] specifically
 /// — the one place carrier selectors are handled, and the one place an
 /// EditorID lookup miss falls back to an entry-point name match (so a bare
 /// positional token like `'Mod Percent Blocked'` — parsed as

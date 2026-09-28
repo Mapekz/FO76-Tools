@@ -10,7 +10,7 @@ mod common;
 
 use common::{append_record, append_subrecord, cstr, tes4_header, wrap_grup, write_and_open};
 use esm::decode::FormIdRefResolver;
-use esm::ipc::{Op, RecordSel, dispatch_op};
+use esm::ops::{Op, RecordSel, dispatch_op};
 use esm::{DatabaseResolver, FormId, ResolveDepth};
 
 /// FormID 0x00000399 is the engine-hardcoded AVIF `KillStreak` (verified
@@ -85,11 +85,11 @@ fn real_esm_record_wins_over_hardcoded_table_entry() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// `esm get`'s serving path (`ipc::dispatch_op` → `Op::Record` →
+/// `esm get`'s serving path (`ops::dispatch_op` → `Op::Record` →
 /// `record_resolved`), not just `DatabaseResolver`, must also recognize a
 /// hardcoded-form miss and explain it instead of a bare "not found" — issue
 /// #27's selector-resolution half. `KillStreak` now resolves as an
-/// EditorID (via `ipc::resolve_sel`'s hardcoded fallback) but still has no
+/// EditorID (via `ops::resolve_sel`'s hardcoded fallback) but still has no
 /// record to decode, so the miss must name the form and point at `esm refs`.
 #[test]
 fn dispatch_record_explains_hardcoded_edid_miss() {

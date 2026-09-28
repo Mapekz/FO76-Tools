@@ -3,7 +3,7 @@ mod common;
 use common::{
     append_record, append_subrecord, cstr, make_xref_esm, tes4_header, wrap_grup, write_and_open,
 };
-use esm::ipc::{Op, RecordSel, RefList, dispatch_op, resolve_sel};
+use esm::ops::{Op, RecordSel, RefList, dispatch_op, resolve_sel};
 use esm::refs::{find_ref_path, referenced_by_enriched, referenced_by_enriched_multi};
 use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec};
 
@@ -126,7 +126,7 @@ fn referenced_by_still_excludes_out_of_range_and_null_targets() {
 /// Part 2 of issue #27: a hardcoded form's EditorID, not just its raw hex
 /// FormID, must resolve — `esm refs DamageRecieved`, not only
 /// `esm refs --formid 0x397`. Drives the same selector-resolution path
-/// (`ipc::resolve_sel`) the `refs`/`ref-path`/raw-`get` CLI surfaces share.
+/// (`ops::resolve_sel`) the `refs`/`ref-path`/raw-`get` CLI surfaces share.
 #[test]
 fn resolve_sel_edid_falls_back_to_hardcoded_table() {
     let mut buf = tes4_header();
@@ -142,7 +142,7 @@ fn resolve_sel_edid_falls_back_to_hardcoded_table() {
         .expect("KillStreak should resolve via the hardcoded-table fallback");
     assert_eq!(target, FormId(KILL_STREAK));
 
-    let list = referenced_by_enriched(&db, target, 1, 100, None, false, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, target, 1, 100, None, false, esm::ops::RefSort::Formid)
         .expect("referenced_by_enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(list.rows[0].form_id, FormId(2).display());
@@ -153,7 +153,7 @@ fn resolve_sel_edid_falls_back_to_hardcoded_table() {
 /// Precedence: a real ESM record must win over a same-named hardcoded-table
 /// entry — the same rule `tests/hardcoded.rs`'s
 /// `real_esm_record_wins_over_hardcoded_table_entry` pins for
-/// `DatabaseResolver::stub`, mirrored here for `ipc::resolve_sel`. Reuses
+/// `DatabaseResolver::stub`, mirrored here for `ops::resolve_sel`. Reuses
 /// the hardcoded EditorID `KillStreak` on a real WEAP record at an unrelated
 /// FormID; resolution must return the real record, not 0x399.
 #[test]
@@ -255,7 +255,7 @@ fn recursive_refs_depth1_matches_direct() {
 
     // New BFS path at depth=1
     let list: RefList =
-        referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ipc::RefSort::Formid)
+        referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ops::RefSort::Formid)
             .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(list.rows[0].form_id, FormId(2).display());
@@ -278,7 +278,7 @@ fn recursive_refs_depth1_matches_direct() {
 fn recursive_refs_depth2_follows_one_extra_hop_and_reports_the_cap() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ops::RefSort::Formid)
         .expect("enriched");
 
     // Expect LVLI(2) at depth=1 and LVLI(3) at depth=2.
@@ -333,7 +333,7 @@ fn recursive_refs_depth2_follows_one_extra_hop_and_reports_the_cap() {
 fn recursive_refs_depth6_reaches_all_hops() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ops::RefSort::Formid)
         .expect("enriched");
     assert_eq!(list.rows.len(), 3, "expected LVLI(2)+LVLI(3)+CONT(4)");
 
@@ -367,7 +367,7 @@ fn recursive_refs_depth6_reaches_all_hops() {
 fn recursive_refs_depth0_is_unbounded() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 0, 0, None, false, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, FormId(1), 0, 0, None, false, esm::ops::RefSort::Formid)
         .expect("enriched");
     assert_eq!(
         list.rows.len(),
@@ -394,7 +394,7 @@ fn recursive_refs_depth0_is_unbounded() {
 fn recursive_refs_reports_per_depth_totals_and_shown_max_depth() {
     let (path, db) = open_chain_db();
 
-    let full = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ipc::RefSort::Formid)
+    let full = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ops::RefSort::Formid)
         .expect("enriched");
     // index 0 = carrier rows (none on a direct-target walk), 1 = LVLI(2),
     // 2 = LVLI(3), 3 = CONT(4).
@@ -404,7 +404,7 @@ fn recursive_refs_reports_per_depth_totals_and_shown_max_depth() {
     // limit=1 keeps only the shallowest row (FormID-sorted), but
     // per_depth_totals must still reflect all 3 rows found pre-truncation.
     let limited =
-        referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ipc::RefSort::Formid)
+        referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ops::RefSort::Formid)
             .expect("enriched");
     assert_eq!(limited.rows.len(), 1);
     assert_eq!(
@@ -440,7 +440,7 @@ fn recursive_refs_sort_depth_reorders_relative_to_formid() {
     let (tmp, db) = write_and_open(&buf, "refs_sort_order");
 
     let by_formid =
-        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ipc::RefSort::Formid)
+        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ops::RefSort::Formid)
             .expect("enriched");
     let formid_order: Vec<_> = by_formid.rows.iter().map(|r| r.form_id.clone()).collect();
     assert_eq!(
@@ -450,7 +450,7 @@ fn recursive_refs_sort_depth_reorders_relative_to_formid() {
     );
 
     let by_depth =
-        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ipc::RefSort::Depth)
+        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ops::RefSort::Depth)
             .expect("enriched");
     let depth_order: Vec<_> = by_depth.rows.iter().map(|r| r.form_id.clone()).collect();
     assert_eq!(
@@ -627,7 +627,7 @@ fn recursive_refs_cycle_guard() {
 
     let (tmp, db) = write_and_open(&buf, "refs_cycle");
 
-    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ops::RefSort::Formid)
         .expect("enriched");
 
     // Only WEAP(2) should appear — WEAP(1) is the target and excluded from results.
@@ -644,7 +644,7 @@ fn recursive_refs_cycle_guard() {
 fn recursive_refs_limit_caps_output() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ops::RefSort::Formid)
         .expect("enriched");
     assert_eq!(list.rows.len(), 1, "limit=1 should cap to 1 row");
     assert_eq!(list.total, 3, "total should reflect the full depth=6 count");
@@ -662,7 +662,7 @@ fn field_paths_none_when_not_requested() {
     let buf = make_xref_esm();
     let (tmp, db) = write_and_open(&buf, "refs_paths_off");
 
-    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ops::RefSort::Formid)
         .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert!(
@@ -682,7 +682,7 @@ fn field_paths_finds_all_occurrences_in_one_record() {
     let buf = make_xref_esm();
     let (tmp, db) = write_and_open(&buf, "refs_paths_multi");
 
-    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, true, esm::ipc::RefSort::Formid)
+    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, true, esm::ops::RefSort::Formid)
         .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(
@@ -745,7 +745,7 @@ fn type_filter_narrows_rows_but_keeps_traversing() {
             0,
             Some(filter),
             false,
-            esm::ipc::RefSort::Formid,
+            esm::ops::RefSort::Formid,
         )
         .expect("enriched");
         assert_eq!(
@@ -785,7 +785,7 @@ fn type_filter_limit_and_total_apply_post_filter() {
         1,
         Some("LVLI"),
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("enriched");
     assert_eq!(list.total, 2, "total must reflect the filtered count");
@@ -808,7 +808,7 @@ fn type_filter_rejects_non_4char_signature() {
         0,
         Some("LV"),
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect_err("expected validation error for non-4-char type");
     assert!(
@@ -831,7 +831,7 @@ fn type_filter_and_paths_compose() {
         0,
         Some("CONT"),
         true,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("enriched");
     assert_eq!(list.rows.len(), 1);
@@ -1093,7 +1093,7 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
         0,
         None,
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("referenced_by_enriched_multi");
 
@@ -1156,7 +1156,7 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
         0,
         Some("CONT"),
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("referenced_by_enriched_multi with type filter");
 
@@ -1212,7 +1212,7 @@ fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     )
     .expect("dispatch_op");
@@ -1254,7 +1254,7 @@ fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     )
     .expect("dispatch_op should fall back to entry-point matching");
@@ -1284,7 +1284,7 @@ fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     )
     .expect("dispatch_op");
@@ -1319,7 +1319,7 @@ fn dispatch_referenced_by_edid_neither_interpretation_bails() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     )
     .expect_err("neither interpretation should resolve");
@@ -1344,7 +1344,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         0,
         None,
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("multi EP walk");
 
@@ -1377,7 +1377,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         0,
         None,
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("depth-2 walk");
     let shared_deep = deep
@@ -1411,7 +1411,7 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
         0,
         None,
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("forward");
     let reverse = referenced_by_enriched_multi(
@@ -1422,7 +1422,7 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
         0,
         None,
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("reverse");
 
@@ -1489,7 +1489,7 @@ fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
         0,
         None,
         false,
-        esm::ipc::RefSort::Formid,
+        esm::ops::RefSort::Formid,
     )
     .expect("direct walk");
     assert!(list.rows.iter().all(|r| r.tags.is_empty()));
@@ -1740,7 +1740,7 @@ fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     )
     .expect("dispatch_op");
@@ -1777,7 +1777,7 @@ fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     )
     .expect("Health must resolve as the hardcoded AVIF");
@@ -1806,7 +1806,7 @@ fn dispatch_referenced_by_edid_miss_does_not_fallback_to_omod_property() {
             depth: 1,
             type_filter: None,
             paths: false,
-            sort: esm::ipc::RefSort::Formid,
+            sort: esm::ops::RefSort::Formid,
         },
     )
     .expect_err("Speed must not auto-detect as an OMOD property");

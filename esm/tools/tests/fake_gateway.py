@@ -19,7 +19,7 @@ see those modules' own comments at the import site. This is a deliberate,
 accepted tradeoff (production code depending on a test module) rather than
 duplicating this ~250-line class in two places; `test_fake_gateway.py`'s
 conformance test is what keeps this class honest against the real
-`ipc::referenced_by_enriched` BFS it reimplements in Python.
+`ops::referenced_by_enriched` BFS it reimplements in Python.
 
 Python 3, stdlib only.
 """
@@ -46,7 +46,7 @@ from esm_gateway import (  # noqa: E402
     formid_to_int,
 )
 
-# Matches `ipc::DEFAULT_MAX_DEPTH`, the refs walk's hop cap.
+# Matches `ops::DEFAULT_MAX_DEPTH`, the refs walk's hop cap.
 DEFAULT_MAX_DEPTH = 8
 
 
@@ -161,7 +161,7 @@ class FakeGateway:
         """Fixture-backed counterpart to `EsmGateway.bulk_get`: resolves each
         selector against `self.records`, isolating a lookup failure to its
         own `{"sel", "error"}` entry exactly like the real `Op::RecordBulk`
-        dispatch does (see ipc.rs's `bulk_record_entry`)."""
+        dispatch does (see ops/mod.rs's `bulk_record_entry`)."""
         wire_sels = [_sel_for_input(s) for s in sels]
         return self.op(esm, {"op": "record_bulk", "sels": wire_sels, "depth": resolve})
 
@@ -256,7 +256,7 @@ class FakeGateway:
 
     def _bulk_record_entries(self, wire_sels: Sequence[Mapping[str, Any]]) -> list[dict]:
         """Shared by `bulk_get()` and `op()`'s `record_bulk` dispatch --
-        mirrors `bulk_record_entry` in ipc.rs: one bad selector becomes an
+        mirrors `bulk_record_entry` in ops/mod.rs: one bad selector becomes an
         isolated `error` entry, never aborting the whole batch."""
         entries = []
         for sel in wire_sels:
@@ -350,7 +350,7 @@ class FakeGateway:
                 # `type_filter` narrows *emission* only -- the walk below still
                 # expands through a non-matching node so a matching node
                 # further away stays reachable (mirrors
-                # ipc.rs::referenced_by_enriched's `type_matches` gate).
+                # ops/mod.rs::referenced_by_enriched's `type_matches` gate).
                 type_matches = type_filter_upper is None or (
                     (record_type or "").upper() == type_filter_upper
                 )

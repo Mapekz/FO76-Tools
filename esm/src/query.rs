@@ -69,7 +69,7 @@ pub fn filter_op(s: &str) -> anyhow::Result<FilterOp> {
 
 /// Normalize an optional reverse-reference walk depth, preserving `0` as the
 /// unbounded sentinel and clamping nonzero values to
-/// `[1, ipc::DEFAULT_MAX_DEPTH]`. Defaults to `1` when `None`.
+/// `[1, ops::DEFAULT_MAX_DEPTH]`. Defaults to `1` when `None`.
 ///
 /// This is the same clamp [`crate::refs::referenced_by_enriched`] performs
 /// internally (that one stays in place — it's the authoritative safety net
@@ -82,7 +82,7 @@ pub fn clamp_ref_depth(d: Option<usize>) -> usize {
     match d {
         None => 1,
         Some(0) => 0,
-        Some(d) => d.clamp(1, crate::ipc::DEFAULT_MAX_DEPTH),
+        Some(d) => d.clamp(1, crate::ops::DEFAULT_MAX_DEPTH),
     }
 }
 

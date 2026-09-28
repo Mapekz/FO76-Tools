@@ -91,7 +91,7 @@ use crate::chase::{
     summarize_explosion_detail,
 };
 use crate::decode::level_curves::{self, LevelCurveRow};
-use crate::ipc::RecordSel;
+use crate::ops::RecordSel;
 use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
 use anyhow::Context as _;
 use serde::{Deserialize, Serialize};

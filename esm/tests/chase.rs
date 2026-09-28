@@ -10,7 +10,7 @@
 //! `chase()`'s reverse-chase makes (one per `CONSUMER_TYPES` entry).
 
 use esm::chase::{ChaseFetcher, ChaseOptions, EffectHopKind, FetchDirection, HopKind, chase};
-use esm::ipc::RecordSel;
+use esm::ops::RecordSel;
 use esm::reader::RecordHeaderInfo;
 use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use serde_json::json;
@@ -60,7 +60,7 @@ fn ok_entry(
 /// record-type filter)` since that's exactly what `chase()`'s reverse-chase
 /// calls with (one `refs()` call per `CONSUMER_TYPES` entry) — no need to
 /// reimplement `referenced_by_enriched`'s BFS/filter walk here, that's
-/// already covered by `tests/ipc.rs`.
+/// already covered by `tests/ops.rs`.
 struct FakeFetcher {
     records: HashMap<String, BulkRecordEntry>,
     refs_by_type: HashMap<(String, String), RefList>,

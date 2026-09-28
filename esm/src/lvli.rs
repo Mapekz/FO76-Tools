@@ -989,7 +989,7 @@ pub fn drop_table(
 mod tests {
     use super::*;
     use crate::ResolveDepth;
-    use crate::ipc::{RecordSel, RefList};
+    use crate::ops::{RecordSel, RefList};
     use serde_json::json;
 
     /// Minimal `ChaseFetcher`: `drop_table` only ever calls `bulk_get`
