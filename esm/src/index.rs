@@ -512,10 +512,12 @@ impl Index {
     /// materializing a full `Vec`/iterator of them. `0` if the forms section
     /// is absent or the type has no records.
     pub fn count_by_type(&self, sig: &str) -> usize {
-        let key = Signature::from_slice(sig.as_bytes()).0;
+        let Some(key) = Signature::parse(sig) else {
+            return 0;
+        };
         self.forms
             .get()
-            .and_then(|f| f.types.get(&key))
+            .and_then(|f| f.types.get(&key.0))
             .map_or(0, |ids| ids.len())
     }
 
@@ -525,11 +527,12 @@ impl Index {
     /// [`RecordMeta`]. Empty iterator if the forms section is absent or the
     /// type has no records.
     pub fn form_ids_by_type(&self, sig: &str) -> impl ExactSizeIterator<Item = FormId> + '_ {
-        let key = Signature::from_slice(sig.as_bytes()).0;
+        let key = Signature::parse(sig);
         let ids: &[_] = self
             .forms
             .get()
-            .and_then(|f| f.types.get(&key))
+            .zip(key)
+            .and_then(|(f, key)| f.types.get(&key.0))
             .map_or(&[][..], |v| v.as_slice());
         ids.iter().map(|id| FormId::new(id.to_native()))
     }
@@ -539,11 +542,12 @@ impl Index {
     /// `RecordMeta` is `Copy`. Empty iterator if the forms section is absent
     /// or the type has no records.
     pub fn records_by_type(&self, sig: &str) -> impl Iterator<Item = (FormId, RecordMeta)> + '_ {
-        let key = Signature::from_slice(sig.as_bytes()).0;
+        let key = Signature::parse(sig);
         let ids: &[_] = self
             .forms
             .get()
-            .and_then(|f| f.types.get(&key))
+            .zip(key)
+            .and_then(|(f, key)| f.types.get(&key.0))
             .map_or(&[][..], |v| v.as_slice());
         ids.iter().filter_map(move |id| {
             let form_id = FormId::new(id.to_native());
@@ -1301,7 +1305,7 @@ mod tests {
             weap1,
             RecordMeta {
                 offset: 0,
-                signature: Signature::from_slice(b"WEAP"),
+                signature: Signature(*b"WEAP"),
                 flags: 0,
                 form_version: 155,
             },
@@ -1310,7 +1314,7 @@ mod tests {
             weap2,
             RecordMeta {
                 offset: 100,
-                signature: Signature::from_slice(b"WEAP"),
+                signature: Signature(*b"WEAP"),
                 flags: 0,
                 form_version: 155,
             },
@@ -1319,7 +1323,7 @@ mod tests {
             npc_,
             RecordMeta {
                 offset: 200,
-                signature: Signature::from_slice(b"NPC_"),
+                signature: Signature(*b"NPC_"),
                 flags: 0,
                 form_version: 155,
             },
@@ -1390,7 +1394,7 @@ mod tests {
             weap1,
             RecordMeta {
                 offset: 10,
-                signature: Signature::from_slice(b"WEAP"),
+                signature: Signature(*b"WEAP"),
                 flags: 0,
                 form_version: 155,
             },
@@ -1399,7 +1403,7 @@ mod tests {
             weap2,
             RecordMeta {
                 offset: 20,
-                signature: Signature::from_slice(b"WEAP"),
+                signature: Signature(*b"WEAP"),
                 flags: 1,
                 form_version: 155,
             },
@@ -1408,7 +1412,7 @@ mod tests {
             npc_,
             RecordMeta {
                 offset: 30,
-                signature: Signature::from_slice(b"NPC_"),
+                signature: Signature(*b"NPC_"),
                 flags: 4,
                 form_version: 131,
             },
@@ -1417,7 +1421,7 @@ mod tests {
             armo1,
             RecordMeta {
                 offset: 40,
-                signature: Signature::from_slice(b"ARMO"),
+                signature: Signature(*b"ARMO"),
                 flags: 0,
                 form_version: 131,
             },

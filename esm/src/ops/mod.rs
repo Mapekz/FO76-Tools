@@ -130,7 +130,7 @@ ops! {
     list_groups => ListGroups(NoArgs) -> Vec<crate::GroupNode> = tree::list_groups;
     list_type_children => ListTypeChildren(ListTypeChildrenArgs) -> Vec<crate::GroupChild> = tree::list_type_children;
     list_group_children => ListGroupChildren(ListGroupChildrenArgs) -> Vec<crate::GroupChild> = tree::list_group_children;
-    record_stub_at => RecordStubAt(RecordStubAtArgs) -> crate::tree::RecordStub = tree::record_stub_at;
+    record_stub_at => RecordStubAt(RecordStubAtArgs) -> crate::tree::TreeRecordStub = tree::record_stub_at;
     coverage => Coverage(CoverageArgs) -> CoverageReport = coverage::coverage;
     diff => Diff(DiffArgs) -> crate::diff::DiffResult = diff::needs_two_databases;
 }

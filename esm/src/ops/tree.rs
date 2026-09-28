@@ -55,6 +55,6 @@ pub struct RecordStubAtArgs {
 pub(super) fn record_stub_at(
     db: &Database,
     args: &RecordStubAtArgs,
-) -> anyhow::Result<crate::tree::RecordStub> {
+) -> anyhow::Result<crate::tree::TreeRecordStub> {
     db.record_stub_at(args.offset)
 }

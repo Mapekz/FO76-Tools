@@ -5,7 +5,7 @@
 //! structural scan of the file, cached in its own rkyv-backed `tree`
 //! section (see [`crate::rkyvcache`] and `index.rs`'s `Index::build`/
 //! `build_tree_and_forms`), and a presentation layer (`GroupLabel`,
-//! `GroupNode`, `RecordStub`, `GroupChild`) for browsing.
+//! `GroupNode`, `TreeRecordStub`, `GroupChild`) for browsing.
 
 use crate::format::Signature;
 use crate::formid::FormId;
@@ -51,13 +51,10 @@ pub struct GroupNode {
 
 /// A cheap, header-only record listing — no field decode.
 ///
-/// Renamed to `TreeRecordStub` on the TypeScript side (`#[ts(rename)]`) to
-/// avoid colliding with `diff::RecordStub`'s generated file — mirrors the
-/// `RecordStub as TreeRecordStub` alias `lib.rs` already uses on the Rust side.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
-#[cfg_attr(test, ts(export, rename = "TreeRecordStub"))]
-pub struct RecordStub {
+#[cfg_attr(test, ts(export))]
+pub struct TreeRecordStub {
     /// Pre-formatted hex (e.g. "0x0000463F") — same rationale as `GroupLabel::FormId`.
     pub form_id: String,
     pub editor_id: Option<String>,
@@ -72,7 +69,7 @@ pub struct RecordStub {
 #[cfg_attr(test, ts(export))]
 pub enum GroupChild {
     Group(GroupNode),
-    Record(RecordStub),
+    Record(TreeRecordStub),
 }
 
 /// One arena entry per GRUP discovered in the file. Internal/cached.

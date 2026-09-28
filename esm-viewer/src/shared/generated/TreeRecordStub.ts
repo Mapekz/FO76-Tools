@@ -3,9 +3,6 @@
 /**
  * A cheap, header-only record listing — no field decode.
  *
- * Renamed to `TreeRecordStub` on the TypeScript side (`#[ts(rename)]`) to
- * avoid colliding with `diff::RecordStub`'s generated file — mirrors the
- * `RecordStub as TreeRecordStub` alias `lib.rs` already uses on the Rust side.
  */
 export type TreeRecordStub = { 
 /**

@@ -50,10 +50,8 @@ use serde_json::Value;
 use std::collections::HashSet;
 use std::path::Path;
 
-// Re-export tree types. The tree module's RecordStub is distinct from
-// diff::RecordStub (different form_id representation and purpose), so it is
-// exported under the alias TreeRecordStub to avoid a name collision.
-pub use tree::{GroupChild, GroupLabel, GroupNode, RecordStub as TreeRecordStub, TreeIndex};
+// Re-export tree types.
+pub use tree::{GroupChild, GroupLabel, GroupNode, TreeIndex, TreeRecordStub};
 
 /// Primary interface to a Fallout 76 ESM file.
 ///
@@ -75,7 +73,7 @@ pub struct Database {
     /// Per-record-type memoized decode, populated lazily by `filter_type_records`
     /// and `list_type_field_paths`. In-memory only — never persisted, no
     /// CACHE_VERSION bump (these are ephemeral, rebuilt each time the Database
-    /// is opened; `tree`/`GroupLabel`/`RecordStub` in `tree.rs` are the only
+    /// is opened; `tree`/`GroupLabel`/`TreeRecordStub` in `tree.rs` are the only
     /// precedent for presentation-layer types, and this is analogous — it's not
     /// part of any of `Index`'s persisted rkyv sections at all).
     filter_cache: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<TypeSample>>>,
@@ -1188,7 +1186,7 @@ impl Database {
                     let record_type = String::from_utf8_lossy(&rec_sig)
                         .trim_end_matches('\0')
                         .to_string();
-                    result.push(GroupChild::Record(crate::tree::RecordStub {
+                    result.push(GroupChild::Record(crate::tree::TreeRecordStub {
                         form_id: FormId(form_id).display(),
                         editor_id,
                         record_type,
@@ -1204,7 +1202,7 @@ impl Database {
     ///
     /// Attempts to read the EDID from the first subrecord when the record is not
     /// compressed. Falls back to `None` editor_id without panicking.
-    pub fn record_stub_at(&self, offset: u64) -> anyhow::Result<crate::tree::RecordStub> {
+    pub fn record_stub_at(&self, offset: u64) -> anyhow::Result<crate::tree::TreeRecordStub> {
         let data = self.esm.data();
         if offset as usize + crate::format::HEADER_SIZE as usize > data.len() {
             anyhow::bail!("record offset {} out of range", offset);
@@ -1234,7 +1232,7 @@ impl Database {
             None
         };
 
-        Ok(crate::tree::RecordStub {
+        Ok(crate::tree::TreeRecordStub {
             form_id: FormId(hdr.form_id).display(),
             editor_id,
             record_type: hdr.signature.to_string(),

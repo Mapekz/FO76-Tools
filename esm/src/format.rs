@@ -24,6 +24,14 @@ pub const XXXX_SIG: [u8; 4] = *b"XXXX";
 pub struct Signature(pub [u8; 4]);
 
 impl Signature {
+    /// A signature from exactly four bytes of `s`, e.g. a caller-supplied
+    /// record type; `None` for any other length.
+    pub fn parse(s: &str) -> Option<Self> {
+        s.as_bytes().try_into().ok().map(Signature)
+    }
+
+    /// The first four bytes of `s`, zero-padded — for signatures read from
+    /// file data, which are always four bytes.
     pub fn from_slice(s: &[u8]) -> Self {
         let mut sig = [0u8; 4];
         let len = s.len().min(4);
