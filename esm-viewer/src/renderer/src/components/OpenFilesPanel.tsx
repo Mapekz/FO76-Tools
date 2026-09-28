@@ -26,7 +26,7 @@ export function OpenFilesPanel() {
 
   async function handleClose(id: string) {
     await window.api.closeDatabase(id)
-    fileClosed(id, await window.api.listOpen())
+    await fileClosed(id, await window.api.listOpen())
   }
 
   return (

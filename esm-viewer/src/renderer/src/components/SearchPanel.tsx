@@ -9,17 +9,18 @@ import { colors, panelStyle, inputStyle } from '../theme'
 const LIMIT = 200
 
 export function SearchPanel() {
-  const { activeDbId } = useStore()
+  const { activeDbId, openDbs } = useStore()
   const [pattern, setPattern] = useState('')
   const [field, setField] = useState<'edid' | 'name' | 'both'>('both')
   const [typesText, setTypesText] = useState('')
   // Results remember the file they were searched in, so a row still opens
-  // there after the active file changes.
-  const [results, setResults] = useState<{ dbId: string; rows: RecordRow[] }>({
+  // there after the active file changes; closing that file drops them.
+  const [searched, setSearched] = useState<{ dbId: string; rows: RecordRow[] }>({
     dbId: '',
     rows: [],
   })
   const { loading, error, run } = useAsyncAction()
+  const results = openDbs.some((db) => db.id === searched.dbId) ? searched : { dbId: '', rows: [] }
 
   if (!activeDbId) return null
 
@@ -29,7 +30,7 @@ export function SearchPanel() {
     const types = parseSigList(typesText)
     await run(async () => {
       const rows = await window.api.run(dbId, { op: 'search', pattern, types, field, limit: LIMIT })
-      setResults({ dbId, rows })
+      setSearched({ dbId, rows })
     })
   }
 

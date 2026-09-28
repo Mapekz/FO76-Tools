@@ -1,9 +1,12 @@
 // Doc-drift guard: the viewer's docs against ground truth in code. Failures
 // name the exact drifted token and say which side to fix. Skip-lists below
 // start EMPTY — a hit means fix the doc (or the code), not add an exception.
-// Paths and links are checked repo-wide by repo-policy (`just policy`).
+// Paths with a directory and links are checked repo-wide by repo-policy
+// (`just policy`).
 //
-// Three checks:
+// Four checks:
+//   0. Every bare root-file token (`bun.lock`, `.oxlintrc.json`,
+//      `tsconfig.web.json`) in README.md and AGENTS.md exists here or at the repo root.
 //   1. Every `bun run <script>` / `just <recipe>` mentioned in README.md,
 //      AGENTS.md, or the justfile names a real package.json script / justfile
 //      recipe; no npm/npx/pnpm invocation is documented as a command to run.
@@ -11,7 +14,7 @@
 //      agree in both directions (same tokens, same hex, theme.ts is truth).
 //   3. No raw hex/rgba color literal exists outside theme.ts.
 
-import { readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 
@@ -50,6 +53,26 @@ function codeRegions(markdown: string): string[] {
 function stripTrailingPunct(tok: string): string {
   return tok.replace(/[,.;:)\]]+$/, '')
 }
+
+// ── Check 0: bare root-file references resolve ─────────────────────────
+
+// Deliberately narrow (no `.ts`/`.tsx`): a bare source filename in prose
+// (`index.ts` in the architecture table) names a file informally, not a path.
+const ROOT_FILE_RE = /^\.?[\w.-]+\.(json|lock|md|yml|yaml|toml)$/
+
+test('bare root-file references resolve (README.md, AGENTS.md)', () => {
+  const failures: string[] = []
+  for (const name of ['README.md', 'AGENTS.md']) {
+    for (const span of inlineSpans(read(join(ROOT, name)))) {
+      const token = stripTrailingPunct(span.trim())
+      const found = existsSync(join(ROOT, token)) || existsSync(join(ROOT, '..', token))
+      if (ROOT_FILE_RE.test(token) && !found) {
+        failures.push(`${name}: \`${token}\` exists neither in esm-viewer/ nor at the repo root`)
+      }
+    }
+  }
+  expect(failures).toEqual([])
+})
 
 // ── Check 1: command references are real ────────────────────────────────
 

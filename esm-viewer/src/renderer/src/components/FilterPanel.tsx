@@ -20,7 +20,7 @@ const OPERATORS: { value: FilterOp; label: string }[] = [
 ]
 
 export function FilterPanel() {
-  const { activeDbId } = useStore()
+  const { activeDbId, openDbs } = useStore()
   const [sigs, setSigs] = useState<string[]>([])
   const [sig, setSig] = useState('')
   const [fieldPaths, setFieldPaths] = useState<string[]>([])
@@ -28,9 +28,10 @@ export function FilterPanel() {
   const [op, setOp] = useState<FilterOp>('exists')
   const [value, setValue] = useState('')
   // The result remembers the file it was filtered in, so a row still opens
-  // there after the active file changes.
-  const [result, setResult] = useState<(FilterResult & { dbId: string }) | null>(null)
+  // there after the active file changes; closing that file drops it.
+  const [filtered, setFiltered] = useState<(FilterResult & { dbId: string }) | null>(null)
   const { loading, error, run } = useAsyncAction()
+  const result = filtered && openDbs.some((db) => db.id === filtered.dbId) ? filtered : null
 
   useEffect(() => {
     if (!activeDbId) {
@@ -70,7 +71,7 @@ export function FilterPanel() {
         value: op === 'exists' ? null : value,
         limit: LIMIT,
       })
-      setResult({ ...res, dbId })
+      setFiltered({ ...res, dbId })
     })
   }
 

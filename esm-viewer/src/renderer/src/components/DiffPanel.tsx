@@ -109,9 +109,11 @@ export function DiffPanel() {
   const [suppressNoise, setSuppressNoise] = useState(true)
   const [excludeTypes, setExcludeTypes] = useState('')
   // The result remembers the files it compared, so its rows open there even
-  // after the Old/New selectors change.
-  const [result, setResult] = useState<(DiffResult & { oldId: string; newId: string }) | null>(null)
+  // after the Old/New selectors change; closing either file drops it.
+  const [diffed, setDiffed] = useState<(DiffResult & { oldId: string; newId: string }) | null>(null)
   const { loading, error, run } = useAsyncAction()
+  const isOpen = (id: string) => openDbs.some((db) => db.id === id)
+  const result = diffed && isOpen(diffed.oldId) && isOpen(diffed.newId) ? diffed : null
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
     added: true,
     removed: true,
@@ -166,7 +168,7 @@ export function DiffPanel() {
           exclude_types: excludeList,
         },
       })
-      setResult({ ...res, oldId: from, newId: to })
+      setDiffed({ ...res, oldId: from, newId: to })
     })
   }
 

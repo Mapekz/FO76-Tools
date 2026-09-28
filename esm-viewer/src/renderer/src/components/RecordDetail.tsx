@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { RecordTable } from './RecordTable'
 import { hasCoverageMarkers, isUnknownRecordType } from '../lib/alignedTree'
-import { sel, type RawRecordView } from '../../../shared/api-types'
+import type { RawRecordView } from '../../../shared/api-types'
 import { colors } from '../theme'
 
 /** Amber/warning accent for undecoded content — distinct from the Fault Red error color used
@@ -73,51 +73,30 @@ function RawRecordSection({
 type ViewMode = 'decoded' | 'raw'
 
 export function RecordDetail() {
-  const { activeRecord, activeDbId, recordColumns } = useStore()
+  const { activeRecord, activeDbId, recordColumns, raw, loadRaw } = useStore()
   const [mode, setMode] = useState<ViewMode>('decoded')
-  const [rawView, setRawView] = useState<RawRecordView | null>(null)
-  const [rawLoading, setRawLoading] = useState(false)
-  const [rawError, setRawError] = useState<string | null>(null)
-
-  const loadRaw = useCallback(async (dbId: string, formId: string) => {
-    setRawLoading(true)
-    setRawError(null)
-    try {
-      const view = await window.api.run(dbId, { op: 'record_raw', sel: sel(formId) })
-      setRawView(view)
-    } catch (e) {
-      setRawError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setRawLoading(false)
-    }
-  }, [])
 
   // Re-default the toggle per-record: raw only when the record's type has no
   // schema mapping at all (nothing to decode); decoded otherwise, even if a
   // few nested fields carry coverage-gap markers (see the inline badges and
   // the header note below). Recomputed whenever the active record changes so
-  // it doesn't get stuck on a prior record's choice.
+  // it doesn't get stuck on a prior record's choice. The store owns the raw
+  // dump, so one requested for an earlier record never lands under this one.
   useEffect(() => {
-    setRawView(null)
-    setRawError(null)
     if (!activeRecord || !activeDbId) {
       setMode('decoded')
       return
     }
     const defaultMode: ViewMode = isUnknownRecordType(activeRecord.fields) ? 'raw' : 'decoded'
     setMode(defaultMode)
-    if (defaultMode === 'raw') {
-      void loadRaw(activeDbId, activeRecord.header.form_id)
-    }
+    if (defaultMode === 'raw') void loadRaw()
     // activeRecord's identity changes on every load (new object from IPC), so this
     // effect fires exactly once per navigated-to record.
   }, [activeRecord, activeDbId, loadRaw])
 
   function switchMode(next: ViewMode) {
     setMode(next)
-    if (next === 'raw' && !rawView && !rawLoading && activeDbId && activeRecord) {
-      void loadRaw(activeDbId, activeRecord.header.form_id)
-    }
+    if (next === 'raw' && !raw.view && !raw.loading) void loadRaw()
   }
 
   if (!activeRecord || !activeDbId) {
@@ -190,7 +169,7 @@ export function RecordDetail() {
           activeDbId={activeDbId}
         />
       ) : (
-        <RawRecordSection view={rawView} loading={rawLoading} error={rawError} />
+        <RawRecordSection view={raw.view} loading={raw.loading} error={raw.error} />
       )}
     </div>
   )
