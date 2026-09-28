@@ -118,8 +118,9 @@ fn concurrent_cold_cache_builds_build_each_section_once() {
 
 /// Killing the caller's whole process group while its cold build waits
 /// leaves the build running: the detached builder, in its own session,
-/// finishes and publishes the section.
-#[cfg(unix)]
+/// finishes and publishes the section. Linux-only: it finds the builder
+/// through `/proc`.
+#[cfg(target_os = "linux")]
 #[test]
 fn a_cold_build_outlives_its_killed_caller() {
     use std::os::unix::process::CommandExt;
@@ -157,8 +158,9 @@ fn a_cold_build_outlives_its_killed_caller() {
     cleanup(&dir);
 }
 
-/// Whether a detached `esm cache build` for `esm_path` is running.
-#[cfg(unix)]
+/// Whether a detached `esm cache build` for `esm_path` is running (read
+/// from Linux's `/proc`).
+#[cfg(target_os = "linux")]
 fn builder_running(esm_path: &Path) -> bool {
     let needle = format!("{}\0cache\0build\0", esm_path.display());
     std::fs::read_dir("/proc")
