@@ -2,44 +2,29 @@ import React, { useState } from 'react'
 import { useStore } from '../store'
 import type { RecordRow } from '../../../shared/api-types'
 import { parseSigList } from '../lib/sigLists'
+import { useAsyncAction } from '../lib/useAsyncAction'
+import { RecordRef } from './RecordRef'
 import { colors, panelStyle, inputStyle } from '../theme'
-
-interface Props {
-  onNavigate: (dbId: string, formid: string) => void
-}
 
 const LIMIT = 200
 
-export function SearchPanel({ onNavigate }: Props) {
+export function SearchPanel() {
   const { activeDbId } = useStore()
   const [pattern, setPattern] = useState('')
   const [field, setField] = useState<'edid' | 'name' | 'both'>('both')
   const [typesText, setTypesText] = useState('')
   const [results, setResults] = useState<RecordRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { loading, error, run } = useAsyncAction()
 
   if (!activeDbId) return null
 
   async function runSearch() {
     if (!activeDbId) return
+    const dbId = activeDbId
     const types = parseSigList(typesText)
-    setLoading(true)
-    setError(null)
-    try {
-      const rows = await window.api.run(activeDbId, {
-        op: 'search',
-        pattern,
-        types,
-        field,
-        limit: LIMIT,
-      })
-      setResults(rows)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
+    await run(async () => {
+      setResults(await window.api.run(dbId, { op: 'search', pattern, types, field, limit: LIMIT }))
+    })
   }
 
   return (
@@ -96,19 +81,15 @@ export function SearchPanel({ onNavigate }: Props) {
       <div style={{ overflowY: 'auto', flex: 1, marginTop: 4 }}>
         {results.map((row, i) => (
           // Composite key: index guards against duplicate form_ids across pages.
-          <div
+          <RecordRef
             // oxlint-disable-next-line react/no-array-index-key
             key={`${row.form_id}-${i}`}
-            style={{ cursor: 'pointer', padding: '2px 0' }}
-            onClick={() => onNavigate(activeDbId, row.form_id)}
-          >
-            <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{row.form_id}</span>{' '}
-            {row.record_type && (
-              <span style={{ color: colors.dimReadout }}>({row.record_type})</span>
-            )}{' '}
-            {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
-            {row.name && <span>{row.name}</span>}
-          </div>
+            dbId={activeDbId}
+            formId={row.form_id}
+            recordType={row.record_type}
+            editorId={row.editor_id}
+            name={row.name}
+          />
         ))}
       </div>
     </div>

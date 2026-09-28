@@ -3,10 +3,7 @@ import { useStore } from '../store'
 import { fetchReferencedBy } from '../lib/referencedBy'
 import type { RefPathNode, RefRow } from '../../../shared/api-types'
 import { colors } from '../theme'
-
-interface Props {
-  onNavigate: (dbId: string, formid: string) => void
-}
+import { RecordRef } from './RecordRef'
 
 function pathLabel(node: RefPathNode): string {
   return node.editor_id ?? node.form_id
@@ -25,7 +22,7 @@ function HopChain({ row }: { row: RefRow }) {
   )
 }
 
-export function ReferencedByPanel({ onNavigate }: Props) {
+export function ReferencedByPanel() {
   const {
     referencedBy,
     referencedByDepth,
@@ -78,19 +75,16 @@ export function ReferencedByPanel({ onNavigate }: Props) {
         {referencedBy.map((row, i) => (
           // Composite key: a multi-seed entry-point walk can reach the same
           // form_id via different paths, so form_id alone isn't unique here.
-          <div
+          <RecordRef
             // oxlint-disable-next-line react/no-array-index-key
             key={`${row.form_id}-${i}`}
-            style={{ cursor: 'pointer', padding: '1px 0' }}
-            onClick={() => onNavigate(activeDbId, row.form_id)}
-          >
-            <HopChain row={row} />
-            <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>
-              {row.form_id}
-            </span>{' '}
-            {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
-            {row.name && <span>{row.name}</span>}
-          </div>
+            dbId={activeDbId}
+            formId={row.form_id}
+            editorId={row.editor_id}
+            name={row.name}
+            header={<HopChain row={row} />}
+            style={{ padding: '1px 0' }}
+          />
         ))}
       </div>
     </div>

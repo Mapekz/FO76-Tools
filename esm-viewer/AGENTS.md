@@ -103,6 +103,6 @@ app's docs/config files were never brought under formatter control.
 |---|---|
 | `src/main/` | Electron main process: window creation (`index.ts`), the typed `EsmHost` (`addon.ts`), open-database ids (`db-registry.ts`), every IPC handler over injected dependencies (`handlers.ts`, wired to Electron by `ipc.ts`), trust-boundary checks (`ipc-validators.ts`) |
 | `src/preload/` | Context-isolated preload bridge exposed to the renderer |
-| `src/renderer/` | React UI (record tree, detail panel, referenced-by panel, open-files panel, nav history), Zustand store |
+| `src/renderer/` | React UI (record tree, detail panel, referenced-by panel, open-files panel, nav history) and the Zustand store, which owns navigation (`navigate`, `goBack`, `goForward`); `RecordRef` is the shared clickable record row |
 | `src/shared/api-types.ts` | The renderer ↔ main contract: re-exports the generated types (`Op`, `OpOutput`, DTOs) and defines `CH`, `Fo76Api` (`run(id, op)` typed by `OpOutput`), `DbHandle`, and `sel()` |
 | `src/shared/generated/` | Generated TypeScript mirrors (`ts-rs` + two hand-written generators) — follow the root validation map; never hand-edit |

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { RecordRow } from '../../../shared/api-types'
+import { useStore } from '../store'
 import { type SortColumn, type SortState } from '../lib/recordSort'
 import { colors } from '../theme'
 
@@ -40,15 +41,14 @@ export function RecordTypeTable({
   onSortChange,
   focusedFormId,
   activeDbId,
-  onNavigate,
 }: {
   rows: RecordRow[]
   sortState: SortState | undefined
   onSortChange: (column: SortColumn) => void
   focusedFormId: string | null
   activeDbId: string | null
-  onNavigate: (dbId: string, formid: string) => void
 }) {
+  const navigate = useStore((s) => s.navigate)
   const parentRef = useRef<HTMLDivElement>(null)
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -96,7 +96,7 @@ export function RecordTypeTable({
             return (
               <div
                 key={vi.key}
-                onClick={() => activeDbId && onNavigate(activeDbId, row.form_id)}
+                onClick={() => activeDbId && void navigate(activeDbId, row.form_id)}
                 style={{
                   position: 'absolute',
                   top: 0,

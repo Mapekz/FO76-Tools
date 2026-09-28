@@ -2,13 +2,8 @@ import React from 'react'
 import { useStore } from '../store'
 import { colors } from '../theme'
 
-interface Props {
-  onBack: () => void
-  onForward: () => void
-}
-
-export function NavHistory({ onBack, onForward }: Props) {
-  const { nav } = useStore()
+export function NavHistory() {
+  const { nav, goBack, goForward } = useStore()
 
   return (
     <div
@@ -19,10 +14,10 @@ export function NavHistory({ onBack, onForward }: Props) {
         borderBottom: `1px solid ${colors.seam}`,
       }}
     >
-      <button onClick={onBack} disabled={nav.index <= 0}>
+      <button onClick={() => void goBack()} disabled={nav.index <= 0}>
         ← Back
       </button>
-      <button onClick={onForward} disabled={nav.index >= nav.entries.length - 1}>
+      <button onClick={() => void goForward()} disabled={nav.index >= nav.entries.length - 1}>
         Forward →
       </button>
     </div>

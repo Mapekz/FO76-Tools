@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import type { RecordColumn } from '../store'
+import { useStore, type RecordColumn } from '../store'
 import {
   buildAlignedTree,
   buildLeafNode,
@@ -12,7 +12,6 @@ import { colors, missingTint, gapTint } from '../theme'
 interface Props {
   columns: RecordColumn[]
   activeDbId: string | null
-  onNavigate: (dbId: string, formid: string) => void
 }
 
 const PROPERTY_COL_WIDTH = 280
@@ -76,15 +75,14 @@ function ValueCell({
   badges,
   column,
   columnCount,
-  onNavigate,
 }: {
   node: AlignedNode
   value: unknown
   badges: string[]
   column: RecordColumn
   columnCount: number
-  onNavigate: (dbId: string, formid: string) => void
 }) {
+  const navigate = useStore((s) => s.navigate)
   // A conflicting row is amber-tinted as a whole (see RowNode); a MISSING cell
   // inside it gets an extra red-family tint so "absent here" reads differently
   // from "present but different" at a glance.
@@ -131,12 +129,12 @@ function ValueCell({
           tabIndex={0}
           style={{ color: colors.traceBlue, cursor: 'pointer', textDecoration: 'underline' }}
           onClick={(e) => {
-            if (e.ctrlKey || e.metaKey) onNavigate(column.dbId, value.formid)
+            if (e.ctrlKey || e.metaKey) void navigate(column.dbId, value.formid)
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
-              onNavigate(column.dbId, value.formid)
+              void navigate(column.dbId, value.formid)
             }
           }}
           title={`Ctrl+Click (or focus + Enter/Space) to navigate to ${value.formid} in ${column.fileName}`}
@@ -175,14 +173,12 @@ function RowNode({
   node,
   depth,
   columns,
-  onNavigate,
   isExpanded,
   toggleNode,
 }: {
   node: AlignedNode
   depth: number
   columns: RecordColumn[]
-  onNavigate: (dbId: string, formid: string) => void
   isExpanded: (node: AlignedNode) => boolean
   toggleNode: (path: string) => void
 }) {
@@ -218,7 +214,6 @@ function RowNode({
             badges={node.badgesPerCol[i] ?? []}
             column={col}
             columnCount={columns.length}
-            onNavigate={onNavigate}
           />
         ))}
       </tr>
@@ -229,7 +224,6 @@ function RowNode({
             node={child}
             depth={depth + 1}
             columns={columns}
-            onNavigate={onNavigate}
             isExpanded={isExpanded}
             toggleNode={toggleNode}
           />
@@ -238,7 +232,9 @@ function RowNode({
   )
 }
 
-export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
+export function RecordTable({ columns, activeDbId }: Props) {
+  const navigate = useStore((s) => s.navigate)
+
   // Per-path manual overrides layered on top of a global default. `globalOverride`
   // is null until Expand/Collapse all is pressed (per-node `defaultNodeExpanded`
   // rule applies); Expand/Collapse all force every node one way and clear the
@@ -322,7 +318,7 @@ export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
                   key={col.dbId}
                   onClick={() => {
                     if (col.record && col.dbId !== activeDbId)
-                      onNavigate(col.dbId, col.record.header.form_id)
+                      void navigate(col.dbId, col.record.header.form_id)
                   }}
                   title={`Click to show ${col.fileName}'s copy (drives the tree, Raw mode and Referenced By)`}
                   style={{
@@ -356,7 +352,6 @@ export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
                 node={node}
                 depth={0}
                 columns={columns}
-                onNavigate={onNavigate}
                 isExpanded={isExpanded}
                 toggleNode={toggleNode}
               />

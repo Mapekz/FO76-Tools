@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import type { GroupChild, GroupLabel } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
 import { loadGroupChildrenPage } from '../lib/recordLoad'
-import { colors } from '../theme'
+import { RecordRef } from './RecordRef'
 
 export const PAGE_SIZE = 100
 
@@ -25,29 +25,20 @@ function groupLabelText(label: GroupLabel): string {
 
 /** Recursive node for the WRLD/CELL hierarchical subtree: a group descends
  * further via `listGroupChildren`, a record is a clickable leaf. */
-export function GroupChildNode({
-  child,
-  dbId,
-  onNavigate,
-}: {
-  child: GroupChild
-  dbId: string
-  onNavigate: (dbId: string, formid: string) => void
-}) {
+export function GroupChildNode({ child, dbId }: { child: GroupChild; dbId: string }) {
   const [expanded, setExpanded] = useState(false)
   const [children, setChildren] = useState<GroupChild[] | null>(null)
   const [loading, setLoading] = useState(false)
 
   if (child.node === 'record') {
     return (
-      <div
-        onClick={() => onNavigate(dbId, child.form_id)}
-        style={{ padding: '2px 6px', cursor: 'pointer' }}
-      >
-        <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{child.form_id}</span>{' '}
-        <span style={{ color: colors.dimReadout }}>[{child.record_type}]</span>{' '}
-        {child.editor_id && <span>{child.editor_id}</span>}
-      </div>
+      <RecordRef
+        dbId={dbId}
+        formId={child.form_id}
+        recordType={child.record_type}
+        editorId={child.editor_id}
+        style={{ padding: '2px 6px' }}
+      />
     )
   }
 
@@ -86,7 +77,6 @@ export function GroupChildNode({
               key={c.node === 'group' ? c.offset : `${c.form_id}-${i}`}
               child={c}
               dbId={dbId}
-              onNavigate={onNavigate}
             />
           ))}
           {(children?.length ?? 0) < child.child_count && (

@@ -1,5 +1,5 @@
 /** Pure logic for building one xEdit-style value column per open file that
- * contains a given record — shared by `App.tsx`'s `loadRecord` and its tests.
+ * contains a given record — shared by the store's record load and its tests.
  * No React, no Zustand: callers pass in `openDbs` and the subset of `Fo76Api`
  * actually needed, so this can be exercised with a fake `api` in unit tests. */
 

@@ -3,11 +3,9 @@ import { useStore } from '../store'
 import type { FilterOp, FilterResult, RecordRow } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
 import { listRecordTypeSigs } from '../lib/sigLists'
+import { useAsyncAction } from '../lib/useAsyncAction'
+import { RecordRef } from './RecordRef'
 import { colors, panelStyle, inputStyle } from '../theme'
-
-interface Props {
-  onNavigate: (dbId: string, formid: string) => void
-}
 
 const LIMIT = 200
 
@@ -21,7 +19,7 @@ const OPERATORS: { value: FilterOp; label: string }[] = [
   { value: 'lte', label: '<=' },
 ]
 
-export function FilterPanel({ onNavigate }: Props) {
+export function FilterPanel() {
   const { activeDbId } = useStore()
   const [sigs, setSigs] = useState<string[]>([])
   const [sig, setSig] = useState('')
@@ -30,8 +28,7 @@ export function FilterPanel({ onNavigate }: Props) {
   const [op, setOp] = useState<FilterOp>('exists')
   const [value, setValue] = useState('')
   const [result, setResult] = useState<FilterResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { loading, error, run } = useAsyncAction()
 
   useEffect(() => {
     if (!activeDbId) {
@@ -61,10 +58,9 @@ export function FilterPanel({ onNavigate }: Props) {
 
   async function runFilter() {
     if (!activeDbId || !sig) return
-    setLoading(true)
-    setError(null)
-    try {
-      const res = await window.api.run(activeDbId, {
+    const dbId = activeDbId
+    await run(async () => {
+      const res = await window.api.run(dbId, {
         op: 'filter_type_records',
         sig,
         path: path.trim() || null,
@@ -73,11 +69,7 @@ export function FilterPanel({ onNavigate }: Props) {
         limit: LIMIT,
       })
       setResult(res)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
+    })
   }
 
   const rows: RecordRow[] = result?.rows ?? []
@@ -164,16 +156,14 @@ export function FilterPanel({ onNavigate }: Props) {
       <div style={{ overflowY: 'auto', flex: 1, marginTop: 4 }}>
         {rows.map((row, i) => (
           // Composite key: index guards against duplicate form_ids across pages.
-          <div
+          <RecordRef
             // oxlint-disable-next-line react/no-array-index-key
             key={`${row.form_id}-${i}`}
-            style={{ cursor: 'pointer', padding: '2px 0' }}
-            onClick={() => onNavigate(activeDbId, row.form_id)}
-          >
-            <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{row.form_id}</span>{' '}
-            {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
-            {row.name && <span>{row.name}</span>}
-          </div>
+            dbId={activeDbId}
+            formId={row.form_id}
+            editorId={row.editor_id}
+            name={row.name}
+          />
         ))}
       </div>
     </div>

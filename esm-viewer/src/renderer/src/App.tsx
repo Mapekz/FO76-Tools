@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { OpenFilesPanel } from './components/OpenFilesPanel'
 import { RecordTree } from './components/RecordTree'
 import { RecordDetail } from './components/RecordDetail'
@@ -9,8 +9,6 @@ import { FilterPanel } from './components/FilterPanel'
 import { CoveragePanel } from './components/CoveragePanel'
 import { DiffPanel } from './components/DiffPanel'
 import { useStore } from './store'
-import { buildRecordColumns } from './lib/recordColumns'
-import { fetchReferencedBy } from './lib/referencedBy'
 import { colors } from './theme'
 
 type LeftView = 'tree' | 'search' | 'filter' | 'coverage' | 'diff'
@@ -24,74 +22,21 @@ const LEFT_VIEW_LABELS: Record<LeftView, string> = {
 }
 
 export function App() {
-  const { showRecord, setReferencedBy, navPush, navBack, navForward, referencedByDepth } =
-    useStore()
+  const { goBack, goForward } = useStore()
   const [leftView, setLeftView] = useState<LeftView>('tree')
 
-  // Out-of-order-response guard: rapid navigation can fire several loadRecord
-  // calls before earlier ones resolve. Each call captures its own sequence
-  // number and bails before touching the store if a later call has since won.
-  const loadSeq = useRef(0)
-
-  // Fetch + display a record without touching nav history. Used for Back/Forward
-  // (which already moved the history index themselves) and as the shared core
-  // of `navigate` below. Also builds one xEdit-style column per open file that
-  // contains the resolved FormID (auto-columns).
-  const loadRecord = useCallback(
-    async (dbId: string, target: string) => {
-      const seq = ++loadSeq.current
-      try {
-        // Read openDbs fresh (not from the component's closure) so this callback's
-        // identity doesn't have to change every time a file is opened/closed.
-        const { openDbs } = useStore.getState()
-        const { active, columns } = await buildRecordColumns(target, dbId, openDbs, window.api)
-        if (seq !== loadSeq.current) return
-
-        showRecord(dbId, active, columns)
-
-        const refs = await fetchReferencedBy(dbId, target, referencedByDepth, window.api)
-        if (seq !== loadSeq.current) return
-        setReferencedBy(refs)
-      } catch (e) {
-        console.error('load record error:', e)
-      }
-    },
-    [showRecord, setReferencedBy, referencedByDepth],
-  )
-
-  // A NEW navigation choice (tree click, ctrl-click FormID link, referenced-by row):
-  // push history, then load.
-  const navigate = useCallback(
-    async (dbId: string, target: string) => {
-      navPush({ dbId, formid: target })
-      await loadRecord(dbId, target)
-    },
-    [navPush, loadRecord],
-  )
-
-  // Single shared implementation of Back/Forward, used by the NavHistory buttons
-  // and the Alt+Arrow / media-key / mouse X-button shortcuts below.
-  const goBack = useCallback(() => {
-    const entry = navBack()
-    if (entry) void loadRecord(entry.dbId, entry.formid)
-  }, [navBack, loadRecord])
-
-  const goForward = useCallback(() => {
-    const entry = navForward()
-    if (entry) void loadRecord(entry.dbId, entry.formid)
-  }, [navForward, loadRecord])
-
+  // Back/Forward shortcuts: Alt+Arrow, media keys and mouse X-buttons.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       // Media-keyboard back/forward keys never type text, so they navigate even
       // while an input is focused.
       if (e.key === 'BrowserBack') {
         e.preventDefault()
-        goBack()
+        void goBack()
         return
       } else if (e.key === 'BrowserForward') {
         e.preventDefault()
-        goForward()
+        void goForward()
         return
       }
 
@@ -102,10 +47,10 @@ export function App() {
 
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault()
-        goBack()
+        void goBack()
       } else if (e.altKey && e.key === 'ArrowRight') {
         e.preventDefault()
-        goForward()
+        void goForward()
       }
     }
     // Mouse X-buttons (back = 3, forward = 4). preventDefault on mousedown too,
@@ -116,10 +61,10 @@ export function App() {
     function onMouseUp(e: MouseEvent) {
       if (e.button === 3) {
         e.preventDefault()
-        goBack()
+        void goBack()
       } else if (e.button === 4) {
         e.preventDefault()
-        goForward()
+        void goForward()
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -178,17 +123,17 @@ export function App() {
             </button>
           ))}
         </div>
-        {leftView === 'tree' && <RecordTree onNavigate={navigate} />}
-        {leftView === 'search' && <SearchPanel onNavigate={navigate} />}
-        {leftView === 'filter' && <FilterPanel onNavigate={navigate} />}
+        {leftView === 'tree' && <RecordTree />}
+        {leftView === 'search' && <SearchPanel />}
+        {leftView === 'filter' && <FilterPanel />}
         {leftView === 'coverage' && <CoveragePanel />}
-        {leftView === 'diff' && <DiffPanel onNavigate={navigate} />}
+        {leftView === 'diff' && <DiffPanel />}
       </div>
       {/* Right panel */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <NavHistory onBack={goBack} onForward={goForward} />
-        <RecordDetail onNavigate={navigate} />
-        <ReferencedByPanel onNavigate={navigate} />
+        <NavHistory />
+        <RecordDetail />
+        <ReferencedByPanel />
       </div>
     </div>
   )

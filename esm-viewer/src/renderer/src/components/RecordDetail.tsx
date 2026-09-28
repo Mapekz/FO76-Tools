@@ -5,10 +5,6 @@ import { hasCoverageMarkers, isUnknownRecordType } from '../lib/alignedTree'
 import { sel, type RawRecordView } from '../../../shared/api-types'
 import { colors } from '../theme'
 
-interface Props {
-  onNavigate: (dbId: string, formid: string) => void
-}
-
 /** Amber/warning accent for undecoded content — distinct from the Fault Red error color used
  * elsewhere. */
 const COVERAGE_COLOR = colors.gapAmber
@@ -76,7 +72,7 @@ function RawRecordSection({
 
 type ViewMode = 'decoded' | 'raw'
 
-export function RecordDetail({ onNavigate }: Props) {
+export function RecordDetail() {
   const { activeRecord, activeDbId, recordColumns } = useStore()
   const [mode, setMode] = useState<ViewMode>('decoded')
   const [rawView, setRawView] = useState<RawRecordView | null>(null)
@@ -192,7 +188,6 @@ export function RecordDetail({ onNavigate }: Props) {
           key={header.form_id + activeDbId}
           columns={recordColumns}
           activeDbId={activeDbId}
-          onNavigate={onNavigate}
         />
       ) : (
         <RawRecordSection view={rawView} loading={rawLoading} error={rawError} />

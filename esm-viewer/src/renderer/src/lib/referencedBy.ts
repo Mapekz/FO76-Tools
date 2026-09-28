@@ -1,5 +1,5 @@
 /** Fetch the records referencing `target` out to `depth` hops — shared by
- * `App.tsx`'s `loadRecord` (initial load) and `ReferencedByPanel`'s depth
+ * the store's record load (initial load) and `ReferencedByPanel`'s depth
  * selector (re-fetch at a new depth), so both go through one call site. */
 
 import { sel, type Fo76Api, type RefListResult } from '../../../shared/api-types'

@@ -16,10 +16,6 @@ const HIERARCHICAL = new Set(['WRLD', 'CELL'])
  * one call doesn't freeze the app. Tune against real large record types. */
 const CHUNK_SIZE = 2000
 
-interface Props {
-  onNavigate: (dbId: string, formid: string) => void
-}
-
 interface GroupEntry {
   sig: string
   child_count: number
@@ -27,8 +23,8 @@ interface GroupEntry {
 
 type FocusRow = { kind: 'group'; sig: string } | { kind: 'record'; row: RecordRow }
 
-export function RecordTree({ onNavigate }: Props) {
-  const { activeDbId } = useStore()
+export function RecordTree() {
+  const { activeDbId, navigate } = useStore()
   const [groups, setGroups] = useState<GroupEntry[]>([])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [rows, setRows] = useState<Record<string, RecordRow[]>>({})
@@ -199,7 +195,7 @@ export function RecordTree({ onNavigate }: Props) {
         if (fr) {
           e.preventDefault()
           if (fr.kind === 'record') {
-            if (activeDbId) onNavigate(activeDbId, fr.row.form_id)
+            if (activeDbId) void navigate(activeDbId, fr.row.form_id)
           } else {
             void toggleGroup(fr.sig)
           }
@@ -250,7 +246,6 @@ export function RecordTree({ onNavigate }: Props) {
                           key={child.node === 'group' ? child.offset : `${child.form_id}-${i}`}
                           child={child}
                           dbId={activeDbId}
-                          onNavigate={onNavigate}
                         />
                       ))}
                       {(groupChildren[g.sig]?.length ?? 0) < g.child_count && (
@@ -270,7 +265,6 @@ export function RecordTree({ onNavigate }: Props) {
                     onSortChange={(column) => handleSortClick(g.sig, column)}
                     focusedFormId={focusedFormId}
                     activeDbId={activeDbId}
-                    onNavigate={onNavigate}
                   />
                 )}
               </div>

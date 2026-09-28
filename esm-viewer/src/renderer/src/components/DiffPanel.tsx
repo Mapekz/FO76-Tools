@@ -2,11 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import type { DiffResult, RecordStubDiff, RecordChangeDiff } from '../../../shared/api-types'
 import { parseSigList } from '../lib/sigLists'
+import { useAsyncAction } from '../lib/useAsyncAction'
+import { RecordRef } from './RecordRef'
 import { colors, panelStyle, inputStyle } from '../theme'
-
-interface Props {
-  onNavigate: (dbId: string, formid: string) => void
-}
 
 type SectionKey = 'added' | 'removed' | 'changed'
 
@@ -31,35 +29,39 @@ function countFieldChanges(node: unknown): number {
   return total
 }
 
-function StubRow({ row, onClick }: { row: RecordStubDiff; onClick: () => void }) {
+function StubRow({ row, dbId }: { row: RecordStubDiff; dbId: string }) {
   return (
-    <div style={{ cursor: 'pointer', padding: '2px 0' }} onClick={onClick}>
-      <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{row.form_id}</span>{' '}
-      <span style={{ color: colors.dimReadout }}>[{row.record_type}]</span>{' '}
-      {row.editor_id && <span style={{ color: colors.dimReadout }}>[{row.editor_id}]</span>}{' '}
-      {row.name && <span>{row.name}</span>}
-    </div>
+    <RecordRef
+      dbId={dbId}
+      formId={row.form_id}
+      recordType={row.record_type}
+      editorId={row.editor_id}
+      name={row.name}
+    />
   )
 }
 
-function ChangedRow({ change, onClick }: { change: RecordChangeDiff; onClick: () => void }) {
+function ChangedRow({ change, dbId }: { change: RecordChangeDiff; dbId: string }) {
   const { stub, field_changes, prev_editor_id } = change
   const changeCount = countFieldChanges(field_changes)
   return (
     <div
       style={{ marginBottom: 4, borderBottom: `1px solid ${colors.hairline}`, paddingBottom: 4 }}
     >
-      <div style={{ cursor: 'pointer' }} onClick={onClick}>
-        <span style={{ fontFamily: 'monospace', color: colors.traceBlue }}>{stub.form_id}</span>{' '}
-        <span style={{ color: colors.dimReadout }}>[{stub.record_type}]</span>{' '}
-        {stub.editor_id && <span style={{ color: colors.dimReadout }}>[{stub.editor_id}]</span>}{' '}
-        {stub.name && <span>{stub.name}</span>}
+      <RecordRef
+        dbId={dbId}
+        formId={stub.form_id}
+        recordType={stub.record_type}
+        editorId={stub.editor_id}
+        name={stub.name}
+        style={{ padding: 0 }}
+      >
         {prev_editor_id && (
           <span style={{ color: colors.gapAmber, marginLeft: 6, fontSize: 11 }}>
             renamed from &quot;{prev_editor_id}&quot;
           </span>
         )}
-      </div>
+      </RecordRef>
       <div style={{ color: colors.dimReadout, fontSize: 11 }}>
         {changeCount} {changeCount === 1 ? 'field' : 'fields'} changed
       </div>
@@ -99,7 +101,7 @@ function Section({
   )
 }
 
-export function DiffPanel({ onNavigate }: Props) {
+export function DiffPanel() {
   const { openDbs, activeDbId } = useStore()
   const [oldId, setOldId] = useState('')
   const [newId, setNewId] = useState('')
@@ -107,8 +109,7 @@ export function DiffPanel({ onNavigate }: Props) {
   const [suppressNoise, setSuppressNoise] = useState(true)
   const [excludeTypes, setExcludeTypes] = useState('')
   const [result, setResult] = useState<DiffResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { loading, error, run } = useAsyncAction()
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
     added: true,
     removed: true,
@@ -149,9 +150,7 @@ export function DiffPanel({ onNavigate }: Props) {
 
   async function runDiff() {
     if (!oldId || !newId) return
-    setLoading(true)
-    setError(null)
-    try {
+    await run(async () => {
       const excludeList = parseSigList(excludeTypes)
       const res = await window.api.diff(oldId, newId, {
         record_type: recordType.trim() || null,
@@ -165,11 +164,7 @@ export function DiffPanel({ onNavigate }: Props) {
         },
       })
       setResult(res)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
+    })
   }
 
   const suppressedEntries = result ? Object.entries(result.suppressed_counts ?? {}) : []
@@ -257,7 +252,7 @@ export function DiffPanel({ onNavigate }: Props) {
             onToggle={() => toggleSection('added')}
           >
             {result.added.map((row) => (
-              <StubRow key={row.form_id} row={row} onClick={() => onNavigate(newId, row.form_id)} />
+              <StubRow key={row.form_id} row={row} dbId={newId} />
             ))}
           </Section>
           <Section
@@ -267,7 +262,7 @@ export function DiffPanel({ onNavigate }: Props) {
             onToggle={() => toggleSection('removed')}
           >
             {result.removed.map((row) => (
-              <StubRow key={row.form_id} row={row} onClick={() => onNavigate(oldId, row.form_id)} />
+              <StubRow key={row.form_id} row={row} dbId={oldId} />
             ))}
           </Section>
           <Section
@@ -277,11 +272,7 @@ export function DiffPanel({ onNavigate }: Props) {
             onToggle={() => toggleSection('changed')}
           >
             {result.changed.map((c) => (
-              <ChangedRow
-                key={c.stub.form_id}
-                change={c}
-                onClick={() => onNavigate(newId, c.stub.form_id)}
-              />
+              <ChangedRow key={c.stub.form_id} change={c} dbId={newId} />
             ))}
           </Section>
         </div>

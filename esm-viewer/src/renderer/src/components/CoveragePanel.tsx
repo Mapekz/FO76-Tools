@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import type { CoverageReport, Markers } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
 import { listRecordTypeSigs } from '../lib/sigLists'
+import { useAsyncAction } from '../lib/useAsyncAction'
 import { colors, panelStyle, inputStyle } from '../theme'
 
 const DEFAULT_SAMPLE = 200
@@ -27,8 +28,7 @@ export function CoveragePanel() {
   const [sample, setSample] = useState(DEFAULT_SAMPLE)
   const [scanAll, setScanAll] = useState(false)
   const [report, setReport] = useState<CoverageReport | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { loading, error, run } = useAsyncAction()
 
   useEffect(() => {
     if (!activeDbId) {
@@ -44,21 +44,15 @@ export function CoveragePanel() {
 
   async function runCoverage() {
     if (!activeDbId) return
-    setLoading(true)
-    setError(null)
-    try {
-      const effectiveSample = scanAll ? 0 : sample
-      const res = await window.api.run(activeDbId, {
+    const dbId = activeDbId
+    await run(async () => {
+      const res = await window.api.run(dbId, {
         op: 'coverage',
         record_type: sig || null,
-        sample: effectiveSample,
+        sample: scanAll ? 0 : sample,
       })
       setReport(res)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
+    })
   }
 
   const rows = report
