@@ -876,6 +876,7 @@ where
         >,
 {
     write_section(path, sig, cache_version, &value)?;
+    note_published(<rkyv::Archived<T> as SectionSpec>::KIND);
     drop(value);
     let section = Section::<rkyv::Archived<T>>::map(path, sig, cache_version)?;
     anyhow::ensure!(
@@ -885,6 +886,20 @@ where
         path.display()
     );
     Ok(section)
+}
+
+/// With `ESM_BUILD_LOG` naming a file, append each section's label to it as
+/// the section is published: a diagnostic of how often each is built, which
+/// the cold-cache concurrency tests count.
+fn note_published(kind: SectionKind) {
+    let Some(log) = std::env::var_os("ESM_BUILD_LOG") else {
+        return;
+    };
+    let _ = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log)
+        .and_then(|mut f| f.write_all(format!("{}\n", kind.label()).as_bytes()));
 }
 
 /// Map `T`'s section for `esm_path`, or build and publish it.
