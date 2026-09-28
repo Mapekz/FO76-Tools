@@ -89,6 +89,9 @@ struct FormatSpec {
     /// Bits per pixel-equivalent (block-compressed formats express this per
     /// 4x4 block, e.g. BC1 = 4).
     bits_per_pixel: u32,
+    /// Stored as 4x4 blocks (BC1-BC7), so a mip's size rounds each
+    /// dimension up to a whole block.
+    block_compressed: bool,
     pixel_format: PixelFormat,
     size_kind: SizeKind,
 }
@@ -101,6 +104,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 10,
         name: "R16G16B16A16_FLOAT",
         bits_per_pixel: 64,
+        block_compressed: false,
         pixel_format: PixelFormat::Dxt10,
         size_kind: SizeKind::Pitch,
     },
@@ -108,6 +112,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 11,
         name: "R16G16B16A16_UNORM",
         bits_per_pixel: 64,
+        block_compressed: false,
         pixel_format: PixelFormat::Dxt10,
         size_kind: SizeKind::Pitch,
     },
@@ -115,6 +120,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 28,
         name: "R8G8B8A8_UNORM",
         bits_per_pixel: 32,
+        block_compressed: false,
         pixel_format: PixelFormat::Rgba8888,
         size_kind: SizeKind::Pitch,
     },
@@ -122,6 +128,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 29,
         name: "R8G8B8A8_UNORM_SRGB",
         bits_per_pixel: 32,
+        block_compressed: false,
         pixel_format: PixelFormat::Dxt10,
         size_kind: SizeKind::Pitch,
     },
@@ -129,6 +136,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 61,
         name: "R8_UNORM",
         bits_per_pixel: 8,
+        block_compressed: false,
         pixel_format: PixelFormat::Luminance8,
         size_kind: SizeKind::Pitch,
     },
@@ -136,6 +144,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 71,
         name: "BC1_UNORM",
         bits_per_pixel: 4,
+        block_compressed: true,
         pixel_format: PixelFormat::FourCc(b"DXT1"),
         size_kind: SizeKind::Linear,
     },
@@ -143,6 +152,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 72,
         name: "BC1_UNORM_SRGB",
         bits_per_pixel: 4,
+        block_compressed: true,
         pixel_format: PixelFormat::Dxt10,
         size_kind: SizeKind::Linear,
     },
@@ -150,6 +160,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 77,
         name: "BC3_UNORM",
         bits_per_pixel: 8,
+        block_compressed: true,
         pixel_format: PixelFormat::FourCc(b"DXT5"),
         size_kind: SizeKind::Linear,
     },
@@ -157,6 +168,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 78,
         name: "BC3_UNORM_SRGB",
         bits_per_pixel: 8,
+        block_compressed: true,
         pixel_format: PixelFormat::Dxt10,
         size_kind: SizeKind::Linear,
     },
@@ -164,6 +176,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 80,
         name: "BC4_UNORM",
         bits_per_pixel: 4,
+        block_compressed: true,
         pixel_format: PixelFormat::FourCc(b"BC4U"),
         size_kind: SizeKind::Linear,
     },
@@ -171,6 +184,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 83,
         name: "BC5_UNORM",
         bits_per_pixel: 8,
+        block_compressed: true,
         pixel_format: PixelFormat::FourCc(b"BC5U"),
         size_kind: SizeKind::Linear,
     },
@@ -178,6 +192,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 84,
         name: "BC5_SNORM",
         bits_per_pixel: 8,
+        block_compressed: true,
         pixel_format: PixelFormat::FourCc(b"BC5S"),
         size_kind: SizeKind::Linear,
     },
@@ -185,6 +200,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 87,
         name: "B8G8R8A8_UNORM",
         bits_per_pixel: 32,
+        block_compressed: false,
         pixel_format: PixelFormat::Bgra8888,
         size_kind: SizeKind::Pitch,
     },
@@ -192,6 +208,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 98,
         name: "BC7_UNORM",
         bits_per_pixel: 8,
+        block_compressed: true,
         pixel_format: PixelFormat::Dxt10,
         size_kind: SizeKind::Linear,
     },
@@ -199,6 +216,7 @@ const FORMATS: &[FormatSpec] = &[
         dxgi: 99,
         name: "BC7_UNORM_SRGB",
         bits_per_pixel: 8,
+        block_compressed: true,
         pixel_format: PixelFormat::Dxt10,
         size_kind: SizeKind::Linear,
     },
@@ -230,12 +248,21 @@ pub fn bits_per_pixel(dxgi_format: u8) -> Result<u32> {
     Ok(spec_for(dxgi_format)?.bits_per_pixel)
 }
 
-/// Size (in bytes) of the top-level (mip 0) image for `dxgi_format` at `width`
-/// x `height`, per `TwbBSArchive.Pack`'s `MipSize` formula
-/// (`(width * height * bits_per_pixel) >> 3`).
-pub fn mip0_size(dxgi_format: u8, width: u32, height: u32) -> Result<u32> {
-    let bpp = bits_per_pixel(dxgi_format)?;
-    Ok(((width as u64 * height as u64 * bpp as u64) >> 3) as u32)
+/// Size (in bytes) of mip `level` of `desc`: each dimension halves per level
+/// (to at least 1), and a block-compressed format rounds each up to whole
+/// 4x4 blocks. (Every single-mip chunk in the shipped archives has
+/// multiple-of-4 dimensions, where this equals the unrounded
+/// `width * height * bits / 8 >> 2 * level`.)
+pub fn mip_size(desc: &TextureDesc, level: u32) -> Result<u32> {
+    let spec = spec_for(desc.dxgi_format)?;
+    let w = (u64::from(desc.width) >> level).max(1);
+    let h = (u64::from(desc.height) >> level).max(1);
+    let bits = if spec.block_compressed {
+        w.div_ceil(4) * h.div_ceil(4) * 16 * u64::from(spec.bits_per_pixel)
+    } else {
+        w * h * u64::from(spec.bits_per_pixel)
+    };
+    u32::try_from(bits / 8).map_err(|_| anyhow::anyhow!("mip {level} of {w}x{h} is too large"))
 }
 
 // ── Texture description ──────────────────────────────────────────────────────

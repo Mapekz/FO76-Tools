@@ -1,6 +1,6 @@
 //! Integration tests for `ba2::dds` — DDS header synthesis and parsing.
 
-use ba2::dds::{format_name, mip0_size, parse_header, synth_header};
+use ba2::dds::{TextureDesc, format_name, mip_size, parse_header, synth_header};
 
 const DDPF_FOURCC: u32 = 0x0000_0004;
 const DDPF_RGB: u32 = 0x0000_0040;
@@ -284,10 +284,27 @@ fn format_name_covers_every_shipped_format() {
     assert!(format_name(200).is_none());
 }
 
+/// Mip sizes: a power-of-two block texture halves its dimensions per mip,
+/// an odd-sized one rounds each up to whole 4x4 blocks, and an uncompressed
+/// one floors at 1 pixel.
 #[test]
-fn mip0_size_matches_bits_per_pixel_formula() {
-    // Ground-truthed against a real archive entry.
-    assert_eq!(mip0_size(71, 1024, 1024).unwrap(), 524_288);
+fn mip_size_rounds_block_formats_up_to_whole_blocks() {
+    let desc = |dxgi_format, width, height| TextureDesc {
+        dxgi_format,
+        width,
+        height,
+        mip_count: 11,
+        cubemap: false,
+    };
+    // BC1 (8 bytes per 4x4 block), 1024x1024.
+    assert_eq!(mip_size(&desc(71, 1024, 1024), 0).unwrap(), 524_288);
+    assert_eq!(mip_size(&desc(71, 1024, 1024), 1).unwrap(), 131_072);
+    // BC1 1023x1023: 256x256 blocks, not 1023*1023/2.
+    assert_eq!(mip_size(&desc(71, 1023, 1023), 0).unwrap(), 524_288);
+    // BC1 1000x600, mip 2 is 250x150 -> 63x38 blocks.
+    assert_eq!(mip_size(&desc(71, 1000, 600), 2).unwrap(), 63 * 38 * 8);
+    // R8G8B8A8, 4x4 at mip 3 is 1x1.
+    assert_eq!(mip_size(&desc(28, 4, 4), 3).unwrap(), 4);
 }
 
 // ── parse_header round-trips synth_header ────────────────────────────────────

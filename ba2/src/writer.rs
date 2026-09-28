@@ -337,12 +337,6 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
             meta.desc.mip_count,
             meta.desc.cubemap,
         );
-        let mip0_size = dds::mip0_size(
-            meta.desc.dxgi_format,
-            meta.desc.width as u32,
-            meta.desc.height as u32,
-        )
-        .with_context(|| format!("'{}'", src_path.display()))?;
 
         let mut chunks = Vec::with_capacity(chunk_count as usize);
         let mut mip_offset = 0usize;
@@ -356,7 +350,9 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
                     )
                 })?
             } else {
-                let len = (mip0_size >> (2 * i as u32)) as usize;
+                let len = dds::mip_size(&meta.desc, u32::from(i))
+                    .with_context(|| format!("'{}'", src_path.display()))?
+                    as usize;
                 if mip_offset + len > mip_data.len() {
                     bail!(
                         "'{}': computed mip chunk {} overruns the file",
