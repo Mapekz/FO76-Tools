@@ -189,7 +189,7 @@ issue #18 and #22 restamp/calibrated-default passes); stage order is load-bearin
 
 **`src/walk/`** — the sole interactive/human-readable surface (ADR 0001), split compute
 (`mod.rs`) from render (`render.rs`), the same shape `decode/vmad.rs` uses. `walk::walk` does a
-BFS over a `ChaseFetcher` and computes one typed `Digest` per visited record — `Glob`, `Avif`,
+BFS over a `RecordSource` (`src/source.rs`) and computes one typed `Digest` per visited record — `Glob`, `Avif`,
 `Kywd`, `Mgef`, `MagicItem`, `Perk`, `Weap`, `Proj`, `Expl`, `Lvli`, `Omod`, or `Generic` —
 carrying real values (FormID stubs, numbers, classified `chase::Hop`s), never pre-formatted
 strings, so `--json` output is exactly the computed data. `render.rs`'s `render_digest`/
@@ -204,7 +204,7 @@ direction actually resolved it. The output `ChaseTree` is a frozen, additive-onl
 new optional fields and enum variants are fine, renames and removals are not, without a new ADR.
 
 **`src/lvli.rs`** — `lvli::drop_table` recurses a Leveled List's `Entries[]` tree via the same
-`ChaseFetcher` seam, computing per-leaf `DropRow`s (`expected_count`, `p_at_least_one`) under
+`RecordSource` seam, computing per-leaf `DropRow`s (`expected_count`, `p_at_least_one`) under
 `Use All` / `Use First Match` / pool (exact subset enumeration up to 16 entries, else a flagged
 mean-field approximation) selection and flat/GLOB/Curve-Table `Chance None` resolution.
 Anything the model doesn't cover (`Filter Keyword Chances`, `Epic Loot Chance`, list-level `Max
@@ -212,6 +212,12 @@ Anything the model doesn't cover (`Filter Keyword Chances`, `Epic Loot Chance`, 
 dropped. With `DropOptions::tree_depth > 0` it also returns `DropTable::tree`, the same odds as
 `DropList`/`DropBranch` nesting cut off at that depth (deeper sublists become subtotal rows);
 `walk` renders only the tree, bounded by its `--depth`, while `rows` stay fully flattened.
+
+**`src/source.rs`** — `RecordSource`, the bulk-get and reverse-refs seam walk, chase and the
+drop table fetch through: `ops::analysis`'s `DbSource` reads the open `Database`, and
+`MemorySource` answers from records supplied up front (every traversal test uses it).
+**`src/fields.rs`** holds the decoded-JSON readers the three share (reference stubs, schema
+enums, condition rows), so none of them imports another for a helper.
 
 **`src/refs.rs`** — the reverse-reference graph engine: `referenced_by_enriched`/
 `_multi` (BFS from one or more seeds) and `find_ref_path` (bidirectional path search between two

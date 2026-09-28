@@ -4,15 +4,16 @@
 //! FormIDs/fields) so the two can be eyeballed side by side during the parity
 //! check, even though this crate can't literally share Python's `FakeGateway`.
 //!
-//! `FakeFetcher` below stands in for a `Backend`-driven fetcher: `bulk_get`
-//! looks selectors up in a canned `records` map, `refs` returns a canned
-//! `RefList` keyed by `(target, type_filter)` — the exact two calls
-//! `chase()`'s reverse-chase makes (one per `CONSUMER_TYPES` entry).
+//! Records and reverse references come from a [`MemorySource`]; `refs`
+//! answers per `(target, type_filter)`, the exact two calls `chase()`'s
+//! reverse-chase makes (one per `CONSUMER_TYPES` entry).
 
-use esm::chase::{ChaseFetcher, ChaseOptions, EffectHopKind, FetchDirection, HopKind, chase};
+use esm::ResolveDepth;
+use esm::chase::{ChaseOptions, EffectHopKind, FetchDirection, HopKind, chase};
 use esm::ops::RecordSel;
 use esm::reader::RecordHeaderInfo;
-use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
+use esm::source::{MemorySource, RecordSource};
+use esm::{BulkRecordEntry, RefList, RefRow};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -55,62 +56,27 @@ fn ok_entry(
     }
 }
 
-/// In-memory stand-in for a `Backend`-driven fetcher, mirroring the Python
-/// prototype's `FakeGateway`. `refs_by_type` is keyed by `(target formid,
-/// record-type filter)` since that's exactly what `chase()`'s reverse-chase
-/// calls with (one `refs()` call per `CONSUMER_TYPES` entry) — no need to
-/// reimplement `referenced_by_enriched`'s BFS/filter walk here, that's
-/// already covered by `tests/ops.rs`.
-struct FakeFetcher {
+/// A [`MemorySource`] over `records` (keyed by display FormID) and reverse
+/// refs keyed by `(target, type filter)`.
+fn source(
     records: HashMap<String, BulkRecordEntry>,
     refs_by_type: HashMap<(String, String), RefList>,
-}
-
-impl ChaseFetcher for FakeFetcher {
-    fn bulk_get(
-        &mut self,
-        sels: &[RecordSel],
-        _depth: ResolveDepth,
-    ) -> anyhow::Result<Vec<BulkRecordEntry>> {
-        Ok(sels
-            .iter()
-            .map(|sel| {
-                let display = sel.display();
-                self.records
-                    .get(&display)
-                    .cloned()
-                    .unwrap_or_else(|| BulkRecordEntry {
-                        sel: display.clone(),
-                        header: None,
-                        editor_id: None,
-                        fields: None,
-                        error: Some(format!("not found: {display}")),
-                    })
-            })
-            .collect())
+) -> MemorySource {
+    let mut f = MemorySource::new();
+    for entry in records.into_values() {
+        let header = entry.header.unwrap();
+        f.insert(
+            header.form_id,
+            &header.signature,
+            entry.editor_id.as_deref().unwrap_or(""),
+            header.flags,
+            entry.fields.unwrap(),
+        );
     }
-
-    fn refs(
-        &mut self,
-        target: FormId,
-        _depth: usize,
-        _limit: usize,
-        type_filter: &str,
-        _paths: bool,
-    ) -> anyhow::Result<RefList> {
-        let key = (target.display(), type_filter.to_string());
-        Ok(self
-            .refs_by_type
-            .get(&key)
-            .cloned()
-            .unwrap_or_else(|| RefList {
-                target: target.display(),
-                rows: Vec::new(),
-                total: 0,
-                capped: false,
-                ..Default::default()
-            }))
+    for ((target, type_filter), list) in refs_by_type {
+        f.insert_refs(target.parse().unwrap(), &type_filter, list);
     }
+    f
 }
 
 /// Build the fixture described in `tools/tests/test_chase.py`'s `_fixture()`,
@@ -120,7 +86,7 @@ impl ChaseFetcher for FakeFetcher {
 ///   path (ENCH -> Base Effect -> MGEF -> "Perk to Apply", the exact
 ///   "Severing's confirmed chase" scenario from the mechanics KB);
 /// - standalone PERK/SPEL/ALCH root fixtures for the new `effect_chase` walk.
-fn fixture() -> FakeFetcher {
+fn fixture() -> MemorySource {
     let omod_fields = json!({
         "_record_type": "Object Modification",
         "Editor ID": "mod_Custom_Test",
@@ -421,10 +387,7 @@ fn fixture() -> FakeFetcher {
     );
     // No fixture entry for (KYWD_FID, "PERK") -> defaults to an empty RefList.
 
-    FakeFetcher {
-        records,
-        refs_by_type,
-    }
+    source(records, refs_by_type)
 }
 
 fn sel(fid: &str) -> RecordSel {
@@ -524,10 +487,7 @@ fn omod_avif_direct_property_is_reverse_resolved() {
             }),
         ),
     );
-    let mut f = FakeFetcher {
-        records,
-        refs_by_type: HashMap::new(),
-    };
+    let mut f = source(records, HashMap::new());
     let tree = chase(&mut f, sel(AVIF_OMOD_FID), &ChaseOptions::default()).unwrap();
     assert_eq!(tree.hops.len(), 1);
     let hop = &tree.hops[0];
@@ -578,10 +538,7 @@ fn demoted_tag_keyword_resets_resolution() {
             json!({"_record_type": "Keyword"}),
         ),
     );
-    let mut f = FakeFetcher {
-        records,
-        refs_by_type: HashMap::new(), // no SPEL/PERK consumer for either type
-    };
+    let mut f = source(records, HashMap::new());
     let tree = chase(&mut f, sel(UNTYPED_OMOD_FID), &ChaseOptions::default()).unwrap();
     assert_eq!(tree.hops.len(), 1);
     let hop = &tree.hops[0];
@@ -662,8 +619,14 @@ fn keyword_hook_reverse_evidence_slices_gated_effect() {
 #[test]
 fn keyword_hook_with_no_matching_consumer_is_a_dead_end() {
     let mut f = fixture();
-    f.refs_by_type
-        .remove(&(KYWD_FID.to_string(), "SPEL".to_string()));
+    f.insert_refs(
+        KYWD_FID.parse().unwrap(),
+        "SPEL",
+        RefList {
+            target: KYWD_FID.to_string(),
+            ..Default::default()
+        },
+    );
     let tree = chase(&mut f, sel(OMOD_FID), &ChaseOptions::default()).unwrap();
     assert!(tree.hops[2].evidence.is_empty());
 }
@@ -791,16 +754,19 @@ fn unresolvable_selector_surfaces_as_an_error_not_a_panic() {
 #[test]
 fn omod_with_no_properties_has_empty_hops() {
     let mut f = fixture();
-    let entry = f.records.get_mut(OMOD_FID).unwrap();
-    entry
-        .fields
-        .as_mut()
+    let entry = f
+        .bulk_get(&[sel(OMOD_FID)], ResolveDepth::Stub)
         .unwrap()
-        .pointer_mut("/Data")
-        .unwrap()
-        .as_object_mut()
-        .unwrap()
-        .insert("Properties".to_string(), json!([]));
+        .remove(0);
+    let mut fields = entry.fields.unwrap();
+    fields["Data"]["Properties"] = json!([]);
+    f.insert(
+        OMOD_FID.parse().unwrap(),
+        "OMOD",
+        entry.editor_id.as_deref().unwrap(),
+        0,
+        fields,
+    );
     let tree = chase(&mut f, sel(OMOD_FID), &ChaseOptions::default()).unwrap();
     assert!(tree.hops.is_empty());
     assert!(tree.effect_hops.is_empty());
@@ -858,8 +824,8 @@ fn mod_collection_lists_alternatives_without_merging_them() {
             "Value 2": 0.0,
         }]},
     });
-    let mut f = FakeFetcher {
-        records: HashMap::from([
+    let mut f = source(
+        HashMap::from([
             (
                 COLLECTION_FID.to_string(),
                 ok_entry(COLLECTION_FID, header, "modcol_Test_Barrels", collection),
@@ -874,8 +840,8 @@ fn mod_collection_lists_alternatives_without_merging_them() {
                 ),
             ),
         ]),
-        refs_by_type: HashMap::new(),
-    };
+        HashMap::new(),
+    );
     let tree = chase(&mut f, sel(COLLECTION_FID), &ChaseOptions::default()).unwrap();
     assert!(
         tree.hops.is_empty(),

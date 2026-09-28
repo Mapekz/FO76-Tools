@@ -33,7 +33,7 @@ pub(super) fn walk(db: &Database, args: &WalkArgs) -> anyhow::Result<crate::walk
         ref_limit: args.ref_limit,
         level: args.level,
     };
-    let mut result = crate::walk::walk(&mut DbFetcher { db }, args.sel.clone(), &opts)?;
+    let mut result = crate::walk::walk(&mut DbSource { db }, args.sel.clone(), &opts)?;
     if let Some(nf) = result.not_found.as_mut() {
         nf.matches = db.search(&nf.target, &[], SearchField::Both, 10)?;
     } else if args.want_refs
@@ -65,7 +65,7 @@ pub(super) fn chase(db: &Database, args: &ChaseArgs) -> anyhow::Result<crate::ch
         depth: args.depth,
         ref_limit: args.ref_limit,
     };
-    crate::chase::chase(&mut DbFetcher { db }, args.sel.clone(), &opts)
+    crate::chase::chase(&mut DbSource { db }, args.sel.clone(), &opts)
 }
 
 /// LVLI drop-probability table — the `Op` form of
@@ -101,21 +101,21 @@ pub(super) fn drop_table(
         tree_depth: 0,
     };
     crate::lvli::drop_table(
-        &mut DbFetcher { db },
+        &mut DbSource { db },
         result.header.form_id,
         &result.fields,
         &opts,
     )
 }
 
-/// [`crate::chase::ChaseFetcher`] over an open `Database`, so the walk,
+/// [`crate::source::RecordSource`] over an open `Database`, so the walk,
 /// chase and drop-table traversals fetch records and reverse references
 /// directly.
-struct DbFetcher<'a> {
+struct DbSource<'a> {
     db: &'a Database,
 }
 
-impl crate::chase::ChaseFetcher for DbFetcher<'_> {
+impl crate::source::RecordSource for DbSource<'_> {
     fn bulk_get(
         &mut self,
         sels: &[RecordSel],

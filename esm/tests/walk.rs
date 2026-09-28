@@ -1,126 +1,28 @@
-//! Integration tests for `esm::walk`. Mirrors `tests/chase.rs`'s `FakeFetcher`
-//! pattern: `bulk_get` looks selectors up in a canned `records` map, `refs`
-//! returns a canned `RefList` keyed by `(target, type_filter)`.
+//! Integration tests for `esm::walk`, over records and reverse references
+//! held in a [`MemorySource`].
 
-use esm::chase::ChaseFetcher;
 use esm::ops::RecordSel;
-use esm::reader::RecordHeaderInfo;
+use esm::source::MemorySource;
 use esm::walk::{
     Digest, WalkOptions, WalkResult, build_refs_digest, render_digest, render_text, walk,
 };
-use esm::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
+use esm::{FormId, RefList, RefRow};
 use serde_json::json;
-use std::collections::HashMap;
 
-struct FakeFetcher {
-    records: HashMap<String, BulkRecordEntry>,
-    refs_by_type: HashMap<(String, String), RefList>,
+/// Add a record with no header flags.
+fn put(f: &mut MemorySource, formid: &str, sig: &str, edid: &str, fields: serde_json::Value) {
+    f.insert(fid(formid), sig, edid, 0, fields);
 }
 
-impl FakeFetcher {
-    fn new() -> Self {
-        Self {
-            records: HashMap::new(),
-            refs_by_type: HashMap::new(),
-        }
-    }
-
-    fn insert(&mut self, formid: &str, sig: &str, edid: &str, fields: serde_json::Value) {
-        self.insert_flagged(formid, sig, edid, 0, fields);
-    }
-
-    fn insert_flagged(
-        &mut self,
-        formid: &str,
-        sig: &str,
-        edid: &str,
-        flags: u32,
-        fields: serde_json::Value,
-    ) {
-        self.records.insert(
-            formid.to_string(),
-            BulkRecordEntry {
-                sel: formid.to_string(),
-                header: Some(RecordHeaderInfo {
-                    signature: sig.to_string(),
-                    form_id: formid.parse().unwrap(),
-                    flags,
-                    form_version: 0,
-                    data_size: 0,
-                    offset: 0,
-                }),
-                editor_id: Some(edid.to_string()),
-                fields: Some(fields),
-                error: None,
-            },
-        );
-    }
+fn fid(formid: &str) -> FormId {
+    formid.parse().unwrap()
 }
 
-impl ChaseFetcher for FakeFetcher {
-    fn bulk_get(
-        &mut self,
-        sels: &[RecordSel],
-        _depth: ResolveDepth,
-    ) -> anyhow::Result<Vec<BulkRecordEntry>> {
-        Ok(sels
-            .iter()
-            .map(|sel| {
-                let display = sel.display();
-                self.records
-                    .get(&display)
-                    .cloned()
-                    .unwrap_or_else(|| BulkRecordEntry {
-                        sel: display.clone(),
-                        header: None,
-                        editor_id: None,
-                        fields: None,
-                        error: Some(format!("not found: {display}")),
-                    })
-            })
-            .collect())
-    }
-
-    fn refs(
-        &mut self,
-        target: FormId,
-        _depth: usize,
-        limit: usize,
-        type_filter: &str,
-        _paths: bool,
-    ) -> anyhow::Result<RefList> {
-        let key = (target.display(), type_filter.to_string());
-        let mut list = self
-            .refs_by_type
-            .get(&key)
-            .cloned()
-            .unwrap_or_else(|| RefList {
-                target: target.display(),
-                rows: Vec::new(),
-                total: 0,
-                capped: false,
-                ..Default::default()
-            });
-        // Simulate a real backend's `--ref-limit` truncation, so a test can
-        // assert `WalkOptions::ref_limit`/`ChaseOptions::ref_limit` actually
-        // bounds how many consumers get fetched (see
-        // `omod_keyword_hook_consumer_fetch_bounded_by_ref_limit`).
-        if limit > 0 && list.rows.len() > limit {
-            list.rows.truncate(limit);
-            list.capped = true;
-        }
-        Ok(list)
-    }
+fn sel(formid: &str) -> RecordSel {
+    RecordSel::FormId(fid(formid))
 }
 
-fn sel(fid: &str) -> RecordSel {
-    RecordSel::FormId(fid.parse().unwrap())
-}
-
-/// Walk out from `formid` to `depth` with otherwise-default options — the
-/// shape almost every test here wants.  Tests that vary another option build
-/// their own `WalkOptions` so the setting under test stays at the call site.
-fn walk_at(f: &mut FakeFetcher, formid: &str, depth: usize) -> WalkResult {
+fn walk_at(f: &mut MemorySource, formid: &str, depth: usize) -> WalkResult {
     walk(
         f,
         sel(formid),
@@ -149,9 +51,10 @@ const PERK_NO_EFFECTS_FID: &str = "0x00600012";
 const ENTRY_AV_FID: &str = "0x00600013";
 const PERK_COND_GLOB_FID: &str = "0x00600014";
 
-fn perk_fixture() -> FakeFetcher {
-    let mut f = FakeFetcher::new();
-    f.insert(
+fn perk_fixture() -> MemorySource {
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         PERK_FID,
         "PERK",
         "TestPerkRoot",
@@ -212,13 +115,15 @@ fn perk_fixture() -> FakeFetcher {
             ],
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         ABILITY_SPEL_FID,
         "SPEL",
         "TestAbilitySpel",
         json!({"_record_type": "Spell", "Editor ID": "TestAbilitySpel"}),
     );
-    f.insert(
+    put(
+        &mut f,
         PERK_NO_EFFECTS_FID,
         "PERK",
         "TestPerkNoEffects",
@@ -280,9 +185,10 @@ fn perk_digest_no_effects_variant() {
 const SPEL_MAGIC_FID: &str = "0x00600020";
 const GLOB_MAG_FID: &str = "0x00600021";
 
-fn magic_item_fixture() -> FakeFetcher {
-    let mut f = FakeFetcher::new();
-    f.insert(
+fn magic_item_fixture() -> MemorySource {
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         SPEL_MAGIC_FID,
         "SPEL",
         "TestMagicSpel",
@@ -337,10 +243,11 @@ const LOOT_BAG_LVLI_FID: &str = "0x00600024";
 
 /// A loot-bag consumable: its effect's MGEF names the LVLI it hands out only
 /// through a Papyrus script property, never a record field.
-fn loot_bag_fixture() -> FakeFetcher {
-    let mut f = FakeFetcher::new();
+fn loot_bag_fixture() -> MemorySource {
+    let mut f = MemorySource::new();
     let lvli = json!({"formid": LOOT_BAG_LVLI_FID, "editor_id": "BagLoot", "record_type": "LVLI"});
-    f.insert(
+    put(
+        &mut f,
         LOOT_BAG_ALCH_FID,
         "ALCH",
         "LootBag",
@@ -353,7 +260,8 @@ fn loot_bag_fixture() -> FakeFetcher {
             }],
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         LOOT_BAG_MGEF_FID,
         "MGEF",
         "LootBagEffect",
@@ -371,7 +279,8 @@ fn loot_bag_fixture() -> FakeFetcher {
             "Magic Effect Data": {"Data": {"Archetype": {"value": 1, "name": "Script"}}},
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         LOOT_BAG_LVLI_FID,
         "LVLI",
         "BagLoot",
@@ -435,15 +344,17 @@ const SPEL_CONSUMER_FID: &str = "0x00600031";
 
 #[test]
 fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         KYWD_FID,
         "KYWD",
         "if_tmp_TestTag",
         json!({"_record_type": "Keyword"}),
     );
-    f.refs_by_type.insert(
-        (KYWD_FID.to_string(), "SPEL".to_string()),
+    f.insert_refs(
+        fid(KYWD_FID),
+        "SPEL",
         RefList {
             target: KYWD_FID.to_string(),
             rows: vec![RefRow {
@@ -464,7 +375,7 @@ fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
             ..Default::default()
         },
     );
-    // No fixture entry for (KYWD_FID, "PERK") -> FakeFetcher defaults to empty.
+    // No fixture entry for (KYWD_FID, "PERK") -> MemorySource defaults to empty.
 
     let result = walk_at(&mut f, KYWD_FID, 1);
     let text = node_digest(&result, KYWD_FID).join("\n");
@@ -483,11 +394,12 @@ fn kywd_digest_lists_spel_consumers_and_skips_empty_perk_group() {
 const CHAIN_PERK_FID: &str = "0x00600040";
 const CHAIN_SPEL_FID: &str = "0x00600041";
 
-fn chain_fixture() -> FakeFetcher {
-    let mut f = FakeFetcher::new();
+fn chain_fixture() -> MemorySource {
+    let mut f = MemorySource::new();
     // Two Ability effects pointing at the SAME SPEL — visited-set dedup means
     // only one node should ever be produced for it.
-    f.insert(
+    put(
+        &mut f,
         CHAIN_PERK_FID,
         "PERK",
         "TestChainPerk",
@@ -509,7 +421,8 @@ fn chain_fixture() -> FakeFetcher {
             ],
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         CHAIN_SPEL_FID,
         "SPEL",
         "TestChainSpel",
@@ -686,7 +599,7 @@ fn render_text_refs_summary_ends_with_reminder_when_nonempty() {
 
 #[test]
 fn walk_reports_not_found_with_empty_matches_for_unresolved_root() {
-    let mut f = FakeFetcher::new();
+    let mut f = MemorySource::new();
     let result = walk(&mut f, sel("0x0069999A"), &WalkOptions::default()).unwrap();
     let nf = result
         .not_found
@@ -736,8 +649,9 @@ const ENCH_PROP_FID: &str = "0x00600051";
 
 #[test]
 fn omod_follows_ench_property_and_enqueues_it() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         OMOD_FID,
         "OMOD",
         "mod_Legendary_Weapon1_Test",
@@ -754,7 +668,8 @@ fn omod_follows_ench_property_and_enqueues_it() {
             },
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         ENCH_PROP_FID,
         "ENCH",
         "TestGrantedEnch",
@@ -792,8 +707,9 @@ const GATING_PERK_FID: &str = "0x00600055";
 /// See `digest_node`'s `"OMOD"` arm.
 #[test]
 fn omod_mixed_property_renders_keyword_hook_slice() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         OMOD_MIXED_FID,
         "OMOD",
         "mod_Legendary_Weapon1_Mixed",
@@ -815,13 +731,15 @@ fn omod_mixed_property_renders_keyword_hook_slice() {
             },
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         ENCH_PROP_FID,
         "ENCH",
         "TestGrantedEnch",
         json!({"_record_type": "Enchantment", "Editor ID": "TestGrantedEnch"}),
     );
-    f.insert(
+    put(
+        &mut f,
         GATING_PERK_FID,
         "PERK",
         "GatingPerkBACKUP",
@@ -840,8 +758,9 @@ fn omod_mixed_property_renders_keyword_hook_slice() {
             ],
         }),
     );
-    f.refs_by_type.insert(
-        (KYWD_HOOK_FID.to_string(), "PERK".to_string()),
+    f.insert_refs(
+        fid(KYWD_HOOK_FID),
+        "PERK",
         RefList {
             target: KYWD_HOOK_FID.to_string(),
             rows: vec![RefRow {
@@ -892,8 +811,9 @@ fn omod_mixed_property_renders_keyword_hook_slice() {
 /// lines — there is nothing else for the classifier to surface.
 #[test]
 fn omod_with_only_ench_properties_renders_no_other_mechanism_lines() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         OMOD_ENCH_ONLY_FID,
         "OMOD",
         "mod_Legendary_Weapon1_EnchOnly",
@@ -910,7 +830,8 @@ fn omod_with_only_ench_properties_renders_no_other_mechanism_lines() {
             },
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         ENCH_PROP_FID,
         "ENCH",
         "TestGrantedEnch",
@@ -938,8 +859,9 @@ const KYWD_HUB_FID: &str = "0x00600059";
 /// keyword/AVIF returns dozens of unrelated consumers.
 #[test]
 fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         OMOD_HUB_FID,
         "OMOD",
         "mod_Legendary_Hub_Test",
@@ -959,7 +881,8 @@ fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
     let mut rows = Vec::new();
     for i in 0..5 {
         let fid = format!("0x0060006{i}");
-        f.insert(
+        put(
+            &mut f,
             &fid,
             "PERK",
             &format!("HubConsumer{i}"),
@@ -993,8 +916,9 @@ fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
             ..Default::default()
         });
     }
-    f.refs_by_type.insert(
-        (KYWD_HUB_FID.to_string(), "PERK".to_string()),
+    f.insert_refs(
+        fid(KYWD_HUB_FID),
+        "PERK",
         RefList {
             target: KYWD_HUB_FID.to_string(),
             rows,
@@ -1051,8 +975,9 @@ fn weight_property(value: f64) -> serde_json::Value {
 /// walked as a node of its own.
 #[test]
 fn omod_template_include_renders_its_properties_under_the_template() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         OMOD_SHELL_FID,
         "OMOD",
         "mod_Legendary_Weapon1_Shell",
@@ -1061,8 +986,8 @@ fn omod_template_include_renders_its_properties_under_the_template() {
             "Data": {"Includes": [include_row(OMOD_PARENT_FID, "_PARENT_mod_Weight", 0)]},
         }),
     );
-    f.insert_flagged(
-        OMOD_PARENT_FID,
+    f.insert(
+        fid(OMOD_PARENT_FID),
         "OMOD",
         "_PARENT_mod_Weight",
         0x100, // Mod Template
@@ -1089,9 +1014,9 @@ fn omod_template_include_renders_its_properties_under_the_template() {
 /// level and walked as nodes, never merged into the collection.
 #[test]
 fn omod_collection_walks_its_alternatives() {
-    let mut f = FakeFetcher::new();
-    f.insert_flagged(
-        OMOD_COLLECTION_FID,
+    let mut f = MemorySource::new();
+    f.insert(
+        fid(OMOD_COLLECTION_FID),
         "OMOD",
         "modcol_Test_Barrels",
         0x80, // Mod Collection
@@ -1100,7 +1025,8 @@ fn omod_collection_walks_its_alternatives() {
             "Data": {"Includes": [include_row(OMOD_ALT_FID, "mod_Test_Barrel_Long", 20)]},
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         OMOD_ALT_FID,
         "OMOD",
         "mod_Test_Barrel_Long",
@@ -1169,13 +1095,14 @@ fn lvli_entry(target: serde_json::Value) -> serde_json::Value {
 
 /// Bundles every LVLI digest scenario into one fetcher, mirroring
 /// `perk_fixture`'s "one fixture per digest, many roots" shape.
-fn lvli_fixture() -> FakeFetcher {
-    let mut f = FakeFetcher::new();
+fn lvli_fixture() -> MemorySource {
+    let mut f = MemorySource::new();
 
     // Pool render — a descending GetRandomPercent >= N ladder plus an
     // unconditioned catch-all (the same shape as the real regression fixture
     // this feature was built to answer, `0x008308D7`).
-    f.insert(
+    put(
+        &mut f,
         LVLI_POOL_ROOT_FID,
         "LVLI",
         "TestPoolRoot",
@@ -1195,7 +1122,8 @@ fn lvli_fixture() -> FakeFetcher {
 
     // A sublist whose list-wide note covers two items, under a root that
     // also carries a direct leaf.
-    f.insert(
+    put(
+        &mut f,
         LVLI_SUBLIST_CHILD_FID,
         "LVLI",
         "TestSublistChild",
@@ -1209,7 +1137,8 @@ fn lvli_fixture() -> FakeFetcher {
             ],
         }),
     );
-    f.insert(
+    put(
+        &mut f,
         LVLI_SUBLIST_ROOT_FID,
         "LVLI",
         "TestSublistRoot",
@@ -1225,7 +1154,8 @@ fn lvli_fixture() -> FakeFetcher {
 
     // Quantity Curve Table sibling — points climb 1 -> 5 over level 0 -> 100,
     // so `--level` should move the rendered expected-count row.
-    f.insert(
+    put(
+        &mut f,
         LVLI_CURVE_ROOT_FID,
         "LVLI",
         "TestCurveRoot",
@@ -1249,7 +1179,8 @@ fn lvli_fixture() -> FakeFetcher {
     // XALG/LVLF "Flags" key collision — "Item Dispenser" is a real flag name
     // in both vocabularies, so only "Flags 2" (LVLF, present because XALG
     // took "Flags" first) may be trusted for the selection model.
-    f.insert(
+    put(
+        &mut f,
         LVLI_FLAGS2_ROOT_FID,
         "LVLI",
         "TestFlags2Root",
@@ -1266,7 +1197,8 @@ fn lvli_fixture() -> FakeFetcher {
 
     // Legacy (form_version < 174) entry shape — `Base Data.{Level,Item,Count,
     // Chance None}` instead of the modern `Reference`/sibling fields.
-    f.insert(
+    put(
+        &mut f,
         LVLI_LEGACY_ROOT_FID,
         "LVLI",
         "TestLegacyRoot",
@@ -1287,7 +1219,8 @@ fn lvli_fixture() -> FakeFetcher {
     // A Condition gate that isn't `GetRandomPercent` — a real gate this
     // engine can't turn into a probability, so it must show up as a note
     // rather than silently reading as always-pass with no caveat.
-    f.insert(
+    put(
+        &mut f,
         LVLI_GATED_ROOT_FID,
         "LVLI",
         "TestGatedRoot",
@@ -1515,8 +1448,9 @@ const LVLI_MINLEVEL_ROOT_FID: &str = "0x00600090";
 /// without the reader having to opt in.
 #[test]
 fn weap_damage_curve_evaluates_at_default_level_with_no_level_flag() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         WEAP_CURVE_FID,
         "WEAP",
         "TestCurveWeapon",
@@ -1545,8 +1479,9 @@ fn weap_damage_curve_evaluates_at_default_level_with_no_level_flag() {
 /// editor_id, one row per array element.
 #[test]
 fn npc_properties_curve_rows_labeled_by_actor_value() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         NPC_PROPS_FID,
         "NPC_",
         "TestCreatureNpc",
@@ -1598,8 +1533,9 @@ fn npc_properties_curve_rows_labeled_by_actor_value() {
 /// `Properties[]` that a copy-pasted `label_from` would silently get wrong.
 #[test]
 fn armo_resistances_labeled_by_type_not_actor_value() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         ARMO_RESIST_FID,
         "ARMO",
         "TestArmorPiece",
@@ -1636,8 +1572,9 @@ fn armo_resistances_labeled_by_type_not_actor_value() {
 /// number.
 #[test]
 fn ench_effect_curve_guard_evaluates_only_when_actor_value_absent() {
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         ENCH_GUARD_FID,
         "ENCH",
         "TestGuardEnch",
@@ -1712,8 +1649,9 @@ fn lvli_minimim_level_curve_table_without_a_global_is_noted_not_evaluated() {
         "LVLI has no LEVEL_KEYED_CURVES rows at all"
     );
 
-    let mut f = FakeFetcher::new();
-    f.insert(
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
         LVLI_MINLEVEL_ROOT_FID,
         "LVLI",
         "TestMinLevelCurveRoot",
@@ -1742,10 +1680,11 @@ fn lvli_minimim_level_curve_table_without_a_global_is_noted_not_evaluated() {
 
 #[test]
 fn lvli_with_no_eligible_entries_still_prints_its_list_footnotes() {
-    let mut f = FakeFetcher::new();
+    let mut f = MemorySource::new();
     let mut entry = lvli_entry(lvli_leaf("0x00700091", "WEAP", "HighLevelGun"));
     entry["Leveled List Entry"]["Minimum Level"] = json!(100.0);
-    f.insert(
+    put(
+        &mut f,
         "0x00700090",
         "LVLI",
         "TooHighForLevel50",

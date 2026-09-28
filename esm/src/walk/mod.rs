@@ -23,8 +23,8 @@
 //! Ability, a PERK's Ability SPEL, an OMOD's ENCH property, an LVLI named by
 //! an MGEF's script property, ...). It
 //! composes the same two primitives
-//! `esm::chase`'s "chase pattern" uses — [`ChaseFetcher::bulk_get`] and
-//! [`ChaseFetcher::refs`] — no new trait, no new wire `Op`.
+//! `esm::chase`'s "chase pattern" uses — [`RecordSource::bulk_get`] and
+//! [`RecordSource::refs`] — no new trait, no new wire `Op`.
 //!
 //! **OMOD roots get more than a forward-only digest.** [`digest_node`]'s
 //! `"OMOD"` arm calls straight into `esm::chase`'s mechanism classifier
@@ -71,14 +71,14 @@
 //!
 //! Two responsibilities stay with the caller (`cmd_walk` in
 //! `src/bin/cli.rs`) rather than living in this module, since neither fits
-//! through `ChaseFetcher`'s narrow bulk_get/refs-with-type-filter seam:
+//! through `RecordSource`'s narrow bulk_get/refs-with-type-filter seam:
 //! - **not-found → search fallback**: when the root selector doesn't
 //!   resolve, [`walk`] returns a [`WalkResult`] with [`WalkResult::not_found`]
 //!   set and an empty `matches` list; the CLI driver runs one `Op::Search`
 //!   and fills `matches` in before rendering.
 //! - **`--refs` reverse-reference summary**: needs an *unfiltered* reverse
 //!   `refs` walk (every referencing record type, not just SPEL/PERK), which
-//!   `ChaseFetcher::refs`'s mandatory type-filter parameter can't express.
+//!   `RecordSource::refs`'s mandatory type-filter parameter can't express.
 //!   The CLI driver runs one unfiltered `Op::ReferencedBy` call and passes
 //!   the raw rows to [`build_refs_digest`] (a pure function, easily unit
 //!   tested without any fetcher).
@@ -93,11 +93,12 @@ mod render;
 pub use render::{render_digest, render_text};
 
 use crate::chase::{
-    ChaseFetcher, ChaseOptions, Hop, HopKind, RootStub, consumer_refs_by_type, omod_chase,
-    summarize_explosion,
+    ChaseOptions, Hop, HopKind, RootStub, consumer_refs_by_type, omod_chase, summarize_explosion,
 };
+use crate::fields::{dedup_sorted, flatten_condition_rows, is_ref_stub, stub_formid};
 use crate::ops::RecordSel;
-use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
+use crate::source::{RecordSource, bulk_fetch_map};
+use crate::{FormId, RecordRow, RefRow, ResolveDepth};
 use anyhow::Context as _;
 use level_curves::LevelCurveRow;
 use serde::{Deserialize, Serialize};
@@ -626,56 +627,7 @@ pub struct ArmoDigest {
 
 // ─── generic JSON helpers ───────────────────────────────────────────────────
 
-/// A decoded FormID reference at [`ResolveDepth::Stub`] is a
-/// `{"formid", "editor_id", "record_type"}` object (see module docs).
-fn is_ref_stub(v: &Value) -> bool {
-    matches!(v, Value::Object(map) if map.contains_key("formid"))
-}
-
-pub(crate) fn stub_formid(v: Option<&Value>) -> Option<FormId> {
-    let obj = v?.as_object()?;
-    let s = obj.get("formid")?.as_str()?;
-    crate::parse_form_id_input(s).ok()
-}
-
-pub(crate) fn dedup_sorted(fids: &mut Vec<FormId>) {
-    fids.sort_by_key(|f| f.0);
-    fids.dedup();
-}
-
-/// Batch-fetch `fids` at [`ResolveDepth::Stub`] and return them keyed by their
-/// display-formid string (matches `BulkRecordEntry::sel` for a
-/// `RecordSel::FormId` selector — see `esm::chase`'s identical `by_sel`
-/// pattern).
-pub(crate) fn bulk_fetch_map(
-    f: &mut impl ChaseFetcher,
-    fids: &[FormId],
-) -> anyhow::Result<HashMap<String, BulkRecordEntry>> {
-    if fids.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let sels: Vec<RecordSel> = fids.iter().map(|fid| RecordSel::FormId(*fid)).collect();
-    let entries = f.bulk_get(&sels, ResolveDepth::Stub)?;
-    Ok(entries.into_iter().map(|e| (e.sel.clone(), e)).collect())
-}
-
 // ─── conditions ─────────────────────────────────────────────────────────────
-
-/// Pull the flat condition rows out of a SPEL/ENCH/ALCH/MGEF-style
-/// `Conditions` node. LVLI entries decode `Conditions` into this identical shape (see
-/// `crate::lvli`), so this is shared rather than duplicated.
-pub(crate) fn flatten_condition_rows(node: &Value) -> Vec<Value> {
-    let mut out = Vec::new();
-    let Some(conditions) = node.get("Conditions").and_then(Value::as_array) else {
-        return out;
-    };
-    for item in conditions {
-        if let Some(data) = item.pointer("/Condition/Condition Data") {
-            out.push(data.clone());
-        }
-    }
-    out
-}
 
 /// Flatten a PERK "Perk Conditions" node (tabbed) into raw condition rows.
 /// Tab-index 2 conditions run on the target, so their `Run On` is forced to
@@ -721,7 +673,7 @@ fn digest_glob(fields: &Value) -> GlobDigest {
 }
 
 fn digest_avif(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     formid: FormId,
     fields: &Value,
 ) -> anyhow::Result<AvifDigest> {
@@ -736,7 +688,7 @@ fn digest_avif(
     })
 }
 
-fn digest_kywd(f: &mut impl ChaseFetcher, formid: FormId) -> anyhow::Result<KywdDigest> {
+fn digest_kywd(f: &mut impl RecordSource, formid: FormId) -> anyhow::Result<KywdDigest> {
     Ok(KywdDigest {
         consumers: digest_keyword_or_av(f, formid)?,
     })
@@ -746,7 +698,7 @@ fn digest_kywd(f: &mut impl ChaseFetcher, formid: FormId) -> anyhow::Result<Kywd
 /// SPEL/PERK gates an effect on them. Reverse-`refs --type ... --paths` finds
 /// those consumers and the exact field path each one gates through.
 fn digest_keyword_or_av(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     formid: FormId,
 ) -> anyhow::Result<Vec<ConsumerGroup>> {
     let grouped = consumer_refs_by_type(f, formid, CONSUMER_REF_DEPTH, CONSUMER_REF_LIMIT)?;
@@ -893,7 +845,7 @@ fn digest_mgef(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> MgefDigest {
 /// `Actor Value` input axis, `Conditions`, and the MGEF's own one-hop
 /// `Perk to Apply`/`Equip Ability`.
 fn digest_magic_item(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     sig: &str,
     fields: &Value,
     level: f32,
@@ -1248,7 +1200,7 @@ fn digest_armo(fields: &Value, level: f32) -> ArmoDigest {
 /// [`WalkOptions::ref_limit`]); runs regardless of `--depth`, which only
 /// governs BFS enqueueing.
 fn digest_omod_mechanisms(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     header: &crate::reader::RecordHeaderInfo,
     editor_id: &str,
     fields: &Value,
@@ -1350,7 +1302,7 @@ fn digest_expl(fields: &Value, level: f32) -> ExplDigest {
 /// `level`, recursion through nested sublists) with a nesting tree
 /// `tree_depth` levels deep, and wrap the result verbatim.
 fn digest_lvli(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     formid: FormId,
     fields: &Value,
     level: f32,
@@ -1428,7 +1380,7 @@ pub fn build_refs_digest(rows: &[RefRow]) -> RefsDigest {
 /// `remaining_depth` is the hop budget left at this node, which an LVLI
 /// spends on drop-tree nesting.
 fn digest_node(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     header: &crate::reader::RecordHeaderInfo,
     editor_id: &str,
     fields: &Value,
@@ -1487,7 +1439,7 @@ fn digest_node(
 /// `bulk_get` comes back with an error entry — see module docs for why the
 /// actual search fallback is the caller's job.
 pub fn walk(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     selector: RecordSel,
     opts: &WalkOptions,
 ) -> anyhow::Result<WalkResult> {

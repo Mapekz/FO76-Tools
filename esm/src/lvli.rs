@@ -39,13 +39,9 @@
 //! flagged unverified rather than assumed — see [`DropOptions::level`].
 
 use crate::FormId;
-use crate::chase::ChaseFetcher;
 use crate::curves::eval as curve_eval;
-use crate::walk::{bulk_fetch_map, dedup_sorted, flatten_condition_rows, stub_formid};
-// Only referenced by the fake-fetcher test harness below (`by_sel`'s type in
-// production code is inferred from `bulk_fetch_map`'s return, never named).
-#[cfg(test)]
-use crate::BulkRecordEntry;
+use crate::fields::{dedup_sorted, flatten_condition_rows, stub_formid};
+use crate::source::{RecordSource, bulk_fetch_map};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -639,7 +635,7 @@ fn merge_leaf(
 /// carries every ancestor FormID for cycle detection (push/pop around each
 /// recursive call — see call site).
 fn walk_node(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     fields: &Value,
     opts: &DropOptions,
     depth: usize,
@@ -972,7 +968,7 @@ fn walk_node(
 /// `root_formid` seeds the cycle-detection path so a list that references
 /// itself doesn't recurse forever.
 pub fn drop_table(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     root_formid: FormId,
     fields: &Value,
     opts: &DropOptions,
@@ -1019,71 +1015,8 @@ pub fn drop_table(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ResolveDepth;
-    use crate::ops::{RecordSel, RefList};
+    use crate::source::MemorySource;
     use serde_json::json;
-
-    /// Minimal `ChaseFetcher`: `drop_table` only ever calls `bulk_get`
-    /// (never `refs`), and only for GLOB values and sublist LVLI fields —
-    /// leaf targets carry everything needed inline on their own stub, so
-    /// most tests below never even populate this map.
-    struct FakeFetcher {
-        records: HashMap<String, Value>,
-    }
-
-    impl FakeFetcher {
-        fn new() -> Self {
-            Self {
-                records: HashMap::new(),
-            }
-        }
-
-        fn insert(&mut self, formid: FormId, fields: Value) {
-            self.records.insert(formid.display(), fields);
-        }
-    }
-
-    impl ChaseFetcher for FakeFetcher {
-        fn bulk_get(
-            &mut self,
-            sels: &[RecordSel],
-            _depth: ResolveDepth,
-        ) -> anyhow::Result<Vec<BulkRecordEntry>> {
-            Ok(sels
-                .iter()
-                .map(|sel| {
-                    let disp = sel.display();
-                    match self.records.get(&disp) {
-                        Some(fields) => BulkRecordEntry {
-                            sel: disp,
-                            header: None,
-                            editor_id: None,
-                            fields: Some(fields.clone()),
-                            error: None,
-                        },
-                        None => BulkRecordEntry {
-                            sel: disp,
-                            header: None,
-                            editor_id: None,
-                            fields: None,
-                            error: Some("not found".to_string()),
-                        },
-                    }
-                })
-                .collect())
-        }
-
-        fn refs(
-            &mut self,
-            _target: FormId,
-            _depth: usize,
-            _limit: usize,
-            _type_filter: &str,
-            _paths: bool,
-        ) -> anyhow::Result<RefList> {
-            unimplemented!("lvli::drop_table never calls refs()")
-        }
-    }
 
     fn glob_stub(fid: FormId, edid: &str, value: f64) -> Value {
         json!({"formid": fid.display(), "editor_id": edid, "record_type": "GLOB", "Value": value})
@@ -1294,7 +1227,7 @@ mod tests {
 
     #[test]
     fn drop_table_pool_model_matches_008308d7() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x008308D7);
         let fields = lvli_fields(
             &[],
@@ -1352,7 +1285,7 @@ mod tests {
 
     #[test]
     fn drop_table_use_all_dispenses_every_passing_entry_independently() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x10);
         let fields = lvli_fields(
             &["Use All"],
@@ -1371,7 +1304,7 @@ mod tests {
 
     #[test]
     fn drop_table_use_first_match_is_an_ordered_cascade() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x20);
         // First entry passes 10% of the time and wins outright when it does;
         // the second (unconditioned) entry only fires the other 90%.
@@ -1400,7 +1333,7 @@ mod tests {
         // flag name in BOTH vocabularies — this only comes out right if
         // "Flags 2" (when present) is trusted over "Flags" wholesale rather
         // than merging both by name.
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x30);
         let mut fields = lvli_fields(
             &[],
@@ -1419,7 +1352,7 @@ mod tests {
 
     #[test]
     fn drop_table_bridges_legacy_base_data_entries() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x40);
         let legacy_entry = json!({"Leveled List Entry": {
             "Base Data": {
@@ -1439,11 +1372,14 @@ mod tests {
 
     #[test]
     fn drop_table_recurses_and_multiplies_through_a_nested_sublist() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x50);
         let child_fid = FormId::new(0x51);
         f.insert(
             child_fid,
+            "LVLI",
+            "",
+            0,
             lvli_fields(
                 &[],
                 vec![entry_ref(target_stub(FormId::new(0x52), "WEAP", "Leaf"))],
@@ -1463,7 +1399,7 @@ mod tests {
 
     #[test]
     fn drop_table_cycle_guard_stops_self_referencing_lists() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x60);
         let fields = lvli_fields(
             &[],
@@ -1482,7 +1418,7 @@ mod tests {
 
     #[test]
     fn drop_table_minimum_level_excludes_ineligible_entries() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x70);
         let low = json!({"Leveled List Entry": {
             "Reference": target_stub(FormId::new(0x71), "MISC", "LowLevelItem"),
@@ -1506,7 +1442,7 @@ mod tests {
 
     #[test]
     fn drop_table_pool_cap_falls_back_to_mean_field_and_flags_it() {
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         let root = FormId::new(0x80);
         let entries: Vec<Value> = (0..(MAX_EXACT_POOL_ENTRIES + 1) as u32)
             .map(|i| {
@@ -1554,11 +1490,14 @@ mod tests {
     /// Three levels with every scaling factor away from 1: list and entry
     /// chance-none, quantity on a sublist and a leaf, a gated pool, Use All,
     /// and a cycle back to the root.
-    fn three_level_fixture() -> (FakeFetcher, FormId, Value) {
+    fn three_level_fixture() -> (MemorySource, FormId, Value) {
         let (root, mid, deep) = (FormId::new(0x60), FormId::new(0x61), FormId::new(0x62));
-        let mut f = FakeFetcher::new();
+        let mut f = MemorySource::new();
         f.insert(
             deep,
+            "LVLI",
+            "",
+            0,
             lvli_fields(
                 &[],
                 vec![
@@ -1575,6 +1514,9 @@ mod tests {
         y["Leveled List Entry"]["Quantity"] = json!(3.0);
         f.insert(
             mid,
+            "LVLI",
+            "",
+            0,
             lvli_fields(
                 &["Use All"],
                 vec![

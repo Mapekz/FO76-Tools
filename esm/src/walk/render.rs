@@ -15,8 +15,9 @@ use super::{
 };
 use crate::chase::{
     Evidence, EvidenceDetail, ExplosionDamage, ExplosionSummary, FetchDirection, Hop, HopKind,
-    first_array_container, is_truthy, named,
+    first_array_container,
 };
+use crate::fields::{is_ref_stub, is_truthy, named};
 use serde_json::{Value, json};
 
 /// Display cap on rendered KYWD/AVIF consumer rows per record-type group —
@@ -708,18 +709,10 @@ fn render_explosion_detail_lines(detail: &ExplosionSummary, lines: &mut Vec<Stri
     if chain {
         lines.push(format!("{indent}chain"));
     }
-    if let Some(placed) = detail
-        .placed_object
-        .as_ref()
-        .filter(|v| is_ref_stub_like(v))
-    {
+    if let Some(placed) = detail.placed_object.as_ref().filter(|v| is_ref_stub(v)) {
         lines.push(format!("{indent}placed object → {}", fmt_stub(placed)));
     }
-    if let Some(spawn) = detail
-        .spawn_projectile
-        .as_ref()
-        .filter(|v| is_ref_stub_like(v))
-    {
+    if let Some(spawn) = detail.spawn_projectile.as_ref().filter(|v| is_ref_stub(v)) {
         lines.push(format!("{indent}spawn projectile → {}", fmt_stub(spawn)));
     }
     match detail.damage.as_deref() {
@@ -737,16 +730,6 @@ fn render_explosion_detail_lines(detail: &ExplosionSummary, lines: &mut Vec<Stri
             }
         }
     }
-}
-
-/// A decoded FormID reference at [`crate::ResolveDepth::Stub`] is a
-/// `{"formid", "editor_id", "record_type"}` object — the same shape check
-/// `super::is_ref_stub` makes on the compute side, duplicated here (rather
-/// than shared) since it's the only compute-time check this render module
-/// still needs, on data (`Evidence.detail`) that arrives from `chase.rs`
-/// rather than through `super`'s own digest builders.
-fn is_ref_stub_like(v: &Value) -> bool {
-    matches!(v, Value::Object(map) if map.contains_key("formid"))
 }
 
 fn format_damage_row(row: &ExplosionDamage) -> String {
@@ -1192,7 +1175,7 @@ fn render_projectile_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
         if !parts.is_empty() {
             lines.push(format!("  {}", parts.join("  ")));
         }
-        if let Some(expl) = d.explosion.as_ref().filter(|v| is_ref_stub_like(v)) {
+        if let Some(expl) = d.explosion.as_ref().filter(|v| is_ref_stub(v)) {
             lines.push(format!("  explosion → {}", fmt_stub(expl)));
         }
         render_explosion_detail_lines(&d.summary, lines, "  ");

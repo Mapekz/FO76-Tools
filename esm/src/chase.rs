@@ -65,10 +65,12 @@
 //! targets.
 //!
 //! Composes the same operations (`Op::RecordBulk`, `Op::ReferencedBy`)
-//! in-process through the [`ChaseFetcher`] seam — no new `Op` variant; the
+//! in-process through the [`RecordSource`] seam — no new `Op` variant; the
 //! pure logic here doesn't know where its records come from.
 
+use crate::fields::{is_ref_stub, is_truthy, named};
 use crate::ops::RecordSel;
+use crate::source::RecordSource;
 use crate::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
@@ -165,7 +167,7 @@ pub(crate) fn include_alternatives(fields: &Value) -> Vec<IncludeAlternative> {
         .into_iter()
         .flatten()
         .filter_map(|inc| {
-            let omod = inc.get("Mod").filter(|v| is_formid_stub(v))?.clone();
+            let omod = inc.get("Mod").filter(|v| is_ref_stub(v))?.clone();
             let minimum_level = inc
                 .get("Minimum Level")
                 .and_then(Value::as_u64)
@@ -179,31 +181,6 @@ pub(crate) fn include_alternatives(fields: &Value) -> Vec<IncludeAlternative> {
 }
 
 // ─── fetch seam ─────────────────────────────────────────────────────────────
-
-/// Everything [`chase`] needs from the outside world: a bulk record fetch
-/// (`Op::RecordBulk`) and a reverse-reference walk (`Op::ReferencedBy`).
-///
-/// Mirrors the Python prototype's `EsmGateway`/`FakeGateway` seam — keeping
-/// all I/O out of the pure walk/classification logic below, so tests can
-/// exercise `chase()` against a `FakeFetcher` with no real ESM involved. The
-/// concrete implementor (`DbFetcher` in `src/ops/analysis.rs`) holds the open
-/// `Database`; `chase()` itself only deals in selectors and FormIDs.
-pub trait ChaseFetcher {
-    fn bulk_get(
-        &mut self,
-        sels: &[RecordSel],
-        depth: ResolveDepth,
-    ) -> anyhow::Result<Vec<BulkRecordEntry>>;
-
-    fn refs(
-        &mut self,
-        target: FormId,
-        depth: usize,
-        limit: usize,
-        type_filter: &str,
-        paths: bool,
-    ) -> anyhow::Result<RefList>;
-}
 
 // ─── output types ───────────────────────────────────────────────────────────
 
@@ -636,43 +613,8 @@ fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::E
 
 // ─── schema helpers (pure `serde_json::Value` walking) ─────────────────────
 
-/// Extract the human name from a `{"value":.., "name":..}` schema enum
-/// object, or return the value unchanged if it isn't wrapped that way.
-/// `pub(crate)` so `esm::walk::render`'s `summarize_effect` (moved out of
-/// this module — see the module docs) can reuse it rather than duplicating
-/// the same enum-unwrap logic.
-pub(crate) fn named(field: Option<&Value>) -> Value {
-    match field {
-        Some(Value::Object(map)) => map
-            .get("name")
-            .cloned()
-            .unwrap_or_else(|| field_or_null(field)),
-        Some(other) => other.clone(),
-        None => Value::Null,
-    }
-}
-
 fn field_or_null(field: Option<&Value>) -> Value {
     field.cloned().unwrap_or(Value::Null)
-}
-
-fn is_formid_stub(value: &Value) -> bool {
-    matches!(value, Value::Object(map) if map.contains_key("formid"))
-}
-
-/// Python-truthiness for a JSON value (`None`/`0`/`""`/`[]`/`{}`/`false` are
-/// falsy, matching the prototype's bare `if x:` checks throughout).
-/// `pub(crate)` — same reuse reason as [`named`].
-pub(crate) fn is_truthy(v: Option<&Value>) -> bool {
-    match v {
-        None => false,
-        Some(Value::Null) => false,
-        Some(Value::Bool(b)) => *b,
-        Some(Value::Number(n)) => n.as_f64().map(|f| f != 0.0).unwrap_or(true),
-        Some(Value::String(s)) => !s.is_empty(),
-        Some(Value::Array(a)) => !a.is_empty(),
-        Some(Value::Object(o)) => !o.is_empty(),
-    }
 }
 
 /// `collect_formid_paths` (`src/lib.rs`) builds paths as dot-joined JSON
@@ -754,7 +696,7 @@ fn mgef_targets_in_effects_array(effects: &[Value]) -> Vec<Value> {
         let Some(base) = inner.get("Base Effect") else {
             continue;
         };
-        if !is_formid_stub(base) {
+        if !is_ref_stub(base) {
             continue;
         }
         let rt = base
@@ -931,7 +873,7 @@ pub(crate) fn summarize_explosion(fields: &Value) -> ExplosionSummary {
         if is_truthy(Some(&stagger)) {
             summary.stagger = Some(stagger);
         }
-        if let Some(ipds) = d.get("Impact Data Set").filter(|v| is_formid_stub(v)) {
+        if let Some(ipds) = d.get("Impact Data Set").filter(|v| is_ref_stub(v)) {
             summary.impact_data_set = Some(
                 ipds.get("editor_id")
                     .cloned()
@@ -943,13 +885,10 @@ pub(crate) fn summarize_explosion(fields: &Value) -> ExplosionSummary {
                 .and_then(Value::as_array)
                 .is_some_and(|flags| flags.iter().any(|f| f.as_str() == Some("Chain"))),
         );
-        summary.placed_object = d
-            .get("Placed Object")
-            .filter(|v| is_formid_stub(v))
-            .map(stub);
+        summary.placed_object = d.get("Placed Object").filter(|v| is_ref_stub(v)).map(stub);
         summary.spawn_projectile = d
             .get("Spawn Projectile")
-            .filter(|v| is_formid_stub(v))
+            .filter(|v| is_ref_stub(v))
             .map(stub);
     }
 
@@ -1016,7 +955,7 @@ fn projectile_evidence(
         if is_truthy(Some(&proj_type)) {
             detail.kind = Some(proj_type);
         }
-        if let Some(expl) = data.get("Explosion").filter(|v| is_formid_stub(v)) {
+        if let Some(expl) = data.get("Explosion").filter(|v| is_ref_stub(v)) {
             detail.explosion = Some(stub(expl));
             let expl_fid = expl.get("formid").and_then(Value::as_str).unwrap_or("");
             if let Some(entry) = expl_by_sel.get(expl_fid)
@@ -1109,7 +1048,7 @@ fn classify_property_row(
         evidence: Vec::new(),
     };
 
-    if !is_formid_stub(&value1) {
+    if !is_ref_stub(&value1) {
         return (hop, None);
     }
 
@@ -1177,7 +1116,7 @@ enum FetchDest {
 /// level). An OMOD whose includes are alternatives contributes only its own
 /// properties.
 fn collect_property_sources(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     root_fields: &Value,
     root_flags: u32,
 ) -> anyhow::Result<Vec<(Vec<Value>, Option<Value>)>> {
@@ -1261,7 +1200,7 @@ fn collect_property_sources(
 /// SPEL/PERK grouped under separate headers) — factored here so the `refs`
 /// call sequence isn't duplicated between the two callers.
 pub(crate) fn consumer_refs_by_type(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     target_fid: FormId,
     depth: usize,
     limit: usize,
@@ -1279,7 +1218,7 @@ pub(crate) fn consumer_refs_by_type(
 /// out just the `Effects[N]` entry each `--paths` field path points at (see
 /// module docs, pattern 1/3).
 fn reverse_chase(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     target: &Value,
     depth: usize,
     limit: usize,
@@ -1356,7 +1295,7 @@ fn reverse_chase(
 /// evidence list; a source with no MGEF carrying a pass-through field
 /// contributes nothing.
 fn mgef_pass_through(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     sources: &[(usize, Vec<Value>)],
 ) -> anyhow::Result<Vec<(usize, Evidence)>> {
     let mut all_targets: Vec<Value> = Vec::new();
@@ -1417,11 +1356,11 @@ fn build_root_stub(entry: &BulkRecordEntry, fields: &Value) -> RootStub {
 /// `Data.Properties[]` walk ([`omod_chase`]); PERK/SPEL/ALCH/ENCH get the
 /// `Effects[]` walk ([`effect_chase`]); anything else is rejected.
 ///
-/// `f` is anything implementing [`ChaseFetcher`] — normally a
+/// `f` is anything implementing [`RecordSource`] — normally a
 /// `Backend`-backed fetcher (see `cmd_chase` in `src/bin/cli.rs`), or a fake
 /// for tests (see `tests/chase.rs`).
 pub fn chase(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     selector: RecordSel,
     opts: &ChaseOptions,
 ) -> anyhow::Result<ChaseTree> {
@@ -1473,7 +1412,7 @@ pub fn chase(
 /// see that module's `digest_node`. Building the `RootStub` is cheap and the
 /// caller doesn't need to have paid for a fresh `bulk_get` first.
 pub(crate) fn omod_chase(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     root: RootStub,
     fields: &Value,
     root_flags: u32,
@@ -1486,7 +1425,7 @@ pub(crate) fn omod_chase(
     for (properties, _) in &sources {
         for prop in properties {
             let value1 = field_or_null(prop.get("Value 1"));
-            if !is_formid_stub(&value1) {
+            if !is_ref_stub(&value1) {
                 continue;
             }
             let rt = value1
@@ -1639,7 +1578,7 @@ pub(crate) fn omod_chase(
         // Only demote when we successfully fetched the KYWD's own record —
         // without Type/Notes we can't build the synthetic tag evidence the
         // walk renderer expects, and a failed lookup leaves the hop as a
-        // KeywordHook dead-end (fixture FakeFetchers that omit KYWD bodies).
+        // KeywordHook dead-end (test sources that omit KYWD bodies).
         let Some(fields) = kywd_fields_from_map(&kywd_by_sel, fid) else {
             continue;
         };
@@ -1673,7 +1612,7 @@ pub(crate) fn omod_chase(
 /// with nothing to chase. Never reverse-chases — these records already carry
 /// their mechanic inline, unlike an OMOD's indirect property-row mechanism.
 fn effect_chase(
-    f: &mut impl ChaseFetcher,
+    f: &mut impl RecordSource,
     root: RootStub,
     fields: &Value,
 ) -> anyhow::Result<ChaseTree> {
@@ -1694,7 +1633,7 @@ fn effect_chase(
 
         if let Some(inner) = inner_obj {
             if let Some(base) = inner.get("Base Effect")
-                && is_formid_stub(base)
+                && is_ref_stub(base)
             {
                 kind = EffectHopKind::BaseEffect;
                 target = Some(stub(base));
@@ -1702,7 +1641,7 @@ fn effect_chase(
             if target.is_none() {
                 for key in PERK_EFFECT_TARGET_KEYS {
                     if let Some(t) = inner.get(key)
-                        && is_formid_stub(t)
+                        && is_ref_stub(t)
                     {
                         kind = EffectHopKind::ForwardTarget;
                         target = Some(stub(t));
@@ -1781,27 +1720,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn named_extracts_name_from_enum_object() {
-        let v = json!({"value": 31, "name": "Keywords"});
-        assert_eq!(named(Some(&v)), json!("Keywords"));
-    }
-
-    #[test]
-    fn named_passes_through_non_enum_values() {
-        assert_eq!(named(Some(&json!(1.5))), json!(1.5));
-        assert_eq!(named(None), Value::Null);
-    }
-
-    #[test]
-    fn is_formid_stub_detects_formid_key() {
-        assert!(is_formid_stub(
-            &json!({"formid": "0x123", "record_type": "KYWD"})
-        ));
-        assert!(!is_formid_stub(&json!(1.5)));
-        assert!(!is_formid_stub(&json!({"editor_id": "x"})));
-    }
-
-    #[test]
     fn first_array_container_isolates_first_index() {
         assert_eq!(
             first_array_container("Effects[1].Effect.Conditions.Conditions[0].Parameter 1"),
@@ -1869,18 +1787,6 @@ mod tests {
             stub(&from_ref_row),
             json!({"formid": "0x2", "editor_id": "f", "record_type": "SPEL"})
         );
-    }
-
-    #[test]
-    fn is_truthy_matches_python_semantics() {
-        assert!(!is_truthy(None));
-        assert!(!is_truthy(Some(&Value::Null)));
-        assert!(!is_truthy(Some(&json!(0))));
-        assert!(!is_truthy(Some(&json!(""))));
-        assert!(!is_truthy(Some(&json!([]))));
-        assert!(!is_truthy(Some(&json!({}))));
-        assert!(is_truthy(Some(&json!(1))));
-        assert!(is_truthy(Some(&json!("x"))));
     }
 
     #[test]
