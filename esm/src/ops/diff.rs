@@ -20,13 +20,15 @@ pub struct DiffArgs {
     pub options: DiffOptions,
 }
 
-/// Diff two open databases and apply the optional record-type filter — the
-/// body of `Op::Diff`, shared by [`crate::host::Host::run`], the CLI's
+/// Diff two open databases, limited to `record_type` when set — the body of
+/// `Op::Diff`, shared by [`crate::host::Host::run`], the CLI's
 /// source-override path and the N-API binding.
 pub fn diff(db_a: &Database, db_b: &Database, args: &DiffArgs) -> anyhow::Result<DiffResult> {
-    let mut result = diff_databases_with(db_a, db_b, &args.options)?;
-    crate::diff::apply_type_filter(&mut result, &args.record_type);
-    Ok(result)
+    let mut options = args.options.clone();
+    if args.record_type.is_some() {
+        options.only_type = args.record_type.clone();
+    }
+    diff_databases_with(db_a, db_b, &options)
 }
 
 pub(super) fn needs_two_databases(_db: &Database, _args: &DiffArgs) -> anyhow::Result<DiffResult> {

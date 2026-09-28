@@ -22,6 +22,12 @@ suppress_noise: boolean,
  */
 exclude_types: Array<string>, 
 /**
+ * Diff only records of this 4-character type. Skipped records are never
+ * decoded, so a one-type diff costs one type's worth; noise stage 5's
+ * frequencies are then counted over this type alone.
+ */
+only_type: string | null, 
+/**
  * Minimum appearance count for a `(leaf_name, value)` pair to be treated
  * as a serializer default and stripped when `form_version`s differ
  * (issue #22). Measured on the 20260710→20260717 snapshot: N=100 lands

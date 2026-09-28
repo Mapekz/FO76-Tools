@@ -1030,6 +1030,34 @@ fn bodies_none_skips_fields_both_sides() {
     );
 }
 
+/// `only_type` keeps one record type and never decodes the others.
+#[test]
+fn diff_only_type_keeps_one_type() {
+    let mut misc_subs = Vec::new();
+    append_subrecord(&mut misc_subs, b"EDID", &cstr("OldMisc"));
+    let mut misc_recs = Vec::new();
+    append_record(&mut misc_recs, b"MISC", 1, &misc_subs);
+    let mut book_subs = Vec::new();
+    append_subrecord(&mut book_subs, b"EDID", &cstr("NewBook"));
+    let mut book_recs = Vec::new();
+    append_record(&mut book_recs, b"BOOK", 2, &book_subs);
+
+    let mut buf_a = tes4_header();
+    buf_a.extend(wrap_grup(b"MISC", &misc_recs));
+    let mut buf_b = tes4_header();
+    buf_b.extend(wrap_grup(b"BOOK", &book_recs));
+    let pair = esm_pair(&buf_a, &buf_b, "diff_only_type");
+
+    let opts = DiffOptions {
+        only_type: Some("book".into()),
+        ..Default::default()
+    };
+    let result = diff_databases_with(&pair.a, &pair.b, &opts).expect("diff");
+    assert_eq!(result.added.len(), 1);
+    assert_eq!(result.added[0].record_type, "BOOK");
+    assert!(result.removed.is_empty(), "MISC is outside only_type");
+}
+
 // ---------------------------------------------------------------------------
 // DiffOptions: exclude_types
 // ---------------------------------------------------------------------------

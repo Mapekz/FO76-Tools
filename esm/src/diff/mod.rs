@@ -73,6 +73,10 @@ pub struct DiffOptions {
     /// 4-character record-type signatures (e.g. `["LAND", "NAVM"]`) to omit
     /// entirely from `added`, `removed`, and `changed`.
     pub exclude_types: Vec<String>,
+    /// Diff only records of this 4-character type. Skipped records are never
+    /// decoded, so a one-type diff costs one type's worth; noise stage 5's
+    /// frequencies are then counted over this type alone.
+    pub only_type: Option<String>,
     /// Minimum appearance count for a `(leaf_name, value)` pair to be treated
     /// as a serializer default and stripped when `form_version`s differ
     /// (issue #22). Measured on the 20260710→20260717 snapshot: N=100 lands
@@ -90,6 +94,7 @@ impl Default for DiffOptions {
             bodies: BodyDetail::Full,
             suppress_noise: true,
             exclude_types: Vec::new(),
+            only_type: None,
             restamp_default_min_count: 100,
         }
     }
@@ -278,8 +283,8 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 /// (`noise::strip_localization_flip_text`).
 ///
 /// `opts.exclude_types` omits matching 4-character signatures from `added`,
-/// `removed`, and `changed` outright — checked before any payload
-/// decompression or decode for that record.
+/// `removed`, and `changed` outright, and `opts.only_type` everything but one
+/// — checked before any payload decompression or decode for that record.
 ///
 /// When either database has a localization table loaded, each `RecordStub`
 /// is enriched with `name` (FULL) and `description` (DESC). `DiffResult`
@@ -299,6 +304,10 @@ pub fn diff_databases_with(
         .iter()
         .map(|s| s.to_uppercase())
         .collect();
+    let only_type = opts.only_type.as_deref().map(str::to_uppercase);
+    let skip = |sig: &str| {
+        exclude_types.contains(sig) || only_type.as_deref().is_some_and(|only| only != sig)
+    };
     let depth = opts.bodies.resolve_depth();
 
     let a_ids: HashSet<FormId> = a.index.iter_form_ids().collect();
@@ -308,7 +317,7 @@ pub fn diff_databases_with(
     let mut added = Vec::new();
     for id in b_ids.difference(&a_ids) {
         let meta = b.index.get_by_formid(*id).expect("present in b_ids");
-        if exclude_types.contains(meta.signature.as_str()) {
+        if skip(meta.signature.as_str()) {
             continue;
         }
         let mut stub = record_stub_from_db(b, &meta, *id)?;
@@ -332,7 +341,7 @@ pub fn diff_databases_with(
     let mut removed = Vec::new();
     for id in a_ids.difference(&b_ids) {
         let meta = a.index.get_by_formid(*id).expect("present in a_ids");
-        if exclude_types.contains(meta.signature.as_str()) {
+        if skip(meta.signature.as_str()) {
             continue;
         }
         let mut stub = record_stub_from_db(a, &meta, *id)?;
@@ -370,7 +379,7 @@ pub fn diff_databases_with(
             .get_by_formid(id)
             .expect("present in a_ids/b_ids intersection");
 
-        if exclude_types.contains(meta_a.signature.as_str()) {
+        if skip(meta_a.signature.as_str()) {
             continue;
         }
 
@@ -650,17 +659,6 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
         name: None,
         description: None,
     })
-}
-
-/// Apply optional record-type filter to a diff result in-place.
-pub fn apply_type_filter(result: &mut DiffResult, record_type: &Option<String>) {
-    if let Some(sig) = record_type {
-        let sig = sig.to_uppercase();
-        result.added.retain(|s| s.record_type == sig);
-        result.removed.retain(|s| s.record_type == sig);
-        result.changed.retain(|d| d.stub.record_type == sig);
-        // ref_names is a display sidecar — keep unrestricted.
-    }
 }
 
 /// Recursive JSON diff.  Returns a sparse object with only changed fields.

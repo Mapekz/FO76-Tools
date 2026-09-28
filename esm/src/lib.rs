@@ -37,9 +37,7 @@ use crate::tree::ChildRef;
 use crate::wildcard::wildcard_match;
 use anyhow::{Context, bail};
 pub use decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
-pub use diff::{
-    BodyDetail, DiffOptions, DiffResult, RecordDiff, RecordStub, RefName, apply_type_filter,
-};
+pub use diff::{BodyDetail, DiffOptions, DiffResult, RecordDiff, RecordStub, RefName};
 pub use formid::{FormId, FormIdBase};
 pub use index::{CacheInventory, SearchMeta, cache_inventory};
 pub use ops::{
