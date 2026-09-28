@@ -561,10 +561,15 @@ def build_arg_parser():
     return ap
 
 
-def main(argv=None) -> int:
+def main(argv=None, *, client=None) -> int:
+    """`client` replaces the live `esmcli.EsmGateway` (tests pass a
+    fixture-backed stand-in)."""
     args = build_arg_parser().parse_args(argv)
     gateway = None
-    if not args.no_esm and args.old_esm and args.new_esm:
+    live = not args.no_esm and args.old_esm and args.new_esm
+    if live and client is not None:
+        gateway = client
+    elif live:
         try:
             gateway = eg.EsmGateway(args.esm_bin)
         except eg.EsmError as exc:
@@ -572,7 +577,7 @@ def main(argv=None) -> int:
     try:
         payload = run_check(args.out_dir, gateway, args.old_esm, args.new_esm)
     finally:
-        if gateway is not None and hasattr(gateway, "close"):
+        if gateway is not None and gateway is not client:
             gateway.close()
     print_summary(payload)
     eprint(f"wrote {layout.work_claims_check_json(args.out_dir)}")

@@ -30,41 +30,43 @@ Run commands from `patch-notes/`; `justfile` owns the recipes.
 ## Pipeline
 
 The patch-notes pipeline has a **mechanical stage** (deterministic Python, no LLM) and a
-**narrative stage** (the `/patch-notes` skill in `skill/`). The mechanical stage runs as `just
-run OLD NEW`, which drives `pn/make_patch_notes.py` through a fixed order:
+**narrative stage** (the `/patch-notes` skill in `skill/`). The mechanical stage is `pn run`
+(`pn/make_patch_notes.py`), in a fixed order:
 
 ```
 esm diff (subprocess)                 → diff.json
   │
-render_comprehensive.py  (Tool 1)     → comprehensive.json
+render_comprehensive.py               → comprehensive.json
   │   uses change_entries.py's ChangeEntry construction + array-diff reading
   ▼
-build_bundles.py         (Tool 2)     → bundles.json
+build_bundles.py                      → bundles.json
   │   clusters related records (weapon + mod slots + drop list + unique keyword)
   ▼
-run_lints.py              (Tool 3)    → lints.json (each lint names its bundle_id)
-  │   rule registry, consults esm_gateway.py's EsmGateway for reference-graph checks
+run_lints.py                          → lints.json (each lint names its bundle_id)
+  │   rule registry, consults esmcli's EsmGateway for reference-graph checks
   ▼
 patchnotes_lib.py manifest helpers    → manifest.json
 ```
 
-`triage_bundles.py` runs after this (also mechanical) to assign each bundle a tier — `rollout`,
-`deep`, `brief`, `drop`, or `ambiguous` — against `patch_notes_tiers.json`'s rules, writing
-`work/triage.json`, `work/deep-slice.json`, `work/ambiguous.json`, `work/brief-lines.md`, and
-`work/rollouts.md`. `esm_gateway.py`'s `EsmGateway` is the one seam every stage above uses to
-reach the `esm` CLI — `bulk_get`, `list_type`, `refs`, `diff` — so nothing else in
-`pn/` shells out to `esm` directly.
+`triage_bundles.py` then assigns each bundle a tier — `rollout`, `deep`, `brief`, `drop`, or
+`ambiguous` — against `patch_notes_tiers.json`'s rules, writing `work/triage.json`,
+`work/deep-slice.json`, `work/ambiguous.json`, `work/brief-lines.md`, and `work/rollouts.md`.
+`esmcli`'s `EsmGateway` is the one seam every stage uses to reach the `esm` CLI — `bulk_get`,
+`list_type`, `refs`, `diff` — so nothing else in `pn/` shells out to `esm`, apart from the
+cache build in `workflow.prepare`.
 
-The **narrative stage** takes over from `work/deep-slice.json`/`ambiguous.json` onward: the
-`/patch-notes` skill (`skill/SKILL.md`, run with the repo root as cwd)
-fans out 1-2 deep-writer agents (session model) armed with `deep-writer-prompt.md`/`style-guide.md`/`kb/`
-over the DEEP tier, resolves the `ambiguous` tier with one assessor pass, and assembles the
-final `patch-summary.md`, chunked for Discord by `pn/discord_chunker.py` and finalized via
-`pn/update_manifest.py`. Two deterministic gates sit between the writers and the summary:
-`pn/check_claims.py` re-derives every number a writer claimed (from `comprehensive.json`
-or live `esm` lookups) and `pn/check_coverage.py` asserts every DEEP bundle id is covered by
-exactly one draft and reaches the summary or `work/cuts.json`; `pn/fetch_official_notes.py`
-extracts the newest section of an official patch-notes page for the discrepancy callouts.
+The skill drives everything through four verbs in `pn/workflow.py`, each printing a JSON
+summary on stdout: `prepare` (snapshot resolution, the reuse check, the mechanical stage,
+the new snapshot's cache, triage, and the DEEP slices, split in two above 20 bundles),
+`merge-assessment` (the assessor's tiers, then re-slicing), `gate` (`check_claims.py`
+re-derives every number a writer claimed, from `comprehensive.json` or live `esm` lookups;
+`check_coverage.py` asserts every DEEP bundle id is covered by exactly one draft and, with
+`--summary`, reaches the summary or `work/cuts.json`), and `publish` (validates the review,
+chunks `patch-summary.md` for Discord, records the narrative stage in the manifest).
+Between them, 1-2 deep-writer agents armed with `deep-writer-prompt.md`/`style-guide.md`/`kb/`
+write the DEEP tier, one assessor resolves the `ambiguous` tier, and a cold reviewer reads the
+result. `fetch_official_notes.py` extracts the newest section of an official patch-notes page
+for the discrepancy callouts.
 
 ## Where to tweak what
 

@@ -79,7 +79,7 @@ changes under a shared heading rather than emitting stub sections.
 
 ## Discord rendering constraints
 
-The chunker (`patch-notes/pn/discord_chunker.py`) converts the summary to Discord-safe markdown, then
+The chunker (`pn publish`, via `patch-notes/pn/discord_chunker.py`) converts the summary to Discord-safe markdown, then
 splits it into ≤1900-char posts. Concretely, it:
 
 - Turns GFM tables into monospace code-block tables — and **strips all inline markdown from

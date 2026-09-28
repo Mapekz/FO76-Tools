@@ -20,9 +20,14 @@ from pn import (
     slice_bundles,
     triage_bundles,
     update_manifest,
+    workflow,
 )
 
 VERBS = {
+    "prepare": (workflow.prepare, "skill step: snapshots, pipeline (or reuse), cache, triage, slices"),
+    "merge-assessment": (workflow.merge_assessment, "skill step: fold the assessor's tiers in, re-slice"),
+    "gate": (workflow.gate, "skill step: claims + coverage over the drafts (--summary: and summary)"),
+    "publish": (workflow.publish, "skill step: validate the review, chunk for Discord, record manifest"),
     "run": (make_patch_notes.main, "mechanical stage: esm diff through manifest.json"),
     "render": (render_comprehensive.main, "diff.json -> comprehensive.json"),
     "bundles": (build_bundles.main, "comprehensive.json -> bundles.json"),

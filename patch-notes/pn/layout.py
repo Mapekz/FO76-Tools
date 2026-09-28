@@ -102,6 +102,12 @@ def work_deep_slice_json(out_dir: Path) -> Path:
     return work_dir(out_dir) / "deep-slice.json"
 
 
+def work_deep_slice_part_json(out_dir: Path, part: int) -> Path:
+    """One writer's half of `deep-slice.json` when the DEEP tier is split
+    across two writers (`workflow.split_deep_slice`)."""
+    return work_dir(out_dir) / f"deep-slice.part{part}.json"
+
+
 def work_ambiguous_json(out_dir: Path) -> Path:
     """Compact per-bundle field-diff digests for every `ambiguous`-tier
     bundle -- small enough to paste into one assessor-agent prompt."""

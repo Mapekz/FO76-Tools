@@ -501,6 +501,7 @@ def main(argv=None, *, client=None):
         pipeline_version=schemas.PIPELINE_VERSION,
         counts=manifest_counts,
         localized=localized,
+        exclude_type=exclude_type,
     )
     manifest["stages"]["mechanical"]["completed_at"] = _now_iso()
     manifest["stages"]["mechanical"]["files"] = dict(files_written)

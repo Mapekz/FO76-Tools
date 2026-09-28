@@ -125,9 +125,9 @@ Bundling runs one reverse-reference search per diff record, serially, and keeps 
 memory. A landscaping pass adds or moves hundreds of thousands of REFRs, so bundling grows without
 bound while the diff itself finishes in seconds.
 
-**Symptom:** 100K+ REFR entries in the diff, no `bundles.json`, and `make_patch_notes.py` growing
+**Symptom:** 100K+ REFR entries in the diff, no `bundles.json`, and the pipeline growing
 ~350 MB a minute while its `esm batch` child sits near 100% CPU.
-**Fix:** run `make_patch_notes.py ... --exclude-type LAND,NAVM,REFR`. Summarize placements
+**Fix:** re-run `pn prepare ... --exclude-type LAND,NAVM,REFR`. Summarize placements
 separately from a REFR-only diff (`esm diff OLD NEW --json --bodies stub --type REFR`) as
 counts by base object plus placements of newly added base objects.
 **Example:** 20260903→20260914, 225K of 281K diff records were REFR (Skyline Valley rework);

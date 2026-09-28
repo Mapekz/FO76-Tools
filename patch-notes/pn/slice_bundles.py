@@ -22,12 +22,12 @@ from pn import formids, jsonio, layout, schemas
 # Tunables
 # --------------------------------------------------------------------------
 
-# Above this comprehensive.json size, --extract still loads the whole file
+# Above this comprehensive.json size, extraction still loads the whole file
 # (plain json.load) but warns to stderr first, since this script has no
 # streaming JSON parser available (stdlib only).
 COMPREHENSIVE_WARN_BYTES = 200 * 1024 * 1024
 
-# Cap on the number of ref_names entries returned by --extract.
+# Cap on the number of ref_names entries an extraction returns.
 MAX_REF_NAMES = 200
 
 # --------------------------------------------------------------------------
@@ -57,7 +57,7 @@ def _collect_formid_strings(value, out=None):
 
 def extract_records(comprehensive_data, requested):
     """
-    Core of --extract: given the parsed comprehensive.json dict and a list
+    Core of `pn extract`: given the parsed comprehensive.json dict and a list
     of requested FormID strings (case-insensitive 0x-hex), return
     {"records": {fid: <entry or None>}, "ref_names": {...capped}}.
 

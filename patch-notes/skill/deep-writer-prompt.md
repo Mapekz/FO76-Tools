@@ -70,12 +70,12 @@ every one to ground truth. Run all commands from the repo root.
 
 ## CLAIMS — every number you state is a claim record
 
-`check_claims.py` re-verifies your report against the data; a number it cannot verify fails
+The claims gate (`pn gate`) re-verifies your report against the data; a number it cannot verify fails
 the run and comes back to you. For every figure in the draft, add one entry to the report's
 `claims` array:
 
 - **a changed field:** `{"record": "<FormID or EditorID>", "path": "<ChangeEntry path>",
-  "from": <old>, "to": <new>}` — `path` is exactly the `path` string `--extract` shows
+  "from": <old>, "to": <new>}` — `path` is exactly the `path` string `pn extract` shows
   (`"Data / Damage"`). An array row is addressed by its `key_display`:
   `"Effects / [Effect=0x0004B2E1] / Magnitude"`; a claim on the array itself
   (`"path": "Effects"`) compares the row counts.
