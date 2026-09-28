@@ -11,9 +11,9 @@ subjects stay as they are.
 - **Types in use**: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`. Pick
   the narrowest one that fits; don't invent a type for a one-off commit. Dependency and toolchain
   bumps are `chore(deps)`, named after the `deps` CI job that gates them.
-- **Scope** is the subproject (`esm`, `ba2`, `esm-viewer`, or `napi` for `esm/bindings/napi`) or a
-  cross-cutting area (`repo`, `ci`, `deps`, `docs`, `patch-notes`, `esm-cli`). A path-shaped scope is
-  fine when it is more precise, as `esm/tools` already is for the Python patch-notes tooling, and a
+- **Scope** is the subproject (`esm`, `ba2`, `esm-viewer`, `patch-notes`, or `napi` for
+  `esm/bindings/napi`) or a cross-cutting area (`repo`, `ci`, `deps`, `docs`, `esm-cli`). A
+  path-shaped scope is fine when it is more precise, as `esm/tools` is for the schema tooling, and a
   change that lands in two subprojects names both (`docs(esm/ba2): ...`). Omit the scope only when
   the change is genuinely repo-wide.
 - **Breaking changes**: append `!` after the type/scope (`feat(esm)!: ...`) and say what breaks in

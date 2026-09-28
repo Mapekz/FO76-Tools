@@ -144,7 +144,7 @@ are generated from that list, and each op's `Args` struct and function live in a
  CLI (bin/cli/)             esm batch (bin/cli/)        bindings/napi
    one command, one Host      one JSON request per       EsmHost.run(esm, op)
                               stdin line; used by        (async, one Host)
-                              tools/esm_gateway.py
+                              ../patch-notes/
 ```
 
 Every surface runs in-process; there is no server. Opening a database maps its cache sections
@@ -156,7 +156,7 @@ lock. `src/bin/cli/main.rs` wraps its `Host` in a `Backend` newtype whose `run` 
 heartbeat (`progress::read`) to stderr after a grace period, so a cold build shows visible
 progress instead of looking hung.
 
-`esm batch` is how scripts make many calls cheaply: `tools/esm_gateway.py`'s `EsmGateway` owns one
+`esm batch` is how scripts make many calls cheaply: the patch-notes pipeline's `EsmGateway` owns one
 `esm batch` child, sends it one `{"esm", "op"}` request per line (`ops::Request`), and reads one
 `ops::Response` envelope per line back.
 
@@ -237,49 +237,16 @@ linear interpolation used by crafting quantities, weapon bash damage, and LVLI c
 `hardcoded.rs` is the small lookup both `decode`'s FormID resolver and `refs`'s Direct-selector
 resolution fall back to on an index miss.
 
-## Python mechanical pipeline (`esm/tools/`)
+## Schema tooling (`tools/`)
 
-The patch-notes pipeline has a **mechanical stage** (deterministic Python, no LLM) and a
-**narrative stage** (the repo-root `/patch-notes` skill). The mechanical stage runs as `just
-patch-notes OLD NEW`, which drives `tools/make_patch_notes.py` through a fixed order:
+The patch-notes pipeline lives in the repo-root `../patch-notes/` project, which reaches `esm`
+only through the CLI.
 
-```
-esm diff (subprocess)                 → diff.json
-  │
-render_comprehensive.py  (Tool 1)     → comprehensive.json
-  │   uses change_entries.py's ChangeEntry construction + array-diff reading
-  ▼
-build_bundles.py         (Tool 2)     → bundles.json
-  │   clusters related records (weapon + mod slots + drop list + unique keyword)
-  ▼
-run_lints.py              (Tool 3)    → lints.json, rewrites bundles.json's lint_ids/bug_watch
-  │   rule registry, consults esm_gateway.py's EsmGateway for reference-graph checks
-  ▼
-patchnotes_lib.py manifest helpers    → manifest.json
-```
-
-`triage_bundles.py` runs after this (also mechanical) to assign each bundle a tier — `rollout`,
-`deep`, `brief`, `drop`, or `ambiguous` — against `patch_notes_tiers.json`'s rules, writing
-`work/triage.json`, `work/deep-slice.json`, `work/ambiguous.json`, `work/brief-lines.md`, and
-`work/rollouts.md`. `esm_gateway.py`'s `EsmGateway` is the one seam every stage above uses to
-reach the `esm` CLI — `bulk_get`, `list_type`, `refs`, `diff` — so nothing else in
-`tools/` shells out to `esm` directly.
-
-The **narrative stage** takes over from `work/deep-slice.json`/`ambiguous.json` onward: the
-`/patch-notes` skill (`FO76-Tools/skills/patch-notes/`, run with `FO76-Tools/` as cwd)
-fans out 1-2 deep-writer agents (session model) armed with `deep-writer-prompt.md`/`style-guide.md`/`kb/`
-over the DEEP tier, resolves the `ambiguous` tier with one assessor pass, and assembles the
-final `patch-summary.md`, chunked for Discord by `tools/discord_chunker.py` and finalized via
-`tools/update_manifest.py`. Two deterministic gates sit between the writers and the summary:
-`tools/check_claims.py` re-derives every number a writer claimed (from `comprehensive.json`
-or live `esm` lookups) and `tools/check_coverage.py` asserts every DEEP bundle id is covered by
-exactly one draft and reaches the summary or `work/cuts.json`; `tools/fetch_official_notes.py`
-extracts the newest section of an official patch-notes page for the discrepancy callouts.
-
-**`tools/extractor/`** is the schema side of the pipeline, not the diff side: `extract.py`
+**`tools/extractor/`**: `extract.py`
 (schema generation, described above), `audit.py --gate` (the parity gate `just audit` runs),
 `hardcoded.py` (emits `schema/hardcoded_fo76.json` from xEdit's hardcoded pseudo-plugin, backing
-`src/hardcoded.rs`), and `pascal_stubs.py` (extractor support data).
+`src/hardcoded.rs`), and `pascal_stubs.py` (extractor support data). `tools/curvelookup.py`
+(with `tools/curvelib.py`) is a standalone curve-table lookup.
 
 ## Where to tweak what
 
@@ -289,9 +256,6 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 | Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too |
 | Change diff noise suppression | `src/diff/noise.rs` (`suppress_record` and the stage it names) / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
-| Add a new patch-notes lint rule | `tools/run_lints.py`'s rule registry |
-| Change bundle clustering | `tools/build_bundles.py` |
-| Change tier assignment (DEEP/BRIEF/DROP) | `tools/patch_notes_tiers.json`, `tools/triage_bundles.py` |
 | Add an N-API method | `bindings/napi/src/lib.rs`, then `just gen-types` and `cd bindings/napi && bun run build` |
 | Change a cache section's on-disk shape | its `impl SectionSpec` block (next to the type, in `index.rs` or `tree.rs`) and bump `index::CACHE_VERSION` |
 | Change OMOD mechanism classification | `src/chase.rs` |

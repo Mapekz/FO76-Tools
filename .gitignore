@@ -4,6 +4,9 @@
 # pyenv version file
 .python-version
 
+# Python bytecode
+__pycache__/
+
 # Session research scratch (kept out of version control)
 /scratch/
 

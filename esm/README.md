@@ -11,7 +11,7 @@ esm/
   src/             Engine library + the `esm` CLI
   bindings/napi/   N-API addon (esm-napi) for Electron/Node.js
   schema/          fo76.json (183 record types, embedded at compile time)
-  tools/           Schema extractor (xEdit Pascal → JSON) + patch-note scripts
+  tools/           Schema extractor (xEdit Pascal → JSON), parity audit, curve lookup
 ```
 
 The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling

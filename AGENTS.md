@@ -8,6 +8,7 @@ there is no root build. Before working in a subproject, read its scoped guidance
 | `ba2/` | Rust archive reader/writer and CLI | [ba2/AGENTS.md](ba2/AGENTS.md) |
 | `esm/` | Rust ESM reader, CLI, native addon | [esm/AGENTS.md](esm/AGENTS.md) |
 | `esm-viewer/` | Bun/Electron GUI consuming `esm/bindings/napi` | [esm-viewer/AGENTS.md](esm-viewer/AGENTS.md) |
+| `patch-notes/` | Python patch-notes pipeline and the `/patch-notes` skill | [patch-notes/AGENTS.md](patch-notes/AGENTS.md) |
 
 `esm/` and `esm-viewer/` are read-only. ESM mutation and serialization are
 permanently out of scope, not deferred. BA2 archive writing is supported.
@@ -22,7 +23,7 @@ subproject for unrelated edits.
 
 - ESM schema, extractor, or decode-coverage changes also need `just audit`.
   It reads `FO76-Tools/TES5Edit`, a symlink to the sibling workspace checkout.
-- ESM Python tooling changes need `just patch-tools-test` and `just patch-tools-lint`.
+- ESM schema-tooling (`esm/tools/`) changes need `just tools-test` and `just tools-lint`.
 - ESM's `just check` covers `bindings/napi` too; rebuild the addon with
   `bun run build` from `esm/bindings/napi` after changing it.
 - DTO or `Op` changes need `just gen-types` from `esm/`; it regenerates

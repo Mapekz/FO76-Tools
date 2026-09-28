@@ -1,0 +1,69 @@
+# Patch notes
+
+Scoped guidance for the Python patch-notes pipeline. Shared policy and validation mapping live
+in [../AGENTS.md](../AGENTS.md).
+
+## Build and validation
+
+Run commands from `patch-notes/`; `justfile` owns the recipes.
+
+- `just` runs `test` (the hermetic unittest suite: no game data, no `esm` binary) and `lint`
+  (ruff + ty, pinned to CI's versions). CI runs both.
+- `just run OLD NEW` runs the mechanical stage; the `/patch-notes` skill drives the whole run.
+- `pn/` is stdlib-only at runtime. `pn/esm_gateway.py` finds the `esm` binary at
+  `../esm/target/release/esm`, then on `PATH`.
+
+## Layout
+
+| Path | Purpose |
+|---|---|
+| `pn/` | Pipeline stages (scripts) and their tuning configs (`patch_notes_categories.json`, `patch_notes_tiers.json`) |
+| `tests/` | unittest suite, `fixtures/`, `builders.py`, and `fake_gateway.py` (the `--offline` test double) |
+| `skill/` | The `/patch-notes` skill: `SKILL.md`, the writer and review prompts, `style-guide.md`, and `kb/` |
+
+## Pipeline
+
+The patch-notes pipeline has a **mechanical stage** (deterministic Python, no LLM) and a
+**narrative stage** (the `/patch-notes` skill in `skill/`). The mechanical stage runs as `just
+run OLD NEW`, which drives `pn/make_patch_notes.py` through a fixed order:
+
+```
+esm diff (subprocess)                 → diff.json
+  │
+render_comprehensive.py  (Tool 1)     → comprehensive.json
+  │   uses change_entries.py's ChangeEntry construction + array-diff reading
+  ▼
+build_bundles.py         (Tool 2)     → bundles.json
+  │   clusters related records (weapon + mod slots + drop list + unique keyword)
+  ▼
+run_lints.py              (Tool 3)    → lints.json, rewrites bundles.json's lint_ids/bug_watch
+  │   rule registry, consults esm_gateway.py's EsmGateway for reference-graph checks
+  ▼
+patchnotes_lib.py manifest helpers    → manifest.json
+```
+
+`triage_bundles.py` runs after this (also mechanical) to assign each bundle a tier — `rollout`,
+`deep`, `brief`, `drop`, or `ambiguous` — against `patch_notes_tiers.json`'s rules, writing
+`work/triage.json`, `work/deep-slice.json`, `work/ambiguous.json`, `work/brief-lines.md`, and
+`work/rollouts.md`. `esm_gateway.py`'s `EsmGateway` is the one seam every stage above uses to
+reach the `esm` CLI — `bulk_get`, `list_type`, `refs`, `diff` — so nothing else in
+`pn/` shells out to `esm` directly.
+
+The **narrative stage** takes over from `work/deep-slice.json`/`ambiguous.json` onward: the
+`/patch-notes` skill (`skill/SKILL.md`, run with the repo root as cwd)
+fans out 1-2 deep-writer agents (session model) armed with `deep-writer-prompt.md`/`style-guide.md`/`kb/`
+over the DEEP tier, resolves the `ambiguous` tier with one assessor pass, and assembles the
+final `patch-summary.md`, chunked for Discord by `pn/discord_chunker.py` and finalized via
+`pn/update_manifest.py`. Two deterministic gates sit between the writers and the summary:
+`pn/check_claims.py` re-derives every number a writer claimed (from `comprehensive.json`
+or live `esm` lookups) and `pn/check_coverage.py` asserts every DEEP bundle id is covered by
+exactly one draft and reaches the summary or `work/cuts.json`; `pn/fetch_official_notes.py`
+extracts the newest section of an official patch-notes page for the discrepancy callouts.
+
+## Where to tweak what
+
+| Want to... | Look in |
+|---|---|
+| Add a new lint rule | `pn/run_lints.py`'s rule registry |
+| Change bundle clustering | `pn/build_bundles.py` |
+| Change tier assignment (DEEP/BRIEF/DROP) | `pn/patch_notes_tiers.json`, `pn/triage_bundles.py` |

@@ -12,15 +12,13 @@ Run commands from `esm/`; `justfile` owns the complete recipe list.
 - `just check` covers formatting, clippy and tests across the workspace,
   generated-type drift, and schema formatting. `just audit` adds TES5Edit schema
   parity.
-- `just patch-tools-test` and `just patch-tools-lint` validate Python tooling.
-- `just patch-notes OLD NEW` runs the mechanical patch-notes pipeline; use the
-  patch-notes procedure for narrative output.
+- `just tools-test` and `just tools-lint` validate the Python schema tooling in
+  `tools/` (extractor, curve lookup).
 
 ## Architecture
 
 `docs/architecture.md` owns the full picture: record read flow (bytes → schema decode →
-typed `Node` tree → `serde_json::Value`), cache lifecycle, process topology (CLI, `esm batch`, N-API, Python
-pipeline), and the feature-layer modules (`diff`, `walk`, `chase`, `lvli`, `refs`).
+typed `Node` tree → `serde_json::Value`), cache lifecycle, process topology (CLI, `esm batch`, N-API), and the feature-layer modules (`diff`, `walk`, `chase`, `lvli`, `refs`).
 Its "Where to tweak what" table is the fastest way to find the right edit point for a given
 change; domain vocabulary lives in `CONTEXT.md`, and design decisions are recorded in
 `docs/adr/`.
@@ -34,7 +32,7 @@ change; domain vocabulary lives in `CONTEXT.md`, and design decisions are record
 | Op dispatch (every surface) | `src/host.rs`, `src/ops/mod.rs` |
 | CLI / N-API | `src/bin/cli/main.rs` (+ per-family handler modules), `bindings/napi/src/lib.rs` |
 | Diff / walk / chase / lvli / refs | `src/diff/`, `src/walk/`, `src/chase.rs`, `src/lvli.rs`, `src/refs/`, with `src/source.rs` (the record-fetch seam) and `src/fields.rs` (shared decoded-JSON readers) |
-| Python patch-notes pipeline (mechanical stage) | `tools/` |
+| Schema tooling (xEdit extractor, parity audit, hardcoded forms) | `tools/extractor/` |
 
 The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling
 `../esm-viewer/` directory, not in this crate — see [`../esm-viewer/AGENTS.md`](../esm-viewer/AGENTS.md).

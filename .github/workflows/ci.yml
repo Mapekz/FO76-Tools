@@ -60,20 +60,34 @@ jobs:
 
   # ── Python tooling tests ──────────────────────────────────────────────────
   #
-  # Hermetic unittest suite (tools/tests/) plus lint and typecheck.  The suite
-  # itself needs no pip install and no game data.
+  # Hermetic unittest suites plus lint and typecheck for both Python projects:
+  # the patch-notes pipeline (patch-notes/) and esm's schema tooling
+  # (esm/tools/: extractor, curve lookup).  Neither needs a pip install or
+  # game data.
   #
-  # ruff and ty are dev-only tools invoked through uvx and are never imported by
-  # the pipeline, so esm/tools/ stays stdlib-only at runtime (no requirements.txt,
-  # no lockfile) and the tests still run on a bare python3.  Both are pinned by
-  # exact version: ty is a 0.0.x preview, so an unpinned upgrade could turn CI red
-  # on its own.  Config lives in esm/pyproject.toml ([tool.ruff] / [tool.ty] only).
+  # ruff and ty are dev-only tools invoked through uvx and are never imported at
+  # runtime, so both stay stdlib-only (no requirements.txt, no lockfile) and the
+  # tests still run on a bare python3.  Both are pinned by exact version: ty is a
+  # 0.0.x preview, so an unpinned upgrade could turn CI red on its own.  Config
+  # lives in each project's pyproject.toml ([tool.ruff] / [tool.ty] only).
   python:
-    name: python (tests / ruff / ty)
+    name: "python (${{ matrix.project }}): tests / ruff / ty"
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: patch-notes
+            dir: patch-notes
+            tests: tests
+            lint: pn/ tests/
+          - project: esm-tools
+            dir: esm
+            tests: tools/tests
+            lint: tools/
     defaults:
       run:
-        working-directory: esm
+        working-directory: ${{ matrix.dir }}
 
     steps:
       - uses: actions/checkout@v7
@@ -84,7 +98,7 @@ jobs:
           python-version: "3.14"
 
       - name: test
-        run: python3 -m unittest discover -s tools/tests
+        run: python3 -m unittest discover -s ${{ matrix.tests }}
 
       # Installed via pip rather than a setup-uv action so this depends only on
       # the Python toolchain already provisioned above.
@@ -92,10 +106,10 @@ jobs:
         run: pip install uv
 
       - name: ruff
-        run: uvx ruff@0.15.22 check tools/
+        run: uvx ruff@0.15.22 check ${{ matrix.lint }}
 
       - name: ty
-        run: uvx ty@0.0.62 check tools/
+        run: uvx ty@0.0.62 check ${{ matrix.lint }}
 
   # ── esm-viewer: lint + format + typecheck + unit tests ────────────────────
   #

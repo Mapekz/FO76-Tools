@@ -1,0 +1,136 @@
+You are drafting the deep-analysis sections of this week's Fallout 76 datamine post
+(patch {OLD_TOKEN} → {NEW_TOKEN}) for Discord. You own the bundles in your slice — chase
+every one to ground truth. Run all commands from the repo root.
+
+## INPUTS
+
+- **Your work queue:** `{SLICE_PATH}` — DEEP-tier bundles (same shape as before:
+  `{"bundles": [{"id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids"}],
+  "lints": [...]}`). Edges (`dropped via`/`mod for`/`crafts`) are your story connective tissue.
+- **Knowledge base (read BOTH, FIRST):**
+  - `{MECHANICS_KB}` — game mechanics: the OMOD chase pattern, damage-bonus taxonomy, OMOD
+    property semantics, engine counters, curve semantics. Consult before chasing; only chase
+    mechanics it doesn't cover.
+  - `{TRAPS_KB}` — changes that look real but aren't: serialization/schema-population churn,
+    text churn, semantics traps, and our own lints' known false positives. Check a diff row
+    against this **before** writing it up; most matches should produce no bullet at all.
+
+  Entries are dated — re-verify stale-looking ones with one live call.
+- **Per-record structured diff** (batch FormIDs in one call):
+  `python3 patch-notes/pn/slice_bundles.py --extract {OUT} <FORMID> [<FORMID>...]`
+- **Live verification:**
+  - `esm/target/release/esm --esm "{NEW_ESM}" get <id-or-edid> [<id2-or-edid> ...] --resolve stub --pretty`
+    — batch every FormID/EditorID you need into ONE call. 2+ selectors return a JSON array
+    (one `{"sel": ..., ...}` entry per selector, mixed FormID/EditorID, errors isolated
+    per-selector); never loop single `get`s.
+  - `esm/target/release/esm --esm "{NEW_ESM}" refs <id> --type <SIG> --paths [--depth N] [--limit N] --pretty`
+    — `--type` takes ONE 4-char record-type signature per call (run it once per referencing
+    type, e.g. once for `SPEL`, once for `PERK` — not comma-joined); `--paths` annotates each
+    row with the exact field path (e.g. `Effects[2].Conditions[0]`) that references your
+    target, so you can jump straight to the gating field instead of dumping the whole record.
+  - `esm/target/release/esm --esm "{NEW_ESM}" search "<pattern>" [--type T] --pretty`
+  - Old-side (pre-patch values): same commands with `--esm "{OLD_ESM}"`. Batch all changed
+    anchors for a bundle into one bulk `get` against `{OLD_ESM}` rather than querying
+    value-by-value.
+- **Style guide:** `{STYLE_GUIDE_PATH}` — voice and Discord formatting constraints.
+{OFFICIAL_NOTES_BLOCK}
+
+## FOR EACH BUNDLE
+
+1. **Chase the mechanic to ground truth** (`{MECHANICS_KB}`, "Chasing a unique-weapon effect"). For
+   `mod_Custom_*`/unique-effect OMODs, run
+   `esm/target/release/esm --esm "{NEW_ESM}" chase <OMOD>` FIRST (always emits classified JSON) — it automates the
+   keyword/perk-grant/direct-property walk in a handful of bulk calls and returns just the
+   gating `Effects[N]` entry, not full record dumps. `chase` also accepts a **PERK, SPEL, ALCH,
+   or ENCH selector directly** — run it on whatever the OMOD forward-fetches (or on the record
+   itself, if that's your starting point) to get its own `Effects[]` walked the same way,
+   including one automatic extra hop through an MGEF's `Perk to Apply`/`Equip Ability` when
+   present. Hand-walk with `refs --type <SIG> --paths` (and a bulk `get` on whatever it turns
+   up) only for mechanics chase doesn't cover: resolve every PERK/ENCH/SPEL/AVIF/KYWD a changed
+   property touches until you can state what the change does in player terms. An AVIF's name is
+   not its semantics — find its consumer.
+2. **Plain language first, exact delta second** (style guide's voice rule) — old → new
+   wherever the diff alone is ambiguous: batch every changed anchor's before-value into one
+   bulk `get` against the OLD esm rather than querying them one at a time. Never round, never
+   estimate; every number comes from the slice, an extract, or a live call.
+3. **Hunt silent changes — the post's core value:**
+   - Any property change NOT reflected in the item's Description → `⚠️ Undocumented:` bullet.
+   - Any Description claim contradicted by the numbers → `⚠️ Mismatch:` bullet.
+   - Fetch every anchor's description in ONE bulk `get` call, then compare; assume nothing
+     either way.
+4. **Verify before asserting**: reproduce every lint on your bundles with live `get`s — batch
+   all the affected FormIDs for a lint into one bulk call rather than looping — before writing
+   it up (irreproducible lints go in the report's `lints_not_reproduced`, never the draft).
+   Check it against `{TRAPS_KB}`'s "Lint false positives" section first — e.g.
+   `unreferenced_perk_rank` on an item-granted perk — and verify the grant path via `refs
+   "{NEW_ESM}" <perk-id> --type PCRD --paths --pretty` before calling anything orphaned. Never
+   assert liveness from an EDID prefix alone
+   (`zzz_`/`CUT_`/`DEL_`/`POST_` are heuristics); POST_ content goes only under the datamined
+   section with the standing disclaimer.
+
+## CLAIMS — every number you state is a claim record
+
+`check_claims.py` re-verifies your report against the data; a number it cannot verify fails
+the run and comes back to you. For every figure in the draft, add one entry to the report's
+`claims` array:
+
+- **a changed field:** `{"record": "<FormID or EditorID>", "path": "<ChangeEntry path>",
+  "from": <old>, "to": <new>}` — `path` is exactly the `path` string `--extract` shows
+  (`"Data / Damage"`). An array row is addressed by its `key_display`:
+  `"Effects / [Effect=0x0004B2E1] / Magnitude"`; a claim on the array itself
+  (`"path": "Effects"`) compares the row counts.
+- **a new or removed record:** `{"record": "...", "status": "added"|"removed"}`
+- **a value that did not change, or lives on a referenced record** (the granted perk's
+  magnitude, the GLOB's value, a curve point): `{"record": "...", "path": "<field path in the
+  decoded record>", "value": <v>, "side": "new"|"old"}`
+
+A derived figure (a percentage you computed) may appear in prose only when both inputs are
+claims. FormIDs go in Evidence lines; the coverage gate finds your bundle by its name,
+EditorID, or FormID, so name the item the way the style guide wants and it will be found.
+
+## DEFERRALS — do not silently skip
+
+If a bundle's story genuinely belongs to another writer's slice (check `{OTHER_SLICES}`),
+write a one-line cross-reference in the draft AND list it under `deferred` in your report
+with the FormIDs and one sentence on what you expect the other writer to cover. The
+orchestrator reconciles every deferral — an unlisted skip is a dropped story.
+
+## OUTPUT — exactly two files
+
+1. **Draft** → `{DRAFT_PATH}` — Markdown per the style guide. No absolute filesystem paths,
+   ESM filenames, or local directory names anywhere.
+2. **Report** → `{REPORT_PATH}` — JSON:
+   ```json
+   {
+     "bundles": <int>,
+     "bundles_covered": ["<every bundle id from your slice you wrote up>"],
+     "claims": [
+       {"record": "0x00568635", "path": "Data / Damage", "from": 20, "to": 25},
+       {"record": "mod_Custom_Foo", "path": "Effects / [Effect=0x0004B2E1] / Magnitude", "from": 10, "to": 15},
+       {"record": "0x0071AB00", "status": "added"},
+       {"record": "0x000E1A11", "path": "Data / Value", "value": 0.25, "side": "new"}
+     ],
+     "lints_confirmed": ["..."], "lints_not_reproduced": ["..."],
+     "unresolved": [{"what": "...", "tried": "..."}],
+     "deferred": [{"form_ids": ["..."], "expected_owner": "...", "note": "..."}],
+     "kb_proposals": [{"kind": "mechanic|trap", "entry": "<markdown, exact format below>"}]
+   }
+   ```
+   `bundles_covered` = the ids you actually wrote up (never a deferred one); the coverage gate
+   checks every DEEP id against these lists and matches deferrals by FormID. `claims` = one
+   entry per number in the draft (see CLAIMS above). `unresolved` = anything you could not
+   fully derive (the orchestrator chases these interactively). `kb_proposals` = things you derived that the KB doesn't cover yet —
+   `mechanic` for how the game works (→ `{MECHANICS_KB}`), `trap` for a change that looks real
+   but isn't, or a lint false positive (→ `{TRAPS_KB}`).
+
+### `kb_proposals` entry format — follow exactly
+
+The KB is read whole by every writer each run, so an entry that sprawls costs every future run.
+Match `{MECHANICS_KB}`'s entry format (its header) exactly, or the orchestrator will rewrite it:
+**≤10 lines total**, **exactly one** `**Example:**` (≤4 lines, FormIDs inline), present tense, no
+history of how you found it or what you first believed. If your entry refines something already
+in the KB, say so in the `entry` text (`refines: <existing heading>`) instead of writing a
+near-duplicate.
+
+Your final text reply: ≤10 lines — headline findings, bundles covered, claims count,
+unresolved count, deferred count.

@@ -9,9 +9,8 @@ record in the ESM. xEdit ships these as a pseudo-plugin at
 something to resolve those FormIDs against.
 
 This script shells out to the ``esm`` CLI (the same reader as
-``src/reader.rs``, including the XXXX oversized-subrecord rule) for ``tree``
-and ``get``, and sends ``list`` through ``esm_gateway.EsmGateway.list_type``
-per that module's "one seam" property -- see its docstring. Emits a small lookup table of ``{formid, type, editor_id}``
+``src/reader.rs``, including the XXXX oversized-subrecord rule) for ``tree``,
+``list`` and ``get``. Emits a small lookup table of ``{formid, type, editor_id}``
 entries, checked in at ``schema/hardcoded_fo76.json`` since the TES5Edit
 checkout is not always present (same rationale as ``schema/fo76.json``).
 """
@@ -24,11 +23,6 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR.parent))
-
-import esm_gateway  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 TES5 = ROOT.parent / "TES5Edit"
@@ -97,7 +91,7 @@ def extract_full(record: dict[str, Any]) -> str | None:
     return None
 
 
-def extract(esp_path: Path, esm_bin: str, client: esm_gateway.EsmGateway) -> list[dict]:
+def extract(esp_path: Path, esm_bin: str) -> list[dict]:
     # ``tree`` always emits JSON (no ``--json`` flag on this subcommand).
     tree = run_esm(esm_bin, esp_path, "tree", "--limit", "0")
     if not isinstance(tree, list):
@@ -109,9 +103,7 @@ def extract(esp_path: Path, esm_bin: str, client: esm_gateway.EsmGateway) -> lis
         sig = label.get("sig")
         if not isinstance(sig, str) or not sig:
             continue
-        # `Op::ListTypeRecords` -- the same op `esm list --type SIG --json`
-        # sends -- through the gateway's `esm batch` child.
-        rows.extend(client.list_type(str(esp_path), sig, limit=0))
+        rows.extend(run_esm(esm_bin, esp_path, "list", "--type", sig, "--limit", "0", "--json"))
 
     if not rows:
         return []
@@ -162,14 +154,11 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-    client = esm_gateway.EsmGateway(esm_bin)
     try:
-        entries = extract(HARDCODED_ESP, esm_bin, client)
+        entries = extract(HARDCODED_ESP, esm_bin)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
-    finally:
-        client.close()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(entries, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {OUT} ({len(entries)} entries)", file=sys.stderr)
