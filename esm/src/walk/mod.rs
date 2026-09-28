@@ -124,7 +124,7 @@ pub fn default_depth(root_sig: &str) -> usize {
 /// [`render::CONSUMER_ROWS_SHOWN`] (a *display* cap) further
 /// trims the fetched rows at render time; [`ConsumerGroup::total`] preserves
 /// the true count either way.
-const CONSUMER_REF_DEPTH: usize = 1;
+const CONSUMER_REF_DEPTH: crate::ops::RefDepth = crate::ops::RefDepth::DIRECT;
 const CONSUMER_REF_LIMIT: usize = 10;
 
 /// Record types whose direct references to a target count as a "player-facing
@@ -259,11 +259,34 @@ pub struct WalkNode {
 pub struct RefsDigestGroup {
     pub record_type: String,
     pub count: usize,
-    /// Up to 5 sample EditorIDs, each with `" ⚠NONPLAYABLE"` appended when the
-    /// EditorID itself contains that substring (case-insensitive).
-    pub sample: Vec<String>,
+    /// Up to 5 of the referencing records.
+    pub sample: Vec<RefsSample>,
+    /// What referencers of this type say about obtainability.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag: Option<String>,
+    pub tag: Option<RefsTag>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct RefsSample {
+    pub editor_id: String,
+    /// The EditorID says NONPLAYABLE (case-insensitive).
+    pub nonplayable: bool,
+}
+
+/// What a referencing record type says about whether the target reaches
+/// players.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(rename_all = "snake_case")]
+pub enum RefsTag {
+    /// A recipe, reward, container or list players draw from
+    /// ([`OBTAINABLE_TYPES`]).
+    PlayerFacing,
+    /// A leveled list: only chains that end somewhere player-facing count.
+    LeveledList,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1320,8 +1343,8 @@ fn digest_lvli(
 // ─── refs digest (root-only, `--refs`) ──────────────────────────────────────
 
 /// Group an unfiltered reverse-`refs` row list by `record_type`, sorted by
-/// count descending, each with up to 5 sample EditorIDs (⚠NONPLAYABLE-flagged)
-/// and an obtainability tag. Pure —
+/// count descending, each with up to 5 sample referencers and an
+/// obtainability tag. Pure —
 /// takes the raw rows from whatever unfiltered `Op::ReferencedBy` call the
 /// caller already made (see module docs); no fetcher involved, so this is
 /// directly unit-testable.
@@ -1337,25 +1360,21 @@ pub fn build_refs_digest(rows: &[RefRow]) -> RefsDigest {
     let out = groups
         .into_iter()
         .map(|(record_type, items)| {
-            let sample: Vec<String> = items
+            let sample = items
                 .iter()
                 .take(5)
                 .map(|r| {
-                    let edid = r.editor_id.clone().unwrap_or_default();
-                    if edid.to_uppercase().contains("NONPLAYABLE") {
-                        format!("{edid} ⚠NONPLAYABLE")
-                    } else {
-                        edid
+                    let editor_id = r.editor_id.clone().unwrap_or_default();
+                    RefsSample {
+                        nonplayable: editor_id.to_uppercase().contains("NONPLAYABLE"),
+                        editor_id,
                     }
                 })
                 .collect();
-            // Two leading spaces are baked into the tag itself (rather than
-            // added at the join point in `render_text`) to match the TS
-            // original's own tag string literals exactly.
             let tag = if OBTAINABLE_TYPES.contains(&record_type.as_str()) {
-                Some("  [player-facing signal]".to_string())
+                Some(RefsTag::PlayerFacing)
             } else if record_type == "LVLI" {
-                Some("  [only player-facing LVLI chains count]".to_string())
+                Some(RefsTag::LeveledList)
             } else {
                 None
             };

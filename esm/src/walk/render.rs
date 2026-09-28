@@ -10,8 +10,8 @@
 use super::{
     ArmoDigest, AvifDigest, ConsumerGroup, Digest, ExplDigest, GenericDigest, GlobDigest,
     KywdDigest, LevelCurveRow, LvliDigest, MagicEffectRow, MagicItemDigest, MgefDigest, NpcDigest,
-    OmodDigest, PerkDigest, PerkEffectRow, ProjDigest, RaceDigest, ScriptLeveledList, WalkResult,
-    WeapDigest,
+    OmodDigest, PerkDigest, PerkEffectRow, ProjDigest, RaceDigest, RefsTag, ScriptLeveledList,
+    WalkResult, WeapDigest,
 };
 use crate::chase::{
     Evidence, EvidenceDetail, ExplosionDamage, ExplosionSummary, FetchDirection, Hop, HopKind,
@@ -1341,12 +1341,27 @@ pub fn render_text(result: &WalkResult) -> String {
                 } else {
                     ""
                 };
-                let tag = g.tag.as_deref().unwrap_or("");
+                let tag = match g.tag {
+                    Some(RefsTag::PlayerFacing) => "  [player-facing signal]",
+                    Some(RefsTag::LeveledList) => "  [only player-facing LVLI chains count]",
+                    None => "",
+                };
+                let sample: Vec<String> = g
+                    .sample
+                    .iter()
+                    .map(|s| {
+                        if s.nonplayable {
+                            format!("{} ⚠NONPLAYABLE", s.editor_id)
+                        } else {
+                            s.editor_id.clone()
+                        }
+                    })
+                    .collect();
                 out.push(format!(
                     "  {} ×{}: {}{more}{tag}",
                     g.record_type,
                     g.count,
-                    g.sample.join(", ")
+                    sample.join(", ")
                 ));
             }
             out.push(

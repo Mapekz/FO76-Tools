@@ -1,7 +1,7 @@
 //! The mechanism digests: `walk`, `chase` and LVLI drop tables.
 
 use super::records::{bulk_record_entry, record_resolved};
-use super::{BulkRecordEntry, RecordSel, RefList, RefSort};
+use super::{BulkRecordEntry, RecordSel, RefDepth, RefList, RefSort};
 use crate::{Database, FormId, ResolveDepth, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -40,8 +40,15 @@ pub(super) fn walk(db: &Database, args: &WalkArgs) -> anyhow::Result<crate::walk
         && let Some(root) = result.nodes.first()
     {
         let root_fid = crate::parse_form_id_input(&root.formid)?;
-        let ref_list =
-            crate::refs::referenced_by_enriched(db, root_fid, 1, 0, None, false, RefSort::Formid)?;
+        let ref_list = crate::refs::referenced_by_enriched(
+            db,
+            root_fid,
+            RefDepth::DIRECT,
+            0,
+            None,
+            false,
+            RefSort::Formid,
+        )?;
         result.refs = Some(crate::walk::build_refs_digest(&ref_list.rows));
     }
     Ok(result)
@@ -56,7 +63,7 @@ pub(super) fn walk(db: &Database, args: &WalkArgs) -> anyhow::Result<crate::walk
 #[cfg_attr(test, ts(export))]
 pub struct ChaseArgs {
     pub sel: RecordSel,
-    pub depth: usize,
+    pub depth: RefDepth,
     pub ref_limit: usize,
 }
 
@@ -130,7 +137,7 @@ impl crate::source::RecordSource for DbSource<'_> {
     fn refs(
         &mut self,
         target: FormId,
-        depth: usize,
+        depth: RefDepth,
         limit: usize,
         type_filter: &str,
         paths: bool,

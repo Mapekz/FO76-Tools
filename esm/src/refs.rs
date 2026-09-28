@@ -12,9 +12,7 @@
 //! for the Direct/Carriers seed-selector vocabulary ([`RefSeeds`] is that
 //! ADR's central type).
 
-use crate::ops::{
-    DEFAULT_MAX_DEPTH, RecordSel, RefList, RefPathNode, RefRow, RefSort, resolve_sel,
-};
+use crate::ops::{RecordSel, RefDepth, RefList, RefPathNode, RefRow, RefSort, resolve_sel};
 use crate::{CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec, RecordRow};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -24,9 +22,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 ///
 /// A `depth` of 1 (the default) returns direct reverse references only.
 /// Higher values follow the reverse-reference graph breadth-first,
-/// visiting each node at most once (cycle-safe).  `depth` is clamped to
-/// `[1, DEFAULT_MAX_DEPTH]`; `depth == 0` requests an unbounded walk instead
-/// (no fixed hop cap — see [`RefList::effective_depth`]).
+/// visiting each node at most once (cycle-safe). See [`RefDepth`] for how
+/// `depth` is capped, and [`RefList::effective_depth`].
 ///
 /// Each `RefRow` carries:
 /// - `depth`: hop distance from `target` (1 = direct referencer).
@@ -46,7 +43,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 pub fn referenced_by_enriched(
     db: &Database,
     target: FormId,
-    depth: usize,
+    depth: RefDepth,
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
@@ -93,7 +90,7 @@ pub fn referenced_by_enriched_multi(
     db: &Database,
     seeds: &[(FormId, Vec<CarrierTag>)],
     label: String,
-    depth: usize,
+    depth: RefDepth,
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
@@ -149,21 +146,15 @@ fn referenced_by_walk(
     db: &Database,
     seeds: &[(FormId, Vec<CarrierTag>)],
     emit_seeds: bool,
-    depth: usize,
+    depth: RefDepth,
     limit: usize,
     type_filter: Option<&str>,
     include_paths: bool,
     sort: RefSort,
 ) -> anyhow::Result<(Vec<RefRow>, WalkStats)> {
-    let requested_depth = depth;
-    // `depth == 0` requests an unbounded walk (no fixed hop cap); any other
-    // value clamps to `[1, DEFAULT_MAX_DEPTH]` as before.
-    let max_depth = if depth == 0 {
-        usize::MAX
-    } else {
-        depth.clamp(1, DEFAULT_MAX_DEPTH)
-    };
-    let effective_depth = if depth == 0 { None } else { Some(max_depth) };
+    let requested_depth = depth.requested();
+    let effective_depth = depth.max_hops();
+    let max_depth = effective_depth.unwrap_or(usize::MAX);
     let type_filter = match type_filter {
         Some(t) => {
             if t.len() != 4 {

@@ -69,7 +69,7 @@
 //! pure logic here doesn't know where its records come from.
 
 use crate::fields::{dedup_sorted, is_ref_stub, is_truthy, named, stub_formid};
-use crate::ops::RecordSel;
+use crate::ops::{RecordSel, RefDepth};
 use crate::source::{RecordSource, bulk_fetch_map};
 use crate::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use anyhow::{Context, bail};
@@ -105,7 +105,7 @@ const PERK_EFFECT_TARGET_KEYS: [&str; 5] = ["Ability", "Quest", "Spell", "Item",
 /// Reverse-ref walk depth for keyword/AVIF consumer lookups (the KB's chase
 /// pattern is a single hop; raise only if a mechanic is gated through an
 /// intermediary, e.g. a quest alias).
-pub const DEFAULT_DEPTH: usize = 1;
+pub const DEFAULT_DEPTH: RefDepth = RefDepth::DIRECT;
 /// Cap on refs rows fetched per record-type filter before bulk-fetching consumers.
 pub const DEFAULT_REF_LIMIT: usize = 25;
 
@@ -190,7 +190,7 @@ pub(crate) fn include_alternatives(fields: &Value) -> Vec<IncludeAlternative> {
 /// `effect_chase` never reverse-chases and these options are a no-op there.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ChaseOptions {
-    pub depth: usize,
+    pub depth: RefDepth,
     pub ref_limit: usize,
 }
 
@@ -1195,7 +1195,7 @@ fn collect_property_sources(
 pub(crate) fn consumer_refs_by_type(
     f: &mut impl RecordSource,
     target_fid: FormId,
-    depth: usize,
+    depth: RefDepth,
     limit: usize,
 ) -> anyhow::Result<Vec<(&'static str, RefList)>> {
     let mut out = Vec::with_capacity(CONSUMER_TYPES.len());
@@ -1213,7 +1213,7 @@ pub(crate) fn consumer_refs_by_type(
 fn reverse_chase(
     f: &mut impl RecordSource,
     target: &Value,
-    depth: usize,
+    depth: RefDepth,
     limit: usize,
 ) -> anyhow::Result<Vec<Evidence>> {
     let formid_str = target.get("formid").and_then(Value::as_str).unwrap_or("");

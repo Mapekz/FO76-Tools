@@ -21,7 +21,7 @@ pub(crate) fn cmd_chase(
     backend: &mut Backend,
     file: &Path,
     selector: &str,
-    depth: usize,
+    depth: esm::ops::RefDepth,
     ref_limit: usize,
     base: FormIdBase,
 ) -> anyhow::Result<()> {

@@ -142,8 +142,16 @@ fn resolve_sel_edid_falls_back_to_hardcoded_table() {
         .expect("KillStreak should resolve via the hardcoded-table fallback");
     assert_eq!(target, FormId(KILL_STREAK));
 
-    let list = referenced_by_enriched(&db, target, 1, 100, None, false, esm::ops::RefSort::Formid)
-        .expect("referenced_by_enriched");
+    let list = referenced_by_enriched(
+        &db,
+        target,
+        esm::ops::RefDepth::from_hops(1),
+        100,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("referenced_by_enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(list.rows[0].form_id, FormId(2).display());
 
@@ -254,9 +262,16 @@ fn recursive_refs_depth1_matches_direct() {
     assert_eq!(direct[0].form_id, FormId(2).display());
 
     // New BFS path at depth=1
-    let list: RefList =
-        referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ops::RefSort::Formid)
-            .expect("enriched");
+    let list: RefList = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(1),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(list.rows[0].form_id, FormId(2).display());
     assert_eq!(list.rows[0].depth, 1);
@@ -278,8 +293,16 @@ fn recursive_refs_depth1_matches_direct() {
 fn recursive_refs_depth2_follows_one_extra_hop_and_reports_the_cap() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let list = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(2),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
 
     // Expect LVLI(2) at depth=1 and LVLI(3) at depth=2.
     assert_eq!(
@@ -333,8 +356,16 @@ fn recursive_refs_depth2_follows_one_extra_hop_and_reports_the_cap() {
 fn recursive_refs_depth6_reaches_all_hops() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let list = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(6),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     assert_eq!(list.rows.len(), 3, "expected LVLI(2)+LVLI(3)+CONT(4)");
 
     let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
@@ -367,8 +398,16 @@ fn recursive_refs_depth6_reaches_all_hops() {
 fn recursive_refs_depth0_is_unbounded() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 0, 0, None, false, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let list = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(0),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     assert_eq!(
         list.rows.len(),
         3,
@@ -394,8 +433,16 @@ fn recursive_refs_depth0_is_unbounded() {
 fn recursive_refs_reports_per_depth_totals_and_shown_max_depth() {
     let (path, db) = open_chain_db();
 
-    let full = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let full = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(6),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     // index 0 = carrier rows (none on a direct-target walk), 1 = LVLI(2),
     // 2 = LVLI(3), 3 = CONT(4).
     assert_eq!(full.per_depth_totals, vec![0, 1, 1, 1]);
@@ -403,9 +450,16 @@ fn recursive_refs_reports_per_depth_totals_and_shown_max_depth() {
 
     // limit=1 keeps only the shallowest row (FormID-sorted), but
     // per_depth_totals must still reflect all 3 rows found pre-truncation.
-    let limited =
-        referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ops::RefSort::Formid)
-            .expect("enriched");
+    let limited = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(6),
+        1,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     assert_eq!(limited.rows.len(), 1);
     assert_eq!(
         limited.per_depth_totals,
@@ -439,9 +493,16 @@ fn recursive_refs_sort_depth_reorders_relative_to_formid() {
     let buf = make_sort_order_esm();
     let (tmp, db) = write_and_open(&buf, "refs_sort_order");
 
-    let by_formid =
-        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ops::RefSort::Formid)
-            .expect("enriched");
+    let by_formid = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(2),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     let formid_order: Vec<_> = by_formid.rows.iter().map(|r| r.form_id.clone()).collect();
     assert_eq!(
         formid_order,
@@ -449,9 +510,16 @@ fn recursive_refs_sort_depth_reorders_relative_to_formid() {
         "default sort is FormID-ascending regardless of depth"
     );
 
-    let by_depth =
-        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ops::RefSort::Depth)
-            .expect("enriched");
+    let by_depth = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(2),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Depth,
+    )
+    .expect("enriched");
     let depth_order: Vec<_> = by_depth.rows.iter().map(|r| r.form_id.clone()).collect();
     assert_eq!(
         depth_order,
@@ -627,8 +695,16 @@ fn recursive_refs_cycle_guard() {
 
     let (tmp, db) = write_and_open(&buf, "refs_cycle");
 
-    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let list = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(6),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
 
     // Only WEAP(2) should appear — WEAP(1) is the target and excluded from results.
     // The cycle WEAP(1)→WEAP(2)→WEAP(1) must not cause WEAP(1) to appear as a result.
@@ -644,8 +720,16 @@ fn recursive_refs_cycle_guard() {
 fn recursive_refs_limit_caps_output() {
     let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let list = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(6),
+        1,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     assert_eq!(list.rows.len(), 1, "limit=1 should cap to 1 row");
     assert_eq!(list.total, 3, "total should reflect the full depth=6 count");
     assert!(list.capped, "capped flag should be set");
@@ -662,8 +746,16 @@ fn field_paths_none_when_not_requested() {
     let buf = make_xref_esm();
     let (tmp, db) = write_and_open(&buf, "refs_paths_off");
 
-    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let list = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(1),
+        0,
+        None,
+        false,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert!(
         list.rows[0].field_paths.is_none(),
@@ -682,8 +774,16 @@ fn field_paths_finds_all_occurrences_in_one_record() {
     let buf = make_xref_esm();
     let (tmp, db) = write_and_open(&buf, "refs_paths_multi");
 
-    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, true, esm::ops::RefSort::Formid)
-        .expect("enriched");
+    let list = referenced_by_enriched(
+        &db,
+        FormId(1),
+        esm::ops::RefDepth::from_hops(1),
+        0,
+        None,
+        true,
+        esm::ops::RefSort::Formid,
+    )
+    .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(
         list.rows[0].field_paths,
@@ -741,7 +841,7 @@ fn type_filter_narrows_rows_but_keeps_traversing() {
         let list = referenced_by_enriched(
             &db,
             FormId(1),
-            6,
+            esm::ops::RefDepth::from_hops(6),
             0,
             Some(filter),
             false,
@@ -781,7 +881,7 @@ fn type_filter_limit_and_total_apply_post_filter() {
     let list = referenced_by_enriched(
         &db,
         FormId(1),
-        6,
+        esm::ops::RefDepth::from_hops(6),
         1,
         Some("LVLI"),
         false,
@@ -804,7 +904,7 @@ fn type_filter_rejects_non_4char_signature() {
     let err = referenced_by_enriched(
         &db,
         FormId(1),
-        1,
+        esm::ops::RefDepth::from_hops(1),
         0,
         Some("LV"),
         false,
@@ -827,7 +927,7 @@ fn type_filter_and_paths_compose() {
     let list = referenced_by_enriched(
         &db,
         FormId(1),
-        6,
+        esm::ops::RefDepth::from_hops(6),
         0,
         Some("CONT"),
         true,
@@ -1089,7 +1189,7 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
         &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39 (Mod Percent Blocked)".to_string(),
-        1,
+        esm::ops::RefDepth::from_hops(1),
         0,
         None,
         false,
@@ -1152,7 +1252,7 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
         &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39 (Mod Percent Blocked)".to_string(),
-        1,
+        esm::ops::RefDepth::from_hops(1),
         0,
         Some("CONT"),
         false,
@@ -1209,7 +1309,7 @@ fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
         &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::EntryPoint("Mod Percent Blocked".to_string()),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
@@ -1251,7 +1351,7 @@ fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
         &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
@@ -1281,7 +1381,7 @@ fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
         &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
@@ -1316,7 +1416,7 @@ fn dispatch_referenced_by_edid_neither_interpretation_bails() {
         &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("TotallyBogusTokenXYZ".to_string()),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
@@ -1340,7 +1440,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         &db,
         &seeds_with_ep(&[(15, 41), (16, 42)]),
         "entry point 'Mod Incoming Spell*' (2 matched)".to_string(),
-        1,
+        esm::ops::RefDepth::from_hops(1),
         0,
         None,
         false,
@@ -1373,7 +1473,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
         &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39".to_string(),
-        2,
+        esm::ops::RefDepth::from_hops(2),
         0,
         None,
         false,
@@ -1407,7 +1507,7 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
         &db,
         &seeds_with_ep(&[(15, 41), (16, 42)]),
         "forward".to_string(),
-        1,
+        esm::ops::RefDepth::from_hops(1),
         0,
         None,
         false,
@@ -1418,7 +1518,7 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
         &db,
         &seeds_with_ep(&[(16, 42), (15, 41)]),
         "reverse".to_string(),
-        1,
+        esm::ops::RefDepth::from_hops(1),
         0,
         None,
         false,
@@ -1485,7 +1585,7 @@ fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
     let list = referenced_by_enriched(
         &db,
         FormId(10),
-        1,
+        esm::ops::RefDepth::from_hops(1),
         0,
         None,
         false,
@@ -1737,7 +1837,7 @@ fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
         &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::OmodProperty("Enchantments".to_string()),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
@@ -1774,7 +1874,7 @@ fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
         &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Health".to_string()),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
@@ -1803,7 +1903,7 @@ fn dispatch_referenced_by_edid_miss_does_not_fallback_to_omod_property() {
         &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Speed".to_string()),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,

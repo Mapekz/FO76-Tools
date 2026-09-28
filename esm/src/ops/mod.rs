@@ -36,6 +36,67 @@ use std::path::PathBuf;
 /// Default maximum recursion depth for the reverse-reference walk.
 pub const DEFAULT_MAX_DEPTH: usize = 8;
 
+/// How far a reverse-reference walk goes. On the wire it is a hop count,
+/// with 0 meaning unbounded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export, type = "number"))]
+pub enum RefDepth {
+    /// Up to this many hops (as asked; walks clamp it to
+    /// `1..=`[`DEFAULT_MAX_DEPTH`]).
+    Hops(usize),
+    /// No hop cap: can take minutes on hub-heavy graphs.
+    Unbounded,
+}
+
+impl RefDepth {
+    /// Direct references only.
+    pub const DIRECT: RefDepth = RefDepth::Hops(1);
+
+    pub fn from_hops(hops: usize) -> RefDepth {
+        if hops == 0 {
+            RefDepth::Unbounded
+        } else {
+            RefDepth::Hops(hops)
+        }
+    }
+
+    /// The hop count as asked (0 = unbounded).
+    pub fn requested(self) -> usize {
+        match self {
+            RefDepth::Hops(n) => n,
+            RefDepth::Unbounded => 0,
+        }
+    }
+
+    /// The hop cap a walk uses: clamped to `1..=`[`DEFAULT_MAX_DEPTH`],
+    /// `None` when unbounded.
+    pub fn max_hops(self) -> Option<usize> {
+        match self {
+            RefDepth::Hops(n) => Some(n.clamp(1, DEFAULT_MAX_DEPTH)),
+            RefDepth::Unbounded => None,
+        }
+    }
+}
+
+impl Default for RefDepth {
+    fn default() -> Self {
+        RefDepth::DIRECT
+    }
+}
+
+impl Serialize for RefDepth {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u64(self.requested() as u64)
+    }
+}
+
+impl<'de> Deserialize<'de> for RefDepth {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        usize::deserialize(d).map(RefDepth::from_hops)
+    }
+}
+
 /// A request to execute one operation against an ESM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {

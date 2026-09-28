@@ -17,9 +17,9 @@ use serde::{Deserialize, Serialize};
 pub struct ReferencedByArgs {
     pub sel: RecordSel,
     pub limit: usize,
-    /// Recursion depth for the reverse-reference walk (default 1, capped at DEFAULT_MAX_DEPTH).
+    /// How far the reverse-reference walk goes (default: direct references).
     #[serde(default)]
-    pub depth: usize,
+    pub depth: super::RefDepth,
     /// Narrow rows to referencing records of this 4-character type
     /// signature (e.g. `"OMOD"`); case-insensitive. Applied during the walk
     /// itself: non-matching nodes are still traversed so deeper hops stay

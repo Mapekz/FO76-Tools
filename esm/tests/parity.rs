@@ -144,7 +144,7 @@ fn referenced_by_parity() {
         Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::FormId(FormId(1)),
             limit: 0,
-            depth: 1,
+            depth: esm::ops::RefDepth::from_hops(1),
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,

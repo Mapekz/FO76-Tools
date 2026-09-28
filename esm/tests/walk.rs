@@ -4,7 +4,7 @@
 use esm::ops::RecordSel;
 use esm::source::MemorySource;
 use esm::walk::{
-    Digest, WalkOptions, WalkResult, build_refs_digest, render_digest, render_text, walk,
+    Digest, RefsTag, WalkOptions, WalkResult, build_refs_digest, render_digest, render_text, walk,
 };
 use esm::{FormId, RefList, RefRow};
 use serde_json::json;
@@ -523,15 +523,12 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
     // Sorted by count desc: COBJ (3) before LVLI (1) / NPC_ (1).
     assert_eq!(digest.groups[0].record_type, "COBJ");
     assert_eq!(digest.groups[0].count, 3);
-    assert_eq!(
-        digest.groups[0].tag.as_deref(),
-        Some("  [player-facing signal]")
-    );
+    assert_eq!(digest.groups[0].tag, Some(RefsTag::PlayerFacing));
     assert!(
         digest.groups[0]
             .sample
             .iter()
-            .any(|s| s == "co_Weapon_Test_NONPLAYABLE ⚠NONPLAYABLE")
+            .any(|s| s.editor_id == "co_Weapon_Test_NONPLAYABLE" && s.nonplayable)
     );
 
     let lvli = digest
@@ -539,10 +536,7 @@ fn build_refs_digest_groups_sorts_tags_and_flags_nonplayable() {
         .iter()
         .find(|g| g.record_type == "LVLI")
         .unwrap();
-    assert_eq!(
-        lvli.tag.as_deref(),
-        Some("  [only player-facing LVLI chains count]")
-    );
+    assert_eq!(lvli.tag, Some(RefsTag::LeveledList));
 
     let npc = digest
         .groups

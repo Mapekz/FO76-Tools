@@ -508,7 +508,7 @@ fn op_referenced_by_without_new_fields_deserializes() {
             ..
         }) => {
             assert_eq!(limit, 100);
-            assert_eq!(depth, 1);
+            assert_eq!(depth, esm::ops::RefDepth::from_hops(1));
             assert_eq!(type_filter, None);
             assert!(!paths);
         }
@@ -533,7 +533,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
     let op = Op::ReferencedBy(esm::ops::ReferencedByArgs {
         sel: RecordSel::FormId(esm::FormId(1)),
         limit: 0,
-        depth: 1,
+        depth: esm::ops::RefDepth::from_hops(1),
         type_filter: Some("WEAP".to_string()),
         paths: true,
         sort: esm::ops::RefSort::Formid,
@@ -568,7 +568,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
     let op_no_match = Op::ReferencedBy(esm::ops::ReferencedByArgs {
         sel: RecordSel::FormId(esm::FormId(1)),
         limit: 0,
-        depth: 1,
+        depth: esm::ops::RefDepth::from_hops(1),
         type_filter: Some("MISC".to_string()),
         paths: false,
         sort: esm::ops::RefSort::Formid,

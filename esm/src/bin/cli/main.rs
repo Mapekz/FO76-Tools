@@ -293,8 +293,8 @@ enum Commands {
         /// 0 = unbounded — no fixed hop cap. An unbounded walk over a
         /// hub-heavy graph like CELL/REFR can return hundreds of thousands
         /// of rows; combine with --limit 0 and a --type filter.
-        #[arg(long, default_value_t = 1, value_parser = parse_ref_depth)]
-        depth: usize,
+        #[arg(long, default_value = "1", value_parser = parse_ref_depth)]
+        depth: esm::ops::RefDepth,
         /// Narrow rows to referencing records of this 4-character type
         /// (e.g. `OMOD`); case-insensitive. Applied server-side, so `--limit`/
         /// `--depth` interact correctly with the filter.
@@ -348,10 +348,10 @@ enum Commands {
     Chase {
         /// OMOD/PERK/SPEL/ALCH/ENCH FormID or EditorID (auto-detected).
         selector: String,
-        /// Reverse-ref walk depth for keyword/AVIF consumer lookups
+        /// Reverse-ref walk depth for keyword/AVIF consumer lookups, 1 to 8
         /// (OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH).
-        #[arg(long, default_value_t = esm::chase::DEFAULT_DEPTH)]
-        depth: usize,
+        #[arg(long, default_value = "1", value_parser = parse_chase_depth)]
+        depth: esm::ops::RefDepth,
         /// Cap on refs rows fetched per record-type filter
         /// (OMOD selectors only — ignored for PERK/SPEL/ALCH/ENCH).
         #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
@@ -525,7 +525,7 @@ impl From<BodiesArg> for BodyDetail {
 /// Validates `refs --depth` against `[0, DEFAULT_MAX_DEPTH]` — `usize`
 /// doesn't get a ranged `clap::value_parser!`, so this rejects out-of-range
 /// values explicitly rather than clamping them silently.
-fn parse_ref_depth(s: &str) -> Result<usize, String> {
+fn parse_ref_depth(s: &str) -> Result<esm::ops::RefDepth, String> {
     let v: usize = s
         .parse()
         .map_err(|_| format!("invalid depth value '{s}'"))?;
@@ -535,7 +535,19 @@ fn parse_ref_depth(s: &str) -> Result<usize, String> {
             esm::ops::DEFAULT_MAX_DEPTH
         ))
     } else {
-        Ok(v)
+        Ok(esm::ops::RefDepth::from_hops(v))
+    }
+}
+
+/// Validates `chase --depth` against `1..=DEFAULT_MAX_DEPTH`: a chase's
+/// reverse walks are per keyword, so it has no unbounded mode.
+fn parse_chase_depth(s: &str) -> Result<esm::ops::RefDepth, String> {
+    match s.parse::<usize>() {
+        Ok(v) if (1..=esm::ops::DEFAULT_MAX_DEPTH).contains(&v) => Ok(esm::ops::RefDepth::Hops(v)),
+        _ => Err(format!(
+            "invalid depth '{s}': expected 1..={}",
+            esm::ops::DEFAULT_MAX_DEPTH
+        )),
     }
 }
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::ops::RecordSel;
+use crate::ops::{RecordSel, RefDepth};
 use crate::reader::RecordHeaderInfo;
 use crate::{BulkRecordEntry, FormId, RefList, ResolveDepth};
 
@@ -24,7 +24,7 @@ pub trait RecordSource {
     fn refs(
         &mut self,
         target: FormId,
-        depth: usize,
+        depth: RefDepth,
         limit: usize,
         type_filter: &str,
         paths: bool,
@@ -145,7 +145,7 @@ impl RecordSource for MemorySource {
     fn refs(
         &mut self,
         target: FormId,
-        _depth: usize,
+        _depth: RefDepth,
         limit: usize,
         type_filter: &str,
         _paths: bool,

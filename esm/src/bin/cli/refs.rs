@@ -47,7 +47,7 @@ pub(crate) fn cmd_refs(
     entry_point: Option<String>,
     omod_property: Option<String>,
     limit: usize,
-    depth: usize,
+    depth: esm::ops::RefDepth,
     record_type: Option<String>,
     paths: bool,
     sort: esm::ops::RefSort,
@@ -58,7 +58,7 @@ pub(crate) fn cmd_refs(
     lang: &str,
     base: FormIdBase,
 ) -> anyhow::Result<()> {
-    if depth == 0 {
+    if depth == esm::ops::RefDepth::Unbounded {
         // Must warn *before* dispatching — an unbounded walk runs
         // synchronously and can take minutes with no other feedback; a note
         // attached to the finished RefList (as `capped`/`depth_capped` are)
