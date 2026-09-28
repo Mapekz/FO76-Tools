@@ -82,6 +82,11 @@
 //!   the raw rows to [`build_refs_digest`] (a pure function, easily unit
 //!   tested without any fetcher).
 
+/// [`level_curves::LevelCurveRow`] is `pub` (used by this module's public
+/// digest structs) — the module is `pub` too so that type is externally
+/// reachable; everything else in it (the allowlist table, the guard enum,
+/// the path walker) stays `pub(crate)`.
+pub mod level_curves;
 mod render;
 
 pub use render::{render_digest, render_text};
@@ -90,10 +95,10 @@ use crate::chase::{
     ChaseFetcher, ChaseOptions, Hop, HopKind, RootStub, consumer_refs_by_type, omod_chase,
     summarize_explosion_detail,
 };
-use crate::decode::level_curves::{self, LevelCurveRow};
 use crate::ops::RecordSel;
 use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
 use anyhow::Context as _;
+use level_curves::LevelCurveRow;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -173,7 +178,7 @@ pub struct WalkOptions {
     /// [`crate::lvli::DropOptions::level`]) — Minimum Level filtering and
     /// Curve Table evaluation both key off it. Also drives level-keyed
     /// Curve Table evaluation on WEAP/NPC_/RACE/ARMO/EXPL/ENCH/SPEL/ALCH
-    /// digests (see `crate::decode::level_curves`) — only for the specific
+    /// digests (see `crate::walk::level_curves`) — only for the specific
     /// fields verified to be level-domained; count-keyed (COBJ component
     /// quantity) and tier-index-keyed (LVLI's own Minimum Level Curve
     /// Table) curve fields are deliberately excluded and stay unaffected by
@@ -428,7 +433,7 @@ pub struct MagicEffectRow {
     pub curve_input_av: Option<Value>,
     /// `curve_table` evaluated at the walk's `--level`, when
     /// `curve_input_av` is absent (verified level-domained — see
-    /// `crate::decode::level_curves::AxisGuard::SiblingIsNoneOrAbsent`).
+    /// `crate::walk::level_curves::AxisGuard::SiblingIsNoneOrAbsent`).
     /// `None` either because there's no curve, or because `curve_input_av`
     /// names the real (non-level) axis — `curve_input_av` itself is already
     /// enough to render that axis note, so no separate field duplicates it.
@@ -513,7 +518,7 @@ pub struct WeapDigest {
     pub level: f32,
     /// Level-keyed curve fields (Damage Curve, durability, condition loss,
     /// per-damage-type curves) evaluated at `level` — see
-    /// `crate::decode::level_curves`.
+    /// `crate::walk::level_curves`.
     pub level_curves: Vec<LevelCurveRow>,
 }
 
@@ -541,7 +546,7 @@ pub struct ExplDigest {
     /// `--level` assumed by `level_curves` below.
     pub level: f32,
     /// Level-keyed curve fields (`Data.Damage Curve Table`, per-damage-type
-    /// curves) evaluated at `level` — see `crate::decode::level_curves`.
+    /// curves) evaluated at `level` — see `crate::walk::level_curves`.
     pub level_curves: Vec<LevelCurveRow>,
 }
 

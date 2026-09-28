@@ -15,6 +15,6 @@ detail: unknown,
 level: number, 
 /**
  * Level-keyed curve fields (`Data.Damage Curve Table`, per-damage-type
- * curves) evaluated at `level` — see `crate::decode::level_curves`.
+ * curves) evaluated at `level` — see `crate::walk::level_curves`.
  */
 level_curves: Array<LevelCurveRow>, };

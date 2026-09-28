@@ -5,9 +5,9 @@ use crate::reader::OwnedSubrecord;
 use crate::schema::{ArrayCount, CountPath, FieldDef, MemberDef, UnionDecider};
 
 use super::DecodeContext;
+use super::derived::{PostDecodeTarget, apply_post_decode_rules};
 use super::model_info::decode_model_info;
 use super::node::{Fields, Node, RawReason, insert_unique};
-use super::rules::{PostDecodeTarget, apply_post_decode_rules};
 use super::scalars::{
     choose_union_variant, count_path_value, field_int_value, field_value_key, int_size,
     member_from_size_ok, member_version_ok, read_le_uint, scalar_bytes, scalar_float,

@@ -6,7 +6,7 @@
 //! fields are deliberately ABSENT and must stay absent:
 //!
 //! - COBJ `Curve Table` — keyed on component *count*, already evaluated at
-//!   the count by `decode::rules`'s quantity-from-curve-table logic.
+//!   the count by the derived component `Quantity` (`decode::derived`).
 //! - LVLI `Minimim Level Curve Table` (schema typo, preserved verbatim) —
 //!   an item-quality-tier index (0-3 with 99/100 sentinels), not level.
 //!   Flagged rather than evaluated by `lvli::resolve_min_level` — see that

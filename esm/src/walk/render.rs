@@ -517,7 +517,7 @@ fn render_magic_effect_row(row: &MagicEffectRow, lines: &mut Vec<String>) {
         }
         // `curve_at_level` is populated only when `curve_input_av` is
         // absent (verified level-domained — see
-        // `crate::decode::level_curves::AxisGuard::SiblingIsNoneOrAbsent`),
+        // `crate::walk::level_curves::AxisGuard::SiblingIsNoneOrAbsent`),
         // so the two never both print: an AV-input axis note above, or an
         // evaluated level number here, never both.
         if let Some(v) = row.curve_at_level {
@@ -597,7 +597,7 @@ fn render_perk(d: &PerkDigest, lines: &mut Vec<String>) {
 }
 
 /// Level-keyed curve lines, shared by every digest that carries them
-/// (WEAP/EXPL/NPC_/RACE/ARMO — see `crate::decode::level_curves`). Mirrors
+/// (WEAP/EXPL/NPC_/RACE/ARMO — see `crate::walk::level_curves`). Mirrors
 /// `render_lvli`'s level echo so the assumed level is always visible next
 /// to the numbers it produced. No-op when `rows` is empty (a record type in
 /// the allowlist with no populated level-keyed fields on this particular

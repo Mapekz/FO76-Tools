@@ -1854,12 +1854,7 @@ impl<'a> crate::decode::FormIdRefResolver for DatabaseResolver<'a> {
         match crate::decode::leaf_values::lookup(record_type)? {
             crate::decode::leaf_values::InlineSource::CurveIndex => {
                 let curve = self.db.curves.as_ref()?.get(id)?;
-                Some(serde_json::json!({
-                    "formid": id.display(),
-                    "editor_id": curve.edid(),
-                    "curve_path": curve.path(),
-                    "curve": crate::decode::curve_points_value(curve),
-                }))
+                Some(crate::decode::curve_inline(id, curve))
             }
             crate::decode::leaf_values::InlineSource::Fields(keys) => {
                 // Decode the target at `ResolveDepth::None`: no resolver, so

@@ -6,23 +6,19 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 mod bind;
+mod derived;
 pub(crate) mod leaf_values;
-/// [`level_curves::LevelCurveRow`] is `pub` (used by `esm::walk`'s public
-/// digest structs) — the module is `pub` too so that type is externally
-/// reachable; everything else in it (the allowlist table, the guard enum,
-/// the path walker) stays `pub(crate)`.
-pub mod level_curves;
 mod model_info;
 pub mod node;
-mod rules;
 mod scalars;
 mod vmad;
 mod walk;
 
-use leaf_values::InlineSource;
 #[cfg(test)]
-pub(crate) use rules::apply_weapon_bash_curve;
-use rules::{PostDecodeTarget, apply_post_decode_rules};
+pub(crate) use derived::apply_weapon_bash_curve;
+use derived::{PostDecodeTarget, apply_post_decode_rules};
+pub(crate) use derived::{curve_inline, curve_points_node};
+use leaf_values::InlineSource;
 pub(crate) use scalars::json_f32;
 #[cfg(test)]
 pub(crate) use scalars::member_version_bounds;
@@ -224,32 +220,6 @@ impl<'a> DecodeContext<'a> {
     }
 }
 
-/// Render a curve's points as a JSON array of `{"x", "y"}` objects, for
-/// [`render_formid`]'s inline curve branch. [`curve_points_node`] builds the
-/// same shape for a CURV record's own `"Curve"` field, so both render
-/// identically.
-pub(crate) fn curve_points_value(curve: &crate::curves::ArchivedCurve) -> Value {
-    Value::Array(
-        curve
-            .points()
-            .iter()
-            .map(|p| json!({"x": json_f32(p.x), "y": json_f32(p.y)}))
-            .collect(),
-    )
-}
-
-/// [`curve_points_value`] as a node, for a CURV record's own decoded tree.
-pub(crate) fn curve_points_node(curve: &crate::curves::ArchivedCurve) -> node::Node {
-    use node::Node;
-    Node::Array(
-        curve
-            .points()
-            .iter()
-            .map(|p| Node::obj([("x", Node::Float(p.x)), ("y", Node::Float(p.y))]))
-            .collect(),
-    )
-}
-
 /// Whether a FormID field's `valid_refs` include a value-bearing leaf type
 /// whose [`InlineSource`] is [`InlineSource::CurveIndex`] (currently only
 /// `"CURV"`); such a reference renders its curve inline (see [`render_formid`]).
@@ -283,12 +253,7 @@ pub(crate) fn render_formid(ctx: &DecodeContext<'_>, curve: bool, id: FormId) ->
         && let Some(curves) = ctx.curves
         && let Some(curve) = curves.get(id)
     {
-        return json!({
-            "formid": id.display(),
-            "editor_id": curve.edid(),
-            "curve_path": curve.path(),
-            "curve": curve_points_value(curve)
-        });
+        return curve_inline(id, curve);
     }
 
     // Reference-following branch
@@ -1023,43 +988,14 @@ mod tests {
         assert!(obj.get("version").is_some(), "version must be present");
     }
 
-    fn sample_bash_damage_curve() -> Value {
-        json!({
-            "formid": "0xDEADBEEF",
-            "editor_id": "CT_Test",
-            "curve_path": "test.json",
-            "curve": [
-                {"x": 1.0, "y": 10.0},
-                {"x": 50.0, "y": 50.0}
-            ]
-        })
-    }
+    /// The Damage Curve every bash fixture references.
+    const BASH_CURVE: FormId = FormId(0x1);
 
-    /// A decoded-node stand-in for `value`: numbers become `Int`/`Float`,
-    /// objects `Struct`, so it renders back to `value`.
-    fn node_from_json(value: &Value) -> node::Node {
-        use node::Node;
-        match value {
-            Value::Null => Node::Null,
-            Value::Bool(b) => Node::Bool(*b),
-            Value::Number(n) => match n.as_i64() {
-                Some(i) => Node::Int(i),
-                None => Node::Float(n.as_f64().unwrap() as f32),
-            },
-            Value::String(s) => Node::Str(s.clone()),
-            Value::Array(items) => Node::Array(items.iter().map(node_from_json).collect()),
-            Value::Object(map) => Node::Struct(
-                map.iter()
-                    .map(|(k, v)| (k.clone(), node_from_json(v)))
-                    .collect(),
-            ),
-        }
-    }
+    const SAMPLE_BASH_CURVE: &[(f32, f32)] = &[(1.0, 10.0), (50.0, 50.0)];
 
     fn weap_bash_fixture(
         weapon_type: &str,
         secondary: f64,
-        damage_curve: Value,
         keywords: Option<Vec<FormId>>,
     ) -> node::Fields {
         use node::{Fields, Node};
@@ -1079,14 +1015,13 @@ mod tests {
             );
         }
         out.insert("Data".to_string(), Node::Struct(data));
-        let damage_curve = match damage_curve {
-            Value::String(s) => Node::FormId {
-                id: crate::formid::parse_formid(&s).unwrap(),
+        out.insert(
+            "Damage Curve".to_string(),
+            Node::FormId {
+                id: BASH_CURVE,
                 curve: true,
             },
-            v => node_from_json(&v),
-        };
-        out.insert("Damage Curve".to_string(), damage_curve);
+        );
         if let Some(kw) = keywords {
             let kw = kw
                 .into_iter()
@@ -1100,10 +1035,23 @@ mod tests {
         out
     }
 
-    /// Run the WEAP bash rule over `out` and render the result.
-    fn bash(mut out: node::Fields) -> Map<String, Value> {
+    /// Run the WEAP bash rule over `out`, with `BASH_CURVE` holding `points`
+    /// (`None`: no curve index loaded), and render the result.
+    fn bash(mut out: node::Fields, points: Option<&[(f32, f32)]>) -> Map<String, Value> {
+        let curves = points.map(|points| {
+            let curve = crate::curves::Curve {
+                edid: None,
+                path: "test.json".to_string(),
+                points: points
+                    .iter()
+                    .map(|&(x, y)| crate::curves::CurvePoint { x, y })
+                    .collect(),
+            };
+            crate::curves::CurveIndex::from_curves([(BASH_CURVE, curve)]).unwrap()
+        });
         let schema = empty_schema();
-        let ctx = bare_ctx(&schema);
+        let mut ctx = bare_ctx(&schema);
+        ctx.env.curves = curves.as_ref();
         apply_weapon_bash_curve(&mut out, &ctx);
         match node::Node::Struct(out).into_json(&ctx) {
             Value::Object(map) => map,
@@ -1119,12 +1067,7 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_gun_computes_table() {
-        let out = bash(weap_bash_fixture(
-            "Gun",
-            5.0,
-            sample_bash_damage_curve(),
-            None,
-        ));
+        let out = bash(weap_bash_fixture("Gun", 5.0, None), Some(SAMPLE_BASH_CURVE));
         assert_eq!(bash_damage_source(&out), Some("curve"));
         let curve = out
             .get("Bash Damage")
@@ -1140,12 +1083,10 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_automatic_melee_keyword_computes_table() {
-        let out = bash(weap_bash_fixture(
-            "HandToHandMelee",
-            8.0,
-            sample_bash_damage_curve(),
-            Some(vec![FormId::new(0x006D5081)]),
-        ));
+        let out = bash(
+            weap_bash_fixture("HandToHandMelee", 8.0, Some(vec![FormId::new(0x006D5081)])),
+            Some(SAMPLE_BASH_CURVE),
+        );
         assert_eq!(bash_damage_source(&out), Some("curve"));
         let damage = out
             .get("Bash Damage")
@@ -1158,54 +1099,41 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_melee_without_keyword_is_ineligible() {
-        let out = bash(weap_bash_fixture(
-            "TwoHandAxe",
-            5.0,
-            sample_bash_damage_curve(),
-            None,
-        ));
+        let out = bash(
+            weap_bash_fixture("TwoHandAxe", 5.0, None),
+            Some(SAMPLE_BASH_CURVE),
+        );
         assert_eq!(bash_damage_source(&out), Some("ineligible"));
     }
 
     #[test]
     fn weapon_bash_curve_grenade_is_ineligible() {
-        let out = bash(weap_bash_fixture(
-            "Grenade",
-            3.0,
-            sample_bash_damage_curve(),
-            None,
-        ));
+        let out = bash(
+            weap_bash_fixture("Grenade", 3.0, None),
+            Some(SAMPLE_BASH_CURVE),
+        );
         assert_eq!(bash_damage_source(&out), Some("ineligible"));
     }
 
     #[test]
     fn weapon_bash_curve_zero_secondary_stays_silent() {
-        let absent = bash(weap_bash_fixture(
-            "Gun",
-            0.0,
-            sample_bash_damage_curve(),
-            None,
-        ));
+        let absent = bash(weap_bash_fixture("Gun", 0.0, None), Some(SAMPLE_BASH_CURVE));
         assert!(!absent.contains_key("Bash Damage"));
 
-        let mut zero = weap_bash_fixture("Gun", 0.0, sample_bash_damage_curve(), None);
+        let mut zero = weap_bash_fixture("Gun", 0.0, None);
         if let Some(node::Node::Struct(data)) = zero.get_mut("Data") {
             data.insert("Secondary Damage".into(), node::Node::Float(0.0));
         }
-        let zero = bash(zero);
+        let zero = bash(zero, Some(SAMPLE_BASH_CURVE));
         assert!(!zero.contains_key("Bash Damage"));
     }
 
     #[test]
     fn weapon_bash_curve_zero_reference_emits_marker_not_null_damage() {
-        let curve = json!({
-            "formid": "0x1",
-            "curve": [
-                {"x": 1.0, "y": 0.0},
-                {"x": 50.0, "y": 20.0}
-            ]
-        });
-        let out = bash(weap_bash_fixture("Gun", 5.0, curve, None));
+        let out = bash(
+            weap_bash_fixture("Gun", 5.0, None),
+            Some(&[(1.0, 0.0), (50.0, 20.0)]),
+        );
         assert_eq!(bash_damage_source(&out), Some("curve_zero_reference"));
         assert!(
             out.get("Bash Damage")
@@ -1216,21 +1144,16 @@ mod tests {
 
     #[test]
     fn weapon_bash_curve_unresolved_curve_marker() {
-        let out = bash(weap_bash_fixture("Gun", 5.0, json!("0x0080F217"), None));
+        let out = bash(weap_bash_fixture("Gun", 5.0, None), None);
         assert_eq!(bash_damage_source(&out), Some("unresolved_curve"));
     }
 
     #[test]
     fn weapon_bash_curve_not_truncated_at_player_cap() {
-        let curve = json!({
-            "formid": "0x1",
-            "curve": [
-                {"x": 1.0, "y": 10.0},
-                {"x": 50.0, "y": 50.0},
-                {"x": 540.0, "y": 540.0}
-            ]
-        });
-        let out = bash(weap_bash_fixture("Gun", 2.0, curve, None));
+        let out = bash(
+            weap_bash_fixture("Gun", 2.0, None),
+            Some(&[(1.0, 10.0), (50.0, 50.0), (540.0, 540.0)]),
+        );
         let curve = out
             .get("Bash Damage")
             .and_then(|v| v.get("curve"))

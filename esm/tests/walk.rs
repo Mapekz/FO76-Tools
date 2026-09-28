@@ -1436,7 +1436,7 @@ fn lvli_non_get_random_percent_gate_is_noted() {
     );
 }
 
-// ─── level-keyed curve evaluation (`crate::decode::level_curves`) ──────────
+// ─── level-keyed curve evaluation (`crate::walk::level_curves`) ──────────
 
 const WEAP_CURVE_FID: &str = "0x00600050";
 const NPC_PROPS_FID: &str = "0x00600060";
@@ -1618,14 +1618,14 @@ fn ench_effect_curve_guard_evaluates_only_when_actor_value_absent() {
 }
 
 /// COBJ's `Curve Table` is count-keyed (evaluated elsewhere by
-/// `decode::rules`'s quantity logic) and must never appear in this
+/// the derived component `Quantity`) and must never appear in this
 /// allowlist.
 #[test]
 fn cobj_curve_table_not_in_level_curves_allowlist() {
     let fields = json!({
         "Components": [{"Count": 3, "Curve Table": {"curve": [{"x": 1.0, "y": 1.0}, {"x": 5.0, "y": 5.0}]}}],
     });
-    let rows = esm::decode::level_curves::eval_level_curves("COBJ", &fields, 50.0);
+    let rows = esm::walk::level_curves::eval_level_curves("COBJ", &fields, 50.0);
     assert!(
         rows.is_empty(),
         "COBJ has no LEVEL_KEYED_CURVES rows — its Curve Table is count-keyed"
@@ -1642,7 +1642,7 @@ fn lvli_minimim_level_curve_table_stays_unresolved_not_evaluated() {
         "Minimim Level Curve Table": {"curve": [{"x": 0.0, "y": 1.0}, {"x": 3.0, "y": 4.0}]},
     });
     assert!(
-        esm::decode::level_curves::eval_level_curves("LVLI", &fields_direct, 50.0).is_empty(),
+        esm::walk::level_curves::eval_level_curves("LVLI", &fields_direct, 50.0).is_empty(),
         "LVLI has no LEVEL_KEYED_CURVES rows at all"
     );
 

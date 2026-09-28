@@ -14,6 +14,6 @@ level: number,
 /**
  * Level-keyed curve fields (Damage Curve, durability, condition loss,
  * per-damage-type curves) evaluated at `level` — see
- * `crate::decode::level_curves`.
+ * `crate::walk::level_curves`.
  */
 level_curves: Array<LevelCurveRow>, };

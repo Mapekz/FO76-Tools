@@ -44,11 +44,12 @@ self-describing Model Information blobs in `decode/model_info.rs`, `VMAD` script
 `fragments` names), and `CTDA` condition blocks to `src/ctda.rs`'s
 `decode_ctda`, which looks up the condition function by index in a compiled-in table
 (`schema/fo76.ctda.json`) and decodes each parameter by its class character. After a record's
-fields are in, `src/decode/rules.rs`'s `apply_post_decode_rules` runs a small, named set of
-FO76-specific post-passes over the assembled fields — `apply_crafting_quantity` (struct-level,
-resolves a component's `Count` + `Curve Table` into an effective `Quantity`) and
-`apply_weapon_bash_curve` (record-level, WEAP only, synthesizes `Bash Damage` from `Damage
-Curve` + `Secondary Damage`).
+fields are in, `src/decode/derived.rs` adds the derived values, the one place fields are
+computed rather than read: `apply_crafting_quantity` (struct-level, resolves a component's
+`Count` + `Curve Table` into an effective `Quantity`), `apply_weapon_bash_curve` (record-level,
+WEAP only, synthesizes `Bash Damage` from `Damage Curve` + `Secondary Damage`), and the curve
+points inlined on a curve-table reference or a CURV record. Curve points come from the loaded
+curve index, looked up by the typed FormID.
 
 A FormID stays `Node::FormId` and a localized string stays `Node::LString` until
 `Node::into_json` renders it at the caller's `--resolve` depth. Union deciders and post-passes
@@ -278,7 +279,7 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 
 | Want to... | Look in |
 |---|---|
-| Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py` (member order and the `unordered`/`any_member` binding flags decide which subrecord a member binds), then `src/decode/bind.rs` for binding, `src/decode/walk.rs` for payload decoding, `src/decode/rules.rs` for any post-decode synthesis |
+| Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py` (member order and the `unordered`/`any_member` binding flags decide which subrecord a member binds), then `src/decode/bind.rs` for binding, `src/decode/walk.rs` for payload decoding, `src/decode/derived.rs` for a derived value |
 | Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too |
 | Change diff noise suppression | `src/diff/noise.rs`'s `strip_noise_fields` / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
