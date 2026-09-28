@@ -190,6 +190,20 @@ mod tests {
     }
 
     #[test]
+    fn rejects_an_array_count_the_decoder_cannot_read() {
+        for count in [
+            r#"{"count_prefix":9}"#,
+            r#"{"count_prefix":3}"#,
+            r#"{"payload_div":0}"#,
+        ] {
+            let array = one_member(&format!(
+                r#"{{"kind":"array","sig":"DATA","name":"A","element":{{"kind":"integer","name":"I","width":"u8"}},"count":{count}}}"#
+            ));
+            assert!(Schema::from_json(&array).is_err(), "{count}");
+        }
+    }
+
+    #[test]
     fn a_union_decider_picks_only_variants_the_union_has() {
         for bad in [
             r#"{"field":"X","map":{"1":2}}"#,

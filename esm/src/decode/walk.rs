@@ -14,21 +14,32 @@ use super::scalars::{
     scalar_formid, scalar_int, scalar_rgba, scalar_string, scalar_vec3, sibling_target_sig,
 };
 
+/// A struct decoded from the start of a payload: the bytes its fields read
+/// and the key its value sits under.
+pub(crate) struct Consumed {
+    pub bytes: usize,
+    pub key: String,
+}
+
 /// Decode `member` from `data`, a payload slice already in hand: a union
-/// variant or an array element inside a subrecord. Returns how many bytes a
-/// struct consumed (see [`decode_struct_fields`]); `None` for other kinds.
+/// variant or an array element inside a subrecord. For a struct, or a union
+/// that selects one, returns what the struct read (see
+/// [`decode_struct_fields`]); `None` for other kinds.
 pub(crate) fn decode_member(
     ctx: &DecodeContext<'_>,
     member: &MemberDef,
     out: &mut Fields,
     data: &[u8],
-) -> Option<usize> {
+) -> Option<Consumed> {
     if !member_version_ok(ctx.form_version, member) {
         return None;
     }
     match member {
         MemberDef::Struct { name, fields, .. } => {
-            return Some(decode_struct_fields(ctx, name, fields, data, out));
+            return Some(Consumed {
+                bytes: decode_struct_fields(ctx, name, fields, data, out),
+                key: name.clone(),
+            });
         }
         MemberDef::Integer {
             name,
@@ -100,7 +111,7 @@ pub(crate) fn decode_member(
             decider,
             variants,
             ..
-        } => decode_union(ctx, name, decider, variants, out, data, false),
+        } => return decode_union(ctx, name, decider, variants, out, data, false),
         MemberDef::String { name, sized, .. } => {
             out.insert(name.clone(), scalar_string(data, sized));
         }
@@ -195,8 +206,9 @@ pub(super) fn choose_variant(
 /// Decode a union whose bytes are `payload` (its own subrecord, or a payload
 /// variant), inserting the chosen variant's value under the union's name.
 /// When `payload` is a whole subrecord (`subrecord`), bytes a struct
-/// variant leaves unread are marked `_trailing` in it, as for a struct
-/// subrecord.
+/// variant (directly, or through nested unions) leaves unread are marked
+/// `_trailing` in it, as for a struct subrecord. Returns what a selected
+/// struct read, as [`decode_member`] does.
 pub(super) fn decode_union(
     ctx: &DecodeContext<'_>,
     name: &str,
@@ -205,11 +217,11 @@ pub(super) fn decode_union(
     out: &mut Fields,
     payload: &[u8],
     subrecord: bool,
-) {
+) -> Option<Consumed> {
     let chosen = choose_variant(ctx, decider, variants.len(), out, payload);
     let Some(variant) = chosen.and_then(|idx| variants.get(idx)) else {
         out.insert(name.to_owned(), Node::raw(None, RawReason::UnresolvedUnion));
-        return;
+        return None;
     };
     // Decode into a temporary map first: some variants are anonymous (Pascal
     // `wbInteger('', ...)` reusing the union's own name conceptually), so
@@ -218,16 +230,24 @@ pub(super) fn decode_union(
     let mut tmp = Fields::new();
     let consumed = decode_member(ctx, variant, &mut tmp, payload);
     if subrecord
-        && let Some(rest) = consumed
-            .and_then(|n| payload.get(n..))
-            .filter(|rest| !rest.is_empty())
+        && let Some(c) = &consumed
+        && let Some(rest) = payload.get(c.bytes..).filter(|rest| !rest.is_empty())
     {
-        mark_trailing(&mut tmp, variant.name(), rest);
+        mark_trailing(&mut tmp, &c.key, rest);
     }
+    let mut struct_key = None;
     for (k, v) in tmp {
+        let is_struct = consumed.as_ref().is_some_and(|c| c.key == k);
         let key = if k.is_empty() { name.to_owned() } else { k };
-        insert_unique(out, key, v);
+        let inserted = insert_unique(out, key, v);
+        if is_struct {
+            struct_key = Some(inserted);
+        }
     }
+    consumed.map(|c| Consumed {
+        bytes: c.bytes,
+        key: struct_key.unwrap_or(c.key),
+    })
 }
 
 /// Mark `rest`, the bytes a struct subrecord's fields left unread, as
@@ -492,7 +512,7 @@ pub(crate) fn decode_struct_fields(
                         //   -1 → 4 bytes (u32), -2 → 2 bytes (u16), -4 → 1 byte (u8).
                         // Read `width` bytes as a little-endian unsigned integer.
                         let w = *width;
-                        if w > 0 && pos + w <= data.len() {
+                        if (1..=8).contains(&w) && pos + w <= data.len() {
                             let mut n: usize = 0;
                             for i in 0..w {
                                 n |= (data[pos + i] as usize) << (8 * i);
@@ -583,8 +603,11 @@ pub(crate) fn decode_struct_fields(
 fn decode_measured(ctx: &DecodeContext<'_>, element: &FieldDef, data: &[u8]) -> (Node, usize) {
     let mut out = Fields::new();
     let consumed = decode_struct_fields(ctx, "", std::slice::from_ref(element), data, &mut out);
+    // The element's value sits under its own name, or (for a union) under
+    // the name of the variant it selected.
     let value = match out.swap_remove("") {
-        Some(Node::Struct(mut fields)) => fields.swap_remove(element.name()),
+        Some(Node::Struct(fields)) if fields.len() == 1 => fields.into_values().next(),
+        Some(Node::Struct(fields)) if !fields.is_empty() => Some(Node::Struct(fields)),
         _ => None,
     };
     let empty = || match element {
@@ -796,6 +819,104 @@ mod tests {
                 "Count": 7,
                 "_trailing": {"hex": "aa", "_raw": true, "reason": "trailing bytes"},
             }})
+        );
+    }
+
+    fn union_of(name: &str, sig: Option<&str>, variants: Vec<MemberDef>) -> MemberDef {
+        MemberDef::Union {
+            sig: sig.map(str::to_string),
+            name: name.into(),
+            decider: UnionDecider::PayloadSize {
+                payload_size: std::collections::HashMap::new(),
+                default_variant: Some(0),
+            },
+            variants,
+            from_version: None,
+            below_version: None,
+        }
+    }
+
+    fn struct_of(name: &str, fields: Vec<MemberDef>) -> MemberDef {
+        MemberDef::Struct {
+            sig: None,
+            name: name.into(),
+            fields,
+            from_version: None,
+            below_version: None,
+        }
+    }
+
+    /// A struct reached through nested unions still marks what it leaves
+    /// unread at the subrecord boundary.
+    #[test]
+    fn a_nested_union_struct_variant_marks_its_trailing_bytes() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let inner = union_of(
+            "Inner",
+            None,
+            vec![struct_of(
+                "Base Data",
+                vec![int_field("Count", IntegerWidth::U8)],
+            )],
+        );
+        let outer = union_of("Outer", Some("DATA"), vec![inner]);
+        let (fields, _) = bind(&ctx, vec![outer], &[subrecord("DATA", vec![0x07, 0xaa], 0)]);
+        assert_eq!(
+            Value::Object(fields),
+            json!({"Base Data": {
+                "Count": 7,
+                "_trailing": {"hex": "aa", "_raw": true, "reason": "trailing bytes"},
+            }})
+        );
+    }
+
+    /// An array of unions whose variants differ in size keeps each
+    /// element's selected value.
+    #[test]
+    fn a_varying_size_union_array_keeps_its_values() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let choice = MemberDef::Union {
+            sig: None,
+            name: "Choice".into(),
+            decider: UnionDecider::ByteAtOffset {
+                byte_offset: 0,
+                default_variant: None,
+                map: std::collections::HashMap::from([("1".into(), 0), ("2".into(), 1)]),
+                width_bytes: 1,
+            },
+            variants: vec![
+                struct_of("A", vec![int_field("Tag", IntegerWidth::U8)]),
+                struct_of(
+                    "B",
+                    vec![
+                        int_field("Tag", IntegerWidth::U8),
+                        int_field("X", IntegerWidth::U8),
+                    ],
+                ),
+            ],
+            from_version: None,
+            below_version: None,
+        };
+        let payload = MemberDef::Struct {
+            sig: Some("DATA".into()),
+            name: "Payload".into(),
+            fields: vec![MemberDef::Array {
+                sig: None,
+                name: "Values".into(),
+                element: Box::new(choice),
+                count: Some(ArrayCount::Fixed(2)),
+                from_version: None,
+                below_version: None,
+            }],
+            from_version: None,
+            below_version: None,
+        };
+        let (fields, _) = bind(&ctx, vec![payload], &[subrecord("DATA", vec![1, 2, 3], 0)]);
+        assert_eq!(
+            Value::Object(fields),
+            json!({"Payload": {"Values": [{"Tag": 1}, {"Tag": 2, "X": 3}]}})
         );
     }
 

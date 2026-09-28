@@ -508,7 +508,9 @@ fn decode_subrecord(
             decider,
             variants,
             ..
-        } => decode_union(ctx, name, decider, variants, out, data, true),
+        } => {
+            decode_union(ctx, name, decider, variants, out, data, true);
+        }
         // Bound by `bind_member` (a signature-bearing array takes a run of
         // subrecords) or never bound (no signature of their own).
         MemberDef::Array { .. } | MemberDef::RStruct { .. } | MemberDef::RArray { .. } => {}

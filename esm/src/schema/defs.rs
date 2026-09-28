@@ -777,6 +777,24 @@ impl MemberDef {
             } if c.up > 1 || c.path.is_empty() => Err(format!(
                 "count path {c:?} must climb at most one scope and name a field"
             )),
+            MemberDef::RArray {
+                count: Some(ArrayCount::CountPrefix(width)),
+                ..
+            }
+            | MemberDef::Array {
+                count: Some(ArrayCount::CountPrefix(width)),
+                ..
+            } if ![1, 2, 4].contains(width) => {
+                Err(format!("count prefix of {width} bytes, not 1, 2 or 4"))
+            }
+            MemberDef::RArray {
+                count: Some(ArrayCount::PayloadDiv(0)),
+                ..
+            }
+            | MemberDef::Array {
+                count: Some(ArrayCount::PayloadDiv(0)),
+                ..
+            } => Err("count divides the payload size by 0".to_string()),
             MemberDef::Union {
                 decider, variants, ..
             } => decider.validate(variants.len()),

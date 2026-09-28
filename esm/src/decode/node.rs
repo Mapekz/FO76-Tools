@@ -222,22 +222,23 @@ impl From<i32> for Node {
     }
 }
 
-/// Insert `value` under `key`; if `key` is taken, under `"key 2"`, `"key 3"`, …
+/// Insert `value` under `key`; if `key` is taken, under `"key 2"`, `"key 3"`, …;
+/// returns the key used.
 ///
 /// Schema patterns reuse one `wbXxx` definition for two slots of a struct
 /// (e.g. MGEF's two `wbActorValue` fields), and the second must not clobber
 /// the first.
-pub(crate) fn insert_unique(fields: &mut Fields, key: String, value: Node) {
+pub(crate) fn insert_unique(fields: &mut Fields, key: String, value: Node) -> String {
     if !fields.contains_key(&key) {
-        fields.insert(key, value);
-        return;
+        fields.insert(key.clone(), value);
+        return key;
     }
     let mut n = 2usize;
     loop {
         let candidate = format!("{key} {n}");
         if !fields.contains_key(&candidate) {
-            fields.insert(candidate, value);
-            return;
+            fields.insert(candidate.clone(), value);
+            return candidate;
         }
         n += 1;
     }
