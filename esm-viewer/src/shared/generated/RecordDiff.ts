@@ -14,4 +14,17 @@ field_changes: unknown,
  * `stub.editor_id` (the B side), which indicates an EDID rename this
  * patch (e.g. a `ZZZ_` deprecation prefix being added).
  */
-prev_editor_id?: string | null, };
+prev_editor_id?: string | null, 
+/**
+ * FormIDs that appear in `field_changes` (on either side) as values of
+ * schema-typed FormID fields, sorted. A `0x…` string in
+ * `field_changes` that is not listed here is not a reference (e.g. a
+ * flags value or a Model Information hash).
+ */
+refs?: Array<string>, 
+/**
+ * FormIDs the B-side record references that the A-side record did not,
+ * and that resolve in neither snapshot (nor the engine-hardcoded
+ * forms), sorted.
+ */
+dangling_refs?: Array<string>, };

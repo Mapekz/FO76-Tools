@@ -117,6 +117,31 @@ impl Node {
         }
     }
 
+    /// Every path at which `target` is referenced, appended to `out`: struct
+    /// keys joined with `.`, array elements as `[N]` (e.g.
+    /// `Effects[2].Conditions[0].Parameter 1`).
+    pub fn formid_paths(&self, target: FormId, prefix: &str, out: &mut Vec<String>) {
+        match self {
+            Node::FormId { id, .. } if *id == target => out.push(prefix.to_owned()),
+            Node::Struct(fields) => {
+                for (k, v) in fields {
+                    let next = if prefix.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{prefix}.{k}")
+                    };
+                    v.formid_paths(target, &next, out);
+                }
+            }
+            Node::Array(items) => {
+                for (i, item) in items.iter().enumerate() {
+                    item.formid_paths(target, &format!("{prefix}[{i}]"), out);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Render the tree to its boundary JSON, resolving FormIDs and localized
     /// strings through `ctx`.
     pub fn into_json(self, ctx: &DecodeContext<'_>) -> Value {

@@ -19,4 +19,14 @@ description?: string | null,
  * decode. Always absent on `changed` stubs (see `RecordDiff::field_changes`
  * instead).
  */
-fields?: unknown, };
+fields?: unknown, 
+/**
+ * FormIDs the decoded `fields` reference through schema-typed FormID
+ * fields, in field order. Present only when `fields` is.
+ */
+refs?: Array<string>, 
+/**
+ * The subset of `refs` that resolves in neither snapshot (nor the
+ * engine-hardcoded forms). Only computed for `added` records.
+ */
+dangling_refs?: Array<string>, };

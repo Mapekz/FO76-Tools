@@ -1403,6 +1403,9 @@ mod tests {
             },
             field_changes,
             prev_editor_id: None,
+            refs: Vec::new(),
+            dangling_refs: Vec::new(),
+            ref_ids: Default::default(),
         }
     }
 

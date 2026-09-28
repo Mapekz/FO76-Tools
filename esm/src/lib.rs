@@ -25,7 +25,7 @@ pub mod tree;
 pub mod walk;
 pub mod wildcard;
 
-use crate::decode::{DecodeContext, decode_record};
+use crate::decode::{DecodeContext, decode_record, decode_record_node};
 use crate::formid::parse_formid;
 use crate::index::Index;
 use crate::reader::{EsmFile, FileInfo, ParsedRecord, RecordHeaderInfo, edid_from_subrecords};
@@ -365,65 +365,6 @@ fn collect_field_paths(v: &Value, prefix: &str, out: &mut HashSet<String>, cap: 
                 if out.len() >= cap {
                     return;
                 }
-            }
-        }
-        _ => {}
-    }
-}
-
-/// Walk a decoded record body collecting every JSON path where a leaf string
-/// value equals `target` (a FormID hex string, e.g. `"0x0004FE3D"`).
-///
-/// Unlike [`collect_field_paths`] (which collapses every array level to a
-/// literal `"[]"` segment for a type-level path union), array elements here
-/// are indexed (`Key[N]`) — the point is the exact location(s) within one
-/// specific decoded record, e.g. `Effects[2].Conditions[0].Parameter 1`. Backs
-/// [`Database::formid_reference_paths`] (`refs --paths`).
-fn collect_formid_paths(v: &Value, target: &str, prefix: String, out: &mut Vec<String>) {
-    match v {
-        Value::String(s) if s == target => out.push(prefix),
-        Value::Object(map) => {
-            for (k, vv) in map {
-                let next = if prefix.is_empty() {
-                    k.clone()
-                } else {
-                    format!("{prefix}.{k}")
-                };
-                collect_formid_paths(vv, target, next, out);
-            }
-        }
-        Value::Array(items) => {
-            for (i, item) in items.iter().enumerate() {
-                collect_formid_paths(item, target, format!("{prefix}[{i}]"), out);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// A raw decoded FormID field renders as exactly `"0x"` + 8 hex digits (see
-/// `FormId::display`) — strict enough that no other decoded string field
-/// (names, EditorIDs, enum labels) can collide with it, so no target
-/// comparison is needed the way [`collect_formid_paths`] needs one.
-fn looks_like_decoded_formid(s: &str) -> bool {
-    s.len() == 10 && s.starts_with("0x") && s[2..].chars().all(|c| c.is_ascii_hexdigit())
-}
-
-/// Collect every string value in `v` that looks like a raw decoded FormID
-/// (see [`looks_like_decoded_formid`]), in traversal order with duplicates
-/// kept — callers that need a deduplicated set should dedupe on the parsed
-/// [`FormId`], not this raw string list. Backs [`Database::outgoing_formids`].
-fn collect_all_formid_values(v: &Value, out: &mut Vec<String>) {
-    match v {
-        Value::String(s) if looks_like_decoded_formid(s) => out.push(s.clone()),
-        Value::Object(map) => {
-            for vv in map.values() {
-                collect_all_formid_values(vv, out);
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                collect_all_formid_values(item, out);
             }
         }
         _ => {}
@@ -1312,6 +1253,17 @@ impl Database {
         parsed: &crate::reader::ParsedRecord,
         depth: crate::decode::ResolveDepth,
     ) -> Value {
+        self.decode_parsed_with(parsed, depth, |_| {})
+    }
+
+    /// [`Self::decode_parsed`], handing the typed tree to `inspect` before it
+    /// is rendered.
+    fn decode_parsed_with(
+        &self,
+        parsed: &crate::reader::ParsedRecord,
+        depth: crate::decode::ResolveDepth,
+        inspect: impl FnOnce(&crate::decode::node::Node),
+    ) -> Value {
         let resolver: Option<DatabaseResolver<'_>> = if depth != crate::decode::ResolveDepth::None {
             Some(DatabaseResolver::new(self, 2))
         } else {
@@ -1328,7 +1280,47 @@ impl Database {
                 .as_ref()
                 .map(|r| r as &dyn crate::decode::FormIdRefResolver),
         );
-        let mut fields = decode_record(&ctx, &parsed.header.signature, &parsed.subrecords);
+        let node = self.node_parsed(&ctx, parsed);
+        inspect(&node);
+        node.into_json(&ctx)
+    }
+
+    /// [`Self::record_at_meta_with_depth`] plus every FormID the record's
+    /// schema-typed fields reference (null FormIDs excluded), in tree order
+    /// with duplicates removed.
+    pub(crate) fn record_at_meta_with_refs(
+        &self,
+        meta: &crate::reader::RecordMeta,
+        depth: crate::decode::ResolveDepth,
+    ) -> anyhow::Result<(RecordResult, Vec<FormId>)> {
+        let parsed = self.esm.parse_record_at(meta.offset)?;
+        let editor_id = edid_from_subrecords(&parsed.subrecords);
+        let mut refs = Vec::new();
+        let fields = self.decode_parsed_with(&parsed, depth, |node| {
+            let mut seen = std::collections::HashSet::new();
+            node.for_each_formid(&mut |id| {
+                if id.0 != 0 && seen.insert(id) {
+                    refs.push(id);
+                }
+            });
+        });
+        Ok((
+            RecordResult {
+                header: parsed.header,
+                editor_id,
+                fields,
+            },
+            refs,
+        ))
+    }
+
+    /// Decode an already-parsed record into its typed tree under `ctx`.
+    fn node_parsed(
+        &self,
+        ctx: &DecodeContext<'_>,
+        parsed: &crate::reader::ParsedRecord,
+    ) -> crate::decode::node::Node {
+        let mut node = decode_record_node(ctx, &parsed.header.signature, &parsed.subrecords);
         // CURV records only carry a path to an external curve-points JSON file
         // (see schema `JSON File Path[/2]`) — inline the parsed points too, so a
         // plain `get` on a CURV record doesn't require a second out-of-band read
@@ -1339,14 +1331,37 @@ impl Database {
                 .curves
                 .as_ref()
                 .and_then(|curves| curves.get(parsed.header.form_id))
-            && let Value::Object(map) = &mut fields
+            && let crate::decode::node::Node::Struct(fields) = &mut node
         {
-            map.insert(
-                "Curve".to_string(),
-                crate::decode::curve_points_value(curve),
-            );
+            fields.insert("Curve".to_string(), crate::decode::curve_points_node(curve));
         }
-        fields
+        node
+    }
+
+    /// Decode the record at `meta` into its typed tree, with no FormID
+    /// resolver. Returns the parsed header and EditorID alongside.
+    pub(crate) fn record_node_at_meta(
+        &self,
+        meta: &crate::reader::RecordMeta,
+    ) -> anyhow::Result<(crate::reader::ParsedRecord, crate::decode::node::Node)> {
+        let parsed = self.esm.parse_record_at(meta.offset)?;
+        let ctx = self.plain_ctx(parsed.header.form_version);
+        let node = self.node_parsed(&ctx, &parsed);
+        Ok((parsed, node))
+    }
+
+    /// A decode context for this database with no FormID resolver
+    /// (`ResolveDepth::None`).
+    pub(crate) fn plain_ctx(&self, form_version: u16) -> DecodeContext<'_> {
+        DecodeContext::for_record(
+            &self.schema,
+            form_version,
+            self.is_localized,
+            self.localization.as_ref(),
+            self.curves.as_ref(),
+            crate::decode::ResolveDepth::None,
+            None,
+        )
     }
 
     /// Decode a record at `meta`'s offset with the given resolution depth.
@@ -1397,22 +1412,19 @@ impl Database {
         self.record_by_formid_resolved(form_id, depth)
     }
 
-    /// Decode `referencer` (no FormID resolver — `ResolveDepth::None`, plain
-    /// hex output) and return every JSON path within its body where `target`
-    /// appears as a raw FormID string. Backs `refs --paths`: best-effort —
+    /// Decode `referencer` and return every path within its body where a
+    /// FormID field references `target`. Backs `refs --paths`: best-effort —
     /// returns an empty vec if `referencer` can't be located or decoded, or if
-    /// `target` never appears as a literal field value (e.g. it's only
-    /// reachable indirectly, such as through curve-table inlining).
+    /// no FormID field holds `target`.
     pub fn formid_reference_paths(&self, referencer: FormId, target: FormId) -> Vec<String> {
         let Some(meta) = self.index.get_by_formid(referencer) else {
             return Vec::new();
         };
-        let Ok(result) = self.record_at_meta_with_depth(&meta, crate::decode::ResolveDepth::None)
-        else {
+        let Ok((_, node)) = self.record_node_at_meta(&meta) else {
             return Vec::new();
         };
         let mut out = Vec::new();
-        collect_formid_paths(&result.fields, &target.display(), String::new(), &mut out);
+        node.formid_paths(target, "", &mut out);
         out
     }
 
@@ -1428,17 +1440,17 @@ impl Database {
         let Some(meta) = self.index.get_by_formid(node) else {
             return Vec::new();
         };
-        let Ok(result) = self.record_at_meta_with_depth(&meta, crate::decode::ResolveDepth::None)
-        else {
+        let Ok((_, tree)) = self.record_node_at_meta(&meta) else {
             return Vec::new();
         };
-        let mut raw = Vec::new();
-        collect_all_formid_values(&result.fields, &mut raw);
         let mut seen = std::collections::HashSet::new();
-        raw.into_iter()
-            .filter_map(|s| crate::parse_form_id_input(&s).ok())
-            .filter(|&f| f != node && seen.insert(f))
-            .collect()
+        let mut out = Vec::new();
+        tree.for_each_formid(&mut |f| {
+            if f != node && f.0 != 0 && seen.insert(f) {
+                out.push(f);
+            }
+        });
+        out
     }
 
     /// The memoized decode of record type `sig` (already uppercased): decoded

@@ -219,17 +219,28 @@ impl<'a> DecodeContext<'a> {
     }
 }
 
-/// Render a curve's points as a JSON array of `{"x", "y"}` objects.
-///
-/// Shared by [`render_formid`]'s inline curve branch and the CURV-record's own
-/// `"Curve"` field injection (`Database::record_at_meta_with_depth`) so both
-/// render identically.
+/// Render a curve's points as a JSON array of `{"x", "y"}` objects, for
+/// [`render_formid`]'s inline curve branch. [`curve_points_node`] builds the
+/// same shape for a CURV record's own `"Curve"` field, so both render
+/// identically.
 pub(crate) fn curve_points_value(curve: &crate::curves::ArchivedCurve) -> Value {
     Value::Array(
         curve
             .points()
             .iter()
             .map(|p| json!({"x": json_f32(p.x), "y": json_f32(p.y)}))
+            .collect(),
+    )
+}
+
+/// [`curve_points_value`] as a node, for a CURV record's own decoded tree.
+pub(crate) fn curve_points_node(curve: &crate::curves::ArchivedCurve) -> node::Node {
+    use node::Node;
+    Node::Array(
+        curve
+            .points()
+            .iter()
+            .map(|p| Node::obj([("x", Node::Float(p.x)), ("y", Node::Float(p.y))]))
             .collect(),
     )
 }

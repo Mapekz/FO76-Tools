@@ -122,6 +122,14 @@ pub struct RecordStub {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(type = "unknown"))]
     pub fields: Option<Value>,
+    /// FormIDs the decoded `fields` reference through schema-typed FormID
+    /// fields, in field order. Present only when `fields` is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+    /// The subset of `refs` that resolves in neither snapshot (nor the
+    /// engine-hardcoded forms). Only computed for `added` records.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dangling_refs: Vec<String>,
 }
 
 /// A record present in both ESMs whose decoded fields changed.
@@ -138,6 +146,22 @@ pub struct RecordDiff {
     /// patch (e.g. a `ZZZ_` deprecation prefix being added).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prev_editor_id: Option<String>,
+    /// FormIDs that appear in `field_changes` (on either side) as values of
+    /// schema-typed FormID fields, sorted. A `0x…` string in
+    /// `field_changes` that is not listed here is not a reference (e.g. a
+    /// flags value or a Model Information hash).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+    /// FormIDs the B-side record references that the A-side record did not,
+    /// and that resolve in neither snapshot (nor the engine-hardcoded
+    /// forms), sorted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dangling_refs: Vec<String>,
+    /// Every FormID either side's record references; filters `refs` once
+    /// noise suppression has settled `field_changes`.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) ref_ids: HashSet<FormId>,
 }
 
 /// Resolved display information for a FormID that appears in `field_changes`.
@@ -190,9 +214,11 @@ pub struct DiffResult {
     pub removed: Vec<RecordStub>,
     /// FormIDs in both files where the decoded fields changed.
     pub changed: Vec<RecordDiff>,
-    /// One-hop resolved names for every FormID hex string that appears in any
-    /// `field_changes` value.  Keyed by the bare hex string (e.g. `"0x00ABCDEF"`).
-    /// Empty when no localization is available or no FormID references exist.
+    /// One-hop resolved names for every typed FormID reference in
+    /// `field_changes` (each changed record's `refs`) and in added/removed
+    /// bodies (each stub's `refs`). Keyed by the bare hex string (e.g.
+    /// `"0x00ABCDEF"`). Empty when no localization is available or no FormID
+    /// references exist.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub ref_names: BTreeMap<String, RefName>,
     /// Count of `changed` records dropped entirely by noise suppression
@@ -257,9 +283,12 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 ///
 /// When either database has a localization table loaded, each `RecordStub`
 /// is enriched with `name` (FULL) and `description` (DESC), and `DiffResult`
-/// gains a `ref_names` sidecar mapping every FormID hex reference found in
+/// gains a `ref_names` sidecar mapping every typed FormID reference in
 /// `field_changes` (and in added/removed decoded bodies) to its resolved
-/// record type, EditorID, name, and description.
+/// record type, EditorID, name, and description. Each changed record lists
+/// those references as `refs`, and the newly introduced ones that resolve
+/// nowhere as `dangling_refs`; added records carry the same two lists for
+/// their body.
 pub fn diff_databases_with(
     a: &Database,
     b: &Database,
@@ -285,9 +314,15 @@ pub fn diff_databases_with(
         let mut stub = record_stub_from_db(b, &meta, *id)?;
         // Decode fields best-effort (never aborts the diff on failure).
         if let Some(depth) = depth
-            && let Ok(r) = b.record_by_formid_resolved(*id, depth)
+            && let Ok((r, refs)) = b.record_at_meta_with_refs(&meta, depth)
         {
             stub.fields = Some(r.fields);
+            stub.dangling_refs = refs
+                .iter()
+                .filter(|id| !resolves(a, b, **id))
+                .map(|id| id.display())
+                .collect();
+            stub.refs = refs.iter().map(|id| id.display()).collect();
         }
         added.push(stub);
     }
@@ -304,9 +339,10 @@ pub fn diff_databases_with(
         // Old-side decode: any FormID refs resolve against A, which is
         // correct since the referenced records may no longer exist in B.
         if let Some(depth) = depth
-            && let Ok(r) = a.record_by_formid_resolved(*id, depth)
+            && let Ok((r, refs)) = a.record_at_meta_with_refs(&meta, depth)
         {
             stub.fields = Some(r.fields);
+            stub.refs = refs.iter().map(|id| id.display()).collect();
         }
         removed.push(stub);
     }
@@ -352,11 +388,11 @@ pub fn diff_databases_with(
         }
 
         // Decode both and field-diff
-        let ra = a
-            .record_at_meta_with_depth(&meta_a, ResolveDepth::None)
+        let (ra, refs_a) = a
+            .record_at_meta_with_refs(&meta_a, ResolveDepth::None)
             .with_context(|| format!("decode A for {}", id))?;
-        let rb = b
-            .record_at_meta_with_depth(&meta_b, ResolveDepth::None)
+        let (rb, refs_b) = b
+            .record_at_meta_with_refs(&meta_b, ResolveDepth::None)
             .with_context(|| format!("decode B for {}", id))?;
 
         let mut field_changes = json_diff(&ra.fields, &rb.fields);
@@ -418,10 +454,22 @@ pub fn diff_databases_with(
             None
         };
 
+        let refs_a: HashSet<FormId> = refs_a.into_iter().collect();
+        let mut dangling_refs: Vec<String> = refs_b
+            .iter()
+            .filter(|id| !refs_a.contains(id) && !resolves(a, b, **id))
+            .map(|id| id.display())
+            .collect();
+        dangling_refs.sort();
+        let mut ref_ids = refs_a;
+        ref_ids.extend(refs_b);
         changed.push(RecordDiff {
             stub,
             field_changes,
             prev_editor_id,
+            refs: Vec::new(),
+            dangling_refs,
+            ref_ids,
         });
         changed_restamp.push(restamp);
     }
@@ -447,28 +495,32 @@ pub fn diff_databases_with(
 
     changed.sort_by(|x, y| x.stub.form_id.cmp(&y.stub.form_id));
 
-    // Build ref_names: one-hop FormID resolution for every hex ref in field_changes
-    // and added/removed records' decoded fields. Populated when either side has
-    // localization or curves loaded, or is non-localized (FULL/DESC are inline
-    // text there, so names resolve without any string table).
+    // Each changed record's `refs`: the typed references still visible in
+    // its (now final) field_changes.
+    for rd in &mut changed {
+        let mut refs = HashSet::new();
+        collect_typed_refs(&rd.field_changes, &rd.ref_ids, &mut refs);
+        let mut refs: Vec<String> = refs.into_iter().map(|id| id.display()).collect();
+        refs.sort();
+        rd.refs = refs;
+    }
+
+    // Build ref_names: one-hop FormID resolution for every typed reference in
+    // field_changes and added/removed records' decoded fields. Populated when
+    // either side has localization or curves loaded, or is non-localized
+    // (FULL/DESC are inline text there, so names resolve without any string
+    // table).
     let ref_names =
         if a.has_enrichment() || b.has_enrichment() || !a.is_localized || !b.is_localized {
-            let mut refs: HashSet<String> = HashSet::new();
-            for rd in &changed {
-                collect_formid_refs(&rd.field_changes, &mut refs);
-            }
-            for stub in &added {
-                if let Some(f) = &stub.fields {
-                    collect_formid_refs(f, &mut refs);
-                }
-            }
-            for stub in &removed {
-                if let Some(f) = &stub.fields {
-                    collect_formid_refs(f, &mut refs);
-                }
-            }
+            let refs: HashSet<&String> = changed
+                .iter()
+                .flat_map(|rd| &rd.refs)
+                .chain(added.iter().chain(&removed).flat_map(|stub| &stub.refs))
+                .collect();
             refs.into_iter()
-                .filter_map(|fid_str| resolve_ref_name(&fid_str, b, a).map(|rn| (fid_str, rn)))
+                .filter_map(|fid_str| {
+                    resolve_ref_name(fid_str, b, a).map(|rn| (fid_str.clone(), rn))
+                })
                 .collect()
         } else {
             BTreeMap::new()
@@ -552,24 +604,36 @@ pub(crate) fn is_formid_str(s: &str) -> bool {
     s.len() == 10 && b[0] == b'0' && b[1] == b'x' && b[2..].iter().all(|c| c.is_ascii_hexdigit())
 }
 
-/// Recursively collect all FormID-shaped strings from a JSON value tree.
-fn collect_formid_refs(val: &Value, out: &mut HashSet<String>) {
+/// Collect the FormIDs in `ids` (a record's typed references) that appear as
+/// FormID strings anywhere in the rendered `val`. A FormID field renders as
+/// its `0x…` display string, so a string counts only when the record really
+/// references that FormID — a flags value or hash with the same shape does not.
+fn collect_typed_refs(val: &Value, ids: &HashSet<FormId>, out: &mut HashSet<FormId>) {
     match val {
         Value::String(s) if is_formid_str(s) => {
-            out.insert(s.clone());
+            if let Ok(id) = parse_formid(s)
+                && ids.contains(&id)
+            {
+                out.insert(id);
+            }
         }
         Value::Object(map) => {
             for v in map.values() {
-                collect_formid_refs(v, out);
+                collect_typed_refs(v, ids, out);
             }
         }
         Value::Array(arr) => {
             for v in arr {
-                collect_formid_refs(v, out);
+                collect_typed_refs(v, ids, out);
             }
         }
         _ => {}
     }
+}
+
+/// Whether `id` names a record in either snapshot or an engine-hardcoded form.
+fn resolves(a: &Database, b: &Database, id: FormId) -> bool {
+    b.index.contains(id) || a.index.contains(id) || crate::hardcoded::lookup(id).is_some()
 }
 
 /// Resolve a FormID hex string to a `RefName` by looking up the record in
