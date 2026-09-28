@@ -60,7 +60,8 @@ pub(crate) fn curve_points_node(curve: &ArchivedCurve) -> Node {
     )
 }
 
-/// What a curve-table field refers to.
+/// What a curve-table field refers to. A curve the loaded index doesn't
+/// hold is unresolved at every resolve depth.
 enum CurveRef {
     /// No reference (absent, null or not a FormID).
     None,

@@ -533,6 +533,9 @@ class TestApplyOverrides(unittest.TestCase):
 
     def test_a_replace_that_changes_nothing_is_reported_redundant(self):
         recs = self.records()
+        # The audit's extractor tags integers with _raw_itype; that doesn't
+        # make an otherwise identical node a change.
+        recs["QUST"]["members"][0]["element"]["members"][1]["_raw_itype"] = "itU8"
         same = {"kind": "integer", "sig": "FNAM", "name": "Flags"}
         self.assertEqual(len(self.apply(recs, "replace", ["Objectives", "element", "FNAM"], same)), 1)
 

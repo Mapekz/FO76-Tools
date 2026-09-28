@@ -612,7 +612,7 @@ impl RecordDef {
 
 #[cfg(test)]
 mod tests {
-    use super::Schema;
+    use super::{RecordDef, Schema};
 
     fn one_array(count_path: &str) -> String {
         format!(
@@ -622,15 +622,21 @@ mod tests {
         )
     }
 
+    /// Every record definition, through both the build-time split the
+    /// binary embeds and a parse of the file itself.
     #[test]
     fn embedded_schema_parses_and_validates() {
         let text = include_str!("../schema/fo76.json");
-        let schema = Schema::from_json(text).unwrap();
         let raw: serde_json::Value = serde_json::from_str(text).unwrap();
-        assert_eq!(
-            schema.records().count(),
-            raw["records"].as_object().unwrap().len()
-        );
+        let count = raw["records"].as_object().unwrap().len();
+        assert_eq!(Schema::from_json(text).unwrap().records().count(), count);
+        let embedded = Schema::load_embedded().unwrap();
+        assert_eq!(embedded.records().count(), count);
+        for (sig, def) in raw["records"].as_object().unwrap() {
+            let parsed = serde_json::to_value(embedded.record(sig).unwrap()).unwrap();
+            let reparsed: RecordDef = serde_json::from_value(def.clone()).unwrap();
+            assert_eq!(parsed, serde_json::to_value(reparsed).unwrap(), "{sig}");
+        }
     }
 
     #[test]

@@ -2309,6 +2309,20 @@ def _descend(node: dict, step: str) -> dict:
 
 
 OVERRIDE_OPS = ("replace", "insert_after", "append")
+
+
+def _same_node(a: object, b: object) -> bool:
+    """Whether two schema nodes are equal, ignoring the audit's `_raw_itype`
+    annotations."""
+
+    def strip(node: object) -> object:
+        if isinstance(node, dict):
+            return {k: strip(v) for k, v in node.items() if k != "_raw_itype"}
+        if isinstance(node, list):
+            return [strip(v) for v in node]
+        return node
+
+    return strip(a) == strip(b)
 _OVERRIDE_KEYS = {"record", "op", "path", "reason", "node"}
 
 
@@ -2362,7 +2376,7 @@ def apply_overrides(records: dict, entries: list[dict], ex: "Extractor | None") 
         raw = entry["node"] if isinstance(entry["node"], list) else [entry["node"]]
         nodes = [_expand_pascal_var(copy.deepcopy(n), ex) for n in raw]
         if op == "replace" and not path:
-            if records.get(sig) == nodes[0]:
+            if _same_node(records.get(sig), nodes[0]):
                 redundant.append(entry)
             records[sig] = nodes[0]
             continue
@@ -2383,7 +2397,7 @@ def apply_overrides(records: dict, entries: list[dict], ex: "Extractor | None") 
                 raise ValueError(f"override {op} {sig} {path}: needs a member, not 'element'")
             if "element" not in parent:
                 raise ValueError(f"override {sig} {path}: 'element' on a non-array node")
-            if parent["element"] == nodes[0]:
+            if _same_node(parent["element"], nodes[0]):
                 redundant.append(entry)
             parent["element"] = nodes[0]
             continue
@@ -2395,7 +2409,7 @@ def apply_overrides(records: dict, entries: list[dict], ex: "Extractor | None") 
         if index is None:
             raise ValueError(f"override {op} {sig} {path}: {last!r} not found")
         if op == "replace":
-            if siblings[index] == nodes[0]:
+            if _same_node(siblings[index], nodes[0]):
                 redundant.append(entry)
             siblings[index] = nodes[0]
         else:
