@@ -18,34 +18,17 @@ use std::path::{Path, PathBuf};
 #[command(name = "esm", about = "Read and inspect Fallout 76 ESM files")]
 #[command(subcommand_required = true, arg_required_else_help = true)]
 struct Cli {
-    /// Path to the ESM file or its data folder. If omitted, falls back to the
-    /// FO76_ESM_PATH environment variable. Applies to every subcommand except
-    /// `diff` (which takes two explicit positionals) and `skill` (which needs
-    /// no ESM at all).
+    /// Path to the ESM file or its data folder. Defaults to FO76_ESM_PATH.
+    /// `diff` takes its two ESMs as positionals instead, and `skill` needs none.
     #[arg(long, global = true, env = "FO76_ESM_PATH")]
     esm: Option<PathBuf>,
-    /// If the index cache is already being built by another process, print
-    /// its status and exit immediately (status 75) instead of waiting for
-    /// it and then running this command's own query. Checked once, up
-    /// front, against whatever build is in flight at that moment — it does
-    /// not prevent this invocation's own query from triggering (and
-    /// blocking on) a *fresh* cold build if none was already running.
+    /// If a cache build for this ESM is already running, print its progress
+    /// and exit with status 75 instead of waiting for it.
     #[arg(long, global = true)]
     no_wait: bool,
-    /// Read bare (no `0x` prefix) FormID input as decimal instead of hex,
-    /// and render identity FormIDs (a record's own FormID — the FORMID
-    /// column, `get`'s header, `refs`'/`diff`'s stubs) as decimal in output.
-    /// FormIDs *inside* decoded field bodies stay hex either way, and an
-    /// explicit `0x`-prefixed input is always hex regardless of this flag.
-    ///
-    /// Without this flag, a bare digit token is *always* read as hex, even
-    /// when that hex reading has no record — there is no implicit fallback
-    /// to decimal (see `docs/adr/0010-formid-input-base.md`). Pass this flag
-    /// when you specifically want the decimal reading instead; hex is never
-    /// attempted in that case. No effect on `skill`, `cache`,
-    /// `info`, or `coverage` (none take a FormID), and deliberately not
-    /// applied to `chase`'s JSON, which is a machine pipeline contract
-    /// requiring literal `0x########`.
+    /// Read bare (no `0x`) FormID input as decimal, and print records' own
+    /// FormIDs as decimal. `0x` input is always hex, and FormIDs inside
+    /// decoded fields and `chase` JSON stay hex.
     #[arg(long, global = true)]
     decimal: bool,
     #[command(subcommand)]
@@ -63,10 +46,13 @@ const DEFAULT_LANG: &str = "en";
 struct DiffArgs {
     file_a: PathBuf,
     file_b: PathBuf,
+    /// Only records of this 4-character type (e.g. `WEAP`).
     #[arg(long = "type")]
     record_type: Option<String>,
+    /// Print machine-readable JSON (compact unless --pretty).
     #[arg(long)]
     json: bool,
+    /// Indent JSON output.
     #[arg(long)]
     pretty: bool,
     /// Detail level for decoded fields attached to added/removed record stubs.
@@ -130,10 +116,13 @@ struct DiffArgs {
 
 #[derive(clap::Args)]
 struct LocalizationArgs {
+    /// Read string tables from this Localization BA2 instead of the ones found next to the ESM.
     #[arg(long = "localization-ba2", conflicts_with = "strings_dir")]
     localization_ba2: Option<PathBuf>,
+    /// Read string tables from this directory instead of the ones found next to the ESM.
     #[arg(long, conflicts_with = "localization_ba2")]
     strings_dir: Option<PathBuf>,
+    /// Language of the string tables.
     #[arg(long, default_value = DEFAULT_LANG)]
     lang: String,
 }
@@ -142,13 +131,18 @@ struct LocalizationArgs {
 struct GetSourceArgs {
     #[command(flatten)]
     localization: LocalizationArgs,
+    /// Read curve tables from this Startup BA2 instead of the ones found next to the ESM.
     #[arg(long)]
     startup_ba2: Option<PathBuf>,
 }
 
+// `Diff` is boxed so `Commands` isn't sized by `DiffArgs`, which carries
+// every per-side source override.
 #[derive(Subcommand)]
 enum Commands {
+    /// Summarize the file header: version, record count, masters.
     Info,
+    /// Decode records by FormID or EditorID.
     Get {
         /// FormID(s) and/or EditorID(s) (auto-detected per token); mix
         /// freely, e.g. `0x0000463F 0x000228AB co_Weapon_...`. A single
@@ -158,14 +152,19 @@ enum Commands {
         /// for the classic single-selector form.
         #[arg(conflicts_with_all = ["formid", "edid"])]
         targets: Vec<String>,
+        /// Select by FormID (hex, `0x`-prefixed or bare).
         #[arg(long, conflicts_with = "edid")]
         formid: Option<String>,
+        /// Select by EditorID.
         #[arg(long, conflicts_with = "formid")]
         edid: Option<String>,
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
+        /// Indent JSON output.
         #[arg(long)]
         pretty: bool,
+        /// Print the record's subrecords as hex instead of decoding them.
         #[arg(long)]
         raw: bool,
         #[command(flatten)]
@@ -181,42 +180,56 @@ enum Commands {
         #[arg(long, default_value = "none")]
         resolve: String,
     },
+    /// List the records of one type.
     List {
+        /// Record type to list (4-character signature, e.g. `WEAP`).
         #[arg(long)]
         r#type: String,
+        /// Maximum rows to print (0 = all).
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
+        /// Indent JSON output.
         #[arg(long)]
         pretty: bool,
         #[command(flatten)]
         sources: LocalizationArgs,
     },
-    /// Boxed to keep `Commands` from ballooning in size (`diff` carries far
-    /// more fields — per-side BA2/strings/curves overrides — than every
-    /// other variant combined).
+    /// Compare two ESMs: added, removed and changed records, field by field.
     Diff(Box<DiffArgs>),
+    /// Browse the GRUP hierarchy.
     Tree {
+        /// Only records of this 4-character type (e.g. `WEAP`).
         #[arg(long = "type")]
         record_type: Option<String>,
+        /// Skip this many rows before printing.
         #[arg(long, default_value_t = 0)]
         offset: usize,
+        /// Maximum rows to print (0 = all).
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        /// Indent JSON output.
         #[arg(long)]
         pretty: bool,
     },
+    /// Report schema decode coverage per record type (`--gate` fails on any gap).
     Coverage {
+        /// Only records of this 4-character type (e.g. `WEAP`).
         #[arg(long = "type")]
         record_type: Option<String>,
+        /// Decode at most this many records per type (0 = all).
         #[arg(long, default_value_t = 0)]
         sample: usize,
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
+        /// Exit non-zero if any record type has a decode gap.
         #[arg(long)]
         gate: bool,
     },
+    /// List the records that reference a record, a perk entry point, or an OMOD property.
     Refs {
         /// FormID, EditorID, or PERK entry-point name (auto-detected);
         /// overridden by --formid/--edid/--entry-point/--omod-property. An
@@ -225,8 +238,10 @@ enum Commands {
         /// point.
         #[arg(conflicts_with_all = ["formid", "edid", "entry_point", "omod_property"])]
         target: Option<String>,
+        /// Select by FormID (hex, `0x`-prefixed or bare).
         #[arg(long, conflicts_with_all = ["edid", "entry_point", "omod_property"])]
         formid: Option<String>,
+        /// Select by EditorID.
         #[arg(long, conflicts_with_all = ["formid", "entry_point", "omod_property"])]
         edid: Option<String>,
         /// PERK "Entry Point" name or numeric id — resolves to every PERK
@@ -271,6 +286,7 @@ enum Commands {
         /// (default 12). Only meaningful with --to.
         #[arg(long, default_value_t = 0, requires = "to")]
         max_hops: usize,
+        /// Maximum rows to print (0 = all).
         #[arg(long, default_value_t = 100)]
         limit: usize,
         /// Reverse-reference walk depth (1 = direct refs only, up to 8;
@@ -296,31 +312,39 @@ enum Commands {
         /// when a low --limit might otherwise hide the deepest hops.
         #[arg(long, value_enum, default_value = "formid")]
         sort: RefSortArg,
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
+        /// Indent JSON output.
         #[arg(long)]
         pretty: bool,
         #[command(flatten)]
         sources: LocalizationArgs,
     },
+    /// Wildcard search over EditorIDs and display names.
     Search {
         pattern: String,
+        /// Only records of these 4-character types (comma-separated, e.g. `WEAP,ARMO`).
         #[arg(long = "type", value_delimiter = ',')]
         types: Vec<String>,
+        /// Match against EditorIDs, display names, or both.
         #[arg(long = "in", value_enum, default_value = "both")]
         search_in: SearchInArg,
+        /// Maximum rows to print (0 = all).
         #[arg(long, default_value_t = 100)]
         limit: usize,
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
+        /// Indent JSON output.
         #[arg(long)]
         pretty: bool,
         #[command(flatten)]
         sources: LocalizationArgs,
     },
-    /// Pipeline evidence contract: classified mechanism JSON for OMOD/PERK/
-    /// SPEL/ALCH/ENCH roots (hard error on other types). For interactive
-    /// reading use `walk`.
+    /// Classify an OMOD/PERK/SPEL/ALCH/ENCH's mechanisms as JSON (pipeline contract).
+    ///
+    /// Hard error on other record types. For reading by hand, use `walk`.
     Chase {
         /// OMOD/PERK/SPEL/ALCH/ENCH FormID or EditorID (auto-detected).
         selector: String,
@@ -333,9 +357,10 @@ enum Commands {
         #[arg(long = "ref-limit", default_value_t = esm::chase::DEFAULT_REF_LIMIT)]
         ref_limit: usize,
     },
-    /// Interactive digest of any record and the chain it references — on
-    /// OMOD roots, classifies and slices each mechanism inline
-    /// (keyword/AVIF hooks resolved via reverse refs, bounded by
+    /// Digest a record and the chain it references, for reading.
+    ///
+    /// On OMOD roots each mechanism is classified and shown inline, with keyword
+    /// and AVIF hooks resolved through reverse references (bounded by
     /// --ref-limit).
     Walk {
         /// FormID or EditorID (auto-detected).
@@ -364,16 +389,15 @@ enum Commands {
         /// (obtainability signal) after the chain digest.
         #[arg(long)]
         refs: bool,
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
     },
-    /// Ad-hoc lookup/sum over any `CURV` (Curve Table) record's points — the
-    /// generic counterpart to `walk --level`'s built-in evaluation, for a
-    /// one-off table (leveling/XP progression curves etc.) that isn't
-    /// implicitly evaluated by any other subcommand. CURV points are
-    /// already inlined into every `get`/`walk` response, so this is pure
-    /// client-side post-processing on an existing bulk fetch — no extra
-    /// round trip beyond the one this command itself makes.
+    /// Evaluate or sum a curve table (CURV record) at given points.
+    ///
+    /// For one-off tables no other command evaluates, such as leveling or XP
+    /// progression curves; `walk --level` already evaluates the curves a record
+    /// uses.
     Curve {
         /// FormID(s) and/or EditorID(s) of CURV records (auto-detected per
         /// token). A single target preserves plain single-record output;
@@ -392,15 +416,16 @@ enum Commands {
         /// Step size for --sum.
         #[arg(long, default_value_t = 1.0, requires = "sum")]
         step: f32,
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
+        /// Indent JSON output.
         #[arg(long)]
         pretty: bool,
     },
-    /// Print the embedded `esm-cli` usage-knowledge doc, or install it into a
-    /// consumer repo's `.claude/skills/esm-cli/` for Claude Code to
-    /// auto-discover. Takes no ESM path, so it is exempt from
-    /// `--esm`/`FO76_ESM_PATH`.
+    /// Print the embedded `esm-cli` agent skill, or install it into a repo.
+    ///
+    /// Takes no ESM path.
     Skill {
         /// Write the doc to `<dir or cwd>/.claude/skills/esm-cli/SKILL.md`
         /// instead of printing it to stdout.
@@ -413,18 +438,20 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
-    /// Inspect, build or clear the on-disk index cache. `status` never opens
-    /// the ESM or triggers a build: it reads `esm_cache/`'s section headers
-    /// and the build lock/heartbeat straight off disk.
+    /// Inspect, build or clear the on-disk cache.
+    ///
+    /// `status` never opens the ESM or triggers a build: it reads `esm_cache/`'s
+    /// section headers and the build lock/heartbeat straight off disk.
     Cache {
         #[command(subcommand)]
         action: CacheAction,
     },
-    /// Answer JSON requests from stdin, one per line: each line is
-    /// `{"esm": <path>, "op": {...}}` and gets one `{"status": "ok", "data":
-    /// ...}` or `{"status": "err", "error": ...}` line back, in order.
-    /// Databases stay open until stdin closes, so a script owning one
-    /// `esm batch` child pays each ESM's open cost once.
+    /// Answer JSON op requests from stdin, one per line (for scripts).
+    ///
+    /// Each line is `{"esm": <path>, "op": {...}}` and gets one `{"status": "ok",
+    /// "data": ...}` or `{"status": "err", "error": ...}` line back, in order.
+    /// Databases stay open until stdin closes, so a script owning one `esm batch`
+    /// child pays each ESM's open cost once.
     Batch,
 }
 
@@ -433,6 +460,7 @@ enum CacheAction {
     /// Print which of the five index-cache sections are present, plus a
     /// live build's progress if one is currently in flight.
     Status {
+        /// Print machine-readable JSON (compact unless --pretty).
         #[arg(long)]
         json: bool,
     },
