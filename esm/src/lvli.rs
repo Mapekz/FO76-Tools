@@ -832,8 +832,11 @@ fn walk_node(
                         if quantity != 1.0 {
                             entry_notes.push(DropNote::QuantityOnSublist);
                         }
-                        let leaves = child
-                            .leaves
+                        // FormID order: the sums below must not depend on
+                        // HashMap iteration order.
+                        let mut child_leaves: Vec<_> = child.leaves.into_iter().collect();
+                        child_leaves.sort_by_key(|(fid, _)| fid.raw());
+                        let leaves = child_leaves
                             .into_iter()
                             .map(|(fid, agg)| {
                                 (
