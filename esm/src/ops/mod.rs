@@ -43,7 +43,7 @@ pub const DEFAULT_MAX_DEPTH: usize = 8;
 #[cfg_attr(test, ts(export, type = "number"))]
 pub enum RefDepth {
     /// Up to this many hops (as asked; walks clamp it to
-    /// `1..=`[`DEFAULT_MAX_DEPTH`]).
+    /// `1..=`[`DEFAULT_MAX_DEPTH`], so 0 is one hop).
     Hops(usize),
     /// No hop cap: can take minutes on hub-heavy graphs.
     Unbounded,
@@ -61,10 +61,10 @@ impl RefDepth {
         }
     }
 
-    /// The hop count as asked (0 = unbounded).
+    /// The hop count as asked (0 = unbounded; `Hops(0)` asks for one hop).
     pub fn requested(self) -> usize {
         match self {
-            RefDepth::Hops(n) => n,
+            RefDepth::Hops(n) => n.max(1),
             RefDepth::Unbounded => 0,
         }
     }

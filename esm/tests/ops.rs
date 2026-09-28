@@ -995,3 +995,37 @@ fn walk_op_depth_is_optional_on_the_wire() {
         other => panic!("expected Op::Walk, got {other:?}"),
     }
 }
+
+/// `RefDepth`'s wire form is the hop count with 0 meaning unbounded;
+/// `Hops(0)` walks one hop, so it goes out as 1.
+#[test]
+fn ref_depth_wire_form() {
+    use esm::ops::RefDepth;
+    let wire = |d: RefDepth| serde_json::to_string(&d).unwrap();
+    assert_eq!(wire(RefDepth::Unbounded), "0");
+    assert_eq!(wire(RefDepth::Hops(3)), "3");
+    assert_eq!(wire(RefDepth::Hops(0)), "1");
+    let read = |s: &str| serde_json::from_str::<RefDepth>(s).unwrap();
+    assert_eq!(read("0"), RefDepth::Unbounded);
+    assert_eq!(read("2"), RefDepth::Hops(2));
+}
+
+/// A chase request never walks consumers unbounded, whatever surface sends
+/// it.
+#[test]
+fn chase_rejects_an_unbounded_depth() {
+    let (path, reg) = open_test_db();
+    let req = Request {
+        esm: path.clone(),
+        op: Op::Chase(esm::ops::ChaseArgs {
+            sel: RecordSel::FormId(esm::FormId::new(1)),
+            depth: esm::ops::RefDepth::Unbounded,
+            ref_limit: 25,
+        }),
+    };
+    let Response::Err { error } = dispatch(&reg, &req) else {
+        panic!("expected an error");
+    };
+    assert!(error.contains("chase depth"), "{error}");
+    let _ = std::fs::remove_file(&path);
+}

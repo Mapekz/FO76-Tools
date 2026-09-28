@@ -13,7 +13,9 @@ use crate::reader::RecordHeaderInfo;
 use crate::{BulkRecordEntry, FormId, RefList, ResolveDepth};
 
 /// A bulk record fetch (`Op::RecordBulk`) and a reverse-reference walk
-/// (`Op::ReferencedBy`).
+/// (`Op::ReferencedBy`). `bulk_get` returns exactly one entry per selector,
+/// in selector order (an error entry for one that doesn't resolve):
+/// callers pair results with their selectors by position.
 pub trait RecordSource {
     fn bulk_get(
         &mut self,

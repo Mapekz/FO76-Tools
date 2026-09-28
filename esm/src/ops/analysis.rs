@@ -68,6 +68,14 @@ pub struct ChaseArgs {
 }
 
 pub(super) fn chase(db: &Database, args: &ChaseArgs) -> anyhow::Result<crate::chase::ChaseTree> {
+    // Each keyword's consumers are one reverse walk; an unbounded one per
+    // keyword is never what a chase wants.
+    if args.depth == RefDepth::Unbounded {
+        bail!(
+            "chase depth must be 1..={}; only refs walks unbounded",
+            crate::ops::DEFAULT_MAX_DEPTH
+        );
+    }
     let opts = crate::chase::ChaseOptions {
         depth: args.depth,
         ref_limit: args.ref_limit,
