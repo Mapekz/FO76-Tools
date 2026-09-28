@@ -199,16 +199,28 @@ def triage_problem(out_dir: Path) -> str | None:
     return None
 
 
-def had_merged_assessment(out_dir: Path) -> bool:
-    """Whether the kept `work/triage.json` records assessor verdicts (read
-    leniently: it may be the file that failed validation)."""
+def assessor_verdicts(out_dir: Path) -> dict[str, tuple[str | None, str]]:
+    """The kept `work/triage.json`'s assessor verdicts, `{bundle_id: (tier,
+    reason)}`, read leniently: it may be the file that failed validation."""
     try:
-        reasons = jsonio.read(layout.work_triage_json(out_dir))["reasons"]
+        triage = jsonio.read(layout.work_triage_json(out_dir))
+        reasons = triage["reasons"]
     except (OSError, ValueError, TypeError, KeyError):
-        return False
-    return isinstance(reasons, dict) and any(
-        isinstance(r, str) and r.startswith("assessor:") for r in reasons.values()
-    )
+        return {}
+    if not isinstance(reasons, dict):
+        return {}
+    tier_of = {
+        bid: tier
+        for tier in schemas.TIERS
+        if isinstance(triage.get(tier), list)
+        for bid in triage[tier]
+        if isinstance(bid, str)
+    }
+    return {
+        bid: (tier_of.get(bid), reason)
+        for bid, reason in reasons.items()
+        if isinstance(reason, str) and reason.startswith("assessor:")
+    }
 
 
 # --------------------------------------------------------------------------
@@ -375,7 +387,8 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
     if stale_triage and stale_triage != "no triage yet":
         eprint(f"re-triaging: the kept triage is unusable ({stale_triage})")
     retriaged = not reused or args.retriage or stale_triage is not None
-    remerge = bool(stale_triage) and not args.retriage and had_merged_assessment(out_dir)
+    kept_verdicts = assessor_verdicts(out_dir) if stale_triage and not args.retriage else {}
+    remerge = bool(kept_verdicts)
     if retriaged and remerge:
         try:
             triage_bundles.run_merge_assessment(out_dir, layout.work_assessment_json(out_dir))
@@ -386,6 +399,19 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
                 f"the kept triage's merged assessment couldn't be re-applied ({exc}): "
                 "re-run the assessor and merge-assessment"
             )
+        else:
+            restored = assessor_verdicts(out_dir)
+            # A kept tier the lenient read couldn't place matches any tier.
+            lost = sorted(
+                bid
+                for bid, (tier, reason) in kept_verdicts.items()
+                if bid not in restored or restored[bid][1] != reason or tier not in (None, restored[bid][0])
+            )
+            if lost:
+                warnings.append(
+                    f"work/assessment.json doesn't restore the kept triage's verdicts for {', '.join(lost)}: "
+                    "re-run the assessor and merge-assessment"
+                )
     if retriaged and not remerge:
         triage_bundles.run_triage(out_dir)
     slices = split_deep_slice(out_dir)

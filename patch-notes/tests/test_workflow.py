@@ -139,13 +139,13 @@ class TestPrepareGatePublish(TempDirTestCase):
         assert summary is not None
         self.assertTrue(summary["retriaged"])
 
-    def run_mechanical(self, **patches):
+    def run_mechanical(self, *extra):
         """The mechanical stage run directly (`pn run`), as a rerun outside
         `prepare` would."""
         from pn import make_patch_notes as mpn
 
         args = [str(self.data / "20260626"), str(self.data / "20260703"), "--out-dir", str(self.out)]
-        args += ["--esm-bin", str(self.esm_bin)]
+        args += ["--esm-bin", str(self.esm_bin), *extra]
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             try:
                 return mpn.main(args, client=FakeGateway(REFS_GRAPH))
@@ -233,6 +233,24 @@ class TestPrepareGatePublish(TempDirTestCase):
         triage = jsonio.read(layout.work_triage_json(self.out))
         self.assertIn(bid, triage["brief"])
         self.assertEqual(triage["reasons"][bid], "assessor:a one-liner")
+
+    def test_an_assessment_that_no_longer_holds_a_kept_verdict_is_reported(self):
+        self.prepare()
+        bid = self.merge_an_assessment()
+        jsonio.write(layout.work_assessment_json(self.out), {"tiers": {}})
+        layout.work_brief_lines_md(self.out).unlink()
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(any(bid in w and "merge-assessment" in w for w in summary["warnings"]), summary["warnings"])
+
+    def test_a_type_restricted_run_is_not_reused_for_an_unrestricted_prepare(self):
+        self.assertEqual(self.run_mechanical("--type", "WEAP"), 0)
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertFalse(summary["reused"])
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["reused"])
 
     def test_a_merged_assessment_that_cant_be_reapplied_is_reported(self):
         self.prepare()
