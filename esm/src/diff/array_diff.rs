@@ -762,10 +762,42 @@ pub(crate) fn array_diff(a: &[Value], b: &[Value]) -> Value {
 /// clears the mark by field name, since [`array_diff`] sees only elements.
 pub(crate) const ORDER_SIGNIFICANT_FIELDS: &[&str] = &["Points", "Vertices", "Names"];
 
+/// Whether the array at `key` of `parent` is a Papyrus array: a script
+/// property's or struct member's `value` (`{"name", "type", "value"}`, the
+/// VMAD decoder's shape) or a variable array's `items`. Scripts read these
+/// by index, so they diff position by position ([`indexed_array_diff`]).
+pub(crate) fn is_indexed_array(key: &str, parent: &serde_json::Map<String, Value>) -> bool {
+    match key {
+        "value" => parent.contains_key("name") && parent.get("type").is_some_and(Value::is_number),
+        "items" => parent.get("_variable_array") == Some(&Value::Bool(true)),
+        _ => false,
+    }
+}
+
+/// Whether the order of the array at `key` of `parent` is part of its
+/// meaning ([`ORDER_SIGNIFICANT_FIELDS`] or [`is_indexed_array`]).
+pub(crate) fn is_order_significant(key: &str, parent: &serde_json::Map<String, Value>) -> bool {
+    ORDER_SIGNIFICANT_FIELDS.contains(&key) || is_indexed_array(key, parent)
+}
+
 /// Drop the `reorder_only` mark from an `_array_diff` envelope.
 pub(crate) fn clear_reorder_only(diff: &mut Value) {
     if let Some(inner) = diff.get_mut("_array_diff").and_then(Value::as_object_mut) {
         inner.remove("reorder_only");
+    }
+}
+
+/// [`array_diff`] for an array whose elements are addressed by index
+/// ([`is_indexed_array`]): equal lengths pair position by position, so a
+/// reorder shows as changed slots; otherwise the lists' difference
+/// (`unkeyed`). Never keyed or multiset, and never `reorder_only`.
+pub(crate) fn indexed_array_diff(a: &[Value], b: &[Value]) -> Value {
+    if a == b {
+        Value::Object(serde_json::Map::new())
+    } else if a.len() == b.len() {
+        positional_diff(a, b)
+    } else {
+        unkeyed_array_diff(a, b)
     }
 }
 
@@ -794,7 +826,7 @@ fn is_condition_list(items: &[Value]) -> bool {
 
 /// A string that is equal for two values exactly when they are equal up to
 /// object key order and the order of any array other than a condition list
-/// or an [`ORDER_SIGNIFICANT_FIELDS`] member, at any depth.
+/// or an order-significant field ([`is_order_significant`]), at any depth.
 fn order_free_key(v: &Value) -> String {
     order_free_key_ordered(v, false)
 }
@@ -804,10 +836,7 @@ fn order_free_key_ordered(v: &Value, keep_order: bool) -> String {
         Value::Object(o) => {
             let mut members: Vec<(&String, String)> = o
                 .iter()
-                .map(|(k, v)| {
-                    let ordered = ORDER_SIGNIFICANT_FIELDS.contains(&k.as_str());
-                    (k, order_free_key_ordered(v, ordered))
-                })
+                .map(|(k, v)| (k, order_free_key_ordered(v, is_order_significant(k, o))))
                 .collect();
             members.sort();
             let body: Vec<String> = members
@@ -940,6 +969,57 @@ mod tests {
         let diff = super::super::json_diff(&a, &b);
         assert!(diff["Region Areas"].get("_array_diff").is_some());
         assert!(!reorder_only(&diff["Region Areas"]));
+    }
+
+    /// A Papyrus property's value `[{name,type,value}]`, as the VMAD decoder
+    /// renders it, inside one script of a record's `Virtual Machine Adapter`.
+    fn vmad_with(prop_type: i64, value: Value) -> Value {
+        json!({"Virtual Machine Adapter": {"scripts": [{
+            "name": "S",
+            "status": 0,
+            "properties": [
+                {"name": "Other", "type": 3, "value": 1},
+                {"name": "Steps", "type": prop_type, "value": value},
+            ],
+        }]}})
+    }
+
+    #[test]
+    fn a_reordered_papyrus_struct_array_is_a_change_at_every_level() {
+        let step = |n: i64| json!([{"name": "Amount", "type": 3, "value": n}]);
+        let a = vmad_with(17, json!([step(1), step(2)]));
+        let b = vmad_with(17, json!([step(2), step(1)]));
+        let diff = super::super::json_diff(&a, &b);
+        let scripts = &diff["Virtual Machine Adapter"]["scripts"];
+        assert!(scripts.get("_array_diff").is_some(), "{diff}");
+        assert!(!reorder_only(scripts));
+        let properties = &scripts["_array_diff"]["changed"][0]["changes"]["properties"];
+        assert!(!reorder_only(properties), "{diff}");
+        let value = &properties["_array_diff"]["changed"][0]["changes"]["value"];
+        assert_eq!(
+            value["_array_diff"]["strategy"],
+            json!("positional"),
+            "{diff}"
+        );
+        assert!(!reorder_only(value));
+    }
+
+    #[test]
+    fn a_reordered_papyrus_primitive_array_is_a_change() {
+        let a = vmad_with(13, json!([1, 2]));
+        let b = vmad_with(13, json!([2, 1]));
+        let diff = super::super::json_diff(&a, &b);
+        let value = &diff["Virtual Machine Adapter"]["scripts"]["_array_diff"]["changed"][0]["changes"]
+            ["properties"]["_array_diff"]["changed"][0]["changes"]["value"];
+        assert_eq!(
+            value["_array_diff"]["strategy"],
+            json!("positional"),
+            "{diff}"
+        );
+        assert_eq!(
+            value["_array_diff"]["changed"].as_array().map(Vec::len),
+            Some(2)
+        );
     }
 
     #[test]
