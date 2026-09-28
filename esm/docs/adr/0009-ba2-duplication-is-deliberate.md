@@ -31,25 +31,23 @@ crate to replace it.
 
 Two concrete reasons, both real behavior/build-graph differences:
 
-- **`Codec` semantics differ, and the difference is exactly the kind of divergence you don't want
-  silently swapped in.** `ba2::Ba2Archive::read` takes an explicit `Codec` parameter, including
-  `Codec::Auto`, which sniffs the first two bytes and transparently accepts either LZ4 or
+- **Read-codec semantics differ, and the difference is exactly the kind of divergence you don't
+  want silently swapped in.** `ba2::Ba2Archive::read` takes an explicit `ReadCodec`, including
+  `ReadCodec::Auto`, which sniffs the first two bytes and transparently accepts either LZ4 or
   zlib-compressed content. `esm/src/ba2.rs::Ba2Archive::read` has no codec parameter — every
   compressed entry (`packed_size != 0`) is unconditionally routed through
-  `crate::compress::decompress_lz4`, so a zlib-compressed entry hard-fails (LZ4 decode error) today.
-  Depending on `ba2` and calling `read(name, Codec::Auto)` (the only call shape that would let
+  `crate::compress::decompress_lz4`, so a zlib-compressed entry hard-fails (LZ4 decode error).
+  Depending on `ba2` and calling `read(name, ReadCodec::Auto)` (the only call shape that would let
   `esm` drop its own zlib-agnostic assumption) would silently start accepting zlib-compressed BA2
   content that `esm` currently rejects outright — a real behavior change smuggled in as a "just
   delete the duplicate" refactor, not a transparent swap.
-- **`ba2`'s write-side pulls in three dependencies `esm` never needs, with no feature gate to
-  exclude them.** `ba2/src/writer.rs` (the two-pass archive writer) and `ba2/src/extract.rs` (glob
-  filtering for `extract`) — plus the `create`/`extract` CLI subcommands in
-  `ba2/src/bin/cli.rs` — depend on `tempfile` (writer.rs's two-pass temp files), `globset`
-  (extract.rs's/cli.rs's `--filter` glob matching), and `walkdir` (cli.rs's directory walk for
-  `create`). All three are unconditional entries in `ba2/Cargo.toml`'s `[dependencies]`, not gated
-  behind a Cargo feature `esm` could opt out of. `esm` never writes a BA2 (the root `AGENTS.md`
-  makes ESM read-only) and never will — depending on `ba2` today would
-  add `tempfile`/`globset`/`walkdir` to `esm`'s build graph for zero runtime benefit.
+- **`ba2`'s library carries write-side dependencies `esm` never needs.** The library's writer
+  (`ba2/src/writer.rs`, two-pass with temporary files) and extraction filter
+  (`ba2/src/extract.rs`, glob matching) depend on `tempfile` and `globset`, unconditional entries
+  in `ba2/Cargo.toml`'s `[dependencies]`. The CLI-only dependencies (`clap`, `walkdir`, `libc`)
+  sit behind the `cli` feature, which `esm` could turn off, but no feature excludes the writer.
+  `esm` never writes a BA2 (the root `AGENTS.md` makes ESM read-only) and never will — depending
+  on `ba2` would add `tempfile`/`globset` to `esm`'s build graph for zero runtime benefit.
 
 ## Consequences
 
