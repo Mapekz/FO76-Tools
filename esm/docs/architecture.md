@@ -103,7 +103,8 @@ Each section is a zero-copy `rkyv`-archived blob (`src/rkyvcache.rs`'s `Section<
 back on later opens instead of re-decoded. Sections live in a shared `esm_cache/` directory
 (`rkyvcache::cache_dir_for`), one file per `(esm file name, section)` pair
 (`rkyvcache::section_path_for`). A section is invalidated by either a crate-wide
-`index::CACHE_VERSION` bump or its own per-section `LAYOUT_FINGERPRINT` — the
+`index::CACHE_VERSION` bump (content changes) or its own per-section `LAYOUT_FINGERPRINT` (a
+layout version a golden test pins to the section's archived bytes) — the
 `SectionSpec` trait (ADR 0007) binds a section's `SectionKind`, fingerprint, and archived type
 together in one `impl` next to the type itself, so a kind/fingerprint mismatch is no longer
 expressible as a silent bug. Every section build goes through

@@ -207,16 +207,10 @@ impl ArchivedStringsSection {
     }
 }
 
-const LSTRINGS_LAYOUT_FINGERPRINT: u64 = {
-    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-    let acc = fnv1a_u64(
-        FNV_OFFSET_BASIS,
-        core::mem::size_of::<ArchivedStringsSection>() as u64,
-    );
-    let acc = fnv1a_u64(acc, core::mem::align_of::<ArchivedStringsSection>() as u64);
-    let acc = fnv1a_u64(acc, core::mem::size_of::<ArchivedStringTable>() as u64);
-    fnv1a_u64(acc, core::mem::align_of::<ArchivedStringTable>() as u64)
-};
+/// Version of this section's archived layout, stored in its file header so
+/// a cache written by a build with another layout is rebuilt. Bump it when
+/// the layout golden test in this module fails.
+const LSTRINGS_LAYOUT_FINGERPRINT: u64 = 1;
 
 impl SectionSpec for ArchivedStringsSection {
     const KIND: SectionKind = SectionKind::Strings;
@@ -348,6 +342,20 @@ fn parse_ba2(ba2_path: &Path, locale: &str, prefix: &str, source: u64) -> Result
 
 #[cfg(test)]
 mod tests {
+    /// Pins the lstrings section's archived layout (see
+    /// `crate::rkyvcache::assert_archived_layout`).
+    #[test]
+    fn strings_section_layout_is_pinned() {
+        let table = |text: &str| StringTable::from_entries(vec![(1, text.to_string())]);
+        let section = StringsSection {
+            source: 7,
+            strings: table("Name"),
+            dlstrings: table("Description"),
+            ilstrings: table("Label"),
+        };
+        crate::rkyvcache::assert_archived_layout("lstrings", &section, 0xd275b62f9ac02059);
+    }
+
     use super::*;
 
     /// A string table buffer with `count = u32::MAX` must be rejected.

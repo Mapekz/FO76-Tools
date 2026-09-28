@@ -165,18 +165,10 @@ impl CurvesSection {
     }
 }
 
-const CURVES_LAYOUT_FINGERPRINT: u64 = {
-    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-    let acc = fnv1a_u64(
-        FNV_OFFSET_BASIS,
-        core::mem::size_of::<ArchivedCurvesSection>() as u64,
-    );
-    let acc = fnv1a_u64(acc, core::mem::align_of::<ArchivedCurvesSection>() as u64);
-    let acc = fnv1a_u64(acc, core::mem::size_of::<ArchivedCurve>() as u64);
-    let acc = fnv1a_u64(acc, core::mem::align_of::<ArchivedCurve>() as u64);
-    let acc = fnv1a_u64(acc, core::mem::size_of::<ArchivedCurvePoint>() as u64);
-    fnv1a_u64(acc, core::mem::align_of::<ArchivedCurvePoint>() as u64)
-};
+/// Version of this section's archived layout, stored in its file header so
+/// a cache written by a build with another layout is rebuilt. Bump it when
+/// the layout golden test in this module fails.
+const CURVES_LAYOUT_FINGERPRINT: u64 = 1;
 
 impl SectionSpec for ArchivedCurvesSection {
     const KIND: SectionKind = SectionKind::Curves;
@@ -521,5 +513,26 @@ fn curve_entry_result(
             "editor_id": editor_id,
             "points": point_values,
         }),
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    /// Pins the curves section's archived layout (see
+    /// `crate::rkyvcache::assert_archived_layout`).
+    #[test]
+    fn curves_section_layout_is_pinned() {
+        let curve = Curve {
+            edid: Some("CT_Test".into()),
+            path: "Test.json".into(),
+            points: vec![
+                CurvePoint { x: 1.0, y: 10.0 },
+                CurvePoint { x: 50.0, y: 50.0 },
+            ],
+        };
+        let section = CurvesSection::new(7, vec![(0x10, curve)]);
+        crate::rkyvcache::assert_archived_layout("curves", &section, 0xe67efa43fe07698b);
     }
 }

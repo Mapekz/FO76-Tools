@@ -272,7 +272,36 @@ pub(crate) trait SectionSpec:
     + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>
 {
     const KIND: SectionKind;
+    /// The section's archived-layout version (see [`assert_archived_layout`]),
+    /// stamped into the header so a stale layout is rejected before any
+    /// archived access.
     const LAYOUT_FINGERPRINT: u64;
+}
+
+/// Pin a section's archived layout: `sample`'s archived bytes must hash to
+/// `expected`. When a layout change moves them, the failure names the
+/// digest to record and the section whose `LAYOUT_FINGERPRINT` to bump, so
+/// caches written with the old layout get rebuilt instead of misread.
+#[cfg(test)]
+pub(crate) fn assert_archived_layout<T>(section: &str, sample: &T, expected: u64)
+where
+    T: for<'a> rkyv::Serialize<
+            rkyv::api::high::HighSerializer<
+                rkyv::util::AlignedVec,
+                rkyv::ser::allocator::ArenaHandle<'a>,
+                rkyv::rancor::Error,
+            >,
+        >,
+{
+    let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(sample).expect("serialize sample");
+    let digest = bytes
+        .iter()
+        .fold(FNV_OFFSET_BASIS, |acc, b| fnv1a_u64(acc, u64::from(*b)));
+    assert_eq!(
+        digest, expected,
+        "the archived layout of the {section} section changed: bump its LAYOUT_FINGERPRINT \
+         version, then record {digest:#018x} here"
+    );
 }
 
 impl<A> Section<A>
@@ -610,33 +639,6 @@ pub(crate) const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 /// One step of 64-bit FNV-1a, folding `x` in 8 bytes at a time
 /// (little-endian). `acc` should start at [`FNV_OFFSET_BASIS`] for the first
 /// call in a chain.
-///
-/// # Building a real `layout_fingerprint` (Stage 4+)
-///
-/// `layout_fingerprint` exists so a stale/incompatible on-disk section is
-/// rejected by the O(1) header check alone (`parse_header` step e), without
-/// ever reaching `access_unchecked` on bytes laid out by a different build.
-/// This module has no real cache type yet — it's the reusable building block
-/// a later stage plugs real archived types into. The intended pattern, once
-/// a section's real `Archive`-derived types exist:
-///
-/// ```ignore
-/// // One `fnv1a_u64` fold per archived type reachable from the section's
-/// // root, folding in both `size_of` and `align_of` (a layout change can
-/// // alter either independently, e.g. adding a trailing padding field).
-/// const LAYOUT_FINGERPRINT: u64 = {
-///     let acc = fnv1a_u64(FNV_OFFSET_BASIS, size_of::<Archived<Foo>>() as u64);
-///     let acc = fnv1a_u64(acc, align_of::<Archived<Foo>>() as u64);
-///     let acc = fnv1a_u64(acc, size_of::<Archived<Bar>>() as u64);
-///     fnv1a_u64(acc, align_of::<Archived<Bar>>() as u64)
-/// };
-/// ```
-///
-/// then pass `LAYOUT_FINGERPRINT` as the `layout_fingerprint` argument to
-/// both `write_section` and `Section::map` for that section kind. See
-/// `tests::TEST_LAYOUT_FINGERPRINT` below, which follows exactly this
-/// pattern against the test-only `Dummy` type, proving the mechanism works
-/// end to end even though no real cache type exists yet.
 pub(crate) const fn fnv1a_u64(acc: u64, x: u64) -> u64 {
     const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
     let bytes = x.to_le_bytes();

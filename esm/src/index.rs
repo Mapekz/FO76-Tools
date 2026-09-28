@@ -23,13 +23,11 @@ use crate::tree::TreeIndex;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-// Bump whenever any section's cached on-disk data changes, whether that's a
-// layout change (fields added/removed/reordered) or a content change (the
-// same fields now hold different derived values). Content changes are
-// invisible to `*_LAYOUT_FINGERPRINT`, which only folds in the archived
-// type's `size_of`/`align_of` — the version bump is the only thing that
-// catches those, except for `xref`'s dependency on the embedded schema,
-// which `XREF_LAYOUT_FINGERPRINT` folds in itself. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
+// Bump whenever the content of any section changes (the same fields now
+// hold different derived values). A layout change bumps that section's own
+// `*_LAYOUT_FINGERPRINT` version instead, which its layout golden test
+// enforces; `xref`'s dependency on the embedded schema is folded into its
+// fingerprint. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
 // share this one constant, so a bump rebuilds all five even when only one
 // changed.
 pub(crate) const CACHE_VERSION: u32 = 20;
@@ -82,40 +80,10 @@ pub(crate) struct FormsSection {
     /// any overhead irrelevant.
     types: HashMap<[u8; 4], Vec<u32>>,
 }
-
-/// FNV-1a fingerprint of this section's archived layout, folding
-/// `size_of`/`align_of` per [`crate::rkyvcache::fnv1a_u64`]'s doc comment.
-/// Passed as the `layout_fingerprint` argument to `write_section`/
-/// `Section::map` for the `forms` section — see `Index::build`/
-/// `build_tree_and_forms` below.
-///
-/// `RecordMeta` is folded in separately from `FormsSection` itself because
-/// it sits behind a `Vec` indirection (`records: Vec<(u32, RecordMeta)>`) —
-/// a layout change to `RecordMeta` (e.g. one driven by a layout change to
-/// `Signature`, which it embeds inline) would not change
-/// `size_of::<Archived<FormsSection>>()` itself, the same reasoning
-/// `tree.rs`'s `TREE_LAYOUT_FINGERPRINT` documents for folding in
-/// `GroupEntry`/`ChildRef` alongside `TreeIndex`.
-const FORMS_LAYOUT_FINGERPRINT: u64 = {
-    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-
-    let acc = fnv1a_u64(
-        FNV_OFFSET_BASIS,
-        core::mem::size_of::<rkyv::Archived<FormsSection>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<FormsSection>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::size_of::<rkyv::Archived<RecordMeta>>() as u64,
-    );
-    fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<RecordMeta>>() as u64,
-    )
-};
+/// Version of this section's archived layout, stored in its file header so
+/// a cache written by a build with another layout is rebuilt. Bump it when
+/// the layout golden test in this module fails.
+const FORMS_LAYOUT_FINGERPRINT: u64 = 1;
 
 /// Binds the `forms` section's archived type to its kind and layout
 /// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
@@ -140,24 +108,10 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<FormsSection> {
 pub(crate) struct EdidSection {
     edid_to_form: HashMap<String, u32>,
 }
-
-/// FNV-1a fingerprint of [`EdidSection`]'s archived layout — see
-/// [`FORMS_LAYOUT_FINGERPRINT`]'s doc comment for the general pattern. No
-/// other named `Archive`-derived type is reachable from `EdidSection` (its
-/// key/value types are `String`/`u32`, both `rkyv`-builtin), so only
-/// `EdidSection` itself needs folding in.
-const EDID_LAYOUT_FINGERPRINT: u64 = {
-    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-
-    let acc = fnv1a_u64(
-        FNV_OFFSET_BASIS,
-        core::mem::size_of::<rkyv::Archived<EdidSection>>() as u64,
-    );
-    fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<EdidSection>>() as u64,
-    )
-};
+/// Version of this section's archived layout, stored in its file header so
+/// a cache written by a build with another layout is rebuilt. Bump it when
+/// the layout golden test in this module fails.
+const EDID_LAYOUT_FINGERPRINT: u64 = 1;
 
 /// Binds the `edid` section's archived type to its kind and layout
 /// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
@@ -171,33 +125,10 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<EdidSection> {
 pub(crate) struct SearchSection {
     entries: HashMap<u32, SearchMeta>,
 }
-
-/// FNV-1a fingerprint of [`SearchSection`]'s archived layout — see
-/// [`FORMS_LAYOUT_FINGERPRINT`]'s doc comment for the general pattern.
-/// `SearchMeta` is folded in separately for the same reason `RecordMeta` is
-/// folded into [`FORMS_LAYOUT_FINGERPRINT`]: it sits behind a `HashMap`
-/// indirection, so a layout change to it alone would not necessarily change
-/// `size_of::<Archived<SearchSection>>()`.
-const SEARCH_LAYOUT_FINGERPRINT: u64 = {
-    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-
-    let acc = fnv1a_u64(
-        FNV_OFFSET_BASIS,
-        core::mem::size_of::<rkyv::Archived<SearchSection>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<SearchSection>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::size_of::<rkyv::Archived<SearchMeta>>() as u64,
-    );
-    fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<SearchMeta>>() as u64,
-    )
-};
+/// Version of this section's archived layout, stored in its file header so
+/// a cache written by a build with another layout is rebuilt. Bump it when
+/// the layout golden test in this module fails.
+const SEARCH_LAYOUT_FINGERPRINT: u64 = 1;
 
 /// Binds the `search` section's archived type to its kind and layout
 /// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
@@ -220,29 +151,12 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<SearchSection> {
 pub(crate) struct XrefSection {
     refs: HashMap<u32, Vec<u32>>,
 }
-
-/// FNV-1a fingerprint of [`XrefSection`]'s archived layout — see
-/// [`FORMS_LAYOUT_FINGERPRINT`]'s doc comment for the general pattern. No
-/// other named `Archive`-derived type is reachable from `XrefSection` (its
-/// key/value types are `u32`/`Vec<u32>`, both `rkyv`-builtin), so only
-/// `XrefSection` itself needs folding in.
-///
-/// Unlike the other sections, `xref`'s content is derived from a full schema
-/// decode, so this also folds in [`crate::schema::SCHEMA_DIGEST`]: a binary
-/// embedding a different schema rejects the old section and rebuilds it.
-const XREF_LAYOUT_FINGERPRINT: u64 = {
-    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-
-    let acc = fnv1a_u64(
-        FNV_OFFSET_BASIS,
-        core::mem::size_of::<rkyv::Archived<XrefSection>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<XrefSection>>() as u64,
-    );
-    fnv1a_u64(acc, crate::schema::SCHEMA_DIGEST)
-};
+/// Version of this section's archived layout, stored in its file header so
+/// a cache written by a build with another layout is rebuilt.
+/// Also folds in the schema digest: the xref index comes from a full
+/// schema-driven decode, so a schema change invalidates it too. Bump it when
+/// the layout golden test in this module fails.
+const XREF_LAYOUT_FINGERPRINT: u64 = crate::rkyvcache::fnv1a_u64(1, crate::schema::SCHEMA_DIGEST);
 
 /// Binds the `xref` section's archived type to its kind and layout
 /// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment.
@@ -1059,6 +973,46 @@ fn section_spec_fingerprint_for(kind: SectionKind) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    /// Pins the archived layouts of the forms, edid, search and xref
+    /// sections (see `rkyvcache::assert_archived_layout`).
+    #[test]
+    fn index_section_layouts_are_pinned() {
+        use crate::format::Signature;
+        use crate::rkyvcache::assert_archived_layout;
+        let meta = RecordMeta {
+            offset: 0x1234,
+            signature: Signature(*b"WEAP"),
+            flags: 0x80,
+            form_version: 208,
+        };
+        let forms = FormsSection {
+            records: vec![(0x10, meta)],
+            types: HashMap::from([(*b"WEAP", vec![0x10])]),
+        };
+        assert_archived_layout("forms", &forms, 0x38e7de4622880634);
+        let edid = EdidSection {
+            edid_to_form: HashMap::from([("TestWeap".to_string(), 0x10)]),
+        };
+        assert_archived_layout("edid", &edid, 0xc880242650861aa3);
+        let search = SearchSection {
+            entries: HashMap::from([(
+                0x10,
+                SearchMeta {
+                    editor_id: Some("TestWeap".into()),
+                    full_id: Some(7),
+                    desc_id: None,
+                    full_text: Some("Test".into()),
+                    desc_text: None,
+                },
+            )]),
+        };
+        assert_archived_layout("search", &search, 0x649edc9cb47ebfb3);
+        let xref = XrefSection {
+            refs: HashMap::from([(0x10, vec![0x20, 0x30])]),
+        };
+        assert_archived_layout("xref", &xref, 0xee882daed97a7af3);
+    }
+
     use super::*;
     use std::fs;
     use std::path::Path;
@@ -1115,17 +1069,10 @@ mod tests {
 
     #[test]
     fn xref_fingerprint_depends_on_the_embedded_schema() {
-        use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-        let layout_only = fnv1a_u64(
-            fnv1a_u64(
-                FNV_OFFSET_BASIS,
-                core::mem::size_of::<rkyv::Archived<XrefSection>>() as u64,
-            ),
-            core::mem::align_of::<rkyv::Archived<XrefSection>>() as u64,
-        );
+        use crate::rkyvcache::fnv1a_u64;
         assert_eq!(
             XREF_LAYOUT_FINGERPRINT,
-            fnv1a_u64(layout_only, crate::schema::SCHEMA_DIGEST)
+            fnv1a_u64(1, crate::schema::SCHEMA_DIGEST)
         );
         assert_ne!(crate::schema::SCHEMA_DIGEST, 0);
     }

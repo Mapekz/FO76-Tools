@@ -120,38 +120,10 @@ pub struct TreeIndex {
     /// Map from GRUP start offset to arena index for O(1) lookup.
     pub(crate) offset_map: std::collections::HashMap<u64, u32>,
 }
-
-/// FNV-1a fingerprint of this section's archived layout (`TreeIndex`,
-/// `GroupEntry`, `ChildRef`), folding `size_of`/`align_of` per
-/// [`crate::rkyvcache::fnv1a_u64`]'s doc comment. Passed as the
-/// `layout_fingerprint` argument to `write_section`/`Section::map` for the
-/// `tree` section — see `index.rs`'s `Index::build`/
-/// `build_tree_and_forms`.
-pub(crate) const TREE_LAYOUT_FINGERPRINT: u64 = {
-    use crate::rkyvcache::{FNV_OFFSET_BASIS, fnv1a_u64};
-
-    let acc = fnv1a_u64(
-        FNV_OFFSET_BASIS,
-        core::mem::size_of::<rkyv::Archived<TreeIndex>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<TreeIndex>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::size_of::<rkyv::Archived<GroupEntry>>() as u64,
-    );
-    let acc = fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<GroupEntry>>() as u64,
-    );
-    let acc = fnv1a_u64(acc, core::mem::size_of::<rkyv::Archived<ChildRef>>() as u64);
-    fnv1a_u64(
-        acc,
-        core::mem::align_of::<rkyv::Archived<ChildRef>>() as u64,
-    )
-};
+/// Version of this section's archived layout, stored in its file header so
+/// a cache written by a build with another layout is rebuilt. Bump it when
+/// the layout golden test in this module fails.
+pub(crate) const TREE_LAYOUT_FINGERPRINT: u64 = 1;
 
 /// Binds the `tree` section's archived type to its kind and layout
 /// fingerprint — see [`crate::rkyvcache::SectionSpec`]'s doc comment for why
@@ -463,6 +435,33 @@ fn owned_child_ref(archived: &rkyv::Archived<ChildRef>) -> ChildRef {
 // integration crate, so these unit tests stay colocated (two-tier convention
 // documented in AGENTS.md).
 mod tests {
+    /// Pins the tree section's archived layout (see
+    /// `rkyvcache::assert_archived_layout`).
+    #[test]
+    fn tree_section_layout_is_pinned() {
+        let tree = TreeIndex {
+            roots: vec![0],
+            groups: vec![GroupEntry {
+                group_type: 0,
+                label: u32::from_le_bytes(*b"WEAP"),
+                start: 24,
+                end: 72,
+                depth: 0,
+                parent: None,
+                children: vec![
+                    ChildRef::Record {
+                        form_id: 0x10,
+                        offset: 48,
+                        sig: *b"WEAP",
+                    },
+                    ChildRef::Group(1),
+                ],
+            }],
+            offset_map: std::collections::HashMap::from([(24, 0)]),
+        };
+        crate::rkyvcache::assert_archived_layout("tree", &tree, 0x54d8b37573dcf0bf);
+    }
+
     use super::*;
 
     #[test]
