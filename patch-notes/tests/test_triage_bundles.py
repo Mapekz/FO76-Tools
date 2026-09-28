@@ -60,10 +60,10 @@ def make_bundle(bid, members, category="uncategorized", title=None):
     )
 
 
-def make_change(path, from_=None, to=None, kind="scalar", suppressed=None, array=None, vmad=None):
+def make_change(path, from_=None, to=None, kind="scalar", suppressed=None, array=None):
     return builders.change(**{
         "path": path, "kind": kind, "from": from_, "to": to,
-        "suppressed": suppressed, "array": array, "vmad": vmad,
+        "suppressed": suppressed, "array": array,
     })
 
 

@@ -44,8 +44,7 @@
           "to_display": "`14`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -68,8 +67,7 @@
           "to_display": "`1.25`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -92,8 +90,7 @@
           "to_display": "`1.1`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -116,8 +113,7 @@
           "to_display": "`4`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -186,8 +182,7 @@
           "to_display": "`true`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -210,8 +205,7 @@
           "to_display": "`2`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },

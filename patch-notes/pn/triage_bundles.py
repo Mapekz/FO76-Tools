@@ -755,12 +755,6 @@ def summarize_change(ce, max_chars):
         removed_n = len(arr.get("removed") or [])
         changed_n = len(arr.get("changed") or [])
         summary = f"{path}: {cf}->{ct} items (+{added_n} -{removed_n} ~{changed_n})"
-    elif kind == "vmad":
-        vmad = ce.get("vmad") or {}
-        summary = (
-            f"{path}: VMAD props +{len(vmad.get('added') or {})} "
-            f"-{len(vmad.get('removed') or {})} ~{len(vmad.get('changed') or {})}"
-        )
     else:
         fd = ce.get("from_display") or _short_scalar(ce.get("from"))
         td = ce.get("to_display") or _short_scalar(ce.get("to"))

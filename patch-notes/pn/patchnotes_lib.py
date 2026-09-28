@@ -37,10 +37,9 @@ Consumes the raw `esm diff --json` output (`DiffResult` in `src/diff.rs`):
   "changed": [{"stub": RecordStub, "field_changes": {...}, "prev_editor_id"?}],
   "ref_names": {"0x...": {"record_type", "editor_id"?, "name"?, "description"?}}}`.
 
-`field_changes` leaves come in two shapes for arrays — see
-`change_entries.py`'s module docstring for the (a)/(b) NEW-vs-LEGACY split;
-both normalize to the identical `array` sub-structure on a ChangeEntry via
-`change_entries.extract_changes`/`change_entries.smart_array_diff`.
+Array edits in `field_changes` arrive as `_array_diff` envelopes;
+`change_entries.extract_changes` normalizes them into a ChangeEntry's `array`
+sub-structure.
 
 Python 3, stdlib only.
 """

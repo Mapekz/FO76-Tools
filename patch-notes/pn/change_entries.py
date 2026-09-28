@@ -1,49 +1,30 @@
 #!/usr/bin/env python3
 """
-change_entries.py — the single owner of patch-notes `ChangeEntry` construction
-and the generic array-diff engine underneath it, consumed only by
-`render_comprehensive.py` (Tool 1 of the pipeline).
+change_entries.py — the single owner of patch-notes `ChangeEntry` construction,
+consumed only by `render_comprehensive.py` (Tool 1 of the pipeline), in a
+sibling module so that CLI entry point stays thin.
 
-`patchnotes_lib.py` started as this pipeline's one shared module, but most of
-its bulk was never actually shared with anyone but that one file: cut/
-deprecation detection (`classify_cut`/`annotate_cut`), VMAD raw-hex decoding
-(`decode_vmad_props`/`diff_vmad`), the generic keyed-array pairing engine
-(`_keyed_array_diff` and its per-shape `diff_components`/
-`diff_omod_properties`/`diff_lvli_entries`/`diff_effects`/`diff_objectives`/
-`diff_stages` callers), `_array_diff` normalization (`smart_array_diff`,
-`_normalize_new_array_diff`, and the `_looks_like_*`/`_is_*_pair`
-FormID/enum/flags/raw/VMAD-hex classifiers it dispatches to), `ChangeEntry`
-construction itself (`extract_changes`, `_walk_changes`, `_make_leaf_entry`,
-`_make_array_diff_entry`), redundant-count suppression
+It owns cut/deprecation detection (`classify_cut`/`annotate_cut`),
+`_array_diff` normalization (`_normalize_new_array_diff`, `presence_array_diff`,
+and the `_looks_like_*`/`_is_*_pair` FormID/enum/flags/raw classifiers),
+`ChangeEntry` construction (`extract_changes`, `_walk_changes`,
+`_make_leaf_entry`, `_make_array_diff_entry`), redundant-count suppression
 (`mark_redundant_counts`), common-change collapsing (`compute_common_changes`),
-and FormID reference harvesting (`collect_refs_out`) — plus the constants and
-TypedDict-adjacent shapes scoped only to this engine (`TYPE_DESC`,
-`EXCLUDED_TYPES`, `CUT_MARKERS`, `SUPPRESSED_REASONS`,
-`DEFAULT_COMMON_THRESHOLD`) — are all read by exactly one consumer:
-`render_comprehensive.py`. Deletion test: none of this earns a shared-module
-boundary; it belongs with its only caller — but per an explicit architecture
-decision, in a sibling module rather than folded into `render_comprehensive.py`
-directly, so that CLI entry point stays thin.
+and FormID reference harvesting (`collect_refs_out`), plus the constants scoped
+to them (`TYPE_DESC`, `EXCLUDED_TYPES`, `CUT_MARKERS`, `SUPPRESSED_REASONS`,
+`DEFAULT_COMMON_THRESHOLD`).
 
-What stays in `patchnotes_lib.py` instead, and why this module still imports
-it (`import patchnotes_lib as pl`): the wire-shape TypedDicts and helpers
-genuinely read by two or more consumers across the pipeline — `RecordEntry`/
-`Member`/`Edge`/`Bundle`/`TierInfo`/`RuleContext` and friends, the small
-formatting helpers `run_lints.py` also imports directly (`annotate_ref`/
-`fmt_num`/`is_formid_str`, plus `format_scalar`/`is_curve` which those two
-recurse through), the `validate_*` payload checkers (now used by four
-consumers), and the manifest read/write helpers. This module reaches back
-into `patchnotes_lib` only for those pieces (`pl.format_scalar`,
-`pl.annotate_ref`, `pl.is_curve`, `pl.is_formid_str`, `pl.fmt_num`) — never
-the other way around; `patchnotes_lib.py` does not import this module.
+It reaches into `patchnotes_lib` (`import patchnotes_lib as pl`) only for the
+formatting helpers shared across the pipeline (`pl.format_scalar`,
+`pl.annotate_ref`, `pl.is_curve`, `pl.is_formid_str`, `pl.fmt_num`);
+`patchnotes_lib.py` never imports this module.
 
-Consumes the same raw `esm diff --json` output (`DiffResult` in
-`src/diff.rs`) documented in `patchnotes_lib.py`'s module docstring — the
-sparse per-record `field_changes` map, in the same two array shapes (NEW
-Rust `_array_diff` vs. LEGACY whole-array `{"from", "to"}`) described there.
-`extract_changes` is this module's main entry point: it turns one record's
-`field_changes` into the flat `ChangeEntry` list `render_comprehensive.py`'s
-markdown/JSON renderers walk directly.
+Input is the `esm diff --json` output (`DiffResult` in `src/diff/`): each
+changed record's sparse `field_changes` map. Rust owns element identity
+(ADR 0005), so every array edit arrives as an `_array_diff`; a `{"from",
+"to"}` leaf holding a list means the array field appeared or disappeared.
+`extract_changes` turns one record's `field_changes` into the flat
+`ChangeEntry` list `render_comprehensive.py` walks.
 
 Python 3, stdlib only.
 """
@@ -51,14 +32,12 @@ Python 3, stdlib only.
 from __future__ import annotations
 
 import json
-import struct
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import lvli_entry  # noqa: E402
 import patchnotes_lib as pl  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -234,498 +213,27 @@ def annotate_cut(record):
     return classify_cut(edid, prev_edid=prev_edid)
 
 
-# --------------------------------------------------------------------------
-# VMAD raw-hex decoding
-# --------------------------------------------------------------------------
-#
-# Some VMAD blocks fail structured decoding on both sides of a diff (e.g. a
-# truncated subrecord) and fall back to the decoder's `{"_raw": true, "hex":
-# "..."}` sentinel. When only the "hex" bytes differ between old/new, the
-# Rust sparse json_diff descends into that wrapper and emits a leaf change
-# scoped to "hex" — path "... / hex" containing "Virtual Machine Adapter".
-# decode_vmad_props() is a best-effort, format-agnostic scanner (it does not
-# replay the full VMAD grammar) over that raw byte blob: it looks for a
-# u16-length-prefixed ASCII property name followed by a 1-byte type + 1-byte
-# status + type-dependent value, which matches the on-disk property layout
-# closely enough to recover simple int32/float/bool property changes.
-
-
-def decode_vmad_props(hex_str):
-    try:
-        data = bytes.fromhex(hex_str)
-    except ValueError:
-        return {}
-
-    result = {}
-    i = 0
-    while i < len(data) - 6:
-        length = struct.unpack_from("<H", data, i)[0]
-        if 2 <= length <= 80 and i + 2 + length + 3 <= len(data):
-            try:
-                name = data[i + 2 : i + 2 + length].decode("ascii")
-            except UnicodeDecodeError:
-                i += 1
-                continue
-            if name and (name[0].isalpha() or name[0] == "_") and all(
-                c.isalnum() or c in "_:." for c in name
-            ):
-                after = i + 2 + length
-                prop_type = data[after]
-                value_start = after + 2
-                if prop_type == 3 and value_start + 4 <= len(data):
-                    result[name] = struct.unpack_from("<i", data, value_start)[0]
-                elif prop_type == 4 and value_start + 4 <= len(data):
-                    result[name] = round(struct.unpack_from("<f", data, value_start)[0], 4)
-                elif prop_type == 5 and value_start + 1 <= len(data):
-                    result[name] = bool(data[value_start])
-                elif prop_type in (1, 2):
-                    result[name] = "(object/string)"
-        i += 1
-    return result
-
-
-def diff_vmad(old_hex, new_hex):
-    """
-    Decode two VMAD raw-hex blobs via decode_vmad_props() and diff their
-    scanned script properties. Returns
-    `{"added": {name: value}, "removed": {name: value},
-      "changed": {name: {"from": .., "to": ..}}}`.
-    """
-    old = decode_vmad_props(old_hex)
-    new = decode_vmad_props(new_hex)
-    added, removed, changed = {}, {}, {}
-    for k in old.keys() | new.keys():
-        if k not in new:
-            removed[k] = old[k]
-        elif k not in old:
-            added[k] = new[k]
-        elif old[k] != new[k]:
-            changed[k] = {"from": old[k], "to": new[k]}
-    return {"added": added, "removed": removed, "changed": changed}
-
-
-# --------------------------------------------------------------------------
-# Generic keyed array-pairing engine (shared by the legacy semantic differs)
-# --------------------------------------------------------------------------
-
-
-def _fields_diff(pairs):
-    """pairs: iterable of (field_name, old_val, new_val). Returns a sparse
-    field_changes-shaped dict containing only the fields that actually
-    differ, suitable for handing to extract_changes()."""
-    fc = {}
-    for name, ov, nv in pairs:
-        if ov != nv:
-            fc[name] = {"from": ov, "to": nv}
-    return fc
-
-
-def _key_tuple_display(k, key_fields, ref_names):
-    if not key_fields:
-        return pl.format_scalar(k, ref_names)
-    if isinstance(k, tuple) and len(key_fields) == len(k):
-        return ", ".join(f"{kf}={pl.format_scalar(v, ref_names)}" for kf, v in zip(key_fields, k))
-    if len(key_fields) == 1:
-        return f"{key_fields[0]}={pl.format_scalar(k, ref_names)}"
-    return pl.format_scalar(k, ref_names)
-
-
 def _key_dict_display(key, ref_names):
     if not isinstance(key, dict) or not key:
         return pl.format_scalar(key, ref_names)
     return ", ".join(f"{k}={pl.format_scalar(v, ref_names)}" for k, v in key.items())
 
 
-def _keyed_array_diff(from_list, to_list, key_fields, key_fn, unwrap_fn, fields_fn, display_fn, ref_names):
-    """
-    Generic engine behind diff_components / diff_omod_properties /
-    diff_lvli_entries / diff_effects / diff_objectives / diff_stages: groups
-    both lists by key_fn(), pairs same-key entries positionally (Bethesda
-    arrays occasionally carry duplicate keys), and returns the normalized
-    `array` structure (added/removed/changed) shared with `_array_diff`.
-
-    key_fn(raw_elem) -> hashable key
-    unwrap_fn(raw_elem) -> inner dict actually holding the comparable fields
-        (some shapes wrap entries in a named container, e.g.
-        {"Leveled List Entry": {...}})
-    fields_fn(old_inner, new_inner) -> list[(field_name, old_val, new_val)]
-    display_fn(raw_elem, ref_names) -> str one-line summary
-    """
-    from_groups, to_groups = defaultdict(list), defaultdict(list)
-    for e in from_list:
-        if isinstance(e, dict):
-            from_groups[key_fn(e)].append(e)
-    for e in to_list:
-        if isinstance(e, dict):
-            to_groups[key_fn(e)].append(e)
-
-    added, removed, changed = [], [], []
-    all_keys = list(from_groups) + [k for k in to_groups if k not in from_groups]
-    for k in all_keys:
-        fg, tg = from_groups.get(k, []), to_groups.get(k, [])
-        for i in range(max(len(fg), len(tg))):
-            oe = fg[i] if i < len(fg) else None
-            ne = tg[i] if i < len(tg) else None
-            if oe is None:
-                added.append(
-                    {
-                        "key_display": _key_tuple_display(k, key_fields, ref_names),
-                        "display": display_fn(ne, ref_names),
-                        "raw": ne,
-                    }
-                )
-            elif ne is None:
-                removed.append(
-                    {
-                        "key_display": _key_tuple_display(k, key_fields, ref_names),
-                        "display": display_fn(oe, ref_names),
-                        "raw": oe,
-                    }
-                )
-            else:
-                oi, ni = unwrap_fn(oe), unwrap_fn(ne)
-                fc = _fields_diff(fields_fn(oi, ni))
-                if fc:
-                    changed.append(
-                        {
-                            "key_display": _key_tuple_display(k, key_fields, ref_names),
-                            "changes": extract_changes(fc, ref_names),
-                        }
-                    )
-
-    return {
-        "strategy": "keyed",
-        "key_fields": key_fields,
-        "count_from": len(from_list),
-        "count_to": len(to_list),
-        "added": added,
-        "removed": removed,
-        "changed": changed,
-    }
-
-
-# ---- Components (COBJ Components / Repair / Scrap Received) --------------
-
-
-def _comp_key(entry):
-    c = entry.get("Component")
-    if isinstance(c, str):
-        return c
-    if isinstance(c, dict):
-        return c.get("formid", str(c))
-    return str(c)
-
-
-def _comp_qty(entry):
-    q = entry.get("Quantity")
-    return q if q is not None else entry.get("Count")
-
-
-def _comp_display(entry, ref_names):
-    return f"{pl.format_scalar(entry.get('Component'), ref_names)} ×{pl.fmt_num(_comp_qty(entry))}"
-
-
-def diff_components(from_list, to_list, ref_names=None):
-    """Per-component crafting-cost quantity diff, keyed by the referenced
-    Component."""
-    ref_names = ref_names or {}
-    return _keyed_array_diff(
-        from_list,
-        to_list,
-        ["Component"],
-        _comp_key,
-        lambda e: e,
-        lambda o, n: [("Quantity", _comp_qty(o), _comp_qty(n))],
-        _comp_display,
-        ref_names,
+def presence_array_diff(from_list, to_list, ref_names=None):
+    """Normalize a `{"from", "to"}` leaf that holds a list. Rust reports
+    every array edit through `_array_diff` (ADR 0005) and uses this leaf
+    shape only when the array field itself appears or disappears (one side
+    is null), so each element on the present side is added or removed."""
+    return _normalize_new_array_diff(
+        {
+            "strategy": "unkeyed",
+            "count_from": len(from_list),
+            "count_to": len(to_list),
+            "removed": from_list,
+            "added": to_list,
+        },
+        ref_names or {},
     )
-
-
-# ---- OMOD properties (Data / Properties) ----------------------------------
-
-
-def _omod_key(p):
-    ft = p.get("Function Type") or p.get("Type")
-    ft_name = ft.get("name") if isinstance(ft, dict) else ft
-    prop = p.get("Property") or p.get("Actor Value")
-    prop_name = prop.get("name") if isinstance(prop, dict) else prop
-    return (ft_name, prop_name)
-
-
-def _omod_value1(p):
-    v = p.get("Value 1")
-    return v if v is not None else p.get("Value")
-
-
-def _omod_display(p, ref_names):
-    ft = p.get("Function Type") or p.get("Type")
-    func = ft.get("name") if isinstance(ft, dict) else pl.format_scalar(ft, ref_names)
-    prop = p.get("Property") or p.get("Actor Value")
-    stat = prop.get("name") if isinstance(prop, dict) else pl.format_scalar(prop, ref_names)
-    v1, v2 = _omod_value1(p), p.get("Value 2")
-    if v2 in (None, 0, 0.0):
-        val = pl.format_scalar(v1, ref_names)
-    else:
-        val = f"{pl.format_scalar(v1, ref_names)}, {pl.format_scalar(v2, ref_names)}"
-    return f"{func} {stat} {val}"
-
-
-def diff_omod_properties(from_list, to_list, ref_names=None):
-    """Per-property diff of an OMOD's Data / Properties[] array, keyed by
-    (Function Type, Property) — the source of 'ADD NumProjectiles +2' /
-    'MUL+ADD Speed 1.5 -> 2.0' style deltas."""
-    ref_names = ref_names or {}
-    return _keyed_array_diff(
-        from_list,
-        to_list,
-        ["Function Type", "Property"],
-        _omod_key,
-        lambda e: e,
-        lambda o, n: [
-            ("Value 1", _omod_value1(o), _omod_value1(n)),
-            ("Value 2", o.get("Value 2"), n.get("Value 2")),
-        ],
-        _omod_display,
-        ref_names,
-    )
-
-
-# ---- Leveled list entries --------------------------------------------------
-#
-# unwrap/reference/quantity reading lives in lvli_entry.py (the single
-# owner shared with run_lints.py) — see that module's
-# docstring for the canonical behavior on each axis, including why
-# entry_quantity() defaults to None rather than fabricating 1.
-
-
-def _lvli_key(e):
-    ue = lvli_entry.unwrap_entry(e)
-    ref = lvli_entry.entry_reference(ue)
-    lvl = ue.get("Minimum Level", ue.get("Level"))
-    fid = ref.get("formid") if isinstance(ref, dict) else ref
-    return (fid, lvl)
-
-
-def _lvli_display(e, ref_names):
-    ue = lvli_entry.unwrap_entry(e)
-    ref = lvli_entry.entry_reference(ue)
-    lvl = ue.get("Minimum Level", ue.get("Level"))
-    qty = lvli_entry.entry_quantity(ue)
-    qty_clause = f", ×{pl.fmt_num(qty)}" if qty is not None else ""
-    return f"{pl.format_scalar(ref, ref_names)} (min lvl {pl.fmt_num(lvl)}{qty_clause})"
-
-
-def diff_lvli_entries(from_list, to_list, ref_names=None):
-    """Per-entry diff of a leveled list's entries — added/removed items and
-    quantity changes, keyed by (referenced item, minimum level). A missing
-    Quantity on both sides (lvli_entry.entry_quantity() -> None on both o
-    and n) never emits a spurious ("Quantity", None, None) row: _fields_diff
-    filters on `ov != nv`, and `None != None` is False, so this falls out
-    for free rather than needing a special case here."""
-    ref_names = ref_names or {}
-    return _keyed_array_diff(
-        from_list,
-        to_list,
-        ["Reference", "Minimum Level"],
-        _lvli_key,
-        lvli_entry.unwrap_entry,
-        lambda o, n: [("Quantity", lvli_entry.entry_quantity(o), lvli_entry.entry_quantity(n))],
-        _lvli_display,
-        ref_names,
-    )
-
-
-# ---- Effects (MGEF/ENCH/SPEL Effects[]) ------------------------------------
-
-
-def _effects_unwrap(e):
-    return e.get("Effect", e) if isinstance(e, dict) else {}
-
-
-def _effects_item(ue):
-    return ue.get("Effect Item Data") or {}
-
-
-def _effects_key(e):
-    ue = _effects_unwrap(e)
-    base = ue.get("Base Effect")
-    return base.get("formid") if isinstance(base, dict) else base
-
-
-def _effects_display(e, ref_names):
-    ue = _effects_unwrap(e)
-    item = _effects_item(ue)
-    return (
-        f"{pl.format_scalar(ue.get('Base Effect'), ref_names)} "
-        f"(mag {pl.fmt_num(item.get('Magnitude'))}, dur {pl.fmt_num(item.get('Duration'))})"
-    )
-
-
-def diff_effects(from_list, to_list, ref_names=None):
-    """Per-effect diff — added/removed effects and magnitude/area/duration
-    changes, keyed by the referenced Base Effect."""
-    ref_names = ref_names or {}
-
-    def fields(o, n):
-        oi, ni = _effects_item(o), _effects_item(n)
-        return [
-            ("Magnitude", oi.get("Magnitude"), ni.get("Magnitude")),
-            ("Area", oi.get("Area"), ni.get("Area")),
-            ("Duration", oi.get("Duration"), ni.get("Duration")),
-        ]
-
-    return _keyed_array_diff(
-        from_list, to_list, ["Base Effect"], _effects_key, _effects_unwrap, fields, _effects_display, ref_names
-    )
-
-
-# ---- Objectives (QUST Objectives[]) ----------------------------------------
-
-
-def _objectives_unwrap(e):
-    return e.get("Objective", e) if isinstance(e, dict) else {}
-
-
-def _objectives_key(e):
-    return _objectives_unwrap(e).get("Objective Index")
-
-
-def _objectives_display(e, ref_names):
-    ue = _objectives_unwrap(e)
-    return f'[{pl.fmt_num(ue.get("Objective Index"))}] "{ue.get("Display Text", "")}"'
-
-
-def diff_objectives(from_list, to_list, ref_names=None):
-    """Per-objective diff, keyed by Objective Index."""
-    ref_names = ref_names or {}
-    return _keyed_array_diff(
-        from_list,
-        to_list,
-        ["Objective Index"],
-        _objectives_key,
-        _objectives_unwrap,
-        lambda o, n: [("Display Text", o.get("Display Text"), n.get("Display Text"))],
-        _objectives_display,
-        ref_names,
-    )
-
-
-# ---- Stages (QUST Stages[]) -------------------------------------------------
-
-
-def _stages_unwrap(e):
-    return e.get("Stage", e) if isinstance(e, dict) else {}
-
-
-def _stages_key(e):
-    stage = _stages_unwrap(e)
-    return (stage.get("INDX") or {}).get("Stage Index")
-
-
-def _stage_log_notes(stage):
-    return [
-        entry.get("Log Entry", {}).get("Note", "")
-        for entry in stage.get("Log Entries", [])
-        if entry.get("Log Entry", {}).get("Note")
-    ]
-
-
-def _stages_display(e, ref_names):
-    ue = _stages_unwrap(e)
-    idx = (ue.get("INDX") or {}).get("Stage Index")
-    notes = _stage_log_notes(ue)
-    return f"Stage {pl.fmt_num(idx)}: {'; '.join(notes) if notes else 'no log entries'}"
-
-
-def diff_stages(from_list, to_list, ref_names=None):
-    """Per-stage diff, keyed by Stage Index; compares the joined Log Entry
-    notes as a single text field."""
-    ref_names = ref_names or {}
-    return _keyed_array_diff(
-        from_list,
-        to_list,
-        ["Stage Index"],
-        _stages_key,
-        _stages_unwrap,
-        lambda o, n: [("Log Entries", "; ".join(_stage_log_notes(o)), "; ".join(_stage_log_notes(n)))],
-        _stages_display,
-        ref_names,
-    )
-
-
-# ---- Scalar (non-dict) arrays: set-diff by value ---------------------------
-
-
-def _normalize_scalar_array(from_list, to_list, ref_names):
-    added_vals = [v for v in to_list if v not in from_list]
-    removed_vals = [v for v in from_list if v not in to_list]
-    return {
-        "strategy": "set",
-        "key_fields": None,
-        "count_from": len(from_list),
-        "count_to": len(to_list),
-        "added": [
-            {"key_display": pl.format_scalar(v, ref_names), "display": pl.format_scalar(v, ref_names), "raw": v}
-            for v in added_vals
-        ],
-        "removed": [
-            {"key_display": pl.format_scalar(v, ref_names), "display": pl.format_scalar(v, ref_names), "raw": v}
-            for v in removed_vals
-        ],
-        "changed": [],
-    }
-
-
-# ---- Dispatcher: legacy whole-array {from,to} -> normalized array shape ----
-
-
-def smart_array_diff(from_list, to_list, ref_names=None):
-    """
-    LEGACY-shape array normalizer. Given a whole-array `{"from": [...], "to":
-    [...]}` pair (the pre-`_array_diff` Rust diff format — still emitted for
-    any array the diff engine hasn't upgraded, or present in older diff JSON
-    on disk), detect the array's semantic "shape" from a sample element and
-    key/diff it the same way the new `_array_diff` engine would, returning
-    the SAME normalized structure produced for a real `_array_diff` (see
-    `extract_changes`). Falls back to a `count_from`/`count_to`-only result
-    when the array holds scalars (routed to a set-diff) or an unrecognized
-    struct shape with no stable per-element key.
-    """
-    ref_names = ref_names or {}
-    count_from = len(from_list) if isinstance(from_list, list) else 0
-    count_to = len(to_list) if isinstance(to_list, list) else 0
-
-    def _empty():
-        return {
-            "strategy": "positional",
-            "key_fields": None,
-            "count_from": count_from,
-            "count_to": count_to,
-            "added": [],
-            "removed": [],
-            "changed": [],
-        }
-
-    if not isinstance(from_list, list) or not isinstance(to_list, list):
-        return _empty()
-
-    sample = next((x for x in (from_list + to_list) if isinstance(x, dict)), None)
-    if sample is None:
-        return _normalize_scalar_array(from_list, to_list, ref_names)
-
-    detectors = [
-        (lambda s: "Objective" in s, diff_objectives),
-        (lambda s: "Stage" in s, diff_stages),
-        (lambda s: "Function Type" in s and "Property" in s, diff_omod_properties),
-        (lambda s: "Component" in s or "Quantity" in s, diff_components),
-        (lambda s: "Leveled List Entry" in s, diff_lvli_entries),
-        (lambda s: "Effect" in s, diff_effects),
-    ]
-    for pred, differ in detectors:
-        if pred(sample):
-            return differ(from_list, to_list, ref_names)
-
-    return _empty()
 
 
 # --------------------------------------------------------------------------
@@ -779,8 +287,7 @@ def _is_flat_renderable_dict(v):
 
 def _struct_display(elem, ref_names):
     """Best-effort one-line summary of a dict array element (used for the
-    generic `_array_diff` added/removed entries, which carry no shape-
-    specific renderer the way the legacy differs above do). Dict-valued
+    `_array_diff` added/removed entries). Dict-valued
     fields (e.g. an OMOD Property's `{"value": .., "name": ..}` enum, or a
     resolved FormID stub) render through `format_scalar` — which already
     knows how to turn those into a name/annotated reference — rather than
@@ -834,8 +341,11 @@ def _elem_display(elem, ref_names):
 
 
 def _array_key_display(elem, key_fields, ref_names):
-    if isinstance(elem, dict) and key_fields:
-        parts = [f"{kf}={pl.format_scalar(elem[kf], ref_names)}" for kf in key_fields if kf in elem]
+    # Rust keys a wrapped element (`{"Leveled List Entry": {...}}`) by its
+    # inner fields, so look the key fields up there.
+    inner = _unwrap_element_wrapper(elem)
+    if isinstance(inner, dict) and key_fields:
+        parts = [f"{kf}={pl.format_scalar(inner[kf], ref_names)}" for kf in key_fields if kf in inner]
         if parts:
             return ", ".join(parts)
     return _elem_display(elem, ref_names)
@@ -894,7 +404,6 @@ def _blank_entry(path, kind="scalar"):
         "suppressed": None,
         "common_group": None,
         "array": None,
-        "vmad": None,
     }
 
 
@@ -966,23 +475,6 @@ def _raw_display(v):
     return pl.format_scalar(v)
 
 
-def _looks_like_hex(s):
-    return len(s) > 0 and len(s) % 2 == 0 and all(c in "0123456789abcdefABCDEF" for c in s)
-
-
-def _is_vmad_hex_pair(path, fv, tv):
-    return (
-        "Virtual Machine Adapter" in path
-        and "hex" in path.lower()
-        and isinstance(fv, str)
-        and isinstance(tv, str)
-        and len(fv) > 40
-        and len(tv) > 40
-        and _looks_like_hex(fv)
-        and _looks_like_hex(tv)
-    )
-
-
 def _enum_display(v):
     if isinstance(v, dict) and "name" in v:
         return f"`{v['name']}`"
@@ -1022,13 +514,6 @@ def _make_leaf_entry(path, fv, tv, ref_names):
     entry = _blank_entry(path)
     entry["from"], entry["to"] = fv, tv
 
-    if _is_vmad_hex_pair(path, fv, tv):
-        entry["kind"] = "vmad"
-        entry["vmad"] = diff_vmad(fv, tv)
-        entry["from_display"] = f"`[VMAD hex, {len(fv)} chars]`"
-        entry["to_display"] = f"`[VMAD hex, {len(tv)} chars]`"
-        return entry
-
     if _is_raw_pair(fv, tv):
         entry["kind"] = "raw"
         if entry["suppressed"] is None:
@@ -1039,7 +524,7 @@ def _make_leaf_entry(path, fv, tv, ref_names):
 
     if isinstance(fv, list) or isinstance(tv, list):
         entry["kind"] = "array"
-        entry["array"] = smart_array_diff(
+        entry["array"] = presence_array_diff(
             fv if isinstance(fv, list) else [],
             tv if isinstance(tv, list) else [],
             ref_names,
@@ -1100,13 +585,12 @@ def extract_changes(field_changes, ref_names=None):
     return a flat list of ChangeEntry dicts:
 
         {"path": "Data / Damage", "kind": "scalar|string|enum|flags|formid|
-                                            array|vmad|raw",
+                                            array|raw",
          "from": <raw json>, "to": <raw json>,
          "from_display": "`10`", "to_display": "`14`",
          "suppressed": None | "redundant_count" | "noise" | "raw",
          "common_group": None,
-         "array": {...} | None,   # kind == "array"
-         "vmad": {...} | None}    # kind == "vmad"
+         "array": {...} | None}   # kind == "array"
 
     Every leaf change becomes exactly one ChangeEntry — suppressed entries
     stay in the list (flagged), never dropped, so the result is exhaustive.

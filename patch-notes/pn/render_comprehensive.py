@@ -162,12 +162,10 @@ def _refs_out_for_changes(changes, refs):
     change_entries.collect_refs_out() (wrapping each value in a single-key
     dict so the path prefix survives).
 
-    - scalar/string/enum/flags/formid/vmad-hex kinds: walk `entry["to"]`.
+    - scalar/string/enum/flags/formid kinds: walk `entry["to"]`.
     - array kind: walk `added` elements (new) and, for `changed` elements,
       recurse into their nested `changes` (also to-side only). `removed`
       elements are old-state and intentionally excluded.
-    - vmad kind: walk `added` prop values and `changed` props' `to` value;
-      `removed` props are old-state and intentionally excluded.
     """
     collected = []
     for entry in changes:
@@ -179,18 +177,6 @@ def _refs_out_for_changes(changes, refs):
                 collected.append(_collect_refs_out({path: a.get("raw")}, refs))
             for c in arr.get("changed") or []:
                 collected.append(_refs_out_for_changes(c.get("changes") or [], refs))
-        elif kind == "vmad" and entry.get("vmad"):
-            # NOTE: sorted() here isn't just cosmetic — decode_vmad_props()
-            # dicts are built from a `set` union upstream (change_entries
-            # diff_vmad), whose iteration order is affected by Python's
-            # per-process hash randomization. Sorting keeps refs_out order
-            # (and, via _render_change_bullet, the MD prop listing) stable
-            # across runs/processes.
-            vmad = entry["vmad"]
-            for name, v in sorted((vmad.get("added") or {}).items()):
-                collected.append(_collect_refs_out({f"{path} / {name}": v}, refs))
-            for name, ch in sorted((vmad.get("changed") or {}).items()):
-                collected.append(_collect_refs_out({f"{path} / {name}": ch.get("to")}, refs))
         else:
             collected.append(_collect_refs_out({path: entry.get("to")}, refs))
     return _merge_refs(*collected)

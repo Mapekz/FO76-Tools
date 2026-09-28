@@ -167,8 +167,7 @@
           "to_display": "`14`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Data / Firing Type",
@@ -185,8 +184,7 @@
           "to_display": "`Burst`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Data / Weapon Flags",
@@ -208,8 +206,7 @@
           "to_display": "`Automatic, Non-Playable` *(+Non-Playable)*",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Data / Ammo",
@@ -220,8 +217,7 @@
           "to_display": "`0x00654321` (AMMO: `Ammo762New` *\"7.62 Round\"*)",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Data / Scope Attachment",
@@ -232,8 +228,7 @@
           "to_display": "`0x00099999` *(dangling)*",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Model / Model Path",
@@ -244,8 +239,7 @@
           "to_display": "`meshes/weapons/rifle_new.nif`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Object Bounds / X1",
@@ -256,8 +250,7 @@
           "to_display": "`-12`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Object Bounds / Y1",
@@ -268,8 +261,7 @@
           "to_display": "`-12`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -396,8 +388,7 @@
                     "to_display": "`1.25`",
                     "suppressed": null,
                     "common_group": null,
-                    "array": null,
-                    "vmad": null
+                    "array": null
                   }
                 ]
               },
@@ -413,14 +404,12 @@
                     "to_display": "`1.5`",
                     "suppressed": null,
                     "common_group": null,
-                    "array": null,
-                    "vmad": null
+                    "array": null
                   }
                 ]
               }
             ]
-          },
-          "vmad": null
+          }
         }
       ]
     },
@@ -445,61 +434,45 @@
         {
           "path": "Entries",
           "kind": "array",
-          "from": [
-            {
-              "Leveled List Entry": {
-                "Reference": "0x00AA0001",
-                "Minimum Level": 1,
-                "Quantity": 1
+          "from": null,
+          "to": {
+            "strategy": "keyed",
+            "key_fields": [
+              "Reference",
+              "Minimum Level"
+            ],
+            "count_from": 3,
+            "count_to": 4,
+            "added": [
+              {
+                "Leveled List Entry": {
+                  "Reference": "0x00AA0004",
+                  "Minimum Level": 15,
+                  "Quantity": 1
+                }
               }
-            },
-            {
-              "Leveled List Entry": {
-                "Reference": "0x00AA0002",
-                "Minimum Level": 5,
-                "Quantity": 1
+            ],
+            "changed": [
+              {
+                "key": {
+                  "Reference": "0x00AA0001",
+                  "Minimum Level": 1
+                },
+                "index_from": 0,
+                "index_to": 0,
+                "changes": {
+                  "Leveled List Entry": {
+                    "Quantity": {
+                      "from": 1,
+                      "to": 3
+                    }
+                  }
+                }
               }
-            },
-            {
-              "Leveled List Entry": {
-                "Reference": "0x00AA0003",
-                "Minimum Level": 10,
-                "Quantity": 2
-              }
-            }
-          ],
-          "to": [
-            {
-              "Leveled List Entry": {
-                "Reference": "0x00AA0001",
-                "Minimum Level": 1,
-                "Quantity": 3
-              }
-            },
-            {
-              "Leveled List Entry": {
-                "Reference": "0x00AA0002",
-                "Minimum Level": 5,
-                "Quantity": 1
-              }
-            },
-            {
-              "Leveled List Entry": {
-                "Reference": "0x00AA0003",
-                "Minimum Level": 10,
-                "Quantity": 2
-              }
-            },
-            {
-              "Leveled List Entry": {
-                "Reference": "0x00AA0004",
-                "Minimum Level": 15,
-                "Quantity": 1
-              }
-            }
-          ],
-          "from_display": "`3 items`",
-          "to_display": "`4 items`",
+            ]
+          },
+          "from_display": null,
+          "to_display": null,
           "suppressed": null,
           "common_group": null,
           "array": {
@@ -513,7 +486,7 @@
             "added": [
               {
                 "key_display": "Reference=`0x00AA0004` (MISC: *\"A rare crafting component.\"*), Minimum Level=`15`",
-                "display": "`0x00AA0004` (MISC: *\"A rare crafting component.\"*) (min lvl 15, ×1)",
+                "display": "Reference=`0x00AA0004` (MISC: *\"A rare crafting component.\"*), Minimum Level=`15`, Quantity=`1`",
                 "raw": {
                   "Leveled List Entry": {
                     "Reference": "0x00AA0004",
@@ -529,7 +502,7 @@
                 "key_display": "Reference=`0x00AA0001` (MISC: `JunkItem01` *\"Scrap Metal\"*), Minimum Level=`1`",
                 "changes": [
                   {
-                    "path": "Quantity",
+                    "path": "Leveled List Entry / Quantity",
                     "kind": "scalar",
                     "from": 1,
                     "to": 3,
@@ -537,14 +510,12 @@
                     "to_display": "`3`",
                     "suppressed": null,
                     "common_group": null,
-                    "array": null,
-                    "vmad": null
+                    "array": null
                   }
                 ]
               }
             ]
-          },
-          "vmad": null
+          }
         },
         {
           "path": "Leveled List Entry Count",
@@ -555,8 +526,7 @@
           "to_display": "`4`",
           "suppressed": "redundant_count",
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -574,28 +544,175 @@
       "dangling_refs": [],
       "changes": [
         {
-          "path": "Virtual Machine Adapter / hex",
-          "kind": "vmad",
-          "from": "0500436f756e740301030000000400466c6167050100",
-          "to": "0500436f756e740301050000000400466c6167050101",
-          "from_display": "`[VMAD hex, 44 chars]`",
-          "to_display": "`[VMAD hex, 44 chars]`",
+          "path": "Virtual Machine Adapter / scripts",
+          "kind": "array",
+          "from": null,
+          "to": {
+            "strategy": "keyed",
+            "key_fields": [
+              "name"
+            ],
+            "count_from": 1,
+            "count_to": 1,
+            "changed": [
+              {
+                "key": {
+                  "name": "TestScript"
+                },
+                "index_from": 0,
+                "index_to": 0,
+                "changes": {
+                  "properties": {
+                    "_array_diff": {
+                      "strategy": "keyed",
+                      "key_fields": [
+                        "name"
+                      ],
+                      "count_from": 2,
+                      "count_to": 2,
+                      "changed": [
+                        {
+                          "key": {
+                            "name": "Count"
+                          },
+                          "index_from": 0,
+                          "index_to": 0,
+                          "changes": {
+                            "value": {
+                              "from": 3,
+                              "to": 5
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "name": "Flag"
+                          },
+                          "index_from": 1,
+                          "index_to": 1,
+                          "changes": {
+                            "value": {
+                              "from": false,
+                              "to": true
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "from_display": null,
+          "to_display": null,
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": {
-            "added": {},
-            "removed": {},
-            "changed": {
-              "Count": {
-                "from": 3,
-                "to": 5
-              },
-              "Flag": {
-                "from": false,
-                "to": true
+          "array": {
+            "strategy": "keyed",
+            "key_fields": [
+              "name"
+            ],
+            "count_from": 1,
+            "count_to": 1,
+            "added": [],
+            "removed": [],
+            "changed": [
+              {
+                "key_display": "name=`TestScript`",
+                "changes": [
+                  {
+                    "path": "properties",
+                    "kind": "array",
+                    "from": null,
+                    "to": {
+                      "strategy": "keyed",
+                      "key_fields": [
+                        "name"
+                      ],
+                      "count_from": 2,
+                      "count_to": 2,
+                      "changed": [
+                        {
+                          "key": {
+                            "name": "Count"
+                          },
+                          "index_from": 0,
+                          "index_to": 0,
+                          "changes": {
+                            "value": {
+                              "from": 3,
+                              "to": 5
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "name": "Flag"
+                          },
+                          "index_from": 1,
+                          "index_to": 1,
+                          "changes": {
+                            "value": {
+                              "from": false,
+                              "to": true
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "from_display": null,
+                    "to_display": null,
+                    "suppressed": null,
+                    "common_group": null,
+                    "array": {
+                      "strategy": "keyed",
+                      "key_fields": [
+                        "name"
+                      ],
+                      "count_from": 2,
+                      "count_to": 2,
+                      "added": [],
+                      "removed": [],
+                      "changed": [
+                        {
+                          "key_display": "name=`Count`",
+                          "changes": [
+                            {
+                              "path": "value",
+                              "kind": "scalar",
+                              "from": 3,
+                              "to": 5,
+                              "from_display": "`3`",
+                              "to_display": "`5`",
+                              "suppressed": null,
+                              "common_group": null,
+                              "array": null
+                            }
+                          ]
+                        },
+                        {
+                          "key_display": "name=`Flag`",
+                          "changes": [
+                            {
+                              "path": "value",
+                              "kind": "scalar",
+                              "from": false,
+                              "to": true,
+                              "from_display": "`false`",
+                              "to_display": "`true`",
+                              "suppressed": null,
+                              "common_group": null,
+                              "array": null
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
               }
-            }
+            ]
           }
         }
       ]
@@ -626,8 +743,7 @@
           "to_display": "`false`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -653,8 +769,7 @@
           "to_display": "`3`",
           "suppressed": null,
           "common_group": "CC001",
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Stats / Aggression",
@@ -665,8 +780,7 @@
           "to_display": "`2`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -692,8 +806,7 @@
           "to_display": "`3`",
           "suppressed": null,
           "common_group": "CC001",
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Stats / Aggression",
@@ -704,8 +817,7 @@
           "to_display": "`3`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -731,8 +843,7 @@
           "to_display": "`3`",
           "suppressed": null,
           "common_group": "CC001",
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Stats / Aggression",
@@ -743,8 +854,7 @@
           "to_display": "`4`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -770,8 +880,7 @@
           "to_display": "`3`",
           "suppressed": null,
           "common_group": "CC001",
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Stats / Aggression",
@@ -782,8 +891,7 @@
           "to_display": "`5`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -809,8 +917,7 @@
           "to_display": "`3`",
           "suppressed": null,
           "common_group": "CC001",
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Stats / Aggression",
@@ -821,8 +928,7 @@
           "to_display": "`6`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     },
@@ -848,8 +954,7 @@
           "to_display": "`3`",
           "suppressed": null,
           "common_group": "CC001",
-          "array": null,
-          "vmad": null
+          "array": null
         },
         {
           "path": "Stats / Aggression",
@@ -860,8 +965,7 @@
           "to_display": "`7`",
           "suppressed": null,
           "common_group": null,
-          "array": null,
-          "vmad": null
+          "array": null
         }
       ]
     }

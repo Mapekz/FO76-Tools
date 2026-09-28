@@ -118,43 +118,6 @@ class TestClassifyCut(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# VMAD hex decode / diff
-# ---------------------------------------------------------------------------
-
-
-class TestVmad(unittest.TestCase):
-    def test_decode_vmad_props_roundtrip(self):
-        diff_data = load_fixture("diff_small.json")
-        rec = find_changed(diff_data, "0x01004001")
-        hex_pair = rec["field_changes"]["Virtual Machine Adapter"]["hex"]
-        old = change_entries.decode_vmad_props(hex_pair["from"])
-        new = change_entries.decode_vmad_props(hex_pair["to"])
-        self.assertEqual(old, {"Count": 3, "Flag": False})
-        self.assertEqual(new, {"Count": 5, "Flag": True})
-
-    def test_diff_vmad_shape(self):
-        diff_data = load_fixture("diff_small.json")
-        rec = find_changed(diff_data, "0x01004001")
-        hex_pair = rec["field_changes"]["Virtual Machine Adapter"]["hex"]
-        result = change_entries.diff_vmad(hex_pair["from"], hex_pair["to"])
-        self.assertEqual(result["added"], {})
-        self.assertEqual(result["removed"], {})
-        self.assertEqual(result["changed"], {"Count": {"from": 3, "to": 5}, "Flag": {"from": False, "to": True}})
-
-    def test_decode_vmad_props_invalid_hex_returns_empty(self):
-        self.assertEqual(change_entries.decode_vmad_props("not hex!!"), {})
-
-    def test_extract_changes_detects_vmad_kind(self):
-        diff_data = load_fixture("diff_small.json")
-        rec = find_changed(diff_data, "0x01004001")
-        entries = change_entries.extract_changes(rec["field_changes"], diff_data["ref_names"])
-        entry = find_entry(entries, "Virtual Machine Adapter / hex")
-        self.assertEqual(entry["kind"], "vmad")
-        self.assertEqual(entry["vmad"]["changed"]["Count"], {"from": 3, "to": 5})
-        self.assertEqual(entry["vmad"]["changed"]["Flag"], {"from": False, "to": True})
-
-
-# ---------------------------------------------------------------------------
 # extract_changes: one kind per record type in the fixture
 # ---------------------------------------------------------------------------
 
@@ -240,17 +203,15 @@ class TestExtractChangesKinds(unittest.TestCase):
         self.assertIsNotNone(e["array"])
         self.assertEqual(e["array"]["strategy"], "keyed")
 
-    def test_array_kind_legacy_shape(self):
-        entries = self._entries("0x01003001")
-        e = find_entry(entries, "Entries")
-        self.assertEqual(e["kind"], "array")
-        self.assertEqual(e["array"]["count_from"], 3)
-        self.assertEqual(e["array"]["count_to"], 4)
-
-    def test_vmad_kind(self):
+    def test_structured_vmad_property_edit(self):
         entries = self._entries("0x01004001")
-        e = find_entry(entries, "Virtual Machine Adapter / hex")
-        self.assertEqual(e["kind"], "vmad")
+        e = find_entry(entries, "Virtual Machine Adapter / scripts")
+        self.assertEqual(e["kind"], "array")
+        props = find_entry(e["array"]["changed"][0]["changes"], "properties")["array"]
+        self.assertEqual(
+            [(c["key_display"], c["changes"][0]["to"]) for c in props["changed"]],
+            [("name=`Count`", 5), ("name=`Flag`", True)],
+        )
 
     def test_raw_kind_suppressed(self):
         entries = change_entries.extract_changes(
@@ -538,59 +499,24 @@ class TestKeyDictDisplay(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Legacy whole-array fallback normalization
+# Whole-array leaves: the array field appears or disappears
 # ---------------------------------------------------------------------------
 
 
-class TestLegacyArrayFallback(unittest.TestCase):
-    def setUp(self):
-        self.diff_data = load_fixture("diff_small.json")
-        rec = find_changed(self.diff_data, "0x01003001")
-        entries = change_entries.extract_changes(rec["field_changes"], self.diff_data["ref_names"])
-        self.array = find_entry(entries, "Entries")["array"]
+class TestPresenceArrayDiff(unittest.TestCase):
+    def test_disappearing_struct_array_lists_every_element_removed(self):
+        effects = [{"Effect": {"Base Effect": "0x00AA0001"}}, {"Effect": {"Base Effect": "0x00AA0002"}}]
+        entries = change_entries.extract_changes({"Effects": {"from": effects, "to": None}}, {})
+        arr = find_entry(entries, "Effects")["array"]
+        self.assertEqual(arr["strategy"], "unkeyed")
+        self.assertEqual((arr["count_from"], arr["count_to"]), (2, 0))
+        self.assertEqual([r["raw"] for r in arr["removed"]], effects)
+        self.assertEqual(arr["added"], [])
 
-    def test_detects_lvli_shape_as_keyed(self):
-        self.assertEqual(self.array["strategy"], "keyed")
-        self.assertEqual(self.array["key_fields"], ["Reference", "Minimum Level"])
-
-    def test_one_added_one_changed_none_removed(self):
-        self.assertEqual(len(self.array["added"]), 1)
-        self.assertEqual(len(self.array["removed"]), 0)
-        self.assertEqual(len(self.array["changed"]), 1)
-
-    def test_added_entry_is_0xaa0004(self):
-        added = self.array["added"][0]
-        self.assertEqual(added["raw"]["Leveled List Entry"]["Reference"], "0x00AA0004")
-
-    def test_changed_entry_quantity_delta(self):
-        changed = self.array["changed"][0]
-        nested = changed["changes"]
-        qty_entry = find_entry(nested, "Quantity")
-        self.assertEqual(qty_entry["from"], 1)
-        self.assertEqual(qty_entry["to"], 3)
-
-    def test_diff_lvli_entries_direct_call_matches(self):
-        rec = find_changed(self.diff_data, "0x01003001")
-        fc = rec["field_changes"]["Entries"]
-        direct = change_entries.diff_lvli_entries(fc["from"], fc["to"], self.diff_data["ref_names"])
-        self.assertEqual(direct, self.array)
-
-    def test_smart_array_diff_unkeyable_scalar_list_falls_back_to_counts(self):
-        result = change_entries.smart_array_diff([1, 2, 3], [1, 2], {})
-        self.assertEqual(result["strategy"], "set")
-        self.assertEqual(result["count_from"], 3)
-        self.assertEqual(result["count_to"], 2)
-
-    def test_smart_array_diff_unrecognized_struct_shape_counts_only(self):
-        from_list = [{"Foo": 1}, {"Foo": 2}]
-        to_list = [{"Foo": 1}]
-        result = change_entries.smart_array_diff(from_list, to_list, {})
-        self.assertEqual(result["strategy"], "positional")
-        self.assertIsNone(result["key_fields"])
-        self.assertEqual(result["count_from"], 2)
-        self.assertEqual(result["count_to"], 1)
-        self.assertEqual(result["added"], [])
-        self.assertEqual(result["removed"], [])
+    def test_appearing_scalar_array_lists_every_value_added(self):
+        arr = change_entries.presence_array_diff([], ["0x00AA0001"], {})
+        self.assertEqual([a["raw"] for a in arr["added"]], ["0x00AA0001"])
+        self.assertEqual(arr["removed"], [])
 
 
 # ---------------------------------------------------------------------------
@@ -616,26 +542,6 @@ class TestLvliEntryConsolidation(unittest.TestCase):
     def test_entry_reference_falls_back_to_item(self):
         self.assertEqual(lvli_entry.entry_reference({"Item": "0x00AA0002"}), "0x00AA0002")
         self.assertEqual(lvli_entry.entry_reference({"Reference": "0x00AA0001", "Item": "0x00AA0002"}), "0x00AA0001")
-
-    def test_lvli_display_omits_quantity_clause_when_missing(self):
-        elem = {"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5}}
-        out = change_entries._lvli_display(elem, {})
-        self.assertNotIn("×None", out)
-        self.assertNotIn("×", out)
-        self.assertIn("min lvl 5", out)
-
-    def test_lvli_display_still_shows_quantity_when_present(self):
-        elem = {"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5, "Quantity": 3}}
-        out = change_entries._lvli_display(elem, {})
-        self.assertIn("×3", out)
-
-    def test_diff_lvli_entries_no_spurious_quantity_row_when_both_missing(self):
-        # Both sides lack Quantity entirely -- must not synthesize a
-        # ("Quantity", None, None) no-op change row.
-        from_list = [{"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5}}]
-        to_list = [{"Leveled List Entry": {"Reference": "0x00AA0001", "Minimum Level": 5}}]
-        result = change_entries.diff_lvli_entries(from_list, to_list, {})
-        self.assertEqual(result["changed"], [])
 
 
 # ---------------------------------------------------------------------------

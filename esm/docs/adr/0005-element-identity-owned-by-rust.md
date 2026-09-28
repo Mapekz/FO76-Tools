@@ -40,11 +40,10 @@ the two whole lists is the only shape that doesn't lie. **A future architecture 
 re-propose "add a CTDA key spec to `element_key_spec`"** — this ADR exists specifically so that
 suggestion doesn't get re-litigated without this context.
 
-`patchnotes_lib.smart_array_diff` and its six legacy differs are *not* deleted by this change —
-they remain the reader for `diff.json` files already on disk from before this ADR, which still
-carry the bare `{from, to}` shape. Their deletion is a separate, evidence-gated follow-up: once
-production has run enough patch-notes cycles on the new shape, confirm nothing still reaches
-`smart_array_diff` and remove it then.
+The patch-notes pipeline has no pairing logic of its own. `smart_array_diff` and its six legacy
+differs are gone: on current diffs a whole-array `{from, to}` leaf only means the array field
+appeared or disappeared, and `change_entries.presence_array_diff` reports every element on the
+present side as added or removed.
 
 ## Consequences
 

@@ -89,7 +89,6 @@ def change(**overrides: Any) -> dict[str, Any]:
         "suppressed": None,
         "common_group": None,
         "array": None,
-        "vmad": None,
         **overrides,
     }
 
