@@ -720,84 +720,11 @@ pub(crate) fn resolve_ref_seeds(db: &Database, sel: &RecordSel) -> anyhow::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
+    use crate::testkit::*;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU32, Ordering};
-
-    // ── Minimal synthetic-ESM byte builders ──────────────────────────────
-    //
-    // Colocated unit tests live inside the `esm` crate itself, so they can't
-    // pull in `tests/common/mod.rs`'s helpers of the same name the way an
-    // integration test under `tests/` does (that file's `use esm::Database`
-    // et al. only resolve for a crate depending on `esm` externally). These
-    // mirror that file's byte-level conventions (and `tests/refs.rs`'s own
-    // local copies of them) with `crate::` paths instead.
-
-    const TEST_FORM_VERSION: u16 = 208;
-
-    fn append_subrecord(out: &mut Vec<u8>, sig: &[u8; 4], data: &[u8]) {
-        out.extend_from_slice(sig);
-        out.extend_from_slice(&(data.len() as u16).to_le_bytes());
-        out.extend_from_slice(data);
-    }
-
-    fn edid_bytes(name: &str) -> Vec<u8> {
-        let mut v = name.as_bytes().to_vec();
-        v.push(0);
-        v
-    }
-
-    fn append_record(out: &mut Vec<u8>, sig: &[u8; 4], form_id: u32, subrecords: &[u8]) {
-        out.extend_from_slice(sig);
-        out.extend_from_slice(&(subrecords.len() as u32).to_le_bytes()); // data_size
-        out.extend_from_slice(&0u32.to_le_bytes()); // flags
-        out.extend_from_slice(&form_id.to_le_bytes());
-        out.extend_from_slice(&0u32.to_le_bytes()); // vcs1
-        out.extend_from_slice(&TEST_FORM_VERSION.to_le_bytes());
-        out.extend_from_slice(&0u16.to_le_bytes()); // vcs2
-        out.extend_from_slice(subrecords);
-    }
-
-    fn wrap_grup(label: &[u8; 4], records: &[u8]) -> Vec<u8> {
-        let mut buf = Vec::new();
-        let group_size = (24 + records.len()) as u32;
-        buf.extend_from_slice(b"GRUP");
-        buf.extend_from_slice(&group_size.to_le_bytes());
-        buf.extend_from_slice(label);
-        buf.extend_from_slice(&0i32.to_le_bytes()); // group_type = 0 (top-level)
-        buf.extend_from_slice(&0u32.to_le_bytes()); // stamp
-        buf.extend_from_slice(&0u32.to_le_bytes()); // unknown
-        buf.extend_from_slice(records);
-        buf
-    }
-
-    fn tes4_header() -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(b"TES4");
-        buf.extend_from_slice(&0u32.to_le_bytes()); // data_size
-        buf.extend_from_slice(&0u32.to_le_bytes()); // flags (unset Localized bit)
-        buf.extend_from_slice(&0u32.to_le_bytes()); // form_id
-        buf.extend_from_slice(&0u32.to_le_bytes()); // vcs1
-        buf.extend_from_slice(&0u16.to_le_bytes()); // form_version
-        buf.extend_from_slice(&0u16.to_le_bytes()); // vcs2
-        buf
-    }
-
-    fn unique_temp_path(stem: &str) -> PathBuf {
-        static COUNTER: AtomicU32 = AtomicU32::new(0);
-        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
-            "fo76_esm_refs_unit_{stem}_{}_{n}.esm",
-            std::process::id()
-        ))
-    }
 
     fn write_and_open(buf: &[u8], stem: &str) -> (PathBuf, Database) {
-        let tmp = unique_temp_path(stem);
-        {
-            let mut f = std::fs::File::create(&tmp).expect("create temp esm");
-            f.write_all(buf).expect("write temp esm");
-        }
+        let tmp = write_temp_esm(buf, stem);
         let db = Database::open(&tmp).expect("open db");
         (tmp, db)
     }
@@ -811,7 +738,7 @@ mod tests {
     #[test]
     fn resolve_ref_seeds_direct_selector_resolves_edid_to_single_target() {
         let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &edid_bytes("TestWeap"));
+        append_subrecord(&mut subs, b"EDID", &cstr("TestWeap"));
         let mut rec = Vec::new();
         append_record(&mut rec, b"WEAP", 1, &subs);
         let mut buf = tes4_header();
@@ -840,7 +767,7 @@ mod tests {
         // `tests/refs.rs::build_perk_entry_points` verifies against real
         // `esm get` output byte-for-byte.
         let mut subs = Vec::new();
-        append_subrecord(&mut subs, b"EDID", &edid_bytes("CarrierPerk"));
+        append_subrecord(&mut subs, b"EDID", &cstr("CarrierPerk"));
         append_subrecord(&mut subs, b"DATA", &[0x01, 0x00, 0x01]); // top-level Data
         append_subrecord(&mut subs, b"PRKE", &[0x02, 0x00]);
         append_subrecord(&mut subs, b"DATA", &[39, 0x00, 0x00, 0x00]);

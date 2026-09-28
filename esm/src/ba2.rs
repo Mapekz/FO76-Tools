@@ -32,6 +32,7 @@ impl Ba2Archive {
     ///
     /// Returns an error for non-GNRL archives (e.g. DX10 texture archives)
     /// and for truncated or otherwise malformed files.
+    #[allow(unsafe_code)] // see the SAFETY comment inside
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let file =

@@ -126,6 +126,7 @@ pub(crate) fn build_in_detached_process(esm: &Path, stage: BuildStage) -> anyhow
 }
 
 #[cfg(unix)]
+#[allow(unsafe_code)] // see the SAFETY comment inside
 fn detach(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
     // SAFETY: `setsid` is async-signal-safe and touches no memory of the

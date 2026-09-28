@@ -104,6 +104,7 @@ pub struct EsmFile {
 }
 
 impl EsmFile {
+    #[allow(unsafe_code)] // see the SAFETY comment inside
     pub fn open(path: impl AsRef<Path>) -> anyhow::Result<Self> {
         let path = path.as_ref().to_path_buf();
         let file = File::open(&path).with_context(|| format!("open {}", path.display()))?;

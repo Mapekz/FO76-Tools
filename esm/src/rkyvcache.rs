@@ -295,6 +295,7 @@ where
     /// `A: `[`SectionSpec`] and so can't pass a mismatched pair; this stays
     /// available for this module's adversarial tests, which need to
     /// construct exactly such a mismatch on purpose.
+    #[allow(unsafe_code)] // see the SAFETY comment inside
     pub(crate) fn map_raw(
         path: &Path,
         kind: SectionKind,
@@ -428,6 +429,7 @@ where
     }
 
     /// Borrow the archived root. `None` iff `self` is `Absent`.
+    #[allow(unsafe_code)] // see the SAFETY comment inside
     pub(crate) fn get(&self) -> Option<&A> {
         match self {
             Section::Absent => None,
@@ -1005,6 +1007,7 @@ where
         })
     }
 
+    #[allow(unsafe_code)] // see the SAFETY comment inside
     pub(crate) fn get(&self) -> &A {
         match self {
             ArchiveBuf::Mapped(section) => section

@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 mod batch;
 mod cache;
 mod curve;
@@ -644,6 +645,7 @@ struct DispatchOptions {
 /// data-race hazard. No pointers are dereferenced other than the constant
 /// `SIG_DFL` sentinel value libc itself defines.
 #[cfg(unix)]
+#[allow(unsafe_code)] // see the SAFETY comment inside
 fn reset_sigpipe_to_default() {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);

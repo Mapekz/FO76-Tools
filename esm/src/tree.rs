@@ -553,60 +553,13 @@ mod tests {
     /// GRUP containing one WEAP record plus a nested interior-block GRUP
     /// (group_type=2, label=5) with a second WEAP record, and a second
     /// top-level ARMO GRUP containing one ARMO record.
-    ///
-    /// Mirrors the byte-level conventions of `tests/common::make_minimal_esm`
-    /// / `wrap_grup` (duplicated here rather than shared, since this module's
-    /// `#[cfg(test)]` block compiles inside the `esm` crate itself and cannot
-    /// see `tests/common`, which is only visible to the separate `tests/`
-    /// integration-test binaries).
     fn build_nested_tree_esm() -> Vec<u8> {
-        fn record(sig: &[u8; 4], form_id: u32) -> Vec<u8> {
-            let mut r = Vec::with_capacity(24);
-            r.extend_from_slice(sig);
-            r.extend_from_slice(&0u32.to_le_bytes()); // data_size
-            r.extend_from_slice(&0u32.to_le_bytes()); // flags
-            r.extend_from_slice(&form_id.to_le_bytes());
-            r.extend_from_slice(&0u32.to_le_bytes()); // vcs1
-            r.extend_from_slice(&0u16.to_le_bytes()); // form_version
-            r.extend_from_slice(&0u16.to_le_bytes()); // vcs2
-            r
-        }
-        fn grup(label: u32, group_type: i32, body: &[u8]) -> Vec<u8> {
-            let group_size = (24 + body.len()) as u32;
-            let mut g = Vec::with_capacity(group_size as usize);
-            g.extend_from_slice(b"GRUP");
-            g.extend_from_slice(&group_size.to_le_bytes());
-            g.extend_from_slice(&label.to_le_bytes());
-            g.extend_from_slice(&group_type.to_le_bytes());
-            g.extend_from_slice(&0u32.to_le_bytes()); // stamp
-            g.extend_from_slice(&0u32.to_le_bytes()); // unknown
-            g.extend_from_slice(body);
-            g
-        }
-
-        let mut buf = Vec::new();
-        // TES4 header (24 B, data_size = 0).
-        buf.extend_from_slice(b"TES4");
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u16.to_le_bytes());
-        buf.extend_from_slice(&0u16.to_le_bytes());
-
-        let weap1 = record(b"WEAP", 1);
-        let weap2 = record(b"WEAP", 2);
-        let nested = grup(5, 2, &weap2); // interior block, label = 5
-        let mut weap_body = Vec::new();
-        weap_body.extend_from_slice(&weap1);
-        weap_body.extend_from_slice(&nested);
-        let weap_grup = grup(u32::from_le_bytes(*b"WEAP"), 0, &weap_body);
-
-        let armo1 = record(b"ARMO", 3);
-        let armo_grup = grup(u32::from_le_bytes(*b"ARMO"), 0, &armo1);
-
-        buf.extend_from_slice(&weap_grup);
-        buf.extend_from_slice(&armo_grup);
+        use crate::testkit::{empty_record, grup, tes4_header, wrap_grup};
+        let mut weap_body = empty_record(b"WEAP", 1);
+        weap_body.extend(grup(5u32.to_le_bytes(), 2, &empty_record(b"WEAP", 2))); // interior block 5
+        let mut buf = tes4_header();
+        buf.extend(wrap_grup(b"WEAP", &weap_body));
+        buf.extend(wrap_grup(b"ARMO", &empty_record(b"ARMO", 3)));
         buf
     }
 

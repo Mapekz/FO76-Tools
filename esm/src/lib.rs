@@ -1,3 +1,7 @@
+// Unsafe code is limited to the functions that allow it: memory maps and
+// rkyv access over cache sections.
+#![deny(unsafe_code)]
+
 pub mod ba2;
 pub mod chase;
 pub mod compress;
@@ -25,6 +29,8 @@ mod rkyvcache;
 pub mod schema;
 pub mod source;
 pub mod strings;
+#[cfg(test)]
+pub(crate) mod testkit;
 pub mod tree;
 pub mod walk;
 pub mod wildcard;

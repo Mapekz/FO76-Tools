@@ -1673,54 +1673,13 @@ mod tests {
         assert_eq!(index.get_xref(FormId::new(1)), Vec::new());
     }
 
-    /// Build a minimal synthetic ESM (TES4 header + one top-level WEAP GRUP
+    /// A minimal synthetic ESM (TES4 header + one top-level WEAP GRUP
     /// containing one WEAP record) for
     /// [`cross_process_warm_reuse_picks_up_prebuilt_lazy_indexes`] below.
-    /// Same byte-level conventions as `tree.rs`'s `build_nested_tree_esm`,
-    /// duplicated here rather than shared for the same reason that module's
-    /// own comment documents: this `#[cfg(test)]` block compiles inside the
-    /// `esm` crate itself, with no visibility into `tree.rs`'s private test
-    /// helpers or the separate `tests/` integration-test crate's
-    /// `tests/common`.
     fn build_minimal_warm_reuse_esm() -> Vec<u8> {
-        fn record(sig: &[u8; 4], form_id: u32) -> Vec<u8> {
-            let mut r = Vec::with_capacity(24);
-            r.extend_from_slice(sig);
-            r.extend_from_slice(&0u32.to_le_bytes()); // data_size
-            r.extend_from_slice(&0u32.to_le_bytes()); // flags
-            r.extend_from_slice(&form_id.to_le_bytes());
-            r.extend_from_slice(&0u32.to_le_bytes()); // vcs1
-            r.extend_from_slice(&0u16.to_le_bytes()); // form_version
-            r.extend_from_slice(&0u16.to_le_bytes()); // vcs2
-            r
-        }
-        fn grup(label: u32, group_type: i32, body: &[u8]) -> Vec<u8> {
-            let group_size = (24 + body.len()) as u32;
-            let mut g = Vec::with_capacity(group_size as usize);
-            g.extend_from_slice(b"GRUP");
-            g.extend_from_slice(&group_size.to_le_bytes());
-            g.extend_from_slice(&label.to_le_bytes());
-            g.extend_from_slice(&group_type.to_le_bytes());
-            g.extend_from_slice(&0u32.to_le_bytes()); // stamp
-            g.extend_from_slice(&0u32.to_le_bytes()); // unknown
-            g.extend_from_slice(body);
-            g
-        }
-
-        let mut buf = Vec::new();
-        // TES4 header (24 B, data_size = 0).
-        buf.extend_from_slice(b"TES4");
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u16.to_le_bytes());
-        buf.extend_from_slice(&0u16.to_le_bytes());
-
-        let weap1 = record(b"WEAP", 1);
-        let weap_grup = grup(u32::from_le_bytes(*b"WEAP"), 0, &weap1);
-
-        buf.extend_from_slice(&weap_grup);
+        use crate::testkit::{empty_record, tes4_header, wrap_grup};
+        let mut buf = tes4_header();
+        buf.extend(wrap_grup(b"WEAP", &empty_record(b"WEAP", 1)));
         buf
     }
 
