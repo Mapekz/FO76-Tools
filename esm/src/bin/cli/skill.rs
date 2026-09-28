@@ -6,70 +6,151 @@ use std::path::{Path, PathBuf};
 /// The `esm-cli` usage-knowledge skill doc, embedded at compile time (same
 /// `include_str!` pattern as `schema/fo76.json` in `src/schema.rs`). `esm
 /// skill` prints it verbatim; `esm skill --install` writes it into a
-/// consumer repo's `.claude/skills/esm-cli/` for Claude Code to auto-discover.
+/// consumer repo for its agents to auto-discover.
 const SKILL_MD: &str = include_str!("../../../skills/esm-cli/SKILL.md");
 
-/// Where `esm skill --install [--dir <DIR>]` writes the doc, relative to
-/// `dir` (or the current directory when `dir` is `None` upstream).
-fn skill_dest_path(dir: &Path) -> PathBuf {
-    dir.join(".claude/skills/esm-cli/SKILL.md")
+/// An agent whose skill directory `esm skill --install` can write to. Each
+/// gets its own copy: a downstream tree isn't ours to symlink into, and Codex
+/// skips a symlinked `SKILL.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum SkillTarget {
+    Codex,
+    Claude,
 }
 
-/// Pure overwrite-guard decision for `esm skill --install`: refuses to
-/// clobber an existing install unless `--force` was passed. Split out from
-/// `cmd_skill` so the decision is unit-testable without touching the
-/// filesystem.
-fn skill_install_allowed(dest_exists: bool, force: bool) -> Result<(), &'static str> {
-    if dest_exists && !force {
-        Err("destination already exists; pass --force to overwrite")
-    } else {
-        Ok(())
+impl SkillTarget {
+    fn dest(self, dir: &Path) -> PathBuf {
+        let skills = match self {
+            SkillTarget::Codex => ".agents/skills",
+            SkillTarget::Claude => ".claude/skills",
+        };
+        dir.join(skills).join("esm-cli/SKILL.md")
     }
 }
 
-pub(crate) fn cmd_skill(install: bool, dir: Option<PathBuf>, force: bool) -> anyhow::Result<()> {
+/// Every destination `targets` names under `dir` (`codex` when none are
+/// given), deduplicated in the order given.
+fn destinations(targets: &[SkillTarget], dir: &Path) -> Vec<PathBuf> {
+    let targets = if targets.is_empty() {
+        &[SkillTarget::Codex][..]
+    } else {
+        targets
+    };
+    let mut dests: Vec<PathBuf> = Vec::new();
+    for target in targets {
+        let dest = target.dest(dir);
+        if !dests.contains(&dest) {
+            dests.push(dest);
+        }
+    }
+    dests
+}
+
+/// Without `--force`, refuse before writing anything if any destination
+/// already exists, so an install is never partial.
+fn preflight(dests: &[PathBuf], force: bool, exists: impl Fn(&Path) -> bool) -> anyhow::Result<()> {
+    if force {
+        return Ok(());
+    }
+    let existing: Vec<String> = dests
+        .iter()
+        .filter(|d| exists(d))
+        .map(|d| d.display().to_string())
+        .collect();
+    if !existing.is_empty() {
+        anyhow::bail!(
+            "{} already exist(s); pass --force to overwrite",
+            existing.join(", ")
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn cmd_skill(
+    install: bool,
+    targets: &[SkillTarget],
+    dir: Option<PathBuf>,
+    force: bool,
+) -> anyhow::Result<()> {
     if !install {
         print!("{SKILL_MD}");
         return Ok(());
     }
-    let base = dir.unwrap_or_else(|| PathBuf::from("."));
-    let dest = skill_dest_path(&base);
-    if let Err(msg) = skill_install_allowed(dest.exists(), force) {
-        anyhow::bail!("{}: {msg}", dest.display());
+    let dests = destinations(targets, &dir.unwrap_or_else(|| PathBuf::from(".")));
+    preflight(&dests, force, Path::exists)?;
+    for dest in &dests {
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("creating {}", parent.display()))?;
+        }
+        std::fs::write(dest, SKILL_MD).with_context(|| format!("writing {}", dest.display()))?;
+        println!("wrote {}", dest.display());
     }
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
-    }
-    std::fs::write(&dest, SKILL_MD).with_context(|| format!("writing {}", dest.display()))?;
-    println!("wrote {}", dest.display());
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser as _;
 
-    /// `esm skill --install` writes to `<dir>/.claude/skills/esm-cli/SKILL.md`.
+    fn parse_targets(args: &[&str]) -> Result<Vec<SkillTarget>, clap::Error> {
+        let mut argv = vec!["esm", "skill"];
+        argv.extend_from_slice(args);
+        match crate::Cli::try_parse_from(argv)?.command {
+            crate::Commands::Skill { target, .. } => Ok(target),
+            _ => unreachable!(),
+        }
+    }
+
     #[test]
-    fn skill_dest_path_is_under_dot_claude_skills() {
+    fn each_target_has_its_own_destination() {
+        let dir = Path::new("/repo");
         assert_eq!(
-            skill_dest_path(Path::new("/repo")),
-            PathBuf::from("/repo/.claude/skills/esm-cli/SKILL.md")
+            destinations(&[SkillTarget::Codex], dir),
+            [PathBuf::from("/repo/.agents/skills/esm-cli/SKILL.md")]
         );
         assert_eq!(
-            skill_dest_path(Path::new(".")),
-            PathBuf::from("./.claude/skills/esm-cli/SKILL.md")
+            destinations(&[SkillTarget::Claude], dir),
+            [PathBuf::from("/repo/.claude/skills/esm-cli/SKILL.md")]
         );
     }
 
-    /// The overwrite guard only blocks an existing destination without `--force`.
     #[test]
-    fn skill_install_allowed_guards_existing_without_force() {
-        assert!(skill_install_allowed(false, false).is_ok());
-        assert!(skill_install_allowed(false, true).is_ok());
-        assert!(skill_install_allowed(true, true).is_ok());
-        assert!(skill_install_allowed(true, false).is_err());
+    fn default_target_is_codex() {
+        assert_eq!(
+            destinations(&[], Path::new(".")),
+            [PathBuf::from("./.agents/skills/esm-cli/SKILL.md")]
+        );
+    }
+
+    #[test]
+    fn target_takes_a_comma_separated_list_and_rejects_unknown_names() {
+        assert_eq!(
+            parse_targets(&["--install", "--target", "claude,codex"]).unwrap(),
+            [SkillTarget::Claude, SkillTarget::Codex]
+        );
+        assert!(parse_targets(&["--install", "--target", "cursor"]).is_err());
+    }
+
+    #[test]
+    fn target_requires_install() {
+        assert!(parse_targets(&["--target", "claude"]).is_err());
+    }
+
+    #[test]
+    fn preflight_checks_every_destination_before_writing() {
+        let dests = destinations(&[SkillTarget::Codex, SkillTarget::Claude], Path::new("/r"));
+        let claude_exists = |p: &Path| p.to_string_lossy().contains(".claude");
+        let err = preflight(&dests, false, claude_exists)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(".claude/skills/esm-cli/SKILL.md"), "{err}");
+        assert!(
+            preflight(&dests, true, claude_exists).is_ok(),
+            "--force overwrites"
+        );
+        assert!(preflight(&dests, false, |_| false).is_ok());
     }
 
     /// The embedded doc is non-empty and starts with the expected frontmatter,

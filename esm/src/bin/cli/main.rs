@@ -427,15 +427,19 @@ enum Commands {
     ///
     /// Takes no ESM path.
     Skill {
-        /// Write the doc to `<dir or cwd>/.claude/skills/esm-cli/SKILL.md`
-        /// instead of printing it to stdout.
+        /// Write the skill into a repo instead of printing it.
         #[arg(long)]
         install: bool,
-        /// Target repo root for `--install` (defaults to the current directory).
-        #[arg(long)]
+        /// Agents to install for, comma-separated: `codex` writes
+        /// `.agents/skills/esm-cli/SKILL.md`, `claude` writes
+        /// `.claude/skills/esm-cli/SKILL.md`. Defaults to `codex`.
+        #[arg(long, value_enum, value_delimiter = ',', requires = "install")]
+        target: Vec<skill::SkillTarget>,
+        /// Repo root to install into (defaults to the current directory).
+        #[arg(long, requires = "install")]
         dir: Option<PathBuf>,
-        /// Overwrite an existing installed copy.
-        #[arg(long)]
+        /// Overwrite existing installed copies.
+        #[arg(long, requires = "install")]
         force: bool,
     },
     /// Inspect, build or clear the on-disk cache.
@@ -645,11 +649,12 @@ fn main() -> anyhow::Result<()> {
     // works with no --esm/FO76_ESM_PATH set.
     if let Commands::Skill {
         install,
+        target,
         dir,
         force,
     } = cli.command
     {
-        return skill::cmd_skill(install, dir, force);
+        return skill::cmd_skill(install, &target, dir, force);
     }
 
     // `batch` names its ESM per request, and installs the detached build
