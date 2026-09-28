@@ -51,7 +51,10 @@ export function FilterPanel({ onNavigate }: Props) {
       setFieldPaths([])
       return
     }
-    window.api.listTypeFieldPaths(activeDbId, sig).then(setFieldPaths).catch(console.error)
+    window.api
+      .run(activeDbId, { op: 'list_type_field_paths', sig })
+      .then(setFieldPaths)
+      .catch(console.error)
   }, [activeDbId, sig])
 
   if (!activeDbId) return null
@@ -61,14 +64,14 @@ export function FilterPanel({ onNavigate }: Props) {
     setLoading(true)
     setError(null)
     try {
-      const res = await window.api.filterTypeRecords(
-        activeDbId,
+      const res = await window.api.run(activeDbId, {
+        op: 'filter_type_records',
         sig,
-        path.trim() || undefined,
-        op,
-        op === 'exists' ? undefined : value,
-        LIMIT,
-      )
+        path: path.trim() || null,
+        filter_op: op,
+        value: op === 'exists' ? null : value,
+        limit: LIMIT,
+      })
       setResult(res)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

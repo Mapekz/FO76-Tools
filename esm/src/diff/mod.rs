@@ -61,7 +61,8 @@ impl BodyDetail {
     }
 }
 
-/// Options controlling [`diff_databases_with`]'s behavior.
+/// Options controlling [`diff_databases_with`]'s behavior. Every field
+/// defaults (see `impl Default`), so a request can send only the ones it sets.
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 #[derive(Debug, Clone, Serialize, Deserialize)]

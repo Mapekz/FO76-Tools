@@ -23,14 +23,14 @@ subproject for unrelated edits.
 - ESM schema, extractor, or decode-coverage changes also need `just audit`.
   It reads `FO76-Tools/TES5Edit`, a symlink to the sibling workspace checkout.
 - ESM Python tooling changes need `just patch-tools-test` and `just patch-tools-lint`.
-- ESM's default Cargo checks omit `bindings/napi`. After editing it, run
-  `cargo build -p esm-napi` from `esm/`; rebuild the addon with
-  `bun run build` from `esm/bindings/napi` when its API changes.
-- DTO changes need `just gen-types` from `esm/`; it regenerates
-  `esm-viewer/src/shared/generated/`, which is drift-checked by `just check`.
-  `esm-viewer/src/shared/api-types.ts` re-exports those types; update its
-  hand-written IPC contract (`CH`, `Fo76Api`, `FilterOp`) when methods change.
-  Rebuild the addon and run the viewer checks for affected cross-project changes.
+- ESM's `just check` covers `bindings/napi` too; rebuild the addon with
+  `bun run build` from `esm/bindings/napi` after changing it.
+- DTO or `Op` changes need `just gen-types` from `esm/`; it regenerates
+  `esm-viewer/src/shared/generated/` (including `Op` and `OpOutput`), which is
+  drift-checked by `just check`. The viewer runs every op through one typed
+  `api.run(id, op)`, so a new op needs no IPC code — only a place in
+  `esm-viewer/src/main/ipc-validators.ts`'s `RUNNABLE_OPS`, which the compiler
+  enforces. Run the viewer checks for affected cross-project changes.
 - Game-data integration tests skip when their environment variables are unset.
   Report that coverage gap; a passing synthetic suite does not validate real data.
 

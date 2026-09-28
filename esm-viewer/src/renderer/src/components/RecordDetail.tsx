@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { RecordTable } from './RecordTable'
 import { hasCoverageMarkers, isUnknownRecordType } from '../lib/alignedTree'
-import type { RawRecordView } from '../../../shared/api-types'
+import { sel, type RawRecordView } from '../../../shared/api-types'
 import { colors } from '../theme'
 
 interface Props {
@@ -87,7 +87,7 @@ export function RecordDetail({ onNavigate }: Props) {
     setRawLoading(true)
     setRawError(null)
     try {
-      const view = await window.api.recordRaw(dbId, formId)
+      const view = await window.api.run(dbId, { op: 'record_raw', sel: sel(formId) })
       setRawView(view)
     } catch (e) {
       setRawError(e instanceof Error ? e.message : String(e))

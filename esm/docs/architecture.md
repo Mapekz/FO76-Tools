@@ -120,8 +120,8 @@ are generated from that list, and each op's `Args` struct and function live in a
          ┌─────────────────────────┼──────────────────────────┐
          ▼                         ▼                          ▼
  CLI (bin/cli/)             esm batch (bin/cli/)        bindings/napi
-   one command, one Host      one JSON request per       EsmDatabase
-                              stdin line; used by        Arc<Database>
+   one command, one Host      one JSON request per       EsmHost.run(esm, op)
+                              stdin line; used by        (async, one Host)
                               tools/esm_gateway.py
 ```
 

@@ -1,14 +1,22 @@
-/** Thin, testable wrapper around `Fo76Api.referencedById` — shared by
+/** Fetch the records referencing `target` out to `depth` hops — shared by
  * `App.tsx`'s `loadRecord` (initial load) and `ReferencedByPanel`'s depth
  * selector (re-fetch at a new depth), so both go through one call site. */
 
-import type { Fo76Api, RefListResult } from '../../../shared/api-types'
+import { sel, type Fo76Api, type RefListResult } from '../../../shared/api-types'
 
 export async function fetchReferencedBy(
   dbId: string,
   target: string,
   depth: number,
-  api: Pick<Fo76Api, 'referencedById'>,
+  api: Pick<Fo76Api, 'run'>,
 ): Promise<RefListResult> {
-  return api.referencedById(dbId, target, depth)
+  return api.run(dbId, {
+    op: 'referenced_by',
+    sel: sel(target),
+    limit: 0,
+    depth,
+    type_filter: null,
+    paths: false,
+    sort: 'formid',
+  })
 }

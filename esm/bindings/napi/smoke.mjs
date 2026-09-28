@@ -1,40 +1,40 @@
-// N-API smoke test — mirrors the Rust #[ignore] env-gate convention.
-// Run with:  FO76_ESM=/path/to/Game.esm npm test
+// N-API smoke test — mirrors the Rust env-gate convention.
+// Run with:  FO76_ESM=/path/to/Game.esm bun smoke.mjs
 // Without FO76_ESM set: prints SKIP and exits 0 (safe for CI and other devs).
 //
 // Uses a dynamic import so the env check fires before the native addon is
 // resolved — avoids a MODULE_NOT_FOUND error when running without FO76_ESM.
 
-const esmPath = process.env.FO76_ESM;
+const esmPath = process.env.FO76_ESM
 if (!esmPath) {
-  console.log('SKIP: set FO76_ESM=/path/to/Game.esm to run the napi smoke test');
-  process.exit(0);
+  console.log('SKIP: set FO76_ESM=/path/to/Game.esm to run the napi smoke test')
+  process.exit(0)
 }
 
-// Only load the native addon when we actually intend to run.
-const { EsmDatabase } = await import('./index.js');
+const { EsmHost } = await import('./index.js')
 
-const db = await EsmDatabase.openDatabase(esmPath);
-const info = db.fileInfo();
-console.log('fileInfo:', JSON.stringify(info).slice(0, 200));
-const groups = db.listGroups();
-console.log('listGroups count:', Array.isArray(groups) ? groups.length : '?');
-const weaps = db.listTypeRecords('WEAP', 0, 5);
-console.log('listTypeRecords WEAP:', JSON.stringify(weaps).slice(0, 300));
+const host = new EsmHost()
+const show = (label, value) => console.log(`${label}:`, JSON.stringify(value).slice(0, 200))
+show('open', await host.open(esmPath))
+const run = (op) => host.run(esmPath, op)
+const groups = await run({ op: 'list_groups' })
+console.log('list_groups count:', groups.length)
+const weaps = await run({ op: 'list_type_records', sig: 'WEAP', offset: 0, limit: 5 })
+show('list_type_records WEAP', weaps)
+const first = (rows) => ({ kind: 'auto', value: rows[0].form_id })
 if (weaps.length > 0) {
-  const rec = db.recordByFormid(weaps[0].form_id, 'stub');
-  console.log('recordByFormid:', JSON.stringify(rec).slice(0, 200));
-  const walked = await db.walk(weaps[0].form_id);
-  console.log('walk:', JSON.stringify(walked).slice(0, 200));
+  show('record', await run({ op: 'record', sel: first(weaps), depth: 'stub' }))
+  show('walk', await run({ op: 'walk', sel: first(weaps), ref_limit: 20, level: 50, want_refs: false }))
 }
-const omods = db.listTypeRecords('OMOD', 0, 1);
+const omods = await run({ op: 'list_type_records', sig: 'OMOD', offset: 0, limit: 1 })
 if (omods.length > 0) {
-  const chased = await db.chase(omods[0].form_id);
-  console.log('chase:', JSON.stringify(chased).slice(0, 200));
+  show('chase', await run({ op: 'chase', sel: first(omods), depth: 3, ref_limit: 20 }))
 }
-const lvlis = db.listTypeRecords('LVLI', 0, 1);
+const lvlis = await run({ op: 'list_type_records', sig: 'LVLI', offset: 0, limit: 1 })
 if (lvlis.length > 0) {
-  const dropTable = await db.lvliDropTable(lvlis[0].form_id);
-  console.log('lvliDropTable:', JSON.stringify(dropTable).slice(0, 200));
+  show(
+    'drop_table',
+    await run({ op: 'drop_table', sel: first(lvlis), level: 50, max_depth: 8, strict: false }),
+  )
 }
-console.log('SMOKE TEST PASSED');
+console.log('SMOKE TEST PASSED')

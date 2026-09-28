@@ -22,10 +22,10 @@ export function parseSigList(text: string): string[] {
  * groups with a non-zero `child_count` — RecordTree.tsx needs every group
  * kind for its own tree, so that call site keeps its own inline variant. */
 export async function listRecordTypeSigs(
-  api: Pick<Fo76Api, 'listGroups'>,
+  api: Pick<Fo76Api, 'run'>,
   dbId: string,
 ): Promise<string[]> {
-  const groups = await api.listGroups(dbId)
+  const groups = await api.run(dbId, { op: 'list_groups' })
   return groups
     .filter((g) => g.label.kind === 'record_type' && g.child_count > 0)
     .map((g) => (g.label.kind === 'record_type' ? g.label.sig : ''))

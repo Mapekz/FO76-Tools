@@ -2,7 +2,8 @@
 import type { BodyDetail } from "./BodyDetail";
 
 /**
- * Options controlling [`diff_databases_with`]'s behavior.
+ * Options controlling [`diff_databases_with`]'s behavior. Every field
+ * defaults (see `impl Default`), so a request can send only the ones it sets.
  */
 export type DiffOptions = { 
 /**

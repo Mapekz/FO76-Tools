@@ -700,5 +700,5 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
-module.exports.EsmDatabase = nativeBinding.EsmDatabase
+module.exports.EsmHost = nativeBinding.EsmHost
 module.exports.parseFormId = nativeBinding.parseFormId

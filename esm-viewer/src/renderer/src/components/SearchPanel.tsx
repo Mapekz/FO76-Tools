@@ -27,7 +27,13 @@ export function SearchPanel({ onNavigate }: Props) {
     setLoading(true)
     setError(null)
     try {
-      const rows = await window.api.search(activeDbId, pattern, types, field, LIMIT)
+      const rows = await window.api.run(activeDbId, {
+        op: 'search',
+        pattern,
+        types,
+        field,
+        limit: LIMIT,
+      })
       setResults(rows)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

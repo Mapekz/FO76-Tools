@@ -1,29 +1,33 @@
-import type { DbId } from '../shared/api-types'
-import type { TypedEsmDatabase } from './addon'
+import type { DbHandle, DbId, FileInfo } from '../shared/api-types'
 
-interface DbEntry {
-  db: TypedEsmDatabase
-  path: string
-  info: unknown
-}
+/** The databases the renderer has open, by the opaque id it holds. Several
+ * ids may name the same file; the host keeps one database per path. */
+export class DbRegistry {
+  private readonly entries = new Map<DbId, DbHandle>()
+  private nextId = 1
 
-const registry = new Map<DbId, DbEntry>()
-let nextId = 1
+  add(path: string, info: FileInfo): DbHandle {
+    const handle = { id: String(this.nextId++), path, info }
+    this.entries.set(handle.id, handle)
+    return handle
+  }
 
-export function add(db: TypedEsmDatabase, path: string, info: unknown): DbId {
-  const id = String(nextId++)
-  registry.set(id, { db, path, info })
-  return id
-}
+  get(id: DbId): DbHandle | undefined {
+    return this.entries.get(id)
+  }
 
-export function get(id: DbId): DbEntry | undefined {
-  return registry.get(id)
-}
+  /** Remove `id`, returning its handle if it existed. */
+  remove(id: DbId): DbHandle | undefined {
+    const handle = this.entries.get(id)
+    this.entries.delete(id)
+    return handle
+  }
 
-export function remove(id: DbId): void {
-  registry.delete(id)
-}
+  isOpen(path: string): boolean {
+    return [...this.entries.values()].some((h) => h.path === path)
+  }
 
-export function listAll(): Array<{ id: DbId; path: string; info: unknown }> {
-  return Array.from(registry.entries()).map(([id, { path, info }]) => ({ id, path, info }))
+  listAll(): DbHandle[] {
+    return [...this.entries.values()]
+  }
 }

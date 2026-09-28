@@ -43,7 +43,7 @@ export function RecordTree({ onNavigate }: Props) {
       return
     }
     window.api
-      .listGroups(activeDbId)
+      .run(activeDbId, { op: 'list_groups' })
       .then((gs) => {
         const parsed: GroupEntry[] = gs.map((g) => {
           const sig = g.label.kind === 'record_type' ? g.label.sig : '????'

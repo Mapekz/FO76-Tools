@@ -1,60 +1,40 @@
-// Pure argument validators for the Electron main-process IPC trust boundary —
-// the last line of defense before untyped renderer input reaches the native
-// `EsmDatabase` addon. Deliberately free of any Electron import so that:
-//   - they're unit-testable directly under vitest's `node` environment
-//     (importing `electron` outside the Electron runtime is unreliable), and
-//   - `../shared/ipc-contract.ts` can import them without pulling Electron
-//     into shared code.
-// `src/main/ipc.ts` re-exports all of these (`export * from './ipc-validators'`)
-// so existing call sites and tests can import from either module.
+// Validation at the Electron main-process trust boundary: renderer input is
+// checked here before it reaches the native addon. The engine parses every op
+// strictly (unknown ops, missing fields and wrong types are errors), so this
+// file adds only what the engine would accept but the viewer must not send:
+// ops outside the viewer's set, unbounded limits, and unbounded refs walks.
+// Free of Electron imports so it is unit-testable directly.
 
-export function validateResolve(v: unknown): 'none' | 'stub' | 'full' {
-  if (v === 'none' || v === 'stub' || v === 'full') return v
-  throw new Error(`invalid resolve value: expected none|stub|full, got ${String(v)}`)
-}
+import type { DiffRequest, RunnableOp } from '../shared/api-types'
 
-export function validateSig(v: unknown): string {
-  if (typeof v === 'string' && /^[A-Z_0-9]{1,4}$/.test(v)) return v
-  throw new Error(`invalid record signature: ${String(v)}`)
-}
+/** The ops the renderer may run. Adding an op to the engine fails the
+ * `satisfies` check below until it is listed here or deliberately left out. */
+const RUNNABLE_OPS = [
+  'file_info',
+  'record',
+  'record_bulk',
+  'record_raw',
+  'list_type_records',
+  'filter_type_records',
+  'list_type_field_paths',
+  'search',
+  'referenced_by',
+  'ref_path',
+  'walk',
+  'chase',
+  'drop_table',
+  'list_groups',
+  'list_type_children',
+  'list_group_children',
+  'record_stub_at',
+  'coverage',
+] as const satisfies readonly RunnableOp['op'][]
 
-export function validateSigArray(v: unknown): string[] {
-  if (!Array.isArray(v)) throw new Error(`invalid record signature list: ${String(v)}`)
-  return v.map((sig) => validateSig(sig))
-}
+type Unlisted = Exclude<RunnableOp['op'], (typeof RUNNABLE_OPS)[number]>
+const everyOpListed: [Unlisted] extends [never] ? true : Unlisted = true
+void everyOpListed
 
-export function validateSearchField(v: unknown): 'edid' | 'name' | 'both' {
-  if (v === 'edid' || v === 'name' || v === 'both') return v
-  throw new Error(`invalid search field: expected edid|name|both, got ${String(v)}`)
-}
-
-export function validateBodies(v: unknown): 'none' | 'stub' | 'full' {
-  if (v === 'none' || v === 'stub' || v === 'full') return v
-  throw new Error(`invalid bodies value: expected none|stub|full, got ${String(v)}`)
-}
-
-export function validateFilterOp(
-  v: unknown,
-): 'exists' | 'eq' | 'contains' | 'gt' | 'lt' | 'gte' | 'lte' {
-  if (
-    v === 'exists' ||
-    v === 'eq' ||
-    v === 'contains' ||
-    v === 'gt' ||
-    v === 'lt' ||
-    v === 'gte' ||
-    v === 'lte'
-  ) {
-    return v
-  }
-  throw new Error(`invalid filter op: expected exists|eq|contains|gt|lt|gte|lte, got ${String(v)}`)
-}
-
-export function validateOptionalText(name: string, v: unknown, max = 512): string | undefined {
-  if (v === undefined || v === null) return undefined
-  if (typeof v === 'string' && v.length <= max) return v
-  throw new Error(`invalid ${name}: must be a string of length <= ${max}`)
-}
+const RUNNABLE = new Set<string>(RUNNABLE_OPS)
 
 export function validateUint(name: string, v: unknown, max = 100_000): number {
   if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max) return v
@@ -63,8 +43,8 @@ export function validateUint(name: string, v: unknown, max = 100_000): number {
 
 /**
  * Referenced-by walk depth in hops. Absent means 1; integers clamp to
- * `1..=max`. Anything else is rejected, because the addon reads a depth of 0
- * as an unbounded walk and a non-number would reach it as 0.
+ * `1..=max`. Anything else is rejected, because the engine reads a depth of 0
+ * as an unbounded walk.
  */
 export function validateRefDepth(v: unknown, max = 6): number {
   if (v === undefined || v === null) return 1
@@ -72,7 +52,29 @@ export function validateRefDepth(v: unknown, max = 6): number {
   throw new Error(`invalid depth: expected an integer, got ${String(v)}`)
 }
 
-export function validateTarget(v: unknown): string {
-  if (typeof v === 'string' && v.length > 0 && v.length <= 512) return v
-  throw new Error(`invalid target: must be a non-empty string`)
+function plainObject(name: string, v: unknown): Record<string, unknown> {
+  if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
+    return v as Record<string, unknown>
+  }
+  throw new Error(`invalid ${name}: expected an object`)
+}
+
+/** An op the renderer may run, with its limit and refs depth bounded. */
+export function validateOp(v: unknown): RunnableOp {
+  const op = { ...plainObject('op', v) }
+  if (typeof op.op !== 'string' || !RUNNABLE.has(op.op)) {
+    throw new Error(`invalid op: ${String(op.op)}`)
+  }
+  if ('limit' in op) op.limit = validateUint('limit', op.limit)
+  if (op.op === 'referenced_by') op.depth = validateRefDepth(op.depth)
+  return op as RunnableOp
+}
+
+export function validateDiffRequest(v: unknown): DiffRequest {
+  const request = plainObject('diff request', v)
+  const recordType = request.record_type ?? null
+  if (recordType !== null && (typeof recordType !== 'string' || recordType.length > 4)) {
+    throw new Error(`invalid record_type: ${String(recordType)}`)
+  }
+  return { record_type: recordType, options: plainObject('diff options', request.options ?? {}) }
 }

@@ -13,7 +13,7 @@ import type { Fo76Api, GroupChild, RecordRow } from '../../../shared/api-types'
  * Stops once `offset >= total`, or defensively on an empty chunk (avoids an
  * infinite loop on a short backend response). */
 export async function loadAllTypeRecords(
-  api: Pick<Fo76Api, 'listTypeRecords'>,
+  api: Pick<Fo76Api, 'run'>,
   dbId: string,
   sig: string,
   total: number,
@@ -26,7 +26,12 @@ export async function loadAllTypeRecords(
     // Each chunk's offset depends on the previous chunk's length, so this
     // can't be parallelized with Promise.all.
     // oxlint-disable-next-line eslint/no-await-in-loop
-    const chunk = await api.listTypeRecords(dbId, sig, offset, chunkSize)
+    const chunk = await api.run(dbId, {
+      op: 'list_type_records',
+      sig,
+      offset,
+      limit: chunkSize,
+    })
     if (chunk.length === 0) break // defensive: avoid an infinite loop on a short backend response
     acc = acc.concat(chunk)
     offset += chunk.length
@@ -39,13 +44,18 @@ export async function loadAllTypeRecords(
  * Pass `current = []` for the initial expand and the group's own accumulated
  * list for a subsequent "Load more…". */
 export async function loadTypeChildrenPage(
-  api: Pick<Fo76Api, 'listTypeChildren'>,
+  api: Pick<Fo76Api, 'run'>,
   dbId: string,
   sig: string,
   current: GroupChild[],
   pageSize: number,
 ): Promise<GroupChild[]> {
-  const next = await api.listTypeChildren(dbId, sig, current.length, pageSize)
+  const next = await api.run(dbId, {
+    op: 'list_type_children',
+    sig,
+    offset: current.length,
+    limit: pageSize,
+  })
   return [...current, ...next]
 }
 
@@ -54,12 +64,17 @@ export async function loadTypeChildrenPage(
  * already has. Pass `current = []` for a `GroupChildNode`'s initial expand
  * and its accumulated list for a subsequent "Load more…". */
 export async function loadGroupChildrenPage(
-  api: Pick<Fo76Api, 'listGroupChildren'>,
+  api: Pick<Fo76Api, 'run'>,
   dbId: string,
   groupOffset: number,
   current: GroupChild[],
   pageSize: number,
 ): Promise<GroupChild[]> {
-  const next = await api.listGroupChildren(dbId, groupOffset, current.length, pageSize)
+  const next = await api.run(dbId, {
+    op: 'list_group_children',
+    group_offset: groupOffset,
+    offset: current.length,
+    limit: pageSize,
+  })
   return [...current, ...next]
 }

@@ -1,435 +1,96 @@
 #![deny(clippy::all)]
 
-use esm::ops::RecordSel;
-use esm::{Database, FormId, ResolveDepth, SearchField};
+//! Node binding for the `esm` engine: one [`EsmHost`] that opens ESMs and runs
+//! any [`esm::ops::Op`] against them, the same `Host::run` the CLI and
+//! `esm batch` use. Ops travel as JSON (`{"op": "<tag>", ...args}`); the
+//! TypeScript `Op` and `OpOutput` types generated from the Rust registry
+//! (`esm/src/ops/mod.rs`) type both sides. Every call runs on a blocking
+//! worker thread, so the JavaScript thread never waits on decoding or a cache
+//! build.
+
+use esm::FormId;
+use esm::host::Host;
 use napi_derive::napi;
+use std::path::PathBuf;
 use std::sync::Arc;
 
+fn js_err(e: impl std::fmt::Display) -> napi::Error {
+    napi::Error::from_reason(e.to_string())
+}
+
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
+) -> napi::Result<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| js_err(format!("worker thread failed: {e}")))?
+        .map_err(|e| js_err(format!("{e:#}")))
+}
+
+/// The ESMs this process has open, and the one entry point for running ops
+/// against them.
 #[napi]
-pub struct EsmDatabase {
-    inner: Arc<Database>,
+pub struct EsmHost {
+    host: Arc<Host>,
+}
+
+impl Default for EsmHost {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[napi]
-impl EsmDatabase {
-    /// Open an ESM file asynchronously (blocks on mmap + index build).
-    #[napi(factory)]
-    pub async fn open_database(path: String) -> napi::Result<EsmDatabase> {
-        esm::logging::init();
-        let inner = tokio::task::spawn_blocking(move || Database::open(&path).map(Arc::new))
-            .await
-            .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        Ok(EsmDatabase { inner })
+impl EsmHost {
+    #[napi(constructor)]
+    pub fn new() -> Self {
+        EsmHost {
+            host: Arc::new(Host::new()),
+        }
     }
 
-    #[napi]
-    pub fn file_info(&self) -> napi::Result<serde_json::Value> {
-        let db = &self.inner;
-        esm::ops::run(db, &esm::ops::Op::FileInfo(esm::ops::NoArgs {}))
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    #[napi]
-    pub fn list_groups(&self) -> napi::Result<serde_json::Value> {
-        let db = &self.inner;
-        esm::ops::run(db, &esm::ops::Op::ListGroups(esm::ops::NoArgs {}))
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// Paginated record rows for the given 4-character record type signature.
-    #[napi]
-    pub fn list_type_records(
-        &self,
-        sig: String,
-        offset: u32,
-        limit: u32,
-    ) -> napi::Result<serde_json::Value> {
-        let db = &self.inner;
-        let op = esm::ops::Op::ListTypeRecords(esm::ops::ListTypeRecordsArgs {
-            sig,
-            offset: offset as usize,
-            limit: limit as usize,
-        });
-        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// Search records by EditorID and/or display name using a `*`-wildcard pattern.
-    ///
-    /// `types` restricts the search to the given 4-character record-type
-    /// signatures (empty = all types). `field` is one of `"edid"` | `"name"` |
-    /// `"both"`. `limit` caps the number of results (`0` = no limit).
-    #[napi]
-    pub fn search(
-        &self,
-        pattern: String,
-        types: Vec<String>,
-        field: String,
-        limit: u32,
-    ) -> napi::Result<serde_json::Value> {
-        let field = esm::query::search_field(Some(&field), SearchField::Both)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        let db = &self.inner;
-        let op = esm::ops::Op::Search(esm::ops::SearchArgs {
-            pattern,
-            types,
-            field,
-            limit: limit as usize,
-        });
-        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// Filter records of type `sig` by a predicate against their decoded
-    /// field body. `path` is a dot-separated path (`"[]"` segments fan out
-    /// over arrays); `None`/empty deep-scans every field. `op` is one of
-    /// `"exists"` | `"eq"` | `"contains"` | `"gt"` | `"lt"` | `"gte"` | `"lte"`.
-    /// `limit` caps the number of returned rows (`0` = no limit).
-    #[napi]
-    pub fn filter_type_records(
-        &self,
-        sig: String,
-        path: Option<String>,
-        op: String,
-        value: Option<String>,
-        limit: u32,
-    ) -> napi::Result<serde_json::Value> {
-        let op =
-            esm::query::filter_op(&op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        let db = &self.inner;
-        let wire_op = esm::ops::Op::FilterTypeRecords(esm::ops::FilterTypeRecordsArgs {
-            sig,
-            path,
-            filter_op: op,
-            value,
-            limit: limit as usize,
-        });
-        esm::ops::run(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// List every dot-notation field path observed across a (possibly capped)
-    /// decoded sample of a type's records — for filter-panel autocomplete.
-    #[napi]
-    pub fn list_type_field_paths(&self, sig: String) -> napi::Result<serde_json::Value> {
-        let db = &self.inner;
-        esm::ops::run(
-            db,
-            &esm::ops::Op::ListTypeFieldPaths(esm::ops::ListTypeFieldPathsArgs { sig }),
-        )
-        .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// List direct children of the top-level GRUP with the given record type signature.
-    #[napi]
-    pub fn list_type_children(
-        &self,
-        sig: String,
-        offset: u32,
-        limit: u32,
-    ) -> napi::Result<serde_json::Value> {
-        let db = &self.inner;
-        let op = esm::ops::Op::ListTypeChildren(esm::ops::ListTypeChildrenArgs {
-            sig,
-            offset: offset as usize,
-            limit: limit as usize,
-        });
-        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// List direct children of an arbitrary GRUP by its own header offset — used for
-    /// recursive descent below the top level (e.g. into a worldspace's exterior blocks,
-    /// then into a block's cells). `group_offset` is passed as `f64`/JS `number` rather
-    /// than a `u64`/BigInt: GRUP offsets fit exactly within f64's safe-integer range for
-    /// any realistic ESM file size, and this keeps the JS side free of BigInt handling.
-    #[napi]
-    pub fn list_group_children(
-        &self,
-        group_offset: f64,
-        offset: u32,
-        limit: u32,
-    ) -> napi::Result<serde_json::Value> {
-        let db = &self.inner;
-        let wire_op = esm::ops::Op::ListGroupChildren(esm::ops::ListGroupChildrenArgs {
-            group_offset: group_offset as u64,
-            offset: offset as usize,
-            limit: limit as usize,
-        });
-        esm::ops::run(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// Decode a record by FormID hex string (e.g. "0x0000463F").
-    ///
-    /// `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
-    #[napi]
-    pub fn record_by_formid(
-        &self,
-        formid: String,
-        resolve: String,
-    ) -> napi::Result<serde_json::Value> {
-        let fid: FormId = formid
-            .parse()
-            .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-        let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        let db = &self.inner;
-        let op = esm::ops::Op::Record(esm::ops::RecordArgs {
-            sel: RecordSel::FormId(fid),
-            depth,
-        });
-        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-    }
-
-    /// Decode a record by EditorID string.
-    ///
-    /// `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
-    #[napi]
-    pub async fn record_by_edid(
-        &self,
-        edid: String,
-        resolve: String,
-    ) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = &inner;
-            let op = esm::ops::Op::Record(esm::ops::RecordArgs {
-                sel: RecordSel::Edid(edid),
-                depth,
-            });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+    /// Open the ESM at `path` (a `.esm` file or its data folder), building its
+    /// cache if needed, and return its file info. Later `run` calls reuse it.
+    #[napi(ts_return_type = "Promise<unknown>")]
+    pub async fn open(&self, path: String) -> napi::Result<serde_json::Value> {
+        let host = self.host.clone();
+        blocking(move || {
+            Ok(serde_json::to_value(
+                host.open(path.as_ref())?.file_info()?,
+            )?)
         })
         .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
     }
 
-    /// Decode a record by FormID or EditorID (auto-detected).
-    ///
-    /// `resolve` controls FormID field expansion: `"none"` | `"stub"` | `"full"`.
-    #[napi]
-    pub async fn record_by_id(
-        &self,
-        id: String,
-        resolve: String,
-    ) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let sel = RecordSel::from_input(&id)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = &inner;
-            let op = esm::ops::Op::Record(esm::ops::RecordArgs { sel, depth });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+    /// Run one op (`{"op": "<tag>", ...args}`) against the ESM at `esm`.
+    /// `diff`'s `b` names the other ESM by path.
+    #[napi(
+        ts_args_type = "esm: string, op: object",
+        ts_return_type = "Promise<unknown>"
+    )]
+    pub async fn run(&self, esm: String, op: serde_json::Value) -> napi::Result<serde_json::Value> {
+        let host = self.host.clone();
+        blocking(move || {
+            let op: esm::ops::Op = serde_json::from_value(op)?;
+            host.run(&PathBuf::from(esm), &op)
         })
         .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
     }
 
-    /// Return all records that reference the given FormID or EditorID (auto-detected).
-    ///
-    /// `depth` controls the reverse-reference walk depth (default 1 = direct refs only,
-    /// capped at DEFAULT_MAX_DEPTH = 8; pass 0 for an unbounded walk with no fixed hop
-    /// cap). Each returned row includes its hop `depth` and an intermediate-node `path`
-    /// array (empty for depth-1 results).
+    /// Forget the ESM at `esm`; the next `open`/`run` reopens it.
     #[napi]
-    pub async fn referenced_by_id(
-        &self,
-        id: String,
-        depth: Option<u32>,
-    ) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let sel = RecordSel::from_input(&id)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let walk_depth = esm::query::clamp_ref_depth(depth.map(|d| d as usize));
-            let db = &inner;
-            let op = esm::ops::Op::ReferencedBy(esm::ops::ReferencedByArgs {
-                sel,
-                limit: usize::MAX,
-                depth: walk_depth,
-                type_filter: None,
-                paths: false,
-                sort: esm::ops::RefSort::Formid,
-            });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-    }
-
-    /// Hex/subrecord dump of a record, by FormID or EditorID (auto-detected).
-    #[napi]
-    pub async fn record_raw(&self, id: String) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let sel = RecordSel::from_input(&id)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = &inner;
-            let op = esm::ops::Op::RecordRaw(esm::ops::RecordRawArgs { sel });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-    }
-
-    /// Decode-coverage report: per-type counts of _unknown_record/_raw/_unmapped/
-    /// _unresolved markers. `record_type` (4-char sig, optional) restricts to one
-    /// type; `sample` caps records decoded per type (0 = unlimited).
-    #[napi]
-    pub async fn coverage_report(
-        &self,
-        record_type: Option<String>,
-        sample: u32,
-    ) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let db = &inner;
-            let op = esm::ops::Op::Coverage(esm::ops::CoverageArgs {
-                record_type,
-                sample: sample as usize,
-            });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-    }
-
-    /// Interactive digest of a record and the chain it references (see
-    /// `esm::walk`) — computed in-process via `Op::Walk`, the same op the CLI
-    /// dispatches. `depth` defaults per
-    /// root type (`esm::walk::default_depth`); `ref_limit`/
-    /// `level` default to
-    /// `esm::chase::DEFAULT_REF_LIMIT`/`esm::lvli::DEFAULT_LEVEL` when
-    /// omitted; `want_refs` mirrors the CLI's `--refs` flag.
-    #[napi]
-    pub async fn walk(
-        &self,
-        id: String,
-        depth: Option<u32>,
-        ref_limit: Option<u32>,
-        level: Option<f64>,
-        want_refs: Option<bool>,
-    ) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let sel = RecordSel::from_input(&id)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = &inner;
-            let op = esm::ops::Op::Walk(esm::ops::WalkArgs {
-                sel,
-                depth: depth.map(|d| d as usize),
-                ref_limit: ref_limit
-                    .map(|d| d as usize)
-                    .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),
-                level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
-                want_refs: want_refs.unwrap_or(false),
-            });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-    }
-
-    /// Pipeline evidence contract: the classified mechanism tree for an
-    /// OMOD/PERK/SPEL/ALCH/ENCH selector (see `esm::chase`), computed
-    /// server-side via `Op::Chase`. `depth`/`ref_limit` default to
-    /// `esm::chase::DEFAULT_DEPTH`/`esm::chase::DEFAULT_REF_LIMIT` when
-    /// omitted.
-    #[napi]
-    pub async fn chase(
-        &self,
-        id: String,
-        depth: Option<u32>,
-        ref_limit: Option<u32>,
-    ) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let sel = RecordSel::from_input(&id)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = &inner;
-            let op = esm::ops::Op::Chase(esm::ops::ChaseArgs {
-                sel,
-                depth: depth
-                    .map(|d| d as usize)
-                    .unwrap_or(esm::chase::DEFAULT_DEPTH),
-                ref_limit: ref_limit
-                    .map(|d| d as usize)
-                    .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),
-            });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-    }
-
-    /// Resolved LVLI drop-probability table (see `esm::lvli::drop_table`),
-    /// computed server-side via `Op::DropTable`. Hard errors on a non-LVLI
-    /// selector. `level` defaults to `esm::lvli::DEFAULT_LEVEL`;
-    /// `max_depth`/`strict` default to `esm::lvli::DropOptions::default()`'s
-    /// values.
-    #[napi]
-    pub async fn lvli_drop_table(
-        &self,
-        id: String,
-        level: Option<f64>,
-    ) -> napi::Result<serde_json::Value> {
-        let inner = self.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let sel = RecordSel::from_input(&id)
-                .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = &inner;
-            let op = esm::ops::Op::DropTable(esm::ops::DropTableArgs {
-                sel,
-                level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
-                max_depth: esm::lvli::MAX_RECURSION_DEPTH,
-                strict: false,
-            });
-            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-    }
-
-    /// Compare this database (treated as the "old"/base snapshot) against
-    /// `other` (the "new" snapshot). `record_type` (optional 4-char sig)
-    /// restricts the diff to one type; `bodies` is "none"|"stub"|"full"
-    /// (detail level for added/removed record bodies); `suppress_noise` strips
-    /// known-noisy fields (placement/CELL-precombine) from `changed` records;
-    /// `exclude_types` omits matching signatures from added/removed/changed
-    /// entirely.
-    #[napi]
-    pub async fn diff(
-        &self,
-        other: &EsmDatabase,
-        record_type: Option<String>,
-        bodies: String,
-        suppress_noise: bool,
-        exclude_types: Vec<String>,
-    ) -> napi::Result<serde_json::Value> {
-        let bodies = esm::query::body_detail(Some(&bodies), esm::diff::BodyDetail::Full)
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        let arc_a = self.inner.clone();
-        let arc_b = other.inner.clone();
-        tokio::task::spawn_blocking(move || {
-            let args = esm::ops::DiffArgs {
-                b: std::path::PathBuf::new(),
-                record_type,
-                options: esm::query::diff_options(bodies, suppress_noise, exclude_types),
-            };
-            esm::ops::diff(&arc_a, &arc_b, &args)
-                .and_then(|result| Ok(serde_json::to_value(result)?))
-                .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+    pub fn close(&self, esm: String) -> napi::Result<()> {
+        self.host
+            .close(esm.as_ref())
+            .map_err(|e| js_err(format!("{e:#}")))
     }
 }
 
-/// Parse a FormID hex string to its display form.
+/// Parse a FormID token (hex, `0x`-prefixed or bare) to its display form.
 #[napi]
 pub fn parse_form_id(s: String) -> napi::Result<String> {
     let fid: FormId = s
         .parse()
-        .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
+        .map_err(|e: anyhow::Error| js_err(format!("{e:#}")))?;
     Ok(fid.display())
 }

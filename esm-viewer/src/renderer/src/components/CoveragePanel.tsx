@@ -47,7 +47,11 @@ export function CoveragePanel() {
     setError(null)
     try {
       const effectiveSample = scanAll ? 0 : sample
-      const res = await window.api.coverageReport(activeDbId, sig || undefined, effectiveSample)
+      const res = await window.api.run(activeDbId, {
+        op: 'coverage',
+        record_type: sig || null,
+        sample: effectiveSample,
+      })
       setReport(res)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

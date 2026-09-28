@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'bun:test'
 import { fetchReferencedBy } from './referencedBy'
 import type { RefListResult } from '../../../shared/api-types'
-import { mockApi } from '../../../test-support/fixtures'
+import { mockRun } from '../../../test-support/fixtures'
 
 describe('fetchReferencedBy', () => {
-  it('passes its arguments through to api.referencedById and returns its result', async () => {
+  it('runs an unlimited referenced_by walk at the given depth and returns its result', async () => {
     const result: RefListResult = {
       target: '0x00012345',
       rows: [],
@@ -17,11 +17,19 @@ describe('fetchReferencedBy', () => {
       per_depth_totals: [],
       shown_max_depth: 0,
     }
-    const api = mockApi('referencedById', async () => result)
+    const api = mockRun(async () => result)
 
     const out = await fetchReferencedBy('db1', '0x00012345', 3, api)
 
     expect(out).toBe(result)
-    expect(api.referencedById).toHaveBeenCalledWith('db1', '0x00012345', 3)
+    expect(api.run).toHaveBeenCalledWith('db1', {
+      op: 'referenced_by',
+      sel: { kind: 'auto', value: '0x00012345' },
+      limit: 0,
+      depth: 3,
+      type_filter: null,
+      paths: false,
+      sort: 'formid',
+    })
   })
 })

@@ -8,21 +8,16 @@
 // relying on the default here — otherwise changing a default would silently
 // change what those suites exercise.
 //
-// This module must NOT import `src/main/db-registry` (directly or
-// transitively): `ipc.test.ts` calls `mock.module('./db-registry', …)`, which
-// Bun applies process-globally and cannot undo, so anything importing it from
-// here would inherit the mocked copy depending on file evaluation order.
-// `ipc.test.ts`'s `makeSpyDb` and `db-registry.test.ts`'s `fakeDb` stay local
-// to those files for the same reason.
-
 import { vi, type Mock } from 'bun:test'
 import type {
   DbHandle,
+  DbId,
   Fo76Api,
   GroupChild,
   GroupNode,
   RecordResult,
   RecordRow,
+  RunnableOp,
 } from '../shared/api-types'
 
 /** The `node: 'record'` half of the `GroupChild` union. */
@@ -94,16 +89,15 @@ export function makeFormIdStub(over: Partial<FormIdStub> = {}): FormIdStub {
   return { formid: '0x1', editor_id: 'Foo', record_type: 'ARMO', ...over }
 }
 
-/** A one-method fake `Fo76Api` whose single method is a spy. The result is
- * assignable to the `Pick<Fo76Api, …>` slice each module under test asks for,
- * and the method is typed as a `Mock` so tests can queue return values and
- * assert calls on it directly. Pass `impl` for a fixed behaviour, or omit it
- * and drive the spy with `mockResolvedValueOnce`. */
-export function mockApi<K extends keyof Fo76Api>(
-  method: K,
-  impl?: Fo76Api[K],
-): { [P in K]: Mock<Fo76Api[P]> } {
-  return { [method]: impl ? vi.fn(impl) : vi.fn() } as unknown as {
-    [P in K]: Mock<Fo76Api[P]>
-  }
+/** A fake `Fo76Api.run` spy, assignable to the `Pick<Fo76Api, 'run'>` each
+ * module under test asks for. Pass `impl` for a fixed behaviour, or omit it
+ * and queue results with `mockResolvedValueOnce`; assert on the `(id, op)`
+ * pairs it was called with. */
+export function mockRun(impl?: (id: DbId, op: RunnableOp) => Promise<unknown>): {
+  run: Mock<(id: DbId, op: RunnableOp) => Promise<unknown>>
+} & Pick<Fo76Api, 'run'> {
+  const run = impl ? vi.fn(impl) : vi.fn<(id: DbId, op: RunnableOp) => Promise<unknown>>()
+  return { run } as unknown as {
+    run: Mock<(id: DbId, op: RunnableOp) => Promise<unknown>>
+  } & Pick<Fo76Api, 'run'>
 }

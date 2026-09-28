@@ -86,9 +86,8 @@ pub fn clamp_ref_depth(d: Option<usize>) -> usize {
     }
 }
 
-/// Build a [`DiffOptions`] from the primitive fields the CLI's `diff`/`Diff`
-/// subcommand and napi's `EsmDatabase::diff` method each accept, sharing the
-/// exclude-types uppercasing so it isn't duplicated on both surfaces.
+/// Build a [`DiffOptions`] from the primitive fields the CLI's `diff`
+/// subcommand accepts.
 ///
 /// Uppercasing here is a convenience for callers that want a canonical
 /// `DiffOptions` value up front (e.g. to compare/log it) — `diff_databases_with`

@@ -132,6 +132,14 @@ impl Host {
         Ok((canonical, db))
     }
 
+    /// Forget the database for `path`; a later [`Self::open`] reopens it.
+    /// Callers still holding its `Arc` keep using it until they drop it.
+    pub fn close(&self, path: &Path) -> anyhow::Result<()> {
+        let canonical = crate::discover::resolve_esm_path(path)?;
+        self.lock().remove(&canonical);
+        Ok(())
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, Resident>> {
         self.inner
             .lock()

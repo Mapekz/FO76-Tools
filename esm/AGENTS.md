@@ -64,7 +64,9 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `Resol
 ## N-API Binding and Electron App
 
 The `bindings/napi/` sub-crate produces the addon consumed by
-`../esm-viewer/src/main/addon.ts` through the local `@fo76/esm-napi` dependency.
+`../esm-viewer/src/main/addon.ts` through the local `@fo76/esm-napi` dependency. It exposes
+one `EsmHost` (a `host::Host`) whose async `run(esm, op)` takes any `Op` as JSON, so adding an
+op needs no binding code.
 Follow [the root validation map](../AGENTS.md#validation-map) for addon builds,
 DTO regeneration, and IPC synchronization. DTOs use `ts-rs` test-only derives
 and exports in Rust; generated TypeScript is not hand-edited.

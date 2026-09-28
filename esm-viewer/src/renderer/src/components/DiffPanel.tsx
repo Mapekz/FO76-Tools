@@ -153,18 +153,17 @@ export function DiffPanel({ onNavigate }: Props) {
     setError(null)
     try {
       const excludeList = parseSigList(excludeTypes)
-      const res = await window.api.diff(
-        oldId,
-        newId,
-        recordType.trim() || undefined,
-        // Bodies are never rendered here (see ChangedRow's one-line summary +
-        // the detail pane's side-by-side columns), so skip decoding them
-        // server-side — faster, and `field_changes` is computed unconditionally
-        // regardless of this param (verified against esm/src/diff.rs).
-        'none',
-        suppressNoise,
-        excludeList,
-      )
+      const res = await window.api.diff(oldId, newId, {
+        record_type: recordType.trim() || null,
+        options: {
+          // Bodies are never rendered here (see ChangedRow's one-line summary +
+          // the detail pane's side-by-side columns), so skip decoding them —
+          // `field_changes` is computed regardless.
+          bodies: 'none',
+          suppress_noise: suppressNoise,
+          exclude_types: excludeList,
+        },
+      })
       setResult(res)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

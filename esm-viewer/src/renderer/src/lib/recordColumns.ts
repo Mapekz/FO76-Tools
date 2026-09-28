@@ -3,7 +3,7 @@
  * No React, no Zustand: callers pass in `openDbs` and the subset of `Fo76Api`
  * actually needed, so this can be exercised with a fake `api` in unit tests. */
 
-import type { DbHandle, Fo76Api, RecordResult } from '../../../shared/api-types'
+import { sel, type DbHandle, type Fo76Api, type RecordResult } from '../../../shared/api-types'
 import type { RecordColumn } from '../store'
 
 function basename(path: string): string {
@@ -37,17 +37,17 @@ export async function buildRecordColumns(
   target: string,
   dbId: string,
   openDbs: DbHandle[],
-  api: Pick<Fo76Api, 'recordById'>,
+  api: Pick<Fo76Api, 'run'>,
 ): Promise<{ active: RecordResult; columns: RecordColumn[] }> {
-  const rec = await api.recordById(dbId, target, 'stub')
+  const rec = await api.run(dbId, { op: 'record', sel: sel(target), depth: 'stub' })
   const formId = rec.header.form_id
 
   const others = openDbs.filter((db) => db.id !== dbId)
   const settled = await Promise.allSettled(
-    others.map((db) => api.recordById(db.id, formId, 'stub')),
+    others.map((db) => api.run(db.id, { op: 'record', sel: sel(formId), depth: 'stub' })),
   )
 
-  // recordById rejects when the FormID is absent from that file — that
+  // `record` rejects when the FormID is absent from that file — that
   // rejection IS the "not in this file" signal, so the column is dropped.
   const otherResults = new Map<string, PromiseSettledResult<RecordResult>>()
   others.forEach((db, i) => otherResults.set(db.id, settled[i]))
