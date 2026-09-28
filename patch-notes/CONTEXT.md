@@ -52,10 +52,12 @@ A DEEP **Bundle** deliberately left out of the summary, with a reason, in `work/
 _Avoid_: drop (that's a **Tier**); see Flagged ambiguities
 
 **Cut record**:
-A record whose EditorID carries a cut marker (`ZZZ`, `CUT`, `DEPRECATED`, …), classified
-with a confidence by `change_entries.classify_cut`. The marker is a hint, not proof of
-removal: liveness needs other evidence (see the skill's guardrails), and `POST_` content is
-datamined, not cut.
+A record whose EditorID carries a cut marker (`ZZZ`, `CUT`, `POST`, `DEPRECATED`, `DELETE`),
+as `change_entries.classify_cut` finds it: it records the marker, a confidence and a kind
+under the record's `cut` key in `comprehensive.json`; BRIEF lines call a `POST`-marked
+record datamined and any other cut content. The marker is a heuristic, not proof of removal: writers need other evidence
+before calling content gone, and they report `POST_` content as datamined (not yet live)
+rather than cut (see the skill's guardrails and the deep-writer prompt).
 _Avoid_: deleted record; calling content removed on the marker alone
 
 ## Relationships

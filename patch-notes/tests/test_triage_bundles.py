@@ -1108,6 +1108,19 @@ class TestBriefLines(unittest.TestCase):
         self.assertIn("OldPerk", md)
         self.assertIn("vaulted", md.lower())
 
+    def test_post_marked_line_says_datamined_not_cut(self):
+        bundle = make_bundle("B0001", [make_member("0x01", "WEAP", "POST_Gun", name="Gun")])
+        records = {
+            "0x01": make_record(
+                "0x01", "WEAP", "POST_Gun", name="Gun",
+                cut={"marker": "POST", "confidence": "medium", "kind": "added_cut"},
+            )
+        }
+        tiers = {"B0001": {"tier": "brief", "reason": "brief:renamed_or_cut_only", "bucket": "Renamed / Cut"}}
+        md = tb.render_brief_lines(["B0001"], {"B0001": bundle}, tiers, records)
+        self.assertIn("POST-marked (datamined, not live)", md)
+        self.assertNotIn("cut content", md)
+
     def test_empty_brief_set_yields_empty_string(self):
         self.assertEqual(tb.render_brief_lines([], {}, {}, {}), "")
 
@@ -1235,6 +1248,23 @@ class TestRunTriage(unittest.TestCase):
             with mock.patch.object(tb.jsonio, "write", fail_on_slice), self.assertRaises(OSError):
                 tb.run_triage(out_dir, tiers_path)
             self.assertFalse((out_dir / "work" / "triage.json").exists())
+
+    def test_an_interrupted_final_write_leaves_no_triage(self):
+        bundles_data, comprehensive_data = _sample_pipeline_output()
+        with TempOutDir(bundles_data, comprehensive_data) as out_dir:
+            tiers_path = _write_mini_tiers_config(out_dir)
+            real_dump = tb.jsonio.json.dump
+
+            def fail_on_triage(payload, f, **kwargs):
+                if "deep" in payload and "reasons" in payload:
+                    f.write('{"deep":')
+                    raise OSError("disk full")
+                real_dump(payload, f, **kwargs)
+
+            with mock.patch.object(tb.jsonio.json, "dump", fail_on_triage), self.assertRaises(OSError):
+                tb.run_triage(out_dir, tiers_path)
+            self.assertFalse((out_dir / "work" / "triage.json").exists())
+            self.assertEqual([p.name for p in (out_dir / "work").glob(".*.tmp")], [])
 
     def test_missing_bundles_json_raises(self):
         with tempfile.TemporaryDirectory() as tmp:

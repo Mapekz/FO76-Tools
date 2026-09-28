@@ -250,6 +250,9 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
         run_args += ["--exclude-type", exclude_type]
         if args.force_pipeline:
             run_args.append("--force-pipeline")
+        # A fresh mechanical stage invalidates the old triage now, before any
+        # later step can fail and leave it looking reusable.
+        layout.work_triage_json(out_dir).unlink(missing_ok=True)
         rc = mpn.main(run_args, client=client)
         if rc:
             return rc, None

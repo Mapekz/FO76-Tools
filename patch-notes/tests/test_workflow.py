@@ -129,6 +129,16 @@ class TestPrepareGatePublish(TempDirTestCase):
         self.assertFalse(summary["reused"])
         self.assertTrue(summary["retriaged"])
 
+    def test_a_failed_cache_build_after_a_rerun_leaves_no_stale_triage(self):
+        self.prepare()
+        with mock.patch.object(workflow, "build_cache", side_effect=workflow.subprocess.CalledProcessError(1, "esm")):
+            rc, _ = self.prepare("--force-pipeline")
+        self.assertEqual(rc, 1)
+        self.assertFalse(layout.work_triage_json(self.out).exists())
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["retriaged"])
+
     def gate(self, *extra):
         esms = ["--old-esm", str(self.data / "20260626" / "SeventySix.esm")]
         esms += ["--new-esm", str(self.data / "20260703" / "SeventySix.esm")]

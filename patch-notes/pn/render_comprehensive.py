@@ -327,8 +327,8 @@ def build_arg_parser():
     ap.add_argument("--out-dir", required=True, help="Directory to write comprehensive.json into.")
     ap.add_argument("--old-esm", help="Path to the OLD .esm; its name and folder give the default old label and patch date.")
     ap.add_argument("--new-esm", help="Path to the NEW .esm; its name and folder give the default new label and patch date.")
-    ap.add_argument("--old-label", help="Display label for the old side (default: basename of --old-esm).")
-    ap.add_argument("--new-label", help="Display label for the new side (default: basename of --new-esm).")
+    ap.add_argument("--old-label", help="Display label for the old side (default: from --old-esm, its folder name for a dated snapshot folder).")
+    ap.add_argument("--new-label", help="Display label for the new side (default: from --new-esm, its folder name for a dated snapshot folder).")
     ap.add_argument("--patch-date", help="Patch date YYYY-MM-DD (default: derived from filenames).")
     ap.add_argument(
         "--common-threshold", type=int, default=change_entries.DEFAULT_COMMON_THRESHOLD,

@@ -932,7 +932,9 @@ def _renamed_cut_line(bundle, records):
             f"({marker}-marked; vaulted/cut)"
         )
     if kind in ("still_cut", "added_cut") and marker:
-        return f"- **{name}**: still {marker}-marked (cut content)"
+        # POST marks content not live yet, which the post reports as datamined.
+        status = "datamined, not live" if marker == "POST" else "cut content"
+        return f"- **{name}**: still {marker}-marked ({status})"
     if prev:
         return f"- **{name}**: renamed from `{prev}`"
     return f"- **{name}** ({a.get('record_type', '?')}): cut/deprecated"
