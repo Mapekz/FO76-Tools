@@ -276,19 +276,11 @@ fn format_eta(eta: Option<Duration>) -> Option<String> {
 }
 
 /// One-line summary shared by the non-TTY plain line, `--no-wait`'s
-/// one-shot print, and `esm cache status`'s human output — e.g. `"stage
-/// 4/5 (xref), 54%, eta ~1m 20s"` or `"stage 1/2 (forms), 100%,
-/// writing…"`.
+/// one-shot print, and `esm cache status`'s human output — e.g. `"xref,
+/// 54%, eta ~1m 20s"` or `"forms, 100%, writing…"`.
 pub fn format_stage_summary(p: &BuildProgress) -> String {
     let counts = humanize_done_total(p.done, p.total, p.unit);
-    let mut s = format!(
-        "stage {}/{} ({}), {:.0}%, {}",
-        p.stage_index,
-        p.stage_count,
-        p.stage.label(),
-        p.percent(),
-        counts
-    );
+    let mut s = format!("{}, {:.0}%, {}", p.stage.label(), p.percent(), counts);
     if p.writing {
         s.push_str(", writing…");
     } else if let Some(eta) = format_eta(p.eta()) {
@@ -322,14 +314,7 @@ mod tests {
     use super::*;
     use esm::progress::BuildStage;
 
-    fn progress(
-        stage: BuildStage,
-        stage_index: u8,
-        stage_count: u8,
-        done: u64,
-        total: u64,
-        unit: ProgressUnit,
-    ) -> BuildProgress {
+    fn progress(stage: BuildStage, done: u64, total: u64, unit: ProgressUnit) -> BuildProgress {
         // Round-trips through JSON so the test only depends on the public
         // `BuildProgress` shape, not any private constructor — `progress.rs`
         // keeps its timestamp fields private, so this is the only way to
@@ -337,8 +322,6 @@ mod tests {
         serde_json::from_value(serde_json::json!({
             "pid": 4242,
             "stage": stage,
-            "stage_index": stage_index,
-            "stage_count": stage_count,
             "done": done,
             "total": total,
             "unit": unit,
@@ -397,21 +380,19 @@ mod tests {
         // done=3_100_000/total=5_600_000, 10s elapsed -> rate implies an ETA.
         let p = progress(
             BuildStage::Xref,
-            4,
-            5,
             3_100_000,
             5_600_000,
             ProgressUnit::Records,
         );
         let s = format_stage_summary(&p);
-        assert!(s.starts_with("stage 4/5 (xref), 55%,"), "{s}");
+        assert!(s.starts_with("xref, 55%,"), "{s}");
         assert!(s.contains("3.1M/5.6M recs"), "{s}");
         assert!(s.contains("eta"), "{s}");
     }
 
     #[test]
     fn format_stage_summary_writing_overrides_eta() {
-        let mut p = progress(BuildStage::Forms, 1, 2, 100, 100, ProgressUnit::Bytes);
+        let mut p = progress(BuildStage::Forms, 100, 100, ProgressUnit::Bytes);
         p.writing = true;
         let s = format_stage_summary(&p);
         assert!(s.ends_with("writing…"), "{s}");
@@ -419,7 +400,7 @@ mod tests {
 
     #[test]
     fn render_bar_line_is_stderr_shaped_not_json() {
-        let p = progress(BuildStage::Tree, 2, 2, 50, 100, ProgressUnit::Bytes);
+        let p = progress(BuildStage::Tree, 50, 100, ProgressUnit::Bytes);
         let line = render_bar_line(&p, 10);
         assert!(line.contains("tree"));
         assert!(line.contains('▕') && line.contains('▏'));

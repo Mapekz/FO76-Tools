@@ -926,12 +926,11 @@ where
     {
         return Ok(section);
     }
-    let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
-        esm_path, stage, 1, 1, total, current,
-    )? {
-        crate::progress::Acquired::AlreadyBuilt(section) => return Ok(section),
-        crate::progress::Acquired::NeedsBuild(lease) => lease,
-    };
+    let mut lease =
+        match crate::progress::BuildLease::acquire_or_recheck(esm_path, stage, total, current)? {
+            crate::progress::Acquired::AlreadyBuilt(section) => return Ok(section),
+            crate::progress::Acquired::NeedsBuild(lease) => lease,
+        };
     let data = build(&mut lease)?;
     lease.writing();
     write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)

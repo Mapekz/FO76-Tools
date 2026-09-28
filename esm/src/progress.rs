@@ -181,11 +181,6 @@ pub enum ProgressUnit {
 pub struct BuildProgress {
     pub pid: u32,
     pub stage: BuildStage,
-    /// 1-based, for a "stage N/M" label.
-    pub stage_index: u8,
-    /// How many stages *this* build will run — varies by command (`get`
-    /// only needs forms+tree; `refs` adds xref), so this is not always 5.
-    pub stage_count: u8,
     pub done: u64,
     pub total: u64,
     pub unit: ProgressUnit,
@@ -294,8 +289,6 @@ pub struct BuildLease {
     // never read directly again after `acquire`.
     _lock_file: fs::File,
     stage: BuildStage,
-    stage_index: u8,
-    stage_count: u8,
     total: u64,
     done: u64,
     writing: bool,
@@ -395,8 +388,7 @@ pub enum Acquired<T> {
 
 impl BuildLease {
     /// Block until the per-ESM build lock is ours, then start publishing a
-    /// heartbeat for `stage` (the first of `stage_count` stages this build
-    /// will run).
+    /// heartbeat for `stage`.
     ///
     /// The lock is per-ESM, not per-section: a builder mid-`xref` blocks a
     /// second process that only wants `edid`. This lock's job is dedup, not
@@ -412,21 +404,8 @@ impl BuildLease {
     /// impossible to skip instead of relying on this doc comment; this
     /// method stays `pub` only because [`Self::acquire_or_recheck`] and this
     /// module's own tests are built directly on it.
-    pub fn acquire(
-        esm_path: &Path,
-        stage: BuildStage,
-        stage_index: u8,
-        stage_count: u8,
-        total: u64,
-    ) -> anyhow::Result<Self> {
-        Self::acquire_with_publish(
-            esm_path,
-            stage,
-            stage_index,
-            stage_count,
-            total,
-            !progress_disabled(),
-        )
+    pub fn acquire(esm_path: &Path, stage: BuildStage, total: u64) -> anyhow::Result<Self> {
+        Self::acquire_with_publish(esm_path, stage, total, !progress_disabled())
     }
 
     /// [`Self::acquire`], plus the mandatory recheck fused into one call so
@@ -440,12 +419,10 @@ impl BuildLease {
     pub fn acquire_or_recheck<T>(
         esm_path: &Path,
         stage: BuildStage,
-        stage_index: u8,
-        stage_count: u8,
         total: u64,
         recheck: impl FnOnce() -> anyhow::Result<Option<T>>,
     ) -> anyhow::Result<Acquired<T>> {
-        let lease = Self::acquire(esm_path, stage, stage_index, stage_count, total)?;
+        let lease = Self::acquire(esm_path, stage, total)?;
         if let Some(already) = recheck()? {
             return Ok(Acquired::AlreadyBuilt(already));
         }
@@ -459,8 +436,6 @@ impl BuildLease {
     fn acquire_with_publish(
         esm_path: &Path,
         stage: BuildStage,
-        stage_index: u8,
-        stage_count: u8,
         total: u64,
         publish: bool,
     ) -> anyhow::Result<Self> {
@@ -483,8 +458,6 @@ impl BuildLease {
             esm_path: esm_path.to_path_buf(),
             _lock_file: lock_file,
             stage,
-            stage_index,
-            stage_count,
             total,
             done: 0,
             writing: false,
@@ -496,23 +469,6 @@ impl BuildLease {
         };
         lease.publish_now();
         Ok(lease)
-    }
-
-    /// Move to a new stage on an already-held lock — used by the
-    /// `forms`-then-`tree` build, which runs both under one lease rather
-    /// than releasing and reacquiring the lock between them. Resets
-    /// `done`/`writing`/`started_at` for the new stage, so [`Self::eta`]-
-    /// adjacent math (actually [`BuildProgress::eta`]) always extrapolates
-    /// from the current stage alone.
-    pub fn begin_stage(&mut self, stage: BuildStage, stage_index: u8, total: u64) {
-        self.stage = stage;
-        self.stage_index = stage_index;
-        self.total = total;
-        self.done = 0;
-        self.writing = false;
-        self.started_at_unix_ms = now_unix_ms();
-        self.last_write = Instant::now() - HEARTBEAT_INTERVAL;
-        self.publish_now();
     }
 
     /// Record progress. Hot path — called once per record across a full ESM
@@ -549,8 +505,6 @@ impl BuildLease {
         let progress = BuildProgress {
             pid: std::process::id(),
             stage: self.stage,
-            stage_index: self.stage_index,
-            stage_count: self.stage_count,
             done: self.done,
             total: self.total,
             unit: self.stage.unit(),
@@ -659,13 +613,11 @@ mod tests {
     #[test]
     fn acquire_publishes_a_readable_heartbeat() {
         let esm = test_esm_path("publishes");
-        let lease = BuildLease::acquire(&esm, BuildStage::Forms, 1, 2, 1000).unwrap();
+        let lease = BuildLease::acquire(&esm, BuildStage::Forms, 1000).unwrap();
 
         let progress = read(&esm).expect("a live lease must be visible to read()");
         assert_eq!(progress.pid, std::process::id());
         assert_eq!(progress.stage, BuildStage::Forms);
-        assert_eq!(progress.stage_index, 1);
-        assert_eq!(progress.stage_count, 2);
         assert_eq!(progress.total, 1000);
         assert_eq!(progress.done, 0);
         assert!(!progress.writing);
@@ -678,7 +630,7 @@ mod tests {
     #[test]
     fn read_is_none_after_lease_drops() {
         let esm = test_esm_path("drops");
-        let lease = BuildLease::acquire(&esm, BuildStage::Edid, 1, 1, 10).unwrap();
+        let lease = BuildLease::acquire(&esm, BuildStage::Edid, 10).unwrap();
         assert!(read(&esm).is_some());
         drop(lease);
         assert!(
@@ -691,7 +643,7 @@ mod tests {
     #[test]
     fn tick_within_throttle_window_does_not_republish() {
         let esm = test_esm_path("throttle");
-        let mut lease = BuildLease::acquire(&esm, BuildStage::Xref, 1, 1, 100).unwrap();
+        let mut lease = BuildLease::acquire(&esm, BuildStage::Xref, 100).unwrap();
         // `acquire` already published once (done=0) and reset `last_write`
         // to "now" — this tick lands well inside HEARTBEAT_INTERVAL, so it
         // must update the in-memory value but NOT rewrite the file.
@@ -708,7 +660,7 @@ mod tests {
     #[test]
     fn tick_after_throttle_window_elapses_republishes() {
         let esm = test_esm_path("tick_after_interval");
-        let mut lease = BuildLease::acquire(&esm, BuildStage::Xref, 1, 1, 100).unwrap();
+        let mut lease = BuildLease::acquire(&esm, BuildStage::Xref, 100).unwrap();
         std::thread::sleep(HEARTBEAT_INTERVAL + Duration::from_millis(50));
         lease.tick(42);
         let progress = read(&esm).unwrap();
@@ -718,29 +670,9 @@ mod tests {
     }
 
     #[test]
-    fn begin_stage_resets_done_and_writing() {
-        let esm = test_esm_path("begin_stage");
-        let mut lease = BuildLease::acquire(&esm, BuildStage::Forms, 1, 2, 500).unwrap();
-        lease.tick(500);
-        lease.writing();
-        assert!(read(&esm).unwrap().writing);
-
-        lease.begin_stage(BuildStage::Tree, 2, 300);
-        let progress = read(&esm).unwrap();
-        assert_eq!(progress.stage, BuildStage::Tree);
-        assert_eq!(progress.stage_index, 2);
-        assert_eq!(progress.total, 300);
-        assert_eq!(progress.done, 0);
-        assert!(!progress.writing);
-
-        drop(lease);
-        cleanup(&esm);
-    }
-
-    #[test]
     fn writing_pins_done_to_total() {
         let esm = test_esm_path("writing");
-        let mut lease = BuildLease::acquire(&esm, BuildStage::Search, 1, 1, 777).unwrap();
+        let mut lease = BuildLease::acquire(&esm, BuildStage::Search, 777).unwrap();
         lease.writing();
         let progress = read(&esm).unwrap();
         assert_eq!(progress.done, 777);
@@ -760,8 +692,7 @@ mod tests {
         // races under a multithreaded `cargo test` (see
         // `acquire_with_publish`'s doc comment).
         let esm = test_esm_path("no_progress");
-        let lease =
-            BuildLease::acquire_with_publish(&esm, BuildStage::Forms, 1, 1, 10, false).unwrap();
+        let lease = BuildLease::acquire_with_publish(&esm, BuildStage::Forms, 10, false).unwrap();
         // The lock is still held (dedup still works)...
         assert!(
             read(&esm).is_none(),
@@ -785,8 +716,6 @@ mod tests {
         let mut p = BuildProgress {
             pid: 1,
             stage: BuildStage::Forms,
-            stage_index: 1,
-            stage_count: 1,
             done: 0,
             total: 0,
             unit: ProgressUnit::Bytes,
@@ -824,8 +753,6 @@ mod tests {
         let fresh = BuildProgress {
             pid: 1,
             stage: BuildStage::Forms,
-            stage_index: 1,
-            stage_count: 1,
             done: 1,
             total: 10,
             unit: ProgressUnit::Bytes,
@@ -853,8 +780,6 @@ mod tests {
         let p = BuildProgress {
             pid: 4242,
             stage: BuildStage::Xref,
-            stage_index: 5,
-            stage_count: 5,
             done: 3_100_000,
             total: 5_600_000,
             unit: ProgressUnit::Records,

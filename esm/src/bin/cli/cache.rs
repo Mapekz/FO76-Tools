@@ -41,8 +41,6 @@ pub(crate) fn cmd_cache_status(esm: &Path, as_json: bool) -> anyhow::Result<()> 
             serde_json::json!({
                 "pid": p.pid,
                 "stage": p.stage.label(),
-                "stage_index": p.stage_index,
-                "stage_count": p.stage_count,
                 "percent": p.percent(),
                 "done": p.done,
                 "total": p.total,

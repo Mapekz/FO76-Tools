@@ -858,8 +858,6 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
         &esm.path,
         crate::progress::BuildStage::Forms,
-        1,
-        1,
         total,
         map_both,
     )? {
@@ -1052,11 +1050,6 @@ fn section_spec_fingerprint_for(kind: SectionKind) -> u64 {
             <crate::curves::ArchivedCurvesSection as SectionSpec>::LAYOUT_FINGERPRINT
         }
     }
-}
-
-pub fn full_name_for_record(esm: &EsmFile, meta: &RecordMeta) -> anyhow::Result<Option<u32>> {
-    let rec = esm.parse_record_at(meta.offset)?;
-    Ok(lstring_id_from_subrecords(&rec.subrecords, "FULL"))
 }
 
 #[cfg(test)]
