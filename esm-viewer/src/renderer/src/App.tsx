@@ -24,15 +24,8 @@ const LEFT_VIEW_LABELS: Record<LeftView, string> = {
 }
 
 export function App() {
-  const {
-    setActiveRecord,
-    setRecordColumns,
-    setReferencedBy,
-    navPush,
-    navBack,
-    navForward,
-    referencedByDepth,
-  } = useStore()
+  const { showRecord, setReferencedBy, navPush, navBack, navForward, referencedByDepth } =
+    useStore()
   const [leftView, setLeftView] = useState<LeftView>('tree')
 
   // Out-of-order-response guard: rapid navigation can fire several loadRecord
@@ -54,8 +47,7 @@ export function App() {
         const { active, columns } = await buildRecordColumns(target, dbId, openDbs, window.api)
         if (seq !== loadSeq.current) return
 
-        setActiveRecord(active)
-        setRecordColumns(columns)
+        showRecord(dbId, active, columns)
 
         const refs = await fetchReferencedBy(dbId, target, referencedByDepth, window.api)
         if (seq !== loadSeq.current) return
@@ -64,7 +56,7 @@ export function App() {
         console.error('load record error:', e)
       }
     },
-    [setActiveRecord, setRecordColumns, setReferencedBy, referencedByDepth],
+    [showRecord, setReferencedBy, referencedByDepth],
   )
 
   // A NEW navigation choice (tree click, ctrl-click FormID link, referenced-by row):

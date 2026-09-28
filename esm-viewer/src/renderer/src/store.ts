@@ -31,6 +31,10 @@ export interface AppStore {
   setActiveDb: (id: string | null) => void
   setActiveRecord: (r: RecordResult | null) => void
   setRecordColumns: (cols: RecordColumn[]) => void
+  /** Show a navigated-to record. The selection carries its file: `dbId`
+   * becomes the active file, so the tree, raw view and Referenced By all
+   * read the file the record came from. */
+  showRecord: (dbId: string, record: RecordResult, columns: RecordColumn[]) => void
   setReferencedBy: (result: RefListResult) => void
   setReferencedByDepth: (d: number) => void
   navPush: (entry: NavEntry) => void
@@ -54,6 +58,8 @@ export const useStore = create<AppStore>((set, get) => ({
   setActiveDb: (id) => set({ activeDbId: id }),
   setActiveRecord: (r) => set({ activeRecord: r }),
   setRecordColumns: (cols) => set({ recordColumns: cols }),
+  showRecord: (dbId, record, columns) =>
+    set({ activeDbId: dbId, activeRecord: record, recordColumns: columns }),
   setReferencedBy: (result) =>
     set({
       referencedBy: result.rows,
@@ -64,6 +70,9 @@ export const useStore = create<AppStore>((set, get) => ({
 
   navPush: (entry) =>
     set((s) => {
+      // Re-selecting the current entry reloads it without growing history.
+      const current = s.nav.entries[s.nav.index]
+      if (current && current.dbId === entry.dbId && current.formid === entry.formid) return {}
       const before = s.nav.entries.slice(0, s.nav.index + 1)
       const entries = [...before, entry]
       return { nav: { entries, index: entries.length - 1 } }

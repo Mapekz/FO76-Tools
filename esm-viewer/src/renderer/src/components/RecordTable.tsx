@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { useStore, type RecordColumn } from '../store'
+import type { RecordColumn } from '../store'
 import {
   buildAlignedTree,
   buildLeafNode,
@@ -239,8 +239,6 @@ function RowNode({
 }
 
 export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
-  const setActiveDb = useStore((s) => s.setActiveDb)
-
   // Per-path manual overrides layered on top of a global default. `globalOverride`
   // is null until Expand/Collapse all is pressed (per-node `defaultNodeExpanded`
   // rule applies); Expand/Collapse all force every node one way and clear the
@@ -322,8 +320,11 @@ export function RecordTable({ columns, activeDbId, onNavigate }: Props) {
               {columns.map((col) => (
                 <th
                   key={col.dbId}
-                  onClick={() => setActiveDb(col.dbId)}
-                  title={`Click to make ${col.fileName} the active file (drives Raw mode and Referenced By)`}
+                  onClick={() => {
+                    if (col.record && col.dbId !== activeDbId)
+                      onNavigate(col.dbId, col.record.header.form_id)
+                  }}
+                  title={`Click to show ${col.fileName}'s copy (drives the tree, Raw mode and Referenced By)`}
                   style={{
                     textAlign: 'left',
                     padding: '4px 6px',
