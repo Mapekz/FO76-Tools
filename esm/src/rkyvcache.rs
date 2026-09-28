@@ -1160,6 +1160,40 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
+    #[test]
+    fn map_or_build_builds_once_across_concurrent_lease_holders() {
+        // Every thread opens its own lock file handle, so the build lease
+        // conflicts between them exactly as it does between processes.
+        let dir =
+            std::env::temp_dir().join(format!("esm_rkyvcache_map_or_build_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let esm = dir.join("Lease.esm");
+        fs::write(&esm, b"not really an esm").unwrap();
+        let builds = std::sync::atomic::AtomicUsize::new(0);
+
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    let section = map_or_build::<Dummy>(
+                        &esm,
+                        1,
+                        |_| true,
+                        |_lease| {
+                            builds.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                            Ok(dummy_value())
+                        },
+                    )
+                    .unwrap();
+                    assert_eq!(section.get().unwrap().a, 7);
+                });
+            }
+        });
+
+        assert_eq!(builds.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     // ── 2. Round-trip, unchecked access via Section::get ────────────────────
 
     #[test]
