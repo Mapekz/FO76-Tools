@@ -54,6 +54,30 @@
       "class_": "kind-mismatch",
       "path": "SCEN[2:Actions][elem][0:Type Specific Action][v4]/HTID",
       "reason": "Start Scene's 0-byte 'End Scene Say Greeting' marker is wbEmpty(HTID) in xEdit. 'empty' decodes with an unscoped take, and HTID is also the Dialogue action's Player Headtracking and the Radio action's Play Sound, so a Start Scene action without its own marker took the next action's HTID (0x0053AF54, snapshot 20260914). Overridden in fo76.overrides.json (record_patches.SCEN) to kind=lstring, which is element-scoped and renders the same null. Divergence is intentional."
+    },
+    {
+      "record": "BOOK",
+      "class_": "count-mismatch",
+      "path": "BOOK/DNAM",
+      "reason": "fv 210+ BOOK DNAM is 14 bytes: a trailing u8 (0 or 1 on the 20260918 snapshot, e.g. HIDELeadMedium 0x008EFC79 = 1) that xEdit doesn't declare. Added by fo76.overrides.json (record_patches.BOOK) so the byte decodes instead of landing in _trailing. Divergence is intentional."
+    },
+    {
+      "record": "CSTY",
+      "class_": "count-mismatch",
+      "path": "CSTY/CSGD",
+      "reason": "CSGD is 52 bytes on 38 fv 208+ records (48 elsewhere); the extra 4 bytes are a CURV FormID such as HIDE_crDrifter_EquipmentSwitch_ScoreFallOff (0x008F4E5F). xEdit stops at 12 floats; fo76.overrides.json (record_patches.CSTY) adds the FormID. Divergence is intentional."
+    },
+    {
+      "record": "LVLN",
+      "class_": "count-mismatch",
+      "path": "LVLN[2:Leveled List Entries][elem]",
+      "reason": "LVLN entries carry a per-entry LVOC (Chance None Global) like LVLI's; xEdit comments it out of the LVLN entry, which leaves the subrecord unbound (issue #41). Added by fo76.overrides.json (record_patches.LVLN). Divergence is intentional."
+    },
+    {
+      "record": "WTHR",
+      "class_": "count-mismatch",
+      "path": "WTHR[1:Cloud Textures]",
+      "reason": "Game data carries cloud layers 10-16 (:0TX through @0TX) between layers 9 and 17; xEdit's Cloud Textures skips those signatures, so the struct would close at layer 10 and strand layers 17-31. fo76.overrides.json (record_patches.WTHR) inserts them in order. Divergence is intentional."
     }
   ]
 }
