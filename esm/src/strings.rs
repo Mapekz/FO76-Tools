@@ -265,11 +265,7 @@ impl Localization {
         locale: &str,
         prefix: &str,
     ) -> Result<Self> {
-        let files = match src {
-            StringsSrc::Loose(dir) => loose_paths(dir, locale, prefix),
-            StringsSrc::Ba2(path) => vec![path.clone()],
-        };
-        let stamp = crate::rkyvcache::source_stamp(&files, &format!("{prefix}_{locale}"))?;
+        let stamp = source_stamp(src, locale, prefix)?;
         let section = crate::rkyvcache::map_or_build::<StringsSection>(
             esm_path,
             StringKind::ALL.len() as u64,
@@ -284,6 +280,23 @@ impl Localization {
         })
     }
 
+    /// Whether `esm_path`'s `lstrings` section is built from `src`'s current
+    /// files, without building it.
+    pub(crate) fn section_is_current(
+        esm_path: &Path,
+        src: &StringsSrc,
+        locale: &str,
+        prefix: &str,
+    ) -> Result<bool> {
+        // Files that can't be stamped leave nothing current to compare.
+        let Ok(stamp) = source_stamp(src, locale, prefix) else {
+            return Ok(false);
+        };
+        crate::rkyvcache::section_is_current::<ArchivedStringsSection>(esm_path, |cached| {
+            cached.source.to_native() == stamp
+        })
+    }
+
     /// Look up a string by table kind and LString ID.
     pub fn lookup(&self, kind: StringKind, id: u32) -> Option<&str> {
         self.tables.get().table(kind).get(id)
@@ -293,6 +306,16 @@ impl Localization {
     pub fn len(&self, kind: StringKind) -> usize {
         self.tables.get().table(kind).ids.len()
     }
+}
+
+/// The stamp of the string files `src` names (see
+/// [`crate::rkyvcache::source_stamp`]).
+fn source_stamp(src: &StringsSrc, locale: &str, prefix: &str) -> Result<u64> {
+    let files = match src {
+        StringsSrc::Loose(dir) => loose_paths(dir, locale, prefix),
+        StringsSrc::Ba2(path) => vec![path.clone()],
+    };
+    crate::rkyvcache::source_stamp(&files, &format!("{prefix}_{locale}"))
 }
 
 fn loose_paths(dir: &Path, locale: &str, prefix: &str) -> Vec<PathBuf> {

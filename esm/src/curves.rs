@@ -252,6 +252,14 @@ impl CurveIndex {
         })
     }
 
+    /// Whether `esm_path`'s `curves` section is built from `src` as it is
+    /// now, without building it.
+    pub(crate) fn section_is_current(esm_path: &Path, src: &CurvesSrc) -> Result<bool> {
+        crate::rkyvcache::section_is_current::<ArchivedCurvesSection>(esm_path, |cached| {
+            is_current(src, cached)
+        })
+    }
+
     /// The curves `Database::open` discovered for `esm`, served from the
     /// `curves` cache section: read and published on first use, then mapped.
     /// A section built from a different curve source is rebuilt. A loose
@@ -263,20 +271,10 @@ impl CurveIndex {
         index: &crate::index::Index,
         src: &CurvesSrc,
     ) -> Result<CurveIndex> {
-        const SALT: &str = "curves";
-        let stamp = |dirs: &[&str]| match src {
-            CurvesSrc::LooseBase(base) => {
-                crate::rkyvcache::tree_stamp(&base.join("curvetables/json"), dirs, SALT)
-            }
-            CurvesSrc::Ba2(path) => crate::rkyvcache::source_stamp(std::slice::from_ref(path), SALT),
-        };
         let section = crate::rkyvcache::map_or_build::<CurvesSection>(
             &esm.path,
             index.count_by_type("CURV") as u64,
-            |cached| {
-                let dirs: Vec<&str> = cached.source_dirs.iter().map(|d| d.as_str()).collect();
-                stamp(&dirs).is_ok_and(|s| s == cached.source.to_native())
-            },
+            |cached| is_current(src, cached),
             |_lease| {
                 // Stamp before reading, so a curve added meanwhile is seen
                 // as a change next time rather than missed.
@@ -287,7 +285,7 @@ impl CurveIndex {
                     CurvesSrc::Ba2(_) => Vec::new(),
                 };
                 let dir_refs: Vec<&str> = dirs.iter().map(String::as_str).collect();
-                let source = stamp(&dir_refs)?;
+                let source = curves_stamp(src, &dir_refs)?;
                 let entries = match src {
                     CurvesSrc::LooseBase(base) => read_loose(esm, index, base)?,
                     CurvesSrc::Ba2(path) => read_ba2(esm, index, path)?,
@@ -299,6 +297,24 @@ impl CurveIndex {
             section: ArchiveBuf::Mapped(section),
         })
     }
+}
+
+/// The stamp of the curve source `src`, a loose tree stamped by its
+/// directories `dirs` (see [`crate::rkyvcache::tree_stamp`]).
+fn curves_stamp(src: &CurvesSrc, dirs: &[&str]) -> Result<u64> {
+    const SALT: &str = "curves";
+    match src {
+        CurvesSrc::LooseBase(base) => {
+            crate::rkyvcache::tree_stamp(&base.join("curvetables/json"), dirs, SALT)
+        }
+        CurvesSrc::Ba2(path) => crate::rkyvcache::source_stamp(std::slice::from_ref(path), SALT),
+    }
+}
+
+/// Whether a `curves` section was built from `src` as it is now.
+fn is_current(src: &CurvesSrc, cached: &ArchivedCurvesSection) -> bool {
+    let dirs: Vec<&str> = cached.source_dirs.iter().map(|d| d.as_str()).collect();
+    curves_stamp(src, &dirs).is_ok_and(|stamp| stamp == cached.source.to_native())
 }
 
 fn read_loose(

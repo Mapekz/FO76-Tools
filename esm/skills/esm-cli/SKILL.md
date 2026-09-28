@@ -33,9 +33,9 @@ subcommand.
   starting another. `esm cache status [--json]` inspects without triggering
   anything; `esm cache build` builds ahead of time and `esm cache clear`
   deletes an ESM's cache.
-- The cache rebuilds by itself when the ESM, its `strings/`, or a rebuilt
-  binary's schema changes. Editing a curve file inside an existing
-  `misc/curvetables/json/` tree is not detected — `esm cache clear` after that.
+- The cache rebuilds by itself when the ESM, its `strings/`, its curve files,
+  or a rebuilt binary's schema changes. Editing an existing curve file in
+  place is not detected — `esm cache clear` after that.
 - Scripts making many calls can keep one `esm batch` child: it reads one
   `{"esm": <path>, "op": {...}}` JSON request per line and answers each with
   one `{"status": "ok"|"err", ...}` line, keeping each ESM open in between.

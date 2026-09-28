@@ -940,6 +940,20 @@ where
     write_and_remap(&path, sig, crate::index::CACHE_VERSION, data)
 }
 
+/// Whether `esm_path`'s section `A` is on disk, valid and `is_current`,
+/// without building it.
+pub(crate) fn section_is_current<A: SectionSpec>(
+    esm_path: &Path,
+    is_current: impl Fn(&A) -> bool,
+) -> anyhow::Result<bool> {
+    let sig = CacheSig::read(esm_path)?;
+    let path = section_path_for_spec::<A>(esm_path)?;
+    Ok(
+        map_section_if_present::<A>(&path, sig, crate::index::CACHE_VERSION)?
+            .is_some_and(|section| section.get().is_some_and(is_current)),
+    )
+}
+
 /// A stamp of the files a section was derived from besides the ESM: FNV-1a
 /// over `salt` and each path's name, size, mtime and (on Unix) inode. A
 /// directory contributes its own metadata only, which changes when entries

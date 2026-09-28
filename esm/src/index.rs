@@ -850,6 +850,9 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
 pub struct CacheInventory {
     pub present: Vec<crate::progress::BuildStage>,
     pub missing: Vec<crate::progress::BuildStage>,
+    /// Source sections with nothing to build from: no string tables or no
+    /// curve tables beside the ESM.
+    pub no_source: Vec<crate::progress::BuildStage>,
 }
 
 impl CacheInventory {
@@ -862,11 +865,13 @@ impl CacheInventory {
     }
 }
 
-/// Inspect `esm_cache/`'s five sections for `esm_path` via the same O(1)
-/// header check [`Index::build`] uses (`Section::map`: magic/format/kind/
+/// Inspect `esm_cache/`'s sections for `esm_path` via the same O(1) header
+/// check [`Index::build`] uses (`Section::map`: magic/format/kind/
 /// cache_version/layout_fingerprint/ESM identity stamp) — but as a **pure
 /// read**, deliberately without `Index::build`'s `build_tree_and_forms`
-/// fallback. This must never trigger a build: `esm cache status` calls it
+/// fallback. The `lstrings` and `curves` sections also count as missing when
+/// their source files changed since they were built, and as `no_source`
+/// when the ESM has none. This must never trigger a build: `esm cache status` calls it
 /// while another process may hold the build lock, and it has to answer
 /// instantly regardless. Doesn't mmap the ESM itself — `CacheSig::read`
 /// only needs `fs::metadata`.
@@ -874,6 +879,7 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
     let sig = CacheSig::read(esm_path)?;
     let mut present = Vec::new();
     let mut missing = Vec::new();
+    let mut no_source = Vec::new();
 
     let mut bucket = |stage: crate::progress::BuildStage, mapped: bool| {
         if mapped {
@@ -929,7 +935,32 @@ pub fn cache_inventory(esm_path: &std::path::Path) -> anyhow::Result<CacheInvent
         .is_mapped(),
     );
 
-    Ok(CacheInventory { present, missing })
+    let sources = crate::discover::resolve_sources(esm_path, "en")?;
+    match &sources.strings {
+        Some(src) => bucket(
+            crate::progress::BuildStage::Strings,
+            crate::strings::Localization::section_is_current(
+                &sources.esm,
+                src,
+                &sources.locale,
+                &sources.loose_prefix,
+            )?,
+        ),
+        None => no_source.push(crate::progress::BuildStage::Strings),
+    }
+    match &sources.curves {
+        Some(src) => bucket(
+            crate::progress::BuildStage::Curves,
+            crate::curves::CurveIndex::section_is_current(&sources.esm, src)?,
+        ),
+        None => no_source.push(crate::progress::BuildStage::Curves),
+    }
+
+    Ok(CacheInventory {
+        present,
+        missing,
+        no_source,
+    })
 }
 
 /// Regression test for [`crate::rkyvcache::SectionSpec`]'s core promise:

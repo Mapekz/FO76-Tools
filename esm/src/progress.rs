@@ -126,7 +126,8 @@ impl BuildStage {
         }
     }
 
-    /// Every cache section stage, index sections first.
+    /// Every cache section stage, index sections first, in the order
+    /// [`crate::index::cache_inventory`] reports them.
     pub const SECTIONS: [BuildStage; 7] = [
         BuildStage::Forms,
         BuildStage::Tree,
@@ -141,17 +142,6 @@ impl BuildStage {
     pub fn from_label(label: &str) -> Option<BuildStage> {
         Self::SECTIONS.into_iter().find(|s| s.label() == label)
     }
-
-    /// The five index stages, in the fixed order
-    /// [`crate::index::cache_inventory`] reports them. The source caches
-    /// (`Strings`, `Curves`) are built at open and are not part of it.
-    pub const ALL: [BuildStage; 5] = [
-        BuildStage::Forms,
-        BuildStage::Tree,
-        BuildStage::Edid,
-        BuildStage::Search,
-        BuildStage::Xref,
-    ];
 }
 
 /// What a [`BuildProgress`]'s `done`/`total` count.
@@ -769,9 +759,14 @@ mod tests {
     }
 
     #[test]
-    fn build_stage_all_matches_label_set() {
-        let labels: Vec<&str> = BuildStage::ALL.iter().map(|s| s.label()).collect();
-        assert_eq!(labels, vec!["forms", "tree", "edid", "search", "xref"]);
+    fn build_stage_sections_match_label_set() {
+        let labels: Vec<&str> = BuildStage::SECTIONS.iter().map(|s| s.label()).collect();
+        assert_eq!(
+            labels,
+            vec![
+                "forms", "tree", "edid", "search", "xref", "lstrings", "curves"
+            ]
+        );
     }
 
     #[test]

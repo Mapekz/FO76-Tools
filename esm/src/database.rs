@@ -42,6 +42,9 @@ pub struct Database {
     /// Optional curve index built from Startup BA2. When present, FormID fields
     /// whose `valid_refs` includes `"CURV"` have their curve data inlined.
     pub(crate) curves: Option<crate::curves::CurveIndex>,
+    /// Why a discovered string or curve source failed to load at open, by
+    /// the cache section it builds (see [`Self::source_errors`]).
+    source_errors: Vec<(crate::progress::BuildStage, String)>,
     /// Per-record-type memoized decode, populated lazily by `filter_type_records`
     /// and `list_type_field_paths`. In-memory only — never persisted, no
     /// CACHE_VERSION bump (these are ephemeral, rebuilt each time the Database
@@ -140,16 +143,37 @@ impl Database {
         let index = Index::build(&esm)?;
         let schema = Schema::load_embedded().context("load embedded schema")?;
 
+        // A source that fails to load leaves the database without it; the
+        // error is kept for `source_errors`.
+        fn loaded<T>(
+            errors: &mut Vec<(crate::progress::BuildStage, String)>,
+            stage: crate::progress::BuildStage,
+            what: &str,
+            result: anyhow::Result<T>,
+        ) -> Option<T> {
+            result
+                .inspect_err(|e| {
+                    log::warn!("failed to load {what}: {e:#}");
+                    errors.push((stage, format!("{e:#}")));
+                })
+                .ok()
+        }
+        let mut source_errors = Vec::new();
         let localization = resolved.strings.as_ref().and_then(|src| {
-            Localization::cached(&esm.path, src, &resolved.locale, &resolved.loose_prefix)
-                .inspect_err(|e| log::warn!("failed to load string tables: {e:#}"))
-                .ok()
+            loaded(
+                &mut source_errors,
+                crate::progress::BuildStage::Strings,
+                "string tables",
+                Localization::cached(&esm.path, src, &resolved.locale, &resolved.loose_prefix),
+            )
         });
-
         let curves = resolved.curves.as_ref().and_then(|src| {
-            crate::curves::CurveIndex::cached(&esm, &index, src)
-                .inspect_err(|e| log::warn!("failed to load curve tables: {e:#}"))
-                .ok()
+            loaded(
+                &mut source_errors,
+                crate::progress::BuildStage::Curves,
+                "curve tables",
+                crate::curves::CurveIndex::cached(&esm, &index, src),
+            )
         });
 
         let is_localized = esm.file_info().map(|i| i.is_localized).unwrap_or(false);
@@ -161,8 +185,15 @@ impl Database {
             is_localized,
             localization,
             curves,
+            source_errors,
             filter_cache: Default::default(),
         })
+    }
+
+    /// Why each string or curve source [`Self::open`] found failed to load
+    /// (the database opened without it), by the cache section it builds.
+    pub fn source_errors(&self) -> &[(crate::progress::BuildStage, String)] {
+        &self.source_errors
     }
 
     /// Replace (or set) the localization tables used for LString resolution.

@@ -83,8 +83,8 @@ esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 | `walk <target>` | Interactive per-record-type mechanics digest (OMOD chains, LVLI drop odds, …) |
 | `chase <target>` | Machine-readable JSON mechanism classification (pipeline contract, not for reading by hand) |
 | `curve <target>...` | Ad-hoc lookup/sum over any Curve Table record's points (`--at X...`, `--sum FROM TO [--step N]`) |
-| `cache status [--json]` | Inspect the on-disk index cache without opening the ESM |
-| `cache build [--section S]`, `cache clear` | Build cache sections now, or delete them all |
+| `cache status [--json]` | Inspect the on-disk cache without opening the ESM: each section built, missing, or (`lstrings`/`curves`, JSON `null`) with no source beside the ESM |
+| `cache build [--section S]`, `cache clear` | Build cache sections now (a wanted section that can't be built fails the command), or delete them all |
 | `batch` | Answer one JSON `{"esm", "op"}` request per stdin line, keeping databases open (for scripts) |
 | `skill [--install [--target codex,claude]]` | Print the agent usage-knowledge doc, or install it into another repo's `.agents/skills/` (default) and/or `.claude/skills/` |
 
@@ -186,8 +186,9 @@ Three are built on first use of the matching operation:
 Every section carries its own header (magic, version, layout fingerprint, source ESM size+mtime)
 validated before any bytes are trusted — a stale, foreign, or corrupt file degrades to "rebuild
 that section," never a crash. `lstrings` and `curves` also record a stamp of the files they were
-read from and rebuild when those change; a curve file rewritten in place inside an existing
-`curvetables/json/` tree is not detected, so run `esm cache clear` after editing one.
+read from and rebuild when those change (a curve file added or removed anywhere in
+`curvetables/json/` counts); a curve file rewritten in place is not detected, so run
+`esm cache clear` after editing one.
 
 Builds are shared across processes: one per-ESM build lock means concurrent callers build a
 missing section once and the rest wait for it. The CLI runs each cold build as a detached

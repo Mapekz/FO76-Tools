@@ -33,9 +33,14 @@ pub(crate) fn cmd_cache_status(esm: &Path, as_json: bool) -> anyhow::Result<()> 
     let state = cache_state_label(&inventory, building.is_some());
 
     if as_json {
-        let sections: BTreeMap<&str, bool> = esm::progress::BuildStage::ALL
+        // `null`: a source section with nothing to build from.
+        let sections: BTreeMap<&str, Option<bool>> = esm::progress::BuildStage::SECTIONS
             .iter()
-            .map(|s| (s.label(), inventory.present.contains(s)))
+            .map(|s| {
+                let built =
+                    (!inventory.no_source.contains(s)).then(|| inventory.present.contains(s));
+                (s.label(), built)
+            })
             .collect();
         let build = building.as_ref().map(|p| {
             serde_json::json!({
@@ -64,7 +69,10 @@ pub(crate) fn cmd_cache_status(esm: &Path, as_json: bool) -> anyhow::Result<()> 
         println!("  {}", progress_ui::format_stage_summary(p));
     }
     print!("  sections:");
-    for stage in esm::progress::BuildStage::ALL {
+    for stage in esm::progress::BuildStage::SECTIONS {
+        if inventory.no_source.contains(&stage) {
+            continue;
+        }
         let mark = if inventory.present.contains(&stage) {
             "+"
         } else {
@@ -73,18 +81,39 @@ pub(crate) fn cmd_cache_status(esm: &Path, as_json: bool) -> anyhow::Result<()> 
         print!(" {mark}{}", stage.label());
     }
     println!();
+    if !inventory.no_source.is_empty() {
+        let labels: Vec<&str> = inventory.no_source.iter().map(|s| s.label()).collect();
+        println!("  no source: {}", labels.join(", "));
+    }
     Ok(())
 }
 
 /// `esm cache build`: build `sections` (every section when empty) for `esm`
 /// in this process, under the usual build lease. Opening the database builds
 /// the eager sections (`forms`, `tree`, `lstrings`, `curves`); the lazy index
-/// sections are built on request. Progress shows on stderr (the detached
-/// builder's stderr is null).
+/// sections are built on request. A wanted `lstrings` or `curves` section
+/// that fails to build, or that is named but has no source beside the ESM,
+/// fails the command. Progress shows on stderr (the detached builder's
+/// stderr is null).
 pub(crate) fn cmd_cache_build(esm: &Path, sections: &[BuildStage]) -> anyhow::Result<()> {
     crate::progress_ui::watched(&[esm], || {
         let db = esm::Database::open(esm)?;
         let wants = |stage| sections.is_empty() || sections.contains(&stage);
+        if let Some((stage, err)) = db.source_errors().iter().find(|(stage, _)| wants(*stage)) {
+            anyhow::bail!("{} section failed to build: {err}", stage.label());
+        }
+        let sources = esm::discover::resolve_sources(esm, "en")?;
+        for (stage, found) in [
+            (BuildStage::Strings, sources.strings.is_some()),
+            (BuildStage::Curves, sources.curves.is_some()),
+        ] {
+            anyhow::ensure!(
+                found || !sections.contains(&stage),
+                "{} has no source beside {} to build from",
+                stage.label(),
+                esm.display()
+            );
+        }
         if wants(BuildStage::Edid) {
             db.ensure_edid_index()?;
         }
@@ -158,7 +187,8 @@ mod tests {
     fn cache_state_label_covers_all_four_states() {
         let empty = CacheInventory {
             present: vec![],
-            missing: esm::progress::BuildStage::ALL.to_vec(),
+            missing: esm::progress::BuildStage::SECTIONS.to_vec(),
+            no_source: vec![],
         };
         assert_eq!(cache_state_label(&empty, false), "empty");
         assert_eq!(cache_state_label(&empty, true), "building");
@@ -173,12 +203,14 @@ mod tests {
                 esm::progress::BuildStage::Search,
                 esm::progress::BuildStage::Xref,
             ],
+            no_source: vec![],
         };
         assert_eq!(cache_state_label(&partial, false), "partial");
 
         let complete = CacheInventory {
-            present: esm::progress::BuildStage::ALL.to_vec(),
+            present: esm::progress::BuildStage::SECTIONS.to_vec(),
             missing: vec![],
+            no_source: vec![],
         };
         assert_eq!(cache_state_label(&complete, false), "complete");
     }
