@@ -49,7 +49,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 
 [dev-dependencies]
-ts-rs = "12.0.1"
+# `no-serde-warnings`: ts-rs warns on serde attributes it ignores, such as
+# `deserialize_with`, which leave the exported (serialized) shape unchanged.
+ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
 
 # Profile used by .github/workflows/release.yml to build the published binaries.
 # Kept separate from `release` so the local `cargo build --release` that backs
