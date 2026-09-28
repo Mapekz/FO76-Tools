@@ -238,7 +238,8 @@ fn referenced_by_walk(
     }
 
     let carrier_total = seed_rows.len();
-    let mut rows: Vec<RefRow> = Vec::new();
+    // Emitted referencer rows with their FormIDs, for sorting.
+    let mut rows: Vec<(FormId, RefRow)> = Vec::new();
     // FormId → index into `rows` for equal-depth carrier-tag unions.
     let mut emitted: HashMap<FormId, usize> = HashMap::new();
     // Newly-discovered nodes at `max_depth` that were not expanded further —
@@ -246,11 +247,7 @@ fn referenced_by_walk(
     let mut frontier_remaining: usize = 0;
 
     while let Some((current, origin, path_here)) = queue.pop_front() {
-        for r in db.referenced_by(current)? {
-            let fid = match crate::parse_form_id_input(&r.form_id) {
-                Ok(f) => f,
-                Err(_) => continue,
-            };
+        for fid in db.referencers(current)? {
             let hop_depth = path_here.len() + 1 - usize::from(emit_seeds);
 
             if !seen.insert(fid) {
@@ -259,11 +256,11 @@ fn referenced_by_walk(
                 // path). Deeper re-reaches and seed self-hits are ignored as
                 // before.
                 if let Some(&idx) = emitted.get(&fid)
-                    && rows[idx].depth == hop_depth
+                    && rows[idx].1.depth == hop_depth
                     && let Some(origin_fid) = origin
                 {
                     merge_tags(
-                        &mut rows[idx].tags,
+                        &mut rows[idx].1.tags,
                         seed_tags
                             .get(&origin_fid)
                             .map(|v| v.as_slice())
@@ -272,11 +269,10 @@ fn referenced_by_walk(
                 }
                 continue;
             }
-
-            let record_type = db
-                .index
-                .get_by_formid(fid)
-                .map(|m| m.signature.as_str().to_owned());
+            let Some(r) = db.record_row_for(fid)? else {
+                continue;
+            };
+            let record_type = r.record_type.clone();
 
             if type_matches(&record_type) {
                 let field_paths = if include_paths {
@@ -288,17 +284,20 @@ fn referenced_by_walk(
                     .and_then(|o| seed_tags.get(&o).cloned())
                     .unwrap_or_default();
                 let idx = rows.len();
-                rows.push(RefRow {
-                    form_id: r.form_id.clone(),
-                    record_type: record_type.clone(),
-                    editor_id: r.editor_id.clone(),
-                    name: r.name.clone(),
-                    offset: r.offset,
-                    depth: hop_depth,
-                    path: path_here.clone(),
-                    field_paths,
-                    tags,
-                });
+                rows.push((
+                    fid,
+                    RefRow {
+                        form_id: r.form_id.clone(),
+                        record_type: record_type.clone(),
+                        editor_id: r.editor_id.clone(),
+                        name: r.name.clone(),
+                        offset: r.offset,
+                        depth: hop_depth,
+                        path: path_here.clone(),
+                        field_paths,
+                        tags,
+                    },
+                ));
                 emitted.insert(fid, idx);
             }
 
@@ -316,18 +315,13 @@ fn referenced_by_walk(
         }
     }
 
-    let form_id_key = |r: &RefRow| {
-        crate::parse_form_id_input(&r.form_id)
-            .map(|f| f.0)
-            .unwrap_or(u32::MAX)
-    };
     match sort {
-        RefSort::Formid => rows.sort_by_key(form_id_key),
-        RefSort::Depth => rows.sort_by_key(|r| (r.depth, form_id_key(r))),
+        RefSort::Formid => rows.sort_by_key(|(fid, _)| fid.0),
+        RefSort::Depth => rows.sort_by_key(|(fid, r)| (r.depth, fid.0)),
     }
 
     let mut all_rows = seed_rows;
-    all_rows.append(&mut rows);
+    all_rows.extend(rows.into_iter().map(|(_, row)| row));
 
     let max_depth_seen = all_rows.iter().map(|r| r.depth).max().unwrap_or(0);
     let mut per_depth_totals = vec![0usize; max_depth_seen + 1];
@@ -529,10 +523,7 @@ pub fn find_ref_path(
         let mut next_frontier = Vec::new();
         if expand_back {
             for &node in &back_frontier {
-                for r in db.referenced_by(node)? {
-                    let Ok(fid) = crate::parse_form_id_input(&r.form_id) else {
-                        continue;
-                    };
+                for fid in db.referencers(node)? {
                     if back_parent.contains_key(&fid) {
                         continue;
                     }

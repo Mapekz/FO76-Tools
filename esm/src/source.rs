@@ -32,18 +32,17 @@ pub trait RecordSource {
 }
 
 /// Batch-fetch `fids` at [`ResolveDepth::Stub`] and return them keyed by
-/// their display-FormID string (`BulkRecordEntry::sel` for a
-/// `RecordSel::FormId` selector).
+/// FormID.
 pub(crate) fn bulk_fetch_map(
     f: &mut impl RecordSource,
     fids: &[FormId],
-) -> anyhow::Result<HashMap<String, BulkRecordEntry>> {
+) -> anyhow::Result<HashMap<FormId, BulkRecordEntry>> {
     if fids.is_empty() {
         return Ok(HashMap::new());
     }
     let sels: Vec<RecordSel> = fids.iter().map(|fid| RecordSel::FormId(*fid)).collect();
     let entries = f.bulk_get(&sels, ResolveDepth::Stub)?;
-    Ok(entries.into_iter().map(|e| (e.sel.clone(), e)).collect())
+    Ok(fids.iter().copied().zip(entries).collect())
 }
 
 /// A [`RecordSource`] over records and reverse-reference lists supplied up

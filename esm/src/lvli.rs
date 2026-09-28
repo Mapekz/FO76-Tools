@@ -814,10 +814,7 @@ fn walk_node(
                     0.0,
                 )
             } else {
-                match by_sel
-                    .get(&target_fid.display())
-                    .and_then(|e| e.fields.as_ref())
-                {
+                match by_sel.get(&target_fid).and_then(|e| e.fields.as_ref()) {
                     Some(sub_fields) => {
                         path.push(target_fid);
                         let child_scale = TreeScale {

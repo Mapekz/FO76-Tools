@@ -1070,14 +1070,23 @@ impl Database {
     /// persisted to its own `xref` rkyv section so subsequent calls —
     /// in this process or a fresh one — are instant.
     pub fn referenced_by(&self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
-        let referencers = self.xref_lookup(form_id)?;
         let mut out = Vec::new();
-        for referencer in referencers {
+        for referencer in self.referencers(form_id)? {
             if let Some(row) = self.record_row_for(referencer)? {
                 out.push(row);
             }
         }
         Ok(out)
+    }
+
+    /// The FormIDs of the indexed records that reference `form_id`, in
+    /// [`Database::referenced_by`]'s order, without building their rows.
+    pub(crate) fn referencers(&self, form_id: FormId) -> anyhow::Result<Vec<FormId>> {
+        Ok(self
+            .xref_lookup(form_id)?
+            .into_iter()
+            .filter(|&id| self.index.get_by_formid(id).is_some())
+            .collect())
     }
 
     /// Build a [`RecordRow`] (resolved type/EditorID/name) for an arbitrary

@@ -68,9 +68,9 @@
 //! in-process through the [`RecordSource`] seam — no new `Op` variant; the
 //! pure logic here doesn't know where its records come from.
 
-use crate::fields::{is_ref_stub, is_truthy, named};
+use crate::fields::{dedup_sorted, is_ref_stub, is_truthy, named, stub_formid};
 use crate::ops::RecordSel;
-use crate::source::RecordSource;
+use crate::source::{RecordSource, bulk_fetch_map};
 use crate::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
@@ -719,20 +719,33 @@ fn mgef_targets_in_effects_array(effects: &[Value]) -> Vec<Value> {
     out
 }
 
-/// Given an already-bulk-fetched MGEF target (looked up in `by_sel`, keyed by
-/// formid string), extract `"Perk to Apply"`/`"Equip Ability"` into a compact
+/// Records fetched by FormID (see [`fetch_stubs`]).
+type Fetched = HashMap<FormId, BulkRecordEntry>;
+
+/// Fetch, once each, the records these reference stubs name.
+fn fetch_stubs<'v>(
+    f: &mut impl RecordSource,
+    stubs: impl IntoIterator<Item = &'v Value>,
+) -> anyhow::Result<Fetched> {
+    let mut fids: Vec<FormId> = stubs
+        .into_iter()
+        .filter_map(|s| stub_formid(Some(s)))
+        .collect();
+    dedup_sorted(&mut fids);
+    bulk_fetch_map(f, &fids)
+}
+
+/// The fetched record a reference stub names.
+fn fetched<'a>(by_fid: &'a Fetched, stub: &Value) -> Option<&'a BulkRecordEntry> {
+    by_fid.get(&stub_formid(Some(stub))?)
+}
+
+/// Given an already-bulk-fetched MGEF target, extract `"Perk to Apply"`/`"Equip Ability"` into a compact
 /// [`Evidence`]. `None` if the MGEF wasn't found/failed to fetch, or has
 /// neither field set — the common case, most magic effects are plain
 /// damage/buff effects with nothing further to chase.
-fn mgef_pass_through_evidence(
-    mgef_target: &Value,
-    by_sel: &HashMap<&str, &BulkRecordEntry>,
-) -> Option<Evidence> {
-    let formid = mgef_target
-        .get("formid")
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let entry = by_sel.get(formid).copied()?;
+fn mgef_pass_through_evidence(mgef_target: &Value, by_fid: &Fetched) -> Option<Evidence> {
+    let entry = fetched(by_fid, mgef_target)?;
     let fields = entry.fields.as_ref()?;
     let perk_to_apply = walk_path(fields, "Magic Effect Data.Data.Perk to Apply")
         .filter(|v| is_truthy(Some(*v)))
@@ -779,10 +792,8 @@ fn note(text: impl Into<String>) -> EvidenceDetail {
     EvidenceDetail::Note { note: text.into() }
 }
 
-fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) -> Evidence {
-    let formid = target.get("formid").and_then(Value::as_str).unwrap_or("");
-    let entry = by_sel.get(formid).copied();
-    let entry = match entry {
+fn forward_evidence(target: &Value, by_fid: &Fetched) -> Evidence {
+    let entry = match fetched(by_fid, target) {
         None => {
             return Evidence {
                 source: stub(target),
@@ -941,11 +952,7 @@ pub(crate) fn summarize_explosion(fields: &Value) -> ExplosionSummary {
 
 /// Build forward evidence for a PROJ-targeting OMOD property: speed/type plus
 /// the linked EXPL's radius/force/stagger/chain/damage summary when present.
-fn projectile_evidence(
-    target: &Value,
-    proj_fields: &Value,
-    expl_by_sel: &HashMap<&str, &BulkRecordEntry>,
-) -> Evidence {
+fn projectile_evidence(target: &Value, proj_fields: &Value, expl_by_fid: &Fetched) -> Evidence {
     let mut detail = ProjectileDetail::default();
     if let Some(data) = proj_fields.get("Data") {
         if is_truthy(data.get("Speed")) {
@@ -957,8 +964,7 @@ fn projectile_evidence(
         }
         if let Some(expl) = data.get("Explosion").filter(|v| is_ref_stub(v)) {
             detail.explosion = Some(stub(expl));
-            let expl_fid = expl.get("formid").and_then(Value::as_str).unwrap_or("");
-            if let Some(entry) = expl_by_sel.get(expl_fid)
+            if let Some(entry) = fetched(expl_by_fid, expl)
                 && entry.error.is_none()
             {
                 let expl_fields = entry.fields.as_ref().unwrap_or(&Value::Null);
@@ -996,13 +1002,9 @@ fn tag_keyword_evidence(target: &Value, kywd_fields: Option<&Value>, type_name: 
     }
 }
 
-/// Look up a successfully-fetched KYWD's decoded fields from a `bulk_get` map
-/// keyed by formid display string.
-fn kywd_fields_from_map<'a>(
-    by_sel: &'a HashMap<&str, &BulkRecordEntry>,
-    formid: &str,
-) -> Option<&'a Value> {
-    let entry = by_sel.get(formid)?;
+/// A successfully-fetched KYWD's decoded fields.
+fn kywd_fields_from_map<'a>(by_fid: &'a Fetched, target: &Value) -> Option<&'a Value> {
+    let entry = fetched(by_fid, target)?;
     if entry.error.is_some() {
         return None;
     }
@@ -1023,7 +1025,7 @@ fn classify_property_row(
     prop: &Value,
     property_index: usize,
     source_omod: Option<Value>,
-    kywd_by_sel: &HashMap<&str, &BulkRecordEntry>,
+    kywd_by_fid: &Fetched,
 ) -> (Hop, Option<FetchDest>) {
     let prop_name = named(prop.get("Property"));
     let function = named(prop.get("Function Type"));
@@ -1061,8 +1063,7 @@ fn classify_property_row(
     hop.target = Some(target.clone());
 
     let dest = if rt == "KYWD" {
-        let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
-        if let Some(fields) = kywd_fields_from_map(kywd_by_sel, fid) {
+        if let Some(fields) = kywd_fields_from_map(kywd_by_fid, &target) {
             let type_name = named(fields.get("Type"));
             if is_populated_kywd_type(&type_name) {
                 hop.kind = HopKind::TagKeyword;
@@ -1127,31 +1128,31 @@ fn collect_property_sources(
         .unwrap_or_default();
     let mut sources: Vec<(Vec<Value>, Option<Value>)> = vec![(root_properties, None)];
 
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut queue: VecDeque<(String, usize)> = VecDeque::new();
-    if include_role(root_flags) == IncludeRole::Compose
-        && let Some(includes) = root_fields
+    // The mod templates an OMOD's `Data.Includes[]` names, capped per level.
+    let included = |fields: &Value| -> Vec<FormId> {
+        fields
             .pointer("/Data/Includes")
             .and_then(Value::as_array)
-    {
-        for inc in includes.iter().take(OMOD_INCLUDE_ENQUEUE_CAP) {
-            if let Some(fid) = inc
-                .get("Mod")
-                .and_then(|m| m.get("formid"))
-                .and_then(Value::as_str)
-                && visited.insert(fid.to_string())
-            {
-                queue.push_back((fid.to_string(), 1));
+            .into_iter()
+            .flatten()
+            .take(OMOD_INCLUDE_ENQUEUE_CAP)
+            .filter_map(|inc| stub_formid(inc.get("Mod")))
+            .collect()
+    };
+    let mut visited: HashSet<FormId> = HashSet::new();
+    let mut queue: VecDeque<(FormId, usize)> = VecDeque::new();
+    if include_role(root_flags) == IncludeRole::Compose {
+        for fid in included(root_fields) {
+            if visited.insert(fid) {
+                queue.push_back((fid, 1));
             }
         }
     }
 
-    while let Some((fid_str, depth)) = queue.pop_front() {
+    while let Some((fid, depth)) = queue.pop_front() {
         if depth > OMOD_INCLUDE_MAX_DEPTH {
             continue;
         }
-        let fid = crate::parse_form_id_input(&fid_str)
-            .with_context(|| format!("invalid include FormID {fid_str:?}"))?;
         let fetched = f.bulk_get(&[RecordSel::FormId(fid)], ResolveDepth::Stub)?;
         let Some(entry) = fetched.into_iter().next() else {
             continue;
@@ -1161,7 +1162,7 @@ fn collect_property_sources(
         }
         let fields = entry.fields.clone().unwrap_or(Value::Null);
         let omod_stub = json!({
-            "formid": fid_str,
+            "formid": fid.display(),
             "editor_id": entry.editor_id.clone().unwrap_or_default(),
             "record_type": entry.header.as_ref().map(|h| h.signature.clone()).unwrap_or_else(|| "OMOD".to_string()),
         });
@@ -1173,18 +1174,10 @@ fn collect_property_sources(
         sources.push((properties, Some(omod_stub)));
 
         let flags = entry.header.as_ref().map_or(0, |h| h.flags);
-        if depth < OMOD_INCLUDE_MAX_DEPTH
-            && include_role(flags) == IncludeRole::Compose
-            && let Some(includes) = fields.pointer("/Data/Includes").and_then(Value::as_array)
-        {
-            for inc in includes.iter().take(OMOD_INCLUDE_ENQUEUE_CAP) {
-                if let Some(child_fid) = inc
-                    .get("Mod")
-                    .and_then(|m| m.get("formid"))
-                    .and_then(Value::as_str)
-                    && visited.insert(child_fid.to_string())
-                {
-                    queue.push_back((child_fid.to_string(), depth + 1));
+        if depth < OMOD_INCLUDE_MAX_DEPTH && include_role(flags) == IncludeRole::Compose {
+            for child in included(&fields) {
+                if visited.insert(child) {
+                    queue.push_back((child, depth + 1));
                 }
             }
         }
@@ -1235,20 +1228,14 @@ fn reverse_chase(
         return Ok(Vec::new());
     }
 
-    let mut ids: Vec<String> = rows.iter().map(|r| r.form_id.clone()).collect();
-    ids.sort();
-    ids.dedup();
-    let sels: Vec<RecordSel> = ids
-        .iter()
-        .map(|s| crate::parse_form_id_input(s).map(RecordSel::FormId))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let fetched = f.bulk_get(&sels, ResolveDepth::Stub)?;
-    let by_sel: HashMap<&str, &BulkRecordEntry> =
-        fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+    let row_fid = |row: &RefRow| crate::parse_form_id_input(&row.form_id).ok();
+    let mut fids: Vec<FormId> = rows.iter().filter_map(row_fid).collect();
+    dedup_sorted(&mut fids);
+    let by_fid = bulk_fetch_map(f, &fids)?;
 
     let mut evidence = Vec::new();
     for row in &rows {
-        let entry = by_sel.get(row.form_id.as_str()).copied();
+        let entry = row_fid(row).and_then(|fid| by_fid.get(&fid));
         let fields = entry.and_then(|e| e.fields.clone()).unwrap_or(Value::Null);
         let paths: Vec<Option<&str>> = match &row.field_paths {
             Some(p) if !p.is_empty() => p.iter().map(|s| Some(s.as_str())).collect(),
@@ -1298,39 +1285,19 @@ fn mgef_pass_through(
     f: &mut impl RecordSource,
     sources: &[(usize, Vec<Value>)],
 ) -> anyhow::Result<Vec<(usize, Evidence)>> {
-    let mut all_targets: Vec<Value> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    for (_, effects) in sources {
-        for t in mgef_targets_in_effects_array(effects) {
-            let fid = t
-                .get("formid")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            if seen.insert(fid) {
-                all_targets.push(t);
-            }
-        }
-    }
+    let all_targets: Vec<Value> = sources
+        .iter()
+        .flat_map(|(_, effects)| mgef_targets_in_effects_array(effects))
+        .collect();
     if all_targets.is_empty() {
         return Ok(Vec::new());
     }
-
-    let sels: Vec<RecordSel> = all_targets
-        .iter()
-        .map(|t| {
-            let fid_str = t.get("formid").and_then(Value::as_str).unwrap_or("");
-            crate::parse_form_id_input(fid_str).map(RecordSel::FormId)
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let fetched = f.bulk_get(&sels, ResolveDepth::Stub)?;
-    let by_sel: HashMap<&str, &BulkRecordEntry> =
-        fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+    let by_fid = fetch_stubs(f, &all_targets)?;
 
     let mut out = Vec::new();
     for (idx, effects) in sources {
         for target in mgef_targets_in_effects_array(effects) {
-            if let Some(ev) = mgef_pass_through_evidence(&target, &by_sel) {
+            if let Some(ev) = mgef_pass_through_evidence(&target, &by_fid) {
                 out.push((*idx, ev));
             }
         }
@@ -1421,37 +1388,15 @@ pub(crate) fn omod_chase(
     let sources = collect_property_sources(f, fields, root_flags)?;
 
     // ---- one bulk_get for every KYWD-typed property target (Type/Notes) ----
-    let mut kywd_fids: Vec<String> = Vec::new();
-    for (properties, _) in &sources {
-        for prop in properties {
-            let value1 = field_or_null(prop.get("Value 1"));
-            if !is_ref_stub(&value1) {
-                continue;
-            }
-            let rt = value1
-                .get("record_type")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            if rt == "KYWD"
-                && let Some(fid) = value1.get("formid").and_then(Value::as_str)
-            {
-                kywd_fids.push(fid.to_string());
-            }
-        }
-    }
-    kywd_fids.sort();
-    kywd_fids.dedup();
-    let kywd_sels: Vec<RecordSel> = kywd_fids
+    let kywd_targets: Vec<Value> = sources
         .iter()
-        .map(|s| crate::parse_form_id_input(s).map(RecordSel::FormId))
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let kywd_fetched = if kywd_sels.is_empty() {
-        Vec::new()
-    } else {
-        f.bulk_get(&kywd_sels, ResolveDepth::Stub)?
-    };
-    let kywd_by_sel: HashMap<&str, &BulkRecordEntry> =
-        kywd_fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+        .flat_map(|(properties, _)| properties)
+        .map(|prop| field_or_null(prop.get("Value 1")))
+        .filter(|value1| {
+            is_ref_stub(value1) && value1.get("record_type").and_then(Value::as_str) == Some("KYWD")
+        })
+        .collect();
+    let kywd_by_fid = fetch_stubs(f, &kywd_targets)?;
 
     let mut hops: Vec<Hop> = Vec::new();
     let mut forward_targets: Vec<(usize, Value)> = Vec::new();
@@ -1459,7 +1404,7 @@ pub(crate) fn omod_chase(
 
     for (properties, source_omod) in &sources {
         for (i, prop) in properties.iter().enumerate() {
-            let (hop, dest) = classify_property_row(prop, i, source_omod.clone(), &kywd_by_sel);
+            let (hop, dest) = classify_property_row(prop, i, source_omod.clone(), &kywd_by_fid);
             let hop_idx = hops.len();
             match dest {
                 Some(FetchDest::Forward(t)) => forward_targets.push((hop_idx, t)),
@@ -1472,69 +1417,28 @@ pub(crate) fn omod_chase(
 
     // ---- forward fetch (perk_grant + direct ENCH/SPEL/PROJ attachments) ----
     if !forward_targets.is_empty() {
-        let sels: Vec<RecordSel> = forward_targets
-            .iter()
-            .map(|(_, t)| {
-                let fid_str = t.get("formid").and_then(Value::as_str).unwrap_or("");
-                crate::parse_form_id_input(fid_str).map(RecordSel::FormId)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let fetched = f.bulk_get(&sels, ResolveDepth::Stub)?;
-        let by_sel: HashMap<&str, &BulkRecordEntry> =
-            fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+        let by_fid = fetch_stubs(f, forward_targets.iter().map(|(_, t)| t))?;
 
-        // Collect EXPL formids from every PROJ target's Data.Explosion for one
-        // batched follow-up fetch (PROJ evidence needs the linked explosion).
-        let mut expl_fids: Vec<String> = Vec::new();
-        for (_, target) in &forward_targets {
-            let rt = target
-                .get("record_type")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            if rt != "PROJ" {
-                continue;
-            }
-            let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
-            let Some(entry) = by_sel.get(fid) else {
-                continue;
-            };
-            if let Some(expl_fid) = entry
-                .fields
-                .as_ref()
-                .and_then(|fl| fl.pointer("/Data/Explosion/formid"))
-                .and_then(Value::as_str)
-            {
-                expl_fids.push(expl_fid.to_string());
-            }
-        }
-        expl_fids.sort();
-        expl_fids.dedup();
-        let expl_sels: Vec<RecordSel> = expl_fids
+        // One batched follow-up fetch for every PROJ target's Data.Explosion
+        // (PROJ evidence needs the linked explosion).
+        let is_proj =
+            |target: &Value| target.get("record_type").and_then(Value::as_str) == Some("PROJ");
+        let explosions: Vec<&Value> = forward_targets
             .iter()
-            .map(|s| crate::parse_form_id_input(s).map(RecordSel::FormId))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let expl_fetched = if expl_sels.is_empty() {
-            Vec::new()
-        } else {
-            f.bulk_get(&expl_sels, ResolveDepth::Stub)?
-        };
-        let expl_by_sel: HashMap<&str, &BulkRecordEntry> =
-            expl_fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+            .filter(|(_, target)| is_proj(target))
+            .filter_map(|(_, target)| fetched(&by_fid, target)?.fields.as_ref())
+            .filter_map(|fields| fields.pointer("/Data/Explosion"))
+            .collect();
+        let expl_by_fid = fetch_stubs(f, explosions)?;
 
         for (i, target) in &forward_targets {
-            let rt = target
-                .get("record_type")
-                .and_then(Value::as_str)
-                .unwrap_or("");
-            if rt == "PROJ" {
-                let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
-                let proj_fields = by_sel
-                    .get(fid)
+            if is_proj(target) {
+                let proj_fields = fetched(&by_fid, target)
                     .and_then(|e| e.fields.as_ref())
                     .unwrap_or(&Value::Null);
-                hops[*i].evidence = vec![projectile_evidence(target, proj_fields, &expl_by_sel)];
+                hops[*i].evidence = vec![projectile_evidence(target, proj_fields, &expl_by_fid)];
             } else {
-                hops[*i].evidence = vec![forward_evidence(target, &by_sel)];
+                hops[*i].evidence = vec![forward_evidence(target, &by_fid)];
             }
         }
 
@@ -1574,12 +1478,11 @@ pub(crate) fn omod_chase(
         let Some(target) = hop.target.clone() else {
             continue;
         };
-        let fid = target.get("formid").and_then(Value::as_str).unwrap_or("");
         // Only demote when we successfully fetched the KYWD's own record —
         // without Type/Notes we can't build the synthetic tag evidence the
         // walk renderer expects, and a failed lookup leaves the hop as a
         // KeywordHook dead-end (test sources that omit KYWD bodies).
-        let Some(fields) = kywd_fields_from_map(&kywd_by_sel, fid) else {
+        let Some(fields) = kywd_fields_from_map(&kywd_by_fid, &target) else {
             continue;
         };
         hop.kind = HopKind::TagKeyword;
@@ -1666,18 +1569,9 @@ fn effect_chase(
 
     // ---- forward fetch (PERK's Ability/Quest/Spell/Item/Leveled Item targets): 1 bulk call ----
     if !forward_targets.is_empty() {
-        let sels: Vec<RecordSel> = forward_targets
-            .iter()
-            .map(|(_, t)| {
-                let fid_str = t.get("formid").and_then(Value::as_str).unwrap_or("");
-                crate::parse_form_id_input(fid_str).map(RecordSel::FormId)
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let fetched = f.bulk_get(&sels, ResolveDepth::Stub)?;
-        let by_sel: HashMap<&str, &BulkRecordEntry> =
-            fetched.iter().map(|e| (e.sel.as_str(), e)).collect();
+        let by_fid = fetch_stubs(f, forward_targets.iter().map(|(_, t)| t))?;
         for (i, target) in &forward_targets {
-            hops[*i].evidence = vec![forward_evidence(target, &by_sel)];
+            hops[*i].evidence = vec![forward_evidence(target, &by_fid)];
         }
     }
 
@@ -1837,8 +1731,8 @@ mod tests {
                 }}
             }),
         );
-        let by_sel: HashMap<&str, &BulkRecordEntry> = [("0x1", &entry)].into_iter().collect();
-        let ev = mgef_pass_through_evidence(&mgef_target, &by_sel).expect("evidence");
+        let by_fid: Fetched = [(FormId::new(1), entry)].into_iter().collect();
+        let ev = mgef_pass_through_evidence(&mgef_target, &by_fid).expect("evidence");
         let EvidenceDetail::PassThrough(pass) = &ev.detail else {
             panic!("expected pass-through evidence, got {:?}", ev.detail);
         };
@@ -1881,8 +1775,8 @@ mod tests {
     fn mgef_pass_through_evidence_returns_none_when_neither_field_set() {
         let mgef_target = json!({"formid": "0x1", "record_type": "MGEF"});
         let entry = ok_test_entry("0x1", json!({"Magic Effect Data": {"Data": {}}}));
-        let by_sel: HashMap<&str, &BulkRecordEntry> = [("0x1", &entry)].into_iter().collect();
-        assert!(mgef_pass_through_evidence(&mgef_target, &by_sel).is_none());
+        let by_fid: Fetched = [(FormId::new(1), entry)].into_iter().collect();
+        assert!(mgef_pass_through_evidence(&mgef_target, &by_fid).is_none());
     }
 
     fn ok_test_entry(sel: &str, fields: Value) -> BulkRecordEntry {

@@ -888,7 +888,7 @@ fn digest_magic_item(
         let mgef_fields = base_effect
             .as_ref()
             .and_then(|b| stub_formid(Some(b)))
-            .and_then(|fid| by_sel.get(&fid.display()))
+            .and_then(|fid| by_sel.get(&fid))
             .and_then(|entry| entry.fields.as_ref());
         let summary = mgef_fields.map(mgef_summary);
         let archetype = summary
