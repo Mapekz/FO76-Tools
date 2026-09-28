@@ -5,7 +5,7 @@
 // EMPTY — a hit means fix the doc (or the code), not add an exception.
 //
 // Five checks:
-//   1. Every path-shaped backtick token in README.md/AGENTS.md resolves on disk.
+//   1. Every path-shaped backtick token in README.md and AGENTS.md resolves on disk.
 //   2. Every `bun run <script>` / `just <recipe>` mentioned in README.md,
 //      AGENTS.md, or the justfile names a real package.json script / justfile
 //      recipe; no npm/npx/pnpm invocation is documented as a command to run.
@@ -27,7 +27,6 @@ function read(absPath: string): string {
 }
 
 // ── Known-intentional exceptions — start EMPTY. A hit means fix the doc. ───
-const SKIP_PATH_REFS: Set<string> = new Set()
 const SKIP_COMMAND_REFS: Set<string> = new Set()
 const SKIP_NPM_MENTIONS: Set<string> = new Set()
 
@@ -55,85 +54,6 @@ function codeRegions(markdown: string): string[] {
 function stripTrailingPunct(tok: string): string {
   return tok.replace(/[,.;:)\]]+$/, '')
 }
-
-// ── Check 1: path references resolve ────────────────────────────────────
-
-// Bare root-level filenames that carry their own extension, e.g. `bun.lock`,
-// `.oxlintrc.json`, `package.json`. Deliberately narrow (no `.ts`/`.tsx`) so
-// a bare filename mentioned in prose without its directory (e.g. `index.ts`
-// in the architecture table's Purpose column) is never mistaken for a
-// root-relative path — those mentions are informal, not literal paths.
-const ROOT_FILE_RE = /^\.?[\w.-]+\.(json|lock|md|yml|yaml|toml)$/
-
-function stripGlob(pathTok: string): string {
-  const star = pathTok.indexOf('*')
-  if (star === -1) return pathTok
-  const upTo = pathTok.slice(0, star)
-  const lastSlash = upTo.lastIndexOf('/')
-  return lastSlash === -1 ? '' : upTo.slice(0, lastSlash)
-}
-
-function trimSpan(raw: string): string {
-  let s = raw.trim()
-  if (s.startsWith('"') && s.endsWith('"') && s.length > 1) s = s.slice(1, -1)
-  return stripTrailingPunct(s)
-}
-
-/** Classifies a trimmed inline-span token as a checkable path reference, or
- * returns null if it doesn't look like one (prose word, identifier, glob
- * with no directory, shell command, etc). */
-function classifyPathToken(rawSpan: string): { rel: string; base: string } | null {
-  if (/\s/.test(rawSpan)) return null // shell commands / multi-word prose
-  const s = trimSpan(rawSpan)
-  if (s === '') return null
-
-  const dotdot = s.indexOf('../')
-  if (dotdot !== -1) {
-    // `rel` keeps its leading `../` and joins onto ROOT (not WORKSPACE) so
-    // path.join resolves it exactly once — WORKSPACE is already "one level
-    // up"; joining an already-`../`-prefixed rel onto it would pop twice.
-    const rel = stripGlob(s.slice(dotdot))
-    if (rel === '../') return null
-    return { rel, base: ROOT }
-  }
-  if (s.startsWith('src/')) {
-    const rel = stripGlob(s)
-    if (rel === '') return null
-    return { rel, base: ROOT }
-  }
-  if (ROOT_FILE_RE.test(s) || s === '.gitignore') {
-    return { rel: s, base: ROOT }
-  }
-  return null
-}
-
-test('doc path references resolve (README.md, AGENTS.md)', () => {
-  const docs: [string, string][] = [
-    ['README.md', read(join(ROOT, 'README.md'))],
-    ['AGENTS.md', read(join(ROOT, 'AGENTS.md'))],
-  ]
-
-  const failures: string[] = []
-  for (const [name, content] of docs) {
-    for (const span of inlineSpans(content)) {
-      const trimmed = span.trim()
-      if (trimmed === '') continue
-      const ref = classifyPathToken(span)
-      if (!ref) continue
-      if (SKIP_PATH_REFS.has(ref.rel)) continue
-      const candidate = join(ref.base, ref.rel)
-      if (!existsSync(candidate)) {
-        failures.push(
-          `${name}: \`${trimmed}\` does not exist at ${candidate} — either the doc is stale ` +
-            `(fix the path) or this is intentional (add "${ref.rel}" to SKIP_PATH_REFS with a ` +
-            `comment explaining why)`,
-        )
-      }
-    }
-  }
-
-  expect(failures).toEqual([])
-})
 
 // ── Check 2: command references are real ────────────────────────────────
 

@@ -99,8 +99,8 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<FormsSection> {
 ///
 /// `edid_to_form`'s archived key type is `ArchivedString`, which — unlike
 /// the `rend` endian-wrapper integer types (see [`XrefSection`]'s doc
-/// comment) — DOES implement `Borrow<str>` (`rkyv` 0.8.17,
-/// `src/string/mod.rs`), with a `Hash` impl that delegates to `str::hash`.
+/// comment) — DOES implement `Borrow<str>` (`rkyv` 0.8.17's
+/// `string` module), with a `Hash` impl that delegates to `str::hash`.
 /// So [`Index::get_by_edid`] can call `.get(edid)` directly with a plain
 /// `&str` — no key-conversion step needed here, unlike [`XrefSection`]'s
 /// `u32` keys.

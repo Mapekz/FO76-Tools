@@ -58,7 +58,7 @@ class RuleContext(TypedDict):
     folds it into `lints.json`'s `meta.notes` afterward.
 
     `client` is an `esmcli.EsmGateway`-shaped object (tests pass
-    `tests/fake_gateway.FakeGateway`)."""
+    `FakeGateway` (`tests/fake_gateway.py`))."""
 
     records: dict[str, Any]
     ref_names: dict[str, Any]

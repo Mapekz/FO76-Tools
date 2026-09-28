@@ -10,7 +10,7 @@ on:
 jobs:
   # ── Rust: fmt / clippy / test ──────────────────────────────────────────────
   #
-  # One job over the repo-root Cargo workspace (esm, esm-napi, ba2), through
+  # One job over the repo-root Cargo workspace (esm, esm-napi, ba2, repo-policy), through
   # the projects' own `just` recipes.  setup-rust-toolchain reads the repo-root
   # rust-toolchain.toml, so CI always matches the pinned local toolchain.
   rust:
@@ -41,6 +41,11 @@ jobs:
 
       - name: ba2
         run: just ba2::check
+
+      # Repo-wide documentation policy (repo-policy/): links and cited paths
+      # resolve against tracked files; no file names a downstream consumer.
+      - name: doc policy
+        run: just policy
 
   # ── Python tooling tests ──────────────────────────────────────────────────
   #

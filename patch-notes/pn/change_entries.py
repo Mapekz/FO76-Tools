@@ -117,7 +117,7 @@ EXCLUDED_TYPES = {"WRLD", "CELL"}
 CUT_MARKERS = ["ZZZ", "CUT", "POST", "DEPRECATED", "DELETE"]
 
 # Top-level diff noise (GLOBAL_NOISE_FIELDS, PLACEMENT_NOISE_FIELDS,
-# CELL_NOISE_FIELDS in esm/src/diff.rs) is stripped before this tooling
+# CELL_NOISE_FIELDS in esm/src/diff/noise.rs) is stripped before this tooling
 # runs.  --keep-noise surfaces those fields; this layer does not re-suppress.
 
 # The full set of values `ChangeEntry["suppressed"]` may take (besides None).

@@ -266,7 +266,7 @@ enum Commands {
         /// legend of every matched scope+id+name and a `PROP` column
         /// attributing each row. Unlike --entry-point, never auto-detected
         /// from a bare positional target (property names are short/generic and
-        /// collide with real EditorIDs — see docs/adr/0004).
+        /// collide with real EditorIDs — see `docs/adr/0004-refs-seed-selectors.md`).
         #[arg(long = "omod-property", visible_alias = "prop", conflicts_with_all = ["formid", "edid", "entry_point", "to"])]
         omod_property: Option<String>,
         /// FormID or EditorID of a second record — instead of walking the

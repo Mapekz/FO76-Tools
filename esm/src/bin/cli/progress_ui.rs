@@ -44,7 +44,7 @@ fn tty_poll_interval() -> Duration {
 
 /// How often a non-TTY (piped/redirected) run emits a plain progress line —
 /// much coarser than the TTY refresh rate so captured logs (CI,
-/// `tools/esm_gateway.py`) stay readable rather than one line per poll.
+/// `patch-notes/pn/esmcli.py`) stay readable rather than one line per poll.
 const PLAIN_LINE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Bar width in character cells, fixed rather than terminal-width-adaptive

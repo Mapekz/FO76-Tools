@@ -12,7 +12,7 @@ Covers:
 `tests/fake_gateway.py`, with its own tests in
 `tests/test_fake_gateway.py`.
 
-Every test above uses only synthetic fixtures/stubs. `RealEsmIntegrationTests`
+Every test above uses only synthetic fixtures and stubs. `RealEsmIntegrationTests`
 at the bottom is the one exception: it drives `EsmGateway` end-to-end against
 the repo's `esm` binary, opted into with `$PN_TEST_ESM` (a real
 `SeventySix.esm`) the way `tests/diff.rs`'s `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B`

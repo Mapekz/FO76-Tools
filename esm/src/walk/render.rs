@@ -366,7 +366,7 @@ fn fmt_stub(stub: &Value) -> String {
 }
 
 /// Left-align each column to its widest cell, two-space-joined. A minimal,
-/// string-returning stand-in for `print_record_table` (`src/bin/cli.rs`,
+/// string-returning stand-in for `print_record_table` (`src/bin/cli/output.rs`,
 /// binary-crate-private and `println!`s directly rather than returning lines
 /// for `WalkNode::digest`) — not worth promoting/sharing for one caller.
 fn align_table(headers: &[&str], rows: &[Vec<String>]) -> Vec<String> {

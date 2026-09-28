@@ -2,8 +2,8 @@
 
 Status: accepted (2026-07-31)
 
-`walk` and `chase` began as ports of two prototypes from two consumer repos (dps-76's
-`esm-walk.ts`, patch-notes' `chase.py`) and overlapped heavily: on four of chase's five
+`walk` and `chase` began as ports of two prototypes (a downstream consumer's TypeScript
+record walker and patch-notes' `chase.py`) and overlapped heavily: on four of chase's five
 root types walk was a superset, and walk's OMOD digest was blind to keyword/AVIF-hook
 mechanisms — the most common interactive question in this domain. We decided the two
 subcommands serve two *contracts*, not two capabilities:

@@ -49,6 +49,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 
 [dev-dependencies]
+repo-policy = { path = "../repo-policy" }
 # `no-serde-warnings`: ts-rs warns on serde attributes it ignores, such as
 # `deserialize_with`, which leave the exported (serialized) shape unchanged.
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }

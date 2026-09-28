@@ -6,7 +6,7 @@
 #   just          -> fmt + clippy + test + gen-types + drift check + schema-fmt-check (full local esm pass)
 #   just release  -> build the release CLI (../target/release/esm, the workspace target)
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
-#   just audit    -> schema parity gate plus schema/hardcoded drift guards (needs ../TES5Edit)
+#   just audit    -> schema parity gate plus the schema and hardcoded-forms drift guards (needs ../TES5Edit)
 #   just schema   -> regenerate schema/fo76.json + fo76.ctda.json (needs ../TES5Edit)
 #   just schema-fmt -> canonicalize schema/fo76.overrides.json in place
 #   just schema-fmt-check -> verify schema/fo76.overrides.json is already canonical (also enforced in CI)

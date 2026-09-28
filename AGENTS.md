@@ -1,7 +1,8 @@
 # FO76-Tools
 
-Independent builds in one repository. Run commands from the relevant subdirectory;
-there is no root build. Before working in a subproject, read its scoped guidance:
+Four projects in one repository. The Rust crates share a root Cargo workspace (one
+`Cargo.lock`, one `target/`), and the root `justfile` runs each project's recipes.
+Before working in a project, read its scoped guidance:
 
 | Directory | Purpose | Guidance |
 |---|---|---|
@@ -12,8 +13,19 @@ there is no root build. Before working in a subproject, read its scoped guidance
 
 `esm/` and `esm-viewer/` are read-only. ESM mutation and serialization are
 permanently out of scope, not deferred. BA2 archive writing is supported.
-The standalone BA2 crate and ESM's minimal archive reader deliberately share no
-code; see [the duplication decision](esm/docs/adr/0009-ba2-duplication-is-deliberate.md).
+
+## Contexts
+
+Each project has its own vocabulary; `esm/CONTEXT.md` and `patch-notes/CONTEXT.md` are
+the glossaries, and [domain docs](docs/agents/domain.md) says how to use them.
+
+- **esm → patch-notes**: the pipeline runs the `esm` CLI (`esm diff`, `esm batch`) and
+  reads its JSON, so it shares esm's diff and record vocabulary.
+- **esm → esm-viewer**: the viewer runs esm's N-API addon (`esm/bindings/napi`) and shares
+  its record and decode vocabulary.
+- **ba2 ↔ esm**: none. esm reads strings and curve tables through its own minimal read-only
+  BA2 reader (`esm/src/ba2.rs`), not the `ba2` crate;
+  see [the duplication decision](esm/docs/adr/0009-ba2-duplication-is-deliberate.md).
 
 ## Validation map
 
@@ -39,9 +51,9 @@ rather than rerunning every subproject for unrelated edits.
 
 ## Dependencies
 
-Both Rust crates share root `deny.toml`, enforced by the dependency CI job.
-For dependency changes, run `cargo deny --config ../deny.toml --all-features check`
-from the affected crate. This differs from the TES5Edit schema audit.
+The workspace's one `Cargo.lock` is checked against root `deny.toml` by the `deps` CI
+job. For dependency changes, run `cargo deny --all-features check` from the repo root.
+This differs from the TES5Edit schema audit.
 
 The repo-root `rust-toolchain.toml` pins the toolchain and `rustfmt.toml` sets formatting for
 every crate; clippy takes its MSRV from each `Cargo.toml` `rust-version`. Keep `rust-version`
@@ -54,6 +66,10 @@ resolution does not hold upgrades back.
 - Shared backlog: GitHub Issues on `Mapekz/FO76-Tools` via `gh`;
   [issue workflow](docs/agents/issue-tracker.md) and
   [triage labels](docs/agents/triage-labels.md).
-- Domain terms and decisions: start with [CONTEXT-MAP.md](CONTEXT-MAP.md), then
-  the relevant subproject's glossary and ADRs. See [domain docs](docs/agents/domain.md).
+- Domain terms and decisions: "Contexts" above, then the relevant project's glossary
+  and ADRs.
+- Documentation policy: `just policy` (`repo-policy/`) fails on a markdown link or a
+  cited repo path (in markdown code or a code comment) that does not resolve, and on any
+  file naming a downstream consumer project. Each CLI's own docs are checked against
+  its `--help` by that crate's `tests/doc_drift.rs`.
 - Record deliberate scope exclusions beside the code they constrain, in present tense.

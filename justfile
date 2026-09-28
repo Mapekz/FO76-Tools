@@ -5,6 +5,7 @@
 #
 # Usage:
 #   just        -> every project's local check (CI runs these same recipes)
+#   just policy -> repo-wide documentation policy (links, cited paths, consumer names)
 #   just audit  -> esm's schema parity audit and drift guards (needs ./TES5Edit)
 
 mod esm
@@ -15,7 +16,14 @@ mod patch-notes
 default: check
 
 # Every project's local check.
-check: esm::check esm::tools-check ba2::check viewer::check patch-notes::check
+check: esm::check esm::tools-check ba2::check viewer::check patch-notes::check policy
+
+# Markdown links and cited repo paths resolve; no file names a downstream consumer.
+[doc("Repo-wide documentation policy: links, cited paths, consumer names")]
+policy:
+    cargo fmt -p repo-policy --check
+    cargo clippy -p repo-policy --all-targets -- -D warnings
+    cargo test -p repo-policy
 
 # esm's schema parity audit against ./TES5Edit, plus the schema and
 # hardcoded-forms drift guards.

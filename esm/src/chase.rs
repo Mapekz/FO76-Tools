@@ -5,13 +5,12 @@
 //!   is the machine-facing pipeline evidence contract: it always emits the
 //!   classified `ChaseTree` as JSON and hard-errors on any selector that
 //!   doesn't resolve to one of the five accepted root types. Its JSON shape
-//!   is frozen — a native port of `tools/chase/chase.py`'s output, still
-//!   consumed unchanged by the `/patch-notes` deep-writer agent. This module
+//!   is frozen: the `/patch-notes` deep-writer agent consumes it. This module
 //!   has no human text renderer of its own; interactive reading of a
 //!   classified OMOD lives entirely in `esm::walk`, which calls straight into
 //!   this module's classification functions (see [`omod_chase`]) and renders
 //!   the result itself.
-//! - **`esm walk`** (`src/walk.rs`) is the sole interactive surface. On an
+//! - **`esm walk`** (`src/walk/`) is the sole interactive surface. On an
 //!   OMOD root it runs this module's classifier inline and renders each
 //!   mechanism as path-sliced evidence rows under the record's digest — see
 //!   that module's docs for the exact rendering.
@@ -1324,7 +1323,7 @@ fn build_root_stub(entry: &BulkRecordEntry, fields: &Value) -> RootStub {
 /// `Effects[]` walk ([`effect_chase`]); anything else is rejected.
 ///
 /// `f` is anything implementing [`RecordSource`] — normally a
-/// `Backend`-backed fetcher (see `cmd_chase` in `src/bin/cli.rs`), or a fake
+/// `Backend`-backed fetcher (see `cmd_chase` in `src/bin/cli/walk.rs`), or a fake
 /// for tests (see `tests/chase.rs`).
 pub fn chase(
     f: &mut impl RecordSource,

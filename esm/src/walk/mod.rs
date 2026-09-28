@@ -70,7 +70,7 @@
 //! inlines directly onto the reference too.
 //!
 //! Two responsibilities stay with the caller (`cmd_walk` in
-//! `src/bin/cli.rs`) rather than living in this module, since neither fits
+//! `src/bin/cli/walk.rs`) rather than living in this module, since neither fits
 //! through `RecordSource`'s narrow bulk_get/refs-with-type-filter seam:
 //! - **not-found → search fallback**: when the root selector doesn't
 //!   resolve, [`walk`] returns a [`WalkResult`] with [`WalkResult::not_found`]

@@ -1,8 +1,5 @@
-//! Integration tests for `esm::chase` — the native port of
-//! `tools/chase/chase.py`, generalized to accept OMOD/PERK/SPEL/ALCH/ENCH
-//! selectors. Mirrors `tools/tests/test_chase.py`'s fixture (same synthetic
-//! FormIDs/fields) so the two can be eyeballed side by side during the parity
-//! check, even though this crate can't literally share Python's `FakeGateway`.
+//! Integration tests for `esm::chase` over OMOD, PERK, SPEL, ALCH and ENCH
+//! selectors.
 //!
 //! Records and reverse references come from a [`MemorySource`]; `refs`
 //! answers per `(target, type_filter)`, the exact two calls `chase()`'s
@@ -772,7 +769,7 @@ fn omod_with_no_properties_has_empty_hops() {
     assert!(tree.effect_hops.is_empty());
 }
 
-/// `chase` is JSON-only (see `docs/adr/0001`): `ChaseTree`'s JSON shape is a
+/// `chase` is JSON-only (see `docs/adr/0001-walk-interactive-chase-pipeline-json.md`): `ChaseTree`'s JSON shape is a
 /// frozen pipeline contract the `/patch-notes` deep-writer consumes, so the
 /// `#[serde(rename_all = "snake_case")]` hop-kind tags are load-bearing —
 /// this is the one test that round-trips the tree through `serde_json` and

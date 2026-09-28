@@ -204,7 +204,7 @@ class TestBuildComprehensiveConformance(unittest.TestCase):
 
 def _drop_vs_keep_diff():
     # Use raw (_unmapped) blobs for the "fully covered" cases — top-level diff
-    # noise is stripped in esm/src/diff.rs, not re-suppressed here.
+    # noise is stripped in esm/src/diff/noise.rs, not re-suppressed here.
     raw_only = {
         "from": {"_raw": True, "hex": "aa"},
         "to": {"_raw": True, "hex": "bb"},

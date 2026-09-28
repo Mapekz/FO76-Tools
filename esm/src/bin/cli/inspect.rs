@@ -146,7 +146,7 @@ pub(crate) fn cmd_coverage(
         }
     }
 
-    // Gate on decode/schema coverage only — not `unresolved`, which indicates
+    // Gate on decode and schema coverage only — not `unresolved`, which indicates
     // missing localization BA2 strings rather than a decode failure.
     if gate {
         let totals = &report.totals;

@@ -1,5 +1,5 @@
 [workspace]
-members = ["esm", "esm/bindings/napi", "ba2"]
+members = ["esm", "esm/bindings/napi", "ba2", "repo-policy"]
 resolver = "3"
 
 # Invariants the code states in prose, enforced: every `unsafe` block carries a

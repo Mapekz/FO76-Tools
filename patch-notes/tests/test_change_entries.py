@@ -183,7 +183,7 @@ class TestExtractChangesKinds(unittest.TestCase):
         self.assertEqual(entries[0]["kind"], "string")
 
     def test_object_bounds_not_suppressed_in_python(self):
-        # Object Bounds noise is stripped in esm/src/diff.rs; when --keep-noise
+        # Object Bounds noise is stripped in esm/src/diff/noise.rs; when --keep-noise
         # surfaces them, this layer leaves them renderable.
         entries = self._entries("0x01001001")
         for path in ("Object Bounds / X1", "Object Bounds / Y1"):

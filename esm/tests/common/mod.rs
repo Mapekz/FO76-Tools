@@ -265,7 +265,7 @@ pub fn make_xref_esm() -> Vec<u8> {
 /// WEAP EILV/IBSD/PHST stubs (see extract.py's `self.vars` hand overrides):
 /// a member whose JSON key is a bare 4-char raw signature (e.g. `"EILV"`,
 /// `"NVNM"`) rendering as an opaque `{"hex": ...}` leaf. Genuine, intentionally
-/// opaque fields are always named descriptively by the schema/Pascal (e.g.
+/// opaque fields are always named descriptively by the schema's Pascal source (e.g.
 /// `"Padding?"`, `"Unknown 2"`, `"Edge Index"`) rather than left under their
 /// raw signature, so this check needs no allowlist — a real subrecord-shaped
 /// key defaulting to its own signature as the display name is itself the

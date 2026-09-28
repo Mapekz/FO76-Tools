@@ -8,15 +8,15 @@ use crate::Backend;
 use crate::output::render_form_id;
 
 /// `chase` is JSON-only — a pipeline evidence contract, not something meant
-/// to be read directly (see `esm::chase`'s module docs and `docs/adr/0001`).
+/// to be read directly (see `esm::chase`'s module docs and `docs/adr/0001-walk-interactive-chase-pipeline-json.md`).
 /// The classifier itself runs in the library (`Op::Chase`, see
 /// `esm::ops::run`); this is one `Op` and a pretty-print.
 ///
 /// `--decimal` still affects *input* selector parsing here (`base`, for
 /// consistency with every other subcommand), but deliberately never touches
 /// this command's output: `chase`'s JSON is a machine pipeline contract
-/// (`docs/adr/0001`) consumed by `tools/patchnotes_lib.py`'s `is_formid_str`,
-/// which requires literal `0x` + 8 hex digits.
+/// (`docs/adr/0001-walk-interactive-chase-pipeline-json.md`) whose readers expect literal
+/// `0x` + 8 hex digits.
 pub(crate) fn cmd_chase(
     backend: &mut Backend,
     file: &Path,

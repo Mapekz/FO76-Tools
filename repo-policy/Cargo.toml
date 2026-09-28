@@ -1,0 +1,11 @@
+[package]
+name = "repo-policy"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+description = "Repo-wide documentation policy test, and the CLI-doc checks the crates' doc_drift tests share"
+
+[lints]
+workspace = true

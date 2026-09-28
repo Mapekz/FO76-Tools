@@ -73,8 +73,7 @@ def _sel_display(sel: Mapping[str, Any]) -> str:
     return formids.display(value) if kind == "form_id" else value
 
 
-# ─── esm binary discovery (the one find_esm_binary, shared by ─────────────
-# ─── make_patch_notes.py/build_bundles.py) ─────────────────────────────────
+# ─── esm binary discovery ────────────────────────────────────────────────────
 
 #: The repo root -- this file lives at patch-notes/pn/esmcli.py.
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -113,7 +112,7 @@ def find_esm_binary(explicit: str | Path | None = None) -> Path:
     )
 
 
-# ─── diff() command construction (moved from make_patch_notes.py) ──────────
+# ─── diff() command construction ────────────────────────────────────────────
 
 
 def build_diff_cmd(

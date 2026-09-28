@@ -32,7 +32,7 @@ Algorithm (see module docstring sections below for each step):
 library entry point; `main()` is a thin CLI wrapper. `client` is anything
 implementing `esmcli.EsmGateway`'s `refs()`/`record()` surface —
 normally an `esmcli.EsmGateway`,
-or `tests/fake_gateway.FakeGateway` in tests.
+or `FakeGateway` (`tests/fake_gateway.py`) in tests.
 
 Python 3, stdlib only.
 """

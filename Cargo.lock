@@ -84,6 +84,7 @@ dependencies = [
  "libc",
  "lz4_flex",
  "memmap2",
+ "repo-policy",
  "tempfile",
  "walkdir",
 ]
@@ -274,6 +275,7 @@ dependencies = [
  "log",
  "lz4_flex",
  "memmap2",
+ "repo-policy",
  "rkyv",
  "serde",
  "serde_json",
@@ -809,6 +811,10 @@ checksum = "663ba70707f96e871406fe10d68128412e619b06d1d47cb91c3a4c6501176240"
 dependencies = [
  "bytecheck",
 ]
+
+[[package]]
+name = "repo-policy"
+version = "0.1.0"
 
 [[package]]
 name = "rkyv"

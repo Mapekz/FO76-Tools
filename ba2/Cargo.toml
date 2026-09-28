@@ -46,5 +46,6 @@ tempfile = "3"
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
+repo-policy = { path = "../repo-policy" }
 globset = "0.4"
 tempfile = "3"

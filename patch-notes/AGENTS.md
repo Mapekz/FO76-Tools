@@ -17,7 +17,7 @@ Run commands from `patch-notes/`; `justfile` owns the recipes.
 - `pn/` is stdlib-only at runtime. `pn/esmcli.py` finds the `esm` binary at
   `../target/release/esm` (the workspace target), then on `PATH`.
 - Tests import `pn` and `tests` as packages; a stage that talks to `esm` takes its gateway as a
-  `client=` argument, so tests pass `tests/fake_gateway.FakeGateway` and production code never
+  `client=` argument, so tests pass `FakeGateway` (`tests/fake_gateway.py`) and production code never
   imports `tests/`.
 
 ## Layout

@@ -34,8 +34,8 @@ pub struct Database {
     pub(crate) index: Index,
     pub(crate) schema: Schema,
     /// Whether the ESM's TES4 header has the Localized flag set. Stays
-    /// `pub` (unlike its siblings below) — `src/bin/cli.rs`'s `diff` command
-    /// reads it directly across the bin/lib crate boundary.
+    /// `pub` (unlike its siblings below): the CLI's `diff` command
+    /// (`src/bin/cli/diff.rs`) reads it across the binary/library crate boundary.
     pub is_localized: bool,
     /// Resolved string tables, if a localization BA2 was found or supplied.
     pub(crate) localization: Option<Localization>,
@@ -215,7 +215,7 @@ impl Database {
     //
     // `Index` keeps the data (the five `Section`s) and the pure reads over
     // it; `Database` owns building it, since building a section needs the
-    // mmap'd ESM (plus the schema/localization/curves for `xref`'s full
+    // mmap'd ESM (plus the schema, localization and curves for `xref`'s full
     // decode) that only `Database` holds. The three functions actually
     // reachable from index.rs are `build_edid_section`/`build_search_section`/
     // `build_xref_section` — this crate-internal data/orchestration split
