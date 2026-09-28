@@ -74,7 +74,7 @@ fn cache_inventory_after_open_has_tree_and_forms_only() {
 #[test]
 fn cache_inventory_reflects_lazy_sections_after_use() {
     let tmp = write_esm(&make_minimal_esm(), "inventory_full");
-    let mut db = Database::open(&tmp).expect("open db");
+    let db = Database::open(&tmp).expect("open db");
 
     // Each call triggers its matching `ensure_*_index`, regardless of
     // whether the lookup itself finds anything — `record_by_edid` on a

@@ -192,6 +192,64 @@ pub(crate) enum Section<A> {
     },
 }
 
+/// A section that is mapped at open when its file is already valid, and
+/// otherwise built on first use. Shareable across threads: the first caller
+/// to need it builds it while later callers wait on `build_lock`, then every
+/// caller reads the same mapping for the life of the owner.
+pub(crate) struct LazySection<A> {
+    cell: std::sync::OnceLock<Section<A>>,
+    build_lock: std::sync::Mutex<()>,
+}
+
+impl<A> From<Section<A>> for LazySection<A> {
+    fn from(section: Section<A>) -> Self {
+        let cell = std::sync::OnceLock::new();
+        if matches!(section, Section::Mapped { .. }) {
+            let _ = cell.set(section);
+        }
+        LazySection {
+            cell,
+            build_lock: std::sync::Mutex::new(()),
+        }
+    }
+}
+
+impl<A> LazySection<A>
+where
+    A: rkyv::Portable
+        + for<'a> rkyv::bytecheck::CheckBytes<rkyv::api::high::HighValidator<'a, rkyv::rancor::Error>>,
+{
+    pub(crate) fn is_mapped(&self) -> bool {
+        self.cell.get().is_some_and(Section::is_mapped)
+    }
+
+    /// Borrow the archived root. `None` until the section is mapped.
+    pub(crate) fn get(&self) -> Option<&A> {
+        self.cell.get().and_then(Section::get)
+    }
+
+    /// The mapped section, running `build` first if nothing is mapped yet.
+    /// Concurrent callers in this process build once; `build` itself
+    /// coordinates with other processes (see `BuildLease`).
+    pub(crate) fn get_or_build(
+        &self,
+        build: impl FnOnce() -> anyhow::Result<Section<A>>,
+    ) -> anyhow::Result<&Section<A>> {
+        if let Some(section) = self.cell.get() {
+            return Ok(section);
+        }
+        let _guard = self
+            .build_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(section) = self.cell.get() {
+            return Ok(section);
+        }
+        let section = build()?;
+        Ok(self.cell.get_or_init(|| section))
+    }
+}
+
 /// Binds one archived section type to its [`SectionKind`] and layout
 /// fingerprint, in exactly one place: the `impl SectionSpec for
 /// rkyv::Archived<X>` block sitting next to `X`'s own definition (`tree.rs`
@@ -925,6 +983,42 @@ mod tests {
             vec![1, 2, 3, 4, 5]
         );
 
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn lazy_section_builds_once_under_concurrent_first_use() {
+        let path = test_path("lazy_section_concurrent");
+        let sig = test_sig();
+        let lazy: LazySection<rkyv::Archived<Dummy>> = Section::Absent.into();
+        assert!(!lazy.is_mapped());
+        let builds = std::sync::atomic::AtomicUsize::new(0);
+
+        std::thread::scope(|s| {
+            for _ in 0..8 {
+                s.spawn(|| {
+                    let section = lazy
+                        .get_or_build(|| {
+                            builds.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            std::thread::sleep(std::time::Duration::from_millis(20));
+                            write_section_raw(
+                                &path,
+                                TEST_KIND,
+                                sig,
+                                TEST_CACHE_VERSION,
+                                TEST_LAYOUT_FINGERPRINT,
+                                &dummy_value(),
+                            )?;
+                            Ok(map_dummy(&path, TEST_KIND, sig))
+                        })
+                        .unwrap();
+                    assert_eq!(section.get().unwrap().a, 7);
+                });
+            }
+        });
+
+        assert_eq!(builds.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(lazy.is_mapped());
         let _ = fs::remove_file(&path);
     }
 

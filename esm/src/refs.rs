@@ -44,7 +44,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 /// [`Database::formid_reference_paths`]) — opt-in because it requires a full
 /// decode per row, unlike the rest of this walk.
 pub fn referenced_by_enriched(
-    db: &mut Database,
+    db: &Database,
     target: FormId,
     depth: usize,
     limit: usize,
@@ -90,7 +90,7 @@ pub fn referenced_by_enriched(
 /// end-to-end — do not re-sort here; see [`Database::perks_by_entry_point`].
 #[allow(clippy::too_many_arguments)]
 pub fn referenced_by_enriched_multi(
-    db: &mut Database,
+    db: &Database,
     seeds: &[(FormId, Vec<CarrierTag>)],
     label: String,
     depth: usize,
@@ -146,7 +146,7 @@ pub fn referenced_by_enriched_multi(
 /// Returns `(rows, stats)` — see [`WalkStats`].
 #[allow(clippy::too_many_arguments)]
 fn referenced_by_walk(
-    db: &mut Database,
+    db: &Database,
     seeds: &[(FormId, Vec<CarrierTag>)],
     emit_seeds: bool,
     depth: usize,
@@ -463,7 +463,7 @@ pub struct RefPathResult {
 ///
 /// `max_hops` is the combined hop-count ceiling (0 = [`DEFAULT_MAX_PATH_HOPS`]).
 pub fn find_ref_path(
-    db: &mut Database,
+    db: &Database,
     from: FormId,
     to: FormId,
     max_hops: usize,
@@ -604,7 +604,7 @@ pub fn find_ref_path(
 /// `from..=to` chain and decode each hop. See [`find_ref_path`] for the
 /// direction convention `back_parent`/`fwd_parent` follow.
 fn build_ref_path_result(
-    db: &mut Database,
+    db: &Database,
     from: FormId,
     to: FormId,
     meet: FormId,
@@ -647,7 +647,7 @@ fn build_ref_path_result(
 /// (this node's own reference to `predecessor`, its immediate neighbor
 /// closer to `from`) when `predecessor` is `Some`.
 fn ref_path_hop(
-    db: &mut Database,
+    db: &Database,
     node: FormId,
     predecessor: Option<FormId>,
 ) -> anyhow::Result<RefPathHop> {
@@ -690,7 +690,7 @@ pub enum RefSeeds {
 /// [`RecordSel::Edid`] by [`RecordSel::from_input`], since it isn't FormID-
 /// shaped — resolves without needing the explicit `--entry-point` flag).
 /// Every other `Op` uses [`resolve_sel`], which rejects carrier selectors.
-pub(crate) fn resolve_ref_seeds(db: &mut Database, sel: &RecordSel) -> anyhow::Result<RefSeeds> {
+pub(crate) fn resolve_ref_seeds(db: &Database, sel: &RecordSel) -> anyhow::Result<RefSeeds> {
     match sel {
         RecordSel::EntryPoint(token) => {
             let spec = EntryPointSpec::parse(token)?;
@@ -833,9 +833,9 @@ mod tests {
         let mut buf = tes4_header();
         buf.extend(wrap_grup(b"WEAP", &rec));
 
-        let (path, mut db) = write_and_open(&buf, "resolve_ref_seeds_direct");
+        let (path, db) = write_and_open(&buf, "resolve_ref_seeds_direct");
 
-        let seeds = resolve_ref_seeds(&mut db, &RecordSel::Edid("TestWeap".to_string()))
+        let seeds = resolve_ref_seeds(&db, &RecordSel::Edid("TestWeap".to_string()))
             .expect("resolve_ref_seeds");
         match seeds {
             RefSeeds::Direct(fid) => assert_eq!(fid, FormId(1)),
@@ -866,9 +866,9 @@ mod tests {
         let mut buf = tes4_header();
         buf.extend(wrap_grup(b"PERK", &rec));
 
-        let (path, mut db) = write_and_open(&buf, "resolve_ref_seeds_carriers");
+        let (path, db) = write_and_open(&buf, "resolve_ref_seeds_carriers");
 
-        let seeds = resolve_ref_seeds(&mut db, &RecordSel::EntryPoint("39".to_string()))
+        let seeds = resolve_ref_seeds(&db, &RecordSel::EntryPoint("39".to_string()))
             .expect("resolve_ref_seeds");
         match seeds {
             RefSeeds::Carriers { label, seeds } => {
@@ -960,9 +960,9 @@ mod tests {
         let mut buf = tes4_header();
         buf.extend(wrap_grup(b"WEAP", &recs));
 
-        let (path, mut db) = write_and_open(&buf, "ref_path_hop");
+        let (path, db) = write_and_open(&buf, "ref_path_hop");
 
-        let hop_no_pred = ref_path_hop(&mut db, FormId(2), None).expect("ref_path_hop");
+        let hop_no_pred = ref_path_hop(&db, FormId(2), None).expect("ref_path_hop");
         assert_eq!(hop_no_pred.form_id, FormId(2).display());
         assert_eq!(hop_no_pred.record_type.as_deref(), Some("WEAP"));
         assert!(
@@ -970,8 +970,7 @@ mod tests {
             "field_paths must stay None without a predecessor"
         );
 
-        let hop_with_pred =
-            ref_path_hop(&mut db, FormId(2), Some(FormId(1))).expect("ref_path_hop");
+        let hop_with_pred = ref_path_hop(&db, FormId(2), Some(FormId(1))).expect("ref_path_hop");
         assert_eq!(
             hop_with_pred.field_paths,
             Some(vec!["Sound - Pickup".to_string()]),

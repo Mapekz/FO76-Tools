@@ -79,7 +79,14 @@ pub struct Database {
     /// is opened; `tree`/`GroupLabel`/`RecordStub` in `tree.rs` are the only
     /// precedent for presentation-layer types, and this is analogous — it's not
     /// part of any of `Index`'s persisted rkyv sections at all).
-    filter_cache: std::collections::HashMap<String, (usize, Vec<FilterCacheEntry>)>,
+    filter_cache: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<TypeSample>>>,
+}
+
+/// The memoized decode of one record type: its total record count and the
+/// first [`FILTER_SCAN_CAP`] records, decoded.
+struct TypeSample {
+    total: usize,
+    entries: Vec<FilterCacheEntry>,
 }
 
 /// One memoized, fully-decoded record used by [`Database::filter_type_records`]
@@ -158,7 +165,7 @@ pub enum FilterOp {
 }
 
 /// Maximum number of records of a single type decoded and cached by
-/// [`Database::ensure_filter_cache`]. Types like REFR/NAVM/LAND can have tens
+/// [`Database::type_sample`]. Types like REFR/NAVM/LAND can have tens
 /// or hundreds of thousands of records; a full schema-driven decode of all of
 /// them is meaningfully more expensive than the cheap header/EDID scans
 /// `ensure_xref_index`/`ensure_search_index` already do at full-file scale.
@@ -752,7 +759,7 @@ impl Database {
             is_localized,
             localization,
             curves,
-            filter_cache: std::collections::HashMap::new(),
+            filter_cache: Default::default(),
         })
     }
 
@@ -898,13 +905,12 @@ impl Database {
     /// comment) — reuses it rather than rebuilding. See
     /// [`Self::build_lazy_section`] for the shared acquire/recheck/publish
     /// protocol this and its two siblings below delegate to.
-    pub fn ensure_edid_index(&mut self) -> anyhow::Result<()> {
-        if self.index.edid.is_mapped() {
-            return Ok(());
-        }
+    pub fn ensure_edid_index(&self) -> anyhow::Result<()> {
         let total = self.index.len() as u64;
-        self.index.edid = self.build_lazy_section(total, |lease| {
-            crate::index::build_edid_section(&self.index, &self.esm, lease)
+        self.index.edid.get_or_build(|| {
+            self.build_lazy_section(total, |lease| {
+                crate::index::build_edid_section(&self.index, &self.esm, lease)
+            })
         })?;
         Ok(())
     }
@@ -913,13 +919,12 @@ impl Database {
     /// call, then cache it to its own `search` section. See
     /// [`Self::build_lazy_section`] for the acquire/recheck protocol this
     /// shares.
-    pub fn ensure_search_index(&mut self) -> anyhow::Result<()> {
-        if self.index.search.is_mapped() {
-            return Ok(());
-        }
+    pub fn ensure_search_index(&self) -> anyhow::Result<()> {
         let total = self.index.len() as u64;
-        self.index.search = self.build_lazy_section(total, |lease| {
-            crate::index::build_search_section(&self.index, &self.esm, self.is_localized, lease)
+        self.index.search.get_or_build(|| {
+            self.build_lazy_section(total, |lease| {
+                crate::index::build_search_section(&self.index, &self.esm, self.is_localized, lease)
+            })
         })?;
         Ok(())
     }
@@ -929,21 +934,20 @@ impl Database {
     /// builds (a full schema decode of every record). See
     /// [`Self::build_lazy_section`] for the acquire/recheck protocol this
     /// shares.
-    pub fn ensure_xref_index(&mut self) -> anyhow::Result<()> {
-        if self.index.xref.is_mapped() {
-            return Ok(());
-        }
+    pub fn ensure_xref_index(&self) -> anyhow::Result<()> {
         let total = self.esm.data().len() as u64;
-        self.index.xref = self.build_lazy_section(total, |lease| {
-            crate::index::build_xref_section(
-                &self.index,
-                &self.esm,
-                &self.schema,
-                self.is_localized,
-                self.localization.as_ref(),
-                self.curves.as_ref(),
-                lease,
-            )
+        self.index.xref.get_or_build(|| {
+            self.build_lazy_section(total, |lease| {
+                crate::index::build_xref_section(
+                    &self.index,
+                    &self.esm,
+                    &self.schema,
+                    self.is_localized,
+                    self.localization.as_ref(),
+                    self.curves.as_ref(),
+                    lease,
+                )
+            })
         })?;
         Ok(())
     }
@@ -967,7 +971,7 @@ impl Database {
     /// Referencers of `form_id`, building the `xref` index first if needed.
     /// Never silently answers "no referencers" for an index that just
     /// hasn't been built yet — see the module note above.
-    fn xref_lookup(&mut self, form_id: FormId) -> anyhow::Result<Vec<FormId>> {
+    fn xref_lookup(&self, form_id: FormId) -> anyhow::Result<Vec<FormId>> {
         self.ensure_xref_index()?;
         Ok(self.index.get_xref(form_id))
     }
@@ -977,7 +981,7 @@ impl Database {
     /// never conflated with "index not built yet" the way a bare
     /// `Index::get_by_edid` call without an `ensure_edid_index` first would
     /// be.
-    fn resolve_edid_indexed(&mut self, edid: &str) -> anyhow::Result<Option<FormId>> {
+    fn resolve_edid_indexed(&self, edid: &str) -> anyhow::Result<Option<FormId>> {
         self.ensure_edid_index()?;
         Ok(self.index.get_by_edid(edid))
     }
@@ -989,12 +993,12 @@ impl Database {
             .with_context(|| format!("FormID {} not found", form_id))
     }
 
-    pub fn record_by_formid(&mut self, form_id: FormId) -> anyhow::Result<RecordResult> {
+    pub fn record_by_formid(&self, form_id: FormId) -> anyhow::Result<RecordResult> {
         let meta = self.get_formid_meta(form_id)?;
         self.record_at_meta_with_depth(&meta, crate::decode::ResolveDepth::None)
     }
 
-    pub fn record_by_edid(&mut self, edid: &str) -> anyhow::Result<RecordResult> {
+    pub fn record_by_edid(&self, edid: &str) -> anyhow::Result<RecordResult> {
         let form_id = self
             .resolve_edid_indexed(edid)?
             .with_context(|| format!("EditorID '{}' not found", edid))?;
@@ -1045,7 +1049,7 @@ impl Database {
     /// names are inline strings and will not match via the lstring-ID path;
     /// EditorID search still works for those files.
     pub fn search(
-        &mut self,
+        &self,
         pattern: &str,
         types: &[String],
         field: SearchField,
@@ -1171,7 +1175,7 @@ impl Database {
     /// Returns FormID, EditorID, and resolved translated name (from the
     /// localization BA2 when available) for each record.
     pub fn list_type_records(
-        &mut self,
+        &self,
         sig: &str,
         offset: usize,
         limit: usize,
@@ -1214,7 +1218,7 @@ impl Database {
     /// The reverse-reference index is built lazily on the first call and
     /// persisted to its own `xref` rkyv section so subsequent calls —
     /// in this process or a fresh one — are instant.
-    pub fn referenced_by(&mut self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
+    pub fn referenced_by(&self, form_id: FormId) -> anyhow::Result<Vec<RecordRow>> {
         let referencers = self.xref_lookup(form_id)?;
         let mut out = Vec::new();
         for referencer in referencers {
@@ -1229,7 +1233,7 @@ impl Database {
     /// FormID already present in the index — `None` if it isn't. Shared by
     /// [`Database::referenced_by`] (each referencer row) and
     /// [`refs::referenced_by_enriched`]'s carrier/seed rows.
-    fn record_row_for(&mut self, form_id: FormId) -> anyhow::Result<Option<RecordRow>> {
+    fn record_row_for(&self, form_id: FormId) -> anyhow::Result<Option<RecordRow>> {
         let Some(meta) = self.index.get_by_formid(form_id) else {
             return Ok(None);
         };
@@ -1473,7 +1477,7 @@ impl Database {
     /// broader precedence-aware resolution; this method stays as a narrower
     /// public building block rather than duplicating that fallback here.
     pub fn record_by_edid_resolved(
-        &mut self,
+        &self,
         edid: &str,
         depth: crate::decode::ResolveDepth,
     ) -> anyhow::Result<RecordResult> {
@@ -1527,13 +1531,13 @@ impl Database {
             .collect()
     }
 
-    /// Populate `self.filter_cache` for `sig` (already uppercased) on first
-    /// access, decoding at most [`FILTER_SCAN_CAP`] records. No-op if already
-    /// cached. Used by [`Database::filter_type_records`] and
-    /// [`Database::list_type_field_paths`].
-    fn ensure_filter_cache(&mut self, sig: &str) -> anyhow::Result<()> {
-        if self.filter_cache.contains_key(sig) {
-            return Ok(());
+    /// The memoized decode of record type `sig` (already uppercased): decoded
+    /// on first access, at most [`FILTER_SCAN_CAP`] records, then shared by
+    /// [`Database::filter_type_records`], [`Database::list_type_field_paths`],
+    /// [`Database::perks_by_entry_point`] and [`Database::omods_by_property`].
+    fn type_sample(&self, sig: &str) -> anyhow::Result<std::sync::Arc<TypeSample>> {
+        if let Some(sample) = self.lock_filter_cache().get(sig) {
+            return Ok(sample.clone());
         }
 
         // `count_by_type` looks up the type_index directly, avoiding a full
@@ -1570,30 +1574,21 @@ impl Database {
             });
         }
 
-        self.filter_cache.insert(sig.to_string(), (total, entries));
-        Ok(())
+        let sample = std::sync::Arc::new(TypeSample { total, entries });
+        Ok(self
+            .lock_filter_cache()
+            .entry(sig.to_string())
+            .or_insert(sample)
+            .clone())
     }
 
-    /// [`Self::ensure_filter_cache`] for `sig`, then borrow the entry it
-    /// guarantees is now present — the same ensure-then-get shape
-    /// [`Self::xref_lookup`]/[`Self::resolve_edid_indexed`] use for the
-    /// lazy `Index` sections, applied here to the four call sites that used
-    /// to each repeat `self.ensure_filter_cache(&sig)?` followed by a
-    /// `self.filter_cache.get(&sig).expect("populated by
-    /// ensure_filter_cache")` — a panic (not a recoverable error) if that
-    /// invariant were ever violated. Folding both steps into one call still
-    /// can't silently skip the ensure, and turns what would be a process
-    /// crash into a normal propagated `Err` via `.context()`, matching this
-    /// crate's `anyhow::Result` convention instead of being the one
-    /// `.expect()`-shaped exception to it.
-    fn filter_cache_entries(
-        &mut self,
-        sig: &str,
-    ) -> anyhow::Result<&(usize, Vec<FilterCacheEntry>)> {
-        self.ensure_filter_cache(sig)?;
-        self.filter_cache.get(sig).with_context(|| {
-            format!("filter cache entry for '{sig}' missing immediately after ensure_filter_cache — this should never happen")
-        })
+    fn lock_filter_cache(
+        &self,
+    ) -> std::sync::MutexGuard<'_, std::collections::HashMap<String, std::sync::Arc<TypeSample>>>
+    {
+        self.filter_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Filter records of type `sig` by a predicate against their decoded
@@ -1604,7 +1599,7 @@ impl Database {
     /// of `0` means no limit. Decoding itself is capped at [`FILTER_SCAN_CAP`]
     /// records per type — see [`FilterResult::scan_capped`].
     pub fn filter_type_records(
-        &mut self,
+        &self,
         sig: &str,
         path: Option<&str>,
         op: FilterOp,
@@ -1612,8 +1607,8 @@ impl Database {
         limit: usize,
     ) -> anyhow::Result<FilterResult> {
         let sig = sig.to_uppercase();
-        let (total, entries) = self.filter_cache_entries(&sig)?;
-        let total = *total;
+        let sample = self.type_sample(&sig)?;
+        let (total, entries) = (sample.total, &sample.entries);
         let scanned = entries.len();
 
         let mut matches: Vec<&FilterCacheEntry> = entries
@@ -1652,10 +1647,11 @@ impl Database {
     /// regardless of index (all elements of an array share the same
     /// predicate-path shape). Sorted, deduped, capped defensively at a few
     /// thousand entries against pathological records.
-    pub fn list_type_field_paths(&mut self, sig: &str) -> anyhow::Result<Vec<String>> {
+    pub fn list_type_field_paths(&self, sig: &str) -> anyhow::Result<Vec<String>> {
         const MAX_PATHS: usize = 5000;
         let sig = sig.to_uppercase();
-        let (_, entries) = self.filter_cache_entries(&sig)?;
+        let sample = self.type_sample(&sig)?;
+        let entries = &sample.entries;
 
         let mut paths: HashSet<String> = HashSet::new();
         for entry in entries {
@@ -1682,7 +1678,7 @@ impl Database {
     /// `refs::referenced_by_walk` (earlier seeds win equal-depth ties for
     /// `path`/`VIA`; equal-depth `tags` are unioned).
     ///
-    /// Reuses the `ensure_filter_cache("PERK")` memoized decode (shared with
+    /// Reuses the `type_sample("PERK")` memoized decode (shared with
     /// [`Database::filter_type_records`]), so repeat lookups after the first
     /// are effectively free.
     ///
@@ -1692,10 +1688,11 @@ impl Database {
     /// — meant for [`ipc::RefList::target`]; `seeds` are `(FormId, tags)`
     /// pairs tagging each carrier with the entry points it matched.
     pub fn perks_by_entry_point(
-        &mut self,
+        &self,
         spec: &EntryPointSpec,
     ) -> anyhow::Result<(String, Carriers)> {
-        let (_, entries) = self.filter_cache_entries("PERK")?;
+        let sample = self.type_sample("PERK")?;
+        let entries = &sample.entries;
 
         let mut seeds: Carriers = Vec::new();
         let mut matched: std::collections::BTreeSet<(u16, Option<String>)> = Default::default();
@@ -1775,7 +1772,7 @@ impl Database {
     /// attribution priority in `refs::referenced_by_walk` (earlier seeds win
     /// equal-depth ties for `path`/`VIA`; equal-depth `tags` are unioned).
     ///
-    /// Reuses the `ensure_filter_cache("OMOD")` memoized decode (shared with
+    /// Reuses the `type_sample("OMOD")` memoized decode (shared with
     /// [`Database::filter_type_records`]), so repeat lookups after the first
     /// are effectively free.
     ///
@@ -1785,11 +1782,9 @@ impl Database {
     /// armo:0 Enchantments, npc:3 Enchantments)"` — meant for
     /// [`ipc::RefList::target`]; `seeds` are `(FormId, tags)` pairs tagging
     /// each carrier with the properties it matched.
-    pub fn omods_by_property(
-        &mut self,
-        spec: &OmodPropertySpec,
-    ) -> anyhow::Result<(String, Carriers)> {
-        let (_, entries) = self.filter_cache_entries("OMOD")?;
+    pub fn omods_by_property(&self, spec: &OmodPropertySpec) -> anyhow::Result<(String, Carriers)> {
+        let sample = self.type_sample("OMOD")?;
+        let entries = &sample.entries;
 
         let mut seeds: Carriers = Vec::new();
         let mut matched: std::collections::BTreeSet<(PropScope, u16, Option<String>)> =

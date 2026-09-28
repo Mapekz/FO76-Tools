@@ -104,7 +104,7 @@ fn decode_all_clean_types_fully() {
         return;
     };
 
-    let mut db = Database::open(&esm_path)
+    let db = Database::open(&esm_path)
         .unwrap_or_else(|e| panic!("failed to open ESM at {esm_path:?}: {e}"));
 
     let mut total_records: u64 = 0;

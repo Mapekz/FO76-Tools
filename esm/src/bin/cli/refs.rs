@@ -97,7 +97,7 @@ pub(crate) fn cmd_refs(
             paths,
             sort,
         };
-        let v = esm::ipc::dispatch_op(&mut db, &op)?;
+        let v = esm::ipc::dispatch_op(&db, &op)?;
         let mut ref_list: RefList = serde_json::from_value(v)?;
         convert_ref_list_form_ids(&mut ref_list, base);
         print_refs(&ref_list, sort, json, pretty);

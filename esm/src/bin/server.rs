@@ -190,8 +190,8 @@ async fn legacy_op(state: &AppState, op: Op) -> Result<serde_json::Value, ApiErr
     let path = path.clone();
     tokio::task::spawn_blocking(move || {
         let arc = registry.get_or_open(&path)?;
-        let mut db = arc.lock().unwrap();
-        dispatch_op(&mut db, &op)
+        let db = arc.lock().unwrap();
+        dispatch_op(&db, &op)
     })
     .await
     .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?

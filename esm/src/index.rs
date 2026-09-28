@@ -8,7 +8,7 @@ use crate::reader::{
 #[cfg(test)]
 use crate::rkyvcache::write_section;
 use crate::rkyvcache::{
-    CacheSig, Section, map_section_if_present, section_path_for_spec, write_and_remap,
+    CacheSig, LazySection, Section, map_section_if_present, section_path_for_spec, write_and_remap,
 };
 // `SectionKind`/`section_path_for` (the explicit-kind form `section_path_for_spec`
 // replaces at every production call site — see that function's doc comment)
@@ -275,11 +275,11 @@ pub struct Index {
     /// it needs `Database`'s other fields (the mmap'd ESM), which is why
     /// that method lives on `Database`, not here — `Index` only holds the
     /// section once built.
-    pub(crate) edid: Section<rkyv::Archived<EdidSection>>,
+    pub(crate) edid: LazySection<rkyv::Archived<EdidSection>>,
     /// Lazy, independently optional — see [`crate::Database::ensure_search_index`].
-    pub(crate) search: Section<rkyv::Archived<SearchSection>>,
+    pub(crate) search: LazySection<rkyv::Archived<SearchSection>>,
     /// Lazy, independently optional — see [`crate::Database::ensure_xref_index`].
-    pub(crate) xref: Section<rkyv::Archived<XrefSection>>,
+    pub(crate) xref: LazySection<rkyv::Archived<XrefSection>>,
 }
 
 impl std::fmt::Debug for Index {
@@ -384,9 +384,9 @@ impl Index {
             path: esm.path.clone(),
             tree: tree_section,
             forms: forms_section,
-            edid: edid_section,
-            search: search_section,
-            xref: xref_section,
+            edid: edid_section.into(),
+            search: search_section.into(),
+            xref: xref_section.into(),
         })
     }
 
@@ -403,9 +403,9 @@ impl Index {
             path,
             tree: Section::Absent,
             forms: Section::Absent,
-            edid: Section::Absent,
-            search: Section::Absent,
-            xref: Section::Absent,
+            edid: Section::Absent.into(),
+            search: Section::Absent.into(),
+            xref: Section::Absent.into(),
         }
     }
 
@@ -1272,9 +1272,9 @@ mod tests {
             path: PathBuf::from("/tmp/test.esm"),
             tree: Section::Absent,
             forms,
-            edid: Section::Absent,
-            search: Section::Absent,
-            xref: Section::Absent,
+            edid: Section::Absent.into(),
+            search: Section::Absent.into(),
+            xref: Section::Absent.into(),
         }
     }
 
@@ -1283,9 +1283,9 @@ mod tests {
             path: PathBuf::from("/tmp/test.esm"),
             tree: Section::Absent,
             forms: Section::Absent,
-            edid,
-            search: Section::Absent,
-            xref: Section::Absent,
+            edid: edid.into(),
+            search: Section::Absent.into(),
+            xref: Section::Absent.into(),
         }
     }
 
@@ -1294,9 +1294,9 @@ mod tests {
             path: PathBuf::from("/tmp/test.esm"),
             tree: Section::Absent,
             forms: Section::Absent,
-            edid: Section::Absent,
-            search,
-            xref: Section::Absent,
+            edid: Section::Absent.into(),
+            search: search.into(),
+            xref: Section::Absent.into(),
         }
     }
 
@@ -1305,9 +1305,9 @@ mod tests {
             path: PathBuf::from("/tmp/test.esm"),
             tree: Section::Absent,
             forms: Section::Absent,
-            edid: Section::Absent,
-            search: Section::Absent,
-            xref,
+            edid: Section::Absent.into(),
+            search: Section::Absent.into(),
+            xref: xref.into(),
         }
     }
 

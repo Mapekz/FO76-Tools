@@ -601,8 +601,8 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
         }
         _ => {
             let arc = reg.get_or_open(&req.esm)?;
-            let mut db = arc.lock().unwrap();
-            dispatch_op(&mut db, &req.op)
+            let db = arc.lock().unwrap();
+            dispatch_op(&db, &req.op)
         }
     }
 }
@@ -616,7 +616,7 @@ fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
 /// serialization, no round-trip, and `walk`'s one-node-per-queue-pop
 /// `bulk_get` costs no HTTP hop per BFS node.
 struct DbFetcher<'a> {
-    db: &'a mut Database,
+    db: &'a Database,
 }
 
 impl crate::chase::ChaseFetcher for DbFetcher<'_> {
@@ -652,7 +652,7 @@ impl crate::chase::ChaseFetcher for DbFetcher<'_> {
 }
 
 /// Execute a single `Op` against an already-open `Database`.
-pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
+pub fn dispatch_op(db: &Database, op: &Op) -> anyhow::Result<Value> {
     match op {
         Op::Shutdown => Ok(Value::Null),
         Op::FileInfo => {
@@ -771,7 +771,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                 level: *level,
             };
             let mut result = {
-                let mut fetcher = DbFetcher { db: &mut *db };
+                let mut fetcher = DbFetcher { db };
                 crate::walk::walk(&mut fetcher, sel.clone(), &opts)?
             };
             if let Some(nf) = result.not_found.as_mut() {
@@ -800,7 +800,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                 depth: *depth,
                 ref_limit: *ref_limit,
             };
-            let mut fetcher = DbFetcher { db: &mut *db };
+            let mut fetcher = DbFetcher { db };
             let tree = crate::chase::chase(&mut fetcher, sel.clone(), &opts)?;
             Ok(serde_json::to_value(&tree)?)
         }
@@ -824,7 +824,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
                 strict: *strict,
                 tree_depth: 0,
             };
-            let mut fetcher = DbFetcher { db: &mut *db };
+            let mut fetcher = DbFetcher { db };
             let table = crate::lvli::drop_table(
                 &mut fetcher,
                 result.header.form_id,
@@ -880,7 +880,7 @@ pub fn dispatch_op(db: &mut Database, op: &Op) -> anyhow::Result<Value> {
 /// Resolve a [`RecordSel`] to a concrete [`FormId`], looking up the EditorID
 /// index when needed. The one canonical selector-resolution used by every
 /// serving surface (daemon, CLI, N-API) — do not reimplement this locally.
-pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId> {
+pub fn resolve_sel(db: &Database, sel: &RecordSel) -> anyhow::Result<FormId> {
     match sel {
         RecordSel::FormId(fid) => Ok(*fid),
         RecordSel::Edid(edid) => {
@@ -944,7 +944,7 @@ pub fn resolve_sel(db: &mut Database, sel: &RecordSel) -> anyhow::Result<FormId>
 }
 
 fn record_resolved(
-    db: &mut Database,
+    db: &Database,
     sel: &RecordSel,
     depth: ResolveDepth,
 ) -> anyhow::Result<crate::RecordResult> {
@@ -999,7 +999,7 @@ fn explain_hardcoded_miss(form_id: FormId, err: anyhow::Error) -> anyhow::Error 
 /// failure into an `error`-carrying [`BulkRecordEntry`] instead of aborting
 /// the whole batch — the per-record failure isolation that distinguishes bulk
 /// `get` from N sequential single `get`s.
-fn bulk_record_entry(db: &mut Database, sel: &RecordSel, depth: ResolveDepth) -> BulkRecordEntry {
+fn bulk_record_entry(db: &Database, sel: &RecordSel, depth: ResolveDepth) -> BulkRecordEntry {
     let display = sel.display();
     match record_resolved(db, sel, depth) {
         Ok(result) => BulkRecordEntry {

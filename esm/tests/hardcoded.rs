@@ -98,10 +98,10 @@ fn dispatch_record_explains_hardcoded_edid_miss() {
     append_record(&mut weap, b"WEAP", 1, &[]); // unrelated record, keeps the ESM non-empty
     buf.extend_from_slice(&wrap_grup(b"WEAP", &weap));
 
-    let (path, mut db) = write_and_open(&buf, "hardcoded_dispatch_edid_miss");
+    let (path, db) = write_and_open(&buf, "hardcoded_dispatch_edid_miss");
 
     let err = dispatch_op(
-        &mut db,
+        &db,
         &Op::Record {
             sel: RecordSel::Edid("KillStreak".to_string()),
             depth: ResolveDepth::None,

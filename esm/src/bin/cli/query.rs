@@ -122,7 +122,7 @@ pub(crate) fn cmd_get(
         } else {
             Op::Record { sel, depth }
         };
-        let mut v = esm::ipc::dispatch_op(&mut db, &op)?;
+        let mut v = esm::ipc::dispatch_op(&db, &op)?;
         convert_get_result(&mut v, base);
         print_json(&v, pretty || !json);
         return Ok(());

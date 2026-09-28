@@ -20,7 +20,7 @@ use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropert
 #[test]
 fn referenced_by_deduplicates_within_record() {
     let buf = make_xref_esm();
-    let (tmp, mut db) = write_and_open(&buf, "refs");
+    let (tmp, db) = write_and_open(&buf, "refs");
     let rows = db.referenced_by(FormId(1)).expect("referenced_by");
 
     assert_eq!(
@@ -64,7 +64,7 @@ fn referenced_by_resolves_hardcoded_target() {
     append_record(&mut rec, b"WEAP", 2, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_target");
+    let (tmp, db) = write_and_open(&buf, "refs_hardcoded_target");
     let rows = db
         .referenced_by(FormId(KILL_STREAK))
         .expect("referenced_by");
@@ -105,7 +105,7 @@ fn referenced_by_still_excludes_out_of_range_and_null_targets() {
     append_record(&mut rec, b"WEAP", 2, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_negative");
+    let (tmp, db) = write_and_open(&buf, "refs_hardcoded_negative");
     assert!(
         db.referenced_by(FormId(OUT_OF_RANGE))
             .expect("referenced_by")
@@ -137,21 +137,13 @@ fn resolve_sel_edid_falls_back_to_hardcoded_table() {
     append_record(&mut rec, b"WEAP", 2, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_edid_sel");
-    let target = resolve_sel(&mut db, &RecordSel::Edid("KillStreak".to_string()))
+    let (tmp, db) = write_and_open(&buf, "refs_hardcoded_edid_sel");
+    let target = resolve_sel(&db, &RecordSel::Edid("KillStreak".to_string()))
         .expect("KillStreak should resolve via the hardcoded-table fallback");
     assert_eq!(target, FormId(KILL_STREAK));
 
-    let list = referenced_by_enriched(
-        &mut db,
-        target,
-        1,
-        100,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("referenced_by_enriched");
+    let list = referenced_by_enriched(&db, target, 1, 100, None, false, esm::ipc::RefSort::Formid)
+        .expect("referenced_by_enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(list.rows[0].form_id, FormId(2).display());
 
@@ -175,8 +167,8 @@ fn resolve_sel_edid_real_record_wins_over_hardcoded_table() {
     append_record(&mut rec, b"WEAP", REAL_FORM_ID, &subs);
     buf.extend(wrap_grup(b"WEAP", &rec));
 
-    let (tmp, mut db) = write_and_open(&buf, "refs_hardcoded_precedence");
-    let target = resolve_sel(&mut db, &RecordSel::Edid("KillStreak".to_string()))
+    let (tmp, db) = write_and_open(&buf, "refs_hardcoded_precedence");
+    let target = resolve_sel(&db, &RecordSel::Edid("KillStreak".to_string()))
         .expect("KillStreak should resolve");
     assert_eq!(
         target,
@@ -254,7 +246,7 @@ fn open_chain_db() -> (std::path::PathBuf, Database) {
 /// depth=1 yields exactly the direct referencers (single-level, today's behaviour).
 #[test]
 fn recursive_refs_depth1_matches_direct() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
     // Single-level old path
     let direct = db.referenced_by(FormId(1)).expect("referenced_by");
@@ -262,16 +254,9 @@ fn recursive_refs_depth1_matches_direct() {
     assert_eq!(direct[0].form_id, FormId(2).display());
 
     // New BFS path at depth=1
-    let list: RefList = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        1,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list: RefList =
+        referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ipc::RefSort::Formid)
+            .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(list.rows[0].form_id, FormId(2).display());
     assert_eq!(list.rows[0].depth, 1);
@@ -291,18 +276,10 @@ fn recursive_refs_depth1_matches_direct() {
 /// sets belong to one test.
 #[test]
 fn recursive_refs_depth2_follows_one_extra_hop_and_reports_the_cap() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        2,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list = referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ipc::RefSort::Formid)
+        .expect("enriched");
 
     // Expect LVLI(2) at depth=1 and LVLI(3) at depth=2.
     assert_eq!(
@@ -354,18 +331,10 @@ fn recursive_refs_depth2_follows_one_extra_hop_and_reports_the_cap() {
 /// depth=6 (or any depth ≥ 3) reaches all nodes in the 3-hop chain.
 #[test]
 fn recursive_refs_depth6_reaches_all_hops() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        6,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ipc::RefSort::Formid)
+        .expect("enriched");
     assert_eq!(list.rows.len(), 3, "expected LVLI(2)+LVLI(3)+CONT(4)");
 
     let ids: Vec<_> = list.rows.iter().map(|r| r.form_id.as_str()).collect();
@@ -396,18 +365,10 @@ fn recursive_refs_depth6_reaches_all_hops() {
 /// full chain, not clamp to 1 (the old semantics) or to DEFAULT_MAX_DEPTH.
 #[test]
 fn recursive_refs_depth0_is_unbounded() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        0,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list = referenced_by_enriched(&db, FormId(1), 0, 0, None, false, esm::ipc::RefSort::Formid)
+        .expect("enriched");
     assert_eq!(
         list.rows.len(),
         3,
@@ -431,18 +392,10 @@ fn recursive_refs_depth0_is_unbounded() {
 /// `shown_max_depth` reflects only what survived truncation.
 #[test]
 fn recursive_refs_reports_per_depth_totals_and_shown_max_depth() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let full = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        6,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let full = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ipc::RefSort::Formid)
+        .expect("enriched");
     // index 0 = carrier rows (none on a direct-target walk), 1 = LVLI(2),
     // 2 = LVLI(3), 3 = CONT(4).
     assert_eq!(full.per_depth_totals, vec![0, 1, 1, 1]);
@@ -450,16 +403,9 @@ fn recursive_refs_reports_per_depth_totals_and_shown_max_depth() {
 
     // limit=1 keeps only the shallowest row (FormID-sorted), but
     // per_depth_totals must still reflect all 3 rows found pre-truncation.
-    let limited = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        6,
-        1,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let limited =
+        referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ipc::RefSort::Formid)
+            .expect("enriched");
     assert_eq!(limited.rows.len(), 1);
     assert_eq!(
         limited.per_depth_totals,
@@ -491,18 +437,11 @@ fn make_sort_order_esm() -> Vec<u8> {
 #[test]
 fn recursive_refs_sort_depth_reorders_relative_to_formid() {
     let buf = make_sort_order_esm();
-    let (tmp, mut db) = write_and_open(&buf, "refs_sort_order");
+    let (tmp, db) = write_and_open(&buf, "refs_sort_order");
 
-    let by_formid = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        2,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let by_formid =
+        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ipc::RefSort::Formid)
+            .expect("enriched");
     let formid_order: Vec<_> = by_formid.rows.iter().map(|r| r.form_id.clone()).collect();
     assert_eq!(
         formid_order,
@@ -510,16 +449,9 @@ fn recursive_refs_sort_depth_reorders_relative_to_formid() {
         "default sort is FormID-ascending regardless of depth"
     );
 
-    let by_depth = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        2,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Depth,
-    )
-    .expect("enriched");
+    let by_depth =
+        referenced_by_enriched(&db, FormId(1), 2, 0, None, false, esm::ipc::RefSort::Depth)
+            .expect("enriched");
     let depth_order: Vec<_> = by_depth.rows.iter().map(|r| r.form_id.clone()).collect();
     assert_eq!(
         depth_order,
@@ -539,9 +471,9 @@ fn recursive_refs_sort_depth_reorders_relative_to_formid() {
 /// to=4 (a transitive referencer), 3 hops.
 #[test]
 fn find_ref_path_discovers_known_chain() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let result = find_ref_path(&mut db, FormId(1), FormId(4), 0, false).expect("find_ref_path");
+    let result = find_ref_path(&db, FormId(1), FormId(4), 0, false).expect("find_ref_path");
     assert_eq!(result.from, FormId(1).display());
     assert_eq!(result.to, FormId(4).display());
     assert_eq!(result.hops, Some(3));
@@ -564,9 +496,9 @@ fn find_ref_path_discovers_known_chain() {
 /// `from == to` is a trivial 0-hop chain containing just that one node.
 #[test]
 fn find_ref_path_trivial_when_from_equals_to() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let result = find_ref_path(&mut db, FormId(1), FormId(1), 0, false).expect("find_ref_path");
+    let result = find_ref_path(&db, FormId(1), FormId(1), 0, false).expect("find_ref_path");
     assert_eq!(result.hops, Some(0));
     let chain = result.chain.expect("trivial path should be found");
     assert_eq!(chain.len(), 1);
@@ -581,9 +513,9 @@ fn find_ref_path_trivial_when_from_equals_to() {
 /// the edges backwards.
 #[test]
 fn find_ref_path_is_directional_not_found_in_reverse() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let result = find_ref_path(&mut db, FormId(4), FormId(1), 0, false).expect("find_ref_path");
+    let result = find_ref_path(&db, FormId(4), FormId(1), 0, false).expect("find_ref_path");
     assert_eq!(result.chain, None);
     assert_eq!(result.hops, None);
     assert!(
@@ -598,15 +530,15 @@ fn find_ref_path_is_directional_not_found_in_reverse() {
 /// found" rather than a partial/incorrect chain.
 #[test]
 fn find_ref_path_respects_max_hops_ceiling() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
     // The real chain from 1 to 4 is 3 hops; a ceiling of 2 must not find it.
-    let result = find_ref_path(&mut db, FormId(1), FormId(4), 2, false).expect("find_ref_path");
+    let result = find_ref_path(&db, FormId(1), FormId(4), 2, false).expect("find_ref_path");
     assert_eq!(result.chain, None);
     assert!(!result.budget_exhausted);
 
     // Raising the ceiling to the exact chain length finds it again.
-    let result = find_ref_path(&mut db, FormId(1), FormId(4), 3, false).expect("find_ref_path");
+    let result = find_ref_path(&db, FormId(1), FormId(4), 3, false).expect("find_ref_path");
     assert_eq!(result.hops, Some(3));
 
     let _ = std::fs::remove_file(&path);
@@ -617,9 +549,9 @@ fn find_ref_path_respects_max_hops_ceiling() {
 /// `referenced_by_walk`'s `--paths` uses.
 #[test]
 fn find_ref_path_paths_annotate_every_hop_but_the_first() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let result = find_ref_path(&mut db, FormId(1), FormId(4), 0, true).expect("find_ref_path");
+    let result = find_ref_path(&db, FormId(1), FormId(4), 0, true).expect("find_ref_path");
     let chain = result.chain.expect("path should be found");
     assert_eq!(
         chain[0].field_paths, None,
@@ -693,18 +625,10 @@ fn recursive_refs_cycle_guard() {
     buf.extend_from_slice(&0u16.to_le_bytes());
     buf.extend_from_slice(&subs2);
 
-    let (tmp, mut db) = write_and_open(&buf, "refs_cycle");
+    let (tmp, db) = write_and_open(&buf, "refs_cycle");
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        6,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list = referenced_by_enriched(&db, FormId(1), 6, 0, None, false, esm::ipc::RefSort::Formid)
+        .expect("enriched");
 
     // Only WEAP(2) should appear — WEAP(1) is the target and excluded from results.
     // The cycle WEAP(1)→WEAP(2)→WEAP(1) must not cause WEAP(1) to appear as a result.
@@ -718,18 +642,10 @@ fn recursive_refs_cycle_guard() {
 /// limit cap: when limit > 0, total reflects the real count and capped=true.
 #[test]
 fn recursive_refs_limit_caps_output() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        6,
-        1,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list = referenced_by_enriched(&db, FormId(1), 6, 1, None, false, esm::ipc::RefSort::Formid)
+        .expect("enriched");
     assert_eq!(list.rows.len(), 1, "limit=1 should cap to 1 row");
     assert_eq!(list.total, 3, "total should reflect the full depth=6 count");
     assert!(list.capped, "capped flag should be set");
@@ -744,18 +660,10 @@ fn recursive_refs_limit_caps_output() {
 #[test]
 fn field_paths_none_when_not_requested() {
     let buf = make_xref_esm();
-    let (tmp, mut db) = write_and_open(&buf, "refs_paths_off");
+    let (tmp, db) = write_and_open(&buf, "refs_paths_off");
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        1,
-        0,
-        None,
-        false,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, false, esm::ipc::RefSort::Formid)
+        .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert!(
         list.rows[0].field_paths.is_none(),
@@ -772,18 +680,10 @@ fn field_paths_none_when_not_requested() {
 #[test]
 fn field_paths_finds_all_occurrences_in_one_record() {
     let buf = make_xref_esm();
-    let (tmp, mut db) = write_and_open(&buf, "refs_paths_multi");
+    let (tmp, db) = write_and_open(&buf, "refs_paths_multi");
 
-    let list = referenced_by_enriched(
-        &mut db,
-        FormId(1),
-        1,
-        0,
-        None,
-        true,
-        esm::ipc::RefSort::Formid,
-    )
-    .expect("enriched");
+    let list = referenced_by_enriched(&db, FormId(1), 1, 0, None, true, esm::ipc::RefSort::Formid)
+        .expect("enriched");
     assert_eq!(list.rows.len(), 1);
     assert_eq!(
         list.rows[0].field_paths,
@@ -835,11 +735,11 @@ fn formid_reference_paths_unknown_referencer_returns_empty() {
 /// case-insensitive, so every spelling of the signature must behave the same.
 #[test]
 fn type_filter_narrows_rows_but_keeps_traversing() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
     for filter in ["CONT", "cont", "CoNt"] {
         let list = referenced_by_enriched(
-            &mut db,
+            &db,
             FormId(1),
             6,
             0,
@@ -874,12 +774,12 @@ fn type_filter_narrows_rows_but_keeps_traversing() {
 /// counted against the cap.
 #[test]
 fn type_filter_limit_and_total_apply_post_filter() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
     // Unfiltered depth=6 walk has 3 rows (LVLI, LVLI, CONT); filtering to LVLI
     // only should report total=2, not 3, and limit=1 should cap that to 1.
     let list = referenced_by_enriched(
-        &mut db,
+        &db,
         FormId(1),
         6,
         1,
@@ -899,10 +799,10 @@ fn type_filter_limit_and_total_apply_post_filter() {
 /// A type signature that isn't exactly 4 characters is rejected up front.
 #[test]
 fn type_filter_rejects_non_4char_signature() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
     let err = referenced_by_enriched(
-        &mut db,
+        &db,
         FormId(1),
         1,
         0,
@@ -922,10 +822,10 @@ fn type_filter_rejects_non_4char_signature() {
 /// `--type` and `--paths` compose: filtered rows still get field_paths.
 #[test]
 fn type_filter_and_paths_compose() {
-    let (path, mut db) = open_chain_db();
+    let (path, db) = open_chain_db();
 
     let list = referenced_by_enriched(
-        &mut db,
+        &db,
         FormId(1),
         6,
         0,
@@ -1085,7 +985,7 @@ fn entry_point_spec_parse_numeric_name_and_rejects_formid_like() {
 /// points entirely.
 #[test]
 fn perks_by_entry_point_matches_by_id_and_exact_case_insensitive_name() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Id(39))
@@ -1128,7 +1028,7 @@ fn perks_by_entry_point_matches_by_id_and_exact_case_insensitive_name() {
 /// A `*`-glob name pattern can match several distinct entry points at once.
 #[test]
 fn perks_by_entry_point_glob_matches_multiple_distinct_entry_points() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Name("Mod Incoming Spell*".to_string()))
@@ -1158,7 +1058,7 @@ fn perks_by_entry_point_glob_matches_multiple_distinct_entry_points() {
 /// it has none.
 #[test]
 fn perks_by_entry_point_reaches_unnamed_id_only_by_number() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let (label, seeds) = db
         .perks_by_entry_point(&EntryPointSpec::Id(213))
@@ -1183,10 +1083,10 @@ fn perks_by_entry_point_reaches_unnamed_id_only_by_number() {
 /// are found and deduped together.
 #[test]
 fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let list = referenced_by_enriched_multi(
-        &mut db,
+        &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39 (Mod Percent Blocked)".to_string(),
         1,
@@ -1246,10 +1146,10 @@ fn referenced_by_enriched_multi_emits_carriers_at_depth_zero_then_bfs() {
 /// other row.
 #[test]
 fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let list = referenced_by_enriched_multi(
-        &mut db,
+        &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39 (Mod Percent Blocked)".to_string(),
         1,
@@ -1284,9 +1184,9 @@ fn referenced_by_enriched_multi_type_filter_applies_to_carriers_too() {
 /// entry-point selector outright rather than silently misinterpreting it.
 #[test]
 fn resolve_sel_rejects_entry_point_selector() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
-    let err = resolve_sel(&mut db, &RecordSel::EntryPoint("39".to_string()))
+    let err = resolve_sel(&db, &RecordSel::EntryPoint("39".to_string()))
         .expect_err("entry-point selector must not resolve to a single FormId");
     let msg = format!("{err:#}");
     assert!(
@@ -1302,10 +1202,10 @@ fn resolve_sel_rejects_entry_point_selector() {
 /// the CLI/daemon/N-API would use it.
 #[test]
 fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let v = dispatch_op(
-        &mut db,
+        &db,
         &Op::ReferencedBy {
             sel: RecordSel::EntryPoint("Mod Percent Blocked".to_string()),
             limit: 0,
@@ -1344,10 +1244,10 @@ fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
 /// without the explicit `--entry-point` flag.
 #[test]
 fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let v = dispatch_op(
-        &mut db,
+        &db,
         &Op::ReferencedBy {
             sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
             limit: 0,
@@ -1374,10 +1274,10 @@ fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
 /// only triggers on an EditorID *miss*, never overriding a genuine match.
 #[test]
 fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
-    let (path, mut db) = open_edid_collision_db();
+    let (path, db) = open_edid_collision_db();
 
     let v = dispatch_op(
-        &mut db,
+        &db,
         &Op::ReferencedBy {
             sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
             limit: 0,
@@ -1409,10 +1309,10 @@ fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
 /// existing dual-interpretation error.
 #[test]
 fn dispatch_referenced_by_edid_neither_interpretation_bails() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let err = dispatch_op(
-        &mut db,
+        &db,
         &Op::ReferencedBy {
             sel: RecordSel::Edid("TotallyBogusTokenXYZ".to_string()),
             limit: 0,
@@ -1434,10 +1334,10 @@ fn dispatch_referenced_by_edid_neither_interpretation_bails() {
 /// two carriers at the same depth gets both carriers' tags unioned.
 #[test]
 fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let list = referenced_by_enriched_multi(
-        &mut db,
+        &db,
         &seeds_with_ep(&[(15, 41), (16, 42)]),
         "entry point 'Mod Incoming Spell*' (2 matched)".to_string(),
         1,
@@ -1470,7 +1370,7 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
 
     // Depth-2 SharedDeep from CarrierA+CarrierB (same EP 39) also unions.
     let deep = referenced_by_enriched_multi(
-        &mut db,
+        &db,
         &seeds_with_ep(&[(10, 39), (11, 39)]),
         "entry point 39".to_string(),
         2,
@@ -1501,10 +1401,10 @@ fn entry_point_tags_inherited_and_unioned_on_equal_depth_re_reach() {
 /// (no re-sort by FormID inside `referenced_by_walk`).
 #[test]
 fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let forward = referenced_by_enriched_multi(
-        &mut db,
+        &db,
         &seeds_with_ep(&[(15, 41), (16, 42)]),
         "forward".to_string(),
         1,
@@ -1515,7 +1415,7 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
     )
     .expect("forward");
     let reverse = referenced_by_enriched_multi(
-        &mut db,
+        &db,
         &seeds_with_ep(&[(16, 42), (15, 41)]),
         "reverse".to_string(),
         1,
@@ -1580,10 +1480,10 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
 /// depth-1 `path` — bit-compatible with pre-EP-attribution behavior.
 #[test]
 fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
-    let (path, mut db) = open_entry_point_db();
+    let (path, db) = open_entry_point_db();
 
     let list = referenced_by_enriched(
-        &mut db,
+        &db,
         FormId(10),
         1,
         0,
@@ -1711,7 +1611,7 @@ fn omod_property_spec_parses_scopes_names_ids_and_rejects_ambiguous_or_formid() 
 /// repeated property row produces one tag on its carrier.
 #[test]
 fn omods_by_property_scope_name_and_numeric_match_only_requested_space() {
-    let (path, mut db) = open_omod_property_db();
+    let (path, db) = open_omod_property_db();
 
     let (_, by_name) = db
         .omods_by_property(&OmodPropertySpec::parse("weap:Speed").unwrap())
@@ -1742,7 +1642,7 @@ fn omods_by_property_scope_name_and_numeric_match_only_requested_space() {
 /// weapon `ActorValues` and armor `Actor Values` are one logical query.
 #[test]
 fn omods_by_property_bare_name_spans_spaces_and_ignores_whitespace() {
-    let (path, mut db) = open_omod_property_db();
+    let (path, db) = open_omod_property_db();
 
     let (label, actor_values) = db
         .omods_by_property(&OmodPropertySpec::parse("ActorValues").unwrap())
@@ -1778,7 +1678,7 @@ fn omods_by_property_bare_name_spans_spaces_and_ignores_whitespace() {
 
 #[test]
 fn omods_by_property_no_match_and_glob_match_multiple_distinct_names() {
-    let (path, mut db) = open_omod_property_db();
+    let (path, db) = open_omod_property_db();
 
     let (label, none) = db
         .omods_by_property(&OmodPropertySpec::parse("weap:NotAProperty").unwrap())
@@ -1815,9 +1715,9 @@ fn omods_by_property_no_match_and_glob_match_multiple_distinct_names() {
 
 #[test]
 fn resolve_sel_rejects_omod_property_selector() {
-    let (path, mut db) = open_omod_property_db();
+    let (path, db) = open_omod_property_db();
 
-    let err = resolve_sel(&mut db, &RecordSel::OmodProperty("weap:Speed".to_string()))
+    let err = resolve_sel(&db, &RecordSel::OmodProperty("weap:Speed".to_string()))
         .expect_err("OMOD-property selector must not resolve to one FormId");
     let msg = format!("{err:#}");
     assert!(
@@ -1830,10 +1730,10 @@ fn resolve_sel_rejects_omod_property_selector() {
 
 #[test]
 fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
-    let (path, mut db) = open_omod_property_db();
+    let (path, db) = open_omod_property_db();
 
     let v = dispatch_op(
-        &mut db,
+        &db,
         &Op::ReferencedBy {
             sel: RecordSel::OmodProperty("Enchantments".to_string()),
             limit: 0,
@@ -1867,10 +1767,10 @@ fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
 /// must win even though Health is also an OMOD property name.
 #[test]
 fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
-    let (path, mut db) = open_omod_property_db();
+    let (path, db) = open_omod_property_db();
 
     let v = dispatch_op(
-        &mut db,
+        &db,
         &Op::ReferencedBy {
             sel: RecordSel::Edid("Health".to_string()),
             limit: 0,
@@ -1896,10 +1796,10 @@ fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
 /// dispatch here would prove that the forbidden fallback was added.
 #[test]
 fn dispatch_referenced_by_edid_miss_does_not_fallback_to_omod_property() {
-    let (path, mut db) = open_omod_property_db();
+    let (path, db) = open_omod_property_db();
 
     let err = dispatch_op(
-        &mut db,
+        &db,
         &Op::ReferencedBy {
             sel: RecordSel::Edid("Speed".to_string()),
             limit: 0,

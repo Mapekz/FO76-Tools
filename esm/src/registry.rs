@@ -174,7 +174,7 @@ impl Registry {
         if !self.auto_warm && !self.warm_xref {
             return Ok(());
         }
-        let mut db = db_arc.lock().unwrap();
+        let db = db_arc.lock().unwrap();
         db.ensure_edid_index()?;
         db.ensure_search_index()?;
         if self.warm_xref {

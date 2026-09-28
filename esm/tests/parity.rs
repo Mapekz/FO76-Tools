@@ -50,9 +50,9 @@ fn assert_parity(path: &Path, reg: &Registry, op: Op) {
         Response::Err { error } => panic!("dispatch (registry path) failed for {op:?}: {error}"),
     };
 
-    let mut db = Database::open(path).expect("open db directly for dispatch_op path");
-    let via_direct = dispatch_op(&mut db, &op)
-        .unwrap_or_else(|e| panic!("dispatch_op failed for {op:?}: {e:#}"));
+    let db = Database::open(path).expect("open db directly for dispatch_op path");
+    let via_direct =
+        dispatch_op(&db, &op).unwrap_or_else(|e| panic!("dispatch_op failed for {op:?}: {e:#}"));
 
     assert_eq!(
         via_registry, via_direct,
