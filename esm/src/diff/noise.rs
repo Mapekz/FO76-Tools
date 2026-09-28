@@ -343,11 +343,24 @@ fn is_materialized_on_resave(sig: &str, key: &str, from: &Value, to: &Value) -> 
 struct Leaf<'a> {
     /// The key the change sits under.
     key: &'a str,
+    /// What holds that key.
+    within: Within,
     /// Dot-joined keys from the top, with `[]` after a key whose value is
     /// an `_array_diff` (e.g. `Responses[].Response.Unknown`).
     path: &'a str,
     from: &'a Value,
     to: &'a Value,
+}
+
+/// The container a [`Leaf`]'s key belongs to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Within {
+    /// The record's own `field_changes`.
+    Record,
+    /// An `_array_diff` element's `changes`.
+    Element,
+    /// A nested struct value.
+    Struct,
 }
 
 /// A pruning test: whether a [`Leaf`] is noise. `FnMut` so a pass can count
@@ -363,7 +376,12 @@ type IsNoise<'a> = dyn FnMut(&Leaf) -> bool + 'a;
 /// (a real structural change), and `count_from`/`count_to` are left as they
 /// are — with no `added`/`removed`, both array-diff strategies only pair
 /// elements 1:1, so the counts already agree.
-fn prune_leaves(map: &mut serde_json::Map<String, Value>, path: &str, is_noise: &mut IsNoise) {
+fn prune_leaves(
+    map: &mut serde_json::Map<String, Value>,
+    path: &str,
+    within: Within,
+    is_noise: &mut IsNoise,
+) {
     map.retain(|key, value| {
         let Some(obj) = value.as_object_mut() else {
             return true;
@@ -381,7 +399,7 @@ fn prune_leaves(map: &mut serde_json::Map<String, Value>, path: &str, is_noise: 
                     else {
                         return true;
                     };
-                    prune_leaves(changes, &child_path, is_noise);
+                    prune_leaves(changes, &child_path, Within::Element, is_noise);
                     !changes.is_empty()
                 });
                 if elements.is_empty() {
@@ -397,12 +415,13 @@ fn prune_leaves(map: &mut serde_json::Map<String, Value>, path: &str, is_noise: 
         {
             return !is_noise(&Leaf {
                 key,
+                within,
                 path: &child_path,
                 from,
                 to,
             });
         }
-        prune_leaves(obj, &child_path, is_noise);
+        prune_leaves(obj, &child_path, Within::Struct, is_noise);
         !obj.is_empty()
     });
 }
@@ -416,7 +435,7 @@ pub(crate) fn strip_restamp_appearances(field_changes: &mut Value, sig: &str) {
     let Some(map) = field_changes.as_object_mut() else {
         return;
     };
-    prune_leaves(map, "", &mut |leaf| {
+    prune_leaves(map, "", Within::Record, &mut |leaf| {
         is_zero_raw_transition(leaf.from, leaf.to)
             || is_materialized_on_resave(sig, leaf.key, leaf.from, leaf.to)
     });
@@ -449,7 +468,7 @@ pub(crate) fn strip_localization_flip_text(field_changes: &mut Value) -> usize {
         return 0;
     };
     let mut stripped = 0;
-    prune_leaves(map, "", &mut |leaf| {
+    prune_leaves(map, "", Within::Record, &mut |leaf| {
         let noise = matches!((leaf.from, leaf.to), (Value::String(a), Value::String(b))
             if table_normalized(a) == table_normalized(b));
         stripped += usize::from(noise);
@@ -617,8 +636,12 @@ fn strip_padding_zeroed(field_changes: &mut Value) -> usize {
         return 0;
     };
     let mut stripped = 0;
-    prune_leaves(map, "", &mut |leaf| {
-        let noise = leaf.key == "hex" && is_padding_zeroed_hex_diff(leaf.from, leaf.to);
+    prune_leaves(map, "", Within::Record, &mut |leaf| {
+        // Only a `_raw` blob's `hex`, which sits in a struct value; a bare
+        // `hex` in an array element's changes is a byte-array value edit.
+        let noise = leaf.key == "hex"
+            && leaf.within == Within::Struct
+            && is_padding_zeroed_hex_diff(leaf.from, leaf.to);
         stripped += usize::from(noise);
         noise
     });
@@ -630,7 +653,7 @@ fn strip_calibrated_defaults(field_changes: &mut Value, suppressible: &HashSet<D
     let Some(map) = field_changes.as_object_mut() else {
         return;
     };
-    prune_leaves(map, "", &mut |leaf| {
+    prune_leaves(map, "", Within::Record, &mut |leaf| {
         leaf.from.is_null()
             && !leaf.to.is_null()
             && suppressible.contains(&(leaf_name(leaf.path).to_owned(), canonical_json(leaf.to)))
@@ -1292,6 +1315,20 @@ mod tests {
         let mut appearance =
             json!({"Unknown": {"from": null, "to": {"hex": "000000", "_raw": true}}});
         assert_eq!(strip_padding_zeroed(&mut appearance), 0);
+    }
+
+    /// A byte-array element that goes to zeros is a value edit (REGN
+    /// `Unknown 2` 0x0042C6D7 on 20260914: `803f` -> `0000`), not the `_raw`
+    /// padding shape, and must survive.
+    #[test]
+    fn padding_zeroed_keeps_byte_array_element_edits() {
+        let mut fc = json!({"Unknown 2": {"_array_diff": {"strategy": "positional",
+            "count_from": 9, "count_to": 9, "changed": [{"key": {"index": 7},
+            "index_from": 7, "index_to": 7,
+            "changes": {"hex": {"from": "803f", "to": "0000"}}}]}}});
+        let before = fc.clone();
+        assert_eq!(strip_padding_zeroed(&mut fc), 0);
+        assert_eq!(fc, before);
     }
 
     #[test]
