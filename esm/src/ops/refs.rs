@@ -122,10 +122,11 @@ pub struct RefPathNode {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
+#[serde(try_from = "RefRowJson")]
 pub struct RefRow {
     pub form_id: String,
     /// `form_id`, typed, for in-process consumers (chase, walk). Not
-    /// serialized: a row read back from JSON has the null FormID here.
+    /// serialized; a row read back from JSON gets it from `form_id`.
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
     pub id: crate::FormId,
@@ -157,6 +158,45 @@ pub struct RefRow {
     /// single-target walk.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<CarrierTag>,
+}
+
+/// A [`RefRow`] as JSON carries it: everything but the typed `id`, which
+/// reading it back derives from `form_id`.
+#[derive(Deserialize)]
+struct RefRowJson {
+    form_id: String,
+    record_type: Option<String>,
+    editor_id: Option<String>,
+    name: Option<String>,
+    offset: u64,
+    depth: usize,
+    #[serde(default)]
+    path: Vec<RefPathNode>,
+    #[serde(default)]
+    field_paths: Option<Vec<String>>,
+    #[serde(default)]
+    tags: Vec<CarrierTag>,
+}
+
+impl TryFrom<RefRowJson> for RefRow {
+    type Error = String;
+
+    fn try_from(row: RefRowJson) -> Result<Self, String> {
+        let id = crate::parse_form_id_input(&row.form_id)
+            .map_err(|e| format!("reference row form_id {:?}: {e}", row.form_id))?;
+        Ok(RefRow {
+            form_id: row.form_id,
+            id,
+            record_type: row.record_type,
+            editor_id: row.editor_id,
+            name: row.name,
+            offset: row.offset,
+            depth: row.depth,
+            path: row.path,
+            field_paths: row.field_paths,
+            tags: row.tags,
+        })
+    }
 }
 
 /// Referenced-by result with total count and optional cap flag.
@@ -205,4 +245,24 @@ pub struct RefList {
     /// a truncated result state precisely "you only got hops 1..=N".
     #[serde(default)]
     pub shown_max_depth: usize,
+}
+
+#[cfg(test)]
+mod ref_row_tests {
+    use super::*;
+
+    #[test]
+    fn a_row_read_back_from_json_keeps_its_typed_id() {
+        let row = RefRow {
+            form_id: crate::FormId(0x0050_0030).display(),
+            id: crate::FormId(0x0050_0030),
+            depth: 1,
+            ..RefRow::default()
+        };
+        let back: RefRow = serde_json::from_value(serde_json::to_value(&row).unwrap()).unwrap();
+        assert_eq!(back.id, row.id);
+        let bad = serde_json::json!({"form_id": "nope", "record_type": null, "editor_id": null,
+            "name": null, "offset": 0, "depth": 1});
+        assert!(serde_json::from_value::<RefRow>(bad).is_err());
+    }
 }
