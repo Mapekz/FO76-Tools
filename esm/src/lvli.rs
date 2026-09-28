@@ -529,15 +529,176 @@ fn mean_field_pool_odds(probs: &[f64]) -> Vec<f64> {
     probs.iter().map(|p| p / denom).collect()
 }
 
-// ─── recursive tree walk ────────────────────────────────────────────────────
+// ─── resolve: one list's entries at a level ─────────────────────────────────
 
-struct EligibleEntry<'a> {
-    entry: &'a Value,
+/// The record an entry names.
+struct Target {
+    fid: FormId,
+    editor_id: String,
+    record_type: String,
+}
+
+impl Target {
+    /// `None` without a usable, non-null FormID.
+    fn of(entry: &Value) -> Option<Target> {
+        let stub = entry_target(entry)?;
+        let fid = stub_formid(Some(stub)).filter(|fid| fid.raw() != 0)?;
+        let text = |key: &str| {
+            stub.get(key)
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string()
+        };
+        Some(Target {
+            fid,
+            editor_id: text("editor_id"),
+            record_type: text("record_type"),
+        })
+    }
+
+    fn is_sublist(&self) -> bool {
+        self.record_type == "LVLI"
+    }
+}
+
+/// An entry that qualifies at the requested level, with its scalars
+/// resolved. An entry without a target still takes part in selection.
+struct Eligible {
+    target: Option<Target>,
+    /// Chance its CTDA gate passes.
     gate_prob: f64,
     chance_none: f64,
     quantity: f64,
     notes: Vec<DropNote>,
 }
+
+/// One list resolved at a level: how it selects, what it notes, and the
+/// entries that qualify.
+struct ResolvedList {
+    model: SelectionModel,
+    /// Chance the list-level Chance None lets anything through.
+    list_factor: f64,
+    notes: Vec<DropNote>,
+    entries: Vec<Eligible>,
+    /// Sublists any entry names (eligible or not), for one batched fetch.
+    sublists: Vec<FormId>,
+}
+
+fn resolve_list(fields: &Value, opts: &DropOptions) -> ResolvedList {
+    let flags = lvlf_flags(fields);
+    let model = selection_model(&flags);
+
+    let mut notes: Vec<DropNote> = Vec::new();
+    for key in [
+        "Max Count",
+        "Max Global",
+        "Max Curve Table",
+        "Filter Keyword Chances",
+        "Epic Loot Chance",
+    ] {
+        if fields.get(key).is_some_and(|v| !v.is_null()) {
+            notes.push(DropNote::Unresolved {
+                reason: format!("{key} present on this list — not modeled"),
+            });
+        }
+    }
+
+    // Leaf targets need nothing further: their stub carries editor_id and
+    // record_type (and a GLOB's Value, see `glob_stub_value`).
+    let entry_vals = entries(fields);
+    let mut sublists: Vec<FormId> = Vec::new();
+    for e in &entry_vals {
+        if let Some(target) = Target::of(e).filter(Target::is_sublist) {
+            sublists.push(target.fid);
+        }
+        let extra_data = DropNote::Unresolved {
+            reason: "Extra Data (COED owner/rank/condition) present — not modeled".to_string(),
+        };
+        if e.get("Extra Data").is_some_and(|v| !v.is_null()) && !notes.contains(&extra_data) {
+            notes.push(extra_data);
+        }
+    }
+    dedup_sorted(&mut sublists);
+
+    let list_factor = 1.0 - list_chance_none(fields, opts.level, &mut notes);
+
+    let mut entries = Vec::new();
+    let mut min_levels: Vec<i64> = Vec::new();
+    for e in &entry_vals {
+        let mut entry_notes = Vec::new();
+        if let Some(ml) = resolve_min_level(e, opts.level, &mut entry_notes) {
+            if ml > opts.level {
+                continue;
+            }
+            min_levels.push((ml * 1000.0).round() as i64);
+        }
+        let gate_prob = match e.get("Conditions") {
+            Some(c) => entry_gate_prob(&flatten_condition_rows(c), opts.strict, &mut entry_notes),
+            None => 1.0,
+        };
+        let chance_none = entry_chance_none(e, opts.level, &mut entry_notes);
+        let quantity = resolve_quantity(e, opts.level, &mut entry_notes);
+        entries.push(Eligible {
+            target: Target::of(e),
+            gate_prob,
+            chance_none,
+            quantity,
+            notes: entry_notes,
+        });
+    }
+
+    if !flags.contains(CALC_ALL_LEVELS) {
+        let distinct: HashSet<i64> = min_levels.into_iter().collect();
+        if distinct.len() > 1 {
+            notes.push(DropNote::Unresolved {
+                reason: format!(
+                    "no \"{CALC_ALL_LEVELS}\" flag and multiple Minimum Level tiers qualify at \
+                     level {} — whether FO76 collapses to only the highest tier here is \
+                     unverified, so every qualifying tier is shown",
+                    opts.level
+                ),
+            });
+        }
+    }
+
+    ResolvedList {
+        model,
+        list_factor,
+        notes,
+        entries,
+        sublists,
+    }
+}
+
+// ─── evaluate: selection odds ───────────────────────────────────────────────
+
+/// The chance each entry is selected under `model`, and whether the pool
+/// odds are a mean-field approximation.
+fn selection_odds(model: SelectionModel, entries: &[Eligible]) -> (Vec<f64>, bool) {
+    let gates: Vec<f64> = entries.iter().map(|e| e.gate_prob).collect();
+    match model {
+        SelectionModel::UseAll => (gates, false),
+        SelectionModel::UseFirstMatch => {
+            let mut remaining = 1.0;
+            let odds = gates
+                .iter()
+                .map(|g| {
+                    let c = g * remaining;
+                    remaining *= 1.0 - g;
+                    c
+                })
+                .collect();
+            (odds, false)
+        }
+        SelectionModel::Pool if gates.is_empty() => (Vec::new(), false),
+        SelectionModel::Pool if gates.len() <= MAX_EXACT_POOL_ENTRIES => {
+            (compute_pool_odds(&gates), false)
+        }
+        SelectionModel::Pool => (mean_field_pool_odds(&gates), true),
+    }
+}
+
+// ─── the recursive walk ─────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct LeafAgg {
@@ -631,6 +792,31 @@ fn merge_leaf(
     }
 }
 
+/// A leaf item one invocation of a target yields: its chance of at least one
+/// and expected count.
+struct Reach {
+    fid: FormId,
+    p: f64,
+    expected: f64,
+    editor_id: String,
+    record_type: String,
+    notes: Vec<DropNote>,
+}
+
+impl Reach {
+    /// A non-list target: itself, once.
+    fn leaf(target: &Target) -> Reach {
+        Reach {
+            fid: target.fid,
+            p: 1.0,
+            expected: 1.0,
+            editor_id: target.editor_id.clone(),
+            record_type: target.record_type.clone(),
+            notes: Vec::new(),
+        }
+    }
+}
+
 /// Recursively resolve one LVLI's fields into a [`NodeResult`]. `path`
 /// carries every ancestor FormID for cycle detection (push/pop around each
 /// recursive call — see call site).
@@ -642,270 +828,116 @@ fn walk_node(
     path: &mut Vec<FormId>,
     scale: TreeScale,
 ) -> anyhow::Result<NodeResult> {
-    let entry_vals = entries(fields);
-    let flags = lvlf_flags(fields);
-    let model = selection_model(&flags);
-    let calc_all_levels = flags.contains(CALC_ALL_LEVELS);
-
-    let mut node_notes: Vec<DropNote> = Vec::new();
-    for key in [
-        "Max Count",
-        "Max Global",
-        "Max Curve Table",
-        "Filter Keyword Chances",
-        "Epic Loot Chance",
-    ] {
-        if fields.get(key).is_some_and(|v| !v.is_null()) {
-            node_notes.push(DropNote::Unresolved {
-                reason: format!("{key} present on this list — not modeled"),
-            });
-        }
+    let list = resolve_list(fields, opts);
+    let mut node_notes = list.notes;
+    let by_fid = bulk_fetch_map(f, &list.sublists)?;
+    let (chosen, mut truncated) = selection_odds(list.model, &list.entries);
+    if truncated {
+        node_notes.push(DropNote::PoolCapped);
     }
+    let list_factor = list.list_factor;
 
-    // One batched fetch for every sublist target's own fields (leaf targets
-    // need nothing further — their stub already carries
-    // editor_id/record_type, and, for a GLOB leaf, its Value inlined too —
-    // see `glob_stub_value`. This used to also collect every `*_Global` and
-    // condition GLOB ref for a second bulk fetch; `--resolve stub` now
-    // inlines those values directly onto the reference, so that fetch is
-    // gone — see `esm/docs/adr/0011-value-bearing-leaf-inlining.md`.)
-    let mut want: Vec<FormId> = Vec::new();
-    for e in &entry_vals {
-        if let Some(target) = entry_target(e)
-            && target.get("record_type").and_then(Value::as_str) == Some("LVLI")
-            && let Some(fid) = stub_formid(Some(target))
-        {
-            want.push(fid);
-        }
-        let extra_data = DropNote::Unresolved {
-            reason: "Extra Data (COED owner/rank/condition) present — not modeled".to_string(),
-        };
-        if e.get("Extra Data").is_some_and(|v| !v.is_null()) && !node_notes.contains(&extra_data) {
-            node_notes.push(extra_data);
-        }
-    }
-    dedup_sorted(&mut want);
-    let by_sel = bulk_fetch_map(f, &want)?;
-
-    let list_factor = 1.0 - list_chance_none(fields, opts.level, &mut node_notes);
-
-    let mut eligible: Vec<EligibleEntry> = Vec::new();
-    let mut min_levels: Vec<i64> = Vec::new();
-    for e in &entry_vals {
-        let mut notes = Vec::new();
-        if let Some(ml) = resolve_min_level(e, opts.level, &mut notes) {
-            if ml > opts.level {
-                continue;
-            }
-            min_levels.push((ml * 1000.0).round() as i64);
-        }
-        let gate_prob = match e.get("Conditions") {
-            Some(c) => entry_gate_prob(&flatten_condition_rows(c), opts.strict, &mut notes),
-            None => 1.0,
-        };
-        let chance_none = entry_chance_none(e, opts.level, &mut notes);
-        let quantity = resolve_quantity(e, opts.level, &mut notes);
-        eligible.push(EligibleEntry {
-            entry: e,
-            gate_prob,
-            chance_none,
-            quantity,
-            notes,
-        });
-    }
-
-    if !calc_all_levels {
-        let distinct: HashSet<i64> = min_levels.into_iter().collect();
-        if distinct.len() > 1 {
-            node_notes.push(DropNote::Unresolved {
-                reason: format!(
-                    "no \"{CALC_ALL_LEVELS}\" flag and multiple Minimum Level tiers qualify at \
-                     level {} — whether FO76 collapses to only the highest tier here is \
-                     unverified, so every qualifying tier is shown",
-                    opts.level
-                ),
-            });
-        }
-    }
-
-    let mut truncated = false;
-    let n = eligible.len();
-    let chosen: Vec<f64> = match model {
-        SelectionModel::UseAll => eligible.iter().map(|e| e.gate_prob).collect(),
-        SelectionModel::UseFirstMatch => {
-            let mut remaining = 1.0;
-            eligible
-                .iter()
-                .map(|e| {
-                    let c = e.gate_prob * remaining;
-                    remaining *= 1.0 - e.gate_prob;
-                    c
-                })
-                .collect()
-        }
-        SelectionModel::Pool if n == 0 => Vec::new(),
-        SelectionModel::Pool if n <= MAX_EXACT_POOL_ENTRIES => {
-            compute_pool_odds(&eligible.iter().map(|e| e.gate_prob).collect::<Vec<_>>())
-        }
-        SelectionModel::Pool => {
-            truncated = true;
-            node_notes.push(DropNote::PoolCapped);
-            mean_field_pool_odds(&eligible.iter().map(|e| e.gate_prob).collect::<Vec<_>>())
-        }
-    };
-
-    let disjoint = !matches!(model, SelectionModel::UseAll);
+    let disjoint = !matches!(list.model, SelectionModel::UseAll);
     let mut node_leaves: HashMap<FormId, LeafAgg> = HashMap::new();
     let mut sum_effective_survive = 0.0_f64;
     let mut prod_all_fail = 1.0_f64;
     let mut branches: Vec<DropBranch> = Vec::new();
 
-    for (ee, &chosen_i) in eligible.iter().zip(&chosen) {
+    for (entry, &chosen_i) in list.entries.iter().zip(&chosen) {
         if chosen_i <= 0.0 {
             continue;
         }
-        let entry = ee.entry;
-        let effective_i = chosen_i * (1.0 - ee.chance_none);
+        let effective_i = chosen_i * (1.0 - entry.chance_none);
         if effective_i <= 0.0 {
             continue;
         }
-        let quantity = ee.quantity;
-
-        let Some(target) = entry_target(entry) else {
+        let Some(target) = &entry.target else {
             continue;
         };
-        let Some(target_fid) = stub_formid(Some(target)) else {
-            continue;
-        };
-        if target_fid.raw() == 0 {
-            continue;
-        }
-        let target_rt = target
-            .get("record_type")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
-        let target_edid = target
-            .get("editor_id")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
+        let quantity = entry.quantity;
 
-        let mut entry_notes = ee.notes.clone();
+        let mut entry_notes = entry.notes.clone();
         let reach_p = scale.p * list_factor * effective_i;
         let reach_expected = scale.expected * list_factor * effective_i * quantity;
         let mut sublist: Option<DropList> = None;
-        let (child_leaves, child_empty) = if target_rt == "LVLI" {
-            if path.contains(&target_fid) {
-                entry_notes.push(DropNote::Cycle);
-                (Vec::new(), 1.0)
-            } else if depth >= opts.max_depth {
-                entry_notes.push(DropNote::DepthCapped);
-                truncated = true;
-                (
-                    vec![(
-                        target_fid,
-                        1.0_f64,
-                        1.0_f64,
-                        target_edid.clone(),
-                        target_rt.clone(),
-                        Vec::new(),
-                    )],
-                    0.0,
-                )
-            } else {
-                match by_sel.get(&target_fid).and_then(|e| e.fields.as_ref()) {
-                    Some(sub_fields) => {
-                        path.push(target_fid);
-                        let child_scale = TreeScale {
-                            levels: scale.levels.saturating_sub(1),
-                            p: reach_p,
-                            expected: reach_expected,
-                        };
-                        let mut child =
-                            walk_node(f, sub_fields, opts, depth + 1, path, child_scale)?;
-                        path.pop();
-                        if scale.levels > 0 {
-                            sublist = Some(into_drop_list(&mut child));
-                        }
-                        truncated |= child.truncated;
-                        if quantity != 1.0 {
-                            entry_notes.push(DropNote::QuantityOnSublist);
-                        }
-                        // FormID order: the sums below must not depend on
-                        // HashMap iteration order.
-                        let mut child_leaves: Vec<_> = child.leaves.into_iter().collect();
-                        child_leaves.sort_by_key(|(fid, _)| fid.raw());
-                        let leaves = child_leaves
-                            .into_iter()
-                            .map(|(fid, agg)| {
-                                (
-                                    fid,
-                                    agg.p_at_least_one,
-                                    agg.expected_count,
-                                    agg.editor_id,
-                                    agg.record_type,
-                                    agg.notes,
-                                )
-                            })
-                            .collect();
-                        (leaves, child.p_empty)
+        let (reaches, child_empty) = if !target.is_sublist() {
+            (vec![Reach::leaf(target)], 0.0)
+        } else if path.contains(&target.fid) {
+            entry_notes.push(DropNote::Cycle);
+            (Vec::new(), 1.0)
+        } else if depth >= opts.max_depth {
+            entry_notes.push(DropNote::DepthCapped);
+            truncated = true;
+            (vec![Reach::leaf(target)], 0.0)
+        } else {
+            match by_fid.get(&target.fid).and_then(|e| e.fields.as_ref()) {
+                Some(sub_fields) => {
+                    path.push(target.fid);
+                    let child_scale = TreeScale {
+                        levels: scale.levels.saturating_sub(1),
+                        p: reach_p,
+                        expected: reach_expected,
+                    };
+                    let mut child = walk_node(f, sub_fields, opts, depth + 1, path, child_scale)?;
+                    path.pop();
+                    if scale.levels > 0 {
+                        sublist = Some(into_drop_list(&mut child));
                     }
-                    None => {
-                        entry_notes.push(DropNote::Unresolved {
-                            reason: "sublist fetch failed".to_string(),
-                        });
-                        (Vec::new(), 1.0)
+                    truncated |= child.truncated;
+                    if quantity != 1.0 {
+                        entry_notes.push(DropNote::QuantityOnSublist);
                     }
+                    // FormID order: the sums below must not depend on
+                    // HashMap iteration order.
+                    let mut leaves: Vec<_> = child.leaves.into_iter().collect();
+                    leaves.sort_by_key(|(fid, _)| fid.raw());
+                    let reaches = leaves
+                        .into_iter()
+                        .map(|(fid, agg)| Reach {
+                            fid,
+                            p: agg.p_at_least_one,
+                            expected: agg.expected_count,
+                            editor_id: agg.editor_id,
+                            record_type: agg.record_type,
+                            notes: agg.notes,
+                        })
+                        .collect();
+                    (reaches, child.p_empty)
+                }
+                None => {
+                    entry_notes.push(DropNote::Unresolved {
+                        reason: "sublist fetch failed".to_string(),
+                    });
+                    (Vec::new(), 1.0)
                 }
             }
-        } else {
-            (
-                vec![(
-                    target_fid,
-                    1.0_f64,
-                    1.0_f64,
-                    target_edid,
-                    target_rt,
-                    Vec::new(),
-                )],
-                0.0,
-            )
         };
 
-        for (fid, p_child, exp_child, edid, rt, sub_notes) in &child_leaves {
+        for reach in &reaches {
             let mut all_notes = entry_notes.clone();
-            for n in sub_notes {
+            for n in &reach.notes {
                 if !all_notes.contains(n) {
                     all_notes.push(n.clone());
                 }
             }
             merge_leaf(
                 &mut node_leaves,
-                *fid,
-                edid.clone(),
-                rt.clone(),
-                effective_i * p_child,
-                effective_i * quantity * exp_child,
+                reach.fid,
+                reach.editor_id.clone(),
+                reach.record_type.clone(),
+                effective_i * reach.p,
+                effective_i * quantity * reach.expected,
                 disjoint,
                 &all_notes,
             );
         }
 
         if scale.levels > 0 {
-            let child_expected: f64 = child_leaves.iter().map(|l| l.2).sum();
+            let child_expected: f64 = reaches.iter().map(|r| r.expected).sum();
             branches.push(DropBranch {
-                formid: target_fid.display(),
-                editor_id: target
-                    .get("editor_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                record_type: target
-                    .get("record_type")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
+                formid: target.fid.display(),
+                editor_id: target.editor_id.clone(),
+                record_type: target.record_type.clone(),
                 expected_count: reach_expected * child_expected,
                 p_at_least_one: (reach_p * (1.0 - child_empty)).clamp(0.0, 1.0),
                 notes: entry_notes.clone(),
@@ -921,6 +953,7 @@ fn walk_node(
         }
     }
 
+    // ─── project: the node's odds, leaves and tree rows ─────────────────────
     let p_empty_pre_l = if disjoint {
         (1.0 - sum_effective_survive).clamp(0.0, 1.0)
     } else {
@@ -958,7 +991,7 @@ fn walk_node(
         p_empty: node_p_empty,
         leaves: node_leaves,
         truncated,
-        model,
+        model: list.model,
         notes: node_notes,
         branches,
     })
