@@ -1,11 +1,20 @@
-//! Noise suppression: the sequential sub-stages `diff_databases_with` runs
-//! over a `changed` record's `field_changes` before deciding whether to keep
-//! or drop it entirely (see `DiffOptions::suppress_noise`). Stage order is
-//! load-bearing and must not change: unconditional → localization-flip →
-//! version-gated → restamp-#18 → calibrated-#22 (the last needs a global cross-record
-//! frequency pass, hence runs after the per-record loop in
-//! `diff_databases_with`). Each stage may only ever *narrow* `field_changes`
-//! — over-stripping silently hides real patch-notes content.
+//! Noise suppression over a changed record's `field_changes` (see
+//! `DiffOptions::suppress_noise`), in five stages whose order is
+//! load-bearing:
+//!
+//! 1. unconditional — known-noisy top-level fields ([`strip_noise_fields`]);
+//! 2. localization flip — string-table whitespace rewrites, when the two
+//!    sides' Localized flags differ;
+//! 3. version-gated — pure appearances/disappearances a schema version gate
+//!    explains, when the form versions differ;
+//! 4. restamp (#18) — re-save appearances no gate explains, same condition;
+//! 5. calibrated (#22) — padding zeroing and engine-default appearances on
+//!    restamped records, which needs frequencies across every record.
+//!
+//! [`suppress_record`] runs stages 1–4 per record; stage 5
+//! ([`apply_restamp_calibrated_suppression`]) runs once the whole diff is
+//! in. Each stage only ever *narrows* `field_changes` — over-stripping
+//! silently hides real patch-notes content.
 //!
 //! # Unconditional suppression
 //!
@@ -25,6 +34,41 @@ use crate::decode::member_version_ok;
 use crate::schema::{MemberDef, Schema};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+/// One record's two sides, as [`suppress_record`] needs them.
+pub(crate) struct RecordSides<'a> {
+    pub sig: &'a str,
+    /// The newer side's schema (for version gates).
+    pub schema: &'a Schema,
+    pub form_versions: (u16, u16),
+    /// Whether the two ESMs' Localized flags differ.
+    pub localization_flip: bool,
+}
+
+/// What [`suppress_record`] did.
+pub(crate) struct Suppressed {
+    /// The form versions differ: stage 5 revisits this record.
+    pub restamp: bool,
+    /// Localization-flip strings dropped.
+    pub flip_text: usize,
+}
+
+/// Stages 1–4 (see the module docs) over one record's `field_changes`.
+pub(crate) fn suppress_record(field_changes: &mut Value, rec: &RecordSides) -> Suppressed {
+    strip_noise_fields(field_changes, rec.sig);
+    let flip_text = if rec.localization_flip {
+        strip_localization_flip_text(field_changes)
+    } else {
+        0
+    };
+    let (fv_a, fv_b) = rec.form_versions;
+    let restamp = fv_a != fv_b;
+    if restamp {
+        strip_version_gated_transitions(field_changes, rec.schema, rec.sig, fv_a, fv_b);
+        strip_restamp_appearances(field_changes, rec.sig);
+    }
+    Suppressed { restamp, flip_text }
+}
 
 /// Record types whose placement-transform fields are considered noise.
 const PLACEMENT_TYPES: &[&str] = &["REFR", "ACHR", "PGRE", "PHZD"];
@@ -294,93 +338,73 @@ fn is_materialized_on_resave(sig: &str, key: &str, from: &Value, to: &Value) -> 
     from.is_null() && !to.is_null() && MATERIALIZED_ON_RESAVE.contains(&(sig, key))
 }
 
-/// A leaf-noise test: `(member key, from, to) -> is noise`. `FnMut` so a
-/// pass can count what it strips.
-type LeafNoise<'a> = dyn FnMut(&str, &Value, &Value) -> bool + 'a;
+/// One `{"from", "to"}` change under a `field_changes` tree, as the
+/// pruning passes see it.
+struct Leaf<'a> {
+    /// The key the change sits under.
+    key: &'a str,
+    /// Dot-joined keys from the top, with `[]` after a key whose value is
+    /// an `_array_diff` (e.g. `Responses[].Response.Unknown`).
+    path: &'a str,
+    from: &'a Value,
+    to: &'a Value,
+}
 
-/// Strip a `_array_diff` envelope's noise in place (`ad` is the object under
-/// the `"_array_diff"` key: `strategy`/`key_fields`/`count_from`/`count_to`/
-/// `added`/`removed`/`changed`). Walks every `changed[]` element's `changes`
-/// recursively via [`strip_leaves`], drops elements whose `changes`
-/// collapses to empty, and drops the `"changed"` key itself when every
-/// element was dropped. Returns `true` when the whole envelope is now
-/// noise-free and should be removed by the caller: `added`/`removed` were
-/// never present (leaf tests never touch genuine structural changes — see
-/// `is_pure_transition`'s same reasoning) and `changed` is now empty or
-/// absent.
+/// A pruning test: whether a [`Leaf`] is noise. `FnMut` so a pass can count
+/// what it strips.
+type IsNoise<'a> = dyn FnMut(&Leaf) -> bool + 'a;
+
+/// Remove every leaf under `map` that `is_noise` flags, in place, and prune
+/// what that empties: a nested struct left empty, an `_array_diff` element
+/// whose `changes` are left empty, and the envelope once it has no `added`,
+/// `removed` or `changed` left. `path` is `map`'s own path (empty at the top).
 ///
-/// `count_from == count_to` is NOT re-derived or asserted here as a
-/// correctness dependency — it's a defensive invariant that already holds
-/// whenever `added`/`removed` are both absent, by construction of the two
-/// strategies that populate `changed[]`: `positional_diff` only runs when
-/// `a.len() == b.len()`, and `keyed_diff`'s empty `added`/`removed` means
-/// every element paired 1:1 (see those functions' doc comments) — so a
-/// mismatch here would itself indicate a bug in an array-diff builder, not
-/// in this pass.
-fn strip_leaf_array_diff(
-    ad: &mut serde_json::Map<String, Value>,
-    is_noise: &mut LeafNoise,
-) -> bool {
-    if let Some(Value::Array(elements)) = ad.get_mut("changed") {
-        elements.retain_mut(|elem| {
-            let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut) else {
-                return true;
-            };
-            strip_leaves(changes, is_noise);
-            !changes.is_empty()
-        });
-        if elements.is_empty() {
-            ad.remove("changed");
+/// Only ever narrows: an `_array_diff` with `added`/`removed` elements stays
+/// (a real structural change), and `count_from`/`count_to` are left as they
+/// are — with no `added`/`removed`, both array-diff strategies only pair
+/// elements 1:1, so the counts already agree.
+fn prune_leaves(map: &mut serde_json::Map<String, Value>, path: &str, is_noise: &mut IsNoise) {
+    map.retain(|key, value| {
+        let Some(obj) = value.as_object_mut() else {
+            return true;
+        };
+        let mut child_path = if path.is_empty() {
+            key.clone()
+        } else {
+            format!("{path}.{key}")
+        };
+        if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
+            child_path.push_str("[]");
+            if let Some(Value::Array(elements)) = ad.get_mut("changed") {
+                elements.retain_mut(|elem| {
+                    let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut)
+                    else {
+                        return true;
+                    };
+                    prune_leaves(changes, &child_path, is_noise);
+                    !changes.is_empty()
+                });
+                if elements.is_empty() {
+                    ad.remove("changed");
+                }
+            }
+            return ad.contains_key("added")
+                || ad.contains_key("removed")
+                || ad.contains_key("changed");
         }
-    }
-
-    !(ad.contains_key("added") || ad.contains_key("removed") || ad.contains_key("changed"))
-}
-
-/// Strip noise leaves from `value` (the entry keyed by `key`) in place, and
-/// report whether the parent map should drop `key` entirely. Three shapes:
-///
-/// - a leaf `{"from": .., "to": ..}` change — tested directly by `is_noise`,
-///   no recursion;
-/// - an `_array_diff` envelope — delegates to [`strip_leaf_array_diff`];
-/// - a plain nested struct object (e.g. `Responses[].changes.Response`, one
-///   level of struct nesting under an array element's `changes`, per the
-///   design review) — recurse via [`strip_leaves`], then drop if the
-///   recursion emptied it.
-fn should_drop_leaf(value: &mut Value, key: &str, is_noise: &mut LeafNoise) -> bool {
-    let Some(obj) = value.as_object_mut() else {
-        return false;
-    };
-
-    if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
-        return strip_leaf_array_diff(ad, is_noise);
-    }
-
-    if obj.len() == 2 && obj.contains_key("from") && obj.contains_key("to") {
-        return is_noise(key, &obj["from"], &obj["to"]);
-    }
-
-    strip_leaves(obj, is_noise);
-    obj.is_empty()
-}
-
-/// Recursively strip noise leaves from a `changes`-shaped object map, in
-/// place, pruning parent keys whose value collapses to empty. See
-/// [`should_drop_leaf`] for the per-key logic; this just drives it over
-/// every key in `map` and removes the ones it flags.
-fn strip_leaves(map: &mut serde_json::Map<String, Value>, is_noise: &mut LeafNoise) {
-    let keys: Vec<String> = map.keys().cloned().collect();
-    let mut to_remove = Vec::new();
-    for key in keys {
-        if let Some(value) = map.get_mut(&key)
-            && should_drop_leaf(value, &key, is_noise)
+        if obj.len() == 2
+            && let (Some(from), Some(to)) = (obj.get("from"), obj.get("to"))
         {
-            to_remove.push(key);
+            return !is_noise(&Leaf {
+                key,
+                path: &child_path,
+                from,
+                to,
+            });
         }
-    }
-    for key in to_remove {
-        map.remove(&key);
-    }
+        prune_leaves(obj, &child_path, is_noise);
+        !obj.is_empty()
+    });
 }
 
 /// Drop restamp-only appearances/disappearances (see module docs above) from
@@ -392,8 +416,9 @@ pub(crate) fn strip_restamp_appearances(field_changes: &mut Value, sig: &str) {
     let Some(map) = field_changes.as_object_mut() else {
         return;
     };
-    strip_leaves(map, &mut |key, from, to| {
-        is_zero_raw_transition(from, to) || is_materialized_on_resave(sig, key, from, to)
+    prune_leaves(map, "", &mut |leaf| {
+        is_zero_raw_transition(leaf.from, leaf.to)
+            || is_materialized_on_resave(sig, leaf.key, leaf.from, leaf.to)
     });
 }
 
@@ -424,8 +449,8 @@ pub(crate) fn strip_localization_flip_text(field_changes: &mut Value) -> usize {
         return 0;
     };
     let mut stripped = 0;
-    strip_leaves(map, &mut |_, from, to| {
-        let noise = matches!((from, to), (Value::String(a), Value::String(b))
+    prune_leaves(map, "", &mut |leaf| {
+        let noise = matches!((leaf.from, leaf.to), (Value::String(a), Value::String(b))
             if table_normalized(a) == table_normalized(b));
         stripped += usize::from(noise);
         noise
@@ -480,33 +505,11 @@ fn is_from_to_leaf(v: &Value) -> bool {
         .is_some_and(|m| m.len() == 2 && m.contains_key("from") && m.contains_key("to"))
 }
 
-/// True when `v` is the residual `_raw` hex-diff shape
-/// `{"hex": {"from": <str>, "to": <all-zeros, non-empty>}}` — garbage padding
-/// bytes zeroed by a newer serializer (issue #22 rule (d)).
-fn is_padding_zeroed_value(v: &Value) -> bool {
-    let Some(map) = v.as_object() else {
-        return false;
-    };
-    // After json_diff, equal `_raw: true` on both sides is omitted, leaving
-    // exactly the `hex` key with a from/to string change.
-    if map.len() != 1 {
-        return false;
-    }
-    is_padding_zeroed_hex_diff(map.get("hex").unwrap_or(&Value::Null))
-}
-
-/// True when `v` is `{"from": <hex str>, "to": <all-zeros, non-empty>}`.
-fn is_padding_zeroed_hex_diff(v: &Value) -> bool {
-    let Some(m) = v.as_object() else {
-        return false;
-    };
-    if m.len() != 2 || !m.contains_key("from") || !m.contains_key("to") {
-        return false;
-    }
-    let Some(from) = m.get("from").and_then(Value::as_str) else {
-        return false;
-    };
-    let Some(to) = m.get("to").and_then(Value::as_str) else {
+/// True when a `hex` leaf goes from padding bytes to all zeros: the residual
+/// `_raw` shape `{"hex": {"from": <str>, "to": <all-zeros, non-empty>}}`
+/// once `json_diff` has dropped the equal `_raw: true` (issue #22 rule (d)).
+fn is_padding_zeroed_hex_diff(from: &Value, to: &Value) -> bool {
+    let (Some(from), Some(to)) = (from.as_str(), to.as_str()) else {
         return false;
     };
     !from.is_empty() && !to.is_empty() && to.bytes().all(|b| b == b'0')
@@ -581,7 +584,7 @@ fn collect_restamp_default_stats(
             let name = leaf_name(path).to_owned();
 
             // Padding-zero hex leaves are neither appearances nor real edits.
-            if name == "hex" && is_padding_zeroed_hex_diff(leaf) {
+            if name == "hex" && is_padding_zeroed_hex_diff(from, to) {
                 return;
             }
 
@@ -607,166 +610,19 @@ fn collect_restamp_default_stats(
     (appearance_counts, real_edits)
 }
 
-/// Strip padding-zeroed `_raw` hex leaves (issue #22 rule (d)) from an
-/// `_array_diff` envelope. Returns the number of leaves stripped; `true` when
-/// the envelope is now empty of structural content and should be dropped.
-fn strip_padding_zeroed_array_diff(ad: &mut serde_json::Map<String, Value>) -> (usize, bool) {
-    let mut stripped = 0;
-    if let Some(Value::Array(elements)) = ad.get_mut("changed") {
-        elements.retain_mut(|elem| {
-            let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut) else {
-                return true;
-            };
-            stripped += strip_padding_zeroed_map(changes);
-            !changes.is_empty()
-        });
-        if elements.is_empty() {
-            ad.remove("changed");
-        }
-    }
-    let empty =
-        !(ad.contains_key("added") || ad.contains_key("removed") || ad.contains_key("changed"));
-    (stripped, empty)
-}
-
-/// Strip padding-zeroed leaves from a changes-shaped map; returns count stripped.
-fn strip_padding_zeroed_map(map: &mut serde_json::Map<String, Value>) -> usize {
-    let keys: Vec<String> = map.keys().cloned().collect();
-    let mut stripped = 0;
-    let mut to_remove = Vec::new();
-    for key in keys {
-        let Some(value) = map.get_mut(&key) else {
-            continue;
-        };
-        let (n, drop) = strip_padding_zeroed_value(value);
-        stripped += n;
-        if drop {
-            to_remove.push(key);
-        }
-    }
-    for key in to_remove {
-        map.remove(&key);
-    }
-    stripped
-}
-
-/// Strip padding-zero noise from `value` in place. Returns `(leaves_stripped,
-/// should_drop_from_parent)`.
-fn strip_padding_zeroed_value(value: &mut Value) -> (usize, bool) {
-    if is_padding_zeroed_value(value) {
-        return (1, true);
-    }
-    let Some(obj) = value.as_object_mut() else {
-        return (0, false);
-    };
-    if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
-        let (n, empty) = strip_padding_zeroed_array_diff(ad);
-        return (n, empty);
-    }
-    // Nested struct (or a hex-bearing object with sibling keys): strip hex
-    // padding-zero if present, then recurse.
-    let mut stripped = 0;
-    if obj.get("hex").is_some_and(is_padding_zeroed_hex_diff) {
-        obj.remove("hex");
-        stripped += 1;
-    }
-    stripped += strip_padding_zeroed_map(obj);
-    (stripped, obj.is_empty())
-}
-
-/// Strip all padding-zeroed `_raw` hex leaves from `field_changes`. Returns
-/// the number of leaves removed.
+/// Strip every padding-zeroed `_raw` hex leaf (issue #22 rule (d)); returns
+/// how many.
 fn strip_padding_zeroed(field_changes: &mut Value) -> usize {
     let Some(map) = field_changes.as_object_mut() else {
         return 0;
     };
-    strip_padding_zeroed_map(map)
-}
-
-/// Strip calibrated appearance-default leaves matching `suppressible` from an
-/// `_array_diff` envelope. Returns `true` when the envelope should be dropped.
-fn strip_calibrated_array_diff(
-    ad: &mut serde_json::Map<String, Value>,
-    path: &str,
-    suppressible: &HashSet<DefaultKey>,
-) -> bool {
-    if let Some(Value::Array(elements)) = ad.get_mut("changed") {
-        elements.retain_mut(|elem| {
-            let Some(changes) = elem.get_mut("changes").and_then(Value::as_object_mut) else {
-                return true;
-            };
-            strip_calibrated_map(changes, path, suppressible);
-            !changes.is_empty()
-        });
-        if elements.is_empty() {
-            ad.remove("changed");
-        }
-    }
-    !(ad.contains_key("added") || ad.contains_key("removed") || ad.contains_key("changed"))
-}
-
-/// Strip matching appearance leaves from a changes-shaped map, in place.
-fn strip_calibrated_map(
-    map: &mut serde_json::Map<String, Value>,
-    path_prefix: &str,
-    suppressible: &HashSet<DefaultKey>,
-) {
-    let keys: Vec<String> = map.keys().cloned().collect();
-    let mut to_remove = Vec::new();
-    for key in keys {
-        let child_path = if path_prefix.is_empty() {
-            key.clone()
-        } else {
-            format!("{path_prefix}.{key}")
-        };
-        let Some(value) = map.get_mut(&key) else {
-            continue;
-        };
-        let child_path = if value
-            .as_object()
-            .is_some_and(|m| m.contains_key("_array_diff"))
-        {
-            format!("{child_path}[]")
-        } else {
-            child_path
-        };
-        if should_drop_calibrated(value, &child_path, suppressible) {
-            to_remove.push(key);
-        }
-    }
-    for key in to_remove {
-        map.remove(&key);
-    }
-}
-
-/// Strip calibrated defaults from `value` in place; return whether the parent
-/// should drop this key (value emptied or leaf matched).
-fn should_drop_calibrated(
-    value: &mut Value,
-    path: &str,
-    suppressible: &HashSet<DefaultKey>,
-) -> bool {
-    let Some(obj) = value.as_object_mut() else {
-        return false;
-    };
-
-    if let Some(Value::Object(ad)) = obj.get_mut("_array_diff") {
-        return strip_calibrated_array_diff(ad, path, suppressible);
-    }
-
-    if obj.len() == 2 && obj.contains_key("from") && obj.contains_key("to") {
-        if obj.get("from").is_some_and(Value::is_null)
-            && let Some(to) = obj.get("to")
-            && !to.is_null()
-        {
-            let pair = (leaf_name(path).to_owned(), canonical_json(to));
-            return suppressible.contains(&pair);
-        }
-        return false;
-    }
-
-    strip_calibrated_map(obj, path, suppressible);
-    obj.is_empty()
+    let mut stripped = 0;
+    prune_leaves(map, "", &mut |leaf| {
+        let noise = leaf.key == "hex" && is_padding_zeroed_hex_diff(leaf.from, leaf.to);
+        stripped += usize::from(noise);
+        noise
+    });
+    stripped
 }
 
 /// Strip appearance leaves whose `(leaf_name, value)` is in `suppressible`.
@@ -774,7 +630,11 @@ fn strip_calibrated_defaults(field_changes: &mut Value, suppressible: &HashSet<D
     let Some(map) = field_changes.as_object_mut() else {
         return;
     };
-    strip_calibrated_map(map, "", suppressible);
+    prune_leaves(map, "", &mut |leaf| {
+        leaf.from.is_null()
+            && !leaf.to.is_null()
+            && suppressible.contains(&(leaf_name(leaf.path).to_owned(), canonical_json(leaf.to)))
+    });
 }
 
 /// Issue #22 second-stage suppression: padding-zeroing + calibrated
@@ -1003,27 +863,21 @@ mod tests {
 
     #[test]
     fn calibrated_leaves_unkeyed_array_diff_untouched() {
-        // Same shape check for the calibrated-appearance-default pass:
-        // `strip_calibrated_array_diff` only walks `changed[].changes`,
-        // never `added`/`removed`.
-        let mut ad = json!({
+        // Same shape check for the calibrated-appearance-default pass: it
+        // only walks `changed[].changes`, never `added`/`removed`, and an
+        // envelope with either stays.
+        let mut fc = json!({"Conditions": {"_array_diff": {
             "strategy": "unkeyed",
             "count_from": 1,
             "count_to": 2,
             "removed": [{"Condition": {"Function": "A"}}],
             "added": [{"Condition": {"Function": "B"}}, {"Condition": {"Function": "C"}}],
-        })
-        .as_object()
-        .unwrap()
-        .clone();
-        let before = ad.clone();
-        let suppressible: HashSet<DefaultKey> = HashSet::new();
-        let dropped = strip_calibrated_array_diff(&mut ad, "Conditions", &suppressible);
-        assert!(
-            !dropped,
-            "added/removed present — envelope is not noise-free"
-        );
-        assert_eq!(ad, before);
+        }}});
+        let before = fc.clone();
+        let suppressible: HashSet<DefaultKey> =
+            [("Function".to_owned(), "\"B\"".to_owned())].into();
+        strip_calibrated_defaults(&mut fc, &suppressible);
+        assert_eq!(fc, before);
     }
 
     #[test]
@@ -1425,18 +1279,19 @@ mod tests {
 
     #[test]
     fn padding_zeroed_detects_garbage_to_zeros_hex_leaf() {
-        assert!(is_padding_zeroed_value(&json!({
-            "hex": {"from": "3809c7", "to": "000000"}
-        })));
+        assert!(is_padding_zeroed_hex_diff(
+            &json!("3809c7"),
+            &json!("000000")
+        ));
         // Non-zero destination must survive.
-        assert!(!is_padding_zeroed_value(&json!({
-            "hex": {"from": "3809c7", "to": "000001"}
-        })));
+        assert!(!is_padding_zeroed_hex_diff(
+            &json!("3809c7"),
+            &json!("000001")
+        ));
         // Appearance (null → zero raw) is #18's job, not this shape.
-        assert!(!is_padding_zeroed_value(&json!({
-            "from": null,
-            "to": {"hex": "000000", "_raw": true}
-        })));
+        let mut appearance =
+            json!({"Unknown": {"from": null, "to": {"hex": "000000", "_raw": true}}});
+        assert_eq!(strip_padding_zeroed(&mut appearance), 0);
     }
 
     #[test]

@@ -4,12 +4,9 @@
 //! for unchanged records; only records with different payloads are decoded and
 //! field-diffed via `json_diff`.
 //!
-//! Two self-contained subsystems live in their own submodules: [`noise`] runs
-//! the three sequential noise-suppression sub-stages over a `changed`
-//! record's `field_changes` (unconditional field-stripping, issue #18
-//! restamp-appearance stripping, issue #22 calibrated-default/padding-zero
-//! stripping — see that module's docs for the stage order, which is
-//! load-bearing), and [`array_diff`] is `json_diff`'s per-element array-diff
+//! Two self-contained subsystems live in their own submodules: [`noise`]
+//! suppresses noise in a `changed` record's `field_changes` (its module docs
+//! list the stages and their load-bearing order), and [`array_diff`] is `json_diff`'s per-element array-diff
 //! engine (the four `keyed`/`positional`/`set`/`unkeyed` pairing strategies
 //! ADR 0005 documents). The two cross paths only through ordinary mutual
 //! recursion — `json_diff` calls `array_diff::array_diff` for array fields,
@@ -29,8 +26,7 @@ use crate::strings::StringKind;
 use anyhow::Context;
 use array_diff::is_empty_diff;
 pub use noise::strip_noise_fields;
-use noise::{apply_restamp_calibrated_suppression, strip_restamp_appearances};
-use noise::{strip_localization_flip_text, strip_version_gated_transitions};
+use noise::{RecordSides, apply_restamp_calibrated_suppression, suppress_record};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -406,29 +402,17 @@ pub fn diff_databases_with(
 
         let mut restamp = false;
         if opts.suppress_noise {
-            strip_noise_fields(&mut field_changes, meta_b.signature.as_str());
-            if localization_flip {
-                flip_text_stripped += strip_localization_flip_text(&mut field_changes);
-            }
-            // Suppress only pure appearances/disappearances whose schema
-            // activation actually changes between these form versions. The
-            // old blanket appearance rule discarded genuine new subrecords
-            // and could show only the removal half of a field swap.
-            if meta_a.form_version != meta_b.form_version {
-                restamp = true;
-                strip_version_gated_transitions(
-                    &mut field_changes,
-                    &b.schema,
-                    meta_b.signature.as_str(),
-                    meta_a.form_version,
-                    meta_b.form_version,
-                );
-                // Second, independent pass: appearances/disappearances with
-                // NO schema gate at all that the re-save's newer serializer
-                // still manufactures — see `noise`'s module docs above
-                // `strip_restamp_appearances`.
-                strip_restamp_appearances(&mut field_changes, meta_b.signature.as_str());
-            }
+            let suppressed = suppress_record(
+                &mut field_changes,
+                &RecordSides {
+                    sig: meta_b.signature.as_str(),
+                    schema: &b.schema,
+                    form_versions: (meta_a.form_version, meta_b.form_version),
+                    localization_flip,
+                },
+            );
+            restamp = suppressed.restamp;
+            flip_text_stripped += suppressed.flip_text;
             if is_empty_diff(&field_changes) {
                 *suppressed_counts
                     .entry(meta_b.signature.as_str().to_owned())
@@ -478,10 +462,8 @@ pub fn diff_databases_with(
         changed_restamp.push(restamp);
     }
 
-    // Issue #22: padding-zeroing + calibrated appearance-default suppression.
-    // Needs a global frequency pass over all `changed` records, so it runs
-    // after the per-record loop. Still gated by `suppress_noise` and applied
-    // only to records whose form_versions differed (same gate as #18).
+    // Noise stage 5 (see `noise`): needs frequencies across every changed
+    // record, and applies only to restamped ones.
     let auto_suppressed_defaults = if opts.suppress_noise && changed_restamp.iter().any(|&r| r) {
         apply_restamp_calibrated_suppression(
             &mut changed,

@@ -181,11 +181,10 @@ what falls outside it, plus an `unchanged_count`). A proposed key is never trust
 sample's shape alone — `widen_key_spec_until_unique` appends further scalar fields until the key
 is actually unique on both sides, falling back to `unkeyed` if nothing achieves that (ADR 0005).
 Arrays with no stable per-element identity classify as `unkeyed` outright — CTDA `Conditions[]`
-is the canonical case, fenced by ADR 0005. `noise.rs` is the three sequential noise-suppression
-sub-stages `diff_databases_with` runs over a `changed` record's `field_changes` (unconditional
-`strip_noise_fields` — placement-transform/CELL-precombine/Object-Bounds churn, off via
-`--keep-noise` on the CLI — then schema-gated appearance/disappearance suppression, then the
-issue #18 and #22 restamp/calibrated-default passes); stage order is load-bearing.
+is the canonical case, fenced by ADR 0005. `noise.rs` suppresses noise in a
+`changed` record's `field_changes` (off via `--keep-noise` on the CLI): `suppress_record` runs the
+per-record stages and `apply_restamp_calibrated_suppression` the cross-record one, in the
+load-bearing order its module docs list.
 
 **`src/walk/`** — the sole interactive/human-readable surface (ADR 0001), split compute
 (`mod.rs`) from render (`render.rs`), the same shape `decode/vmad.rs` uses. `walk::walk` does a
@@ -287,7 +286,7 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 |---|---|
 | Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py` (member order and the `unordered`/`any_member` binding flags decide which subrecord a member binds), then `src/decode/bind.rs` for binding, `src/decode/walk.rs` for payload decoding, `src/decode/derived.rs` for a derived value |
 | Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too |
-| Change diff noise suppression | `src/diff/noise.rs`'s `strip_noise_fields` / `DiffOptions` |
+| Change diff noise suppression | `src/diff/noise.rs` (`suppress_record` and the stage it names) / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
 | Add a new patch-notes lint rule | `tools/run_lints.py`'s rule registry |
 | Change bundle clustering | `tools/build_bundles.py` |
