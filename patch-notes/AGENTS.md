@@ -22,7 +22,7 @@ Run commands from `patch-notes/`; `justfile` owns the recipes.
 
 | Path | Purpose |
 |---|---|
-| `pn/` | The package: one module per stage, `__main__.py` (verbs), shared `esmcli` (the `esm` gateway), `formids`, `jsonio`, `layout` (artifact paths), `patchnotes_lib`; the tier rules (`patch_notes_tiers.json`); bundling tunables are `build_bundles.DEFAULT_SETTINGS` |
+| `pn/` | The package: one module per stage, `__main__.py` (verbs), shared `esmcli` (the `esm` gateway), `formids`, `jsonio`, `layout` (artifact paths), `schemas` (every artifact's shape and strict validator, agent-written ones included, and `PIPELINE_VERSION`), `patchnotes_lib`; the tier rules (`patch_notes_tiers.json`); bundling tunables are `build_bundles.DEFAULT_SETTINGS` |
 | `cli.py` | Launcher for running verbs from outside `patch-notes/` |
 | `tests/` | unittest suite, `fixtures/`, `builders.py`, and `fake_gateway.py` (the fixture-backed gateway) |
 | `skill/` | The `/patch-notes` skill: `SKILL.md`, the writer and review prompts, `style-guide.md`, and `kb/` |

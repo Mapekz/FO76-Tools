@@ -39,7 +39,7 @@ class TestCoverage(TempDirTestCase):
 
     def report(self, name, covered, text, deferred=None):
         (layout.drafts_dir(self.tmp) / f"{name}.report.json").write_text(
-            json.dumps({"bundles_covered": covered, "deferred": deferred or []})
+            json.dumps({"bundles_covered": covered, "claims": [], "deferred": deferred or []})
         )
         (layout.drafts_dir(self.tmp) / f"{name}.md").write_text(text)
 
@@ -84,11 +84,11 @@ class TestCoverage(TempDirTestCase):
         payload = cv.run_check(self.tmp)
         self.assertEqual(self.kinds(payload), ["double_covered"])
 
-    def test_report_without_bundles_covered_list(self):
+    def test_malformed_report_is_a_violation(self):
         (layout.drafts_dir(self.tmp) / "deep.report.json").write_text(json.dumps({"bundles": 3}))
         (layout.drafts_dir(self.tmp) / "deep.md").write_text("Weapon A, Weapon B, Weapon C")
         payload = cv.run_check(self.tmp)
-        self.assertIn("report_without_bundles_covered", self.kinds(payload))
+        self.assertIn("invalid_report", self.kinds(payload))
 
     def test_summary_requires_anchor_or_cut_with_reason(self):
         self.report("deep", ["B0001", "B0002", "B0003"], "Weapon A, Weapon B, Weapon C.")
@@ -96,7 +96,8 @@ class TestCoverage(TempDirTestCase):
         payload = cv.run_check(self.tmp, summary=True)
         self.assertEqual(self.kinds(payload), ["missing_from_summary"])
         layout.work_cuts_json(self.tmp).write_text(json.dumps({"cuts": [{"bundle_id": "B0003", "reason": ""}]}))
-        self.assertEqual(self.kinds(cv.run_check(self.tmp, summary=True)), ["missing_from_summary"])
+        # A cut with an empty reason is malformed, and the story stays missing.
+        self.assertEqual(self.kinds(cv.run_check(self.tmp, summary=True)), ["invalid_cuts", "missing_from_summary"])
         layout.work_cuts_json(self.tmp).write_text(json.dumps({"cuts": [{"bundle_id": "B0003", "reason": "over budget"}]}))
         payload = cv.run_check(self.tmp, summary=True)
         self.assertTrue(payload["ok"], payload["violations"])

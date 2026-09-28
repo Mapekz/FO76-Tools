@@ -42,9 +42,32 @@ from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, TypedDict
 
-from pn import esmcli, formids, jsonio, layout, lvli_entry
+from pn import esmcli, formids, jsonio, layout, lvli_entry, schemas
 from pn import patchnotes_lib as pl
+
+
+class RuleContext(TypedDict):
+    """The `ctx` dict every `run_lints.py` rule function (`rule_name(ctx) ->
+    Iterable[dict]`) receives -- built once per run by `run_lints.
+    build_context` and threaded read-only through every rule except
+    `_notes`, a mutable out-parameter accumulator: rules (and
+    `_RuleRecordTally.append_note`) `.append()` a one-line summary there
+    when they swallow a per-record/per-check error, and `run_lints.run_lints`
+    folds it into `lints.json`'s `meta.notes` afterward.
+
+    `client` is an `esmcli.EsmGateway`-shaped object (tests pass
+    `tests/fake_gateway.FakeGateway`)."""
+
+    records: dict[str, Any]
+    ref_names: dict[str, Any]
+    bundles: list[schemas.Bundle]
+    client: Any
+    new_esm: str | None
+    settings: dict[str, Any]
+    _notes: list[str]
+
 
 # --------------------------------------------------------------------------
 # Tunables / defaults
@@ -231,7 +254,7 @@ def _matches_any(edid, patterns):
     return any(fnmatch.fnmatchcase(edid, pat) for pat in patterns)
 
 
-def _unique_keyword_patterns(ctx: pl.RuleContext):
+def _unique_keyword_patterns(ctx: RuleContext):
     patterns = (ctx.get("settings") or {}).get("unique_keyword_patterns")
     return patterns if patterns else pl.UNIQUE_KEYWORD_PATTERNS
 
@@ -278,7 +301,7 @@ class _RuleRecordTally:
         if self._first_exc is None:
             self._first_exc = exc
 
-    def append_note(self, ctx: pl.RuleContext):
+    def append_note(self, ctx: RuleContext):
         if not self.failures:
             return
         exc = self._first_exc
@@ -322,7 +345,7 @@ def _has_live_referencer(client, esm, fid, *, depth, tally=None):
 # --------------------------------------------------------------------------
 
 
-def rule_lvli_blocked_entry(ctx: pl.RuleContext):
+def rule_lvli_blocked_entry(ctx: RuleContext):
     records = ctx["records"]
     ref_names = ctx["ref_names"]
     lints = []
@@ -472,7 +495,7 @@ def rule_lvli_blocked_entry(ctx: pl.RuleContext):
 # --------------------------------------------------------------------------
 
 
-def rule_dangling_ref(ctx: pl.RuleContext):
+def rule_dangling_ref(ctx: RuleContext):
     """One lint per reference a changed or added record introduces that
     resolves in neither snapshot -- the record's `dangling_refs`, which
     `esm diff` computes from the typed decode."""
@@ -519,7 +542,7 @@ def rule_dangling_ref(ctx: pl.RuleContext):
 # --------------------------------------------------------------------------
 
 
-def rule_orphaned_unique(ctx: pl.RuleContext):
+def rule_orphaned_unique(ctx: RuleContext):
     records = ctx["records"]
     ref_names = ctx["ref_names"]
     client = ctx["client"]
@@ -601,7 +624,7 @@ def rule_orphaned_unique(ctx: pl.RuleContext):
 # --------------------------------------------------------------------------
 
 
-def rule_unreferenced_perk_rank(ctx: pl.RuleContext):
+def rule_unreferenced_perk_rank(ctx: RuleContext):
     records = ctx["records"]
     client = ctx["client"]
     new_esm = ctx.get("new_esm")
@@ -651,7 +674,7 @@ def rule_unreferenced_perk_rank(ctx: pl.RuleContext):
 # --------------------------------------------------------------------------
 
 
-def rule_desc_changed_stats_same(ctx: pl.RuleContext):
+def rule_desc_changed_stats_same(ctx: RuleContext):
     records = ctx["records"]
     lints = []
     tally = _RuleRecordTally("desc_changed_stats_same")
@@ -701,7 +724,7 @@ def rule_desc_changed_stats_same(ctx: pl.RuleContext):
 # --------------------------------------------------------------------------
 
 
-def rule_stats_changed_desc_same(ctx: pl.RuleContext):
+def rule_stats_changed_desc_same(ctx: RuleContext):
     records = ctx["records"]
     lints = []
     tally = _RuleRecordTally("stats_changed_desc_same")
@@ -761,7 +784,7 @@ def rule_stats_changed_desc_same(ctx: pl.RuleContext):
 # --------------------------------------------------------------------------
 
 
-def rule_cut_newly_deprecated(ctx: pl.RuleContext):
+def rule_cut_newly_deprecated(ctx: RuleContext):
     records = ctx["records"]
     lints = []
 
@@ -822,7 +845,7 @@ RULE_ORDER = [
 # --------------------------------------------------------------------------
 
 
-def build_context(comprehensive, bundles, client, new_esm=None, settings=None) -> pl.RuleContext:
+def build_context(comprehensive, bundles, client, new_esm=None, settings=None) -> RuleContext:
     """Build the `ctx` dict every rule function receives."""
     return {
         "records": (comprehensive or {}).get("records", {}) or {},
@@ -849,7 +872,7 @@ def assign_bundle_id(form_id, bundles):
 def run_lints(comp, bundles, client, new_esm=None, settings=None, rules=None):
     """Run the requested rules (default: all of `RULE_ORDER`) over `comp` /
     `bundles`, and return the full `lints.json` document:
-    `{"schema_version", "meta": {"generated_at", "rules_run", "counts",
+    `{"meta": {"generated_at", "rules_run", "counts",
     "notes"?}, "lints": [...]}`.
 
     Never raises: an individual rule that throws is caught, skipped, and
@@ -893,7 +916,6 @@ def run_lints(comp, bundles, client, new_esm=None, settings=None, rules=None):
         meta["notes"] = ctx["_notes"]
 
     lints_payload = {
-        "schema_version": pl.SCHEMA_VERSION,
         "meta": meta,
         "lints": all_lints,
     }
@@ -948,9 +970,9 @@ def main(argv=None, *, client=None):
 
     try:
         comprehensive_path = layout.comprehensive_json(out_dir)
-        comp = pl.validate_comprehensive_payload(jsonio.read(comprehensive_path), label=str(comprehensive_path))
+        comp = schemas.validate_comprehensive_payload(jsonio.read(comprehensive_path), label=str(comprehensive_path))
         bundles_path = layout.bundles_json(out_dir)
-        bundles = pl.validate_bundles_payload(jsonio.read(bundles_path), label=str(bundles_path))
+        bundles = schemas.validate_bundles_payload(jsonio.read(bundles_path), label=str(bundles_path))
     except (OSError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
         print(f"error: failed to read pipeline output from {out_dir}: {exc}", file=sys.stderr)
         return 1

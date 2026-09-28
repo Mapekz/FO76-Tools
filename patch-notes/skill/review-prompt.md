@@ -36,15 +36,16 @@ file except the one output named at the end.
 
 ## OUTPUT — exactly one file
 
-`{OUT}/work/review.json`:
+`{OUT}/work/review.json`, in exactly this shape (`severity` is `high`, `med` or `low`; each
+`checked` value is a count):
 
 ```json
 {
   "findings": [
-    {"severity": "high|med|low", "summary": "<one sentence, what is wrong>",
-     "location": "<section heading or quoted phrase>", "evidence": "<FormID / claim / esm call>"}
+    {"severity": "high", "summary": "The TL;DR says 25 damage; the claim is 24.",
+     "location": "## TL;DR", "evidence": "claim 0x00568635 Data / Damage"}
   ],
-  "checked": {"deep_bundles": <int>, "figures": <int>, "flags_spot_checked": <int>}
+  "checked": {"deep_bundles": 12, "figures": 48, "flags_spot_checked": 5}
 }
 ```
 

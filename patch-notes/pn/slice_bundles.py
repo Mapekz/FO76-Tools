@@ -16,8 +16,7 @@ import argparse
 import json
 import sys
 
-from pn import formids, jsonio, layout
-from pn import patchnotes_lib as pl
+from pn import formids, jsonio, layout, schemas
 
 # --------------------------------------------------------------------------
 # Tunables
@@ -115,7 +114,7 @@ def run_extract(out_dir, requested):
                 "loading it fully into memory anyway",
                 file=sys.stderr,
             )
-        data = pl.validate_comprehensive_payload(jsonio.read(path), label=str(path))
+        data = schemas.validate_comprehensive_payload(jsonio.read(path), label=str(path))
     except (OSError, json.JSONDecodeError) as e:
         print(f"error: failed to load {path}: {e}", file=sys.stderr)
         return 1

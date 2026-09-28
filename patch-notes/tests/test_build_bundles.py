@@ -698,8 +698,7 @@ class TestBundleShapeContract(unittest.TestCase):
         cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm")
 
     def test_top_level_shape(self):
-        self.assertEqual(set(self.result), {"schema_version", "meta", "bundles"})
-        self.assertEqual(self.result["schema_version"], 1)
+        self.assertEqual(set(self.result), {"meta", "bundles"})
 
     def test_meta_shape(self):
         meta = self.result["meta"]
@@ -756,7 +755,6 @@ class TestCli(unittest.TestCase):
             out_path = Path(tmp) / "bundles.json"
             self.assertEqual(self._main("--out", str(out_path)), 0)
             data = json.loads(out_path.read_text())
-            self.assertEqual(data["schema_version"], 1)
             self.assertIn("bundles", data)
             self.assertEqual(data["meta"]["counts"]["bundles"], len(data["bundles"]))
 

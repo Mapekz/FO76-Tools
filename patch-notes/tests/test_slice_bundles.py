@@ -27,7 +27,6 @@ def minimal_comprehensive_record(**overrides):
 
 def minimal_comprehensive_doc(records, **overrides):
     doc = {
-        "schema_version": 1,
         "meta": {},
         "records": records,
         "common_changes": [],
@@ -55,7 +54,6 @@ class TestExtract(unittest.TestCase):
 
     def setUp(self):
         self.comprehensive = {
-            "schema_version": 1,
             "meta": {},
             "records": {
                 "0x00123456": self._record(

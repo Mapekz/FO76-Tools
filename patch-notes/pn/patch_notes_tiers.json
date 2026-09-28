@@ -1,5 +1,4 @@
 {
-  "schema_version": 1,
   "_comment_settings": "rollout_numeric_exclusion: a changed record whose change is a real numeric delta never joins a ROLLOUT shape (it tiers normally); set false only for branch-drift churn. The digest caps are sized for a session-model assessor; a digest that hits the cap is flagged truncated and can never be resolved to drop.",
   "settings": {
     "rollout_min_records": 20,

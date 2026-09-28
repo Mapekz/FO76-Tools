@@ -25,6 +25,7 @@ from unittest import mock
 
 from pn import make_patch_notes as mpn
 from pn import patchnotes_lib as pl
+from pn import schemas
 from pn import update_manifest as um
 from tests.builders import TempDirTestCase, fake_esm_script
 from tests.fake_gateway import FakeGateway
@@ -225,7 +226,7 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         self.assertEqual(inputs["new_token"], "20260703")
         self.assertEqual(inputs["new_esm_size"], st.st_size)
         self.assertEqual(inputs["new_esm_mtime"], int(st.st_mtime))
-        self.assertEqual(inputs["pipeline_version"], pl.SCHEMA_VERSION)
+        self.assertEqual(inputs["pipeline_version"], schemas.PIPELINE_VERSION)
 
     def test_manifest_counts_populated(self):
         out_dir = self.tmp_dir / "out"
@@ -251,10 +252,6 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         )
         narrative = manifest["stages"]["narrative"]
         self.assertIsNone(narrative["completed_at"])
-        # schema_version 3 (the LIVE shape update_manifest.py fills in) --
-        # not the retired per-category shape ("categories": []).
-        self.assertEqual(narrative["schema_version"], 3)
-        self.assertNotIn("categories", narrative)
         self.assertEqual(narrative["max_chunk_chars"], 2000)
         self.assertIn("usage", narrative)
         self.assertIsNone(narrative["usage"])
@@ -319,11 +316,9 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
 
 
 class TestUpdateManifest(TempDirTestCase):
-    """Covers update_manifest.py's tiered-edition narrative schema
-    (schema_version 2): a single patch-summary.md, a flat discord/ chunk
-    list, and work/triage.json tier counts -- the old per-category
-    notes/<slug>.md + discord/<slug>/ + work/categories.json flow is
-    retired (see triage_bundles.py / ../skill/deep-writer-prompt.md)."""
+    """Covers update_manifest.py's narrative stage: a single
+    patch-summary.md, a flat discord/ chunk list, and work/triage.json tier
+    counts."""
 
     def setUp(self):
         super().setUp()
@@ -334,7 +329,7 @@ class TestUpdateManifest(TempDirTestCase):
             new_token="20260703",
             new_esm_size=123,
             new_esm_mtime=456,
-            pipeline_version=pl.SCHEMA_VERSION,
+            pipeline_version=schemas.PIPELINE_VERSION,
             counts={"added": 1, "changed": 2, "removed": 0},
         )
         manifest["stages"]["mechanical"]["completed_at"] = "2026-07-03T00:00:00Z"
@@ -354,7 +349,6 @@ class TestUpdateManifest(TempDirTestCase):
         work_dir = self.out_dir / "work"
         work_dir.mkdir(exist_ok=True)
         payload = {
-            "schema_version": 1,
             "deep": [f"B{i:04d}" for i in range(1, deep + 1)],
             "brief": [f"B{i:04d}" for i in range(deep + 1, deep + brief + 1)],
             "drop": [f"B{i:04d}" for i in range(deep + brief + 1, deep + brief + drop + 1)],
@@ -386,11 +380,9 @@ class TestUpdateManifest(TempDirTestCase):
         self.assertEqual(narrative["chunks"], [])
         self.assertIsNone(narrative["triage"])
 
-    def test_schema_version_is_3(self):
-        rc = um.main([str(self.out_dir)])
-        self.assertEqual(rc, 0)
+    def test_usage_is_none_without_usage_json(self):
+        self.assertEqual(um.main([str(self.out_dir)]), 0)
         narrative = json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]
-        self.assertEqual(narrative["schema_version"], 3)
         self.assertIsNone(narrative["usage"])
 
     def test_usage_json_is_folded_in_with_a_total(self):
@@ -406,12 +398,11 @@ class TestUpdateManifest(TempDirTestCase):
         self.assertEqual(usage["total_tokens"], 88000)
         self.assertEqual(usage["writers"][1]["tokens"], 35000)
 
-    def test_malformed_usage_json_is_ignored(self):
+    def test_malformed_usage_json_is_an_error(self):
         work_dir = self.out_dir / "work"
         work_dir.mkdir(exist_ok=True)
-        (work_dir / "usage.json").write_text("not json")
-        self.assertEqual(um.main([str(self.out_dir)]), 0)
-        self.assertIsNone(json.loads((self.out_dir / "manifest.json").read_text())["stages"]["narrative"]["usage"])
+        (work_dir / "usage.json").write_text(json.dumps({"writers": [{"tokens": "lots"}]}))
+        self.assertEqual(um.main([str(self.out_dir)]), 1)
 
     def test_patch_summary_and_chunks_discovered(self):
         self._write_patch_summary()

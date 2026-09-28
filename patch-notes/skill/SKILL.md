@@ -190,8 +190,9 @@ If `ambiguous.json` has entries, spawn **one assessor subagent** pointed at
 > a reader would want the full story), `brief` (existence is the story — a one-liner
 > suffices), or `drop` (bookkeeping churn a player can never observe). When in doubt
 > between drop and brief, pick brief; between brief and deep, pick deep. Write
-> `<OUT>/work/assessment.json`: `{"tiers": {"<bundle_id>": {"tier": "...", "reason":
-> "<one line>"}}}` covering every bundle. Reply with just the tier counts.
+> `<OUT>/work/assessment.json`: `{"tiers": {"<bundle_id>": {"tier": "deep|brief|drop",
+> "reason": "<one line>"}}}` covering every bundle, no other keys. Reply with just the tier
+> counts.
 
 Then merge:
 
@@ -199,7 +200,9 @@ Then merge:
 python3 patch-notes/cli.py triage "$OUT" --merge-assessment "$OUT/work/assessment.json"
 ```
 
-A digest that hit the size cap is flagged `truncated`; the merge promotes a `drop` verdict on
+The merge rejects a malformed assessment (a tier outside deep/brief/drop, a missing
+reason, an unknown key) with the JSON path at fault; have the assessor fix it. A digest that
+hit the size cap is flagged `truncated`; the merge promotes a `drop` verdict on
 those to `brief` on its own (a partial view may shorten a story, never erase it). Record the
 assessor's token usage for Step 8 only if the client reports it.
 
@@ -255,7 +258,9 @@ python3 patch-notes/cli.py coverage "$OUT"
 lookups for values outside the diff). A `mismatch` is a wrong number; an `unverifiable` is a
 number nobody can stand behind. Send each back to its writer with the checker's detail line,
 or chase it yourself and fix the draft AND its claim. A report with zero claims means the
-writer prompt drifted — re-dispatch that writer. `check_coverage.py` asserts every DEEP bundle
+writer prompt drifted — re-dispatch that writer. A report that breaks the writer contract
+(a missing or unknown key, a malformed claim) shows as INVALID with the JSON path at fault:
+fix the file or re-dispatch its writer. `check_coverage.py` asserts every DEEP bundle
 id is claimed by exactly one draft (or deferred to one) and that the draft names it. Neither
 gate may be skipped or overridden; loop until both exit 0.
 

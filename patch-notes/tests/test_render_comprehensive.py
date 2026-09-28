@@ -6,8 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pn import change_entries
-from pn import patchnotes_lib as pl
+from pn import change_entries, schemas
 from pn import render_comprehensive as rc
 from tests.builders import load_fixture, run_pn
 
@@ -192,10 +191,10 @@ class TestBuildComprehensiveConformance(unittest.TestCase):
     def test_build_comprehensive_records_satisfy_wire_contract(self):
         diff = load_fixture("diff_small.json")
         comp = rc.build_comprehensive(diff, generated_at="X")
-        pl.validate_comprehensive_payload(comp)
+        schemas.validate_comprehensive_payload(comp)
         for fid, record in comp["records"].items():
             with self.subTest(form_id=fid):
-                pl.validate_record_entry(record, path=f"records[{fid!r}]")
+                schemas.validate_record_entry(record, path=f"records[{fid!r}]")
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +377,6 @@ class TestCliEndToEnd(unittest.TestCase):
             self.assertFalse((out_dir / "comprehensive.md").exists())
             self.assertIn("added", result.stderr)
             comp = json.loads((out_dir / "comprehensive.json").read_text(encoding="utf-8"))
-            self.assertEqual(comp["schema_version"], pl.SCHEMA_VERSION)
             self.assertEqual(comp["meta"]["patch_date"], "2026-07-03")
 
     def test_main_derives_labels_and_date_when_omitted(self):
@@ -413,7 +411,7 @@ class TestJsonSchemaKeys(unittest.TestCase):
         cls.comp = rc.build_comprehensive(load_fixture("diff_small.json"), generated_at="X")
 
     def test_top_level_keys(self):
-        self.assertEqual(set(self.comp.keys()), {"schema_version", "meta", "records", "common_changes", "ref_names"})
+        self.assertEqual(set(self.comp.keys()), {"meta", "records", "common_changes", "ref_names"})
 
     def test_meta_keys(self):
         self.assertEqual(
@@ -433,9 +431,6 @@ class TestJsonSchemaKeys(unittest.TestCase):
                 "prev_editor_id", "cut", "fields", "refs_out", "dangling_refs", "changes",
             },
         )
-
-    def test_schema_version_matches_library_constant(self):
-        self.assertEqual(self.comp["schema_version"], pl.SCHEMA_VERSION)
 
     def test_ref_names_carry_diff_names_plus_dangling_refs(self):
         diff = load_fixture("diff_small.json")

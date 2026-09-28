@@ -4,17 +4,14 @@ check_claims.py — machine verification of every number a deep writer
 asserted, for the FO76 patch-notes pipeline.
 
 Deep-writer subagents list each figure they state in the draft as a
-structured claim in `drafts/deep[.partN].report.json` (`claims: [...]`, see
-`patchnotes_lib.Claim`). This script re-derives every claim from the data:
+structured claim in `drafts/deep[.partN].report.json` (`claims: [...]`;
+`schemas.validate_claim` owns the three claim kinds). This script re-derives
+every claim from the data:
 
     python3 -m pn claims <out_dir> [--old-esm P --new-esm P]
                                             [--esm-bin P] [--no-esm]
 
-Claim kinds (exactly one per claim):
-    changed    {"record", "path", "from", "to"}
-    existence  {"record", "status": "added"|"removed"}
-    value      {"record", "path", "value", "side": "old"|"new"}
-
+A report that fails `schemas.validate_report` is INVALID and fails the gate.
 `record` is a FormID (hex) or an EditorID (renames resolve through the
 record's `prev_editor_id`). `path` is `comprehensive.json`'s ChangeEntry
 notation: `" / "`-joined field names, with an array row addressed by its
@@ -23,13 +20,13 @@ claim naming an array entry itself compares `from`/`to` against the row
 counts.
 
 Verification order per claim: the record's `changes[]` in
-`comprehensive.json` (what the writer read via `slice_bundles.py --extract`)
+`comprehensive.json` (what the writer read via `pn extract`)
 first; a live `EsmGateway.bulk_get` against the OLD or NEW snapshot second
 (only when both ESM paths were given and `--no-esm` is absent); else
 `unverifiable`.
 
 Writes `<out_dir>/work/claims-check.json` and exits 1 iff any claim is a
-`mismatch` or `unverifiable` -- an unverifiable number is a number the post
+`mismatch` or `unverifiable`, or any report is invalid -- an unverifiable number is a number the post
 cannot stand behind. Numbers in the draft prose that no claim backs are
 listed as warnings only (`unbacked_numbers`); the writer prompt requires a
 claim for every stated figure, so a long list means the prompt drifted.
@@ -45,11 +42,10 @@ import math
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from pn import esmcli as eg
-from pn import formids, jsonio, layout
-from pn import patchnotes_lib as pl
+from pn import formids, jsonio, layout, schemas
 from pn.triage_bundles import _numeric_value
 
 PATH_SEP = " / "
@@ -296,7 +292,7 @@ class LiveLookup:
 # --------------------------------------------------------------------------
 
 
-def _result(claim: dict, status: str, source: str, detail: str) -> dict:
+def _result(claim: Mapping[str, Any], status: str, source: str, detail: str) -> dict:
     return {"claim": claim, "status": status, "source": source, "detail": detail}
 
 
@@ -320,7 +316,7 @@ def _live_value(live: LiveLookup, side: str, selector: str, segs: list[str]) -> 
     return ("found", value) if found else ("missing", None)
 
 
-def verify_claim(claim: dict, index: RecordIndex, live: LiveLookup) -> dict:
+def verify_claim(claim: Mapping[str, Any], index: RecordIndex, live: LiveLookup) -> dict:
     if not isinstance(claim, dict) or not isinstance(claim.get("record"), str) or not claim["record"].strip():
         return _result(claim, "unverifiable", "none", "claim has no 'record' selector")
     rec = index.get(claim["record"].strip())
@@ -423,7 +419,7 @@ def _number_variants(value: Any) -> set[str]:
     return out
 
 
-def backed_numbers(claims: list[dict]) -> set[str]:
+def backed_numbers(claims: Sequence[Mapping[str, Any]]) -> set[str]:
     backed: set[str] = set()
     for claim in claims:
         if not isinstance(claim, dict):
@@ -434,7 +430,7 @@ def backed_numbers(claims: list[dict]) -> set[str]:
     return backed
 
 
-def find_unbacked_numbers(draft: str, claims: list[dict]) -> list[str]:
+def find_unbacked_numbers(draft: str, claims: Sequence[Mapping[str, Any]]) -> list[str]:
     """Numbers stated in the draft prose (outside code, Evidence lines and
     headings) that no claim's from/to/value renders to. Heuristic, warning
     only: small integers (< 10) without a % sign are skipped as ordinary
@@ -471,16 +467,28 @@ def find_unbacked_numbers(draft: str, claims: list[dict]) -> list[str]:
 
 
 def check_report(report_path: Path, index: RecordIndex, live: LiveLookup) -> dict:
-    report = jsonio.read(report_path)
-    claims = report.get("claims") if isinstance(report, dict) else None
-    if not isinstance(claims, list):
-        claims = []
-    results = [verify_claim(c, index, live) for c in claims]
     draft_path = layout.draft_md_for_report(report_path)
+    try:
+        report = schemas.load(report_path, schemas.validate_report)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return {
+            "report": report_path.name,
+            "draft": draft_path.name if draft_path.is_file() else None,
+            "invalid": str(exc),
+            "checked": 0,
+            "ok": 0,
+            "mismatches": [],
+            "unverifiable": [],
+            "unbacked_numbers": [],
+            "no_claims": False,
+        }
+    claims = report["claims"]
+    results = [verify_claim(c, index, live) for c in claims]
     draft = draft_path.read_text(encoding="utf-8") if draft_path.is_file() else ""
     return {
         "report": report_path.name,
         "draft": draft_path.name if draft_path.is_file() else None,
+        "invalid": None,
         "checked": len(results),
         "ok": sum(1 for r in results if r["status"] == "ok"),
         "mismatches": [r for r in results if r["status"] == "mismatch"],
@@ -494,19 +502,24 @@ def run_check(out_dir: Path, gateway=None, old_esm: str | None = None, new_esm: 
     """Verify every report under `<out_dir>/drafts/`; write
     `work/claims-check.json`; return the payload (`ok` is the gate)."""
     comp_path = layout.comprehensive_json(out_dir)
-    comp = pl.validate_comprehensive_payload(jsonio.read(comp_path))
+    comp = schemas.validate_comprehensive_payload(jsonio.read(comp_path))
     index = RecordIndex(comp.get("records") or {})
     live = LiveLookup(gateway, old_esm, new_esm)
     reports = [check_report(p, index, live) for p in layout.drafts_deep_reports(out_dir)]
     payload = {
-        "schema_version": 1,
         "reports": reports,
         "checked": sum(r["checked"] for r in reports),
         "mismatch_count": sum(len(r["mismatches"]) for r in reports),
         "unverifiable_count": sum(len(r["unverifiable"]) for r in reports),
+        "invalid_count": sum(1 for r in reports if r["invalid"]),
         "live_lookups": bool(gateway is not None and old_esm and new_esm),
     }
-    payload["ok"] = bool(reports) and payload["mismatch_count"] == 0 and payload["unverifiable_count"] == 0
+    payload["ok"] = (
+        bool(reports)
+        and payload["mismatch_count"] == 0
+        and payload["unverifiable_count"] == 0
+        and payload["invalid_count"] == 0
+    )
     layout.work_dir(out_dir).mkdir(parents=True, exist_ok=True)
     jsonio.write(layout.work_claims_check_json(out_dir), payload)
     return payload
@@ -514,6 +527,9 @@ def run_check(out_dir: Path, gateway=None, old_esm: str | None = None, new_esm: 
 
 def print_summary(payload: dict, stream=sys.stderr):
     for r in payload["reports"]:
+        if r["invalid"]:
+            print(f"{r['report']}: INVALID -- {r['invalid']}", file=stream)
+            continue
         line = (
             f"{r['report']}: {r['ok']}/{r['checked']} ok, {len(r['mismatches'])} mismatch, "
             f"{len(r['unverifiable'])} unverifiable, {len(r['unbacked_numbers'])} unbacked number(s)"

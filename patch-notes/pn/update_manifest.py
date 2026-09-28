@@ -12,17 +12,6 @@ skill: it records those two outputs, plus the final `work/triage.json` tier
 counts, into `stages.narrative`, leaving everything else in the manifest
 untouched.
 
-This is schema_version 3 of `stages.narrative`: version 2 plus an optional
-`usage` object folded in from `work/usage.json` (per-subagent token usage
-the orchestrator records). Version 2 dropped (the pipeline's older
-per-category shape -- `categories: [{id, label, notes_md, discord_dir,
-chunk_count, chunks}, ...]`, one `notes/<slug>.md` + `discord/<slug>/` per
-category -- is retired along with the category-slicing narrative flow; see
-`triage_bundles.py` and `deep-writer-prompt.md`). This version instead
-records a single `patch_summary_md` path, a flat `discord/` chunk list, and
-the triage tier counts, keyed under `stages.narrative.schema_version` so
-any downstream consumer can tell the shapes apart.
-
 Usage:
     python3 -m pn manifest OUT_DIR [--max-chunk-chars 2000]
 
@@ -37,14 +26,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pn import jsonio, layout
+from pn import jsonio, layout, schemas
 from pn import patchnotes_lib as pl
-
-#: stages.narrative's own schema version (independent of the pipeline-wide
-#: pl.SCHEMA_VERSION, which covers diff/comprehensive/bundles/lints shapes
-#: this script doesn't touch). Single source of truth in patchnotes_lib.py,
-#: since new_manifest() seeds a fresh stages.narrative in this same shape.
-NARRATIVE_SCHEMA_VERSION = pl.NARRATIVE_SCHEMA_VERSION
 
 #: Bare filename, kept for the human-readable print_summary()/warning
 #: strings below -- the actual path is always layout.patch_summary_md(out_dir).
@@ -110,36 +93,21 @@ def load_triage_stats(out_dir: Path) -> dict | None:
 
 
 def load_usage(out_dir: Path) -> dict | None:
-    """The orchestrator's per-subagent token usage from `<out_dir>/work/
-    usage.json` (`{"assessor": {"tokens": N}, "writers": [{"tokens": N},
-    ...], "reviewer": {"tokens": N}}` -- any subset), with a derived
-    `total_tokens`; or None when the file is missing / unreadable /
-    malformed (never raises)."""
+    """`work/usage.json` (a `schemas.Usage`) with a derived `total_tokens`,
+    or None when the file is absent. Raises on a malformed file."""
     path = layout.work_usage_json(out_dir)
     if not path.is_file():
         return None
-    try:
-        data = jsonio.read(path)
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(data, dict):
-        return None
-    total = 0
-    for value in data.values():
-        entries = value if isinstance(value, list) else [value]
-        for entry in entries:
-            if isinstance(entry, dict) and isinstance(entry.get("tokens"), (int, float)):
-                total += int(entry["tokens"])
-    usage = dict(data)
-    usage["total_tokens"] = total
+    usage: dict = dict(schemas.load(path, schemas.validate_usage))
+    roles = [usage.get("assessor"), usage.get("reviewer"), *usage.get("writers", [])]
+    usage["total_tokens"] = sum(role["tokens"] for role in roles if role)
     return usage
 
 
 def build_narrative_stage(out_dir: Path, max_chunk_chars: int) -> dict:
-    """Build the full `stages.narrative` payload (schema_version 3)."""
+    """Build the full `stages.narrative` payload."""
     chunks = discover_discord_chunks(out_dir)
     return {
-        "schema_version": NARRATIVE_SCHEMA_VERSION,
         "completed_at": _now_iso(),
         "patch_summary_md": discover_patch_summary(out_dir),
         "discord_dir": DISCORD_DIRNAME,
@@ -192,7 +160,11 @@ def main(argv=None):
         eprint(f"error: no manifest.json found in {out_dir}")
         return 1
 
-    narrative = build_narrative_stage(out_dir, args.max_chunk_chars)
+    try:
+        narrative = build_narrative_stage(out_dir, args.max_chunk_chars)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        eprint(f"error: {exc}")
+        return 1
 
     manifest.setdefault("stages", {})
     manifest["stages"]["narrative"] = narrative

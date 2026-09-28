@@ -47,7 +47,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import cast
 
-from pn import esmcli, formids, jsonio
+from pn import esmcli, formids, jsonio, schemas
 from pn import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
@@ -300,7 +300,7 @@ def build_edges(u, ref_names, client, old_esm, new_esm, refs_depth, special_dept
     context_stubs.update(rev_context)
     context_stubs.update(fwd_context)  # forward wins if both discovered the same node
 
-    edges: list[pl.Edge] = []
+    edges: list[schemas.Edge] = []
     for e in fwd_edges + rev_edges:
         src_type = _record_type_of(e["from"], u, fwd_context, rev_context)
         dst_type = _record_type_of(e["to"], u, fwd_context, rev_context)
@@ -779,7 +779,7 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
         anchor_fid = select_anchor(member_fids, u, full_degree, anchor_rank, unlisted_rank)
         anchor_rec = u[anchor_fid] or {}
 
-        member_dicts: list[pl.Member] = []
+        member_dicts: list[schemas.Member] = []
         for fid in member_fids:
             rec = u[fid] or {}
             member_dicts.append(
@@ -840,7 +840,7 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
         for b in raw_bundles
         if sum(
             1
-            for m in cast(list[pl.Member], b.get("members", ()))
+            for m in cast(list[schemas.Member], b.get("members", ()))
             if m.get("role") != "context"
         )
         == 1
@@ -866,7 +866,7 @@ def build_bundles(comp, client, old_esm, new_esm, overrides=None):
         },
     }
 
-    return {"schema_version": 1, "meta": meta, "bundles": raw_bundles}
+    return {"meta": meta, "bundles": raw_bundles}
 
 
 # --------------------------------------------------------------------------
@@ -901,7 +901,7 @@ def main(argv=None, *, client=None):
     args = build_arg_parser().parse_args(argv)
 
     try:
-        comp = pl.validate_comprehensive_payload(jsonio.read(args.comprehensive_json), label=args.comprehensive_json)
+        comp = schemas.validate_comprehensive_payload(jsonio.read(args.comprehensive_json), label=args.comprehensive_json)
     except (OSError, json.JSONDecodeError, TypeError, KeyError, ValueError) as e:
         eprint(f"error: failed to load {args.comprehensive_json}: {e}")
         return 1

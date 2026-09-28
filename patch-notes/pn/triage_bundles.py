@@ -78,7 +78,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from pn import jsonio, layout
+from pn import jsonio, layout, schemas
 from pn import patchnotes_lib as pl
 
 DEFAULT_TIERS_PATH = Path(__file__).resolve().parent / "patch_notes_tiers.json"
@@ -118,7 +118,7 @@ def eprint(*args, **kwargs):
 
 
 def load_bundles(out_dir):
-    return pl.validate_bundles_payload(jsonio.read(layout.bundles_json(out_dir)))
+    return schemas.validate_bundles_payload(jsonio.read(layout.bundles_json(out_dir)))
 
 
 def load_lints(out_dir):
@@ -130,7 +130,7 @@ def load_lints(out_dir):
 
 
 def load_comprehensive(out_dir):
-    return pl.validate_comprehensive_payload(jsonio.read(layout.comprehensive_json(out_dir)))
+    return schemas.validate_comprehensive_payload(jsonio.read(layout.comprehensive_json(out_dir)))
 
 
 def load_tiers_config(path):
@@ -237,7 +237,7 @@ def uniform_numeric_form_ids(records, form_ids, threshold, drop_patterns=None) -
     }
 
 
-def compute_rollout_shapes(records, threshold, numeric_excluded=None) -> list[pl.RolloutShape]:
+def compute_rollout_shapes(records, threshold, numeric_excluded=None) -> list[schemas.RolloutShape]:
     """Return deterministic metadata for changed-record shapes at threshold.
 
     `numeric_excluded` (a set of FormIDs, see numeric_change_form_ids) is
@@ -261,7 +261,7 @@ def compute_rollout_shapes(records, threshold, numeric_excluded=None) -> list[pl
             continue
         form_ids_by_shape[shape].append(form_id)
 
-    rollout_shapes: list[pl.RolloutShape] = []
+    rollout_shapes: list[schemas.RolloutShape] = []
     for (record_type, paths), form_ids in form_ids_by_shape.items():
         if len(form_ids) < threshold:
             continue
@@ -645,7 +645,7 @@ def assign_tier(bundle, records, config, bulk_shapes=None, numeric_excluded=None
     return "ambiguous", None, None
 
 
-def compute_bundle_tiers(bundles, records, config) -> tuple[dict[str, pl.TierInfo], list[pl.RolloutShape]]:
+def compute_bundle_tiers(bundles, records, config) -> tuple[dict[str, schemas.TierInfo], list[schemas.RolloutShape]]:
     """Return (`{bundle_id: TierInfo}`, rollout_shapes) for every bundle."""
     settings = config.get("settings") or {}
     threshold = settings.get("rollout_min_records", DEFAULT_ROLLOUT_MIN_RECORDS)
@@ -672,7 +672,7 @@ def compute_bundle_tiers(bundles, records, config) -> tuple[dict[str, pl.TierInf
         (item["record_type"], tuple(item["paths"]))
         for item in rollout_shapes
     }
-    tiers_by_id: dict[str, pl.TierInfo] = {}
+    tiers_by_id: dict[str, schemas.TierInfo] = {}
     for b in bundles:
         tier, reason, bucket = assign_tier(b, records, config, bulk_shapes, numeric_excluded)
         tiers_by_id[b["id"]] = {"tier": tier, "reason": reason, "bucket": bucket}
@@ -717,7 +717,6 @@ def build_triage_payload(bundles, tiers_by_id, rollout_shapes, extra_stats=None)
         stats.update(extra_stats)
 
     return {
-        "schema_version": 1,
         "rollout": rollout,
         "deep": deep,
         "brief": brief,
@@ -788,7 +787,6 @@ def _strip_bundle_for_deep_slice(bundle):
 def build_deep_slice_payload(deep_bundles, lints_by_id):
     lints = lints_for_bundles(deep_bundles, lints_by_id)
     return {
-        "schema_version": 1,
         "bundles": [_strip_bundle_for_deep_slice(b) for b in deep_bundles],
         "lints": lints,
     }
@@ -891,7 +889,6 @@ def build_ambiguous_digest(bundle, records, max_bundle_chars, max_change_chars):
 
 def build_ambiguous_payload(ambiguous_bundles, records, max_bundle_chars, max_change_chars):
     return {
-        "schema_version": 1,
         "bundles": [
             build_ambiguous_digest(b, records, max_bundle_chars, max_change_chars)
             for b in ambiguous_bundles
@@ -1092,9 +1089,9 @@ def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):
 
 def merge_assessment(tiers_by_id, assessment, truncated_ids=None):
     """Overlay an assessor's `{"tiers": {bundle_id: {"tier", "reason",
-    "bucket"?}}}` onto `tiers_by_id` IN PLACE, resolving only bundles
-    currently tiered "ambiguous". A bundle the assessor doesn't mention, or
-    resolves with an unrecognized tier, is left ambiguous. A `drop` verdict
+    "bucket"?}}}` (a validated `schemas.Assessment`) onto `tiers_by_id` IN
+    PLACE, resolving only bundles currently tiered "ambiguous". A bundle the
+    assessor doesn't mention is left ambiguous. A `drop` verdict
     on a bundle in `truncated_ids` (its digest was cut to fit the size cap,
     so the assessor never saw the whole change) is promoted to `brief`: a
     partial view can demote a story to a one-liner, never erase it.
@@ -1106,19 +1103,16 @@ def merge_assessment(tiers_by_id, assessment, truncated_ids=None):
         if info["tier"] != "ambiguous":
             continue
         override = assessor_tiers.get(bid)
-        if not isinstance(override, dict):
+        if override is None:
             continue
-        new_tier = override.get("tier")
-        if new_tier not in ("deep", "brief", "drop"):
-            eprint(f"warning: assessment.json has unrecognized tier for {bid}: {new_tier!r} -- left ambiguous")
-            continue
-        reason = override.get("reason")
+        new_tier = override["tier"]
+        reason = override["reason"]
         if new_tier == "drop" and bid in truncated_ids:
             eprint(f"warning: assessor dropped {bid} from a truncated digest -- promoted to brief")
             new_tier = "brief"
-            reason = f"{reason or '(no reason given)'} (promoted from drop: truncated digest)"
+            reason = f"{reason} (promoted from drop: truncated digest)"
         info["tier"] = new_tier
-        info["reason"] = f"assessor:{reason}" if reason else "assessor:(no reason given)"
+        info["reason"] = f"assessor:{reason}"
         if new_tier == "brief":
             info["bucket"] = override.get("bucket") or "Other"
         resolved += 1
@@ -1149,7 +1143,7 @@ def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH
     bundles_data = load_bundles(out_dir)
     comp_data = load_comprehensive(out_dir)
     config = load_tiers_config(tiers_path)
-    assessment = jsonio.read(assessment_path)
+    assessment = schemas.load(assessment_path, schemas.validate_assessment)
 
     lints = load_lints(out_dir)
     bundles = pl.attach_lints(bundles_data.get("bundles") or [], lints)
@@ -1222,8 +1216,8 @@ def main(argv=None):
     except FileNotFoundError as e:
         eprint(f"error: {e}")
         return 1
-    except (OSError, json.JSONDecodeError) as e:
-        eprint(f"error: failed to load pipeline output: {e}")
+    except (OSError, ValueError, TypeError, KeyError) as e:
+        eprint(f"error: {e}")
         return 1
 
     print_summary(result["triage"])

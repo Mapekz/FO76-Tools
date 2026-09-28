@@ -70,7 +70,7 @@ def make_bundle(bundle_id, anchor_fid, anchor_type, members=None, edges=None, **
     # Field set/shape mirrors patchnotes_lib.Bundle exactly (role "primary"
     # isn't a real MemberRole -- "anchor"/"satellite"/"context" are -- and
     # "status" is a required-but-nullable key) so this
-    # round-trips through pl.validate_bundles_payload() unchanged, which
+    # round-trips through schemas.validate_bundles_payload() unchanged, which
     # TestEndToEndCli exercises via run_lints.main()'s bundles.json read.
     # The anchor/member dicts stay literal rather than going through
     # builders.anchor()/builders.member(): those carry the nullable
@@ -89,7 +89,7 @@ def make_bundle(bundle_id, anchor_fid, anchor_type, members=None, edges=None, **
 
 
 def make_bundles(bundles=None):
-    return {"schema_version": 1, "bundles": bundles or []}
+    return {"bundles": bundles or []}
 
 
 def no_op_client():
@@ -848,7 +848,6 @@ class TestEndToEndCli(unittest.TestCase):
             self.assertTrue(lints_path.exists())
 
             lints_payload = json.loads(lints_path.read_text(encoding="utf-8"))
-            self.assertEqual(lints_payload["schema_version"], 1)
             self.assertIn("rules_run", lints_payload["meta"])
             self.assertEqual(set(lints_payload["meta"]["counts"].keys()), {"error", "warn", "info"})
 

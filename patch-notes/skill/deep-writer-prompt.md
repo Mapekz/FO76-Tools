@@ -99,21 +99,22 @@ orchestrator reconciles every deferral — an unlisted skip is a dropped story.
 
 1. **Draft** → `{DRAFT_PATH}` — Markdown per the style guide. No absolute filesystem paths,
    ESM filenames, or local directory names anywhere.
-2. **Report** → `{REPORT_PATH}` — JSON:
+2. **Report** → `{REPORT_PATH}` — JSON in exactly this shape (no other keys; `kind` is
+   `mechanic` or `trap`):
    ```json
    {
-     "bundles": <int>,
-     "bundles_covered": ["<every bundle id from your slice you wrote up>"],
+     "bundles": 3,
+     "bundles_covered": ["B0012", "B0015", "B0031"],
      "claims": [
        {"record": "0x00568635", "path": "Data / Damage", "from": 20, "to": 25},
        {"record": "mod_Custom_Foo", "path": "Effects / [Effect=0x0004B2E1] / Magnitude", "from": 10, "to": 15},
        {"record": "0x0071AB00", "status": "added"},
        {"record": "0x000E1A11", "path": "Data / Value", "value": 0.25, "side": "new"}
      ],
-     "lints_confirmed": ["..."], "lints_not_reproduced": ["..."],
-     "unresolved": [{"what": "...", "tried": "..."}],
-     "deferred": [{"form_ids": ["..."], "expected_owner": "...", "note": "..."}],
-     "kb_proposals": [{"kind": "mechanic|trap", "entry": "<markdown, exact format below>"}]
+     "lints_confirmed": ["L0004"], "lints_not_reproduced": ["L0007"],
+     "unresolved": [{"what": "Stage 20 reward", "tried": "refs 0x0071AB00 --type LVLI"}],
+     "deferred": [{"form_ids": ["0x0071AB01"], "expected_owner": "part2", "note": "its weapon's story"}],
+     "kb_proposals": [{"kind": "mechanic", "entry": "## Heading\nBody in the format below."}]
    }
    ```
    `bundles_covered` = the ids you actually wrote up (never a deferred one); the coverage gate

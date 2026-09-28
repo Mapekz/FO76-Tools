@@ -18,6 +18,7 @@ import unittest
 from pathlib import Path
 from typing import Callable, cast
 
+from pn import schemas
 from pn import triage_bundles as tb
 from tests import builders
 from tests.builders import TempOutDir, load_json, run_pn
@@ -960,7 +961,7 @@ class TestDeepSlicePayload(unittest.TestCase):
 
     def test_top_level_shape(self):
         payload = tb.build_deep_slice_payload([], {})
-        self.assertEqual(set(payload.keys()), {"schema_version", "bundles", "lints"})
+        self.assertEqual(set(payload.keys()), {"bundles", "lints"})
 
     def test_relevant_lints_included(self):
         bundle = make_bundle("B0001", [make_member("0x01", "OMOD", "mod_Custom_Foo")])
@@ -1155,12 +1156,9 @@ class TestMergeAssessment(unittest.TestCase):
         self.assertEqual(resolved, 0)
         self.assertEqual(tiers["B0001"]["tier"], "ambiguous")
 
-    def test_invalid_tier_value_leaves_bundle_ambiguous(self):
-        tiers = {"B0001": {"tier": "ambiguous", "reason": None, "bucket": None}}
-        assessment = {"tiers": {"B0001": {"tier": "not_a_real_tier", "reason": "?"}}}
-        resolved = tb.merge_assessment(tiers, assessment)
-        self.assertEqual(resolved, 0)
-        self.assertEqual(tiers["B0001"]["tier"], "ambiguous")
+    def test_assessment_with_an_invalid_tier_is_rejected(self):
+        with self.assertRaises(ValueError):
+            schemas.validate_assessment({"tiers": {"B0001": {"tier": "not_a_real_tier", "reason": "?"}}})
 
     def test_brief_resolution_defaults_bucket_to_other(self):
         tiers = {"B0001": {"tier": "ambiguous", "reason": None, "bucket": None}}
@@ -1168,13 +1166,9 @@ class TestMergeAssessment(unittest.TestCase):
         tb.merge_assessment(tiers, assessment)
         self.assertEqual(tiers["B0001"]["bucket"], "Other")
 
-    def test_missing_reason_still_records_assessor_prefix(self):
-        tiers = {"B0001": {"tier": "ambiguous", "reason": None, "bucket": None}}
-        assessment = {"tiers": {"B0001": {"tier": "drop"}}}
-        tb.merge_assessment(tiers, assessment)
-        reason = tiers["B0001"]["reason"]
-        assert reason is not None
-        self.assertTrue(reason.startswith("assessor:"))
+    def test_assessment_without_a_reason_is_rejected(self):
+        with self.assertRaises(KeyError):
+            schemas.validate_assessment({"tiers": {"B0001": {"tier": "drop"}}})
 
 
 # --------------------------------------------------------------------------
@@ -1189,11 +1183,11 @@ def _sample_pipeline_output():
         make_bundle("B0003", [make_member("0x03", "REFR", "SomeRef")]),
         make_bundle("B0004", [make_member("0x04", "MISC", "Mystery")]),
     ]
-    bundles_data = {"schema_version": 1, "meta": {}, "bundles": bundles, "lints": []}
+    bundles_data = {"meta": {}, "bundles": bundles}
     records = {
         "0x04": make_record("0x04", "MISC", "Mystery", changes=[make_change("Data / Custom", 1, 2)]),
     }
-    comprehensive_data = {"schema_version": 1, "meta": {}, "records": records, "common_changes": [], "ref_names": {}}
+    comprehensive_data = {"meta": {}, "records": records, "common_changes": [], "ref_names": {}}
     return bundles_data, comprehensive_data
 
 

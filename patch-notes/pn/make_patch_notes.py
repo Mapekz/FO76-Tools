@@ -92,7 +92,7 @@ from pn import esmcli as eg
 
 # Locate the esm/ workspace root (directory containing this script's parent).
 # Sibling pipeline-tool modules live next to this script.
-from pn import jsonio, layout
+from pn import jsonio, layout, schemas
 from pn import patchnotes_lib as pl
 from pn import render_comprehensive as rc
 from pn import run_lints as rl
@@ -498,7 +498,7 @@ def main(argv=None, *, client=None):
         new_token=new_token,
         new_esm_size=esm_b.stat().st_size,
         new_esm_mtime=int(esm_b.stat().st_mtime),
-        pipeline_version=pl.SCHEMA_VERSION,
+        pipeline_version=schemas.PIPELINE_VERSION,
         counts=manifest_counts,
         localized=localized,
     )

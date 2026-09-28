@@ -92,7 +92,7 @@ def write_out_dir(tmp: Path, claims, draft="", report_name="deep.report.json"):
     tmp.joinpath("comprehensive.json").write_text(json.dumps({"records": RECORDS, "ref_names": {}}))
     drafts = layout.drafts_dir(tmp)
     drafts.mkdir(exist_ok=True)
-    (drafts / report_name).write_text(json.dumps({"bundles": 1, "claims": claims}))
+    (drafts / report_name).write_text(json.dumps({"bundles": 1, "bundles_covered": ["B0001"], "claims": claims}))
     (drafts / report_name.replace(".report.json", ".md")).write_text(draft)
 
 
@@ -223,7 +223,9 @@ class TestRunCheck(TempDirTestCase):
     def test_part_reports_are_all_checked(self):
         write_out_dir(self.tmp, [{"record": "0x00000001", "path": "Data / Damage", "from": 20, "to": 25}], report_name="deep.part1.report.json")
         drafts = layout.drafts_dir(self.tmp)
-        (drafts / "deep.part2.report.json").write_text(json.dumps({"claims": [{"record": "0x00000002", "status": "added"}]}))
+        (drafts / "deep.part2.report.json").write_text(
+            json.dumps({"bundles_covered": ["B0002"], "claims": [{"record": "0x00000002", "status": "added"}]})
+        )
         (drafts / "deep.part2.md").write_text("Armor B is new.")
         payload = cc.run_check(self.tmp)
         self.assertEqual([r["report"] for r in payload["reports"]], ["deep.part1.report.json", "deep.part2.report.json"])

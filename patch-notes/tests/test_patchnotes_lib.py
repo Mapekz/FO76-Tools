@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from pn import patchnotes_lib as pl
+from pn import schemas
 from tests.builders import load_fixture
 
 # ---------------------------------------------------------------------------
@@ -64,17 +65,11 @@ class TestManifest(unittest.TestCase):
             new_esm_mtime=1234567890.0,
             pipeline_version="1.0.0",
         )
-        self.assertEqual(m["schema_version"], 1)
         self.assertEqual(m["patch_date"], "2026-07-03")
         self.assertEqual(m["inputs"]["old_token"], "20260626")
         self.assertEqual(m["stages"]["mechanical"]["completed_at"], None)
         self.assertEqual(m["stages"]["narrative"]["max_chunk_chars"], 2000)
-        # Seeded narrative shape must match the LIVE schema_version 3 shape
-        # update_manifest.py writes (see NARRATIVE_SCHEMA_VERSION's
-        # docstring) -- not the retired per-category shape ("categories": []).
-        self.assertEqual(m["stages"]["narrative"]["schema_version"], 3)
         self.assertIsNone(m["stages"]["narrative"]["usage"])
-        self.assertNotIn("categories", m["stages"]["narrative"])
         self.assertEqual(m["stages"]["narrative"]["discord_dir"], "discord")
 
     def test_write_then_load_roundtrip(self):
@@ -114,7 +109,7 @@ class TestManifest(unittest.TestCase):
 class TestWireShapeValidation(unittest.TestCase):
     def test_validate_record_entry_rejects_missing_key(self):
         with self.assertRaises(KeyError) as ctx:
-            pl.validate_record_entry({"form_id": "0x01", "record_type": "MISC"})
+            schemas.validate_record_entry({"form_id": "0x01", "record_type": "MISC"})
         self.assertIn("status", str(ctx.exception))
 
     def test_validate_bundle_rejects_bad_member_role(self):
@@ -139,7 +134,7 @@ class TestWireShapeValidation(unittest.TestCase):
             "id": "B0001",
         }
         with self.assertRaises(ValueError) as ctx:
-            pl.validate_bundle(bundle)
+            schemas.validate_bundle(bundle)
         self.assertIn("role", str(ctx.exception))
 
 

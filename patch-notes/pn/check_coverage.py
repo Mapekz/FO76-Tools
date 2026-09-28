@@ -35,7 +35,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from pn import formids, jsonio, layout
+from pn import formids, jsonio, layout, schemas
 
 
 def eprint(*args, **kwargs):
@@ -78,34 +78,36 @@ def mentions(text: str, terms: list[tuple[str, str]]) -> str | None:
 
 
 def load_reports(out_dir: Path) -> list[dict]:
+    """Every writer report with its draft text; a report that fails
+    validation carries `invalid` (the error) and covers nothing."""
     reports = []
     for path in layout.drafts_deep_reports(out_dir):
-        data = _load(path)
         draft_path = layout.draft_md_for_report(path)
-        covered = data.get("bundles_covered") if isinstance(data, dict) else None
-        deferred = data.get("deferred") if isinstance(data, dict) else None
+        text = draft_path.read_text(encoding="utf-8") if draft_path.is_file() else ""
+        try:
+            report = schemas.load(path, schemas.validate_report)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            reports.append({"name": path.name, "covered": [], "deferred": [], "text": text, "invalid": str(exc)})
+            continue
         reports.append(
             {
                 "name": path.name,
-                "covered": [c for c in (covered or []) if isinstance(c, str)],
-                "deferred": [d for d in (deferred or []) if isinstance(d, dict)],
-                "text": draft_path.read_text(encoding="utf-8") if draft_path.is_file() else "",
-                "has_covered_list": isinstance(covered, list),
+                "covered": report["bundles_covered"],
+                "deferred": report["deferred"],
+                "text": text,
+                "invalid": None,
             }
         )
     return reports
 
 
 def load_cuts(out_dir: Path) -> dict[str, str]:
+    """`work/cuts.json` as {bundle_id: reason}; empty when absent. Raises on
+    a malformed file."""
     path = layout.work_cuts_json(out_dir)
     if not path.is_file():
         return {}
-    data = _load(path)
-    out: dict[str, str] = {}
-    for cut in (data.get("cuts") or []) if isinstance(data, dict) else []:
-        if isinstance(cut, dict) and isinstance(cut.get("bundle_id"), str):
-            out[cut["bundle_id"]] = str(cut.get("reason") or "").strip()
-    return out
+    return {cut["bundle_id"]: cut["reason"] for cut in schemas.load(path, schemas.validate_cuts)["cuts"]}
 
 
 def run_check(out_dir: Path, summary: bool = False) -> dict:
@@ -132,20 +134,25 @@ def run_check(out_dir: Path, summary: bool = False) -> dict:
     deferrals: dict[str, list[str]] = {bid: [] for bid in deep_ids}
     for r in reports:
         for d in r["deferred"]:
-            for fid in d.get("form_ids") or []:
+            for fid in d["form_ids"]:
                 bid = bundle_by_fid.get(canon_formid(fid) or "")
                 if bid is None or bid not in deferrals:
                     continue
                 if r["name"] not in deferrals[bid]:
                     deferrals[bid].append(r["name"])
 
-    cuts = load_cuts(out_dir) if summary else {}
+    violations: list[dict] = []
+    cuts: dict[str, str] = {}
+    if summary:
+        try:
+            cuts = load_cuts(out_dir)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            violations.append({"bundle_id": None, "kind": "invalid_cuts", "detail": str(exc)})
     summary_text = ""
     if summary:
         sp = layout.patch_summary_md(out_dir)
         summary_text = sp.read_text(encoding="utf-8") if sp.is_file() else ""
 
-    violations: list[dict] = []
     covered_by: dict[str, str] = {}
     deferred_resolved: dict[str, dict] = {}
     cut: dict[str, str] = {}
@@ -197,11 +204,10 @@ def run_check(out_dir: Path, summary: bool = False) -> dict:
                     })
 
     for r in reports:
-        if not r["has_covered_list"]:
-            violations.append({"bundle_id": None, "kind": "report_without_bundles_covered", "detail": f"{r['name']} has no bundles_covered list"})
+        if r["invalid"]:
+            violations.append({"bundle_id": None, "kind": "invalid_report", "detail": f"{r['name']}: {r['invalid']}"})
 
     payload = {
-        "schema_version": 1,
         "summary_checked": summary,
         "deep_total": len(deep_ids),
         "reports": [r["name"] for r in reports],

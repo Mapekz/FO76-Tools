@@ -32,7 +32,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pn import change_entries, jsonio, layout
+from pn import change_entries, jsonio, layout, schemas
 from pn import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
@@ -187,7 +187,7 @@ def _refs_out_for_changes(changes, refs):
 
 
 def _record_entry(form_id, record_type, editor_id, name, description, status,
-                   prev_editor_id, cut, fields, refs_out, changes, dangling_refs=()) -> pl.RecordEntry:
+                   prev_editor_id, cut, fields, refs_out, changes, dangling_refs=()) -> schemas.RecordEntry:
     return {
         "form_id": form_id,
         "record_type": record_type,
@@ -307,7 +307,6 @@ def build_comprehensive(
     }
 
     return {
-        "schema_version": pl.SCHEMA_VERSION,
         "meta": meta,
         "records": records,
         "common_changes": common_changes,
