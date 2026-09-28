@@ -100,8 +100,14 @@ impl Repo {
         false
     }
 
+    /// Tracked documentation and source text, without data files.
     fn text_files(&self) -> impl Iterator<Item = (&str, String)> {
-        self.files.iter().filter(|f| !is_data(f)).filter_map(|f| {
+        self.all_text_files().filter(|(f, _)| !is_data(f))
+    }
+
+    /// Every tracked file that reads as UTF-8 text.
+    fn all_text_files(&self) -> impl Iterator<Item = (&str, String)> {
+        self.files.iter().filter_map(|f| {
             let text = std::fs::read_to_string(self.root.join(f)).ok()?;
             Some((f.as_str(), text))
         })
@@ -152,8 +158,9 @@ fn normalize(dir: &Path, rel: &str) -> Option<String> {
 }
 
 /// The path inside a cited token, or `None` if it is not path-shaped:
-/// decoration, a `:line` suffix and a `#fragment` are stripped; absolute,
-/// home-relative, URL, glob and placeholder tokens are skipped.
+/// decoration, a `:line` suffix and a `#fragment` are stripped, a glob
+/// stands for the directory before its first wildcard, and absolute,
+/// home-relative, URL and placeholder tokens are skipped.
 fn clean(token: &str) -> Option<String> {
     let t = token
         .trim_start_matches(|c: char| "`*\"'(),;:!?[".contains(c))
@@ -163,6 +170,10 @@ fn clean(token: &str) -> Option<String> {
     let t = match t.rsplit_once(':') {
         Some((head, tail)) if tail.chars().all(|c| c.is_ascii_digit() || c == '-') => head,
         _ => t,
+    };
+    let t = match t.find(['*', '?']) {
+        Some(i) => t[..i].rsplit_once('/').map_or("", |(dir, _)| dir),
+        None => t,
     };
     let t = t.trim_end_matches('/');
     let path_chars = |c: char| c.is_ascii_alphanumeric() || "_.-/".contains(c);
@@ -174,64 +185,212 @@ fn clean(token: &str) -> Option<String> {
     shaped.then(|| t.to_string())
 }
 
-/// `(line, text)` of each comment in a source file. Rust and TypeScript use
-/// `//` and block-comment continuation lines; Python, TOML, YAML, shell and
-/// justfiles use `#`; Python docstrings count too.
+/// `(line, text)` of each comment in a source file, found by a small lexer
+/// that skips string literals. Rust and TypeScript comments are `//` and
+/// `/* */`; Python, TOML, YAML, shell and justfile comments start at a `#`
+/// that opens the line or follows whitespace. Python's triple-quoted strings
+/// (docstrings) count as comments.
 fn comments(path: &str, text: &str) -> Vec<(usize, String)> {
     let ext = path.rsplit('.').next().unwrap_or("");
     let name = path.rsplit('/').next().unwrap_or(path);
-    let slashes = matches!(ext, "rs" | "ts" | "tsx" | "js" | "mjs");
-    let hashes = matches!(ext, "py" | "toml" | "yml" | "yaml" | "sh") || name == "justfile";
-    let mut out = Vec::new();
-    let mut in_docstring = false;
-    for (i, line) in text.lines().enumerate() {
-        let t = line.trim_start();
-        if ext == "py" {
-            let quotes = t.matches("\"\"\"").count();
-            if in_docstring || quotes > 0 {
-                out.push((i + 1, t.to_string()));
-            }
-            if quotes % 2 == 1 {
-                in_docstring = !in_docstring;
-            }
-            if in_docstring || quotes > 0 {
+    if matches!(ext, "rs" | "ts" | "tsx" | "js" | "mjs") {
+        slash_comments(text, ext == "rs")
+    } else if matches!(ext, "py" | "toml" | "yml" | "yaml" | "sh") || name == "justfile" {
+        hash_comments(text, ext == "py")
+    } else {
+        Vec::new()
+    }
+}
+
+/// Collects comment text per line.
+#[derive(Default)]
+struct CommentLines {
+    out: Vec<(usize, String)>,
+    line: usize,
+    buf: String,
+}
+
+impl CommentLines {
+    fn push(&mut self, c: char) {
+        if c == '\n' {
+            self.newline();
+        } else {
+            self.buf.push(c);
+        }
+    }
+
+    fn newline(&mut self) {
+        if !self.buf.trim().is_empty() {
+            self.out
+                .push((self.line + 1, std::mem::take(&mut self.buf)));
+        }
+        self.buf.clear();
+        self.line += 1;
+    }
+}
+
+fn slash_comments(text: &str, rust: bool) -> Vec<(usize, String)> {
+    let c: Vec<char> = text.chars().collect();
+    let mut acc = CommentLines::default();
+    let ident = |ch: char| ch.is_alphanumeric() || ch == '_';
+    let mut i = 0;
+    while i < c.len() {
+        let next = c.get(i + 1).copied();
+        match c[i] {
+            '/' if next == Some('/') => {
+                while i < c.len() && c[i] != '\n' {
+                    acc.push(c[i]);
+                    i += 1;
+                }
                 continue;
             }
+            '/' if next == Some('*') => {
+                // Rust block comments nest; TypeScript's end at the first `*/`.
+                let mut depth = 0;
+                while i < c.len() {
+                    if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+                        depth += 1;
+                        i += 2;
+                    } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
+                        depth -= 1;
+                        i += 2;
+                        if depth == 0 || !rust {
+                            break;
+                        }
+                    } else {
+                        acc.push(c[i]);
+                        i += 1;
+                    }
+                }
+                continue;
+            }
+            'r' if rust && (i == 0 || !ident(c[i - 1])) => {
+                let hashes = c[i + 1..].iter().take_while(|&&ch| ch == '#').count();
+                if c.get(i + 1 + hashes) == Some(&'"') {
+                    let close: Vec<char> = std::iter::once('"')
+                        .chain(std::iter::repeat_n('#', hashes))
+                        .collect();
+                    i += 2 + hashes;
+                    while i < c.len() && !c[i..].starts_with(&close) {
+                        if c[i] == '\n' {
+                            acc.newline();
+                        }
+                        i += 1;
+                    }
+                    i += close.len();
+                    continue;
+                }
+            }
+            // A char literal ('x', '\n', '\u{..}'); any other quote is a lifetime.
+            '\'' if rust => {
+                let end = if next == Some('\\') {
+                    c[i + 2..]
+                        .iter()
+                        .position(|&ch| ch == '\'')
+                        .map(|p| i + 2 + p)
+                } else {
+                    (c.get(i + 2) == Some(&'\'')).then_some(i + 2)
+                };
+                if let Some(end) = end {
+                    i = end + 1;
+                    continue;
+                }
+            }
+            q @ ('"' | '\'' | '`') => {
+                i += 1;
+                while i < c.len() && c[i] != q {
+                    if c[i] == '\\' {
+                        i += 1;
+                    }
+                    if c.get(i) == Some(&'\n') {
+                        acc.newline();
+                    }
+                    i += 1;
+                }
+                i += 1;
+                continue;
+            }
+            '\n' => acc.newline(),
+            _ => {}
         }
-        let comment = if slashes {
-            t.find("//")
-                .map(|j| &t[j..])
-                .or_else(|| t.starts_with('*').then_some(t))
-        } else if hashes {
-            t.find('#')
-                .filter(|&j| j == 0 || t[..j].ends_with(' '))
-                .map(|j| &t[j..])
-        } else {
-            None
-        };
-        out.extend(comment.map(|c| (i + 1, c.to_string())));
+        i += 1;
     }
-    out
+    acc.newline();
+    acc.out
+}
+
+fn hash_comments(text: &str, python: bool) -> Vec<(usize, String)> {
+    let c: Vec<char> = text.chars().collect();
+    let mut acc = CommentLines::default();
+    let mut i = 0;
+    while i < c.len() {
+        let ch = c[i];
+        if python && (ch == '"' || ch == '\'') && c[i..].starts_with(&[ch; 3]) {
+            i += 3;
+            while i < c.len() && !c[i..].starts_with(&[ch; 3]) {
+                acc.push(c[i]);
+                i += 1;
+            }
+            i += 3;
+            continue;
+        }
+        match ch {
+            '#' if i == 0 || c[i - 1].is_whitespace() => {
+                while i < c.len() && c[i] != '\n' {
+                    acc.push(c[i]);
+                    i += 1;
+                }
+                continue;
+            }
+            // Strings end with their line: an apostrophe in YAML or shell
+            // prose must not swallow the rest of the file.
+            q @ ('"' | '\'') => {
+                i += 1;
+                while i < c.len() && c[i] != q && c[i] != '\n' {
+                    if c[i] == '\\' {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                if c.get(i) == Some(&q) {
+                    i += 1;
+                }
+                continue;
+            }
+            '\n' => acc.newline(),
+            _ => {}
+        }
+        i += 1;
+    }
+    acc.newline();
+    acc.out
 }
 
 fn is_markdown(path: &str) -> bool {
     path.ends_with(".md")
 }
 
-/// Local targets of `[text](target)` links outside code.
+/// Local targets of inline links (`[text](target)`, `[text](<target>)`) and
+/// reference definitions (`[label]: target`) outside code.
 fn link_targets(doc: &str) -> Vec<String> {
     let prose: String = doc.split("```").step_by(2).collect::<Vec<_>>().join("\n");
     let prose: String = prose.split('`').step_by(2).collect();
-    prose
-        .match_indices("](")
-        .filter_map(|(i, _)| {
-            let rest = &prose[i + 2..];
-            let target = rest[..rest.find(')')?].split_whitespace().next()?;
-            let local = !target.contains("://")
-                && !target.starts_with(['#', '<'])
-                && !target.starts_with("mailto:");
-            local.then(|| target.split('#').next().unwrap_or("").to_string())
-        })
+    let inline = prose.match_indices("](").filter_map(|(i, _)| {
+        let rest = &prose[i + 2..];
+        match rest.strip_prefix('<') {
+            Some(angled) => angled.split_once('>').map(|(t, _)| t),
+            None => rest[..rest.find(')')?].split_whitespace().next(),
+        }
+    });
+    let definitions = prose.lines().filter_map(|l| {
+        let (label, target) = l.trim_start().strip_prefix('[')?.split_once("]:")?;
+        let target = target.split_whitespace().next()?;
+        (!label.is_empty()).then(|| target.trim_start_matches('<').trim_end_matches('>'))
+    });
+    inline
+        .chain(definitions)
+        .filter(|t| !t.contains("://") && !t.starts_with('#') && !t.starts_with("mailto:"))
+        .map(|t| t.split('#').next().unwrap_or("").to_string())
         .filter(|t| !t.is_empty())
         .collect()
 }
@@ -300,7 +459,7 @@ fn no_file_names_a_consumer() {
     let repo = Repo::load();
     let this_file = "repo-policy/tests/repo_policy.rs";
     let mut failures = Vec::new();
-    for (path, text) in repo.text_files().filter(|(p, _)| *p != this_file) {
+    for (path, text) in repo.all_text_files().filter(|(p, _)| *p != this_file) {
         let lower = text.to_lowercase();
         for name in CONSUMER_NAMES {
             if lower.contains(name) {
@@ -327,6 +486,11 @@ fn clean_accepts_paths_and_rejects_prose() {
     assert_eq!(clean("esm/"), None);
     assert_eq!(clean("`src/lib.rs`'s").as_deref(), Some("src/lib.rs"));
     assert_eq!(clean("(../esm/src)").as_deref(), Some("../esm/src"));
+    assert_eq!(
+        clean("`src/some-dir/*.ts`").as_deref(),
+        Some("src/some-dir")
+    );
+    assert_eq!(clean("docs/adr/*.md").as_deref(), Some("docs/adr"));
     for prose in [
         "/tmp/x",
         "~/dev",
@@ -376,4 +540,36 @@ fn citations_resolve_from_the_citing_directory_or_an_ancestor() {
             .is_some()
     );
     assert_eq!(repo.check_citation(from, "read/write"), None);
+}
+
+#[test]
+fn comments_skip_strings_and_read_block_comments() {
+    let rs = "let s = \"https://x esm/a.rs\"; // see esm/b.rs\n\
+              /* see esm/c.rs\n   esm/d.rs */ let c = '\"'; // esm/e.rs\n\
+              let r = r#\"// esm/f.rs\"#; fn f<'a>(x: &'a str) {} // esm/g.rs\n";
+    let text = comments("x.rs", rs)
+        .into_iter()
+        .map(|(_, c)| c)
+        .collect::<Vec<_>>()
+        .join("\n");
+    for cited in ["esm/b.rs", "esm/c.rs", "esm/d.rs", "esm/e.rs", "esm/g.rs"] {
+        assert!(text.contains(cited), "{cited} missing from {text:?}");
+    }
+    for literal in ["esm/a.rs", "esm/f.rs"] {
+        assert!(
+            !text.contains(literal),
+            "{literal} read from a string: {text:?}"
+        );
+    }
+    let py = "x = 'a # b'  # esm/g.py\n'''doc esm/h.py'''\ny = \"#\"\n";
+    let found: Vec<(usize, String)> = comments("x.py", py);
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found[0].1.contains("esm/g.py") && found[1].1.contains("esm/h.py"));
+}
+
+#[test]
+fn links_include_angled_and_reference_forms() {
+    let doc = "[a](<esm/a.md>) [b](esm/b.md#x) [c](https://x/y)\n\
+               [label]: esm/c.md\n`[d](esm/d.md)`\n";
+    assert_eq!(link_targets(doc), ["esm/a.md", "esm/b.md", "esm/c.md"]);
 }
