@@ -15,6 +15,7 @@ use crate::format::{
     ArchiveKind, HEADER_SIZE, Header, RECORD_SIZE, TEX_CHUNK_SIZE, TEX_RECORD_SIZE, VERSION,
     read_header, read_record, read_tex_chunk, read_tex_record,
 };
+use crate::hash::normalize_name;
 use anyhow::{Context, Result, bail};
 use memmap2::Mmap;
 use std::collections::HashMap;
@@ -183,9 +184,7 @@ impl Ba2Archive {
             if pos + name_len > data.len() {
                 bail!("BA2 name table entry {} string bytes out of range", i);
             }
-            let name = String::from_utf8_lossy(&data[pos..pos + name_len])
-                .to_lowercase()
-                .replace('/', "\\");
+            let name = normalize_name(&String::from_utf8_lossy(&data[pos..pos + name_len]));
             pos += name_len;
             names.push(name);
         }
@@ -310,7 +309,7 @@ impl Ba2Archive {
     pub fn read(&self, name: &str, codec: ReadCodec) -> Result<Vec<u8>> {
         // Names in the archive are lowercased and backslash-separated.
         // Normalise the caller's input to match.
-        let name_lower = name.to_lowercase().replace('/', "\\");
+        let name_lower = normalize_name(name);
         let &idx = self
             .by_name
             .get(&name_lower)

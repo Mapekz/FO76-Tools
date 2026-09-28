@@ -24,7 +24,7 @@ use crate::format::{
     ArchiveKind, HEADER_SIZE, RECORD_FLAGS, RECORD_SIZE, Record, TEX_CHUNK_SIZE, TEX_RECORD_SIZE,
     TexChunk, TexRecord, write_header, write_record, write_tex_chunk, write_tex_record,
 };
-use crate::hash::hash_path;
+use crate::hash::{hash_path, normalize_name};
 use anyhow::{Context, Result, bail};
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -160,7 +160,7 @@ fn write_gnrl(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
     let mut blob_cursor: u64 = 0;
 
     for (archive_path, src_path) in files {
-        let archive_path_norm = archive_path.to_lowercase().replace('/', "\\");
+        let archive_path_norm = normalize_name(archive_path);
 
         // Read source file.
         let raw = std::fs::read(src_path)
@@ -310,7 +310,7 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
     let mut total_chunks: usize = 0;
 
     for (archive_path, src_path) in files {
-        let archive_path_norm = archive_path.to_lowercase().replace('/', "\\");
+        let archive_path_norm = normalize_name(archive_path);
         if archive_path_norm.len() > u16::MAX as usize {
             bail!(
                 "archive path '{}' is too long ({} bytes; max {})",

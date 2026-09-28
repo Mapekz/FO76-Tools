@@ -4,6 +4,7 @@ use ba2::{
     compress::{Codec, ReadCodec},
     dds,
     extract::{ExtractOptions, extract_all, extract_one},
+    hash::normalize_name,
     reader::Ba2Archive,
     write_ba2,
 };
@@ -420,11 +421,12 @@ fn collect_from_dir(dir: &Path) -> Result<Vec<(String, PathBuf)>> {
         let rel = src
             .strip_prefix(dir)
             .with_context(|| format!("failed to relativize '{}'", src.display()))?;
-        let archive_path = rel
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
-            .collect::<Vec<_>>()
-            .join("\\");
+        let archive_path = normalize_name(
+            &rel.components()
+                .map(|c| c.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/"),
+        );
         pairs.push((archive_path, src));
     }
     Ok(pairs)
@@ -454,7 +456,7 @@ fn collect_from_list(list_path: &Path, base: Option<&Path>) -> Result<Vec<(Strin
         }
         if let Some((archive_path, src_str)) = line.split_once('\t') {
             pairs.push((
-                archive_path.trim().to_lowercase().replace('/', "\\"),
+                normalize_name(archive_path.trim()),
                 PathBuf::from(src_str.trim()),
             ));
         } else {
@@ -489,11 +491,12 @@ fn derive_archive_path(src: &Path, base: Option<&Path>) -> Result<String> {
                 .ok_or_else(|| anyhow::anyhow!("'{}' has no file name component", src.display()))?,
         ),
     };
-    Ok(rel
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().to_lowercase())
-        .collect::<Vec<_>>()
-        .join("\\"))
+    Ok(normalize_name(
+        &rel.components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+    ))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

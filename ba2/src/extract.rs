@@ -7,6 +7,7 @@
 //! directory.
 
 use crate::compress::ReadCodec;
+use crate::hash::normalize_name;
 use crate::reader::{Ba2Archive, Ba2Entry};
 use anyhow::{Context, Result, bail};
 use globset::GlobSet;
@@ -104,8 +105,7 @@ pub fn extract_one(
     out_dir: &Path,
     codec: ReadCodec,
 ) -> Result<PathBuf> {
-    // Normalise the same way Ba2Archive::read() does: lowercase + `/` → `\`.
-    let name_lower = name.to_lowercase().replace('/', "\\");
+    let name_lower = normalize_name(name);
     let entry = archive
         .list()
         .iter()

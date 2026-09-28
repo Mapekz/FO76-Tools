@@ -37,6 +37,13 @@ pub fn beth_crc(bytes: &[u8]) -> u32 {
 
 /// Derive `(name_hash, dir_hash, ext)` from an archive-internal path.
 ///
+/// An archive entry name as BA2s store and look it up: lowercased, with `\`
+/// separators. Every name the reader, writer, extractor and CLI compare or
+/// hash goes through this.
+pub fn normalize_name(name: &str) -> String {
+    name.to_lowercase().replace('/', "\\")
+}
+
 /// The path is lowercased and `/` is converted to `\` before hashing so the
 /// result is consistent regardless of OS path conventions.
 ///
@@ -45,7 +52,7 @@ pub fn beth_crc(bytes: &[u8]) -> u32 {
 /// * `ext` — first 4 bytes of the lowercase extension, null-padded
 ///   (e.g. `"dlstrings"` → `*b"dlst"`).
 pub fn hash_path(path: &str) -> (u32, u32, [u8; 4]) {
-    let norm = path.to_lowercase().replace('/', "\\");
+    let norm = normalize_name(path);
 
     // Split into (dir, filename).
     let (dir, file) = match norm.rsplit_once('\\') {
