@@ -367,16 +367,17 @@ deliberately doesn't model (`Filter Keyword Chances`, `Epic Loot Chance`,
 list-level `Max Count`/`Max Global`/`Max Curve Table`, COED owner/rank gates) —
 those surface as notes rather than being silently guessed.
 
-- **A zero `Chance None Value` does not mean "guaranteed" — check the sibling
-  `Chance None Global` on the same entry.** Each `Leveled List Entry` carries
-  both a flat `Chance None Value` and an optional `Chance None Global` FormID;
-  the flat value wins when nonzero, otherwise the GLOB is the real chance-none
-  (the same flat-wins rule as MGEF magnitudes). Reading only the flat field
-  makes gated rewards look like 100% drops: `TWZ07_LL_QuestReward_Event` reports
-  flat `0.0` but points at `RA_Rewards_Activities_UniqueWeapon_DropRate_Cnone`
-  = 85, i.e. a 15% drop. The *list*-level `Chance None Value` has no GLOB
-  sibling — that one really is flat. A `Chance None Curve Table` sibling, when
-  present, outranks both.
+- **A zero `Chance None Value` does not mean "guaranteed" — Chance None,
+  Quantity and Minimum Level each have a flat value, a Global and a Curve
+  Table, and the flat value loses to both.** A Curve Table wins, read at its
+  Global's value when one is set (that Global is a tier on the curve's x-axis:
+  `ItemTwo_Medium_ChanceNone_Tier` = 15 into `Container_Item2_ChanceNone`) and
+  at the player level otherwise; without a curve, a Global wins over the flat
+  value. Reading only the flat field makes gated rewards look like 100% drops:
+  `TWZ07_LL_QuestReward_Event` reports flat `0.0` but points at
+  `RA_Rewards_Activities_UniqueWeapon_DropRate_Cnone` = 85, i.e. a 15% drop.
+  The same rule applies at list level. `walk` applies it and notes any source
+  it can't read.
 - **Flags decide how entries combine, and neither no-flag nor `Use First Object
   That Matches All Conditions` is a 1/N pick.** `Use All` rolls every entry
   independently (multiply the per-entry miss chances). **No flag is a pool, not

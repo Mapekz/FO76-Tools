@@ -8,10 +8,9 @@
 //! - COBJ `Curve Table` — keyed on component *count*, already evaluated at
 //!   the count by the derived component `Quantity` (`decode::derived`).
 //! - LVLI `Minimim Level Curve Table` (schema typo, preserved verbatim) —
-//!   an item-quality-tier index (0-3 with 99/100 sentinels), not level.
-//!   Flagged rather than evaluated by `lvli::resolve_min_level` — see that
-//!   function's doc comment for the full reasoning. Do not duplicate or
-//!   regress that existing behavior with this new mechanism.
+//!   keyed on an item-quality tier (0-3 with 99/100 sentinels) that its
+//!   `Minimum Level Global` supplies, not level; `lvli::resolve_scalar`
+//!   evaluates it there.
 
 use serde_json::Value;
 
@@ -29,9 +28,7 @@ pub(crate) enum AxisGuard {
     /// `Actor Value: None` effect curve is level-domained; every named-AV
     /// one is domained on its own axis (tier counters, SPECIAL stats, a
     /// 0..40000 legendary-caps curve). Evaluating a caps curve at level 50
-    /// would print a confident, wrong number — exactly what
-    /// `lvli::resolve_min_level`'s existing carve-out already refuses to
-    /// do for its own case.
+    /// would print a confident, wrong number.
     SiblingIsNoneOrAbsent(&'static str),
 }
 

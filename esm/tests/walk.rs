@@ -1700,10 +1700,10 @@ fn cobj_curve_table_not_in_level_curves_allowlist() {
 
 /// LVLI's `Minimim Level Curve Table` (schema typo, preserved verbatim) is
 /// tier-indexed, not level — it must stay absent from this allowlist, and
-/// the existing `lvli::resolve_min_level` unresolved-axis note (not a new
-/// evaluated number) must keep firing through the walk digest unchanged.
+/// without its tier Global the drop table notes it rather than evaluating
+/// it at the level.
 #[test]
-fn lvli_minimim_level_curve_table_stays_unresolved_not_evaluated() {
+fn lvli_minimim_level_curve_table_without_a_global_is_noted_not_evaluated() {
     let fields_direct = json!({
         "Minimim Level Curve Table": {"curve": [{"x": 0.0, "y": 1.0}, {"x": 3.0, "y": 4.0}]},
     });
@@ -1735,8 +1735,8 @@ fn lvli_minimim_level_curve_table_stays_unresolved_not_evaluated() {
     let result = walk_at(&mut f, LVLI_MINLEVEL_ROOT_FID, 0);
     let text = node_digest(&result, LVLI_MINLEVEL_ROOT_FID).join("\n");
     assert!(
-        text.contains("Minimum Level Curve Table present"),
-        "expected the existing unresolved-axis note, not a new evaluated number, got:\n{text}"
+        text.contains("has no Global to read its tier from"),
+        "expected the unresolved-input note, not an evaluated number, got:\n{text}"
     );
 }
 

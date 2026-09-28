@@ -25,10 +25,9 @@
 //!   its own gate times the product of every earlier entry's miss chance.
 //!
 //! `Chance None` (list- and entry-level) is layered on *after* selection —
-//! it is not one of the CTDA eligibility gates above (see [`entry_chance_none`]/
-//! [`resolve_chance_none`]) — and, like every other scalar here, a sibling
-//! Curve Table takes precedence over a sibling Global over the flat value
-//! (see [`eval_curve`]).
+//! it is not one of the CTDA eligibility gates above (see [`entry_chance_none`]).
+//! It, `Quantity` and `Minimum Level` each have a flat value, a Global and a
+//! Curve Table, resolved by one rule ([`resolve_scalar`]).
 //!
 //! ## What isn't modeled (never silently — see [`DropNote::Unresolved`])
 //!
@@ -262,106 +261,133 @@ fn glob_stub_value(stub: Option<&Value>) -> Option<f64> {
 
 /// A CURV reference's points are inlined onto the field regardless of
 /// resolve depth (see `crate::decode::resolve_formid`'s CURV branch) — no
-/// fetch needed, just evaluate at `level`.
-fn eval_curve(v: &Value, level: f32) -> Option<f64> {
+/// fetch needed, just evaluate at `x`. `None` when the curve isn't loaded.
+fn eval_curve(v: &Value, x: f32) -> Option<f64> {
     let points = crate::curves::points_from_json(v)?;
-    curve_eval(&points, level).map(f64::from)
+    curve_eval(&points, x).map(f64::from)
 }
 
-/// Flat-wins-over-GLOB-over-Curve-Table chance-none resolution, shared by
-/// the list level (`Chance None Value`/`Chance None Global`/`Chance None
-/// Curve Table`) and the modern entry shape (same three key names — LVLI's
-/// schema reuses them at both levels). Returns a probability in `[0, 1]`.
-fn resolve_chance_none(node: &Value, level: f32) -> f64 {
-    if let Some(c) = node
-        .get("Chance None Curve Table")
-        .and_then(|v| eval_curve(v, level))
+/// The field names of one leveled-list scalar's three sources.
+struct ScalarFields {
+    flat: &'static str,
+    global: &'static str,
+    curve: &'static str,
+    /// Whether a curve with no Global reads the player level. Chance None and
+    /// Quantity curves used alone are level-shaped (`CT_Creatures_Loot_
+    /// WeaponUser_*` over x = 1–50); a Minimum Level curve is tier-indexed
+    /// (`MinLevel_*_CT` over 0–3) and always comes with its tier Global.
+    curve_reads_level: bool,
+}
+
+const CHANCE_NONE: ScalarFields = ScalarFields {
+    flat: "Chance None Value",
+    global: "Chance None Global",
+    curve: "Chance None Curve Table",
+    curve_reads_level: true,
+};
+const QUANTITY: ScalarFields = ScalarFields {
+    flat: "Quantity",
+    global: "Quantity Global",
+    curve: "Quantity Curve Table",
+    curve_reads_level: true,
+};
+const MIN_LEVEL: ScalarFields = ScalarFields {
+    flat: "Minimum Level",
+    global: "Minimum Level Global",
+    // The schema's typo, preserved verbatim.
+    curve: "Minimim Level Curve Table",
+    curve_reads_level: false,
+};
+
+/// One scalar from its flat value, Global and Curve Table: a Curve Table
+/// wins, evaluated at its Global's value when a Global is set and at `level`
+/// otherwise (see [`ScalarFields::curve_reads_level`]); without one, a Global
+/// wins over the flat value.
+///
+/// A Global beside a Curve Table is the curve's input: on 20260918 every such
+/// Global is a tier (`*_ChanceNone_Tier` = 5–25 on `Container_*_ChanceNone`'s
+/// x-knots 0/1/5/…/30/100, `MinLvl_*_ECON` = 1–3 on `MinLevel_*_CT`'s 0–3,
+/// `ActorTier02`–`12` on `CT_Creatures_Tier_*`'s 1–12). A flat value beside a
+/// Global mostly repeats it (`LL_Chems_High_ChanceNone_ECON` = 75 with flat
+/// 75); the Global is the tunable source. A source that can't be read (a
+/// curve not loaded, a Global naming a non-GLOB) is noted and skipped.
+/// `None` when no source is set.
+fn resolve_scalar(
+    node: &Value,
+    fields: &ScalarFields,
+    level: f32,
+    notes: &mut Vec<DropNote>,
+) -> Option<f64> {
+    let global_ref = node.get(fields.global).filter(|v| v.is_object());
+    let global = glob_stub_value(global_ref);
+    if let Some(stub) = global_ref
+        && global.is_none()
     {
-        return (c / 100.0).clamp(0.0, 1.0);
+        let edid = stub.get("editor_id").and_then(Value::as_str).unwrap_or("?");
+        notes.push(DropNote::Unresolved {
+            reason: format!("{} {edid} has no GLOB value", fields.global),
+        });
     }
-    let flat = node
-        .get("Chance None Value")
-        .and_then(Value::as_f64)
-        .unwrap_or(0.0);
-    if flat != 0.0 {
-        return (flat / 100.0).clamp(0.0, 1.0);
+    if let Some(curve) = node.get(fields.curve).filter(|v| v.is_object()) {
+        let x = global.or_else(|| fields.curve_reads_level.then_some(f64::from(level)));
+        match x.map(|x| eval_curve(curve, x as f32)) {
+            Some(Some(y)) => return Some(y),
+            Some(None) => notes.push(DropNote::Unresolved {
+                reason: format!("{} isn't loaded", fields.curve),
+            }),
+            None => notes.push(DropNote::Unresolved {
+                reason: format!(
+                    "{} has no Global to read its tier from, so it isn't evaluated",
+                    fields.curve
+                ),
+            }),
+        }
     }
-    if let Some(g) = glob_stub_value(node.get("Chance None Global")) {
-        return (g / 100.0).clamp(0.0, 1.0);
-    }
-    0.0
+    global.or_else(|| node.get(fields.flat).and_then(Value::as_f64))
 }
 
-/// An entry's own chance-none: the modern flat/GLOB/curve trio for a
-/// `Reference`-shaped entry, or the legacy `Base Data.Chance None` u8
-/// (no GLOB/curve sibling exists on that pre-174 shape).
-fn entry_chance_none(entry: &Value, level: f32) -> f64 {
-    if is_legacy_entry(entry) {
+/// A list's chance-none as a probability in `[0, 1]` ([`resolve_scalar`]).
+fn list_chance_none(fields: &Value, level: f32, notes: &mut Vec<DropNote>) -> f64 {
+    percent_to_probability(resolve_scalar(fields, &CHANCE_NONE, level, notes))
+}
+
+/// An entry's chance-none as a probability in `[0, 1]`: [`resolve_scalar`],
+/// or the `Base Data.Chance None` u8 on a legacy entry (which has no Global
+/// or curve).
+fn entry_chance_none(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> f64 {
+    percent_to_probability(if is_legacy_entry(entry) {
         entry
             .pointer("/Base Data/Chance None")
             .and_then(Value::as_f64)
-            .map(|v| (v / 100.0).clamp(0.0, 1.0))
-            .unwrap_or(0.0)
     } else {
-        resolve_chance_none(entry, level)
-    }
+        resolve_scalar(entry, &CHANCE_NONE, level, notes)
+    })
 }
 
-/// An entry's Minimum Level: `Minimum Level Global` > flat `Minimum Level`
-/// (modern shape), or `Base Data.Level` (legacy). `None` means no level gate.
-///
-/// Unlike [`resolve_chance_none`]/[`resolve_quantity`], a `Minimim Level
-/// Curve Table` sibling (schema typo, preserved verbatim) is **not**
-/// evaluated here: its x-domain reads as an item-quality-tier index (0-3,
-/// with 99/100 sentinel rows), not player level, unlike the level-shaped
-/// Quantity/Chance-None curve tables (spot-checked via
-/// `LL_Armor_Metal_ArmLeft`'s `MinLevel_Armor_Metal_CT` curve against
-/// `CT_Creatures_Loot_WeaponUser_Steel_Base`/`Container_Item2_ChanceNone`).
-/// Evaluating it at `--level` would invent a number off an unconfirmed axis,
-/// so it's flagged instead of guessed.
-fn resolve_min_level(entry: &Value, notes: &mut Vec<DropNote>) -> Option<f32> {
+fn percent_to_probability(percent: Option<f64>) -> f64 {
+    (percent.unwrap_or(0.0) / 100.0).clamp(0.0, 1.0)
+}
+
+/// An entry's Minimum Level ([`resolve_scalar`], or `Base Data.Level` on a
+/// legacy entry). `None` means no level gate.
+fn resolve_min_level(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> Option<f32> {
     if is_legacy_entry(entry) {
         return entry
             .pointer("/Base Data/Level")
             .and_then(Value::as_f64)
             .map(|v| v as f32);
     }
-    let curve_table_nonempty = entry
-        .get("Minimim Level Curve Table")
-        .and_then(|v| v.get("curve"))
-        .and_then(Value::as_array)
-        .is_some_and(|a| !a.is_empty());
-    if curve_table_nonempty {
-        notes.push(DropNote::Unresolved {
-            reason: "Minimum Level Curve Table present — its input axis isn't confirmed to be \
-                     player level (looks tier-indexed on spot-checked data), so it's not evaluated"
-                .to_string(),
-        });
-    }
-    if let Some(g) = glob_stub_value(entry.get("Minimum Level Global")) {
-        return Some(g as f32);
-    }
-    entry
-        .get("Minimum Level")
-        .and_then(Value::as_f64)
-        .map(|v| v as f32)
+    resolve_scalar(entry, &MIN_LEVEL, level, notes).map(|v| v as f32)
 }
 
-/// An entry's Quantity, Curve-Table > Global > flat (modern shape) or
-/// `Base Data.Count` (legacy). `Quantity: 0` means "use the sublist's own
-/// count", not disabled — normalized to `1.0` here.
-fn resolve_quantity(entry: &Value, level: f32) -> f64 {
+/// An entry's Quantity ([`resolve_scalar`], or `Base Data.Count` on a legacy
+/// entry). `Quantity: 0` means "use the sublist's own count", not disabled —
+/// normalized to `1.0` here.
+fn resolve_quantity(entry: &Value, level: f32, notes: &mut Vec<DropNote>) -> f64 {
     let raw = if is_legacy_entry(entry) {
         entry.pointer("/Base Data/Count").and_then(Value::as_f64)
-    } else if let Some(c) = entry
-        .get("Quantity Curve Table")
-        .and_then(|v| eval_curve(v, level))
-    {
-        Some(c)
-    } else if let Some(g) = glob_stub_value(entry.get("Quantity Global")) {
-        Some(g)
     } else {
-        entry.get("Quantity").and_then(Value::as_f64)
+        resolve_scalar(entry, &QUANTITY, level, notes)
     }
     .unwrap_or(1.0);
     if raw == 0.0 { 1.0 } else { raw }
@@ -512,6 +538,8 @@ fn mean_field_pool_odds(probs: &[f64]) -> Vec<f64> {
 struct EligibleEntry<'a> {
     entry: &'a Value,
     gate_prob: f64,
+    chance_none: f64,
+    quantity: f64,
     notes: Vec<DropNote>,
 }
 
@@ -663,13 +691,13 @@ fn walk_node(
     dedup_sorted(&mut want);
     let by_sel = bulk_fetch_map(f, &want)?;
 
-    let list_factor = 1.0 - resolve_chance_none(fields, opts.level);
+    let list_factor = 1.0 - list_chance_none(fields, opts.level, &mut node_notes);
 
     let mut eligible: Vec<EligibleEntry> = Vec::new();
     let mut min_levels: Vec<i64> = Vec::new();
     for e in &entry_vals {
         let mut notes = Vec::new();
-        if let Some(ml) = resolve_min_level(e, &mut notes) {
+        if let Some(ml) = resolve_min_level(e, opts.level, &mut notes) {
             if ml > opts.level {
                 continue;
             }
@@ -679,9 +707,13 @@ fn walk_node(
             Some(c) => entry_gate_prob(&flatten_condition_rows(c), opts.strict, &mut notes),
             None => 1.0,
         };
+        let chance_none = entry_chance_none(e, opts.level, &mut notes);
+        let quantity = resolve_quantity(e, opts.level, &mut notes);
         eligible.push(EligibleEntry {
             entry: e,
             gate_prob,
+            chance_none,
+            quantity,
             notes,
         });
     }
@@ -737,12 +769,11 @@ fn walk_node(
             continue;
         }
         let entry = ee.entry;
-        let cn = entry_chance_none(entry, opts.level);
-        let effective_i = chosen_i * (1.0 - cn);
+        let effective_i = chosen_i * (1.0 - ee.chance_none);
         if effective_i <= 0.0 {
             continue;
         }
-        let quantity = resolve_quantity(entry, opts.level);
+        let quantity = ee.quantity;
 
         let Some(target) = entry_target(entry) else {
             continue;
@@ -1166,22 +1197,97 @@ mod tests {
         assert!((eval_curve(&v, 50.0).unwrap() - 50.0).abs() < 1e-4);
     }
 
-    #[test]
-    fn resolve_chance_none_flat_wins_over_glob() {
-        let glob_fid = FormId::new(0x1000);
-        let node = json!({
-            "Chance None Value": 10.0,
-            "Chance None Global": glob_stub(glob_fid, "SomeGlobal", 85.0),
-        });
-        assert!((resolve_chance_none(&node, 50.0) - 0.10).abs() < 1e-9);
+    /// A curve over x = 0..100 with y = 100 - x.
+    fn falling_curve() -> Value {
+        json!({"formid": "0x00001001", "curve": [{"x": 0.0, "y": 100.0}, {"x": 100.0, "y": 0.0}]})
+    }
 
-        // Flat 0.0 -> the GLOB is the real chance-none (esm-cli SKILL.md's
-        // TWZ07_LL_QuestReward_Event example: flat 0.0, GLOB 85 -> 15% drop).
-        let node_zero_flat = json!({
-            "Chance None Value": 0.0,
-            "Chance None Global": glob_stub(glob_fid, "SomeGlobal", 85.0),
+    /// The precedence rule: curve (at the Global, else the level) > Global > flat.
+    #[test]
+    fn scalar_precedence_table() {
+        let global = glob_stub(FormId::new(0x1000), "Some_Tier", 15.0);
+        let cases = [
+            ("flat only", json!({"Chance None Value": 10.0}), Some(10.0)),
+            (
+                "Global over flat",
+                json!({"Chance None Value": 10.0, "Chance None Global": global}),
+                Some(15.0),
+            ),
+            (
+                "curve at the level",
+                json!({"Chance None Value": 10.0, "Chance None Curve Table": falling_curve()}),
+                Some(50.0),
+            ),
+            (
+                "curve at the Global",
+                json!({
+                    "Chance None Value": 10.0,
+                    "Chance None Global": global,
+                    "Chance None Curve Table": falling_curve(),
+                }),
+                Some(85.0),
+            ),
+            ("nothing set", json!({}), None),
+        ];
+        for (label, node, want) in cases {
+            let mut notes = Vec::new();
+            let got = resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes);
+            assert_eq!(got.map(|v| (v * 1e6).round() / 1e6), want, "{label}");
+            assert!(notes.is_empty(), "{label}: {notes:?}");
+        }
+    }
+
+    /// Quantity and Minimum Level follow the same rule, including the curve
+    /// reading its Global as the x input (a tier, for Minimum Level).
+    #[test]
+    fn quantity_and_min_level_use_the_same_rule() {
+        let tier = glob_stub(FormId::new(0x1000), "MinLvl_Test_ECON", 2.0);
+        let tier_curve = json!({"formid": "0x00001002", "curve": [
+            {"x": 0.0, "y": 1.0}, {"x": 1.0, "y": 10.0}, {"x": 2.0, "y": 20.0}, {"x": 3.0, "y": 30.0}
+        ]});
+        let entry = json!({
+            "Reference": {"formid": "0x00000001"},
+            "Minimum Level": 1.0,
+            "Minimum Level Global": tier,
+            "Minimim Level Curve Table": tier_curve,
+            "Quantity": 1.0,
+            "Quantity Global": glob_stub(FormId::new(0x1003), "Reward_Count", 10.0),
         });
-        assert!((resolve_chance_none(&node_zero_flat, 50.0) - 0.85).abs() < 1e-9);
+        let mut notes = Vec::new();
+        assert_eq!(resolve_min_level(&entry, 50.0, &mut notes), Some(20.0));
+        assert_eq!(resolve_quantity(&entry, 50.0, &mut notes), 10.0);
+        assert!(notes.is_empty(), "{notes:?}");
+    }
+
+    /// A source that can't be read is noted, and the next one used.
+    #[test]
+    fn unreadable_sources_are_noted_and_skipped() {
+        let avif =
+            json!({"formid": "0x00001004", "editor_id": "PerDiem_Limit", "record_type": "AVIF"});
+        let unloaded_curve = json!({"formid": "0x00001005", "editor_id": "Some_CT"});
+        let mut notes = Vec::new();
+        let node = json!({"Quantity": 6.0, "Quantity Global": avif});
+        assert_eq!(
+            resolve_scalar(&node, &QUANTITY, 50.0, &mut notes),
+            Some(6.0)
+        );
+        let node = json!({"Quantity": 3.0, "Quantity Curve Table": unloaded_curve});
+        assert_eq!(
+            resolve_scalar(&node, &QUANTITY, 50.0, &mut notes),
+            Some(3.0)
+        );
+        assert_eq!(notes.len(), 2, "{notes:?}");
+    }
+
+    /// Flat 0.0 with a GLOB of 85 is an 85% chance-none (esm-cli SKILL.md's
+    /// TWZ07_LL_QuestReward_Event example: a 15% drop).
+    #[test]
+    fn a_zero_flat_chance_none_defers_to_its_global() {
+        let node = json!({
+            "Chance None Value": 0.0,
+            "Chance None Global": glob_stub(FormId::new(0x1000), "SomeGlobal", 85.0),
+        });
+        assert!((list_chance_none(&node, 50.0, &mut Vec::new()) - 0.85).abs() < 1e-9);
     }
 
     // ─── full tree resolution ───────────────────────────────────────────
