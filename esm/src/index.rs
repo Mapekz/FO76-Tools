@@ -825,6 +825,22 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     let tree_path = section_path_for_spec::<rkyv::Archived<TreeIndex>>(&esm.path)?;
     let forms_path = section_path_for_spec::<rkyv::Archived<FormsSection>>(&esm.path)?;
     let total = esm.data().len() as u64;
+    let map_both = || -> anyhow::Result<Option<TreeAndFormsSections>> {
+        let tree =
+            map_section_if_present::<rkyv::Archived<TreeIndex>>(&tree_path, sig, CACHE_VERSION)?;
+        let forms = map_section_if_present::<rkyv::Archived<FormsSection>>(
+            &forms_path,
+            sig,
+            CACHE_VERSION,
+        )?;
+        Ok(tree.zip(forms))
+    };
+
+    if crate::progress::run_build_delegate(&esm.path, crate::progress::BuildStage::Forms)
+        && let Some(sections) = map_both()?
+    {
+        return Ok(sections);
+    }
 
     // Single stage, not two: `tree` and `forms` are both derived from one
     // shared `walk_structure` pass below, so there is only one counting
@@ -846,19 +862,7 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
         1,
         1,
         total,
-        || {
-            let tree_recheck = map_section_if_present::<rkyv::Archived<TreeIndex>>(
-                &tree_path,
-                sig,
-                CACHE_VERSION,
-            )?;
-            let forms_recheck = map_section_if_present::<rkyv::Archived<FormsSection>>(
-                &forms_path,
-                sig,
-                CACHE_VERSION,
-            )?;
-            Ok(tree_recheck.zip(forms_recheck))
-        },
+        map_both,
     )? {
         crate::progress::Acquired::AlreadyBuilt(sections) => return Ok(sections),
         crate::progress::Acquired::NeedsBuild(lease) => lease,

@@ -132,6 +132,22 @@ impl BuildStage {
         }
     }
 
+    /// Every cache section stage, index sections first.
+    pub const SECTIONS: [BuildStage; 7] = [
+        BuildStage::Forms,
+        BuildStage::Tree,
+        BuildStage::Edid,
+        BuildStage::Search,
+        BuildStage::Xref,
+        BuildStage::Strings,
+        BuildStage::Curves,
+    ];
+
+    /// The stage whose [`Self::label`] is `label`.
+    pub fn from_label(label: &str) -> Option<BuildStage> {
+        Self::SECTIONS.into_iter().find(|s| s.label() == label)
+    }
+
     /// The five index stages, in the fixed order
     /// [`crate::index::cache_inventory`] reports them. The source caches
     /// (`Strings`, `Curves`) are built at open and are not part of it.
@@ -291,6 +307,76 @@ pub struct BuildLease {
     started_at_unix_ms: u64,
     last_write: Instant,
     publish: bool,
+}
+
+/// Delete every cache section built for `esm_path` (its `esm_cache/`
+/// files), returning the paths removed. Refuses while a build holds the
+/// ESM's build lock, and holds that lock itself while deleting so no build
+/// can start underneath it.
+pub fn clear_cache(esm_path: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let lock_path = lock_path(esm_path)?;
+    let lock_file = match fs::OpenOptions::new()
+        .create(false)
+        .write(true)
+        .open(&lock_path)
+    {
+        Ok(file) => Some(file),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e).with_context(|| format!("open {}", lock_path.display())),
+    };
+    if let Some(file) = &lock_file {
+        file.try_lock_exclusive().map_err(|_| {
+            anyhow::anyhow!("a cache build is in progress for {}", esm_path.display())
+        })?;
+    }
+    let mut removed = Vec::new();
+    for stage in BuildStage::SECTIONS {
+        let path = crate::rkyvcache::section_path_for(esm_path, stage)?;
+        match fs::remove_file(&path) {
+            Ok(()) => removed.push(path),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e).with_context(|| format!("remove {}", path.display())),
+        }
+    }
+    Ok(removed)
+}
+
+type BuildDelegate = Box<dyn Fn(&Path, BuildStage) -> anyhow::Result<()> + Send + Sync>;
+
+static BUILD_DELEGATE: std::sync::OnceLock<BuildDelegate> = std::sync::OnceLock::new();
+
+/// Hand cache builds to another process for the rest of this process's life.
+///
+/// A caller that finds a section it needs missing first runs
+/// `delegate(esm_path, stage)` — expected to build that stage under the same
+/// build lease, typically in a detached `esm cache build` — and then maps the
+/// result. If the delegate fails, or the section is still missing afterwards,
+/// the caller builds it in-process as before. The CLI installs a delegate so
+/// that a cold build survives the invoking process being killed (an agent's
+/// tool timeout, a closed terminal); library hosts build in-process. Only the
+/// first call takes effect.
+pub fn delegate_builds(
+    delegate: impl Fn(&Path, BuildStage) -> anyhow::Result<()> + Send + Sync + 'static,
+) {
+    let _ = BUILD_DELEGATE.set(Box::new(delegate));
+}
+
+/// Run the installed build delegate for `stage`, if any. `true` iff one ran
+/// and reported success; the caller still re-checks the section itself.
+pub(crate) fn run_build_delegate(esm_path: &Path, stage: BuildStage) -> bool {
+    let Some(delegate) = BUILD_DELEGATE.get() else {
+        return false;
+    };
+    match delegate(esm_path, stage) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!(
+                "delegated {} build failed, building in-process: {e:#}",
+                stage.label()
+            );
+            false
+        }
+    }
 }
 
 /// Outcome of [`BuildLease::acquire_or_recheck`] — the enforced form of the

@@ -1,3 +1,4 @@
+mod cache;
 mod curve;
 mod daemon;
 mod diff;
@@ -458,6 +459,29 @@ enum CacheAction {
         #[arg(long)]
         json: bool,
     },
+    /// Build cache sections now instead of on first use. Builds every
+    /// section unless `--section` names some (repeatable: forms, tree, edid,
+    /// search, xref, lstrings, curves).
+    Build {
+        #[arg(long = "section", value_parser = parse_section)]
+        sections: Vec<esm::progress::BuildStage>,
+    },
+    /// Delete every cache section built for the ESM; the next query rebuilds
+    /// what it needs. Refuses while a build is running.
+    Clear,
+}
+
+fn parse_section(label: &str) -> Result<esm::progress::BuildStage, String> {
+    esm::progress::BuildStage::from_label(label).ok_or_else(|| {
+        let known: Vec<&str> = esm::progress::BuildStage::SECTIONS
+            .iter()
+            .map(|s| s.label())
+            .collect();
+        format!(
+            "unknown section {label:?} (expected one of: {})",
+            known.join(", ")
+        )
+    })
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -665,7 +689,9 @@ fn main() -> anyhow::Result<()> {
         // surfacing rather than reporting a misleading "empty" status.
         let esm = esm::discover::resolve_esm_path(&esm)?;
         return match action {
-            CacheAction::Status { json } => daemon::cmd_cache_status(&esm, json),
+            CacheAction::Status { json } => cache::cmd_cache_status(&esm, json),
+            CacheAction::Build { sections } => cache::cmd_cache_build(&esm, &sections),
+            CacheAction::Clear => cache::cmd_cache_clear(&esm),
         };
     }
 
@@ -698,6 +724,10 @@ fn main() -> anyhow::Result<()> {
             std::process::exit(EXIT_BUILD_IN_PROGRESS);
         }
     }
+
+    // A cold section this command needs is built by a detached
+    // `esm cache build`, so the build outlives this process if it's killed.
+    esm::progress::delegate_builds(cache::build_in_detached_process);
 
     let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
     let daemon_mode = backend.is_remote();

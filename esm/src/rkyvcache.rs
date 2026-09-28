@@ -921,6 +921,11 @@ where
         return Ok(section);
     }
     let stage = <rkyv::Archived<T> as SectionSpec>::KIND;
+    if crate::progress::run_build_delegate(esm_path, stage)
+        && let Some(section) = current()?
+    {
+        return Ok(section);
+    }
     let mut lease = match crate::progress::BuildLease::acquire_or_recheck(
         esm_path, stage, 1, 1, total, current,
     )? {
