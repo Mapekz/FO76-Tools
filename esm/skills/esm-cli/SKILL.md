@@ -1,6 +1,6 @@
 ---
 name: esm-cli
-description: Using the FO76 `esm` CLI effectively and reading what it returns — invocation and daemon behaviour, refs gotchas, walk/chase mechanics digests, curve tables, drop-chance math, and live-vs-cut game data. Use when querying SeventySix.esm records, decoding a perk/OMOD/legendary mechanic, deciding whether a record is live or player-obtainable, reading a damage or drop-chance number, or wrapping the CLI in scripts.
+description: Using the FO76 `esm` CLI effectively and reading what it returns — invocation and cache behaviour, refs gotchas, walk/chase mechanics digests, curve tables, drop-chance math, and live-vs-cut game data. Use when querying SeventySix.esm records, decoding a perk/OMOD/legendary mechanic, deciding whether a record is live or player-obtainable, reading a damage or drop-chance number, or wrapping the CLI in scripts.
 ---
 
 # esm CLI knowledge
@@ -16,47 +16,32 @@ subcommand.
 
 ## Invocation & path resolution
 
-- Subcommands: `daemon, cache, info, get, list, search, refs, tree, diff,
-  coverage, chase, walk, curve, skill`.
+- Subcommands: `cache, info, get, list, search, refs, tree, diff, coverage,
+  chase, walk, curve, batch, skill`.
 - `FO76_ESM_PATH` is a plain process env var — there is no `.env` parser.
-  `daemon` takes no path at all; it resolves one at spawn.
-- Every subcommand is one-shot; a missing subcommand is a usage error, not a
-  REPL. `--local` costs seconds per open — never use it for bulk work.
-- **The daemon self-manages, so bulk work never needs lifecycle handling.** It
-  auto-spawns, stale-evicts and reopens when the ESM changes on disk, and shuts
-  down after 10 minutes idle (`ESM_DAEMON_IDLE_SECS=0` disables that). An
-  advisory spawn-lock lets concurrent agents share one warm instance. A bulk
-  `get` over `ESM_BULK_CHUNK` selectors (default 512, `0` disables) is split
-  across round-trips and reassembled, so responses have no size ceiling.
-- Rebuilding the binary self-heals the daemon via a size+mtime fingerprint.
-  Changing loose files beside the dump (strings/curvetables) does *not* — run
-  `esm daemon stop` after touching those.
+- Every subcommand is one-shot and runs in-process; a missing subcommand is a
+  usage error, not a REPL. Once an ESM's cache exists, a call costs a few
+  milliseconds, so loops of individual calls are fine; a bulk `get` with many
+  selectors is still one call instead of N.
 - **A cold call against an ESM with no `esm_cache/` yet can take tens of
   seconds to a couple of minutes** — worst case a first-ever
   `refs`/`walk`/`chase`, which builds the `xref` index (a full schema decode of
   every record). It streams progress to stderr rather than hanging silently and
-  still returns the real result — just wait. A second concurrent query reuses
-  whichever build is already running instead of starting a redundant one.
-  `esm cache status [--json]` inspects without triggering anything;
-  `esm cache build` builds ahead of time and `esm cache clear` deletes an
-  ESM's cache.
+  still returns the real result — just wait. The build runs as a detached
+  `esm cache build`, so it finishes even if the calling command is killed (a
+  tool timeout), and a second concurrent query waits for that build instead of
+  starting another. `esm cache status [--json]` inspects without triggering
+  anything; `esm cache build` builds ahead of time and `esm cache clear`
+  deletes an ESM's cache.
+- The cache rebuilds by itself when the ESM, its `strings/`, or a rebuilt
+  binary's schema changes. Editing a curve file inside an existing
+  `misc/curvetables/json/` tree is not detected — `esm cache clear` after that.
 - Scripts making many calls can keep one `esm batch` child: it reads one
   `{"esm": <path>, "op": {...}}` JSON request per line and answers each with
   one `{"status": "ok"|"err", ...}` line, keeping each ESM open in between.
-  `ESM_NO_PROGRESS=1` suppresses heartbeat *publishing* only (e.g. in an
+- `ESM_NO_PROGRESS=1` suppresses heartbeat *publishing* only (e.g. in an
   embedding context where a stray file write is unwanted) — lock-based dedup
   between concurrent builders keeps working regardless.
-## MCP (for AI clients that support it)
-
-`esm-server --mcp-stdio` speaks JSON-RPC 2.0 over stdin/stdout, proxying the
-same warm daemon the CLI uses. Ten read-only tools: `esm_file_info`,
-`esm_search`, `esm_get_record` (`resolve=none|stub|full`, default `stub`),
-`esm_list_groups`, `esm_list_records`, `esm_refs` (depth-bound BFS
-reverse-reference walk, default depth 1, up to 8, `0` = unbounded), `esm_walk`,
-`esm_chase`, `esm_lvli_drop_table`, `esm_curve` (interpolate/sum a CURV record,
-single or bulk via `ids`). Point an MCP client at the built `esm-server` binary
-with `args: ["--mcp-stdio", "<esm-or-data-path>"]`, and keep that config out of
-version control — it hardcodes a non-redistributable, machine-local ESM path.
 
 ## Fetching records
 
@@ -80,14 +65,12 @@ version control — it hardcodes a non-redistributable, machine-local ESM path.
 - `--limit 0` means unlimited on `list`/`search`/`refs`. All three print
   `note: output capped at N of M results; use --limit 0 to show all` to
   **stderr**, never stdout, so `--json` stays parseable when capped.
-- **`--localization-ba2`/`--strings-dir`/`--startup-ba2` on `get`/`list`/
-  `search`/`diff` force a cold in-process open, bypassing the daemon**
-  (ADR 0008): the shared cache holds
-  exactly one warm `Database` per canonical ESM path, which a per-call source
-  override has no coherent way to join. For sweeps needing localized strings,
-  put the Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a
-  `misc/curvetables/` folder) beside the ESM instead — the daemon auto-loads
-  them on open and warm lookups return localized output with no per-call flags.
+- **Source-override flags (`--localization-ba2`/`--strings-dir`, plus
+  `--startup-ba2` on `get`/`diff`) parse those sources for this one call**,
+  skipping the `lstrings`/`curves` cache. For sweeps needing localized strings, put the
+  Localization BA2 (or a `strings/` folder) and the Startup BA2 (or a
+  `misc/curvetables/` folder) beside the ESM instead — they are discovered and
+  cached on open, with no per-call flags.
 ## Reverse references (`refs`)
 
 - The default `--limit 100` truncates popular targets (see the stderr capped-
@@ -565,8 +548,7 @@ effect arm as live, traverse both directions and refs-check the **ends**:
 - Curve resolution needs `<dump>/misc/curvetables/json/` next to the ESM.
   Missing curvetables degrade silently: `Damage Curve` refs stay raw formids
   and curve-driven values vanish. If a fresh dump lacks the dir, copy it from
-  the previous dump (tier tables rarely change), then `esm daemon stop`
-  before re-querying.
+  the previous dump (tier tables rarely change); the next query picks it up.
 - WEAP records may include a derived `"Bash Damage"` object (top-level sibling
   of `Data` and `Damage Curve`, not inside `Data`). It is computed automatically
   during decode — no CLI flag — from `Data.Secondary Damage` and the primary
@@ -623,7 +605,7 @@ effect arm as live, traverse both directions and refs-check the **ends**:
 
 Decoded field names come from the schema layer and can change across
 rebuilds — the same WEAP field has been `Min Power Per Shot`, `Max Power Per
-Shot`, and `Full Power Damage Mult` at different times, once renaming
-mid-session after a daemon restart. After any esm rebuild, re-dump one known
+Shot`, and `Full Power Damage Mult` at different times. After any esm
+rebuild, re-dump one known
 record (e.g. `esm get GaussRifle`) and grep the actual field names before
 trusting fixtures, extractor code, or prior notes.

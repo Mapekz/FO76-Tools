@@ -1,6 +1,7 @@
 # Source-override flags are deliberately CLI-only, never given a daemon wire representation
 
-Status: accepted (2026-08-13)
+Status: superseded by ADR 0013 (2026-09-27), which removed the daemon; overrides now simply
+configure the in-process `Database` a command opens. Accepted 2026-08-13.
 
 `list`, `get`/`refs`, `search`, and `diff` each accept source-override flags —
 `--localization-ba2`/`--strings-dir`/`--startup-ba2`/`--curves-dir` (`diff` doubles these into
@@ -21,7 +22,7 @@ should have. It is not.
 Source-override flags stay CLI-only. They will not get an `Op::*` variant, and `RemoteBackend`
 will not grow a way to carry them to the daemon over HTTP.
 
-The reason is `src/registry.rs`'s `Registry`: it caches exactly one warm `Database` per canonical
+The reason is the daemon's `Registry`: it caches exactly one warm `Database` per canonical
 ESM path, shared across every client that asks for that path. That cache is the entire reason the
 daemon is faster than `--local` — the mmap, the schema, and (once built) the five `rkyv` index
 sections are paid for once and reused by every subsequent request. A source override is

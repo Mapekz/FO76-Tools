@@ -1,5 +1,4 @@
 pub mod ba2;
-pub mod backend;
 pub mod chase;
 pub mod compress;
 pub mod ctda;
@@ -10,6 +9,7 @@ pub mod discover;
 pub mod format;
 pub mod formid;
 pub mod hardcoded;
+pub mod host;
 pub mod index;
 pub mod ipc;
 pub mod logging;
@@ -18,7 +18,6 @@ pub mod progress;
 pub mod query;
 pub mod reader;
 pub mod refs;
-pub mod registry;
 mod rkyvcache;
 pub mod schema;
 pub mod strings;
@@ -495,7 +494,7 @@ pub struct CarrierTag {
 pub type Carriers = Vec<(FormId, Vec<CarrierTag>)>;
 
 impl EntryPointSpec {
-    /// Parse a CLI/MCP token: an all-ASCII-digit token is a numeric id,
+    /// Parse a CLI token: an all-ASCII-digit token is a numeric id,
     /// everything else is a name pattern — except a `0x`/`0X`-prefixed
     /// token, which is rejected outright rather than silently becoming a
     /// (never-matching) name pattern: it's unambiguously someone passing a
@@ -586,7 +585,7 @@ enum OmodPropertySel {
 }
 
 impl OmodPropertySpec {
-    /// Parse a CLI/MCP token. Numeric ids require a form-type scope because
+    /// Parse a CLI token. Numeric ids require a form-type scope because
     /// each OMOD property enum space assigns different meanings to the same
     /// number. Names may be scoped or may fan out across all three spaces.
     pub fn parse(s: &str) -> anyhow::Result<OmodPropertySpec> {
@@ -1378,7 +1377,7 @@ impl Database {
     /// Decode a record by EditorID with the given resolution depth.
     ///
     /// Only resolves against real ESM records — unlike `ipc::resolve_sel`
-    /// (the CLI/daemon/N-API serving path), this does not fall back to
+    /// (the path every serving surface uses), this does not fall back to
     /// `crate::hardcoded`'s engine-hardcoded EditorID table. Prefer
     /// `ipc::resolve_sel` + [`Self::record_by_formid_resolved`] for that
     /// broader precedence-aware resolution; this method stays as a narrower

@@ -82,10 +82,9 @@ pub fn resolve_sources(input: &Path, locale: &str) -> Result<ResolvedSources> {
 }
 
 /// Resolve `input` (an `.esm` file or its containing data folder) to the
-/// canonical path of the `.esm` file itself — the exact same two-step
-/// resolution [`crate::registry::Registry::get_or_open_with_key`] applies
-/// before opening a [`crate::Database`] (folder→ESM via [`resolve_sources`],
-/// then [`Path::canonicalize`]).
+/// canonical path of the `.esm` file itself — the two-step resolution
+/// [`crate::Database::open`] applies before opening anything (folder→ESM via
+/// [`resolve_sources`], then [`Path::canonicalize`]).
 ///
 /// Every consumer of `esm_cache/`'s sidecar files — [`crate::index::Index`]'s
 /// build entry points via [`crate::progress::BuildLease`], and any external

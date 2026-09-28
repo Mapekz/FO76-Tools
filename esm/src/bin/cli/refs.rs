@@ -56,7 +56,6 @@ pub(crate) fn cmd_refs(
     localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
-    daemon_mode: bool,
     base: FormIdBase,
 ) -> anyhow::Result<()> {
     if depth == 0 {
@@ -80,12 +79,6 @@ pub(crate) fn cmd_refs(
         }
     };
     if localization_ba2.is_some() || strings_dir.is_some() {
-        if daemon_mode {
-            anyhow::bail!(
-                "--localization-ba2/--strings-dir are not supported in daemon mode; \
-                 use --local to open the ESM directly"
-            );
-        }
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);

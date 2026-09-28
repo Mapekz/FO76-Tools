@@ -1,5 +1,5 @@
 //! Unit tests for `src/query.rs` — the canonical string→enum argument
-//! translation shared by the CLI, HTTP/MCP server, and N-API bindings.
+//! translation shared by the CLI and N-API bindings.
 //!
 //! All functions here are fully `pub`, so per the colocated-vs-`tests/`
 //! convention in `esm/AGENTS.md` these live in their own integration test

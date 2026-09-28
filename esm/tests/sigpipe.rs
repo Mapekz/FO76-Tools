@@ -56,8 +56,8 @@ fn stdio_with_no_reader() -> Stdio {
 fn broken_stdout_pipe_kills_the_process_instead_of_panicking() {
     let binary = std::env::var_os("CARGO_BIN_EXE_esm").expect("CARGO_BIN_EXE_esm not set");
 
-    // `esm skill` prints a large embedded doc and — like `daemon`/`cache` —
-    // needs no ESM path/game data, so this test has no external dependency.
+    // `esm skill` prints a large embedded doc and needs no ESM path or game
+    // data, so this test has no external dependency.
     let output = Command::new(binary)
         .arg("skill")
         .stdin(Stdio::null())

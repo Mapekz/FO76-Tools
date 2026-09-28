@@ -1,18 +1,17 @@
-//! Wire types and the canonical `dispatch` function shared by CLI, daemon, and N-API.
+//! Wire types and [`dispatch_op`], the one op dispatcher shared by the CLI,
+//! `esm batch`, and N-API (all through [`crate::host::Host::run`]).
 
 use crate::diff::{DiffOptions, diff_databases_with};
 use crate::refs::{
     RefSeeds, find_ref_path, referenced_by_enriched, referenced_by_enriched_multi,
     resolve_ref_seeds,
 };
-use crate::registry::Registry;
 use crate::{CarrierTag, Database, FilterOp, FormId, FormIdBase, ResolveDepth, SearchField};
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
 
 /// Default maximum recursion depth for the reverse-reference walk.
 pub const DEFAULT_MAX_DEPTH: usize = 8;
@@ -26,7 +25,7 @@ pub struct Request {
     pub op: Op,
 }
 
-/// Success or error envelope returned by the daemon `/op` endpoint.
+/// Success or error envelope `esm batch` answers each request with.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Response {
@@ -69,8 +68,7 @@ pub enum RecordSel {
     /// Only meaningful for [`Op::ReferencedBy`] (via [`resolve_ref_seeds`]) —
     /// `resolve_sel`, which every other `Op` uses, rejects it. Never produced
     /// by [`RecordSel::from_input`]/[`RecordSel::from_parts`]; constructed
-    /// only by the CLI's explicit `--entry-point`/`--ep` flag or the MCP
-    /// `entry_point` argument.
+    /// only by the CLI's explicit `--entry-point`/`--ep` flag.
     EntryPoint(String),
     /// An OMOD Property name or scoped numeric id (see
     /// [`crate::OmodPropertySpec::parse`]), resolving to every OMOD that declares it
@@ -78,8 +76,7 @@ pub enum RecordSel {
     /// [`Op::ReferencedBy`] (via [`resolve_ref_seeds`]) — `resolve_sel`,
     /// which every other `Op` uses, rejects it. Never produced by
     /// [`RecordSel::from_input`]/[`RecordSel::from_parts`]; constructed only
-    /// by the CLI's explicit `--omod-property`/`--prop` flag or the MCP
-    /// `property` argument.
+    /// by the CLI's explicit `--omod-property`/`--prop` flag.
     OmodProperty(String),
 }
 
@@ -144,9 +141,8 @@ impl RecordSel {
     }
 
     /// Build a selector from explicit `--formid`/`--edid` inputs, falling back to
-    /// auto-detecting a single ambiguous token (a positional CLI arg, or an MCP
-    /// `"id"` argument) via [`RecordSel::from_input`]. The one parser shared by
-    /// the CLI's `record_sel` and the MCP server's `sel_from_args` call sites.
+    /// auto-detecting a single ambiguous token (a positional CLI arg) via
+    /// [`RecordSel::from_input`].
     /// Equivalent to [`RecordSel::from_parts_with`] under [`FormIdBase::Hex`].
     pub fn from_parts(
         formid: Option<&str>,
@@ -299,7 +295,7 @@ pub enum Op {
     },
     /// Interactive record digest — the server-side counterpart to `esm walk`
     /// (see [`crate::walk`]). The BFS and per-node digest computation run
-    /// entirely inside the process handling this op (daemon or `--local`),
+    /// entirely inside the process handling this op,
     /// one round trip regardless of how many nodes the walk visits, not one
     /// `Op::RecordBulk` call per queue-pop. `want_refs` mirrors the CLI's
     /// `--refs` flag: when true and the root resolved, one extra unfiltered
@@ -327,10 +323,10 @@ pub enum Op {
         depth: usize,
         ref_limit: usize,
     },
-    /// LVLI drop-probability table — the server-side counterpart to
+    /// LVLI drop-probability table — the `Op` form of
     /// [`crate::lvli::drop_table`], reachable standalone (not only via
-    /// `Op::Walk`'s LVLI digest) for MCP/N-API callers that just want the
-    /// resolved odds. Hard-errors on a selector that doesn't resolve to an
+    /// `Op::Walk`'s LVLI digest) for callers that just want the resolved
+    /// odds. Hard-errors on a selector that doesn't resolve to an
     /// LVLI record.
     DropTable {
         sel: RecordSel,
@@ -368,8 +364,6 @@ pub enum Op {
         #[serde(default)]
         options: DiffOptions,
     },
-    /// Daemon lifecycle: no ESM path required (ignored).
-    Shutdown,
 }
 
 // ─── Shared DTOs (lifted from CLI) ──────────────────────────────────────────
@@ -582,31 +576,6 @@ pub struct CoverageReport {
 
 // ─── Dispatch ───────────────────────────────────────────────────────────────
 
-/// Execute `req` against the registry, returning a [`Response`].
-pub fn dispatch(reg: &Registry, req: &Request) -> Response {
-    Response::from_result(dispatch_inner(reg, req))
-}
-
-fn dispatch_inner(reg: &Registry, req: &Request) -> anyhow::Result<Value> {
-    match &req.op {
-        Op::Shutdown => Ok(Value::Null),
-        Op::Diff {
-            b,
-            record_type,
-            options,
-        } => {
-            let (key_a, arc_a) = reg.get_or_open_with_key(&req.esm)?;
-            let (key_b, arc_b) = reg.get_or_open_with_key(b)?;
-            diff_pair(&arc_a, &arc_b, Some((&key_a, &key_b)), options, record_type)
-        }
-        _ => {
-            let arc = reg.get_or_open(&req.esm)?;
-            let db = arc.lock().unwrap();
-            dispatch_op(&db, &req.op)
-        }
-    }
-}
-
 // ─── in-process ChaseFetcher adapter ────────────────────────────────────────
 
 /// In-process [`crate::chase::ChaseFetcher`] adapter over an already-open
@@ -654,7 +623,6 @@ impl crate::chase::ChaseFetcher for DbFetcher<'_> {
 /// Execute a single `Op` against an already-open `Database`.
 pub fn dispatch_op(db: &Database, op: &Op) -> anyhow::Result<Value> {
     match op {
-        Op::Shutdown => Ok(Value::Null),
         Op::FileInfo => {
             let info = db.file_info()?;
             Ok(serde_json::to_value(&info)?)
@@ -663,7 +631,7 @@ pub fn dispatch_op(db: &Database, op: &Op) -> anyhow::Result<Value> {
             // `RecordResult`'s `Serialize` impl produces the exact same
             // `{header, editor_id, fields}` shape a hand-built `json!` would
             // (no serde renames, no optional-field skipping) — this is the one
-            // authoritative shape both the CLI/daemon and N-API bindings read.
+            // authoritative shape both the CLI and N-API bindings read.
             let result = record_resolved(db, sel, *depth)?;
             Ok(serde_json::to_value(&result)?)
         }
@@ -872,14 +840,14 @@ pub fn dispatch_op(db: &Database, op: &Op) -> anyhow::Result<Value> {
             Ok(serde_json::to_value(&report)?)
         }
         Op::Diff { .. } => {
-            bail!("Diff must be dispatched via registry with two ESM paths");
+            bail!("Diff needs two ESMs; run it through `Host::run`");
         }
     }
 }
 
 /// Resolve a [`RecordSel`] to a concrete [`FormId`], looking up the EditorID
 /// index when needed. The one canonical selector-resolution used by every
-/// serving surface (daemon, CLI, N-API) — do not reimplement this locally.
+/// serving surface (CLI, `esm batch`, N-API) — do not reimplement this locally.
 pub fn resolve_sel(db: &Database, sel: &RecordSel) -> anyhow::Result<FormId> {
     match sel {
         RecordSel::FormId(fid) => Ok(*fid),
@@ -1019,74 +987,10 @@ fn bulk_record_entry(db: &Database, sel: &RecordSel, depth: ResolveDepth) -> Bul
     }
 }
 
-/// Acquire locks on two `Database` handles in a deadlock-safe order, then run
-/// [`diff_locked`]. When `canonical_keys` is `Some`, ordering follows the
-/// registry's normalized path keys (`dispatch_inner`'s `Diff` arm and the HTTP
-/// `/diff` route). When `None`, ordering falls back to raw `Arc` pointer
-/// address — the scheme the N-API `diff` method can adopt later.
-pub fn diff_pair(
-    arc_a: &Arc<Mutex<Database>>,
-    arc_b: &Arc<Mutex<Database>>,
-    canonical_keys: Option<(&Path, &Path)>,
-    options: &DiffOptions,
-    record_type: &Option<String>,
-) -> anyhow::Result<Value> {
-    let same_db =
-        canonical_keys.map(|(ka, kb)| ka == kb).unwrap_or(false) || Arc::ptr_eq(arc_a, arc_b);
-    if same_db {
-        let db = arc_a
-            .lock()
-            .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-        // same_db means no added records — enrich_added_sources is a no-op.
-        return diff_locked(&db, &db, options, record_type);
-    }
-    match canonical_keys {
-        Some((ka, kb)) if ka < kb => {
-            let db_a = arc_a
-                .lock()
-                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-            let db_b = arc_b
-                .lock()
-                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-            diff_locked(&db_a, &db_b, options, record_type)
-        }
-        Some(_) => {
-            let db_b = arc_b
-                .lock()
-                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-            let db_a = arc_a
-                .lock()
-                .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-            diff_locked(&db_a, &db_b, options, record_type)
-        }
-        None => {
-            if Arc::as_ptr(arc_a) < Arc::as_ptr(arc_b) {
-                let db_a = arc_a
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-                let db_b = arc_b
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-                diff_locked(&db_a, &db_b, options, record_type)
-            } else {
-                let db_b = arc_b
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-                let db_a = arc_a
-                    .lock()
-                    .map_err(|e| anyhow::anyhow!("lock poisoned: {}", e))?;
-                diff_locked(&db_a, &db_b, options, record_type)
-            }
-        }
-    }
-}
-
-/// Post-lock part of a database diff: run [`diff_databases_with`] and apply
-/// the optional record-type filter, once both `Database` locks are already
-/// held. Shared by [`diff_pair`] (registry-backed and HTTP `/diff` routes) and
-/// the N-API binding's `diff` method (which keeps its own lock-acquisition
-/// code until it adopts [`diff_pair`]).
-pub fn diff_locked(
+/// Diff two open databases and apply the optional record-type filter — the
+/// body of `Op::Diff`, shared by [`crate::host::Host::run`], the CLI's
+/// source-override path and the N-API binding.
+pub fn run_diff(
     db_a: &Database,
     db_b: &Database,
     options: &DiffOptions,
@@ -1189,14 +1093,4 @@ pub fn coverage_report(
     });
 
     Ok(CoverageReport { by_type, totals })
-}
-
-/// Convenience: open a single ESM and run one op (used by LocalBackend).
-pub fn dispatch_local(path: &std::path::Path, op: &Op) -> anyhow::Result<Value> {
-    let reg = Registry::new();
-    let req = Request {
-        esm: path.to_path_buf(),
-        op: op.clone(),
-    };
-    dispatch_inner(&reg, &req)
 }

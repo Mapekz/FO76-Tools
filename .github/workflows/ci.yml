@@ -43,22 +43,12 @@ jobs:
       - name: clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      # The esm-server binary has `required-features = ["server"]`, so
-      # --all-targets alone silently skips it.  Lint it explicitly.
-      - name: clippy (server feature)
-        if: matrix.crate == 'esm'
-        run: cargo clippy --workspace --all-targets --features server -- -D warnings
-
       - name: test
-        run: cargo test
+        run: cargo test --workspace
         # Game-data integration tests skip silently when their env vars are unset
         # (no #[ignore] attributes anywhere in esm/src or esm/tests):
         #   tests/decode_coverage.rs  — RUST_TEST_ESM
         #   tests/diff.rs             — RUST_TEST_ESM_A and RUST_TEST_ESM_B
-
-      - name: test (server feature)
-        if: matrix.crate == 'esm'
-        run: cargo test --features server
 
       - name: export bindings (generated TypeScript)
         if: matrix.crate == 'esm'
@@ -187,9 +177,8 @@ jobs:
   # TES5Edit schema-parity gate.
   #
   # Both crates share one policy at the repo root (deny.toml), checked once per
-  # crate because they have independent Cargo.lock files.  --all-features so the
-  # esm `server` tree (axum, tokio, tower-http) is covered too; without it an
-  # advisory reachable only through an optional feature would go unnoticed.
+  # crate because they have independent Cargo.lock files.  --all-features so an
+  # advisory reachable only through an optional feature is covered too.
   deps:
     name: ${{ matrix.crate }} (cargo-deny)
     runs-on: ubuntu-latest

@@ -2,12 +2,12 @@
 """Tests for tools/make_patch_notes.py (mechanical-stage orchestrator) and
 tools/update_manifest.py (narrative-stage manifest updater).
 
-The orchestrator end-to-end tests never spawn a real `esm`/`esm-server`: the
+The orchestrator end-to-end tests never spawn a real `esm`: the
 diff step is satisfied by a tiny generated shell script that ignores its
 arguments and `cat`s `tools/tests/fixtures/diff_small.json` verbatim, and the
 bundles/lints stages run against `esm_gateway.FakeGateway` backed by
 `tools/tests/fixtures/refs_graph.json` (`--offline --refs-fixture`). No real
-daemon or ESM is touched.
+ESM is touched.
 
 (`esm_gateway`'s own tests cover the stricter JSON-parsing contract this fake
 binary complies with -- see `test_esm_gateway.py`'s

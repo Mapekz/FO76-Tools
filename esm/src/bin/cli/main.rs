@@ -1,7 +1,6 @@
 mod batch;
 mod cache;
 mod curve;
-mod daemon;
 mod diff;
 mod inspect;
 mod output;
@@ -13,24 +12,16 @@ mod walk;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use esm::BodyDetail;
-use esm::backend::{LocalBackend, RemoteBackend};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "esm", about = "Read and inspect Fallout 76 ESM files")]
 #[command(subcommand_required = true, arg_required_else_help = true)]
 struct Cli {
-    /// Force in-process (cold) open, bypassing the daemon entirely.
-    #[arg(long)]
-    local: bool,
-    #[arg(long)]
-    addr: Option<String>,
-    #[arg(long)]
-    port: Option<u16>,
     /// Path to the ESM file or its data folder. If omitted, falls back to the
     /// FO76_ESM_PATH environment variable. Applies to every subcommand except
-    /// `diff` (which takes two explicit positionals), `daemon`, and `skill`
-    /// (neither needs an ESM at all).
+    /// `diff` (which takes two explicit positionals) and `skill` (which needs
+    /// no ESM at all).
     #[arg(long, global = true, env = "FO76_ESM_PATH")]
     esm: Option<PathBuf>,
     /// If the index cache is already being built by another process, print
@@ -51,7 +42,7 @@ struct Cli {
     /// when that hex reading has no record — there is no implicit fallback
     /// to decimal (see `docs/adr/0010-formid-input-base.md`). Pass this flag
     /// when you specifically want the decimal reading instead; hex is never
-    /// attempted in that case. No effect on `daemon`, `skill`, `cache`,
+    /// attempted in that case. No effect on `skill`, `cache`,
     /// `info`, or `coverage` (none take a FormID), and deliberately not
     /// applied to `chase`'s JSON, which is a machine pipeline contract
     /// requiring literal `0x########`.
@@ -157,10 +148,6 @@ struct GetSourceArgs {
 
 #[derive(Subcommand)]
 enum Commands {
-    Daemon {
-        #[command(subcommand)]
-        action: DaemonAction,
-    },
     Info,
     Get {
         /// FormID(s) and/or EditorID(s) (auto-detected per token); mix
@@ -412,7 +399,7 @@ enum Commands {
     },
     /// Print the embedded `esm-cli` usage-knowledge doc, or install it into a
     /// consumer repo's `.claude/skills/esm-cli/` for Claude Code to
-    /// auto-discover. Takes no ESM path — like `daemon`, it is exempt from
+    /// auto-discover. Takes no ESM path, so it is exempt from
     /// `--esm`/`FO76_ESM_PATH`.
     Skill {
         /// Write the doc to `<dir or cwd>/.claude/skills/esm-cli/SKILL.md`
@@ -426,10 +413,9 @@ enum Commands {
         #[arg(long)]
         force: bool,
     },
-    /// Inspect the on-disk index cache directly — no daemon, no ESM open,
-    /// never triggers a build. Takes an ESM path (unlike `daemon`/`skill`)
-    /// but no backend: reads `esm_cache/`'s five section headers and the
-    /// build lock/heartbeat straight off disk.
+    /// Inspect, build or clear the on-disk index cache. `status` never opens
+    /// the ESM or triggers a build: it reads `esm_cache/`'s section headers
+    /// and the build lock/heartbeat straight off disk.
     Cache {
         #[command(subcommand)]
         action: CacheAction,
@@ -440,13 +426,6 @@ enum Commands {
     /// Databases stay open until stdin closes, so a script owning one
     /// `esm batch` child pays each ESM's open cost once.
     Batch,
-}
-
-#[derive(Subcommand)]
-enum DaemonAction {
-    Start,
-    Stop,
-    Status,
 }
 
 #[derive(Subcommand)]
@@ -544,8 +523,7 @@ impl From<RefSortArg> for esm::ipc::RefSort {
     }
 }
 
-/// CLI-side wrapper around `esm::backend::Backend` (the plain local/remote
-/// dispatch enum): every real query goes through [`Self::run`], which wraps
+/// The CLI's [`esm::host::Host`]: every real query goes through [`Self::run`], which wraps
 /// the inner call with a [`progress_ui::Watcher`] — this is the one place
 /// all ~15 `cmd_*` functions' `backend.run(...)` calls funnel through, and
 /// `watcher.stop()` (which blocks until any rendered line is erased) runs
@@ -553,7 +531,7 @@ impl From<RefSortArg> for esm::ipc::RefSort {
 /// about to `println!`/`print_json` its result never races a still-visible
 /// progress line. See `progress_ui`'s module doc for why this site, not
 /// `dispatch_command`, is the right one.
-struct Backend(esm::backend::Backend);
+struct Backend(esm::host::Host);
 
 impl Backend {
     fn run(&mut self, esm: &Path, op: esm::ipc::Op) -> anyhow::Result<serde_json::Value> {
@@ -562,23 +540,9 @@ impl Backend {
             watched.push(progress_watch_path(b));
         }
         let watcher = progress_ui::Watcher::spawn(watched);
-        let result = self.0.run(esm, op);
+        let result = self.0.run(esm, &op);
         watcher.stop();
         result
-    }
-
-    fn is_remote(&self) -> bool {
-        matches!(self.0, esm::backend::Backend::Remote(_))
-    }
-}
-
-fn make_backend(local: bool, addr: Option<&str>, port: Option<u16>) -> anyhow::Result<Backend> {
-    if local {
-        Ok(Backend(esm::backend::Backend::Local(LocalBackend::new())))
-    } else {
-        Ok(Backend(esm::backend::Backend::Remote(
-            RemoteBackend::connect_with_override(addr, port)?,
-        )))
     }
 }
 
@@ -591,8 +555,8 @@ fn resolve_esm(esm: Option<PathBuf>) -> anyhow::Result<PathBuf> {
 
 /// Best-effort canonical ESM path for progress-watching purposes only (the
 /// [`progress_ui::Watcher`], `--no-wait`, `esm cache status`) — must match
-/// whatever path `Registry::get_or_open_with_key` (daemon and `--local`
-/// alike) actually canonicalizes to and keys `esm_cache/`'s sidecar files
+/// whatever path `Database::open` actually canonicalizes to and keys
+/// `esm_cache/`'s sidecar files
 /// off, via [`esm::discover::resolve_esm_path`]. This can differ from the
 /// raw `--esm`/`file_b` input whenever it's a data folder, a relative path,
 /// or a symlink — looking a build up by the raw input instead would poll a
@@ -607,7 +571,6 @@ fn progress_watch_path(esm: &Path) -> PathBuf {
 
 #[derive(Clone, Copy)]
 struct DispatchOptions {
-    daemon_mode: bool,
     /// From `--decimal` — see `Cli::decimal`'s doc comment.
     formid_base: esm::FormIdBase,
 }
@@ -650,16 +613,8 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let esm_opt = cli.esm.clone();
 
-    if let Commands::Daemon { action } = cli.command {
-        return match action {
-            DaemonAction::Start => daemon::cmd_daemon_start(),
-            DaemonAction::Stop => daemon::cmd_daemon_stop(),
-            DaemonAction::Status => daemon::cmd_daemon_status(cli.addr.as_deref(), cli.port),
-        };
-    }
-
-    // `skill` needs no ESM and no backend/daemon at all — handled up front,
-    // same as `daemon` above, so it works with no --esm/FO76_ESM_PATH set.
+    // `skill` needs no ESM and no backend at all — handled up front, so it
+    // works with no --esm/FO76_ESM_PATH set.
     if let Commands::Skill {
         install,
         dir,
@@ -677,14 +632,14 @@ fn main() -> anyhow::Result<()> {
     }
 
     // `cache status` reads `esm_cache/` and the build lock/heartbeat
-    // straight off disk — it needs an ESM path (unlike `daemon`/`skill`)
-    // but must never construct a `Backend` or contact the daemon, since the
-    // whole point is answering instantly even while a build is in flight.
+    // straight off disk — it needs an ESM path (unlike `skill`) but must
+    // never open the database, since the whole point is answering instantly
+    // even while a build is in flight.
     if let Commands::Cache { action } = cli.command {
         let esm = resolve_esm(esm_opt.clone())?;
         // Resolve folder→ESM and canonicalize here (not `progress_watch_path`'s
         // silent-degrade variant): `cache_inventory`/`progress::read` must key
-        // off the exact same path `Registry` does, and if that resolution
+        // off the exact same path `Database::open` does, and if that resolution
         // itself fails (bad path, ambiguous folder), that's a real error worth
         // surfacing rather than reporting a misleading "empty" status.
         let esm = esm::discover::resolve_esm_path(&esm)?;
@@ -695,23 +650,18 @@ fn main() -> anyhow::Result<()> {
         };
     }
 
-    // Every subcommand runs once and exits. Daemon-backed by default;
-    // --local bypasses the daemon entirely (cold in-process open).
+    // Every other subcommand runs once, in-process, and exits.
     let cmd = cli.command;
     let esm = match &cmd {
         Commands::Diff(args) => args.file_a.clone(),
-        Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
         Commands::Cache { .. } => unreachable!(),
         Commands::Batch => unreachable!(),
         _ => resolve_esm(esm_opt.clone())?,
     };
 
-    // `--no-wait` is checked client-side, purely from the build lock's
-    // filesystem state, before a `Backend` is even constructed — routing it
-    // through the daemon would defeat the point, since the daemon's own
-    // per-ESM mutex is exactly what's held for the whole build (see
-    // `esm::progress`'s module doc).
+    // `--no-wait` is checked purely from the build lock's filesystem state,
+    // before anything opens the database (see `esm::progress`'s module doc).
     if cli.no_wait {
         let mut watched = vec![progress_watch_path(&esm)];
         if let Commands::Diff(args) = &cmd {
@@ -729,22 +679,13 @@ fn main() -> anyhow::Result<()> {
     // `esm cache build`, so the build outlives this process if it's killed.
     esm::progress::delegate_builds(cache::build_in_detached_process);
 
-    let mut backend = make_backend(cli.local, cli.addr.as_deref(), cli.port)?;
-    let daemon_mode = backend.is_remote();
+    let mut backend = Backend(esm::host::Host::new());
     let formid_base = if cli.decimal {
         esm::FormIdBase::Dec
     } else {
         esm::FormIdBase::Hex
     };
-    dispatch_command(
-        &esm,
-        &mut backend,
-        cmd,
-        DispatchOptions {
-            daemon_mode,
-            formid_base,
-        },
-    )
+    dispatch_command(&esm, &mut backend, cmd, DispatchOptions { formid_base })
 }
 
 fn dispatch_command(
@@ -787,7 +728,6 @@ fn dispatch_command(
             &lang,
             startup_ba2,
             resolve,
-            options.daemon_mode,
             options.formid_base,
         ),
         Commands::List {
@@ -811,7 +751,6 @@ fn dispatch_command(
             localization_ba2,
             strings_dir,
             &lang,
-            options.daemon_mode,
             options.formid_base,
         ),
         Commands::Diff(args) => {
@@ -861,7 +800,6 @@ fn dispatch_command(
                 bodies.into(),
                 keep_noise,
                 exclude_type,
-                options.daemon_mode,
                 options.formid_base,
             )
         }
@@ -940,7 +878,6 @@ fn dispatch_command(
                     localization_ba2,
                     strings_dir,
                     &lang,
-                    options.daemon_mode,
                     options.formid_base,
                 )
             }
@@ -970,7 +907,6 @@ fn dispatch_command(
             localization_ba2,
             strings_dir,
             &lang,
-            options.daemon_mode,
             options.formid_base,
         ),
         Commands::Chase {
@@ -1021,7 +957,6 @@ fn dispatch_command(
             pretty,
             options.formid_base,
         ),
-        Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
         Commands::Cache { .. } => unreachable!(),
         Commands::Batch => unreachable!(),
@@ -1059,7 +994,7 @@ mod tests {
 
     /// `esm cache status [--json]` parses through the top-level command
     /// enum and requires no ESM/backend at all to construct — it's a
-    /// third `main()` short-circuit alongside `daemon`/`skill`.
+    /// `main()` short-circuit alongside `skill`.
     #[test]
     fn cache_status_parses() {
         let plain =
@@ -1125,7 +1060,6 @@ mod tests {
         };
 
         let output = command
-            .arg("--local")
             .arg("--esm")
             .arg(esm_path)
             .args(["get", "0x463F", "--json"])

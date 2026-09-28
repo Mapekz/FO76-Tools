@@ -4,23 +4,28 @@ use common::{
     append_record, append_subrecord, cstr, make_minimal_esm, tes4_header, unique_temp_path,
     wrap_grup,
 };
-use esm::ipc::{Op, RecordSel, Request, Response, dispatch};
-use esm::registry::Registry;
+use esm::host::Host;
+use esm::ipc::{Op, RecordSel, Request, Response};
 use esm::{
     BodyDetail, BulkRecordEntry, Database, DiffOptions, DiffResult, ResolveDepth, SearchField,
 };
 use std::io::Write;
 use std::path::PathBuf;
 
-fn open_test_db() -> (PathBuf, Registry) {
+/// `Host::run` wrapped in the `Response` envelope `esm batch` answers with.
+fn dispatch(host: &Host, req: &Request) -> Response {
+    Response::from_result(host.run(&req.esm, &req.op))
+}
+
+fn open_test_db() -> (PathBuf, Host) {
     let buf = make_minimal_esm();
     let tmp_path = unique_temp_path("ipc_dispatch");
     {
         let mut f = std::fs::File::create(&tmp_path).expect("create temp file");
         f.write_all(&buf).expect("write");
     }
-    let reg = Registry::new();
-    reg.get_or_open(&tmp_path).expect("open");
+    let reg = Host::new();
+    reg.open(&tmp_path).expect("open");
     (tmp_path, reg)
 }
 
@@ -180,7 +185,7 @@ fn dispatch_record_auto_sel_resolves_as_editorid_when_formid_absent() {
         let mut f = std::fs::File::create(&tmp).expect("create temp esm");
         f.write_all(&buf).expect("write temp esm");
     }
-    let reg = Registry::new();
+    let reg = Host::new();
 
     let req = Request {
         esm: tmp.clone(),
@@ -261,7 +266,7 @@ fn dispatch_record_auto_sel_never_implicitly_falls_back_to_decimal() {
         let mut f = std::fs::File::create(&tmp).expect("create temp esm");
         f.write_all(&buf).expect("write temp esm");
     }
-    let reg = Registry::new();
+    let reg = Host::new();
 
     let req = Request {
         esm: tmp.clone(),
@@ -320,27 +325,6 @@ fn dispatch_diff_same_path_does_not_deadlock() {
     assert!(diff.added.is_empty());
     assert!(diff.removed.is_empty());
     assert!(diff.changed.is_empty());
-
-    let _ = std::fs::remove_file(&path);
-}
-
-#[test]
-fn local_backend_parity_with_dispatch() {
-    use esm::backend::LocalBackend;
-
-    let (path, reg) = open_test_db();
-    let mut local = LocalBackend::new();
-
-    let op = Op::FileInfo;
-    let req = Request {
-        esm: path.clone(),
-        op: op.clone(),
-    };
-    let Response::Ok { data: via_reg } = dispatch(&reg, &req) else {
-        panic!("expected Ok");
-    };
-    let via_local = local.run(&path, op).expect("local run");
-    assert_eq!(via_reg, via_local);
 
     let _ = std::fs::remove_file(&path);
 }
@@ -457,8 +441,8 @@ fn record_sel_json_round_trip() {
 
 /// A `Response::Ok { data }` carrying an extreme-magnitude decoded float
 /// (subnormal or near f32::MAX) must survive a JSON text round-trip exactly —
-/// this is what happens on every daemon request: the server serializes
-/// `Response` to text, sends it over HTTP, and the client re-parses it.
+/// this is what happens on every `esm batch` request: `esm batch` serializes
+/// `Response` to a text line, and the client re-parses it.
 ///
 /// serde_json's *default* float parser does not guarantee exact round-trip
 /// precision for every f64 (particularly extreme exponents): parsing back a
@@ -554,7 +538,7 @@ fn op_referenced_by_without_new_fields_deserializes() {
 
 /// `Op::ReferencedBy` with `type_filter`/`paths` set must survive a full JSON
 /// round-trip, and dispatching it end-to-end must apply the filter and
-/// annotate rows with `field_paths` — exercising the daemon IPC path (not
+/// annotate rows with `field_paths` — exercising the `Host::run` path (not
 /// just `referenced_by_enriched` directly, which `tests/refs.rs` covers).
 #[test]
 fn dispatch_referenced_by_with_type_filter_and_paths() {
@@ -564,7 +548,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
         let mut f = std::fs::File::create(&tmp).expect("create temp esm");
         f.write_all(&buf).expect("write temp esm");
     }
-    let reg = Registry::new();
+    let reg = Host::new();
 
     let op = Op::ReferencedBy {
         sel: RecordSel::FormId(esm::FormId(1)),
@@ -669,7 +653,7 @@ fn op_diff_with_options_roundtrip() {
 /// End-to-end: dispatch `Op::Diff` with non-default options (`bodies: None`,
 /// an explicit `exclude_types` filter) across two distinct synthetic ESMs and
 /// confirm both the added/removed bookkeeping and the options themselves took
-/// effect through the full `Registry` → `dispatch` path (not just
+/// effect through the full `Host::run` path (not just
 /// `diff_databases_with` called directly, which `tests/diff.rs` already
 /// covers).
 #[test]
@@ -697,7 +681,7 @@ fn dispatch_diff_two_esms_with_options() {
         .write_all(&buf_b)
         .expect("write b");
 
-    let reg = Registry::new();
+    let reg = Host::new();
     let req = Request {
         esm: path_a.clone(),
         op: Op::Diff {
@@ -793,7 +777,7 @@ fn dispatch_record_bulk_mixed_selectors_round_trip() {
         let mut f = std::fs::File::create(&tmp).expect("create temp esm");
         f.write_all(&buf).expect("write temp esm");
     }
-    let reg = Registry::new();
+    let reg = Host::new();
 
     let op = Op::RecordBulk {
         sels: vec![
@@ -845,7 +829,7 @@ fn dispatch_record_bulk_isolates_per_selector_failure() {
         let mut f = std::fs::File::create(&tmp).expect("create temp esm");
         f.write_all(&buf).expect("write temp esm");
     }
-    let reg = Registry::new();
+    let reg = Host::new();
 
     let req = Request {
         esm: tmp.clone(),
@@ -911,7 +895,7 @@ fn make_bulk_stub_test_esm() -> Vec<u8> {
 
     // A GLOB (form_id 3) referenced by a CHAL's `HNAM` ("Required Count
     // Global", form_id 4) — proves a value-bearing leaf's inline (`Value`)
-    // survives the same daemon/IPC bulk-dispatch path as the plain
+    // survives the same `Host::run` bulk-dispatch path as the plain
     // EditorID/record_type annotation above.
     let mut glob_subs = Vec::new();
     append_subrecord(&mut glob_subs, b"EDID", &cstr("TargetGlob"));
@@ -944,7 +928,7 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
         let mut f = std::fs::File::create(&tmp).expect("create temp esm");
         f.write_all(&buf).expect("write temp esm");
     }
-    let reg = Registry::new();
+    let reg = Host::new();
 
     let req = Request {
         esm: tmp.clone(),
@@ -992,7 +976,7 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
     assert_eq!(entries[1].editor_id.as_deref(), Some("TargetWeap"));
 
     // Third entry: a CHAL referencing a GLOB via `HNAM` ("Required Count
-    // Global") — the GLOB's own `Value` must survive the daemon/IPC bulk
+    // Global") — the GLOB's own `Value` must survive the `Host::run` bulk
     // path, inlined onto the reference stub, not just its identity.
     let chal = &entries[2];
     assert_eq!(chal.sel, "0x00000004");

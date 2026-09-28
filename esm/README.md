@@ -2,17 +2,16 @@
 
 A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 183 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, mechanics digests, and schema coverage auditing.
 
-> **Read-only.** This tool never modifies your `.esm` files. The only files it writes live in a shared sidecar directory next to the ESM, `esm_cache/`, holding five zero-copy rkyv sections per ESM (`<name>.esm.tree`, `<name>.esm.forms`, `<name>.esm.edid`, `<name>.esm.search`, `<name>.esm.xref`) — see [Index cache](#index-cache) below. Game data files (`*.esm`, `*.ba2`, and `esm_cache/`) are gitignored and non-redistributable — obtain them from your own game install.
+> **Read-only.** This tool never modifies your `.esm` files. The only files it writes live in a shared sidecar directory next to the ESM, `esm_cache/`, holding zero-copy rkyv cache sections per ESM (`<name>.esm.tree`, `.forms`, `.edid`, `.search`, `.xref`, `.lstrings`, `.curves`) — see [Cache](#cache) below. Game data files (`*.esm`, `*.ba2`, and `esm_cache/`) are gitignored and non-redistributable — obtain them from your own game install.
 
 ## Workspace layout
 
 ```
 esm/
-  src/             Engine library + two binaries (esm CLI, esm-server)
+  src/             Engine library + the `esm` CLI
   bindings/napi/   N-API addon (esm-napi) for Electron/Node.js
   schema/          fo76.json (183 record types, embedded at compile time)
   tools/           Schema extractor (xEdit Pascal → JSON) + patch-note scripts
-  static/          Embedded HTML for the HTTP server UI
 ```
 
 The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling
@@ -32,8 +31,7 @@ The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the 
 
 ```sh
 cargo build --release          # esm CLI → target/release/esm
-cargo build --release --features server  # also builds esm-server
-cargo test                     # run all tests (~100 run; 2 env-gated ignored)
+cargo test --workspace         # every test; game-data tests skip without their env vars
 ```
 
 ## Quickstart
@@ -89,7 +87,6 @@ esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 | `walk <target>` | Interactive per-record-type mechanics digest (OMOD chains, LVLI drop odds, …) |
 | `chase <target>` | Machine-readable JSON mechanism classification (pipeline contract, not for reading by hand) |
 | `curve <target>...` | Ad-hoc lookup/sum over any Curve Table record's points (`--at X...`, `--sum FROM TO [--step N]`) |
-| `daemon {start,stop,status}` | Manage the background warm daemon (see [Daemon](#daemon) below) |
 | `cache status [--json]` | Inspect the on-disk index cache without opening the ESM |
 | `cache build [--section S]`, `cache clear` | Build cache sections now, or delete them all |
 | `batch` | Answer one JSON `{"esm", "op"}` request per stdin line, keeping databases open (for scripts) |
@@ -103,52 +100,14 @@ For full per-flag depth, bulk-operation patterns, `refs` selector rules, and how
 `walk`/`chase` digest, run `esm skill` or see [`skills/esm-cli/SKILL.md`](skills/esm-cli/SKILL.md)
 — the same document ships embedded in the binary for downstream agents.
 
-### Daemon
+### Performance
 
-The first `esm` call auto-spawns `esm-server` as a warm background daemon; every subsequent call
-is a fast HTTP round-trip instead of a cold in-process open (`--local` forces cold, useful for
-one-off debugging). It self-manages:
-
-- **Auto-shuts-down** after 10 minutes idle (`ESM_DAEMON_IDLE_SECS=0` disables this).
-- **Stale-evicts** and reopens when the ESM changes on disk.
-- **Rebuild-evicts** when the `esm-server` binary itself changes (e.g. after `cargo build`) — no
-  manual `daemon stop` needed after a rebuild.
-- **Parallel-agent safe** — an advisory spawn-lock lets multiple concurrent callers share one
-  instance without double-spawning.
-
-`esm daemon status` reports whether it's running (and whether a rebuild has made it stale);
-`esm daemon stop` shuts it down early.
-
-## Server — `esm-server`
-
-Feature-gated HTTP REST + MCP stdio server. Build with `--features server`:
-
-```sh
-cargo run --release --features server --bin esm-server -- path/to/data
-cargo run --release --features server --bin esm-server -- path/to/data --compare path/to/prev --port 3000
-cargo run --release --features server --bin esm-server -- path/to/data --mcp-stdio
-```
-
-HTTP routes: `GET /info`, `/records/{formid}`, `/records?edid=|type=&limit=`, `/groups`, `/groups/{sig}/children`, `/stub/{offset}`, `/diff`, `/health`. Serves an embedded HTML viewer at `/` and `/compare`.
-
-MCP-stdio mode speaks JSON-RPC 2.0 over stdin/stdout, proxying the same warm daemon the CLI uses. Wire it into an AI client's MCP config — **do not commit** the config file, since it hardcodes a non-redistributable, machine-local ESM path:
-
-```jsonc
-// .mcp.json (gitignored — fill in your actual paths)
-{
-  "mcpServers": {
-    "fo76-esm": {
-      "command": "/path/to/esm-server",
-      "args": ["--mcp-stdio", "/path/to/data"]
-    }
-  }
-}
-```
-
-Nine read-only tools are exposed (`esm_file_info`, `esm_search`, `esm_get_record`,
-`esm_list_groups`, `esm_list_records`, `esm_refs`, `esm_walk`, `esm_chase`,
-`esm_lvli_drop_table`) — see `skills/esm-cli/SKILL.md`'s MCP section for the full per-tool
-argument reference.
+Every call opens the ESM in-process. Once the cache exists, opening maps its sections without
+parsing anything, so a warm `esm get` takes a few milliseconds end to end. Scripts that make many
+calls can keep one `esm batch` child instead of launching one process per call: it reads one
+`{"esm": <path>, "op": {...}}` JSON request per stdin line, answers each with one
+`{"status": "ok"|"err", ...}` line, and keeps each ESM open until stdin closes. The request and
+response shapes are `Request`, `Op` and `Response` in `src/ipc.rs`.
 
 ## Library API
 
@@ -160,26 +119,25 @@ use esm::{Database, FormId, ResolveDepth};
 let db = Database::open("path/to/data")?;  // data folder or explicit .esm file
 
 // File metadata
-let info = db.file_info();
+let info = db.file_info()?;
 
-// Fetch by EditorID (decoded JSON)
-let record = db.record_by_edid("AssaultRifle", ResolveDepth::None)?;
+// Fetch by EditorID or FormID (decoded JSON)
+let record = db.record_by_edid_resolved("AssaultRifle", ResolveDepth::None)?;
+let record = db.record_by_formid_resolved(FormId::new(0x463F), ResolveDepth::Stub)?;
 
-// Fetch by FormID
-let record = db.record_by_formid(FormId(0x463F), ResolveDepth::Stub)?;
-
-// List all records of a type
-let weapons = db.list_by_type("WEAP")?;
+// List records of a type (0 = no limit)
+let weapons = db.list_by_type("WEAP", 0)?;
 
 // Reverse FormID lookup
-let referencing = db.referenced_by(FormId(0x463F), 100)?;
+let referencing = db.referenced_by(FormId::new(0x463F))?;
 
 // Diff two databases
-use esm::diff::diff_databases;
-let diff = diff_databases(&db_a, &db_b)?;
+let diff = esm::diff::diff_databases(&db_a, &db_b)?;
 ```
 
-Key re-exports: `Database`, `FormId`, `ResolveDepth`, `DiffResult`, `RecordDiff`, `RecordResult`, `ListEntry`, `GroupNode`, `TreeIndex`, `DatabaseResolver`.
+Every query takes `&self`, so one `Database` can serve several threads. `esm::host::Host` keeps
+several databases open by canonical path and runs `esm::ipc::Op`s against them — the entry point the
+CLI, `esm batch` and the N-API addon share.
 
 ## Schema
 
@@ -199,10 +157,10 @@ python3 tools/extractor/audit.py --gate
 
 ## Tests
 
-~100 tests across `tests/` (integration test targets, one per module — `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_coverage.rs`) plus inline `#[cfg(test)]` blocks for `tree`/`decode` internals not public outside the crate. `tests/decode_records/` is a directory-backed target — one `main.rs` plus a module per record family — whose fixtures are verbatim subrecord bytes captured from `esm get --raw`, so it runs entirely in CI with no game data. Run all:
+Integration test targets live in `tests/` (one per module) alongside inline `#[cfg(test)]` blocks for internals not public outside the crate. `tests/decode_records/` is a directory-backed target — one `main.rs` plus a module per record family — whose fixtures are verbatim subrecord bytes captured from `esm get --raw`, so it runs entirely in CI with no game data. Run all:
 
 ```sh
-cargo test
+cargo test --workspace
 
 # Exhaustive decode sweep over CLEAN_TYPES (needs real ESM — skips silently if unset)
 RUST_TEST_ESM=path/to/data cargo test
@@ -211,24 +169,35 @@ RUST_TEST_ESM=path/to/data cargo test
 RUST_TEST_ESM_A=old.esm RUST_TEST_ESM_B=new.esm cargo test
 ```
 
-## Index cache
+## Cache
 
-`Index`'s cache is five independent, zero-copy [rkyv](https://rkyv.org/) sections, each its own mmap'd file inside `esm_cache/` (one shared directory sibling to the ESM), read via `rkyv::access_unchecked` rather than deserialized into heap HashMaps. Two are eager, built together on `Database::open` whenever either is missing or stale:
+The cache is a set of independent, zero-copy [rkyv](https://rkyv.org/) sections, each its own
+mmap'd file inside `esm_cache/` (one shared directory sibling to the ESM), read via
+`rkyv::access_unchecked` rather than deserialized into heap maps. Four are built on
+`Database::open` whenever missing or stale:
 
 - **`.esm.forms`** (~200 MiB) — FormID→[`RecordMeta`] table plus the per-type FormID directory.
 - **`.esm.tree`** (~140 MiB) — the GRUP structural tree (`tree` / `list-groups`).
+- **`.esm.lstrings`** (~15 MiB) — the three localization string tables.
+- **`.esm.curves`** (~1 MiB) — every CURV record's curve points.
 
-Three are lazy, built on first use of the matching operation and persisted for later processes to reuse:
+Three are built on first use of the matching operation:
 
 - **`.esm.edid`** (~15 MiB) — EditorID→FormID map (`--edid` lookups).
 - **`.esm.search`** (~30 MiB) — FormID→name/description map (`search`).
-- **`.esm.xref`** (~55 MiB) — FormID→referencing-FormIDs map (`refs`).
+- **`.esm.xref`** (~60 MiB) — FormID→referencing-FormIDs map (`refs`).
 
 Every section carries its own header (magic, version, layout fingerprint, source ESM size+mtime)
 validated before any bytes are trusted — a stale, foreign, or corrupt file degrades to "rebuild
-that section," never a crash. Building the `xref` section from scratch (a full schema decode of
-every record) can take tens of seconds to a couple of minutes on the full FO76 ESM; every builder
-publishes a live heartbeat any process can read instantly via `esm cache status [--json]` — see
+that section," never a crash. `lstrings` and `curves` also record a stamp of the files they were
+read from and rebuild when those change; a curve file rewritten in place inside an existing
+`curvetables/json/` tree is not detected, so run `esm cache clear` after editing one.
+
+Builds are shared across processes: one per-ESM build lock means concurrent callers build a
+missing section once and the rest wait for it. The CLI runs each cold build as a detached
+`esm cache build`, so the build finishes even if the command that started it is killed. Building
+`xref` (a full schema decode of every record) takes about a minute; every builder publishes a
+live heartbeat any process can read instantly via `esm cache status [--json]` — see
 `docs/adr/0003-cache-build-progress-heartbeat.md`. The whole `esm_cache/` directory is gitignored.
 
 ## Electron GUI

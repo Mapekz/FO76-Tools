@@ -182,13 +182,13 @@ def build_diff_cmd(
     startup_ba2: Path | None = None,
     curves_dir: Path | None = None,
 ) -> list[str]:
-    """Build the `esm --local diff ...` argv list. Pure / side-effect-free so
+    """Build the `esm diff ...` argv list. Pure / side-effect-free so
     it can be unit-tested directly without spawning a subprocess (see
     `make_patch_notes.py`'s `TestBuildDiffCmd`, which calls this via
     `make_patch_notes.build_diff_cmd` -- re-exported there for that existing
     call site)."""
     cmd = [
-        str(esm_bin), "--local", "diff", str(esm_a), str(esm_b),
+        str(esm_bin), "diff", str(esm_a), str(esm_b),
         "--lang", lang, "--json", "--bodies", bodies,
     ]
     if keep_noise:
@@ -219,7 +219,7 @@ def build_diff_cmd(
 class DiffResult:
     """Result of `EsmGateway.diff()`.
 
-    `data`: the parsed `esm --local diff --json` output (a `DiffResult`-shaped
+    `data`: the parsed `esm diff --json` output (a `DiffResult`-shaped
     dict on the Rust side -- see `src/diff.rs`; unrelated to this Python
     class despite the name collision, which mirrors the Rust type name for
     the reader's convenience).

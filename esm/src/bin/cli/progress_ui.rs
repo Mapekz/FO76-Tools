@@ -4,9 +4,9 @@
 //! (and `--no-wait`/`esm cache status`) share.
 //!
 //! Not part of the `esm` library: `esm::progress` is the domain module every
-//! process (daemon, `--local` CLI, N-API host) writes to and reads from via
-//! the filesystem; a stderr TTY renderer is CLI-presentation logic that
-//! those other consumers must never inherit.
+//! process (CLI, `esm batch`, N-API host) writes to and reads from via the
+//! filesystem; a stderr TTY renderer is CLI-presentation logic that those
+//! other consumers must never inherit.
 //!
 //! # Where this hooks in
 //!

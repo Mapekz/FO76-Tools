@@ -2,14 +2,12 @@
 //! Table) record, by editor ID or FormID.
 //!
 //! The actual result-construction logic lives in the library
-//! (`esm::curves::curve_query`), not here — see that function's doc for why:
-//! a future `esm_curve` MCP tool, in a different binary that can't see
-//! `bin/cli/`, needs to call the exact same code. This module is a thin CLI
-//! wrapper: build selectors from `targets` (mirroring `query::cmd_get`'s
+//! (`esm::curves::curve_query`), so any surface can call it. This module is a
+//! thin CLI wrapper: build selectors from `targets` (mirroring `query::cmd_get`'s
 //! auto-detect-FormID-vs-EditorID convention), fetch them in one
 //! `Op::RecordBulk` round-trip regardless of target count (CURV points are
 //! already inlined into every `Op::Record`/`RecordBulk` response at every
-//! resolve depth — no new daemon `Op` needed), call the shared library
+//! resolve depth — no dedicated `Op` needed), call the shared library
 //! function, then print.
 
 use esm::curves::curve_query;
@@ -48,7 +46,7 @@ pub(crate) fn cmd_curve(
 
     // clap's `conflicts_with`/`requires` already enforce --at/--sum mutual
     // exclusion and --step requiring --sum for this binary; `curve_query`
-    // re-checks --at/--sum itself for a caller with no clap (MCP).
+    // re-checks --at/--sum itself for a library caller with no clap.
     let sum = match sum {
         Some(pair) if pair.len() == 2 => Some((pair[0], pair[1])),
         Some(_) => anyhow::bail!("--sum takes exactly two values: FROM TO"),

@@ -1,23 +1,18 @@
 //! Cross-process cache-build progress: a per-ESM advisory build lock plus an
-//! atomically-published JSON heartbeat, both living alongside the five rkyv
+//! atomically-published JSON heartbeat, both living alongside the rkyv
 //! sections inside `esm_cache/` (see `rkyvcache.rs`'s module doc for that
 //! directory's layout).
 //!
-//! # Why the filesystem, not the daemon
+//! # Why the filesystem
 //!
 //! A cold `Index::build`/`ensure_*_index` call can block for tens of seconds
 //! to minutes on a full FO76 ESM, with nothing to show for it. Any process
-//! that hits this — the daemon, a `--local` CLI invocation, or the N-API
-//! host — needs a way to (a) publish what it's doing and (b) let a second
-//! process notice and wait on the SAME build instead of starting a
-//! redundant one. A daemon HTTP endpoint would only cover the daemon path;
-//! `--local`/N-API callers and `tools/esm_gateway.py` would stay blind, and
-//! a second `--local` process couldn't dedup against a building daemon at
-//! all. Publishing to a well-known sidecar file next to the cache itself
-//! covers every caller uniformly with no IPC, and — critically — stays
-//! answerable even while the daemon's own per-ESM `Mutex<Database>` is held
-//! for the whole build (see `registry.rs`), which is exactly the case a
-//! caller most wants visibility into.
+//! that hits this — a CLI command, an `esm batch` child, a detached
+//! `esm cache build`, or the N-API host — needs a way to (a) publish what
+//! it's doing and (b) let a second process notice and wait on the SAME build
+//! instead of starting a redundant one. A sidecar file next to the cache
+//! itself covers every caller uniformly with no IPC, and a non-blocking lock
+//! probe answers "is anyone building" instantly while a build is running.
 //!
 //! # On-disk files
 //!
@@ -460,8 +455,7 @@ impl BuildLease {
     /// Like [`Self::acquire`], but pins whether the heartbeat is published
     /// rather than reading it from [`NO_PROGRESS_ENV`] — lets tests pin the
     /// behavior without mutating process-global env, which races under a
-    /// multithreaded `cargo test` (same reasoning as
-    /// `RemoteBackend::with_bulk_chunk`'s doc comment in `backend.rs`).
+    /// multithreaded `cargo test`.
     fn acquire_with_publish(
         esm_path: &Path,
         stage: BuildStage,

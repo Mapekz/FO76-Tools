@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::Backend;
-use crate::output::{bail_if_daemon_mode_overrides, esm_string_prefix, print_json, render_form_id};
+use crate::output::{esm_string_prefix, print_json, render_form_id};
 
 /// Rewrite every identity FormID in a `DiffResult` (the `added`/`removed`
 /// stubs' `form_id`, and each `changed` entry's `stub.form_id`) into `base`,
@@ -121,7 +121,6 @@ pub(crate) fn cmd_diff(
     bodies: BodyDetail,
     keep_noise: bool,
     exclude_type: Vec<String>,
-    daemon_mode: bool,
     base: FormIdBase,
 ) -> anyhow::Result<()> {
     let options = esm::query::diff_options(bodies, !keep_noise, &exclude_type);
@@ -136,7 +135,7 @@ pub(crate) fn cmd_diff(
     let cd_a = curves_dir_a.or_else(|| curves_dir.clone());
     let cd_b = curves_dir_b.or_else(|| curves_dir.clone());
 
-    let force_local = lba2_a.is_some()
+    let has_overrides = lba2_a.is_some()
         || lba2_b.is_some()
         || sd_a.is_some()
         || sd_b.is_some()
@@ -145,13 +144,7 @@ pub(crate) fn cmd_diff(
         || cd_a.is_some()
         || cd_b.is_some();
 
-    if force_local {
-        bail_if_daemon_mode_overrides(
-            force_local,
-            daemon_mode,
-            "--localization-ba2*/--strings-dir*/--startup-ba2*/--curves-dir*",
-        )?;
-
+    if has_overrides {
         // Resolve folder → ESM so that esm_string_prefix/resolve_localization_or_bail
         // receive the actual .esm path (not a folder).
         let esm_a = esm::discover::resolve_sources(file_a, "en")?.esm;
@@ -205,14 +198,14 @@ pub(crate) fn cmd_diff(
         }
 
         let record_type_owned = record_type.map(str::to_string);
-        let v = esm::ipc::diff_locked(&db_a, &db_b, &options, &record_type_owned)?;
+        let v = esm::ipc::run_diff(&db_a, &db_b, &options, &record_type_owned)?;
         let mut result: DiffResult = serde_json::from_value(v)?;
         convert_diff_form_ids(&mut result, base);
 
         return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
     }
 
-    // No local flags — use the backend path (daemon or local).
+    // No source overrides: let the host open both ESMs with their own sources.
     let v = backend.run(
         file_a,
         Op::Diff {

@@ -1,9 +1,8 @@
-//! Integration tests for `src/discover.rs`'s `resolve_sources`/`resolve_esm_path` —
-//! previously 0 tests despite `resolve_esm_path` being load-bearing: every
-//! `esm_cache/` consumer (`Registry`, the CLI's progress watcher,
-//! `backend.rs`'s `building_progress`) must key off the exact canonical path
-//! it returns, not the raw, possibly-relative-or-folder input a caller
-//! passed in (see that function's doc comment). These tests exercise the
+//! Integration tests for `src/discover.rs`'s `resolve_sources`/`resolve_esm_path`.
+//! Every `esm_cache/` consumer (`Database::open`, the CLI's progress watcher,
+//! `--no-wait`, `esm cache`) must key off the exact canonical path
+//! `resolve_esm_path` returns, not the raw, possibly-relative-or-folder input
+//! a caller passed in (see that function's doc comment). These tests exercise the
 //! three input shapes its doc comment claims are equivalent: a file, a
 //! folder, and a relative path.
 
@@ -55,9 +54,7 @@ fn file_input_resolves_to_itself_canonicalized() {
 }
 
 /// A **folder** input containing exactly one `.esm` resolves to that file,
-/// canonicalized — the shape `esm --esm <folder>` documents as supported,
-/// and the one `backend.rs`'s `building_progress` fix (Stage C) exists to
-/// keep working against a cold daemon.
+/// canonicalized — the shape `esm --esm <folder>` documents as supported.
 #[test]
 fn folder_input_resolves_to_the_esm_file_inside_it() {
     let dir = fixture_dir("folder_input");

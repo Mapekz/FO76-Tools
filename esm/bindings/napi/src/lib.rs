@@ -3,11 +3,11 @@
 use esm::ipc::RecordSel;
 use esm::{Database, FormId, ResolveDepth, SearchField};
 use napi_derive::napi;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[napi]
 pub struct EsmDatabase {
-    inner: Arc<Mutex<Database>>,
+    inner: Arc<Database>,
 }
 
 #[napi]
@@ -16,32 +16,24 @@ impl EsmDatabase {
     #[napi(factory)]
     pub async fn open_database(path: String) -> napi::Result<EsmDatabase> {
         esm::logging::init();
-        let inner = tokio::task::spawn_blocking(move || {
-            Database::open(&path).map(|db| Arc::new(Mutex::new(db)))
-        })
-        .await
-        .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
-        .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
+        let inner = tokio::task::spawn_blocking(move || Database::open(&path).map(Arc::new))
+            .await
+            .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
+            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         Ok(EsmDatabase { inner })
     }
 
     #[napi]
     pub fn file_info(&self) -> napi::Result<serde_json::Value> {
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        esm::ipc::dispatch_op(&db, &esm::ipc::Op::FileInfo)
+        let db = &self.inner;
+        esm::ipc::dispatch_op(db, &esm::ipc::Op::FileInfo)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     #[napi]
     pub fn list_groups(&self) -> napi::Result<serde_json::Value> {
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        esm::ipc::dispatch_op(&db, &esm::ipc::Op::ListGroups)
+        let db = &self.inner;
+        esm::ipc::dispatch_op(db, &esm::ipc::Op::ListGroups)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
@@ -53,16 +45,13 @@ impl EsmDatabase {
         offset: u32,
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let db = &self.inner;
         let op = esm::ipc::Op::ListTypeRecords {
             sig,
             offset: offset as usize,
             limit: limit as usize,
         };
-        esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Search records by EditorID and/or display name using a `*`-wildcard pattern.
@@ -80,17 +69,14 @@ impl EsmDatabase {
     ) -> napi::Result<serde_json::Value> {
         let field = esm::query::search_field(Some(&field), SearchField::Both)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let db = &self.inner;
         let op = esm::ipc::Op::Search {
             pattern,
             types,
             field,
             limit: limit as usize,
         };
-        esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Filter records of type `sig` by a predicate against their decoded
@@ -109,10 +95,7 @@ impl EsmDatabase {
     ) -> napi::Result<serde_json::Value> {
         let op =
             esm::query::filter_op(&op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let db = &self.inner;
         let wire_op = esm::ipc::Op::FilterTypeRecords {
             sig,
             path,
@@ -120,18 +103,15 @@ impl EsmDatabase {
             value,
             limit: limit as usize,
         };
-        esm::ipc::dispatch_op(&db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        esm::ipc::dispatch_op(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List every dot-notation field path observed across a (possibly capped)
     /// decoded sample of a type's records — for filter-panel autocomplete.
     #[napi]
     pub fn list_type_field_paths(&self, sig: String) -> napi::Result<serde_json::Value> {
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
-        esm::ipc::dispatch_op(&db, &esm::ipc::Op::ListTypeFieldPaths { sig })
+        let db = &self.inner;
+        esm::ipc::dispatch_op(db, &esm::ipc::Op::ListTypeFieldPaths { sig })
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
@@ -143,16 +123,13 @@ impl EsmDatabase {
         offset: u32,
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let db = &self.inner;
         let op = esm::ipc::Op::ListTypeChildren {
             sig,
             offset: offset as usize,
             limit: limit as usize,
         };
-        esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List direct children of an arbitrary GRUP by its own header offset — used for
@@ -167,16 +144,13 @@ impl EsmDatabase {
         offset: u32,
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let db = &self.inner;
         let wire_op = esm::ipc::Op::ListGroupChildren {
             group_offset: group_offset as u64,
             offset: offset as usize,
             limit: limit as usize,
         };
-        esm::ipc::dispatch_op(&db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        esm::ipc::dispatch_op(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Decode a record by FormID hex string (e.g. "0x0000463F").
@@ -193,15 +167,12 @@ impl EsmDatabase {
             .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
         let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-        let db = self
-            .inner
-            .lock()
-            .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+        let db = &self.inner;
         let op = esm::ipc::Op::Record {
             sel: RecordSel::FormId(fid),
             depth,
         };
-        esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Decode a record by EditorID string.
@@ -217,14 +188,12 @@ impl EsmDatabase {
         tokio::task::spawn_blocking(move || {
             let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::Record {
                 sel: RecordSel::Edid(edid),
                 depth,
             };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -245,11 +214,9 @@ impl EsmDatabase {
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::Record { sel, depth };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -272,9 +239,7 @@ impl EsmDatabase {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let walk_depth = esm::query::clamp_ref_depth(depth.map(|d| d as usize));
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::ReferencedBy {
                 sel,
                 limit: usize::MAX,
@@ -283,7 +248,7 @@ impl EsmDatabase {
                 paths: false,
                 sort: esm::ipc::RefSort::Formid,
             };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -296,11 +261,9 @@ impl EsmDatabase {
         tokio::task::spawn_blocking(move || {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::RecordRaw { sel };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -317,22 +280,20 @@ impl EsmDatabase {
     ) -> napi::Result<serde_json::Value> {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || {
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::Coverage {
                 record_type,
                 sample: sample as usize,
             };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
     }
 
     /// Interactive digest of a record and the chain it references (see
-    /// `esm::walk`) — computed server-side (in-process here) via `Op::Walk`,
-    /// the same op the daemon and MCP server dispatch. `depth` defaults per
+    /// `esm::walk`) — computed in-process via `Op::Walk`, the same op the CLI
+    /// dispatches. `depth` defaults per
     /// root type (`esm::walk::default_depth`); `ref_limit`/
     /// `level` default to
     /// `esm::chase::DEFAULT_REF_LIMIT`/`esm::lvli::DEFAULT_LEVEL` when
@@ -350,9 +311,7 @@ impl EsmDatabase {
         tokio::task::spawn_blocking(move || {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::Walk {
                 sel,
                 depth: depth.map(|d| d as usize),
@@ -362,7 +321,7 @@ impl EsmDatabase {
                 level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
                 want_refs: want_refs.unwrap_or(false),
             };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -384,9 +343,7 @@ impl EsmDatabase {
         tokio::task::spawn_blocking(move || {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::Chase {
                 sel,
                 depth: depth
@@ -396,7 +353,7 @@ impl EsmDatabase {
                     .map(|d| d as usize)
                     .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),
             };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -417,16 +374,14 @@ impl EsmDatabase {
         tokio::task::spawn_blocking(move || {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
-            let db = inner
-                .lock()
-                .map_err(|e| napi::Error::from_reason(e.to_string()))?;
+            let db = &inner;
             let op = esm::ipc::Op::DropTable {
                 sel,
                 level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
                 max_depth: esm::lvli::MAX_RECURSION_DEPTH,
                 strict: false,
             };
-            esm::ipc::dispatch_op(&db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            esm::ipc::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -454,10 +409,7 @@ impl EsmDatabase {
         let arc_b = other.inner.clone();
         tokio::task::spawn_blocking(move || {
             let options = esm::query::diff_options(bodies, suppress_noise, exclude_types);
-            // Lock ordering doesn't have a `Registry`'s canonical keys to compare here
-            // (unlike `dispatch_inner`'s `Diff` arm) — order by raw `Arc` pointer address
-            // instead, which is just as deadlock-safe as long as it's used consistently.
-            esm::ipc::diff_pair(&arc_a, &arc_b, None, &options, &record_type)
+            esm::ipc::run_diff(&arc_a, &arc_b, &options, &record_type)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await

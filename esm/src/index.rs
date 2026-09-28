@@ -256,9 +256,9 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<XrefSection> {
 ///
 /// Every field below is a [`Section`], which wraps a `Mmap` — `Mmap`
 /// implements neither trait. Nothing in this crate needs `Index: Clone`
-/// (`Database`, which owns one, doesn't derive it either; `Registry` shares
-/// `Database` instances via `Arc<Mutex<Database>>`, cloning the `Arc`, never
-/// the `Database`/`Index` itself). `Debug` is implemented manually below,
+/// (`Database`, which owns one, doesn't derive it either; `Host` shares
+/// `Database` instances via `Arc<Database>`, cloning the `Arc`, never the
+/// `Database`/`Index` itself). `Debug` is implemented manually below,
 /// summarizing each section as just its mapped/absent state — the shape
 /// `Result`/`Option` helpers that require `T: Debug` (e.g. `.unwrap_err()`
 /// on a `Result<Index, _>`) need — rather than requiring `Section<A>: Debug`

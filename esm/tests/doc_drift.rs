@@ -224,8 +224,8 @@ struct Invocation {
 /// Finds `esm <subcommand>` invocations in `region`, scanning line-by-line
 /// (never crossing a newline) so an unrelated word on the next shell line
 /// can't be mistaken for the subcommand that follows `esm` on this one.
-/// Global flags between `esm` and the subcommand (`--esm <path>`, `--local`,
-/// …) are tolerated: the first lowercase-only token within a short lookahead
+/// Global flags between `esm` and the subcommand (`--esm <path>`,
+/// `--decimal`, …) are tolerated: the first lowercase-only token within a short lookahead
 /// window is taken as the candidate, and flag values almost never look like
 /// a bare lowercase word (paths contain `/`, addresses contain `.`/`:`).
 fn find_invocations(region: &str) -> Vec<Invocation> {
@@ -359,9 +359,8 @@ fn skill_md_flags_are_real() {
     let mut failures = Vec::new();
     for region in code_regions(&content) {
         // Only check flags in regions that actually name an `esm <subcommand>`
-        // invocation — SKILL.md also documents `esm-server --mcp-stdio`
-        // (a different binary) and prose mentions like "`--strict` isn't
-        // exposed on `walk` yet", neither of which should be flag-checked
+        // invocation — SKILL.md also has prose mentions like "`--strict` isn't
+        // exposed on `walk` yet", which should not be flag-checked
         // against the `esm` CLI's own flag set.
         if find_invocations(&region).is_empty() {
             continue;

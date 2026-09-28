@@ -8,13 +8,10 @@ record in the ESM. xEdit ships these as a pseudo-plugin at
 ``Core/Hardcoded/Fallout76.esp`` inside the TES5Edit checkout, purely so it has
 something to resolve those FormIDs against.
 
-This script shells out to the ``esm`` CLI ``--local`` (the same reader as
+This script shells out to the ``esm`` CLI (the same reader as
 ``src/reader.rs``, including the XXXX oversized-subrecord rule) for ``tree``
-and ``get`` -- a cold one-shot open is the right call for this tiny
-pseudo-plugin, no daemon worth keeping warm. ``list`` goes through
-``esm_gateway.EsmGateway.list_type`` (a warm-daemon round-trip) instead of
-its own subprocess call, per that module's "one seam" property -- see its
-docstring. Emits a small lookup table of ``{formid, type, editor_id}``
+and ``get``, and sends ``list`` through ``esm_gateway.EsmGateway.list_type``
+per that module's "one seam" property -- see its docstring. Emits a small lookup table of ``{formid, type, editor_id}``
 entries, checked in at ``schema/hardcoded_fo76.json`` since the TES5Edit
 checkout is not always present (same rationale as ``schema/fo76.json``).
 """
@@ -61,8 +58,8 @@ def read_zstring(data: bytes) -> str | None:
 
 
 def run_esm(esm_bin: str, esp_path: Path, *args: str) -> Any:
-    """Run ``esm --esm <esp> --local <args...>`` and parse stdout as JSON."""
-    cmd = [esm_bin, "--esm", str(esp_path), "--local", *args]
+    """Run ``esm --esm <esp> <args...>`` and parse stdout as JSON."""
+    cmd = [esm_bin, "--esm", str(esp_path), *args]
     try:
         result = subprocess.run(
             cmd,
@@ -113,7 +110,7 @@ def extract(esp_path: Path, esm_bin: str, client: esm_gateway.EsmGateway) -> lis
         if not isinstance(sig, str) or not sig:
             continue
         # `Op::ListTypeRecords` -- the same op `esm list --type SIG --json`
-        # sends -- via the warm-daemon gateway instead of its own subprocess.
+        # sends -- through the gateway's `esm batch` child.
         rows.extend(client.list_type(str(esp_path), sig, limit=0))
 
     if not rows:

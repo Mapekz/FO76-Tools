@@ -6,7 +6,7 @@ there is no root build. Before working in a subproject, read its scoped guidance
 | Directory | Purpose | Guidance |
 |---|---|---|
 | `ba2/` | Rust archive reader/writer and CLI | [ba2/AGENTS.md](ba2/AGENTS.md) |
-| `esm/` | Rust ESM reader, CLI, HTTP/MCP server, native addon | [esm/AGENTS.md](esm/AGENTS.md) |
+| `esm/` | Rust ESM reader, CLI, native addon | [esm/AGENTS.md](esm/AGENTS.md) |
 | `esm-viewer/` | Bun/Electron GUI consuming `esm/bindings/napi` | [esm-viewer/AGENTS.md](esm-viewer/AGENTS.md) |
 
 `esm/` and `esm-viewer/` are read-only. ESM mutation and serialization are

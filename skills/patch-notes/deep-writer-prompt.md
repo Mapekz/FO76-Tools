@@ -18,7 +18,7 @@ every one to ground truth. Run all commands from the repo root.
   Entries are dated — re-verify stale-looking ones with one live call.
 - **Per-record structured diff** (batch FormIDs in one call):
   `python3 esm/tools/slice_bundles.py --extract {OUT} <FORMID> [<FORMID>...]`
-- **Live verification via warm daemon (NEVER `--local`):**
+- **Live verification:**
   - `esm/target/release/esm --esm "{NEW_ESM}" get <id-or-edid> [<id2-or-edid> ...] --resolve stub --pretty`
     — batch every FormID/EditorID you need into ONE call. 2+ selectors return a JSON array
     (one `{"sel": ..., ...}` entry per selector, mixed FormID/EditorID, errors isolated

@@ -65,10 +65,8 @@
 //! targets.
 //!
 //! Composes the same operations (`Op::RecordBulk`, `Op::ReferencedBy`)
-//! in-process through the [`ChaseFetcher`] seam — no new `Op` variant, no
-//! daemon round-trip required by the trait itself (the CLI's concrete
-//! fetcher still goes through `Backend::run`, which may hit the warm
-//! daemon, but the pure logic here doesn't know or care).
+//! in-process through the [`ChaseFetcher`] seam — no new `Op` variant; the
+//! pure logic here doesn't know where its records come from.
 
 use crate::ipc::RecordSel;
 use crate::{BulkRecordEntry, FormId, RefList, RefRow, ResolveDepth};
@@ -126,10 +124,9 @@ const OMOD_INCLUDE_MAX_DEPTH: usize = 3;
 ///
 /// Mirrors the Python prototype's `EsmGateway`/`FakeGateway` seam — keeping
 /// all I/O out of the pure walk/classification logic below, so tests can
-/// exercise `chase()` against a `FakeFetcher` with no real ESM or daemon
-/// involved. The concrete implementor (`BackendFetcher` in `src/bin/cli.rs`)
-/// holds the `&Path` to the ESM being queried; `chase()` itself only deals in
-/// selectors and FormIDs.
+/// exercise `chase()` against a `FakeFetcher` with no real ESM involved. The
+/// concrete implementor (`DbFetcher` in `src/ipc.rs`) holds the open
+/// `Database`; `chase()` itself only deals in selectors and FormIDs.
 pub trait ChaseFetcher {
     fn bulk_get(
         &mut self,

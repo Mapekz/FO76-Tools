@@ -12,7 +12,7 @@ use esm::ipc::{Request, Response};
 use std::io::{BufRead, Write};
 
 pub(crate) fn cmd_batch() -> anyhow::Result<()> {
-    let registry = esm::registry::Registry::new();
+    let host = esm::host::Host::new();
     let stdin = std::io::stdin();
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     for line in stdin.lock().lines() {
@@ -21,7 +21,7 @@ pub(crate) fn cmd_batch() -> anyhow::Result<()> {
             continue;
         }
         let response = match serde_json::from_str::<Request>(&line) {
-            Ok(request) => esm::ipc::dispatch(&registry, &request),
+            Ok(request) => Response::from_result(host.run(&request.esm, &request.op)),
             Err(e) => Response::Err {
                 error: format!("invalid request: {e}"),
             },

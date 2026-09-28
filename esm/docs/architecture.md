@@ -1,7 +1,7 @@
 # Architecture
 
-How raw `SeventySix.esm` bytes become decoded JSON, and how the four consumer surfaces (CLI,
-HTTP/MCP server, N-API addon, Python patch-notes pipeline) all reach the same engine. The
+How raw `SeventySix.esm` bytes become decoded JSON, and how the three consumer surfaces (CLI,
+N-API addon, Python patch-notes pipeline) all reach the same engine. The
 decisions this map rests on are recorded in `docs/adr/`; domain vocabulary is in
 `../CONTEXT.md`.
 
@@ -42,8 +42,8 @@ Curve` + `Secondary Damage`).
 The decoder **never panics**: unknown record types get `_unknown_record: true`, unmapped
 leftover subrecords land under `_unmapped`, malformed bytes fall back to `_raw` hex, and an
 LString whose ID has no match in the loaded string tables gets `_unresolved` — the four marker
-keys are the single source of truth in `decode::markers` and are what the `coverage` subcommand,
-MCP server, and patch-notes tooling all key off of.
+keys are the single source of truth in `decode::markers` and are what the `coverage` subcommand
+and patch-notes tooling key off of.
 
 **Where the embedded schema comes from**: `schema/fo76.json` is a build artifact, not
 hand-written. `tools/extractor/extract.py` reads the sibling `../TES5Edit` checkout's Pascal
@@ -90,80 +90,55 @@ expressible as a silent bug. Every section build goes through
 re-check whether another process already finished the same section before doing any real work —
 so the lock doubles as cross-process dedup, not just coordination.
 
-Cross-process visibility into a build in flight is a **filesystem protocol, not a daemon
-endpoint** (ADR 0003): `src/progress.rs` publishes an atomically-written `.build.json` heartbeat
-next to a `.build.lock` advisory lock, both siblings of the five rkyv sections inside
-`esm_cache/`. `progress::read` is instant and never blocks (`try_lock_exclusive`, one syscall),
-so every caller — the daemon, a `--local` CLI process, the N-API host, or `tools/esm_gateway.py`
-— can answer "is someone already building this ESM" uniformly, without needing to be the one
-holding the build.
+Cross-process visibility into a build in flight is a **filesystem protocol** (ADR 0003):
+`src/progress.rs` publishes an atomically-written `.build.json` heartbeat next to a
+`.build.lock` advisory lock, both siblings of the rkyv sections inside `esm_cache/`.
+`progress::read` is instant and never blocks (`try_lock_exclusive`, one syscall), so any caller
+can answer "is someone already building this ESM" without being the one holding the build.
+A process can also hand its builds to another process (`progress::delegate_builds`): the CLI
+runs each missing section as a detached `esm cache build`, so a build outlives the command that
+started it, and `rkyvcache::map_or_build` falls back to building in-process if that fails.
 
-`src/registry.rs`'s `Registry` sits above all of this for the daemon/N-API path: it lazily
-opens and caches exactly one warm `Database` per canonical ESM path, evicting on a stale
-`FileSig` (path/size/mtime) so a snapshot swap is picked up automatically. `src/discover.rs`
-resolves what path/sources that canonical identity actually is —
-`resolve_esm_path` turns a folder or relative input into one canonical `.esm` path, and
-`resolve_sources` locates the sibling `strings/`/curve-table sources (loose files or BA2) next
-to it.
+`src/discover.rs` resolves what an ESM's canonical identity is — `resolve_esm_path` turns a
+folder or relative input into one canonical `.esm` path, and `resolve_sources` locates the
+sibling `strings/`/curve-table sources (loose files or BA2) next to it. `Database::open` does
+both itself, so every caller that names the same file shares one cache and one build lock.
 
 ## Process topology
 
-Four surfaces read the same engine through one dispatch point, `src/ipc.rs`'s `dispatch_op`
-(driven by the `Op` enum — `Op::Record`, `Op::Search`, `Op::Walk`, `Op::Chase`,
-`Op::DropTable`, …):
+Every surface reaches the engine through `src/host.rs`'s `Host::run(esm, op)`, which keeps the
+databases a process has opened (keyed by canonical path, reopened if the file changes) and runs
+`src/ipc.rs`'s `dispatch_op` — driven by the `Op` enum (`Op::Record`, `Op::Search`, `Op::Walk`,
+`Op::Chase`, `Op::DropTable`, …):
 
 ```
-                         src/ipc.rs  Op + dispatch_op
+                    src/host.rs  Host::run  →  src/ipc.rs  dispatch_op
                                    │
-      ┌───────────────┬───────────┼────────────────┬──────────────────────┐
-      ▼               ▼           ▼                 ▼                     ▼
- CLI (bin/cli/)    --local     daemon (bin/server.rs)   bindings/napi        tools/esm_gateway.py
-   Backend::run       in-proc     HTTP + MCP-stdio       EsmDatabase           (HTTP client,
-   (Local/Remote)                Registry-backed         Arc<Mutex<Database>>  same wire format)
+         ┌─────────────────────────┼──────────────────────────┐
+         ▼                         ▼                          ▼
+ CLI (bin/cli/)             esm batch (bin/cli/)        bindings/napi
+   one command, one Host      one JSON request per       EsmDatabase
+                              stdin line; used by        Arc<Database>
+                              tools/esm_gateway.py
 ```
 
-`src/backend.rs`'s `Backend` enum (`Local(LocalBackend)` / `Remote(RemoteBackend)`) has one
-method, `run(esm, Op) -> Value` — every caller builds an `Op` and reads the result back with
-`serde_json::from_value`, so there's no convenience-method surface that can silently drop a field
-an `Op` variant carries. A plain enum match, not a trait, since the two backends are a closed set
-with no trait-object or generic-bound caller. `LocalBackend` runs `dispatch_op` in-process against
-a cold `Database::open`; `RemoteBackend` posts the same `Op` as JSON to a daemon's `/op` endpoint.
-`src/bin/cli/main.rs` wraps this enum in its own `Backend` newtype to layer the progress-UI watcher
-around every call.
+Every surface runs in-process; there is no server. Opening a database maps its cache sections
+without parsing them (~1.5 ms warm), so a one-shot CLI command costs a few milliseconds, and
+long-lived hosts (`esm batch`, the Electron app) keep databases open between requests.
+`Database`'s queries all take `&self`, so one open database serves concurrent callers without a
+lock. `src/bin/cli/main.rs` wraps its `Host` in a `Backend` newtype whose `run` layers a
+`progress_ui::Watcher` (`src/bin/cli/progress_ui.rs`) around every call: it renders the build
+heartbeat (`progress::read`) to stderr after a grace period, so a cold build shows visible
+progress instead of looking hung.
 
-`src/bin/cli/main.rs`'s `main()` decides which backend a subcommand gets purely from `--local` and
-the global `--esm`/`FO76_ESM_PATH`/`--addr`/`--port` flags (`make_backend`) — every subcommand
-except `diff` (two positional ESM paths), and `skill`/`daemon`/`cache` (need no `Backend` at
-all), resolves one ESM path and one backend, then calls `dispatch_command`. Daemon mode is the
-default: `RemoteBackend::connect_or_spawn` health-checks the daemon info file the OS runtime
-directory holds (`esm-daemon.json`, via `backend::daemon_info_path`), and if nothing answers,
-spawns the `esm-server` binary
-found as a sibling of the running `esm` executable (`esm_server_exe`), coalesced by an advisory
-spawn lock so concurrent callers don't double-spawn. `daemon_fresh`/`exe_sig` detect a stale
-daemon (binary changed since it started, e.g. a rebuild) and force a stop-then-respawn
-transparently — no manual `daemon stop` needed. Every `Backend::run` call is wrapped in a
-`progress_ui::Watcher` (`src/bin/cli/progress_ui.rs`) that renders the build heartbeat
-(`progress::read`) to stderr after a grace period, so a cold build shows visible progress instead
-of looking hung.
+`esm batch` is how scripts make many calls cheaply: `tools/esm_gateway.py`'s `EsmGateway` owns one
+`esm batch` child, sends it one `{"esm", "op"}` request per line (`ipc::Request`), and reads one
+`ipc::Response` envelope per line back.
 
-`src/bin/server.rs` is an Axum HTTP server plus an MCP-stdio mode (`--mcp-stdio`, feature
-`server`), both backed by one `Registry`-cached `Database`. It exposes ten read-only MCP tools
-(`esm_file_info`, `esm_search`, `esm_get_record`, `esm_list_groups`, `esm_list_records`,
-`esm_refs`, `esm_walk`, `esm_chase`, `esm_lvli_drop_table`, `esm_curve`), all proxying to the same
-`Op` dispatch the CLI uses. `--daemon` mode adds an idle-TTL watchdog (`ESM_DAEMON_IDLE_SECS`) that
-self-exits when nothing has queried it recently.
-
-`bindings/napi/src/lib.rs`'s `EsmDatabase` (an `Arc<Mutex<Database>>`) is the fourth surface: it
-opens its own in-process `Database` (via a throwaway `Registry`, so it shares the same
-stale-eviction logic) rather than talking to a daemon over HTTP — the Electron app in
-`../esm-viewer/` is a single long-lived process, so there's no separate process boundary to
-cross.
-
-**Source overrides are CLI-only** (ADR 0008): `--localization-ba2`/`--strings-dir`/
-`--startup-ba2`/`--curves-dir` on `list`/`get`/`search`/`diff` force a cold in-process
-`Database::open` (via `bail_if_daemon_mode_overrides`, one shared guard those four commands
-call) instead of going through the daemon — the daemon's `Registry` caches one shared `Database`
-per path, and a per-request override has no coherent way to join that shared instance.
+**Source overrides** (`--localization-ba2`/`--strings-dir`/`--startup-ba2`/`--curves-dir` on
+`list`/`get`/`search`/`refs`/`diff`) open a `Database` configured with those sources for that one
+command instead of going through the `Host`, whose databases always use the sources discovered
+next to the ESM.
 
 ## Feature layer
 
@@ -239,7 +214,7 @@ The patch-notes pipeline has a **mechanical stage** (deterministic Python, no LL
 patch-notes OLD NEW`, which drives `tools/make_patch_notes.py` through a fixed order:
 
 ```
-esm --local diff (subprocess)         → diff.json
+esm diff (subprocess)                 → diff.json
   │
 render_comprehensive.py  (Tool 1)     → comprehensive.json
   │   uses change_entries.py's ChangeEntry construction + array-diff reading
@@ -257,7 +232,7 @@ patchnotes_lib.py manifest helpers    → manifest.json
 `deep`, `brief`, `drop`, or `ambiguous` — against `patch_notes_tiers.json`'s rules, writing
 `work/triage.json`, `work/deep-slice.json`, `work/ambiguous.json`, `work/brief-lines.md`, and
 `work/rollouts.md`. `esm_gateway.py`'s `EsmGateway` is the one seam every stage above uses to
-reach the `esm` CLI/daemon — `bulk_get`, `list_type`, `refs`, `diff` — so nothing else in
+reach the `esm` CLI — `bulk_get`, `list_type`, `refs`, `diff` — so nothing else in
 `tools/` shells out to `esm` directly.
 
 The **narrative stage** takes over from `work/deep-slice.json`/`ambiguous.json` onward: the
@@ -267,7 +242,7 @@ over the DEEP tier, resolves the `ambiguous` tier with one assessor pass, and as
 final `patch-summary.md`, chunked for Discord by `tools/discord_chunker.py` and finalized via
 `tools/update_manifest.py`. Two deterministic gates sit between the writers and the summary:
 `tools/check_claims.py` re-derives every number a writer claimed (from `comprehensive.json`
-or the live daemon) and `tools/check_coverage.py` asserts every DEEP bundle id is covered by
+or live `esm` lookups) and `tools/check_coverage.py` asserts every DEEP bundle id is covered by
 exactly one draft and reaches the summary or `work/cuts.json`; `tools/fetch_official_notes.py`
 extracts the newest section of an official patch-notes page for the discrepancy callouts.
 
@@ -281,13 +256,12 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 | Want to... | Look in |
 |---|---|
 | Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py`, then `src/decode/walk.rs`'s `decode_member` / `src/decode/rules.rs` for any post-decode synthesis |
-| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `daemon.rs`, `inspect.rs`, …); add an `Op` variant in `src/ipc.rs` if it needs daemon/MCP/N-API reach too |
+| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add an `Op` variant in `src/ipc.rs` if it needs `esm batch`/N-API reach too |
 | Change diff noise suppression | `src/diff/noise.rs`'s `strip_noise_fields` / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
 | Add a new patch-notes lint rule | `tools/run_lints.py`'s rule registry |
 | Change bundle clustering | `tools/build_bundles.py` |
 | Change tier assignment (DEEP/BRIEF/DROP) | `tools/patch_notes_tiers.json`, `tools/triage_bundles.py` |
-| Add an MCP/HTTP tool | `src/bin/server.rs` (tool list + dispatch); add the matching `Op` in `src/ipc.rs` if it's a new query shape |
 | Add an N-API method | `bindings/napi/src/lib.rs`, then `just gen-types` and `cd bindings/napi && bun run build` |
 | Change a cache section's on-disk shape | its `impl SectionSpec` block (next to the type, in `index.rs` or `tree.rs`) and bump `index::CACHE_VERSION` |
 | Change OMOD mechanism classification | `src/chase.rs` |

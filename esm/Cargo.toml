@@ -10,9 +10,6 @@ license = "MIT"
 # Local tooling — never uploaded to a registry.
 publish = false
 
-[features]
-server = ["dep:tokio", "dep:axum", "dep:tower-http"]
-
 [lib]
 name = "esm"
 path = "src/lib.rs"
@@ -20,11 +17,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "esm"
 path = "src/bin/cli/main.rs"
-
-[[bin]]
-name = "esm-server"
-path = "src/bin/server.rs"
-required-features = ["server"]
 
 [dependencies]
 anyhow = "1"
@@ -40,13 +32,9 @@ memmap2 = "0.9"
 rkyv = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip", "raw_value"] }
-ureq = { version = "3", default-features = false, features = ["json"] }
-tokio = { version = "1", features = ["full"], optional = true }
-axum = { version = "0.8", optional = true }
-tower-http = { version = "0.7", features = ["trace"], optional = true }
 
-# Unix-only: restores SIGPIPE's default disposition in the CLI/server binaries'
-# main() (see src/bin/cli/main.rs, src/bin/server.rs) so writes to a closed
+# Unix-only: restores SIGPIPE's default disposition in the CLI's main() (see
+# src/bin/cli/main.rs) so writes to a closed
 # stdout/stderr (piped output closed early, e.g. `esm list ... | head`) kill
 # the process via SIGPIPE like a normal Unix tool instead of surfacing as a
 # panicking `std::io::Error` from `println!`/`writeln!`. Already present
@@ -56,7 +44,6 @@ tower-http = { version = "0.7", features = ["trace"], optional = true }
 libc = "0.2"
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
 ts-rs = "12.0.1"
 
 # Profile used by .github/workflows/release.yml to build the published binaries.

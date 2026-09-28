@@ -6,7 +6,7 @@ pipeline.
 Wires together, in-process, the four deterministic pipeline tools that turn a
 raw `esm diff --json` into a reviewable, bundled, linted output directory:
 
-    1. `esm --local diff` (subprocess)      -> diff.json
+    1. `esm diff` (subprocess)              -> diff.json
     2. render_comprehensive.py (library)    -> comprehensive.json + .md
     3. build_bundles.py (library)           -> bundles.json
     4. run_lints.py (library)               -> lints.json + updated bundles.json

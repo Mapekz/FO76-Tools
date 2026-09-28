@@ -383,13 +383,11 @@ fn parse_curve_json(bytes: &[u8]) -> Option<Vec<CurvePoint>> {
     Some(points)
 }
 
-// ─── `esm curve` / `esm_curve` MCP tool shared logic ───────────────────────
+// ─── `esm curve` query logic ────────────────────────────────────────────────
 
 /// Build the JSON result for the `esm curve` CLI command (`bin/cli/curve.rs`)
 /// from an already-resolved `Op::RecordBulk` response — the query logic
-/// itself, kept here (library level, not the CLI-only binary) so a future
-/// `esm_curve` MCP tool in a different binary can call the exact same code
-/// instead of re-implementing it.
+/// itself, kept at library level so any surface can call it.
 ///
 /// `entries` must be the `BulkRecordEntry` list a single `Op::RecordBulk`
 /// call produced over the caller's selectors, in the same order — the
@@ -398,7 +396,7 @@ fn parse_curve_json(bytes: &[u8]) -> Option<Vec<CurvePoint>> {
 ///
 /// `at` and `sum` are mutually exclusive. Clap already enforces this at the
 /// CLI layer (`conflicts_with`), but this function re-checks it defensively
-/// since a caller with no clap (MCP) can't rely on that for free.
+/// since a library caller with no clap can't rely on that for free.
 ///
 /// - Exactly one entry: returns that entry's own result object directly, no
 ///   `"sel"` wrapper key (matches `esm get`'s single-target convention).

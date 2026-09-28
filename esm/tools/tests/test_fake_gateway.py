@@ -7,7 +7,7 @@ Covers:
     path/depth fields, int vs hex FormID acceptance, type_filter narrowing).
   - `paths=`/`bulk_get`/`list_type` against a small inline fixture.
 
-Every test above uses only synthetic fixtures -- no real daemon or game
+Every test above uses only synthetic fixtures -- no real `esm` or game
 data. `FakeGatewayConformanceTests` at the bottom is the one exception: it
 asserts `FakeGateway`'s Python reimplementation of the reverse-reference BFS
 agrees with the REAL gateway/backend's own `ipc::referenced_by_enriched`

@@ -7,7 +7,7 @@ Reads `<out_dir>/comprehensive.json` (full per-record detail, keyed by
 FormID — see `change_entries.py` for the `ChangeEntry` shape each record's
 `changes` list is made of) and `<out_dir>/bundles.json` (per-bundle
 groupings), runs a fixed registry of rule functions against them (optionally
-consulting a live/fake `esm` daemon client for reference-graph checks), and
+consulting a live or fake `esm` gateway for reference-graph checks), and
 writes `<out_dir>/lints.json`. It also rewrites `bundles.json` in place so
 each bundle's `lint_ids`/`bug_watch` reflect this run's results.
 
@@ -15,15 +15,15 @@ Each rule is a function `rule_name(ctx) -> Iterable[dict]` returning partial
 lint dicts (no `id`/`bundle_id` yet — those are assigned centrally after
 every rule has run, so numbering is deterministic regardless of how any one
 rule iterates). `ctx` is a plain dict (see `build_context`) bundling the
-parsed `comprehensive.json`/`bundles.json` data, the daemon client, the ESM
+parsed `comprehensive.json`/`bundles.json` data, the `esm` gateway, the ESM
 paths, and a `settings` dict for rule tunables.
 
 Rules must never raise: unexpected/missing shapes are skipped quietly (never
-treated as a lint), and client errors (offline daemon, `--local`-only setup,
-malformed fixture) cause that one check to be skipped rather than aborting
+treated as a lint), and gateway errors (no `esm` binary, a malformed
+fixture) cause that one check to be skipped rather than aborting
 the whole run. When a check's result is genuinely ambiguous the rule should
 prefer NOT emitting a lint — the narrative stage re-verifies every lint
-against the live daemon before it reaches player-facing notes, so a false
+against live `esm` lookups before it reaches player-facing notes, so a false
 negative here just gets caught later, but a false positive can waste a
 writer's verification budget.
 
@@ -1112,10 +1112,10 @@ def build_arg_parser():
     ap.add_argument("--new-esm", help="Path to the new-snapshot ESM (required unless --offline).")
     ap.add_argument("--old-esm", help="Path to the old-snapshot ESM (optional; improves dangling_ref).")
     ap.add_argument(
-        "--esm-bin", default="target/release/esm", help="Path to the esm CLI binary (used to spawn/reuse the daemon)."
+        "--esm-bin", default="target/release/esm", help="Path to the esm CLI binary."
     )
     ap.add_argument("--categories", help="Config file supplying rule tunables (e.g. unique_keyword_patterns).")
-    ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeGateway instead of a real daemon.")
+    ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeGateway instead of live esm lookups.")
     ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see tools/tests/fake_gateway.FakeGateway).")
     ap.add_argument("--rules", help="Comma-separated subset of rules to run (default: all).")
     return ap

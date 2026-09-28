@@ -5,8 +5,7 @@ use esm::{Database, FormIdBase, RecordRow, ResolveDepth, SearchField};
 use std::path::{Path, PathBuf};
 
 use crate::output::{
-    apply_strings_override, bail_if_daemon_mode_overrides, print_json, print_record_rows,
-    print_search_results, render_form_id,
+    apply_strings_override, print_json, print_record_rows, print_search_results, render_form_id,
 };
 use crate::{Backend, SearchInArg};
 
@@ -69,74 +68,40 @@ pub(crate) fn cmd_get(
     lang: &str,
     startup_ba2: Option<PathBuf>,
     resolve: String,
-    daemon_mode: bool,
     base: FormIdBase,
 ) -> anyhow::Result<()> {
-    let has_overrides =
-        localization_ba2.is_some() || strings_dir.is_some() || startup_ba2.is_some();
-
-    // ── Bulk path (2+ positional targets) ─────────────────────────────────
-    // clap's `conflicts_with_all` on `targets` guarantees --formid/--edid are
-    // never set here. Single-target and zero-target calls fall through
-    // untouched below, so that output stays byte-for-byte identical to the
-    // pre-bulk CLI.
-    if targets.len() > 1 {
+    let depth = parse_resolve(&resolve)?;
+    let op = if targets.len() > 1 {
+        // clap's `conflicts_with_all` on `targets` guarantees --formid/--edid
+        // are never set here.
         if raw {
             anyhow::bail!("--raw does not support multiple selectors; run one target at a time");
         }
-        if has_overrides {
-            anyhow::bail!(
-                "--localization-ba2/--strings-dir/--startup-ba2 are not supported with \
-                 multiple selectors; run one target at a time, or place the strings/curves \
-                 next to the ESM so the warm daemon auto-loads them (see esm/AGENTS.md)"
-            );
-        }
-        let sels: Vec<RecordSel> = targets
+        let sels = targets
             .iter()
             .map(|t| RecordSel::from_input_with(t, base))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        let depth = parse_resolve(&resolve)?;
-        let mut v = backend.run(file, Op::RecordBulk { sels, depth })?;
-        convert_get_result(&mut v, base);
-        print_json(&v, pretty || !json);
-        return Ok(());
-    }
-    let target = targets.into_iter().next();
+        Op::RecordBulk { sels, depth }
+    } else {
+        let sel = record_sel_with(formid, edid, targets.into_iter().next(), base)?;
+        if raw {
+            Op::RecordRaw { sel }
+        } else {
+            Op::Record { sel, depth }
+        }
+    };
 
-    bail_if_daemon_mode_overrides(
-        has_overrides,
-        daemon_mode,
-        "--localization-ba2/--strings-dir/--startup-ba2",
-    )?;
-    if has_overrides {
+    let mut v = if localization_ba2.is_some() || strings_dir.is_some() || startup_ba2.is_some() {
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         if let Some(ba2_path) = startup_ba2 {
             db.load_curves(&ba2_path)?;
         }
-        let sel = record_sel_with(formid, edid, target, base)?;
-        let depth = parse_resolve(&resolve)?;
-        let op = if raw {
-            Op::RecordRaw { sel }
-        } else {
-            Op::Record { sel, depth }
-        };
-        let mut v = esm::ipc::dispatch_op(&db, &op)?;
-        convert_get_result(&mut v, base);
-        print_json(&v, pretty || !json);
-        return Ok(());
-    }
-
-    let sel = record_sel_with(formid, edid, target, base)?;
-    let depth = parse_resolve(&resolve)?;
-    if raw {
-        let mut v = backend.run(file, Op::RecordRaw { sel })?;
-        convert_get_result(&mut v, base);
-        print_json(&v, pretty || !json);
-        return Ok(());
-    }
-    let mut v = backend.run(file, Op::Record { sel, depth })?;
+        esm::ipc::dispatch_op(&db, &op)?
+    } else {
+        backend.run(file, op)?
+    };
     convert_get_result(&mut v, base);
     print_json(&v, pretty || !json);
     Ok(())
@@ -153,16 +118,10 @@ pub(crate) fn cmd_list(
     localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
-    daemon_mode: bool,
     base: FormIdBase,
 ) -> anyhow::Result<()> {
     let has_overrides = localization_ba2.is_some() || strings_dir.is_some();
     if has_overrides {
-        bail_if_daemon_mode_overrides(
-            has_overrides,
-            daemon_mode,
-            "--localization-ba2/--strings-dir",
-        )?;
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
@@ -196,7 +155,6 @@ pub(crate) fn cmd_search(
     localization_ba2: Option<PathBuf>,
     strings_dir: Option<PathBuf>,
     lang: &str,
-    daemon_mode: bool,
     base: FormIdBase,
 ) -> anyhow::Result<()> {
     let field = match search_in {
@@ -207,11 +165,6 @@ pub(crate) fn cmd_search(
 
     let has_overrides = localization_ba2.is_some() || strings_dir.is_some();
     if has_overrides {
-        bail_if_daemon_mode_overrides(
-            has_overrides,
-            daemon_mode,
-            "--localization-ba2/--strings-dir",
-        )?;
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);

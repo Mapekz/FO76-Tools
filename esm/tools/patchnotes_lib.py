@@ -179,9 +179,9 @@ Claim = TypedDict(
 class ClaimResult(TypedDict):
     claim: Claim
     status: ClaimStatus
-    #: Where the verdict came from: the record's `changes[]`, a live daemon
+    #: Where the verdict came from: the record's `changes[]`, a live `esm`
     #: lookup, or nowhere (unverifiable).
-    source: Literal["changes", "daemon", "none"]
+    source: Literal["changes", "esm", "none"]
     detail: str
 
 

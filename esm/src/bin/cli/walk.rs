@@ -9,9 +9,8 @@ use crate::output::render_form_id;
 
 /// `chase` is JSON-only — a pipeline evidence contract, not something meant
 /// to be read directly (see `esm::chase`'s module docs and `docs/adr/0001`).
-/// The classifier itself runs server-side (`Op::Chase`, dispatched inside the
-/// daemon or `--local`'s in-process `Database` — see `esm::ipc::dispatch_op`);
-/// this is now just one wire call and a pretty-print.
+/// The classifier itself runs in the library (`Op::Chase`, see
+/// `esm::ipc::dispatch_op`); this is one `Op` and a pretty-print.
 ///
 /// `--decimal` still affects *input* selector parsing here (`base`, for
 /// consistency with every other subcommand), but deliberately never touches
@@ -41,12 +40,10 @@ pub(crate) fn cmd_chase(
 
 /// Interactive digest driver. The BFS, per-node digest computation, the
 /// not-found search fallback, and the `--refs` reverse-reference summary all
-/// run server-side in one `Op::Walk` call (`esm::ipc::dispatch_op`) — this
+/// run in the library in one `Op::Walk` call (`esm::ipc::dispatch_op`) — this
 /// only resolves the CLI's own flags into the request and renders the
-/// result, matching `--json` vs plain text either way (see `esm::walk`'s
-/// module docs: only the *computation* moved server-side, `render.rs` is
-/// still the sole place a `Digest`/`WalkResult` becomes text, so `--local`
-/// and daemon output stay byte-identical).
+/// result, matching `--json` vs plain text either way (`esm::walk::render`
+/// is the sole place a `Digest`/`WalkResult` becomes text).
 /// Rewrite a [`esm::walk::WalkResult`]'s identity FormIDs into `base`, in
 /// place: each node's `formid`, the not-found fallback's `target` and its
 /// search-match rows' `form_id`. `digest` (each node's record-type-specific

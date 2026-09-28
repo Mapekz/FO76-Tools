@@ -55,7 +55,7 @@ DISCORD_DIRNAME = "discord"
 
 
 def diff_json(out_dir: Path) -> Path:
-    """`esm --local diff --json` output -- the raw sparse diff."""
+    """`esm diff --json` output -- the raw sparse diff."""
     return Path(out_dir) / "diff.json"
 
 

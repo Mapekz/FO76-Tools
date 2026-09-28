@@ -16,7 +16,7 @@ FO76 ESM Viewer is a desktop GUI for browsing, searching, diffing, and cross-ref
 
 ## Positioning
 
-A faster, Rust-based, cross-platform clone of TES5Edit/xEdit: the incumbent tool is Pascal, Windows/Wine-only, and blocks on backend processing. This product's primary differentiator is cross-platform reach (Electron, ships on Windows/Mac/Linux), backed by a UI that stays warm and loads data quickly (a persistent background daemon in the `esm` engine) instead of reloading or blocking per query.
+A faster, Rust-based, cross-platform clone of TES5Edit/xEdit: the incumbent tool is Pascal, Windows/Wine-only, and blocks on backend processing. This product's primary differentiator is cross-platform reach (Electron, ships on Windows/Mac/Linux), backed by a UI that stays warm and loads data quickly (the `esm` engine's zero-copy cache, held open in-process by the native addon) instead of reloading or blocking per query.
 
 ## Operating Context
 
@@ -24,7 +24,7 @@ A faster, Rust-based, cross-platform clone of TES5Edit/xEdit: the incumbent tool
 - Diffing two ESM snapshots to see what changed between game patches
 - Tracing FormID cross-references via referenced-by lookups (e.g. "what drops this item")
 - Checking schema decode coverage to see what's fully understood vs. raw/unmapped data
-- Querying against a warm background daemon (from the `esm` Rust crate) for fast repeated lookups instead of reloading the ESM per query
+- Querying a database the native addon keeps open (the `esm` Rust crate) for fast repeated lookups instead of reloading the ESM per query
 
 ## Capabilities and Constraints
 

@@ -8,8 +8,8 @@ record detail, search, filtering, referenced-by lookups, snapshot diffing, and s
 decode-coverage reporting. It is strictly read-only: no write/save path exists or is planned.
 
 Positioning: a faster, cross-platform alternative to TES5Edit/xEdit for FO76 datamining —
-Electron instead of Pascal/Wine, and a warm background daemon (from the `esm` engine) instead
-of reloading the ESM per query.
+Electron instead of Pascal/Wine, and a database the native addon keeps open (the `esm` engine's
+zero-copy cache) instead of reloading the ESM per query.
 
 ## Requirements
 

@@ -7,10 +7,11 @@ live in [../AGENTS.md](../AGENTS.md).
 
 Run commands from `esm/`; `justfile` owns the complete recipe list.
 
-- Use `just release` before querying the CLI after changes. It builds both CLI
-  and daemon; a bare Cargo build can leave an old daemon serving stale decode output.
-- `just check` covers formatting, default/server clippy and tests, generated-type
-  drift, and schema formatting. `just audit` adds TES5Edit schema parity.
+- Rebuild with `just release` (a plain `cargo build --release`) before querying
+  the CLI after changes; every call runs in-process, so the next one uses it.
+- `just check` covers formatting, clippy and tests across the workspace,
+  generated-type drift, and schema formatting. `just audit` adds TES5Edit schema
+  parity.
 - `just patch-tools-test` and `just patch-tools-lint` validate Python tooling.
 - `just patch-notes OLD NEW` runs the mechanical patch-notes pipeline; use the
   patch-notes procedure for narrative output.
@@ -18,8 +19,8 @@ Run commands from `esm/`; `justfile` owns the complete recipe list.
 ## Architecture
 
 `docs/architecture.md` owns the full picture: record read flow (bytes → schema decode →
-`serde_json::Value`), index/cache lifecycle, process topology (CLI, daemon, HTTP/MCP server,
-N-API, Python pipeline), and the feature-layer modules (`diff`, `walk`, `chase`, `lvli`, `refs`).
+`serde_json::Value`), cache lifecycle, process topology (CLI, `esm batch`, N-API, Python
+pipeline), and the feature-layer modules (`diff`, `walk`, `chase`, `lvli`, `refs`).
 Its "Where to tweak what" table is the fastest way to find the right edit point for a given
 change; domain vocabulary lives in `CONTEXT.md`, and design decisions are recorded in
 `docs/adr/`.
@@ -29,8 +30,8 @@ change; domain vocabulary lives in `CONTEXT.md`, and design decisions are record
 | Binary parsing | `src/reader.rs`, `src/format.rs` |
 | Schema-driven decode | `src/decode/mod.rs` (+ `decode/vmad.rs`, `src/ctda.rs`) |
 | Index & disk cache | `src/index.rs`, `src/rkyvcache.rs`, `src/progress.rs` |
-| Cross-process daemon path | `src/registry.rs`, `src/backend.rs`, `src/ipc.rs` |
-| CLI / HTTP+MCP server / N-API | `src/bin/cli/main.rs` (+ per-family handler modules), `src/bin/server.rs`, `bindings/napi/src/lib.rs` |
+| Op dispatch (every surface) | `src/host.rs`, `src/ipc.rs` |
+| CLI / N-API | `src/bin/cli/main.rs` (+ per-family handler modules), `bindings/napi/src/lib.rs` |
 | Diff / walk / chase / lvli / refs | `src/diff/`, `src/walk/`, `src/chase.rs`, `src/lvli.rs`, `src/refs.rs` |
 | Python patch-notes pipeline (mechanical stage) | `tools/` |
 
@@ -45,7 +46,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `Resol
 - **Serialization**: manual little-endian byte reads (`u*::from_le_bytes`, `byteorder::ReadBytesExt`) for fixed headers; `serde`/`serde_json` for output; zero-copy `rkyv` sections (`src/rkyvcache.rs`) for the index cache. No `binrw`/`nom`.
 - **Schema editing**: `schema/fo76.json` is embedded at compile time (`include_str!`). Change the extractor (`tools/extractor/extract.py`) or add overrides to `schema/fo76.overrides.json`; regenerate `fo76.json` rather than editing it directly.
 - **Decoder must never panic**: unknown/malformed bytes → raw hex fallback (`_raw`, `_unknown_record`, `_unmapped`). Do not add unwraps on untrusted input.
-- **Tests**: most tests live in `tests/` (one target per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_coverage.rs`). A target that outgrows one file becomes a directory with a `main.rs` declaring its submodules — `tests/decode_records/` splits its whole-record goldens by record family (`weapons.rs`, `perks.rs`, `races.rs`, …), and `cargo test --test decode_records` still selects the whole binary. Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode/mod.rs`, `backend.rs`'s `DaemonHost`/`FakeHost` daemon-lifecycle tests, `registry.rs`'s `RegistryHost`/`FakeHost` cache-policy tests, `diff.rs`'s `lcs_align` alignment/safety-cap tests). Synthetic tests use in-memory byte buffers. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
+- **Tests**: most tests live in `tests/` (one target per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ipc.rs`, `decode_coverage.rs`). A target that outgrows one file becomes a directory with a `main.rs` declaring its submodules — `tests/decode_records/` splits its whole-record goldens by record family (`weapons.rs`, `perks.rs`, `races.rs`, …), and `cargo test --test decode_records` still selects the whole binary. Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode/mod.rs`, `host.rs`'s `Opener`/`FakeHost` reopen and race tests, `diff.rs`'s `lcs_align` alignment/safety-cap tests). Synthetic tests use in-memory byte buffers. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
 
 ## Critical Invariants — Do Not Break
 
@@ -56,9 +57,9 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `Resol
 - **XXXX oversized subrecords**: the 6-byte `XXXX` header declares a 4-byte little-endian size payload, which supplies the length of the following subrecord when its header size is zero. Preserve this in `reader.rs`.
 - **`index.rs` cache**: keyed by path/size/mtime, plus a per-section `layout_fingerprint` (`FORMS_/EDID_/SEARCH_/XREF_LAYOUT_FINGERPRINT` in `index.rs`, `TREE_LAYOUT_FINGERPRINT` in `tree.rs`) folding each section's archived `size_of`/`align_of` (plus, for `xref`, the build-time digest of the embedded schema) — the other half of cache invalidation, alongside `CACHE_VERSION`. **Bump `CACHE_VERSION`** whenever any section's cached data layout changes — the old cache becomes invalid and will be rebuilt.
 - **FormID layout**: high byte = master-file index, low 24 bits = object ID. All values little-endian.
-- **Decode output key conventions** (must stay consistent): `_record_type`, `_unknown_record`, `_unmapped`, `_raw`, `_unresolved`, and (diff output only) `_array_diff`. These are the flags the `coverage` subcommand, MCP server, and patch-notes tooling rely on. Which record types get extra keys inlined onto a `--resolve stub` FormID reference (currently GLOB's `Value`, CURV's `curve_path`/`curve`) is a separate registry, `src/decode/leaf_values.rs` — see `docs/adr/0011-value-bearing-leaf-inlining.md`.
+- **Decode output key conventions** (must stay consistent): `_record_type`, `_unknown_record`, `_unmapped`, `_raw`, `_unresolved`, and (diff output only) `_array_diff`. These are the flags the `coverage` subcommand and patch-notes tooling rely on. Which record types get extra keys inlined onto a `--resolve stub` FormID reference (currently GLOB's `Value`, CURV's `curve_path`/`curve`) is a separate registry, `src/decode/leaf_values.rs` — see `docs/adr/0011-value-bearing-leaf-inlining.md`.
 - **`advance_union` / `RArray` decoder paths**: struct union variants advance by real decoded byte counts; fixed scalars still use `field_byte_size`. Change with extra care and verify against real ESM output.
-- **Every consumer of a build lease keys it by the canonical ESM path** (`discover::resolve_esm_path`). `Database::open` canonicalizes its input itself; anything that watches a build without opening a `Database` (the CLI's progress watcher, `backend.rs`'s `building_progress`/`watch_path`) must call `resolve_esm_path` too.
+- **Every consumer of a build lease keys it by the canonical ESM path** (`discover::resolve_esm_path`). `Database::open` canonicalizes its input itself; anything that watches a build without opening a `Database` (the CLI's progress watcher, `--no-wait`, `esm cache`) must call `resolve_esm_path` too.
 
 ## N-API Binding and Electron App
 
@@ -74,7 +75,7 @@ Game data files (`*.esm`, `*.ba2`, and `Index`'s shared `esm_cache/` directory h
 
 ## CLI usage knowledge (for agents querying game data)
 
-Invocation modes, bulk ops, `--resolve stub`, `refs` selectors, daemon lifecycle, MCP, and how
+Invocation, cache behaviour, bulk ops, `--resolve stub`, `refs` selectors, and how
 to interpret live-vs-cut game data live in `skills/esm-cli/SKILL.md` — it ships embedded in the
 binary (`esm skill`). Read the procedure directly when querying game data.
 

@@ -40,7 +40,12 @@ fn answers_each_request_line_in_order() {
     assert_eq!(lines.len(), 3, "blank lines get no answer: {lines:?}");
     assert_eq!(lines[0]["status"], "ok");
     assert_eq!(lines[1]["status"], "err");
-    assert!(lines[1]["error"].as_str().unwrap().starts_with("invalid request"));
+    assert!(
+        lines[1]["error"]
+            .as_str()
+            .unwrap()
+            .starts_with("invalid request")
+    );
     assert_eq!(lines[2]["status"], "err");
 
     let _ = esm::progress::clear_cache(&esm_path);

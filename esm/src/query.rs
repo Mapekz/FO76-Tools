@@ -1,12 +1,11 @@
-//! Canonical string→enum argument translation shared by the CLI, HTTP/MCP
-//! server, and N-API bindings.
+//! Canonical string→enum argument translation shared by the CLI and N-API
+//! bindings.
 //!
 //! This module is the one place the parsing logic lives — no serving surface
 //! should carry its own copy of these mappings. Callers still choose their
 //! own **default** value for the "argument omitted" case; this module does
 //! not unify defaults across surfaces (e.g. the CLI's `esm get` defaults to
-//! `ResolveDepth::None` while the MCP `esm_get_record` tool defaults to
-//! `ResolveDepth::Stub`).
+//! `ResolveDepth::None` while the viewer asks for `ResolveDepth::Stub`).
 
 use crate::diff::{BodyDetail, DiffOptions};
 use crate::{FilterOp, ResolveDepth, SearchField};

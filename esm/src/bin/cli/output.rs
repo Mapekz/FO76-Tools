@@ -1,8 +1,7 @@
 //! Shared printing/JSON helpers used across the subcommand handler modules
-//! (`query`, `refs`, `diff`, `daemon`, `inspect`): JSON/table rendering plus
+//! (`query`, `refs`, `diff`, `inspect`): JSON/table rendering plus
 //! the localization-override plumbing (`apply_strings_override`,
-//! `esm_string_prefix`) and the daemon-mode override guard
-//! (`bail_if_daemon_mode_overrides`) that several handlers need identically.
+//! `esm_string_prefix`) that several handlers need identically.
 
 use esm::{Database, FormIdBase, RecordRow};
 use serde_json::Value;
@@ -161,28 +160,4 @@ pub(crate) fn apply_strings_override(
             ),
         }
     }
-}
-
-/// Bails when source-override flags were passed while daemon mode is active.
-///
-/// Source-override flags (`--localization-ba2`/`--strings-dir`/`--startup-ba2`/
-/// `--curves-dir`, including `diff`'s per-side `_a`/`_b` variants) are
-/// CLI-only — see `docs/adr/0008-source-overrides-cli-only.md`. The
-/// daemon's `Registry` caches exactly one warm `Database` per canonical ESM
-/// path, shared across every client; a per-request source override can't be
-/// warmed into that shared cache, so there is no `Op` this could ever dispatch
-/// to. Each call site computes `has_overrides` itself — a single flag-presence
-/// check for `list`/`get`/`search`, an 8-way `_a`/`_b` coalesce for `diff` — and
-/// passes the flag names to mention in the error.
-pub(crate) fn bail_if_daemon_mode_overrides(
-    has_overrides: bool,
-    daemon_mode: bool,
-    flags: &str,
-) -> anyhow::Result<()> {
-    if has_overrides && daemon_mode {
-        anyhow::bail!(
-            "{flags} are not supported in daemon mode; use --local to open the ESM directly"
-        );
-    }
-    Ok(())
 }

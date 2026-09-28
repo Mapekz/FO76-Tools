@@ -334,12 +334,11 @@ class BuildDiffCmdTests(unittest.TestCase):
     # esm_gateway.build_diff_cmd, and its strings-dir case asserts strictly
     # more than this one did.
 
-    def test_always_uses_local_diff(self):
-        # diff() only ever shells out to `--local diff` -- see EsmGateway.diff's
-        # docstring for why the /op Diff HTTP route isn't used here.
+    def test_runs_the_diff_subcommand(self):
+        # diff() shells out to `esm diff` -- see EsmGateway.diff's docstring
+        # for why it bypasses the `esm batch` child.
         cmd = self._cmd()
-        self.assertIn("--local", cmd)
-        self.assertIn("diff", cmd)
+        self.assertEqual(cmd[1], "diff")
 
 
 class EsmGatewayDiffTests(TempDirTestCase):
@@ -384,7 +383,7 @@ class EsmGatewayDiffTests(TempDirTestCase):
         fake_esm = self._fake_esm("{}")
         result = self._diff(fake_esm)
         self.assertEqual(result.cmd[0], str(fake_esm))
-        self.assertIn("--local", result.cmd)
+        self.assertEqual(result.cmd[1], "diff")
         self.assertIn("--strings-dir", result.cmd)
 
     def test_nonzero_exit_raises_esm_error(self):

@@ -5,7 +5,7 @@ Uses hand-built minimal comprehensive.json/bundles.json dicts (rather than
 loading the full diff_small.json fixture for every case) plus
 `esm_gateway.FakeGateway` backed by the shared `refs_graph.json` fixture for
 the rules that need a reverse-reference walk (orphaned_unique,
-unreferenced_perk_rank). No real daemon or ESM is touched.
+unreferenced_perk_rank). No real `esm` or ESM is touched.
 """
 
 from __future__ import annotations

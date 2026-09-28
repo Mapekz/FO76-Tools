@@ -7,12 +7,11 @@
 #   - schema parity audit (`just audit`, separate recipe; needs ../TES5Edit)
 #   - Python tooling tests (`just patch-tools-test`) + lint/typecheck (`just patch-tools-lint`)
 #   - esm-viewer lint/format/typecheck/test (cd ../esm-viewer && just check)
-#   - napi native-addon build + smoke (continue-on-error in CI)
+#   - napi native-addon build + smoke
 #
 # Usage:
 #   just          -> fmt + clippy + test + gen-types + drift check + schema-fmt-check (full local esm pass)
-#   just release  -> build both release binaries (esm CLI + esm-server daemon) in sync —
-#                  use this, not `cargo build --release`, before running/querying the CLI
+#   just release  -> build the release CLI (target/release/esm)
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
 #   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
 #   just schema   -> regenerate schema/fo76.json + fo76.ctda.json (needs ../TES5Edit)
@@ -24,44 +23,26 @@
 
 default: check
 
-# Full local esm check (matches the CI rust matrix for esm, including server-feature
-# tests and the generated-types drift guard: `gen-types` must produce no diff).
+# Full local esm check (matches the CI rust matrix for esm, including the
+# generated-types drift guard: `gen-types` must produce no diff).
 check: fmt clippy test gen-types schema-fmt-check
     git diff --exit-code -- ../esm-viewer/src/shared/generated/
 
-# Build BOTH release binaries in one shot: `esm` (the CLI, on PATH via
-# ~/.local/bin/esm) and `esm-server` (the daemon `esm` auto-spawns and reuses
-# across invocations). Use this, not a bare `cargo build --release`, whenever
-# you actually intend to run the CLI or query the daemon afterward.
-#
-# `server` is deliberately not a default Cargo feature (pulls in tokio/axum/
-# tower-http, real compile-time cost) — required-features on the esm-server
-# bin target means a plain `cargo build --release` silently produces no
-# esm-server at all, or leaves an EXISTING one un-rebuilt. The daemon's
-# self-heal (backend.rs's exe fingerprint) only catches a running daemon
-# whose *own* binary changed on disk since it started; it cannot detect
-# "esm-server was never rebuilt" — from its own binary's point of view,
-# nothing changed. A schema/decode change that only rebuilds the plain `esm`
-# binary leaves an old esm-server serving stale/wrong decode output through
-# the daemon with no error, while `--local` queries (which never touch
-# esm-server) are correct — a confusing split. `just release` closes that gap
-# by always building both together.
+# Build the release CLI that ~/.local/bin/esm points at.
 release:
-    cargo build --release --features server
+    cargo build --release
 
-# Verify formatting.
+# Verify formatting (bindings/napi included).
 fmt:
-    cargo fmt --check
+    cargo fmt --all --check
 
-# Lint with all features so the server bin is included.
+# Lint the whole workspace (bindings/napi included).
 clippy:
-    cargo clippy --all-targets -- -D warnings
-    cargo clippy --all-targets --features server -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
 
 # Run all tests (game-data integration tests are env-gated and skip silently when unset).
 test:
-    cargo test
-    cargo test --features server
+    cargo test --workspace
 
 # Regenerate the TypeScript mirrors of the N-API DTOs (ts-rs, see Cargo.toml
 # dev-dependencies) plus their hand-written companions (esm/tests/gen_bindings.rs:

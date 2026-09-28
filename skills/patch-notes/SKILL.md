@@ -100,10 +100,9 @@ full paths are not.
 
 ## 2. Run or reuse the pipeline
 
-Build the binaries first if missing: `test -x esm/target/release/esm && test -x
-esm/target/release/esm-server || (cd esm && cargo build --release --features server)` — cargo
-needs to run inside the crate dir, but both binaries land in `esm/target/release/`, alongside
-each other (required for daemon auto-spawn) and reachable from the repo root.
+Build the binary first if missing: `test -x esm/target/release/esm || (cd esm && cargo build
+--release)` — cargo needs to run inside the crate dir, and the binary lands in
+`esm/target/release/`, reachable from the repo root.
 
 Reuse the existing pipeline output iff `$OUT/manifest.json` exists, its
 `inputs.old_token`/`inputs.new_token` match `$OLD_TOKEN`/`$NEW_TOKEN`, and
@@ -145,12 +144,13 @@ after the pipeline finishes: an `_unresolved` count in the hundreds instead of l
 digits.) A `Localized flag flips` line is expected every few months and needs no action; see
 `kb/pipeline-gotchas.md`.
 
-## 3. Prewarm the daemon
+## 3. Build the cache
 
-Before any agent work, one warm call so the index loads once, up front:
+Before any agent work, build the new snapshot's cache once, up front, so no writer's first query
+waits on it:
 
 ```sh
-esm/target/release/esm --esm "$NEW_ESM" info
+esm/target/release/esm --esm "$NEW_ESM" cache build
 ```
 
 ## 4. Triage
@@ -182,7 +182,7 @@ ROLLOUT (`stats.rollout_numeric_excluded` in `triage.json`, the "Kept out (numer
 in `rollouts.md`), so a genuine balance change hiding inside a bulk shape tiers on its own.
 
 If `ambiguous.json` has entries, spawn **one assessor subagent** pointed at
-`$OUT/work/ambiguous.json` — restrict it to reading that input and writing the assessment, with no daemon access:
+`$OUT/work/ambiguous.json` — restrict it to reading that input and writing the assessment, with no `esm` access:
 
 > You are triaging Fallout 76 patch-diff bundles. Read `<OUT>/work/ambiguous.json`; for each
 > bundle you get the actual field-level before/after values. Assign each a tier: `deep` (real gameplay meaning —
@@ -251,8 +251,8 @@ python3 esm/tools/check_claims.py "$OUT" --old-esm "$OLD_ESM" --new-esm "$NEW_ES
 python3 esm/tools/check_coverage.py "$OUT"
 ```
 
-`check_claims.py` re-derives every `claims[]` entry from `comprehensive.json` (and the live
-daemon for values outside the diff). A `mismatch` is a wrong number; an `unverifiable` is a
+`check_claims.py` re-derives every `claims[]` entry from `comprehensive.json` (and live `esm`
+lookups for values outside the diff). A `mismatch` is a wrong number; an `unverifiable` is a
 number nobody can stand behind. Send each back to its writer with the checker's detail line,
 or chase it yourself and fix the draft AND its claim. A report with zero claims means the
 writer prompt drifted — re-dispatch that writer. `check_coverage.py` asserts every DEEP bundle

@@ -1199,7 +1199,7 @@ fn resolve_sel_rejects_entry_point_selector() {
 
 /// The explicit `RecordSel::EntryPoint` selector (`--entry-point`/`--ep`)
 /// resolves through the full `Op::ReferencedBy` dispatch path exactly like
-/// the CLI/daemon/N-API would use it.
+/// every serving surface uses it.
 #[test]
 fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
     let (path, db) = open_entry_point_db();

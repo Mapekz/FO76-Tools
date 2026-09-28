@@ -20,7 +20,7 @@ use crate::common::{assert_fully_decoded, decode_fixture};
 /// `decode_all_clean_types_fully` sweep once RACE is in `CLEAN_TYPES`.
 #[test]
 fn race_liberator_decodes_correctly() {
-    // Verbatim subrecords from `esm --local get <esm>
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x00002ECF --raw --json` (form_version 209).
     let result = decode_fixture(
         "RACE",
@@ -483,7 +483,7 @@ fn race_liberator_decodes_correctly() {
 /// (6 attacks) alongside the full RACE schema. Asserts fully decoded.
 #[test]
 fn race_mothman_decodes_correctly() {
-    // Verbatim subrecords from `esm --local get <esm>
+    // Verbatim subrecords from `esm get <esm>
     // --formid 0x0000D233 --raw --json` (form_version 209).
     let result = decode_fixture(
         "RACE",

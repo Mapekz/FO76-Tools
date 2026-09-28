@@ -5,8 +5,8 @@ name: Release
 # commit touched no source still publishes.
 #
 # The path list is "anything that changes a shipped binary", which is wider than
-# src/: schema/ (fo76.json, fo76.ctda.json, hardcoded_fo76.json), static/
-# (server HTML) and skills/esm-cli/SKILL.md are all include_str!-embedded.
+# src/: schema/ (fo76.json, fo76.ctda.json, hardcoded_fo76.json) and
+# skills/esm-cli/SKILL.md are include_str!-embedded, and build.rs digests schema/.
 # SKILL.md is markdown but load-bearing — do not add a blanket *.md exclusion.
 on:
   push:
@@ -15,7 +15,7 @@ on:
     paths:
       - 'esm/src/**'
       - 'esm/schema/**'
-      - 'esm/static/**'
+      - 'esm/build.rs'
       - 'esm/skills/**'
       - 'esm/Cargo.toml'
       - 'esm/Cargo.lock'
@@ -142,13 +142,10 @@ jobs:
       - name: assert pinned toolchains agree
         run: diff <(grep '^channel' esm/rust-toolchain.toml) <(grep '^channel' ba2/rust-toolchain.toml)
 
-      # esm-server has required-features = ["server"], so --features server is
-      # load-bearing, not cosmetic: the esm CLI is daemon-backed by default and
-      # spawns esm-server from alongside its own executable.  -p esm keeps the
-      # bindings/napi workspace member out of the build.
-      - name: build esm + esm-server
+      # -p esm keeps the bindings/napi workspace member out of the build.
+      - name: build esm
         working-directory: esm
-        run: cargo build --profile dist -p esm --features server --bin esm --bin esm-server
+        run: cargo build --profile dist -p esm --bin esm
 
       - name: build ba2
         working-directory: ba2
@@ -161,7 +158,6 @@ jobs:
         run: |
           set -euo pipefail
           "esm/target/dist/esm${EXT}"        --help > /dev/null
-          "esm/target/dist/esm-server${EXT}" --help > /dev/null
           "ba2/target/dist/ba2${EXT}"        --help > /dev/null
 
       - name: stage archive contents
@@ -176,7 +172,6 @@ jobs:
           name="fo76-tools-${VERSION}-${TARGET}"
           mkdir -p "dist/${name}"
           cp "esm/target/dist/esm${EXT}"        "dist/${name}/"
-          cp "esm/target/dist/esm-server${EXT}" "dist/${name}/"
           cp "ba2/target/dist/ba2${EXT}"        "dist/${name}/"
           cp LICENSE README.md                  "dist/${name}/"
           {
@@ -285,9 +280,7 @@ jobs:
             echo "| Windows 10/11 x86_64 | \`${win_asset}\` |"
             echo
             echo "Each archive unpacks to \`fo76-tools-${VERSION}-<target>/\` containing"
-            echo "\`esm\`, \`esm-server\`, \`ba2\`, \`BUILD_INFO.txt\`, \`LICENSE\` and \`README.md\`."
-            echo "Keep \`esm-server\` beside \`esm\`: the CLI is daemon-backed by default and"
-            echo "spawns it from its own directory."
+            echo "\`esm\`, \`ba2\`, \`BUILD_INFO.txt\`, \`LICENSE\` and \`README.md\`."
             if [[ "$CHANNEL" == "rolling" ]]; then
               echo
               echo "> The \`latest\` tag and these assets are replaced in place on every"
