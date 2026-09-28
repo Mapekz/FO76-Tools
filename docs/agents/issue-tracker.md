@@ -23,4 +23,4 @@ Run `gh issue view <number> --comments`.
 
 ## The only backlog
 
-GitHub Issues is the single backlog for all three subprojects — there is no separate notes file. A considered non-decision (a deliberate scope exclusion, a carve-out kept out of the table it looks like it should be in) is recorded as a present-tense comment next to the code it constrains, not filed as an issue and not parked in a notes file.
+GitHub Issues is the single backlog for all four projects — there is no separate notes file. A considered non-decision (a deliberate scope exclusion, a carve-out kept out of the table it looks like it should be in) is recorded as a present-tense comment next to the code it constrains, not filed as an issue and not parked in a notes file.

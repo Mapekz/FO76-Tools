@@ -14,8 +14,8 @@ zero-copy cache) instead of reloading the ESM per query.
 ## Requirements
 
 - [Bun](https://bun.sh) (package manager and test runner)
-- A Rust toolchain (to build the native addon this app depends on — see
-  [`../esm/AGENTS.md`](../esm/AGENTS.md) for the pinned version)
+- A Rust toolchain (to build the native addon this app depends on), pinned by the repo-root
+  `rust-toolchain.toml`
 - [`just`](https://github.com/casey/just) (optional; thin wrapper over the `bun run` scripts
   below)
 

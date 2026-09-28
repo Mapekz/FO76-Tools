@@ -46,7 +46,7 @@ Public API re-exported from `lib.rs`: `Database`, `FormId`, `FormIdBase`, `Resol
 - **Serialization**: manual little-endian byte reads (`u*::from_le_bytes`, `byteorder::ReadBytesExt`) for fixed headers; `serde`/`serde_json` for output; zero-copy `rkyv` sections (`src/rkyvcache.rs`) for the index cache. No `binrw`/`nom`.
 - **Schema editing**: `schema/fo76.json` is embedded at compile time (`include_str!`). Change the extractor (`tools/extractor/extract.py`) or add an entry to `schema/fo76.overrides.json` (`{record, op, path, reason, node}`, applied in order; every entry states why the game data diverges from xEdit); regenerate `fo76.json` rather than editing it directly.
 - **Decoder must never panic**: unknown/malformed bytes → raw hex fallback (`_raw`, `_unknown_record`, `_unmapped`). Do not add unwraps on untrusted input.
-- **Tests**: most tests live in `tests/` (one target per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ops.rs`, `decode_coverage.rs`). A target that outgrows one file becomes a directory with a `main.rs` declaring its submodules — `tests/decode_records/` splits its whole-record goldens by record family (`weapons.rs`, `perks.rs`, `races.rs`, …), and `cargo test --test decode_records` still selects the whole binary. Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode/mod.rs`, `host.rs`'s `Opener`/`FakeHost` reopen and race tests, `diff.rs`'s `lcs_align` alignment/safety-cap tests). Synthetic tests use in-memory byte buffers. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
+- **Tests**: most tests live in `tests/` (one target per module: `wildcard.rs`, `curves.rs`, `diff.rs`, `reader.rs`, `ops.rs`, `decode_coverage.rs`). A target that outgrows one file becomes a directory with a `main.rs` declaring its submodules — `tests/decode_records/` splits its whole-record goldens by record family (`weapons.rs`, `perks.rs`, `races.rs`, …), and `cargo test --test decode_records` still selects the whole binary. Tests that exercise private or `pub(crate)` symbols stay colocated in `#[cfg(test)]` blocks (`tree.rs`, `decode/mod.rs`, `host.rs`'s `Opener`/`FakeHost` reopen and race tests, `diff/array_diff.rs`'s `lcs_align` alignment/safety-cap tests). Synthetic tests use in-memory byte buffers. Integration tests that need game data skip silently when the relevant env var is unset (see `tests/diff.rs`, `tests/decode_coverage.rs`).
 
 ## Critical Invariants — Do Not Break
 
@@ -73,7 +73,7 @@ and exports in Rust; generated TypeScript is not hand-edited.
 
 ## Game Data
 
-Game data files (`*.esm`, `*.ba2`, and `Index`'s shared `esm_cache/` directory holding its five rkyv cache sections `tree`/`forms`/`edid`/`search`/`xref`, plus `progress.rs`'s `.build.lock`/`.build.json` sidecar files) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via `--esm`/`FO76_ESM_PATH`/`Database::open(path)`.
+Game data files (`*.esm`, `*.ba2`, and the shared `esm_cache/` directory of rkyv cache sections listed in [README.md's cache section](README.md#cache), plus `progress.rs`'s `.build.lock`/`.build.json` sidecar files) are **gitignored, non-redistributable**. Never commit them; never hardcode their paths in source — always passed at runtime via `--esm`/`FO76_ESM_PATH`/`Database::open(path)`.
 
 ## CLI usage knowledge (for agents querying game data)
 
@@ -91,7 +91,7 @@ Drift subrecords newer than the TES5Edit reference are handled as follows:
 - **CTDA function table** — generated to `schema/fo76.ctda.json` from Pascal; loaded at runtime in `src/ctda.rs`.
 - **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `src/decode/mod.rs`.
 - **Fragmented `VMAD`** (QUST, INFO, PACK, PERK, SCEN, TERM) — the extractor carries xEdit's `wbVMADFragmented*` layout as the vmad member's `fragments`; `src/decode/vmad.rs` reads that Script Fragments tail (plus QUST's Aliases).
-- **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is now in `CLEAN_TYPES`.
+- **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is in `CLEAN_TYPES`.
 - **RACE `CMDT`/`CMDN`/`CMDI`/`CMDE`+`PGTF`** — the Pet Commands rarray and the Progression Track pointer, appended by `schema/fo76.overrides.json`; absent from every `wbDefinitions*.pas`.
 - **PGTR (whole record)** — a record-level `replace` override (empty `path`): no TES5Edit definition exists; field names come from the game's own UI model in the decompiled Scaleform movie `interface/petprogressiontrackmenu.swf`; fields that model doesn't name stay `Unknown` with the observed constant in a `_comment`. See `docs/adr/0012-whole-record-schema-overrides.md`.
 

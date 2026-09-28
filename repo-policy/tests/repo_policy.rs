@@ -111,11 +111,17 @@ impl Repo {
     /// is a repo path that does not resolve.
     fn check_citation(&self, from: &str, token: &str) -> Option<String> {
         let token = clean(token)?;
-        let first = token.split('/').next()?;
+        // The leading `./`/`../` segments plus the first named one.
+        let named = token.split('/').position(|s| s != "." && s != "..")?;
+        let first = token
+            .split('/')
+            .take(named + 1)
+            .collect::<Vec<_>>()
+            .join("/");
         let mut claimed = false;
         let mut dir = Path::new(from).parent();
         while let Some(d) = dir {
-            if let (Some(head), Some(full)) = (normalize(d, first), normalize(d, &token))
+            if let (Some(head), Some(full)) = (normalize(d, &first), normalize(d, &token))
                 && !head.is_empty()
                 && self.exists(&head)
             {
@@ -149,7 +155,10 @@ fn normalize(dir: &Path, rel: &str) -> Option<String> {
 /// decoration, a `:line` suffix and a `#fragment` are stripped; absolute,
 /// home-relative, URL, glob and placeholder tokens are skipped.
 fn clean(token: &str) -> Option<String> {
-    let t = token.trim_matches(|c: char| "`*\"'(),;:.!?[]".contains(c));
+    let t = token
+        .trim_start_matches(|c: char| "`*\"'(),;:!?[".contains(c))
+        .trim_end_matches(|c: char| "`*\"'(),;:.!?]".contains(c));
+    let t = t.strip_suffix("'s").map_or(t, |t| t.trim_end_matches('`'));
     let t = t.split('#').next()?;
     let t = match t.rsplit_once(':') {
         Some((head, tail)) if tail.chars().all(|c| c.is_ascii_digit() || c == '-') => head,
@@ -316,6 +325,8 @@ fn clean_accepts_paths_and_rejects_prose() {
         Some("docs/adr/0001-x.md")
     );
     assert_eq!(clean("esm/"), None);
+    assert_eq!(clean("`src/lib.rs`'s").as_deref(), Some("src/lib.rs"));
+    assert_eq!(clean("(../esm/src)").as_deref(), Some("../esm/src"));
     for prose in [
         "/tmp/x",
         "~/dev",
@@ -335,4 +346,34 @@ fn normalize_folds_dots_and_refuses_to_escape() {
         Some("esm/src/x.rs")
     );
     assert_eq!(normalize(Path::new(""), "../x"), None);
+}
+
+#[test]
+fn citations_resolve_from_the_citing_directory_or_an_ancestor() {
+    let files = [
+        "esm/src/diff/mod.rs",
+        "esm/docs/adr/0001.md",
+        "esm-viewer/src/main.ts",
+    ];
+    let repo = Repo {
+        root: repo_root(),
+        files: files.map(str::to_string).to_vec(),
+        entries: files
+            .iter()
+            .flat_map(|f| f.match_indices('/').map(|(i, _)| &f[..i]).chain([*f]))
+            .map(str::to_string)
+            .collect(),
+    };
+    let from = "esm/docs/adr/0001.md";
+    assert_eq!(repo.check_citation(from, "`src/diff/mod.rs`"), None);
+    assert_eq!(
+        repo.check_citation(from, "../../../esm-viewer/src/main.ts"),
+        None
+    );
+    assert!(repo.check_citation(from, "`src/diff.rs`").is_some());
+    assert!(
+        repo.check_citation(from, "../../../esm-viewer/src/addon.ts")
+            .is_some()
+    );
+    assert_eq!(repo.check_citation(from, "read/write"), None);
 }

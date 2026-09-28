@@ -1,6 +1,6 @@
 # FormID input is hex-first with no implicit decimal fallback; `--decimal` is a client-side, flag-gated override
 
-Status: accepted (2026-08-27)
+Status: accepted (2026-08-27). Amended by [ADR 0013](0013-in-process-only.md): the daemon, HTTP routes and MCP tools it mentions no longer exist; selectors resolve in `ops::resolve_sel`.
 
 `parse_formid` (`src/formid.rs`) previously read a bare (no `0x` prefix) all-hex-digit token as
 hex only when it contained at least one ASCII letter — a purely numeric-looking token like

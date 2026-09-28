@@ -1,12 +1,13 @@
 # FO76-Tools
 
-An umbrella for independent Fallout 76 tooling. The Rust crates (`esm`, its `esm-napi` addon, and `ba2`) share one Cargo workspace at the repo root, building into `target/`; the TypeScript and Python projects have their own toolchains. The one cross-project dependency is `esm-viewer/`, which consumes the native addon built from `esm/bindings/napi`.
+An umbrella for independent Fallout 76 tooling. The Rust crates (`esm`, its `esm-napi` addon, and `ba2`) share one Cargo workspace at the repo root, building into `target/`; the TypeScript and Python projects have their own toolchains. `esm-viewer/` consumes the native addon built from `esm/bindings/napi`, and `patch-notes/` drives the `esm` CLI.
 
 | Project | Language | Description |
 |---|---|---|
-| [`ba2/`](ba2/README.md) | Rust | CLI and library for reading, extracting, and creating Bethesda BA2/BTDX GNRL archives (FO76 LZ4 / FO4 zlib) |
+| [`ba2/`](ba2/README.md) | Rust | CLI and library for reading, extracting, and creating Bethesda BA2/BTDX archives, GNRL and DX10 (FO76 LZ4 / FO4 zlib) |
 | [`esm/`](esm/README.md) | Rust | Read-only FO76 ESM engine: the `esm` CLI and the `esm-napi` N-API addon |
 | [`esm-viewer/`](esm-viewer/) | TypeScript / Electron | "FO76 ESM Viewer" desktop GUI for browsing, searching, and diffing game records; built on `esm-napi` |
+| [`patch-notes/`](patch-notes/AGENTS.md) | Python | Patch-notes pipeline turning two ESM snapshots into a Discord post, and the agent skill that writes it |
 
 Deferred work for every subproject is tracked in [GitHub Issues](https://github.com/Mapekz/FO76-Tools/issues).
 

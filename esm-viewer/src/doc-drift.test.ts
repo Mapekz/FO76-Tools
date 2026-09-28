@@ -1,21 +1,17 @@
-// Doc-drift guard: the esm-viewer analog of the sibling Rust crates'
-// tests/doc_drift.rs (see ../ba2/tests/doc_drift.rs and ../esm/tests/doc_drift.rs).
-// Docs are checked against ground truth on disk / in code; failures name the
-// exact drifted token and say which side to fix. Skip-lists below start
-// EMPTY — a hit means fix the doc (or the code), not add an exception.
+// Doc-drift guard: the viewer's docs against ground truth in code. Failures
+// name the exact drifted token and say which side to fix. Skip-lists below
+// start EMPTY — a hit means fix the doc (or the code), not add an exception.
+// Paths and links are checked repo-wide by repo-policy (`just policy`).
 //
-// Five checks:
-//   1. Every path-shaped backtick token in README.md and AGENTS.md resolves on disk.
-//   2. Every `bun run <script>` / `just <recipe>` mentioned in README.md,
+// Three checks:
+//   1. Every `bun run <script>` / `just <recipe>` mentioned in README.md,
 //      AGENTS.md, or the justfile names a real package.json script / justfile
 //      recipe; no npm/npx/pnpm invocation is documented as a command to run.
-//   3. DESIGN.md's frontmatter `colors:` map and theme.ts's `colors` const
+//   2. DESIGN.md's frontmatter `colors:` map and theme.ts's `colors` const
 //      agree in both directions (same tokens, same hex, theme.ts is truth).
-//   4. No raw hex/rgba color literal exists outside theme.ts.
-//   (5. AGENTS.md's architecture-table paths are covered by check 1's own
-//       extractor — see the "architecture table" case in that test.)
+//   3. No raw hex/rgba color literal exists outside theme.ts.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, test } from 'bun:test'
 
@@ -55,7 +51,7 @@ function stripTrailingPunct(tok: string): string {
   return tok.replace(/[,.;:)\]]+$/, '')
 }
 
-// ── Check 2: command references are real ────────────────────────────────
+// ── Check 1: command references are real ────────────────────────────────
 
 function findBunRunScripts(line: string): string[] {
   const toks = line.trim().split(/\s+/)
@@ -176,7 +172,7 @@ describe('command references are real', () => {
   })
 })
 
-// ── Check 3: theme.ts <-> DESIGN.md palette lockstep ────────────────────
+// ── Check 2: theme.ts <-> DESIGN.md palette lockstep ────────────────────
 
 function kebabToCamel(name: string): string {
   return name.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase())
@@ -249,7 +245,7 @@ test('theme.ts and DESIGN.md color palette are in lockstep', () => {
   expect(failures).toEqual([])
 })
 
-// ── Check 4: no raw color literals outside theme.ts ─────────────────────
+// ── Check 3: no raw color literals outside theme.ts ─────────────────────
 
 const HEX_COLOR_RE = /#[0-9a-fA-F]{3,8}\b/
 const RGBA_RE = /rgba?\(/

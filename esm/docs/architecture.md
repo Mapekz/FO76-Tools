@@ -74,7 +74,7 @@ record definitions (`Core/wbDefinitionsFO76.pas`, `Core/wbDefinitionsCommon.pas`
 "Coverage drift handling" table — LVLI `LVLD`, REFR `MCND`, etc.). `tools/extractor/audit.py
 --gate` is the parity gate: it applies the same overrides to the Pascal-derived tree and fails
 when the shipped schema diverges from xEdit in a way no override (and its `reason`) explains. Fix decode coverage by changing the extractor or the overrides file — never by
-hand-editing the 2.3 MB generated JSON.
+hand-editing the generated JSON.
 
 ## Index & cache lifecycle
 
@@ -172,8 +172,8 @@ Beyond record decode, five modules implement FO76-specific analysis over an alre
 
 **`src/diff/`** — `diff_databases_with(a, b, opts)` (`mod.rs`) compares two `Database`s: a
 byte-equality fast path per record, then a sparse `{from, to}` JSON diff (`json_diff`) for
-records that changed, split compute the same shape `decode/vmad.rs`/`walk/` use into two
-self-contained submodules. `array_diff.rs` is every array field's per-element treatment —
+records that changed. Two self-contained submodules hold the rest, the same split
+`decode/vmad.rs` and `walk/` use. `array_diff.rs` is every array field's per-element treatment —
 `json_diff`'s array arm runs through `array_diff`, which picks one of four pairing strategies:
 `keyed` (paired by an identity `element_key_spec` proposes from a sample element — composing
 every FormID-shaped member, or a handful of named heuristics like quest alias IDs),
@@ -259,8 +259,8 @@ only through the CLI.
 | Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too |
 | Change diff noise suppression | `src/diff/noise.rs` (`suppress_record` and the stage it names) / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
-| Add an N-API method | `bindings/napi/src/lib.rs`, then `just gen-types` and `cd bindings/napi && bun run build` |
-| Change a cache section's on-disk shape | its `impl SectionSpec` block (next to the type, in `index.rs` or `tree.rs`) and bump `index::CACHE_VERSION` |
+| Make an op reachable from the viewer | nothing in `bindings/napi/`: `EsmHost::run` takes any `Op`; run `just gen-types` and add it to the viewer's `RUNNABLE_OPS` (see the root validation map) |
+| Change a cache section's on-disk shape | its `impl SectionSpec` block (next to the type, in `index.rs`, `strings.rs` or `curves.rs`) and bump `index::CACHE_VERSION` |
 | Change OMOD mechanism classification | `src/chase.rs` |
 | Change LVLI drop-probability math | `src/lvli.rs` |
 | Change how `walk` renders a digest | `src/walk/render.rs` (never the compute side, `mod.rs`, for pure formatting changes) |

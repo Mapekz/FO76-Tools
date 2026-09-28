@@ -1,6 +1,6 @@
 # walk is the interactive surface; chase is the JSON-only pipeline evidence contract
 
-Status: accepted (2026-07-31)
+Status: accepted (2026-07-31). Amended by [ADR 0013](0013-in-process-only.md): every surface runs ops in-process through `host::Host`; the daemon, `--local` and the MCP server it mentions no longer exist, and the addon's class is `EsmHost`.
 
 `walk` and `chase` began as ports of two prototypes (a downstream consumer's TypeScript
 record walker and patch-notes' `chase.py`) and overlapped heavily: on four of chase's five

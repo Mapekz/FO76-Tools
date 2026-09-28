@@ -5,7 +5,7 @@ Scoped Electron guidance. Shared policy and validation mapping live in
 
 "FO76 ESM Viewer" is a desktop GUI over the `esm` Rust crate's record browser: it lists,
 searches, and displays decoded FO76 record data. It is **strictly read-only** — no write
-path exists, matching the `esm/` core invariant (see [`../esm/AGENTS.md`](../esm/AGENTS.md)).
+path exists, per the repo-wide read-only rule in [`../AGENTS.md`](../AGENTS.md).
 Do not add any feature that mutates an ESM file.
 
 See [`README.md`](README.md) for the human-facing overview (what this app is, requirements,
@@ -90,7 +90,7 @@ plugins; `style` stays off since `oxfmt` owns formatting. Type-aware linting
 (`oxlint-tsgolint`) is intentionally not wired up — it's a separate devDependency
 regardless of the `typescript` version installed, since TS 7.0 ships no programmatic
 compiler API for it to call. `oxlint --type-check` is also intentionally not used as a
-`tsc` replacement — this app's two projects (divergent `lib`/`jsx`) are the shape oxlint's
+`tsc` replacement — this app's three projects (divergent `lib`/`jsx`) are the shape oxlint's
 single-program discovery is least tested against.
 
 `.oxfmtrc.json` sets `semi: false` / `singleQuote: true` to match the pre-existing house

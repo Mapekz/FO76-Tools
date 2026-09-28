@@ -54,7 +54,7 @@ patchnotes_lib.py manifest helpers    → manifest.json
 `ambiguous` — against `patch_notes_tiers.json`'s rules, writing `work/triage.json`,
 `work/deep-slice.json`, `work/ambiguous.json`, `work/brief-lines.md`, and `work/rollouts.md`.
 `esmcli`'s `EsmGateway` is the one seam every stage uses to reach the `esm` CLI — `bulk_get`,
-`list_type`, `refs`, `diff` — so nothing else in `pn/` shells out to `esm`, apart from the
+`search`, `refs`, `diff` — so nothing else in `pn/` shells out to `esm`, apart from the
 cache build in `workflow.prepare`.
 
 The skill drives everything through four verbs in `pn/workflow.py`, each printing a JSON

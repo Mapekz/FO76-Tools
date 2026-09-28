@@ -23,7 +23,7 @@ default: check
 check: fmt clippy test gen-types schema-fmt-check
     git diff --exit-code -- ../esm-viewer/src/shared/generated/
 
-# Build the release CLI that ~/.local/bin/esm points at.
+# Build the release CLI, ../target/release/esm (the workspace target).
 release:
     cargo build --release -p esm
 
@@ -42,7 +42,7 @@ test:
 # Regenerate the TypeScript mirrors of the N-API DTOs (ts-rs, see Cargo.toml
 # dev-dependencies) plus their hand-written companions (esm/tests/gen_bindings.rs:
 # recordTypeNames.generated.ts from schema/fo76.json, markers.generated.ts from
-# src/decode.rs's `markers` module) into ../esm-viewer/src/shared/generated/.
+# src/decode/mod.rs's `markers` module) into ../esm-viewer/src/shared/generated/.
 # TS_RS_EXPORT_DIR/TS_RS_LARGE_INT are set globally in ../.cargo/config.toml
 # (not just here) so a bare `cargo test` can never fall back to ts-rs's default
 # `./bindings` dir, which would collide with the tracked `bindings/napi/` crate.
@@ -100,10 +100,8 @@ tools-check: tools-test tools-lint
 
 # Lint + typecheck the Python tooling, matching the CI `python` job.
 #
-# ruff and ty run through uvx and are never imported by the tools, so
-# tools/ stays stdlib-only at runtime. Versions are pinned to match CI exactly
-# (ty is a 0.0.x preview — an unpinned upgrade could disagree with CI).
-# Config lives in pyproject.toml ([tool.ruff] / [tool.ty] only).
+# ruff and ty run through uvx at the versions CI pins (see the `python` job in
+# ../.github/workflows/ci.yml); config lives in pyproject.toml.
 [doc("ruff + ty over tools/")]
 tools-lint:
     uvx ruff@0.15.22 check tools/

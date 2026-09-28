@@ -1,6 +1,6 @@
 # Cache-build progress and cross-process dedup live on the filesystem, not the daemon
 
-Status: accepted (2026-08-04)
+Status: accepted (2026-08-04). Amended by [ADR 0013](0013-in-process-only.md): the daemon, `--local` and `RemoteBackend` it contrasts with no longer exist; the filesystem lease and heartbeat stand, and there are seven cache sections.
 
 A cold `esm get/walk/refs/search` against an ESM with no `esm_cache/` yet blocks for tens of
 seconds to a couple of minutes (`Index::build`'s `build_tree_and_forms`, or one of the three lazy

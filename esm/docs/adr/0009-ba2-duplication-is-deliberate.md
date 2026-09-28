@@ -2,7 +2,7 @@
 
 Status: accepted (2026-08-13)
 
-`esm/src/ba2.rs` (224 lines) is a minimal, read-only, GNRL-only BA2 reader: it parses the same
+`esm/src/ba2.rs` is a minimal, read-only, GNRL-only BA2 reader: it parses the same
 24-byte BTDX header, the same 36-byte GNRL record layout, and calls the same LZ4 raw-block
 decompressor as the sibling `ba2` crate's `src/format.rs` + `src/reader.rs` + `src/compress.rs`.
 `esm`'s only two consumers of this module are `src/strings.rs` (`Localization::from_ba2`) and
@@ -10,7 +10,7 @@ decompressor as the sibling `ba2` crate's `src/format.rs` + `src/reader.rs` + `s
 for "open this archive, read this named entry by path." `ba2/src/lib.rs`'s public
 `Ba2Archive::open`/`Ba2Archive::read` already cover that exact surface.
 
-Two crates in the same workspace-adjacent repo independently reimplement the same binary format —
+Two crates in the same repository independently reimplement the same binary format —
 the duplication was evaluated and kept, not left by `esm` forgetting a
 `ba2 = { path = "../ba2" }` dependency.
 
@@ -47,8 +47,8 @@ Two concrete reasons, both real behavior/build-graph differences:
   `ba2/src/bin/cli.rs` — depend on `tempfile` (writer.rs's two-pass temp files), `globset`
   (extract.rs's/cli.rs's `--filter` glob matching), and `walkdir` (cli.rs's directory walk for
   `create`). All three are unconditional entries in `ba2/Cargo.toml`'s `[dependencies]`, not gated
-  behind a Cargo feature `esm` could opt out of. `esm` never writes a BA2 (see the crate's own
-  "READ-ONLY: no ESM write path exists" invariant) and never will — depending on `ba2` today would
+  behind a Cargo feature `esm` could opt out of. `esm` never writes a BA2 (the root `AGENTS.md`
+  makes ESM read-only) and never will — depending on `ba2` today would
   add `tempfile`/`globset`/`walkdir` to `esm`'s build graph for zero runtime benefit.
 
 ## Consequences

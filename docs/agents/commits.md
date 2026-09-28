@@ -17,10 +17,9 @@ subjects stay as they are.
   change that lands in two subprojects names both (`docs(esm/ba2): ...`). Omit the scope only when
   the change is genuinely repo-wide.
 - **Breaking changes**: append `!` after the type/scope (`feat(esm)!: ...`) and say what breaks in
-  the body. Both crates only read `.esm` files, so what actually breaks for a caller is a CLI flag
-  or JSON output shape, the N-API bindings, an MCP tool, or the library's public Rust API.
-- **Issue refs** go in the subject tail, `(#29)`. The older `(issue #27)` spelling is legacy; don't
-  write new ones that way.
+  the body. What breaks for a caller is a CLI flag or JSON output shape, an op the N-API addon
+  runs, a patch-notes verb or artifact, or a crate's public Rust API.
+- **Issue refs** go in the subject tail, `(#29)`. Not `(issue #27)`.
 - Body lines explain why, not what the diff already shows — the same rule the code comments in this
   repo follow.
 

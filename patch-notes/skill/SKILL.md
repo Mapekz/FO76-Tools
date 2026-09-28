@@ -19,8 +19,8 @@ mechanical stage (diffing, bundling, linting, triage) is deterministic Python; y
 steps 1-7 below. Run every command from the repo root. The pipeline is
 `python3 patch-notes/cli.py <verb>` (below, `pn <verb>`); `prepare`, `merge-assessment`,
 `gate` and `publish` each print a JSON summary on stdout. The `esm` binary is
-`target/release/esm`; build it first if missing:
-`test -x target/release/esm || cargo build --release -p esm`.
+`target/release/esm`; build it first, which is a no-op when it is current:
+`cargo build --release -p esm`.
 
 Use the client's available delegation capability for the roles below; tool names
 are not part of this procedure. If delegation is unavailable, perform triage and

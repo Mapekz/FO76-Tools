@@ -18,10 +18,8 @@ check: test lint
 test:
     python3 -m unittest discover -s tests -t .
 
-# ruff and ty run through uvx and are never imported by the pipeline, so pn/
-# stays stdlib-only at runtime. Versions are pinned to match CI exactly (ty is
-# a 0.0.x preview — an unpinned upgrade could disagree with CI). Config lives
-# in pyproject.toml ([tool.ruff] / [tool.ty] only).
+# ruff and ty run through uvx at the versions CI pins (see the `python` job in
+# ../.github/workflows/ci.yml); config lives in pyproject.toml.
 #
 # Lint and typecheck pn/, tests/ and cli.py.
 lint:

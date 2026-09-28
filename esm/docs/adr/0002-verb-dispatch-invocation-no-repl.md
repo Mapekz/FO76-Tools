@@ -1,6 +1,6 @@
 # Invocation mode is decided by argv shape alone — no REPL, no `-p`
 
-Status: accepted (2026-07-31)
+Status: accepted (2026-07-31). Amended by [ADR 0013](0013-in-process-only.md): every subcommand runs in-process; the daemon and `--local` it mentions no longer exist.
 
 `esm` was originally modelled on single-verb agent CLIs (`claude -p`, `codex`): a `-p`/`--print`
 flag meant "run once and exit", its absence meant "open an interactive session". That model never

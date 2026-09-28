@@ -1,30 +1,13 @@
-/target
-
 # Game data (large, not redistributable — obtain from your own install)
 *.esm
 esm_cache/
 *.ba2
 Data/
 
-# Local usage notes (machine-specific paths)
-*.local.md
+# Loose localization string tables (game data, not redistributable)
+/strings/
 
 # napi binding build output (platform-specific binary)
 bindings/napi/*.node
 bindings/napi/node_modules/
 *.tsbuildinfo
-
-# Generated patch-note outputs (date-stamped, non-redistributable)
-patch_notes_*.md
-patch_*_to_*/
-discord_chunks*/
-
-# Loose localization string tables (game data, not redistributable)
-/strings/
-
-# Python bytecode
-__pycache__/
-
-# Claude Code local state (skills/agents ARE tracked)
-/.claude/settings.local.json
-/.claude/*.lock

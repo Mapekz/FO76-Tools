@@ -15,17 +15,13 @@ esm/
 ```
 
 The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the sibling
-[`../esm-viewer/`](../esm-viewer/) directory, not in this crate.
+[`../esm-viewer/`](../esm-viewer/README.md) directory and builds the addon itself.
 
 ## Requirements
 
-- Toolchain pinned by the repo-root `rust-toolchain.toml` (rustup installs it automatically).
+- Toolchain pinned by the repo-root `rust-toolchain.toml` (rustup installs it automatically);
+  the MSRV policy is in the [root AGENTS.md](../AGENTS.md#dependencies).
 - Edition **2024**.
-- `rust-version` in `Cargo.toml` tracks the pinned toolchain rather than the true language
-  floor. Edition 2024 selects Cargo's MSRV-aware dependency resolver, which treats `rust-version` as
-  a ceiling on dependency selection — a lower value would silently hold dependencies back at older
-  releases. This crate has no external consumers, so there is nothing to gain from a low MSRV. The
-  `bindings/napi` member declares the same value.
 
 ## Build
 
@@ -141,7 +137,7 @@ CLI, `esm batch` and the N-API addon share.
 
 ## Schema
 
-`schema/fo76.json` (2.3 MB) is embedded at compile time via `include_str!`. It covers all 183 FO76 record types — 182 derived from xEdit Pascal definitions plus `PGTR`, hand-authored whole because xEdit has no definition for it — and every type currently decodes `full` (no unmapped subrecords against the reference ESM); test coverage is 3 `robust` (hand-picked, end-to-end: `NPC_`, `PERK`, `WEAP`), 61 `basic`, and 119 `none` (still covered by the exhaustive env-gated sweep test). An `fo76.overrides.json` is merged on top for manual corrections (newer-than-reference drift subrecords TES5Edit doesn't define — see `AGENTS.md`'s "Coverage drift handling").
+`schema/fo76.json` is embedded at compile time via `include_str!`. It covers all 183 FO76 record types — 182 derived from xEdit Pascal definitions plus `PGTR`, hand-authored whole because xEdit has no definition for it — and every type decodes `full` (no unmapped subrecords against the reference ESM), which the env-gated exhaustive sweep in `tests/decode_coverage.rs` checks. An `fo76.overrides.json` is merged on top for manual corrections (newer-than-reference drift subrecords TES5Edit doesn't define — see `AGENTS.md`'s "Coverage drift handling").
 
 Decode status is measured against a reference ESM via `esm coverage`; run it (or `esm coverage --type <SIG>`) for live per-type status instead of a checked-in snapshot.
 
@@ -177,7 +173,7 @@ mmap'd file inside `esm_cache/` (one shared directory sibling to the ESM), read 
 `Database::open` whenever missing or stale:
 
 - **`.esm.forms`** (~200 MiB) — FormID→[`RecordMeta`] table plus the per-type FormID directory.
-- **`.esm.tree`** (~140 MiB) — the GRUP structural tree (`tree` / `list-groups`).
+- **`.esm.tree`** (~140 MiB) — the GRUP structural tree (`tree`, and the viewer's group listing).
 - **`.esm.lstrings`** (~15 MiB) — the three localization string tables.
 - **`.esm.curves`** (~1 MiB) — every CURV record's curve points.
 
@@ -199,31 +195,6 @@ missing section once and the rest wait for it. The CLI runs each cold build as a
 `xref` (a full schema decode of every record) takes about a minute; every builder publishes a
 live heartbeat any process can read instantly via `esm cache status [--json]` — see
 `docs/adr/0003-cache-build-progress-heartbeat.md`. The whole `esm_cache/` directory is gitignored.
-
-## Electron GUI
-
-The sibling `../esm-viewer/` directory (repo root, not inside `esm/`) contains the FO76 ESM Viewer, an Electron desktop application. It depends on the `bindings/napi/` N-API addon (`@fo76/esm-napi`) which must be compiled from Rust before the app can run.
-
-### Building the native addon
-
-Before running the Electron app for the first time, build the N-API addon:
-
-```sh
-cd bindings/napi
-bun install
-bun run build          # or: bun run build:debug for a debug build
-```
-
-This compiles the Rust library into `bindings/napi/esm-napi.<platform>.node` and is required before `bun install` / `bun run dev` in `../esm-viewer/`.
-
-### Running the app
-
-```sh
-cd ../esm-viewer
-bun install
-bun run dev            # start in development mode
-bun run build          # production build
-```
 
 ## Further reading
 

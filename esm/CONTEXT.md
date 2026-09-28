@@ -87,8 +87,8 @@ _Avoid_: treating a bare numeric property id as unambiguous across spaces
 **Element identity**:
 The field(s) that identify one element of a decoded rarray across two snapshots, so a diff
 can pair old/new elements instead of reporting the whole array wholesale. Owned solely by
-`diff.rs::element_key_spec` — `patchnotes_lib.py` normalizes and renders whatever Rust
-decided, it does not decide identity itself. `element_key_spec` only *proposes* an identity
+`diff/array_diff.rs::element_key_spec` — `patch-notes/pn/change_entries.py` renders whatever
+Rust decided, it does not decide identity itself. `element_key_spec` only *proposes* an identity
 from one sample element's shape; `widen_key_spec_until_unique` then validates it against the
 actual pair of arrays, widening with further scalar fields (or falling back to an **unkeyed
 array**) when the proposal turns out non-unique on either side — a key is not treated as
