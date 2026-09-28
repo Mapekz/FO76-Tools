@@ -17,13 +17,15 @@ code; see [the duplication decision](esm/docs/adr/0009-ba2-duplication-is-delibe
 
 ## Validation map
 
-Use each subproject's `just check` for its full local gate; its `justfile` owns
-the commands. Select checks for the changed code rather than rerunning every
-subproject for unrelated edits.
+Each subproject's `justfile` owns its commands; the root `justfile` loads them as
+modules (`just esm::check`, `just viewer::check`, …) and `just` at the root runs
+every project's check, the same recipes CI runs. Select checks for the changed code
+rather than rerunning every subproject for unrelated edits.
 
-- ESM schema, extractor, or decode-coverage changes also need `just audit`.
-  It reads `FO76-Tools/TES5Edit`, a symlink to the sibling workspace checkout.
-- ESM schema-tooling (`esm/tools/`) changes need `just tools-test` and `just tools-lint`.
+- ESM schema, extractor, or decode-coverage changes also need `just audit`
+  (`just esm::audit`: the parity gate plus the schema and hardcoded-forms drift
+  guards). It reads `FO76-Tools/TES5Edit`, a symlink to the sibling workspace checkout.
+- ESM schema-tooling (`esm/tools/`) changes need `just esm::tools-check`.
 - ESM's `just check` covers `bindings/napi` too; rebuild the addon with
   `bun run build` from `esm/bindings/napi` after changing it.
 - DTO or `Op` changes need `just gen-types` from `esm/`; it regenerates

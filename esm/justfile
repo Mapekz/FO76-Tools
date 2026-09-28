@@ -1,30 +1,25 @@
-# Run from esm/.  Local check suite for the esm Rust crate; closely matches the CI
-# rust job (fmt / clippy / test / generated-TypeScript drift guard) but is not
-# identical — see below.
+# The esm crate's recipes: run from esm/, or as `just esm::<recipe>` from the
+# repo root (the root justfile's `just` runs every project's check, as CI does).
 # Install `just` once: cargo install just
-#
-# CI also runs (not covered by `just check`):
-#   - schema parity audit (`just audit`, separate recipe; needs ../TES5Edit)
-#   - Python schema-tooling tests (`just tools-test`) + lint/typecheck (`just tools-lint`)
-#   - esm-viewer lint/format/typecheck/test (cd ../esm-viewer && just check)
-#   - napi native-addon build + smoke
 #
 # Usage:
 #   just          -> fmt + clippy + test + gen-types + drift check + schema-fmt-check (full local esm pass)
 #   just release  -> build the release CLI (../target/release/esm, the workspace target)
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
-#   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
+#   just audit    -> schema parity gate plus schema/hardcoded drift guards (needs ../TES5Edit)
 #   just schema   -> regenerate schema/fo76.json + fo76.ctda.json (needs ../TES5Edit)
 #   just schema-fmt -> canonicalize schema/fo76.overrides.json in place
 #   just schema-fmt-check -> verify schema/fo76.overrides.json is already canonical (also enforced in CI)
 #   just tools-test -> Python schema-tooling tests: extractor, curve lookup (also enforced in CI)
 #   just tools-lint -> ruff + ty over tools/ (also enforced in CI)
+#   just tools-check -> tools-test + tools-lint
 #   just test-esm /path/a.esm /path/b.esm  -> env-gated diff integration test
 
 default: check
 
 # Full local esm check (matches the CI rust matrix for esm, including the
 # generated-types drift guard: `gen-types` must produce no diff).
+[doc("fmt, clippy, test, generated-types drift and schema formatting")]
 check: fmt clippy test gen-types schema-fmt-check
     git diff --exit-code -- ../esm-viewer/src/shared/generated/
 
@@ -53,17 +48,26 @@ test:
 # `./bindings` dir, which would collide with the tracked `bindings/napi/` crate.
 # --test-threads=1: some of these tests share a target directory (mkdir +
 # sibling files) and ts-rs itself recommends serializing export tests.
+[doc("Regenerate the TypeScript DTO mirrors in ../esm-viewer/src/shared/generated/")]
 gen-types:
     cargo test -p esm export_bindings -- --test-threads=1
 
-# Schema parity audit against the Pascal source in ../TES5Edit.
+# Schema parity audit against the Pascal source in ../TES5Edit, then the drift
+# guards: regenerating the schema and the hardcoded-forms table (which drives
+# the release CLI) must change no committed file.
 # Expects ../TES5Edit = Eckserah/TES5Edit @ 80a2c3c6 (branch dev-4.1.6).
 #   git clone https://github.com/Eckserah/TES5Edit.git ../TES5Edit && git -C ../TES5Edit checkout 80a2c3c6
-audit:
+[doc("Schema parity audit plus schema/hardcoded drift guards (needs ../TES5Edit)")]
+audit: release
     python3 tools/extractor/audit.py --gate
+    python3 tools/extractor/extract.py
+    git diff --exit-code schema/fo76.json schema/fo76.ctda.json
+    PATH="{{source_directory()}}/../target/release:$PATH" python3 tools/extractor/hardcoded.py
+    git diff --exit-code schema/hardcoded_fo76.json
 
 # Regenerate the generated schema files from ../TES5Edit plus
 # schema/fo76.overrides.json. CI fails if this changes a committed file.
+[doc("Regenerate schema/fo76.json and fo76.ctda.json from ../TES5Edit")]
 schema:
     python3 tools/extractor/extract.py
 
@@ -73,14 +77,17 @@ schema:
 # reformatting the whole file. -check is an idempotence check (is the file
 # already in canonical form?), not a git-diff check, so in-progress schema
 # edits don't trip it.
+[doc("Canonicalize schema/fo76.overrides.json in place")]
 schema-fmt:
     python3 tools/extractor/extract.py --format-overrides
 
+[doc("Check schema/fo76.overrides.json is canonical")]
 schema-fmt-check:
     python3 tools/extractor/extract.py --format-overrides --check
 
 # Diff two ESM versions with real game data (requires two ESM paths).
 # The test is env-gated and skips silently when RUST_TEST_ESM_A/B are unset.
+[doc("Env-gated diff integration test against two real ESMs")]
 test-esm a b:
     RUST_TEST_ESM_A={{a}} RUST_TEST_ESM_B={{b}} cargo test diff_two_esm_versions_glob -- --nocapture
 
@@ -88,12 +95,16 @@ test-esm a b:
 tools-test:
     python3 -m unittest discover -s tools/tests
 
+# The Python schema tooling's tests and lint, as CI runs them.
+tools-check: tools-test tools-lint
+
 # Lint + typecheck the Python tooling, matching the CI `python` job.
 #
 # ruff and ty run through uvx and are never imported by the tools, so
 # tools/ stays stdlib-only at runtime. Versions are pinned to match CI exactly
 # (ty is a 0.0.x preview — an unpinned upgrade could disagree with CI).
 # Config lives in pyproject.toml ([tool.ruff] / [tool.ty] only).
+[doc("ruff + ty over tools/")]
 tools-lint:
     uvx ruff@0.15.22 check tools/
     uvx ty@0.0.62 check tools/

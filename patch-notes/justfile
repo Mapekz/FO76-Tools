@@ -11,8 +11,10 @@
 
 default: check
 
+[doc("test + lint")]
 check: test lint
 
+[doc("The hermetic unittest suite")]
 test:
     python3 -m unittest discover -s tests -t .
 

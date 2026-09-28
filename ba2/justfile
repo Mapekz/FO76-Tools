@@ -9,6 +9,7 @@
 default: check
 
 # Run the full check suite (same as CI rust matrix).
+[doc("fmt, clippy and test")]
 check: fmt clippy test
 
 # Verify formatting.
@@ -25,6 +26,7 @@ test:
 
 # Compare the real archives in DIR (the Playtest install's Data folder) with
 # tests/baselines/playtest.tsv.
+[doc("Compare DIR's real archives with tests/baselines/playtest.tsv")]
 baseline-check dir:
     BA2_BASELINE_DIR="{{dir}}" cargo test --release --test baseline -- --nocapture
 

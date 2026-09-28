@@ -11,6 +11,7 @@ default: check
 
 # Rebuild the native N-API addon this app depends on.
 # Run after any Rust API change under ../esm/bindings/napi.
+[doc("Rebuild the ../esm/bindings/napi native addon")]
 addon:
     bun run build:addon
 
@@ -18,6 +19,7 @@ addon:
 # oxfmt --check (see .oxfmtrc.json), then type-check main/preload (Node lib) and renderer
 # (DOM lib) separately — they use different tsconfigs, see tsconfig.web.json /
 # tsconfig.node.json — then run the bun:test unit suite. Fast checks first.
+[doc("lint, format check, typecheck, then the bun:test suite")]
 check:
     bun run lint:ci
     bun run format:check

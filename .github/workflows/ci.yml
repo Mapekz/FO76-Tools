@@ -10,9 +10,9 @@ on:
 jobs:
   # ── Rust: fmt / clippy / test ──────────────────────────────────────────────
   #
-  # One job over the repo-root Cargo workspace (esm, esm-napi, ba2).
-  # setup-rust-toolchain reads the repo-root rust-toolchain.toml, so CI always
-  # matches the pinned local toolchain.
+  # One job over the repo-root Cargo workspace (esm, esm-napi, ba2), through
+  # the projects' own `just` recipes.  setup-rust-toolchain reads the repo-root
+  # rust-toolchain.toml, so CI always matches the pinned local toolchain.
   rust:
     name: rust (fmt / clippy / test)
     runs-on: ubuntu-latest
@@ -26,24 +26,21 @@ jobs:
         with:
           rustflags: ""
 
-      - name: fmt
-        run: cargo fmt --all --check
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
-      - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      # Each crate's check: fmt, clippy and tests; esm's adds the generated
+      # TypeScript drift guard and the schema formatting check.
+      # Game-data integration tests skip silently when their env vars are unset
+      # (no #[ignore] attributes anywhere in esm/src or esm/tests):
+      #   esm/tests/decode_coverage.rs  — RUST_TEST_ESM
+      #   esm/tests/diff.rs             — RUST_TEST_ESM_A and RUST_TEST_ESM_B
+      - name: esm
+        run: just esm::check
 
-      - name: test
-        run: cargo test --workspace
-        # Game-data integration tests skip silently when their env vars are unset
-        # (no #[ignore] attributes anywhere in esm/src or esm/tests):
-        #   esm/tests/decode_coverage.rs  — RUST_TEST_ESM
-        #   esm/tests/diff.rs             — RUST_TEST_ESM_A and RUST_TEST_ESM_B
-
-      - name: export bindings (generated TypeScript)
-        run: cargo test -p esm export_bindings -- --test-threads=1
-
-      - name: check generated TypeScript drift
-        run: git diff --exit-code -- esm-viewer/src/shared/generated/
+      - name: ba2
+        run: just ba2::check
 
   # ── Python tooling tests ──────────────────────────────────────────────────
   #
@@ -65,16 +62,9 @@ jobs:
       matrix:
         include:
           - project: patch-notes
-            dir: patch-notes
-            tests: tests -t .
-            lint: pn/ tests/ cli.py
+            recipe: patch-notes::check
           - project: esm-tools
-            dir: esm
-            tests: tools/tests
-            lint: tools/
-    defaults:
-      run:
-        working-directory: ${{ matrix.dir }}
+            recipe: esm::tools-check
 
     steps:
       - uses: actions/checkout@v7
@@ -83,19 +73,17 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: test
-        run: python3 -m unittest discover -s ${{ matrix.tests }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
       # Installed via pip rather than a setup-uv action so this depends only on
       # the Python toolchain already provisioned above.
       - name: install uv
         run: pip install uv
 
-      - name: ruff
-        run: uvx ruff@0.15.22 check ${{ matrix.lint }}
-
-      - name: ty
-        run: uvx ty@0.0.62 check ${{ matrix.lint }}
+      - name: tests / ruff / ty
+        run: just ${{ matrix.recipe }}
 
   # ── esm-viewer: lint + format + typecheck + unit tests ────────────────────
   #
@@ -122,17 +110,12 @@ jobs:
       - name: install
         run: bun install --frozen-lockfile
 
-      - name: lint
-        run: bun run lint:ci
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
-      - name: format
-        run: bun run format:check
-
-      - name: typecheck
-        run: bun run typecheck
-
-      - name: test
-        run: bun run test
+      - name: lint / format / typecheck / test
+        run: just check
 
   # ── N-API binding: build + smoke ──────────────────────────────────────────
   #
@@ -231,32 +214,12 @@ jobs:
           git -C TES5Edit checkout 80a2c3c67e629f46b9320aca54adc706e58ea76c
         working-directory: .
 
-      - name: schema formatting check
-        working-directory: esm
-        run: python3 tools/extractor/extract.py --format-overrides --check
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
-      - name: audit --gate
-        working-directory: esm
-        run: python3 tools/extractor/audit.py --gate
-
-      # schema/fo76.json and fo76.ctda.json are generated: regenerating them
-      # from the pinned Pascal plus fo76.overrides.json must change nothing.
-      - name: schema regeneration drift guard
-        working-directory: esm
-        run: |
-          python3 tools/extractor/extract.py
-          git diff --exit-code schema/fo76.json schema/fo76.ctda.json
-
-      # hardcoded.py runs `esm tree`/`list`/`get`, so the drift guard below
-      # needs a release build on PATH.
-      - name: build esm CLI (release)
-        run: cargo build --release -p esm
-
-      # Regenerates schema/hardcoded_fo76.json via the esm CLI and fails if the
-      # checked-in table drifts from Fallout76.esp at the pinned TES5Edit commit.
-      - name: hardcoded.py drift guard
-        working-directory: esm
-        run: |
-          export PATH="$GITHUB_WORKSPACE/target/release:$PATH"
-          python3 tools/extractor/hardcoded.py
-          git diff --exit-code schema/hardcoded_fo76.json
+      # esm's audit recipe: the parity gate, then the schema and hardcoded-forms
+      # drift guards (regenerating either must change no committed file; the
+      # hardcoded one drives a release build of the esm CLI).
+      - name: audit
+        run: just esm::audit
