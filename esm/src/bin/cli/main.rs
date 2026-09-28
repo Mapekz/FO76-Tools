@@ -536,7 +536,7 @@ struct Backend(esm::host::Host);
 impl Backend {
     fn run(&mut self, esm: &Path, op: esm::ops::Op) -> anyhow::Result<serde_json::Value> {
         let mut watched = vec![progress_watch_path(esm)];
-        if let esm::ops::Op::Diff { b, .. } = &op {
+        if let esm::ops::Op::Diff(esm::ops::DiffArgs { b, .. }) = &op {
             watched.push(progress_watch_path(b));
         }
         let watcher = progress_ui::Watcher::spawn(watched);

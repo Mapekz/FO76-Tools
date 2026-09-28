@@ -3,7 +3,7 @@ mod common;
 use common::{
     append_record, append_subrecord, cstr, make_xref_esm, tes4_header, wrap_grup, write_and_open,
 };
-use esm::ops::{Op, RecordSel, RefList, dispatch_op, resolve_sel};
+use esm::ops::{Op, RecordSel, RefList, resolve_sel, run};
 use esm::refs::{find_ref_path, referenced_by_enriched, referenced_by_enriched_multi};
 use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec};
 
@@ -1204,18 +1204,18 @@ fn resolve_sel_rejects_entry_point_selector() {
 fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
     let (path, db) = open_entry_point_db();
 
-    let v = dispatch_op(
+    let v = run(
         &db,
-        &Op::ReferencedBy {
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::EntryPoint("Mod Percent Blocked".to_string()),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     )
-    .expect("dispatch_op");
+    .expect("run");
     let list: RefList = serde_json::from_value(v).expect("RefList");
 
     assert!(list.target.contains("Mod Percent Blocked"));
@@ -1246,18 +1246,18 @@ fn dispatch_referenced_by_resolves_explicit_entry_point_selector() {
 fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
     let (path, db) = open_entry_point_db();
 
-    let v = dispatch_op(
+    let v = run(
         &db,
-        &Op::ReferencedBy {
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     )
-    .expect("dispatch_op should fall back to entry-point matching");
+    .expect("run should fall back to entry-point matching");
     let list: RefList = serde_json::from_value(v).expect("RefList");
 
     assert!(list.target.contains("Mod Percent Blocked"));
@@ -1276,18 +1276,18 @@ fn dispatch_referenced_by_edid_falls_back_to_entry_point_when_edid_miss() {
 fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
     let (path, db) = open_edid_collision_db();
 
-    let v = dispatch_op(
+    let v = run(
         &db,
-        &Op::ReferencedBy {
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Mod Percent Blocked".to_string()),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     )
-    .expect("dispatch_op");
+    .expect("run");
     let list: RefList = serde_json::from_value(v).expect("RefList");
 
     assert_eq!(
@@ -1304,23 +1304,23 @@ fn dispatch_referenced_by_edid_wins_over_entry_point_name_collision() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// Neither an EditorID nor an entry-point name matches: `dispatch_op` fails
+/// Neither an EditorID nor an entry-point name matches: `run` fails
 /// with a message naming both interpretations, mirroring `RecordSel::Auto`'s
 /// existing dual-interpretation error.
 #[test]
 fn dispatch_referenced_by_edid_neither_interpretation_bails() {
     let (path, db) = open_entry_point_db();
 
-    let err = dispatch_op(
+    let err = run(
         &db,
-        &Op::ReferencedBy {
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("TotallyBogusTokenXYZ".to_string()),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     )
     .expect_err("neither interpretation should resolve");
     let msg = format!("{err:#}");
@@ -1732,18 +1732,18 @@ fn resolve_sel_rejects_omod_property_selector() {
 fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
     let (path, db) = open_omod_property_db();
 
-    let v = dispatch_op(
+    let v = run(
         &db,
-        &Op::ReferencedBy {
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::OmodProperty("Enchantments".to_string()),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     )
-    .expect("dispatch_op");
+    .expect("run");
     let list: RefList = serde_json::from_value(v).expect("RefList");
 
     assert!(list.target.contains("OMOD property"));
@@ -1769,16 +1769,16 @@ fn dispatch_referenced_by_resolves_explicit_omod_property_selector() {
 fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
     let (path, db) = open_omod_property_db();
 
-    let v = dispatch_op(
+    let v = run(
         &db,
-        &Op::ReferencedBy {
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Health".to_string()),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     )
     .expect("Health must resolve as the hardcoded AVIF");
     let list: RefList = serde_json::from_value(v).expect("RefList");
@@ -1798,16 +1798,16 @@ fn dispatch_referenced_by_edid_health_stays_direct_hardcoded_record() {
 fn dispatch_referenced_by_edid_miss_does_not_fallback_to_omod_property() {
     let (path, db) = open_omod_property_db();
 
-    let err = dispatch_op(
+    let err = run(
         &db,
-        &Op::ReferencedBy {
+        &Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::Edid("Speed".to_string()),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     )
     .expect_err("Speed must not auto-detect as an OMOD property");
     let msg = format!("{err:#}");

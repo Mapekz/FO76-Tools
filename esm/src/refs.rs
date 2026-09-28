@@ -1,11 +1,11 @@
 //! Reverse-reference graph engine: seed resolution, the depth-bounded BFS
 //! walk, and bidirectional path search over the reverse-reference index
-//! `Index` builds (`ops/mod.rs`'s `Op::ReferencedBy`/`Op::RefPath` are thin
+//! `Index` builds (`ops/refs.rs`'s `Op::ReferencedBy`/`Op::RefPath` are thin
 //! dispatch wrappers around this module).
 //!
-//! The wire protocol (`Op`, `dispatch`/`dispatch_op`, and the DTOs that
+//! The wire protocol (`Op`, `dispatch`/`run`, and the DTOs that
 //! cross the process boundary — `RefRow`, `RefList`, `RefSort`,
-//! `RefPathNode`) stays in `ops/mod.rs`; this module owns the
+//! `RefPathNode`) stays in `ops/refs.rs`; this module owns the
 //! seed-selector/walk/path-search *algorithm* those DTOs describe the
 //! result of. See
 //! [`docs/adr/0004-refs-seed-selectors.md`](https://github.com/Mapekz/FO76-Tools/blob/main/esm/docs/adr/0004-refs-seed-selectors.md)

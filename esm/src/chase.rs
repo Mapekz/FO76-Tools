@@ -125,7 +125,7 @@ const OMOD_INCLUDE_MAX_DEPTH: usize = 3;
 /// Mirrors the Python prototype's `EsmGateway`/`FakeGateway` seam — keeping
 /// all I/O out of the pure walk/classification logic below, so tests can
 /// exercise `chase()` against a `FakeFetcher` with no real ESM involved. The
-/// concrete implementor (`DbFetcher` in `src/ops/mod.rs`) holds the open
+/// concrete implementor (`DbFetcher` in `src/ops/analysis.rs`) holds the open
 /// `Database`; `chase()` itself only deals in selectors and FormIDs.
 pub trait ChaseFetcher {
     fn bulk_get(

@@ -82,15 +82,15 @@ pub(crate) fn cmd_refs(
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
         let mut db = Database::open(&esm_path)?;
         apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
-        let op = Op::ReferencedBy {
+        let op = Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel,
             limit,
             depth,
             type_filter: record_type,
             paths,
             sort,
-        };
-        let v = esm::ops::dispatch_op(&db, &op)?;
+        });
+        let v = esm::ops::run(&db, &op)?;
         let mut ref_list: RefList = serde_json::from_value(v)?;
         convert_ref_list_form_ids(&mut ref_list, base);
         print_refs(&ref_list, sort, json, pretty);
@@ -98,14 +98,14 @@ pub(crate) fn cmd_refs(
     }
     let v = backend.run(
         file,
-        Op::ReferencedBy {
+        Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel,
             limit,
             depth,
             type_filter: record_type,
             paths,
             sort,
-        },
+        }),
     )?;
     let mut ref_list: RefList = serde_json::from_value(v)?;
     convert_ref_list_form_ids(&mut ref_list, base);
@@ -350,12 +350,12 @@ pub(crate) fn cmd_ref_path(
     let to = RecordSel::from_input_with(&to, base)?;
     let v = backend.run(
         file,
-        Op::RefPath {
+        Op::RefPath(esm::ops::RefPathArgs {
             from,
             to,
             max_hops,
             paths,
-        },
+        }),
     )?;
     let mut result: esm::refs::RefPathResult = serde_json::from_value(v)?;
     convert_ref_path_form_ids(&mut result, base);

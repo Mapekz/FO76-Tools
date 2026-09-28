@@ -1,6 +1,6 @@
 //! Cross-surface parity regression guard.
 //!
-//! `Host::run` (what the CLI and `esm batch` call) and a direct `dispatch_op`
+//! `Host::run` (what the CLI and `esm batch` call) and a direct `run`
 //! against an already-open `Database` must produce the same JSON for the same
 //! op. This drives representative ops through both against the same
 //! synthetic ESM and asserts the resulting `serde_json::Value`s are equal.
@@ -10,7 +10,7 @@ mod common;
 use common::{make_xref_esm, unique_temp_path};
 use esm::diff::DiffOptions;
 use esm::host::Host;
-use esm::ops::{Op, RecordSel, dispatch_op, run_diff};
+use esm::ops::{DiffArgs, Op, RecordSel, diff, run};
 use esm::{Database, FormId, ResolveDepth, SearchField};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -26,23 +26,22 @@ fn setup() -> (PathBuf, Host) {
     (path, Host::new())
 }
 
-/// Run `op` through `Host::run` and through `dispatch_op` on a directly
+/// Run `op` through `Host::run` and through `run` on a directly
 /// opened `Database`, and assert identical JSON.
 fn assert_parity(path: &Path, host: &Host, op: Op) {
     let via_host = host
         .run(path, &op)
         .unwrap_or_else(|e| panic!("Host::run failed for {op:?}: {e:#}"));
-    let db = Database::open(path).expect("open db directly for dispatch_op path");
-    let via_direct =
-        dispatch_op(&db, &op).unwrap_or_else(|e| panic!("dispatch_op failed for {op:?}: {e:#}"));
+    let db = Database::open(path).expect("open db directly for run path");
+    let via_direct = run(&db, &op).unwrap_or_else(|e| panic!("run failed for {op:?}: {e:#}"));
     assert_eq!(
         via_host, via_direct,
-        "Host::run vs dispatch_op produced different JSON for {op:?}"
+        "Host::run vs run produced different JSON for {op:?}"
     );
 }
 
 /// `Op::Diff` needs two databases, so diff parity is checked between
-/// `Host::run` and [`run_diff`] on two directly opened databases.
+/// `Host::run` and [`diff`] on two directly opened databases.
 fn assert_diff_parity(
     path_a: &Path,
     path_b: &Path,
@@ -50,28 +49,35 @@ fn assert_diff_parity(
     options: &DiffOptions,
     record_type: &Option<String>,
 ) {
-    let op = Op::Diff {
+    let op = Op::Diff(esm::ops::DiffArgs {
         b: path_b.to_path_buf(),
         record_type: record_type.clone(),
         options: options.clone(),
-    };
+    });
     let via_host = host
         .run(path_a, &op)
         .unwrap_or_else(|e| panic!("Host::run diff failed: {e:#}"));
     let db_a = Database::open(path_a).expect("open path_a");
     let db_b = Database::open(path_b).expect("open path_b");
-    let via_direct = run_diff(&db_a, &db_b, options, record_type)
-        .unwrap_or_else(|e| panic!("run_diff failed: {e:#}"));
+    let args = DiffArgs {
+        b: path_b.to_path_buf(),
+        record_type: record_type.clone(),
+        options: options.clone(),
+    };
+    let via_direct = serde_json::to_value(
+        diff(&db_a, &db_b, &args).unwrap_or_else(|e| panic!("diff failed: {e:#}")),
+    )
+    .unwrap();
     assert_eq!(
         via_host, via_direct,
-        "Host::run vs run_diff produced different JSON for {path_a:?} vs {path_b:?}"
+        "Host::run vs diff produced different JSON for {path_a:?} vs {path_b:?}"
     );
 }
 
 #[test]
 fn file_info_parity() {
     let (path, host) = setup();
-    assert_parity(&path, &host, Op::FileInfo);
+    assert_parity(&path, &host, Op::FileInfo(esm::ops::NoArgs {}));
     let _ = std::fs::remove_file(&path);
 }
 
@@ -81,10 +87,10 @@ fn record_parity() {
     assert_parity(
         &path,
         &host,
-        Op::Record {
+        Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::FormId(FormId(1)),
             depth: ResolveDepth::None,
-        },
+        }),
     );
     let _ = std::fs::remove_file(&path);
 }
@@ -98,10 +104,10 @@ fn record_parity_with_stub_resolve() {
     assert_parity(
         &path,
         &host,
-        Op::Record {
+        Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::FormId(FormId(2)),
             depth: ResolveDepth::Stub,
-        },
+        }),
     );
     let _ = std::fs::remove_file(&path);
 }
@@ -112,12 +118,12 @@ fn search_parity() {
     assert_parity(
         &path,
         &host,
-        Op::Search {
+        Op::Search(esm::ops::SearchArgs {
             pattern: "*".to_string(),
             types: vec!["WEAP".to_string()],
             field: SearchField::Both,
             limit: 0,
-        },
+        }),
     );
     let _ = std::fs::remove_file(&path);
 }
@@ -125,7 +131,7 @@ fn search_parity() {
 #[test]
 fn list_groups_parity() {
     let (path, host) = setup();
-    assert_parity(&path, &host, Op::ListGroups);
+    assert_parity(&path, &host, Op::ListGroups(esm::ops::NoArgs {}));
     let _ = std::fs::remove_file(&path);
 }
 
@@ -135,14 +141,14 @@ fn referenced_by_parity() {
     assert_parity(
         &path,
         &host,
-        Op::ReferencedBy {
+        Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel: RecordSel::FormId(FormId(1)),
             limit: 0,
             depth: 1,
             type_filter: None,
             paths: false,
             sort: esm::ops::RefSort::Formid,
-        },
+        }),
     );
     let _ = std::fs::remove_file(&path);
 }

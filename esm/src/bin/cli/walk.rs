@@ -10,7 +10,7 @@ use crate::output::render_form_id;
 /// `chase` is JSON-only — a pipeline evidence contract, not something meant
 /// to be read directly (see `esm::chase`'s module docs and `docs/adr/0001`).
 /// The classifier itself runs in the library (`Op::Chase`, see
-/// `esm::ops::dispatch_op`); this is one `Op` and a pretty-print.
+/// `esm::ops::run`); this is one `Op` and a pretty-print.
 ///
 /// `--decimal` still affects *input* selector parsing here (`base`, for
 /// consistency with every other subcommand), but deliberately never touches
@@ -28,11 +28,11 @@ pub(crate) fn cmd_chase(
     let sel = RecordSel::from_input_with(selector, base)?;
     let v = backend.run(
         file,
-        Op::Chase {
+        Op::Chase(esm::ops::ChaseArgs {
             sel,
             depth,
             ref_limit,
-        },
+        }),
     )?;
     println!("{}", serde_json::to_string_pretty(&v)?);
     Ok(())
@@ -40,7 +40,7 @@ pub(crate) fn cmd_chase(
 
 /// Interactive digest driver. The BFS, per-node digest computation, the
 /// not-found search fallback, and the `--refs` reverse-reference summary all
-/// run in the library in one `Op::Walk` call (`esm::ops::dispatch_op`) — this
+/// run in the library in one `Op::Walk` call (`esm::ops::run`) — this
 /// only resolves the CLI's own flags into the request and renders the
 /// result, matching `--json` vs plain text either way (`esm::walk::render`
 /// is the sole place a `Digest`/`WalkResult` becomes text).
@@ -79,13 +79,13 @@ pub(crate) fn cmd_walk(
     let sel = RecordSel::from_input_with(selector, base)?;
     let v = backend.run(
         file,
-        Op::Walk {
+        Op::Walk(esm::ops::WalkArgs {
             sel,
             depth,
             ref_limit,
             level,
             want_refs,
-        },
+        }),
     )?;
     let mut result: esm::walk::WalkResult = serde_json::from_value(v)?;
     convert_walk_result_form_ids(&mut result, base);

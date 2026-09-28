@@ -81,13 +81,13 @@ pub(crate) fn cmd_get(
             .iter()
             .map(|t| RecordSel::from_input_with(t, base))
             .collect::<anyhow::Result<Vec<_>>>()?;
-        Op::RecordBulk { sels, depth }
+        Op::RecordBulk(esm::ops::RecordBulkArgs { sels, depth })
     } else {
         let sel = record_sel_with(formid, edid, targets.into_iter().next(), base)?;
         if raw {
-            Op::RecordRaw { sel }
+            Op::RecordRaw(esm::ops::RecordRawArgs { sel })
         } else {
-            Op::Record { sel, depth }
+            Op::Record(esm::ops::RecordArgs { sel, depth })
         }
     };
 
@@ -98,7 +98,7 @@ pub(crate) fn cmd_get(
         if let Some(ba2_path) = startup_ba2 {
             db.load_curves(&ba2_path)?;
         }
-        esm::ops::dispatch_op(&db, &op)?
+        esm::ops::run(&db, &op)?
     } else {
         backend.run(file, op)?
     };
@@ -131,11 +131,11 @@ pub(crate) fn cmd_list(
     }
     let v = backend.run(
         file,
-        Op::ListTypeRecords {
+        Op::ListTypeRecords(esm::ops::ListTypeRecordsArgs {
             sig: sig.to_string(),
             offset: 0,
             limit,
-        },
+        }),
     )?;
     let rows: Vec<RecordRow> = serde_json::from_value(v)?;
     print_record_rows(&rows, limit, json, pretty, base);
@@ -175,12 +175,12 @@ pub(crate) fn cmd_search(
 
     let v = backend.run(
         file,
-        Op::Search {
+        Op::Search(esm::ops::SearchArgs {
             pattern: pattern.to_string(),
             types,
             field,
             limit,
-        },
+        }),
     )?;
     let results: Vec<RecordRow> = serde_json::from_value(v)?;
     print_search_results(&results, limit, json, pretty, base);

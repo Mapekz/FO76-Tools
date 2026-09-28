@@ -26,14 +26,14 @@ impl EsmDatabase {
     #[napi]
     pub fn file_info(&self) -> napi::Result<serde_json::Value> {
         let db = &self.inner;
-        esm::ops::dispatch_op(db, &esm::ops::Op::FileInfo)
+        esm::ops::run(db, &esm::ops::Op::FileInfo(esm::ops::NoArgs {}))
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     #[napi]
     pub fn list_groups(&self) -> napi::Result<serde_json::Value> {
         let db = &self.inner;
-        esm::ops::dispatch_op(db, &esm::ops::Op::ListGroups)
+        esm::ops::run(db, &esm::ops::Op::ListGroups(esm::ops::NoArgs {}))
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
@@ -46,12 +46,12 @@ impl EsmDatabase {
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
         let db = &self.inner;
-        let op = esm::ops::Op::ListTypeRecords {
+        let op = esm::ops::Op::ListTypeRecords(esm::ops::ListTypeRecordsArgs {
             sig,
             offset: offset as usize,
             limit: limit as usize,
-        };
-        esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        });
+        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Search records by EditorID and/or display name using a `*`-wildcard pattern.
@@ -70,13 +70,13 @@ impl EsmDatabase {
         let field = esm::query::search_field(Some(&field), SearchField::Both)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         let db = &self.inner;
-        let op = esm::ops::Op::Search {
+        let op = esm::ops::Op::Search(esm::ops::SearchArgs {
             pattern,
             types,
             field,
             limit: limit as usize,
-        };
-        esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        });
+        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Filter records of type `sig` by a predicate against their decoded
@@ -96,14 +96,14 @@ impl EsmDatabase {
         let op =
             esm::query::filter_op(&op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         let db = &self.inner;
-        let wire_op = esm::ops::Op::FilterTypeRecords {
+        let wire_op = esm::ops::Op::FilterTypeRecords(esm::ops::FilterTypeRecordsArgs {
             sig,
             path,
             filter_op: op,
             value,
             limit: limit as usize,
-        };
-        esm::ops::dispatch_op(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        });
+        esm::ops::run(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List every dot-notation field path observed across a (possibly capped)
@@ -111,8 +111,11 @@ impl EsmDatabase {
     #[napi]
     pub fn list_type_field_paths(&self, sig: String) -> napi::Result<serde_json::Value> {
         let db = &self.inner;
-        esm::ops::dispatch_op(db, &esm::ops::Op::ListTypeFieldPaths { sig })
-            .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        esm::ops::run(
+            db,
+            &esm::ops::Op::ListTypeFieldPaths(esm::ops::ListTypeFieldPathsArgs { sig }),
+        )
+        .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List direct children of the top-level GRUP with the given record type signature.
@@ -124,12 +127,12 @@ impl EsmDatabase {
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
         let db = &self.inner;
-        let op = esm::ops::Op::ListTypeChildren {
+        let op = esm::ops::Op::ListTypeChildren(esm::ops::ListTypeChildrenArgs {
             sig,
             offset: offset as usize,
             limit: limit as usize,
-        };
-        esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        });
+        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// List direct children of an arbitrary GRUP by its own header offset — used for
@@ -145,12 +148,12 @@ impl EsmDatabase {
         limit: u32,
     ) -> napi::Result<serde_json::Value> {
         let db = &self.inner;
-        let wire_op = esm::ops::Op::ListGroupChildren {
+        let wire_op = esm::ops::Op::ListGroupChildren(esm::ops::ListGroupChildrenArgs {
             group_offset: group_offset as u64,
             offset: offset as usize,
             limit: limit as usize,
-        };
-        esm::ops::dispatch_op(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        });
+        esm::ops::run(db, &wire_op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Decode a record by FormID hex string (e.g. "0x0000463F").
@@ -168,11 +171,11 @@ impl EsmDatabase {
         let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
             .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
         let db = &self.inner;
-        let op = esm::ops::Op::Record {
+        let op = esm::ops::Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::FormId(fid),
             depth,
-        };
-        esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+        });
+        esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
     }
 
     /// Decode a record by EditorID string.
@@ -189,11 +192,11 @@ impl EsmDatabase {
             let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
             let db = &inner;
-            let op = esm::ops::Op::Record {
+            let op = esm::ops::Op::Record(esm::ops::RecordArgs {
                 sel: RecordSel::Edid(edid),
                 depth,
-            };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -215,8 +218,8 @@ impl EsmDatabase {
             let depth = esm::query::resolve_depth(Some(&resolve), ResolveDepth::None)
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))?;
             let db = &inner;
-            let op = esm::ops::Op::Record { sel, depth };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            let op = esm::ops::Op::Record(esm::ops::RecordArgs { sel, depth });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -240,15 +243,15 @@ impl EsmDatabase {
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let walk_depth = esm::query::clamp_ref_depth(depth.map(|d| d as usize));
             let db = &inner;
-            let op = esm::ops::Op::ReferencedBy {
+            let op = esm::ops::Op::ReferencedBy(esm::ops::ReferencedByArgs {
                 sel,
                 limit: usize::MAX,
                 depth: walk_depth,
                 type_filter: None,
                 paths: false,
                 sort: esm::ops::RefSort::Formid,
-            };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -262,8 +265,8 @@ impl EsmDatabase {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let db = &inner;
-            let op = esm::ops::Op::RecordRaw { sel };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            let op = esm::ops::Op::RecordRaw(esm::ops::RecordRawArgs { sel });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -281,11 +284,11 @@ impl EsmDatabase {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || {
             let db = &inner;
-            let op = esm::ops::Op::Coverage {
+            let op = esm::ops::Op::Coverage(esm::ops::CoverageArgs {
                 record_type,
                 sample: sample as usize,
-            };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -312,7 +315,7 @@ impl EsmDatabase {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let db = &inner;
-            let op = esm::ops::Op::Walk {
+            let op = esm::ops::Op::Walk(esm::ops::WalkArgs {
                 sel,
                 depth: depth.map(|d| d as usize),
                 ref_limit: ref_limit
@@ -320,8 +323,8 @@ impl EsmDatabase {
                     .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),
                 level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
                 want_refs: want_refs.unwrap_or(false),
-            };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -344,7 +347,7 @@ impl EsmDatabase {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let db = &inner;
-            let op = esm::ops::Op::Chase {
+            let op = esm::ops::Op::Chase(esm::ops::ChaseArgs {
                 sel,
                 depth: depth
                     .map(|d| d as usize)
@@ -352,8 +355,8 @@ impl EsmDatabase {
                 ref_limit: ref_limit
                     .map(|d| d as usize)
                     .unwrap_or(esm::chase::DEFAULT_REF_LIMIT),
-            };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -375,13 +378,13 @@ impl EsmDatabase {
             let sel = RecordSel::from_input(&id)
                 .map_err(|e: anyhow::Error| napi::Error::from_reason(format!("{e:#}")))?;
             let db = &inner;
-            let op = esm::ops::Op::DropTable {
+            let op = esm::ops::Op::DropTable(esm::ops::DropTableArgs {
                 sel,
                 level: level.map(|l| l as f32).unwrap_or(esm::lvli::DEFAULT_LEVEL),
                 max_depth: esm::lvli::MAX_RECURSION_DEPTH,
                 strict: false,
-            };
-            esm::ops::dispatch_op(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
+            });
+            esm::ops::run(db, &op).map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await
         .map_err(|e| napi::Error::from_reason(format!("join error: {e}")))?
@@ -408,8 +411,13 @@ impl EsmDatabase {
         let arc_a = self.inner.clone();
         let arc_b = other.inner.clone();
         tokio::task::spawn_blocking(move || {
-            let options = esm::query::diff_options(bodies, suppress_noise, exclude_types);
-            esm::ops::run_diff(&arc_a, &arc_b, &options, &record_type)
+            let args = esm::ops::DiffArgs {
+                b: std::path::PathBuf::new(),
+                record_type,
+                options: esm::query::diff_options(bodies, suppress_noise, exclude_types),
+            };
+            esm::ops::diff(&arc_a, &arc_b, &args)
+                .and_then(|result| Ok(serde_json::to_value(result)?))
                 .map_err(|e| napi::Error::from_reason(format!("{e:#}")))
         })
         .await

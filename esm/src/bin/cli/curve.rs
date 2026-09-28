@@ -37,10 +37,10 @@ pub(crate) fn cmd_curve(
 
     let v = backend.run(
         file,
-        Op::RecordBulk {
+        Op::RecordBulk(esm::ops::RecordBulkArgs {
             sels,
             depth: ResolveDepth::None,
-        },
+        }),
     )?;
     let entries: Vec<BulkRecordEntry> = serde_json::from_value(v)?;
 

@@ -36,7 +36,7 @@ fn dispatch_file_info_matches_direct() {
 
     let req = Request {
         esm: path.clone(),
-        op: Op::FileInfo,
+        op: Op::FileInfo(esm::ops::NoArgs {}),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -51,20 +51,10 @@ fn dispatch_file_info_matches_direct() {
 }
 
 #[test]
-fn dispatch_list_by_type() {
+fn list_by_type() {
     let (path, reg) = open_test_db();
 
-    let req = Request {
-        esm: path.clone(),
-        op: Op::ListByType {
-            sig: "WEAP".to_string(),
-            limit: 10,
-        },
-    };
-    let Response::Ok { data } = dispatch(&reg, &req) else {
-        panic!("expected Ok");
-    };
-    let entries: Vec<esm::ListEntry> = serde_json::from_value(data).unwrap();
+    let entries = reg.open(&path).unwrap().list_by_type("WEAP", 10).unwrap();
     assert_eq!(entries.len(), 2);
 
     let _ = std::fs::remove_file(&path);
@@ -76,20 +66,10 @@ fn dispatch_list_by_type() {
 /// `.take(limit)` was called unconditionally, so `limit: 0` silently returned
 /// zero records instead of all of them.
 #[test]
-fn dispatch_list_by_type_limit_zero_is_unlimited() {
+fn list_by_type_limit_zero_is_unlimited() {
     let (path, reg) = open_test_db();
 
-    let req = Request {
-        esm: path.clone(),
-        op: Op::ListByType {
-            sig: "WEAP".to_string(),
-            limit: 0,
-        },
-    };
-    let Response::Ok { data } = dispatch(&reg, &req) else {
-        panic!("expected Ok");
-    };
-    let entries: Vec<esm::ListEntry> = serde_json::from_value(data).unwrap();
+    let entries = reg.open(&path).unwrap().list_by_type("WEAP", 0).unwrap();
     assert_eq!(
         entries.len(),
         2,
@@ -108,11 +88,11 @@ fn dispatch_list_type_records_limit_zero_is_unlimited() {
 
     let req = Request {
         esm: path.clone(),
-        op: Op::ListTypeRecords {
+        op: Op::ListTypeRecords(esm::ops::ListTypeRecordsArgs {
             sig: "WEAP".to_string(),
             offset: 0,
             limit: 0,
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -129,12 +109,12 @@ fn dispatch_search_wildcard() {
 
     let req = Request {
         esm: path.clone(),
-        op: Op::Search {
+        op: Op::Search(esm::ops::SearchArgs {
             pattern: "*".to_string(),
             types: vec!["WEAP".to_string()],
             field: SearchField::Edid,
             limit: 0,
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -152,10 +132,10 @@ fn dispatch_record_by_formid() {
 
     let req = Request {
         esm: path.clone(),
-        op: Op::Record {
+        op: Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::FormId(esm::FormId(1)),
             depth: ResolveDepth::None,
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -189,10 +169,10 @@ fn dispatch_record_auto_sel_resolves_as_editorid_when_formid_absent() {
 
     let req = Request {
         esm: tmp.clone(),
-        op: Op::Record {
+        op: Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::Auto("cafe".to_string()),
             depth: ResolveDepth::None,
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok — Auto must fall back to EditorID 'cafe'");
@@ -210,10 +190,10 @@ fn dispatch_record_auto_sel_resolves_as_formid_when_present() {
 
     let req = Request {
         esm: path.clone(),
-        op: Op::Record {
+        op: Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::Auto("1".to_string()), // looks_like_formid("1") == true
             depth: ResolveDepth::None,
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok — FormId(1) exists in the fixture");
@@ -232,10 +212,10 @@ fn dispatch_record_auto_sel_errors_naming_both_attempts_when_neither_resolves() 
 
     let req = Request {
         esm: path.clone(),
-        op: Op::Record {
+        op: Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::Auto("eeee".to_string()),
             depth: ResolveDepth::None,
-        },
+        }),
     };
     let Response::Err { error } = dispatch(&reg, &req) else {
         panic!("expected Err — neither FormID nor EditorID 'eeee' should resolve");
@@ -270,10 +250,10 @@ fn dispatch_record_auto_sel_never_implicitly_falls_back_to_decimal() {
 
     let req = Request {
         esm: tmp.clone(),
-        op: Op::Record {
+        op: Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::Auto("00568635".to_string()),
             depth: ResolveDepth::None,
-        },
+        }),
     };
     let Response::Err { error } = dispatch(&reg, &req) else {
         panic!(
@@ -295,7 +275,7 @@ fn dispatch_list_groups() {
 
     let req = Request {
         esm: path.clone(),
-        op: Op::ListGroups,
+        op: Op::ListGroups(esm::ops::NoArgs {}),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -312,11 +292,11 @@ fn dispatch_diff_same_path_does_not_deadlock() {
 
     let req = Request {
         esm: path.clone(),
-        op: Op::Diff {
+        op: Op::Diff(esm::ops::DiffArgs {
             b: path.clone(),
             record_type: None,
             options: DiffOptions::default(),
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -423,10 +403,10 @@ fn record_sel_json_round_trip() {
     let auto_sel = RecordSel::Auto("18000".to_string());
 
     for sel in [formid_sel, edid_sel, auto_sel] {
-        let op = Op::Record {
+        let op = Op::Record(esm::ops::RecordArgs {
             sel: sel.clone(),
             depth: ResolveDepth::None,
-        };
+        });
         let req = Request {
             esm: PathBuf::from("Game.esm"),
             op,
@@ -489,11 +469,11 @@ fn op_diff_without_options_field_deserializes() {
     }"#;
     let req: Request = serde_json::from_str(json).expect("deserialize");
     match req.op {
-        Op::Diff {
+        Op::Diff(esm::ops::DiffArgs {
             b,
             record_type,
             options,
-        } => {
+        }) => {
             assert_eq!(b, PathBuf::from("Other.esm"));
             assert_eq!(record_type, None);
             assert_eq!(options.bodies, BodyDetail::Full);
@@ -520,13 +500,13 @@ fn op_referenced_by_without_new_fields_deserializes() {
     }"#;
     let req: Request = serde_json::from_str(json).expect("deserialize");
     match req.op {
-        Op::ReferencedBy {
+        Op::ReferencedBy(esm::ops::ReferencedByArgs {
             limit,
             depth,
             type_filter,
             paths,
             ..
-        } => {
+        }) => {
             assert_eq!(limit, 100);
             assert_eq!(depth, 1);
             assert_eq!(type_filter, None);
@@ -550,14 +530,14 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
     }
     let reg = Host::new();
 
-    let op = Op::ReferencedBy {
+    let op = Op::ReferencedBy(esm::ops::ReferencedByArgs {
         sel: RecordSel::FormId(esm::FormId(1)),
         limit: 0,
         depth: 1,
         type_filter: Some("WEAP".to_string()),
         paths: true,
         sort: esm::ops::RefSort::Formid,
-    };
+    });
 
     // Round-trip check.
     let req = Request {
@@ -585,14 +565,14 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
     );
 
     // A non-matching type filter excludes the one referencer entirely.
-    let op_no_match = Op::ReferencedBy {
+    let op_no_match = Op::ReferencedBy(esm::ops::ReferencedByArgs {
         sel: RecordSel::FormId(esm::FormId(1)),
         limit: 0,
         depth: 1,
         type_filter: Some("MISC".to_string()),
         paths: false,
         sort: esm::ops::RefSort::Formid,
-    };
+    });
     let req_no_match = Request {
         esm: tmp.clone(),
         op: op_no_match,
@@ -611,7 +591,7 @@ fn dispatch_referenced_by_with_type_filter_and_paths() {
 /// re-serialized wire form and each individual field.
 #[test]
 fn op_diff_with_options_roundtrip() {
-    let op = Op::Diff {
+    let op = Op::Diff(esm::ops::DiffArgs {
         b: PathBuf::from("Other.esm"),
         record_type: Some("WEAP".to_string()),
         options: DiffOptions {
@@ -620,7 +600,7 @@ fn op_diff_with_options_roundtrip() {
             exclude_types: vec!["LAND".to_string(), "NAVM".to_string()],
             ..Default::default()
         },
-    };
+    });
     let req = Request {
         esm: PathBuf::from("Game.esm"),
         op,
@@ -632,11 +612,11 @@ fn op_diff_with_options_roundtrip() {
     assert_eq!(json, json2, "round-trip mismatch");
 
     match back.op {
-        Op::Diff {
+        Op::Diff(esm::ops::DiffArgs {
             b,
             record_type,
             options,
-        } => {
+        }) => {
             assert_eq!(b, PathBuf::from("Other.esm"));
             assert_eq!(record_type, Some("WEAP".to_string()));
             assert_eq!(options.bodies, BodyDetail::Stub);
@@ -684,7 +664,7 @@ fn dispatch_diff_two_esms_with_options() {
     let reg = Host::new();
     let req = Request {
         esm: path_a.clone(),
-        op: Op::Diff {
+        op: Op::Diff(esm::ops::DiffArgs {
             b: path_b.clone(),
             record_type: None,
             options: DiffOptions {
@@ -693,7 +673,7 @@ fn dispatch_diff_two_esms_with_options() {
                 exclude_types: vec!["MISC".to_string()],
                 ..Default::default()
             },
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -735,7 +715,7 @@ fn op_record_old_wire_shape_still_deserializes() {
     }"#;
     let req: Request = serde_json::from_str(json).expect("deserialize");
     match req.op {
-        Op::Record { sel, depth } => {
+        Op::Record(esm::ops::RecordArgs { sel, depth }) => {
             match sel {
                 RecordSel::FormId(f) => assert_eq!(f, esm::FormId(4667)),
                 other => panic!("expected FormId, got {other:?}"),
@@ -779,13 +759,13 @@ fn dispatch_record_bulk_mixed_selectors_round_trip() {
     }
     let reg = Host::new();
 
-    let op = Op::RecordBulk {
+    let op = Op::RecordBulk(esm::ops::RecordBulkArgs {
         sels: vec![
             RecordSel::FormId(esm::FormId(1)),
             RecordSel::Edid("PipePistol".to_string()),
         ],
         depth: ResolveDepth::None,
-    };
+    });
     let req = Request {
         esm: tmp.clone(),
         op: op.clone(),
@@ -833,7 +813,7 @@ fn dispatch_record_bulk_isolates_per_selector_failure() {
 
     let req = Request {
         esm: tmp.clone(),
-        op: Op::RecordBulk {
+        op: Op::RecordBulk(esm::ops::RecordBulkArgs {
             sels: vec![
                 RecordSel::FormId(esm::FormId(1)),          // valid
                 RecordSel::FormId(esm::FormId(0x00999999)), // bogus — not present
@@ -841,7 +821,7 @@ fn dispatch_record_bulk_isolates_per_selector_failure() {
                 RecordSel::Edid("NoSuchEdid".to_string()),  // bogus — not present
             ],
             depth: ResolveDepth::None,
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -932,14 +912,14 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
 
     let req = Request {
         esm: tmp.clone(),
-        op: Op::RecordBulk {
+        op: Op::RecordBulk(esm::ops::RecordBulkArgs {
             sels: vec![
                 RecordSel::FormId(esm::FormId(2)),
                 RecordSel::FormId(esm::FormId(1)),
                 RecordSel::FormId(esm::FormId(4)),
             ],
             depth: ResolveDepth::Stub,
-        },
+        }),
     };
     let Response::Ok { data } = dispatch(&reg, &req) else {
         panic!("expected Ok");
@@ -1006,12 +986,12 @@ fn walk_op_depth_is_optional_on_the_wire() {
     let sel = serde_json::to_value(RecordSel::Edid("SomeList".to_string())).unwrap();
     let omitted = serde_json::json!({"op": "walk", "sel": sel, "ref_limit": 25, "level": 50.0, "want_refs": false});
     match serde_json::from_value::<Op>(omitted).expect("depth may be omitted") {
-        Op::Walk { depth, .. } => assert_eq!(depth, None),
+        Op::Walk(esm::ops::WalkArgs { depth, .. }) => assert_eq!(depth, None),
         other => panic!("expected Op::Walk, got {other:?}"),
     }
     let explicit = serde_json::json!({"op": "walk", "sel": sel, "depth": 3, "ref_limit": 25, "level": 50.0, "want_refs": false});
     match serde_json::from_value::<Op>(explicit).expect("explicit depth") {
-        Op::Walk { depth, .. } => assert_eq!(depth, Some(3)),
+        Op::Walk(esm::ops::WalkArgs { depth, .. }) => assert_eq!(depth, Some(3)),
         other => panic!("expected Op::Walk, got {other:?}"),
     }
 }

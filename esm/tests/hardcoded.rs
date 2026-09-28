@@ -10,7 +10,7 @@ mod common;
 
 use common::{append_record, append_subrecord, cstr, tes4_header, wrap_grup, write_and_open};
 use esm::decode::FormIdRefResolver;
-use esm::ops::{Op, RecordSel, dispatch_op};
+use esm::ops::{Op, RecordSel, run};
 use esm::{DatabaseResolver, FormId, ResolveDepth};
 
 /// FormID 0x00000399 is the engine-hardcoded AVIF `KillStreak` (verified
@@ -85,7 +85,7 @@ fn real_esm_record_wins_over_hardcoded_table_entry() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// `esm get`'s serving path (`ops::dispatch_op` → `Op::Record` →
+/// `esm get`'s serving path (`ops::run` → `Op::Record` →
 /// `record_resolved`), not just `DatabaseResolver`, must also recognize a
 /// hardcoded-form miss and explain it instead of a bare "not found" — issue
 /// #27's selector-resolution half. `KillStreak` now resolves as an
@@ -100,12 +100,12 @@ fn dispatch_record_explains_hardcoded_edid_miss() {
 
     let (path, db) = write_and_open(&buf, "hardcoded_dispatch_edid_miss");
 
-    let err = dispatch_op(
+    let err = run(
         &db,
-        &Op::Record {
+        &Op::Record(esm::ops::RecordArgs {
             sel: RecordSel::Edid("KillStreak".to_string()),
             depth: ResolveDepth::None,
-        },
+        }),
     )
     .expect_err("KillStreak resolves but has no record to decode");
     let msg = format!("{err:#}");

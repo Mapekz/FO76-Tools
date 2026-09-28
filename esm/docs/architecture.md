@@ -108,11 +108,14 @@ both itself, so every caller that names the same file shares one cache and one b
 
 Every surface reaches the engine through `src/host.rs`'s `Host::run(esm, op)`, which keeps the
 databases a process has opened (keyed by canonical path, reopened if the file changes) and runs
-`src/ops/mod.rs`'s `dispatch_op` — driven by the `Op` enum (`Op::Record`, `Op::Search`, `Op::Walk`,
-`Op::Chase`, `Op::DropTable`, …):
+`ops::run` — driven by the `Op` enum (`Op::Record`, `Op::Search`, `Op::Walk`, `Op::Chase`,
+`Op::DropTable`, …). `src/ops/mod.rs` declares every op once in its `ops!` list (wire tag, `Args`
+struct, output type, function); the enum, the dispatcher and the TypeScript `Op`/`OpOutput` types
+are generated from that list, and each op's `Args` struct and function live in a family module
+(`records.rs`, `refs.rs`, `analysis.rs`, `tree.rs`, `coverage.rs`, `diff.rs`):
 
 ```
-                    src/host.rs  Host::run  →  src/ops/mod.rs  dispatch_op
+                    src/host.rs  Host::run  →  src/ops/  ops::run
                                    │
          ┌─────────────────────────┼──────────────────────────┐
          ▼                         ▼                          ▼
@@ -256,7 +259,7 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 | Want to... | Look in |
 |---|---|
 | Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py`, then `src/decode/walk.rs`'s `decode_member` / `src/decode/rules.rs` for any post-decode synthesis |
-| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add an `Op` variant in `src/ops/mod.rs` if it needs `esm batch`/N-API reach too |
+| Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too |
 | Change diff noise suppression | `src/diff/noise.rs`'s `strip_noise_fields` / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |
 | Add a new patch-notes lint rule | `tools/run_lints.py`'s rule registry |

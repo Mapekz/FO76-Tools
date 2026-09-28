@@ -11,9 +11,9 @@ pub mod formid;
 pub mod hardcoded;
 pub mod host;
 pub mod index;
-pub mod ops;
 pub mod logging;
 pub mod lvli;
+pub mod ops;
 pub mod progress;
 pub mod query;
 pub mod reader;
@@ -130,6 +130,8 @@ pub struct RecordRow {
 }
 
 /// Which fields to match against in [`Database::search`].
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchField {
@@ -142,6 +144,8 @@ pub enum SearchField {
 }
 
 /// Comparison operator for [`Database::filter_type_records`].
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterOp {

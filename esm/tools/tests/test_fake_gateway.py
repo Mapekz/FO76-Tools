@@ -259,7 +259,7 @@ class FakeGatewayPathsAndBulkGetTests(unittest.TestCase):
         self.assertEqual(entries[1]["sel"], "0xFFFFFFFF")
         self.assertIn("error", entries[1])
         # EditorID selectors display as the literal input text (mirrors
-        # RecordSel::display() in ops/mod.rs), not the resolved FormID.
+        # RecordSel::display() in src/ops/sel.rs), not the resolved FormID.
         self.assertEqual(entries[2]["sel"], "mod_Custom_Test")
         self.assertEqual(entries[2]["fields"], {"Data": {"Properties": []}})
 

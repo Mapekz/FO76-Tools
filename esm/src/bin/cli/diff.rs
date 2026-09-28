@@ -197,9 +197,12 @@ pub(crate) fn cmd_diff(
             db_b.load_curves_from_dir(&dir)?;
         }
 
-        let record_type_owned = record_type.map(str::to_string);
-        let v = esm::ops::run_diff(&db_a, &db_b, &options, &record_type_owned)?;
-        let mut result: DiffResult = serde_json::from_value(v)?;
+        let args = esm::ops::DiffArgs {
+            b: file_b.to_path_buf(),
+            record_type: record_type.map(str::to_string),
+            options,
+        };
+        let mut result = esm::ops::diff(&db_a, &db_b, &args)?;
         convert_diff_form_ids(&mut result, base);
 
         return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
@@ -208,11 +211,11 @@ pub(crate) fn cmd_diff(
     // No source overrides: let the host open both ESMs with their own sources.
     let v = backend.run(
         file_a,
-        Op::Diff {
+        Op::Diff(esm::ops::DiffArgs {
             b: file_b.to_path_buf(),
             record_type: record_type.map(|s| s.to_string()),
             options,
-        },
+        }),
     )?;
     let mut result: DiffResult = serde_json::from_value(v)?;
     convert_diff_form_ids(&mut result, base);

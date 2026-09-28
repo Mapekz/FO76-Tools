@@ -90,16 +90,12 @@ impl Host {
     /// `Op::Diff` opens its second ESM the same way.
     pub fn run(&self, esm: &Path, op: &Op) -> anyhow::Result<Value> {
         match op {
-            Op::Diff {
-                b,
-                record_type,
-                options,
-            } => {
+            Op::Diff(args) => {
                 let db_a = self.open(esm)?;
-                let db_b = self.open(b)?;
-                crate::ops::run_diff(&db_a, &db_b, options, record_type)
+                let db_b = self.open(&args.b)?;
+                Ok(serde_json::to_value(crate::ops::diff(&db_a, &db_b, args)?)?)
             }
-            _ => crate::ops::dispatch_op(&*self.open(esm)?, op),
+            _ => crate::ops::run(&*self.open(esm)?, op),
         }
     }
 

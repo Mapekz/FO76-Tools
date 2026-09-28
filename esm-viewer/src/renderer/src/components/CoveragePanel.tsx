@@ -11,7 +11,7 @@ const ALL_TYPES = ''
 /** Sums every `Markers` field except `records` — that field is the sample
  * count, not a gap counter. Deriving the sum this way (rather than naming
  * each gap field) means a newly added marker field joins the total for
- * free. Mirrors Rust `Markers::total()` in `esm/src/ops/mod.rs`, which excludes
+ * free. Mirrors Rust `Markers::total()` in `esm/src/ops/coverage.rs`, which excludes
  * `records` from its own sum the same way. */
 function totalGaps(m: Markers): number {
   return (Object.entries(m) as [keyof Markers, number][])

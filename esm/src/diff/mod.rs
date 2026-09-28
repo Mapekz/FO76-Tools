@@ -36,6 +36,8 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
 /// How much of an added/removed record's decoded body to attach to its stub.
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BodyDetail {
@@ -60,6 +62,8 @@ impl BodyDetail {
 }
 
 /// Options controlling [`diff_databases_with`]'s behavior.
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DiffOptions {

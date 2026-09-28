@@ -33,7 +33,8 @@ fn convert_tree_json(v: &mut Value, base: FormIdBase) {
 }
 
 pub(crate) fn cmd_info(backend: &mut Backend, file: &Path) -> anyhow::Result<()> {
-    let info: esm::reader::FileInfo = serde_json::from_value(backend.run(file, Op::FileInfo)?)?;
+    let info: esm::reader::FileInfo =
+        serde_json::from_value(backend.run(file, Op::FileInfo(esm::ops::NoArgs {}))?)?;
     println!("File: {}", file.display());
     println!("Version: {}", info.version);
     println!("Record count: {}", info.record_count);
@@ -68,14 +69,14 @@ pub(crate) fn cmd_tree(
     let mut v = if let Some(sig) = record_type {
         backend.run(
             file,
-            Op::ListTypeChildren {
+            Op::ListTypeChildren(esm::ops::ListTypeChildrenArgs {
                 sig: sig.to_string(),
                 offset,
                 limit,
-            },
+            }),
         )?
     } else {
-        backend.run(file, Op::ListGroups)?
+        backend.run(file, Op::ListGroups(esm::ops::NoArgs {}))?
     };
     convert_tree_json(&mut v, base);
     print_json(&v, pretty);
@@ -92,10 +93,10 @@ pub(crate) fn cmd_coverage(
 ) -> anyhow::Result<()> {
     let v = backend.run(
         file,
-        Op::Coverage {
+        Op::Coverage(esm::ops::CoverageArgs {
             record_type: record_type.map(|s| s.to_string()),
             sample,
-        },
+        }),
     )?;
     let report: CoverageReport = serde_json::from_value(v)?;
 
