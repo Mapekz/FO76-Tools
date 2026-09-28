@@ -174,7 +174,14 @@ fn synthetic_dds(
     cubemap: bool,
     mip_data_len: usize,
 ) -> Vec<u8> {
-    let mut dds = ba2::dds::synth_header(dxgi_format, width, height, mip_count, cubemap).unwrap();
+    let mut dds = ba2::dds::synth_header(&ba2::dds::TextureDesc {
+        dxgi_format,
+        width,
+        height,
+        mip_count,
+        cubemap,
+    })
+    .unwrap();
     dds.extend((0..mip_data_len).map(|i| (i % 251) as u8));
     dds
 }
@@ -218,11 +225,11 @@ fn dx10_create_small_texture_round_trips() {
     assert_eq!(archive.kind(), ArchiveKind::Dx10);
     assert_eq!(archive.list().len(), 1);
     let t = archive.list()[0].texture().unwrap();
-    assert_eq!(t.dxgi_format, 71);
-    assert_eq!(t.width, 64);
-    assert_eq!(t.height, 64);
-    assert_eq!(t.mip_count, 1);
-    assert!(!t.cubemap);
+    assert_eq!(t.desc.dxgi_format, 71);
+    assert_eq!(t.desc.width, 64);
+    assert_eq!(t.desc.height, 64);
+    assert_eq!(t.desc.mip_count, 1);
+    assert!(!t.desc.cubemap);
     assert_eq!(
         t.chunks.len(),
         1,
@@ -288,7 +295,7 @@ fn dx10_create_cubemap_is_single_chunk() {
     let (archive, _guards) = create_dx10("textures/cube.dds", &dds, Codec::Store);
 
     let t = archive.list()[0].texture().unwrap();
-    assert!(t.cubemap);
+    assert!(t.desc.cubemap);
     assert_eq!(t.chunks.len(), 1);
 
     let round_tripped = archive.read("textures/cube.dds", ReadCodec::Auto).unwrap();
@@ -303,7 +310,7 @@ fn dx10_create_dxt10_extension_format_round_trips() {
     let (archive, _guards) = create_dx10("textures/bc7.dds", &dds, Codec::Store);
 
     let t = archive.list()[0].texture().unwrap();
-    assert_eq!(t.dxgi_format, 98);
+    assert_eq!(t.desc.dxgi_format, 98);
 
     let round_tripped = archive.read("textures/bc7.dds", ReadCodec::Auto).unwrap();
     assert_eq!(round_tripped, dds);

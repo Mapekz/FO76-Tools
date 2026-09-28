@@ -49,7 +49,14 @@ fn gnrl_files() -> Vec<(&'static str, Vec<u8>)> {
 }
 
 fn dds(dxgi_format: u8, width: u16, height: u16, mips: u8, cube: bool, len: usize) -> Vec<u8> {
-    let mut dds = ba2::dds::synth_header(dxgi_format, width, height, mips, cube).unwrap();
+    let mut dds = ba2::dds::synth_header(&ba2::dds::TextureDesc {
+        dxgi_format,
+        width,
+        height,
+        mip_count: mips,
+        cubemap: cube,
+    })
+    .unwrap();
     dds.extend((0..len).map(|i| (i % 251) as u8));
     dds
 }

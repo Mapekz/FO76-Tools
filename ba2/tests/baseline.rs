@@ -52,19 +52,23 @@ fn index_digest(archive: &Ba2Archive) -> u64 {
             e.name, e.name_hash, e.dir_hash, e.ext
         );
         match &e.data {
-            EntryData::Gnrl {
-                flags,
-                data_offset,
-                packed_size,
-                unpacked_size,
-            } => {
-                let _ = writeln!(text, "{flags}|{data_offset}|{packed_size}|{unpacked_size}");
+            EntryData::Gnrl { flags, blob } => {
+                let _ = writeln!(
+                    text,
+                    "{flags}|{}|{}|{}",
+                    blob.offset, blob.packed_size, blob.unpacked_size
+                );
             }
             EntryData::Texture(t) => {
                 let _ = write!(
                     text,
                     "{}x{}|{}|{}|{}|{}",
-                    t.width, t.height, t.mip_count, t.dxgi_format, t.cubemap, t.tile_mode
+                    t.desc.width,
+                    t.desc.height,
+                    t.desc.mip_count,
+                    t.desc.dxgi_format,
+                    t.desc.cubemap,
+                    t.tile_mode
                 );
                 for c in &t.chunks {
                     let _ = write!(

@@ -143,6 +143,34 @@ pub fn write_header(
     buf
 }
 
+// ── Blob ─────────────────────────────────────────────────────────────────────
+
+/// One stored blob: a GNRL entry's data or one DX10 mip chunk. The on-disk
+/// `packed_size == 0` means "stored uncompressed"; [`Blob::is_compressed`]
+/// and [`Blob::stored_len`] are the one place that reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Blob {
+    pub offset: u64,
+    /// Compressed size; 0 means the data is stored uncompressed.
+    pub packed_size: u32,
+    pub unpacked_size: u32,
+}
+
+impl Blob {
+    pub fn is_compressed(self) -> bool {
+        self.packed_size != 0
+    }
+
+    /// Bytes the blob occupies in the archive.
+    pub fn stored_len(self) -> u64 {
+        u64::from(if self.is_compressed() {
+            self.packed_size
+        } else {
+            self.unpacked_size
+        })
+    }
+}
+
 // ── GNRL record ──────────────────────────────────────────────────────────────
 
 /// Parsed GNRL file record (36 bytes).
@@ -157,6 +185,16 @@ pub struct Record {
     pub packed_size: u32,
     pub unpacked_size: u32,
     // padding field (0xBAADF00D) is consumed on read and emitted on write, not stored.
+}
+
+impl Record {
+    pub fn blob(&self) -> Blob {
+        Blob {
+            offset: self.data_offset,
+            packed_size: self.packed_size,
+            unpacked_size: self.unpacked_size,
+        }
+    }
 }
 
 /// Read a single 36-byte GNRL record from a slice at byte offset `base`.
@@ -287,6 +325,16 @@ pub struct TexChunk {
     pub mip_first: u16,
     pub mip_last: u16,
     // sentinel field (0xBAADF00D) is consumed on read and emitted on write, not stored.
+}
+
+impl TexChunk {
+    pub fn blob(&self) -> Blob {
+        Blob {
+            offset: self.data_offset,
+            packed_size: self.packed_size,
+            unpacked_size: self.unpacked_size,
+        }
+    }
 }
 
 /// Read a single 24-byte DX10 chunk record from a slice at byte offset `base`.

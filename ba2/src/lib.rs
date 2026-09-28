@@ -15,7 +15,8 @@ pub mod writer;
 
 // Convenience re-exports for library consumers.
 pub use compress::{Codec, ReadCodec};
+pub use dds::TextureDesc;
 pub use extract::{ExtractOptions, extract_all, extract_one};
-pub use format::ArchiveKind;
+pub use format::{ArchiveKind, Blob};
 pub use reader::{Ba2Archive, Ba2Entry, EntryData, TextureInfo};
 pub use writer::{WriteOptions, write_ba2};

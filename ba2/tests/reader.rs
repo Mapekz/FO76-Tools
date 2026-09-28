@@ -336,7 +336,14 @@ fn dx10_multi_chunk_reassembly_order() {
     assert_eq!(archive.kind(), ArchiveKind::Dx10);
 
     let data = archive.read("textures/multi.dds", ReadCodec::Auto).unwrap();
-    let mut expected = ba2::dds::synth_header(77, 8, 8, 2, false).unwrap();
+    let mut expected = ba2::dds::synth_header(&ba2::dds::TextureDesc {
+        dxgi_format: 77,
+        width: 8,
+        height: 8,
+        mip_count: 2,
+        cubemap: false,
+    })
+    .unwrap();
     expected.extend_from_slice(&[0xAAu8; 16]);
     expected.extend_from_slice(&[0xBBu8; 4]);
     assert_eq!(
@@ -381,7 +388,7 @@ fn dx10_cubemap_flag_decoded() {
     let tmp = common::make_test_texture_archive(&[tex]);
     let archive = Ba2Archive::open(tmp.path()).unwrap();
     let t = archive.list()[0].texture().unwrap();
-    assert!(t.cubemap);
+    assert!(t.desc.cubemap);
 
     let data = archive
         .read("textures/shared/cubemaps/test.dds", ReadCodec::Auto)

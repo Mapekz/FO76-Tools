@@ -332,13 +332,17 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
         let mip_data = &raw[meta.header_len..];
 
         let chunk_count = dx10_chunk_count(
-            meta.width as u32,
-            meta.height as u32,
-            meta.mip_count,
-            meta.cubemap,
+            meta.desc.width as u32,
+            meta.desc.height as u32,
+            meta.desc.mip_count,
+            meta.desc.cubemap,
         );
-        let mip0_size = dds::mip0_size(meta.dxgi_format, meta.width as u32, meta.height as u32)
-            .with_context(|| format!("'{}'", src_path.display()))?;
+        let mip0_size = dds::mip0_size(
+            meta.desc.dxgi_format,
+            meta.desc.width as u32,
+            meta.desc.height as u32,
+        )
+        .with_context(|| format!("'{}'", src_path.display()))?;
 
         let mut chunks = Vec::with_capacity(chunk_count as usize);
         let mut mip_offset = 0usize;
@@ -380,7 +384,7 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
 
             let mip_first = i as u16;
             let mip_last = if is_last {
-                meta.mip_count.saturating_sub(1) as u16
+                meta.desc.mip_count.saturating_sub(1) as u16
             } else {
                 i as u16
             };
@@ -403,11 +407,11 @@ fn write_dx10(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -
                 ext,
                 dir_hash,
                 chunk_count,
-                height: meta.height,
-                width: meta.width,
-                mip_count: meta.mip_count,
-                dxgi_format: meta.dxgi_format,
-                cubemap: meta.cubemap,
+                height: meta.desc.height,
+                width: meta.desc.width,
+                mip_count: meta.desc.mip_count,
+                dxgi_format: meta.desc.dxgi_format,
+                cubemap: meta.desc.cubemap,
                 tile_mode: crate::format::TEX_TILE_MODE_LINEAR,
             },
             chunks,

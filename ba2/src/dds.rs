@@ -238,19 +238,33 @@ pub fn mip0_size(dxgi_format: u8, width: u32, height: u32) -> Result<u32> {
     Ok(((width as u64 * height as u64 * bpp as u64) >> 3) as u32)
 }
 
+// ── Texture description ──────────────────────────────────────────────────────
+
+/// What a DX10 texture is: its format, top-mip size, mip count and whether
+/// it is a cubemap. A DX10 record stores it, a DDS header encodes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextureDesc {
+    pub dxgi_format: u8,
+    pub width: u16,
+    pub height: u16,
+    pub mip_count: u8,
+    pub cubemap: bool,
+}
+
 // ── Header synthesis (extract) ───────────────────────────────────────────────
 
 /// Synthesize a DDS file header (`DDS_HEADER`, plus `DDS_HEADER_DXT10` when
 /// the format needs it) for a texture entry. The caller appends the
 /// decompressed, concatenated mip chunk data after this header to produce a
 /// complete `.dds` file.
-pub fn synth_header(
-    dxgi_format: u8,
-    width: u16,
-    height: u16,
-    mip_count: u8,
-    cubemap: bool,
-) -> Result<Vec<u8>> {
+pub fn synth_header(desc: &TextureDesc) -> Result<Vec<u8>> {
+    let TextureDesc {
+        dxgi_format,
+        width,
+        height,
+        mip_count,
+        cubemap,
+    } = *desc;
     let spec = spec_for(dxgi_format)?;
     // DirectXTex/DecodeDDSHeader: a stored mip_count of 0 means 1 (single top mip).
     let mip_count = if mip_count == 0 {
@@ -362,11 +376,7 @@ pub fn synth_header(
 /// Metadata parsed from a `.dds` file's header, sufficient to write it back
 /// as a DX10 archive entry.
 pub struct TextureMeta {
-    pub dxgi_format: u8,
-    pub width: u16,
-    pub height: u16,
-    pub mip_count: u8,
-    pub cubemap: bool,
+    pub desc: TextureDesc,
     /// Byte length of the header — mip data starts immediately after it.
     pub header_len: usize,
 }
@@ -469,11 +479,13 @@ pub fn parse_header(dds: &[u8]) -> Result<TextureMeta> {
     let cubemap = ext_cubemap || caps2 & DDSCAPS2_CUBEMAP != 0;
 
     Ok(TextureMeta {
-        dxgi_format,
-        width: width as u16,
-        height: height as u16,
-        mip_count: mip_count as u8,
-        cubemap,
+        desc: TextureDesc {
+            dxgi_format,
+            width: width as u16,
+            height: height as u16,
+            mip_count: mip_count as u8,
+            cubemap,
+        },
         header_len,
     })
 }

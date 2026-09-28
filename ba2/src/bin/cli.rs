@@ -225,7 +225,7 @@ fn cmd_info(archive_path: &Path) -> Result<()> {
         for e in archive.list() {
             if let Some(t) = e.texture() {
                 total_chunks += t.chunks.len();
-                let name = dds::format_name(t.dxgi_format).unwrap_or("UNKNOWN");
+                let name = dds::format_name(t.desc.dxgi_format).unwrap_or("UNKNOWN");
                 *by_format.entry(name).or_insert(0) += 1;
             }
         }
@@ -281,16 +281,16 @@ fn cmd_list(archive_path: &Path, long: bool) -> Result<()> {
                 );
                 for e in entries {
                     let Some(t) = e.texture() else { continue };
-                    let pixels = format!("{}x{}", t.width, t.height);
-                    let format_str = dds::format_name(t.dxgi_format)
+                    let pixels = format!("{}x{}", t.desc.width, t.desc.height);
+                    let format_str = dds::format_name(t.desc.dxgi_format)
                         .map(str::to_string)
-                        .unwrap_or_else(|| format!("UNKNOWN({})", t.dxgi_format));
-                    let cube = if t.cubemap { "+cube" } else { "" };
+                        .unwrap_or_else(|| format!("UNKNOWN({})", t.desc.dxgi_format));
+                    let cube = if t.desc.cubemap { "+cube" } else { "" };
                     println!(
                         "{:<11}  {:<16}  {:<4}  {:<6}  {:<10}  {:<10}  {}{}",
                         pixels,
                         format_str,
-                        t.mip_count,
+                        t.desc.mip_count,
                         t.chunks.len(),
                         e.packed_size(),
                         e.unpacked_size(),

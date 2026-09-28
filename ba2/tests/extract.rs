@@ -131,7 +131,14 @@ fn extract_one_writes_texture_as_dds() {
     .unwrap();
     assert!(dest.ends_with("textures/props/test_d.dds"));
 
-    let mut expected = ba2::dds::synth_header(71, 8, 8, 1, false).unwrap();
+    let mut expected = ba2::dds::synth_header(&ba2::dds::TextureDesc {
+        dxgi_format: 71,
+        width: 8,
+        height: 8,
+        mip_count: 1,
+        cubemap: false,
+    })
+    .unwrap();
     expected.extend_from_slice(&[0x42u8; 32]);
     assert_eq!(std::fs::read(&dest).unwrap(), expected);
 }

@@ -9,10 +9,10 @@
 //! — see [`crate::dds`]. Unsupported archive versions are a hard error.
 
 use crate::compress::{ReadCodec, decompress};
-use crate::dds;
+use crate::dds::{self, TextureDesc};
 pub use crate::format::TexChunk;
 use crate::format::{
-    ArchiveKind, HEADER_SIZE, Header, RECORD_SIZE, TEX_CHUNK_SIZE, TEX_RECORD_SIZE, VERSION,
+    ArchiveKind, Blob, HEADER_SIZE, Header, RECORD_SIZE, TEX_CHUNK_SIZE, TEX_RECORD_SIZE, VERSION,
     read_header, read_record, read_tex_chunk, read_tex_record,
 };
 use crate::hash::normalize_name;
@@ -26,13 +26,7 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub enum EntryData {
     /// A GNRL entry: one blob, optionally compressed.
-    Gnrl {
-        flags: u32,
-        data_offset: u64,
-        /// Compressed size; 0 means the data is stored uncompressed.
-        packed_size: u32,
-        unpacked_size: u32,
-    },
+    Gnrl { flags: u32, blob: Blob },
     /// A DX10 texture entry: dimensions/format plus its mip chunks.
     Texture(TextureInfo),
 }
@@ -40,11 +34,7 @@ pub enum EntryData {
 /// Dimensions, format, and mip-chunk layout of a DX10 texture entry.
 #[derive(Debug, Clone)]
 pub struct TextureInfo {
-    pub width: u16,
-    pub height: u16,
-    pub mip_count: u8,
-    pub dxgi_format: u8,
-    pub cubemap: bool,
+    pub desc: TextureDesc,
     pub tile_mode: u8,
     /// Mip chunks in on-disk order (chunk 0 first).
     pub chunks: Vec<TexChunk>,
@@ -65,8 +55,8 @@ impl Ba2Entry {
     /// True when this entry's blob (GNRL) or any of its chunks (DX10) is compressed.
     pub fn is_compressed(&self) -> bool {
         match &self.data {
-            EntryData::Gnrl { packed_size, .. } => *packed_size != 0,
-            EntryData::Texture(t) => t.chunks.iter().any(|c| c.packed_size != 0),
+            EntryData::Gnrl { blob, .. } => blob.is_compressed(),
+            EntryData::Texture(t) => t.chunks.iter().any(|c| c.blob().is_compressed()),
         }
     }
 
@@ -75,12 +65,8 @@ impl Ba2Entry {
     /// matching how `is_compressed` treats a stored chunk).
     pub fn packed_size(&self) -> u64 {
         match &self.data {
-            EntryData::Gnrl { packed_size, .. } => *packed_size as u64,
-            EntryData::Texture(t) => t
-                .chunks
-                .iter()
-                .map(|c| if c.packed_size == 0 { c.unpacked_size } else { c.packed_size } as u64)
-                .sum(),
+            EntryData::Gnrl { blob, .. } => u64::from(blob.packed_size),
+            EntryData::Texture(t) => t.chunks.iter().map(|c| c.blob().stored_len()).sum(),
         }
     }
 
@@ -88,12 +74,11 @@ impl Ba2Entry {
     /// full synthesized `.dds` file size (header + all mip chunks).
     pub fn unpacked_size(&self) -> u64 {
         match &self.data {
-            EntryData::Gnrl { unpacked_size, .. } => *unpacked_size as u64,
+            EntryData::Gnrl { blob, .. } => u64::from(blob.unpacked_size),
             EntryData::Texture(t) => {
-                let header_len =
-                    dds::synth_header(t.dxgi_format, t.width, t.height, t.mip_count, t.cubemap)
-                        .map(|h| h.len() as u64)
-                        .unwrap_or(0);
+                let header_len = dds::synth_header(&t.desc)
+                    .map(|h| h.len() as u64)
+                    .unwrap_or(0);
                 header_len + t.chunks.iter().map(|c| c.unpacked_size as u64).sum::<u64>()
             }
         }
@@ -222,9 +207,7 @@ impl Ba2Archive {
                 ext: r.ext,
                 data: EntryData::Gnrl {
                     flags: r.flags,
-                    data_offset: r.data_offset,
-                    packed_size: r.packed_size,
-                    unpacked_size: r.unpacked_size,
+                    blob: r.blob(),
                 },
             })
             .collect())
@@ -278,11 +261,13 @@ impl Ba2Archive {
                 dir_hash: r.dir_hash,
                 ext: r.ext,
                 data: EntryData::Texture(TextureInfo {
-                    width: r.width,
-                    height: r.height,
-                    mip_count: r.mip_count,
-                    dxgi_format: r.dxgi_format,
-                    cubemap: r.cubemap,
+                    desc: TextureDesc {
+                        dxgi_format: r.dxgi_format,
+                        width: r.width,
+                        height: r.height,
+                        mip_count: r.mip_count,
+                        cubemap: r.cubemap,
+                    },
                     tile_mode: r.tile_mode,
                     chunks,
                 }),
@@ -327,35 +312,14 @@ impl Ba2Archive {
         let data = &*self.mmap;
 
         match &entry.data {
-            EntryData::Gnrl {
-                data_offset,
-                packed_size,
-                unpacked_size,
-                ..
-            } => Self::read_blob(
-                data,
-                entry,
-                *data_offset,
-                *packed_size,
-                *unpacked_size,
-                codec,
-            ),
+            EntryData::Gnrl { blob, .. } => Self::read_blob(data, entry, *blob, codec),
             EntryData::Texture(t) => {
-                let mut out =
-                    dds::synth_header(t.dxgi_format, t.width, t.height, t.mip_count, t.cubemap)
-                        .with_context(|| {
-                            format!("failed to synthesize DDS header for '{}'", entry.name)
-                        })?;
+                let mut out = dds::synth_header(&t.desc).with_context(|| {
+                    format!("failed to synthesize DDS header for '{}'", entry.name)
+                })?;
                 for (i, chunk) in t.chunks.iter().enumerate() {
-                    let mip = Self::read_blob(
-                        data,
-                        entry,
-                        chunk.data_offset,
-                        chunk.packed_size,
-                        chunk.unpacked_size,
-                        codec,
-                    )
-                    .with_context(|| format!("chunk {} of '{}'", i, entry.name))?;
+                    let mip = Self::read_blob(data, entry, chunk.blob(), codec)
+                        .with_context(|| format!("chunk {} of '{}'", i, entry.name))?;
                     if mip.len() != chunk.unpacked_size as usize {
                         bail!(
                             "'{}' chunk {} decompressed to {} bytes, expected {}",
@@ -372,34 +336,20 @@ impl Ba2Archive {
         }
     }
 
-    /// Read and decompress a single stored blob (a GNRL entry's data, or one
-    /// DX10 chunk) at `data_offset`/`packed_size`/`unpacked_size`.
-    fn read_blob(
-        data: &[u8],
-        entry: &Ba2Entry,
-        data_offset: u64,
-        packed_size: u32,
-        unpacked_size: u32,
-        codec: ReadCodec,
-    ) -> Result<Vec<u8>> {
-        let start = data_offset as usize;
-        let stored_len = if packed_size == 0 {
-            unpacked_size as usize
-        } else {
-            packed_size as usize
-        };
-
+    /// Read and decompress one stored blob (a GNRL entry's data, or one DX10
+    /// chunk).
+    fn read_blob(data: &[u8], entry: &Ba2Entry, blob: Blob, codec: ReadCodec) -> Result<Vec<u8>> {
+        let start = blob.offset as usize;
+        let stored_len = blob.stored_len() as usize;
         if start.saturating_add(stored_len) > data.len() {
             bail!("BA2 entry '{}' data out of range", entry.name);
         }
         let raw = &data[start..start + stored_len];
-
-        if packed_size == 0 {
-            // Stored uncompressed.
-            Ok(raw.to_vec())
-        } else {
-            decompress(raw, unpacked_size, codec)
+        if blob.is_compressed() {
+            decompress(raw, blob.unpacked_size, codec)
                 .with_context(|| format!("decompression failed for '{}'", entry.name))
+        } else {
+            Ok(raw.to_vec())
         }
     }
 }
