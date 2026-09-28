@@ -5,8 +5,8 @@
  */
 export type Markers = { unknown_record: number, 
 /**
- * `_raw` values the schema couldn't decode: members the extractor
- * couldn't model, and unions with no variant for their bytes.
+ * `_raw` values the schema couldn't decode: unions with no variant for
+ * their bytes.
  */
 raw_fallback: number, 
 /**

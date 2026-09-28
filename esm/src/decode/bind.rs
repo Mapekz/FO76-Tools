@@ -162,7 +162,6 @@ pub(super) fn bind_record(
             cur.skip();
         }
     }
-    add_raw_fallback_markers(members, &mut fields, &mut origin);
     out.extend(in_member_order(members, fields, &origin));
 }
 
@@ -225,30 +224,8 @@ fn bind_struct(
         }
         def_pos = if unordered { 0 } else { def_pos + 1 };
     }
-    add_raw_fallback_markers(members, out, &mut origin);
     let fields = std::mem::take(out);
     *out = in_member_order(members, fields, &origin);
-}
-
-/// A signature-less `raw_fallback` member marks schema the extractor could
-/// not model; it binds no subrecord, so its marker is added to every
-/// container it belongs to.
-fn add_raw_fallback_markers(members: &[MemberDef], out: &mut Fields, origin: &mut Vec<usize>) {
-    for (j, member) in members.iter().enumerate() {
-        if let MemberDef::RawFallback {
-            sig: None,
-            name,
-            reason,
-        } = member
-            && !out.contains_key(name)
-        {
-            out.insert(
-                name.clone(),
-                Node::raw(None, RawReason::Unmodelled(reason.clone())),
-            );
-            origin.push(j);
-        }
-    }
 }
 
 /// `fields` reordered by the member each entry came from (`origin`, parallel
@@ -520,12 +497,6 @@ fn decode_subrecord(
         MemberDef::Unused { .. } => {}
         MemberDef::Unknown { name, .. } => {
             out.insert(name.clone(), Node::raw(Some(data), RawReason::Unknown));
-        }
-        MemberDef::RawFallback { name, reason, .. } => {
-            out.insert(
-                name.clone(),
-                Node::raw(Some(data), RawReason::Unmodelled(reason.clone())),
-            );
         }
         MemberDef::Vmad {
             name, fragments, ..

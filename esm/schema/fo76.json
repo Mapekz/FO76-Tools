@@ -6,7 +6,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -18,7 +17,6 @@
         {
           "kind": "string",
           "name": "Notes",
-          "keep_case": false,
           "sig": "DNAM"
         },
         {
@@ -92,7 +90,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -214,7 +211,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -230,13 +226,11 @@
             {
               "kind": "string",
               "name": "Part",
-              "keep_case": false,
               "sig": "ANAM"
             },
             {
               "kind": "string",
               "name": "Part 2",
-              "keep_case": false,
               "sig": "BNAM"
             },
             {
@@ -268,13 +262,11 @@
               {
                 "kind": "string",
                 "name": "Part",
-                "keep_case": false,
                 "sig": "ANAM"
               },
               {
                 "kind": "string",
                 "name": "Part (BNAM)",
-                "keep_case": false,
                 "sig": "BNAM"
               },
               {
@@ -298,7 +290,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -494,7 +485,6 @@
                       {
                         "kind": "string",
                         "name": "Subtype",
-                        "keep_case": false,
                         "sized": 4
                       }
                     ]
@@ -1375,7 +1365,6 @@
         {
           "kind": "string",
           "name": "Comments",
-          "keep_case": false,
           "sig": "MNAM"
         }
       ],
@@ -1387,7 +1376,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -1689,7 +1677,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -1705,7 +1692,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -1956,13 +1942,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -2102,7 +2086,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -2115,7 +2098,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -2631,13 +2613,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -2685,13 +2665,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -3185,7 +3163,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -3281,7 +3258,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -3348,7 +3324,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -3589,7 +3564,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -3724,7 +3698,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -3940,7 +3913,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -4110,13 +4082,11 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Message Icon",
-          "keep_case": false,
           "sig": "MICO"
         },
         {
@@ -4238,13 +4208,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -4384,7 +4352,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -4397,7 +4364,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -4802,13 +4768,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -4878,7 +4842,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -4975,7 +4938,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -5122,7 +5084,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -5373,13 +5334,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -5519,7 +5478,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -5532,7 +5490,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -5798,7 +5755,6 @@
         {
           "kind": "string",
           "name": "Casing Model",
-          "keep_case": false,
           "sig": "NAM1"
         },
         {
@@ -5814,7 +5770,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -5825,7 +5780,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -5995,7 +5949,6 @@
         {
           "kind": "string",
           "name": "Unload Event",
-          "keep_case": false,
           "sig": "BNAM"
         }
       ]
@@ -6006,7 +5959,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -6065,7 +6017,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -6118,7 +6069,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -6253,7 +6203,6 @@
                 {
                   "kind": "string",
                   "name": "Model Filename",
-                  "keep_case": false,
                   "sig": "MOD2"
                 },
                 {
@@ -6368,7 +6317,6 @@
                 {
                   "kind": "string",
                   "name": "Model Filename",
-                  "keep_case": false,
                   "sig": "MOD3"
                 },
                 {
@@ -6490,7 +6438,6 @@
                 {
                   "kind": "string",
                   "name": "Model Filename",
-                  "keep_case": false,
                   "sig": "MOD4"
                 },
                 {
@@ -6586,7 +6533,6 @@
                 {
                   "kind": "string",
                   "name": "Model Filename",
-                  "keep_case": false,
                   "sig": "MOD5"
                 },
                 {
@@ -6768,7 +6714,6 @@
                     {
                       "kind": "string",
                       "name": "Bone Name",
-                      "keep_case": false,
                       "sig": "BSMB"
                     },
                     {
@@ -6803,7 +6748,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -7040,7 +6984,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -7069,7 +7012,6 @@
                 {
                   "kind": "string",
                   "name": "Model Filename",
-                  "keep_case": false,
                   "sig": "MOD2"
                 },
                 {
@@ -7156,13 +7098,11 @@
             {
               "kind": "string",
               "name": "Icon Image",
-              "keep_case": false,
               "sig": "ICON"
             },
             {
               "kind": "string",
               "name": "Message Icon",
-              "keep_case": false,
               "sig": "MICO"
             }
           ],
@@ -7179,7 +7119,6 @@
                 {
                   "kind": "string",
                   "name": "Model Filename",
-                  "keep_case": false,
                   "sig": "MOD4"
                 },
                 {
@@ -7266,13 +7205,11 @@
             {
               "kind": "string",
               "name": "Icon Image",
-              "keep_case": false,
               "sig": "ICO2"
             },
             {
               "kind": "string",
               "name": "Message Icon",
-              "keep_case": false,
               "sig": "MIC2"
             }
           ],
@@ -7411,13 +7348,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -7557,7 +7492,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -7570,7 +7504,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -8643,7 +8576,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -8804,7 +8736,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -8841,7 +8772,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -9030,7 +8960,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -9216,7 +9145,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -9245,32 +9173,27 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Male Parent Title",
-          "keep_case": false,
           "sig": "MPRT"
         },
         {
           "kind": "string",
           "name": "Female Parent Title",
-          "keep_case": false,
           "sig": "FPRT"
         },
         {
           "kind": "string",
           "name": "Male Child Title",
-          "keep_case": false,
           "sig": "MCHT"
         },
         {
           "kind": "string",
           "name": "Female Child Title",
-          "keep_case": false,
           "sig": "FCHT"
         },
         {
@@ -9293,7 +9216,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -9311,7 +9233,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -9372,14 +9293,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "DURL",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -9517,7 +9436,6 @@
         {
           "kind": "string",
           "name": "Description 2",
-          "keep_case": false,
           "sig": "CNAM"
         }
       ]
@@ -9528,7 +9446,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -9583,7 +9500,6 @@
         {
           "kind": "string",
           "name": "SWF Image",
-          "keep_case": false,
           "sig": "SWFI"
         },
         {
@@ -9600,7 +9516,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -9718,7 +9633,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -9906,7 +9820,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -10076,13 +9989,11 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Message Icon",
-          "keep_case": false,
           "sig": "MICO"
         },
         {
@@ -10174,13 +10085,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -10320,7 +10229,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -10333,7 +10241,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -10705,7 +10612,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -10716,7 +10622,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -10898,13 +10803,11 @@
               {
                 "kind": "string",
                 "name": "Part Node",
-                "keep_case": false,
                 "sig": "BPNN"
               },
               {
                 "kind": "string",
                 "name": "VATS Target",
-                "keep_case": false,
                 "sig": "BPNT"
               },
               {
@@ -11215,13 +11118,11 @@
               {
                 "kind": "string",
                 "name": "Limb Replacement Model",
-                "keep_case": false,
                 "sig": "NAM1"
               },
               {
                 "kind": "string",
                 "name": "Gore Effects - Target Bone",
-                "keep_case": false,
                 "sig": "NAM4"
               },
               {
@@ -11232,13 +11133,11 @@
               {
                 "kind": "string",
                 "name": "Hit Reaction - Start",
-                "keep_case": false,
                 "sig": "ENAM"
               },
               {
                 "kind": "string",
                 "name": "Hit Reaction - End",
-                "keep_case": false,
                 "sig": "FNAM"
               },
               {
@@ -11297,13 +11196,11 @@
               {
                 "kind": "string",
                 "name": "Twist Variable Prefix",
-                "keep_case": false,
                 "sig": "DNAM"
               },
               {
                 "kind": "string",
                 "name": "Bone Name",
-                "keep_case": false,
                 "sig": "BPVB"
               }
             ],
@@ -11318,7 +11215,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -11329,7 +11225,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -11522,13 +11417,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -11666,14 +11559,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "DURL",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -12573,7 +12464,6 @@
         {
           "kind": "string",
           "name": "Water Environment Map",
-          "keep_case": false,
           "sig": "XWEM"
         },
         {
@@ -12796,7 +12686,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -12825,7 +12714,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -12837,13 +12725,11 @@
         {
           "kind": "string",
           "name": "Tracked Stat Used",
-          "keep_case": false,
           "sig": "SNAM"
         },
         {
           "kind": "string",
           "name": "Comment",
-          "keep_case": false,
           "sig": "NNAM"
         },
         {
@@ -13028,13 +12914,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -13078,13 +12962,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -13262,13 +13144,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -13301,7 +13181,6 @@
         {
           "kind": "string",
           "name": "Associated Json File",
-          "keep_case": false,
           "sig": "JASF"
         },
         {
@@ -13320,7 +13199,6 @@
         {
           "kind": "string",
           "name": "Reward Icon",
-          "keep_case": false,
           "sig": "RNAM"
         }
       ]
@@ -13331,7 +13209,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -13348,7 +13225,6 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
@@ -13430,7 +13306,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -13486,13 +13361,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -13509,7 +13382,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -13549,13 +13421,11 @@
         {
           "kind": "string",
           "name": "Sun Texture",
-          "keep_case": false,
           "sig": "FNAM"
         },
         {
           "kind": "string",
           "name": "Sun Glare Texture",
-          "keep_case": false,
           "sig": "GNAM"
         },
         {
@@ -13565,7 +13435,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -13795,7 +13664,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -13958,7 +13826,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -14067,13 +13934,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -14090,14 +13955,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Singular Name",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -14164,7 +14027,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -14445,7 +14307,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -14475,13 +14336,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -14498,7 +14357,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -14551,7 +14409,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -14835,13 +14692,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -15085,7 +14940,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -15191,13 +15045,11 @@
             {
               "kind": "string",
               "name": "Storefront Image Path",
-              "keep_case": false,
               "sig": "ETIP"
             },
             {
               "kind": "string",
               "name": "Storefront Preview Image",
-              "keep_case": false,
               "sig": "ETDI"
             },
             {
@@ -15212,7 +15064,6 @@
               "element": {
                 "kind": "string",
                 "name": "Image",
-                "keep_case": false,
                 "sig": "ECIL"
               }
             }
@@ -15233,7 +15084,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -15295,7 +15145,6 @@
         {
           "kind": "string",
           "name": "Name",
-          "keep_case": false,
           "sig": "MNAM",
           "sized": 0
         },
@@ -15326,7 +15175,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -15529,7 +15377,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -15946,13 +15793,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -16092,7 +15937,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -16105,7 +15949,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -16439,7 +16282,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -16499,25 +16341,21 @@
         {
           "kind": "string",
           "name": "Icon",
-          "keep_case": false,
           "sig": "ANAM"
         },
         {
           "kind": "string",
           "name": "Reward Rarity",
-          "keep_case": false,
           "sig": "BNAM"
         },
         {
           "kind": "string",
           "name": "Storefront Image Path",
-          "keep_case": false,
           "sig": "CNAM"
         },
         {
           "kind": "string",
           "name": "Storefront Preview Image",
-          "keep_case": false,
           "sig": "DNAM"
         },
         {
@@ -16526,7 +16364,6 @@
           "element": {
             "kind": "string",
             "name": "Item Storefront Image",
-            "keep_case": false,
             "sig": "ENAM"
           }
         }
@@ -16538,7 +16375,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -16568,13 +16404,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -16645,7 +16479,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -16693,7 +16526,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17008,20 +16840,17 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "JSON File Path",
-          "keep_case": false,
           "sig": "CRVE"
         },
         {
           "kind": "string",
           "name": "JSON File Path 2",
-          "keep_case": false,
           "sig": "JASF"
         }
       ]
@@ -17032,7 +16861,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17072,7 +16900,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17095,8 +16922,7 @@
                   },
                   {
                     "kind": "string",
-                    "name": "Model FileName",
-                    "keep_case": false
+                    "name": "Model FileName"
                   },
                   {
                     "kind": "integer",
@@ -17129,7 +16955,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17147,7 +16972,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17533,7 +17357,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17588,7 +17411,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17623,7 +17445,6 @@
         {
           "kind": "string",
           "name": "Image",
-          "keep_case": false,
           "sig": "DIMG"
         },
         {
@@ -17658,7 +17479,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17751,7 +17571,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -17788,14 +17607,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "DURL",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -17976,7 +17793,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -17992,7 +17808,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -18243,13 +18058,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -18389,7 +18202,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -18402,7 +18214,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -18667,7 +18478,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -18705,7 +18515,6 @@
         {
           "kind": "string",
           "name": "SWF Class Name",
-          "keep_case": false,
           "sig": "SNAM"
         }
       ]
@@ -18716,38 +18525,32 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Fill Texture",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Particle Shader Texture",
-          "keep_case": false,
           "sig": "ICO2"
         },
         {
           "kind": "string",
           "name": "Holes Texture",
-          "keep_case": false,
           "sig": "NAM7"
         },
         {
           "kind": "string",
           "name": "Membrane Palette Texture",
-          "keep_case": false,
           "sig": "NAM8"
         },
         {
           "kind": "string",
           "name": "Particle Palette Texture",
-          "keep_case": false,
           "sig": "NAM9"
         },
         {
@@ -19109,7 +18912,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -19284,7 +19086,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -19388,7 +19189,6 @@
         {
           "kind": "string",
           "name": "Swf Class Name",
-          "keep_case": false,
           "sig": "SNAM"
         },
         {
@@ -19524,7 +19324,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -19871,13 +19670,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -19973,7 +19770,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -20026,7 +19822,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -20069,7 +19864,6 @@
         {
           "kind": "string",
           "name": "SWF Image",
-          "keep_case": false,
           "sig": "SWFI"
         },
         {
@@ -20089,13 +19883,11 @@
             {
               "kind": "string",
               "name": "Storefront Image Path",
-              "keep_case": false,
               "sig": "ETIP"
             },
             {
               "kind": "string",
               "name": "Storefront Preview Image",
-              "keep_case": false,
               "sig": "ETDI"
             },
             {
@@ -20110,7 +19902,6 @@
               "element": {
                 "kind": "string",
                 "name": "Image",
-                "keep_case": false,
                 "sig": "ECIL"
               }
             }
@@ -20125,7 +19916,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -20196,7 +19986,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -20331,7 +20120,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -20760,7 +20548,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -21002,7 +20789,6 @@
               {
                 "kind": "string",
                 "name": "Insignia (unused)",
-                "keep_case": false,
                 "sig": "INAM"
               }
             ]
@@ -21488,13 +21274,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -21544,13 +21328,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -21567,7 +21349,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -21693,7 +21474,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -21937,7 +21717,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -22188,13 +21967,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -22334,7 +22111,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -22347,7 +22123,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -22819,7 +22594,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": false,
           "sig": "EDID",
           "sized": 0
         },
@@ -22889,7 +22663,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -22905,7 +22678,6 @@
         {
           "kind": "string",
           "name": "Tag",
-          "keep_case": false,
           "sig": "ANAM",
           "sized": 0
         }
@@ -22917,7 +22689,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -23073,7 +22844,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -23263,7 +23033,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -23279,7 +23048,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -23530,13 +23298,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -23676,7 +23442,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -23689,7 +23454,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -24098,13 +23862,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -24152,13 +23914,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -24629,7 +24389,6 @@
         {
           "kind": "string",
           "name": "Marker Model",
-          "keep_case": false,
           "sig": "XMRK"
         },
         {
@@ -25792,7 +25551,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -25847,7 +25605,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -25944,7 +25701,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -25997,7 +25753,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -26029,7 +25784,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -26039,7 +25793,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -26225,13 +25978,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -26312,7 +26063,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": false,
           "sig": "EDID",
           "sized": 0
         },
@@ -26373,7 +26123,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -26498,7 +26247,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -26748,7 +26496,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -26871,7 +26618,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -27152,7 +26898,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -27211,7 +26956,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -27452,7 +27196,6 @@
               {
                 "kind": "string",
                 "name": "Filename",
-                "keep_case": false,
                 "sig": "NAM1"
               }
             ]
@@ -27508,13 +27251,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -27531,7 +27272,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -27604,13 +27344,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -27622,13 +27360,11 @@
         {
           "kind": "string",
           "name": "Behavior Graph",
-          "keep_case": false,
           "sig": "DNAM"
         },
         {
           "kind": "string",
           "name": "Animation Event",
-          "keep_case": false,
           "sig": "ENAM"
         },
         {
@@ -27710,7 +27446,6 @@
         {
           "kind": "string",
           "name": "Animation File",
-          "keep_case": false,
           "sig": "GNAM"
         },
         {
@@ -27734,7 +27469,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -27942,7 +27676,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -28117,7 +27850,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -28681,7 +28413,6 @@
         {
           "kind": "string",
           "name": "Texture",
-          "keep_case": false,
           "sig": "LNAM"
         },
         {
@@ -29958,7 +29689,6 @@
         {
           "kind": "string",
           "name": "Name",
-          "keep_case": false,
           "sig": "FULL"
         }
       ]
@@ -29969,7 +29699,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -30335,7 +30064,6 @@
         {
           "kind": "string",
           "name": "LUT",
-          "keep_case": false,
           "sig": "TX00"
         }
       ]
@@ -30346,7 +30074,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -30479,7 +30206,6 @@
         {
           "kind": "string",
           "name": "Override FileName",
-          "keep_case": false,
           "sig": "IOVR"
         },
         {
@@ -30570,19 +30296,16 @@
               {
                 "kind": "string",
                 "name": "Script Notes",
-                "keep_case": false,
                 "sig": "NAM2"
               },
               {
                 "kind": "string",
                 "name": "Edits",
-                "keep_case": false,
                 "sig": "NAM3"
               },
               {
                 "kind": "string",
                 "name": "Alternate LIP Text",
-                "keep_case": false,
                 "sig": "NAM4"
               },
               {
@@ -30655,13 +30378,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -30750,7 +30471,6 @@
         {
           "kind": "string",
           "name": "Start Scene Phase",
-          "keep_case": false,
           "sig": "NAM0"
         },
         {
@@ -30808,7 +30528,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -30954,7 +30673,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -31124,13 +30842,11 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Message Icon",
-          "keep_case": false,
           "sig": "MICO"
         },
         {
@@ -31217,13 +30933,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -31363,7 +31077,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -31376,7 +31089,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -31752,13 +31464,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -31828,14 +31538,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Instance Naming Filter",
-          "keep_case": false,
           "sig": "INRF"
         },
         {
@@ -31860,7 +31568,6 @@
           "element": {
             "kind": "string",
             "name": "Ruleset Name",
-            "keep_case": false,
             "sig": "ZNAM"
           }
         },
@@ -31987,7 +31694,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -31998,7 +31704,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -32487,7 +32192,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -32524,7 +32228,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -32696,7 +32399,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -32866,13 +32568,11 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Message Icon",
-          "keep_case": false,
           "sig": "MICO"
         },
         {
@@ -32959,13 +32659,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -33105,7 +32803,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -33118,7 +32815,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -33355,7 +33051,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -33450,7 +33145,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -33503,7 +33197,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -33515,7 +33208,6 @@
         {
           "kind": "string",
           "name": "Notes",
-          "keep_case": false,
           "sig": "DNAM"
         },
         {
@@ -33570,7 +33262,6 @@
         {
           "kind": "string",
           "name": "Icon Name",
-          "keep_case": false,
           "sig": "ENAM"
         },
         {
@@ -33594,7 +33285,6 @@
         {
           "kind": "string",
           "name": "Display Name",
-          "keep_case": false,
           "sig": "NNAM"
         }
       ]
@@ -33605,7 +33295,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -33630,7 +33319,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -33695,7 +33383,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -33875,14 +33562,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "DURL",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -34690,7 +34375,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -34721,13 +34405,11 @@
               {
                 "kind": "string",
                 "name": "Lens Flare Sprite ID",
-                "keep_case": false,
                 "sig": "DNAM"
               },
               {
                 "kind": "string",
                 "name": "Texture",
-                "keep_case": false,
                 "sig": "FNAM"
               },
               {
@@ -34798,7 +34480,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -34861,7 +34542,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -35237,7 +34917,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -35907,7 +35586,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -36039,7 +35717,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -36316,13 +35993,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -36462,7 +36137,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -36475,7 +36149,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -36679,13 +36352,11 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Message Icon",
-          "keep_case": false,
           "sig": "MICO"
         },
         {
@@ -36848,7 +36519,6 @@
         {
           "kind": "string",
           "name": "Gobo",
-          "keep_case": false,
           "sig": "NAM0"
         },
         {
@@ -36883,7 +36553,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -37010,7 +36679,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -37045,13 +36713,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -37063,7 +36729,6 @@
         {
           "kind": "string",
           "name": "Background Image",
-          "keep_case": false,
           "sig": "BNAM"
         },
         {
@@ -37121,7 +36786,6 @@
         {
           "kind": "string",
           "name": "Camera Path",
-          "keep_case": false,
           "sig": "MOD2",
           "sized": 0
         },
@@ -37143,14 +36807,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Texture",
-          "keep_case": false,
           "sig": "BNAM"
         },
         {
@@ -37225,7 +36887,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -37394,7 +37055,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -37537,13 +37197,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -37939,13 +37597,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -38097,7 +37753,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -38280,7 +37935,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -38498,13 +38152,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -38688,13 +38340,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -38785,7 +38435,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -38967,7 +38616,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -39185,7 +38833,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -39367,7 +39014,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -39618,13 +39264,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -39697,7 +39341,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -39708,7 +39351,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -39955,7 +39597,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -39971,7 +39612,6 @@
         {
           "kind": "string",
           "name": "Material Name",
-          "keep_case": false,
           "sig": "MNAM"
         },
         {
@@ -40023,7 +39663,6 @@
         {
           "kind": "string",
           "name": "Breakable FX",
-          "keep_case": false,
           "sig": "ANAM"
         },
         {
@@ -40039,7 +39678,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -40096,13 +39734,11 @@
               {
                 "kind": "string",
                 "name": "Initial Model",
-                "keep_case": false,
                 "sig": "BNAM"
               },
               {
                 "kind": "string",
                 "name": "New Model",
-                "keep_case": false,
                 "sig": "SNAM"
               }
             ]
@@ -40116,7 +39752,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -40244,7 +39879,6 @@
         {
           "kind": "string",
           "name": "SWF",
-          "keep_case": false,
           "sig": "SNAM"
         },
         {
@@ -40290,13 +39924,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -40321,7 +39953,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -41084,13 +40715,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -41107,7 +40736,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -41427,7 +41055,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -41597,13 +41224,11 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Message Icon",
-          "keep_case": false,
           "sig": "MICO"
         },
         {
@@ -41690,13 +41315,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -41836,7 +41459,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -41849,7 +41471,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -42273,14 +41894,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Name",
-          "keep_case": false,
           "sig": "MNAM"
         },
         {
@@ -43022,7 +42641,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -43094,7 +42712,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -43355,7 +42972,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -43371,7 +42987,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -43622,13 +43237,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -43768,7 +43381,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -43781,7 +43393,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -44069,7 +43680,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -44122,14 +43732,12 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
         {
           "kind": "string",
           "name": "Tree Folder",
-          "keep_case": false,
           "sig": "FNAM"
         },
         {
@@ -44142,19 +43750,16 @@
               {
                 "kind": "string",
                 "name": "Original Material",
-                "keep_case": false,
                 "sig": "BNAM"
               },
               {
                 "kind": "string",
                 "name": "Replacement Material",
-                "keep_case": false,
                 "sig": "SNAM"
               },
               {
                 "kind": "string",
                 "name": "Tree Folder (obsolete)",
-                "keep_case": false,
                 "sig": "FNAM"
               },
               {
@@ -44173,7 +43778,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -44250,7 +43854,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -44277,13 +43880,11 @@
         {
           "kind": "string",
           "name": "Track FileName",
-          "keep_case": false,
           "sig": "ANAM"
         },
         {
           "kind": "string",
           "name": "Finale FileName",
-          "keep_case": false,
           "sig": "BNAM"
         },
         {
@@ -44349,13 +43950,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -44385,7 +43984,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -44724,7 +44322,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -45184,7 +44781,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -45229,7 +44825,6 @@
               {
                 "kind": "string",
                 "name": "Model",
-                "keep_case": false,
                 "sig": "NAM1"
               }
             ]
@@ -45243,7 +44838,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -45367,7 +44961,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -45537,7 +45130,6 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
@@ -45678,7 +45270,6 @@
         {
           "kind": "string",
           "name": "Program File",
-          "keep_case": false,
           "sig": "PNAM"
         }
       ]
@@ -45689,7 +45280,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -45894,7 +45484,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -46397,13 +45986,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -46543,7 +46130,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -46556,7 +46142,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -46835,7 +46420,6 @@
               {
                 "kind": "string",
                 "name": "Attack Event",
-                "keep_case": false,
                 "sig": "ATKE"
               },
               {
@@ -46857,7 +46441,6 @@
               {
                 "kind": "string",
                 "name": "Description",
-                "keep_case": false,
                 "sig": "ATKT"
               },
               {
@@ -46886,13 +46469,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -48587,13 +48168,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -48609,14 +48188,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "DURL",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -48668,7 +48245,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -48689,7 +48265,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -49612,13 +49187,11 @@
         {
           "kind": "string",
           "name": "Filter",
-          "keep_case": false,
           "sig": "FLTR"
         },
         {
           "kind": "string",
           "name": "Obstacle",
-          "keep_case": false,
           "sig": "OBST"
         }
       ]
@@ -49629,7 +49202,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -49716,7 +49288,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -49810,7 +49381,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -49826,7 +49396,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -49991,13 +49560,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -50119,7 +49686,6 @@
                   {
                     "kind": "string",
                     "name": "Type",
-                    "keep_case": false,
                     "sig": "ANAM"
                   },
                   {
@@ -50211,7 +49777,6 @@
                             {
                               "kind": "string",
                               "name": "Subtype",
-                              "keep_case": false,
                               "sized": 4
                             }
                           ]
@@ -50665,7 +50230,6 @@
                   {
                     "kind": "string",
                     "name": "Name",
-                    "keep_case": false,
                     "sig": "BNAM"
                   },
                   {
@@ -50704,7 +50268,6 @@
                   {
                     "kind": "string",
                     "name": "Branch Type",
-                    "keep_case": false,
                     "sig": "ANAM"
                   },
                   {
@@ -50740,13 +50303,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -50783,7 +50344,6 @@
                   {
                     "kind": "string",
                     "name": "Procedure Type",
-                    "keep_case": false,
                     "sig": "PNAM"
                   },
                   {
@@ -51000,7 +50560,6 @@
               {
                 "kind": "string",
                 "name": "Name",
-                "keep_case": false,
                 "sig": "BNAM"
               },
               {
@@ -51077,7 +50636,6 @@
                       {
                         "kind": "string",
                         "name": "Subtype",
-                        "keep_case": false,
                         "sized": 4
                       }
                     ]
@@ -51147,7 +50705,6 @@
                       {
                         "kind": "string",
                         "name": "Subtype",
-                        "keep_case": false,
                         "sized": 4
                       }
                     ]
@@ -51217,7 +50774,6 @@
                       {
                         "kind": "string",
                         "name": "Subtype",
-                        "keep_case": false,
                         "sized": 4
                       }
                     ]
@@ -51236,7 +50792,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -51317,13 +50872,11 @@
         {
           "kind": "string",
           "name": "Male Name",
-          "keep_case": false,
           "sig": "MNAM"
         },
         {
           "kind": "string",
           "name": "Female Name",
-          "keep_case": false,
           "sig": "FNAM"
         },
         {
@@ -51389,7 +50942,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -51459,14 +51011,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "DURL",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -51488,7 +51038,6 @@
         {
           "kind": "string",
           "name": "Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
@@ -51517,13 +51066,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -51623,13 +51170,11 @@
         {
           "kind": "string",
           "name": "SWF Sprite Name",
-          "keep_case": false,
           "sig": "FNAM"
         },
         {
           "kind": "string",
           "name": "Perk Activation Icon",
-          "keep_case": false,
           "sig": "PRFI"
         },
         {
@@ -52011,13 +51556,11 @@
                           {
                             "kind": "string",
                             "name": "Parameter #1",
-                            "keep_case": false,
                             "sig": "CIS1"
                           },
                           {
                             "kind": "string",
                             "name": "Parameter #2",
-                            "keep_case": false,
                             "sig": "CIS2"
                           }
                         ]
@@ -52371,7 +51914,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -53364,7 +52906,6 @@
         {
           "kind": "string",
           "name": "Comments",
-          "keep_case": false,
           "sig": "MNAM"
         }
       ],
@@ -53376,7 +52917,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -54369,7 +53909,6 @@
         {
           "kind": "string",
           "name": "Comments",
-          "keep_case": false,
           "sig": "MNAM"
         }
       ],
@@ -54381,7 +53920,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -54552,7 +54090,6 @@
         {
           "kind": "string",
           "name": "Filter",
-          "keep_case": false,
           "sig": "FLTR"
         },
         {
@@ -54768,7 +54305,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -54855,7 +54391,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -54969,13 +54504,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -54992,7 +54525,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -55045,7 +54577,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -55057,7 +54588,6 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
@@ -55086,13 +54616,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -55130,7 +54658,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -56123,7 +55650,6 @@
         {
           "kind": "string",
           "name": "Comments",
-          "keep_case": false,
           "sig": "MNAM"
         }
       ],
@@ -56135,7 +55661,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -56220,7 +55745,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -56507,7 +56031,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -56706,7 +56229,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -56957,13 +56479,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -57103,7 +56623,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -57116,7 +56635,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -57453,7 +56971,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "NAM1"
             },
             {
@@ -57509,7 +57026,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -57547,7 +57063,6 @@
         {
           "kind": "string",
           "name": "Notes",
-          "keep_case": false,
           "sig": "QMDN"
         },
         {
@@ -57668,14 +57183,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "DURL",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -58122,14 +57635,12 @@
           "element": {
             "kind": "string",
             "name": "Quest Variable",
-            "keep_case": false,
             "sig": "QTVR"
           }
         },
         {
           "kind": "string",
           "name": "Filter",
-          "keep_case": false,
           "sig": "FLTR"
         },
         {
@@ -58162,13 +57673,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -58214,13 +57723,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -58264,13 +57771,11 @@
                           {
                             "kind": "string",
                             "name": "Parameter #1",
-                            "keep_case": false,
                             "sig": "CIS1"
                           },
                           {
                             "kind": "string",
                             "name": "Parameter #2",
-                            "keep_case": false,
                             "sig": "CIS2"
                           }
                         ]
@@ -58314,13 +57819,11 @@
                               {
                                 "kind": "string",
                                 "name": "Parameter #1",
-                                "keep_case": false,
                                 "sig": "CIS1"
                               },
                               {
                                 "kind": "string",
                                 "name": "Parameter #2",
-                                "keep_case": false,
                                 "sig": "CIS2"
                               }
                             ]
@@ -58422,13 +57925,11 @@
                               {
                                 "kind": "string",
                                 "name": "Parameter #1",
-                                "keep_case": false,
                                 "sig": "CIS1"
                               },
                               {
                                 "kind": "string",
                                 "name": "Parameter #2",
-                                "keep_case": false,
                                 "sig": "CIS2"
                               }
                             ]
@@ -58440,13 +57941,11 @@
                     {
                       "kind": "string",
                       "name": "Note",
-                      "keep_case": false,
                       "sig": "NAM2"
                     },
                     {
                       "kind": "string",
                       "name": "Comments",
-                      "keep_case": false,
                       "sig": "SCFC"
                     },
                     {
@@ -58629,13 +58128,11 @@
                                     {
                                       "kind": "string",
                                       "name": "Parameter #1",
-                                      "keep_case": false,
                                       "sig": "CIS1"
                                     },
                                     {
                                       "kind": "string",
                                       "name": "Parameter #2",
-                                      "keep_case": false,
                                       "sig": "CIS2"
                                     }
                                   ]
@@ -58742,7 +58239,6 @@
               {
                 "kind": "string",
                 "name": "Comments",
-                "keep_case": false,
                 "sig": "SCCM"
               },
               {
@@ -58841,13 +58337,11 @@
                               {
                                 "kind": "string",
                                 "name": "Parameter #1",
-                                "keep_case": false,
                                 "sig": "CIS1"
                               },
                               {
                                 "kind": "string",
                                 "name": "Parameter #2",
-                                "keep_case": false,
                                 "sig": "CIS2"
                               }
                             ]
@@ -58893,7 +58387,6 @@
                   {
                     "kind": "string",
                     "name": "Alias Name",
-                    "keep_case": false,
                     "sig": "ALID"
                   },
                   {
@@ -59380,13 +58873,11 @@
                                 {
                                   "kind": "string",
                                   "name": "Parameter #1",
-                                  "keep_case": false,
                                   "sig": "CIS1"
                                 },
                                 {
                                   "kind": "string",
                                   "name": "Parameter #2",
-                                  "keep_case": false,
                                   "sig": "CIS2"
                                 }
                               ]
@@ -59727,7 +59218,6 @@
                   {
                     "kind": "string",
                     "name": "Comments",
-                    "keep_case": false,
                     "sig": "SCCM"
                   },
                   {
@@ -59763,7 +59253,6 @@
                   {
                     "kind": "string",
                     "name": "Alias Name",
-                    "keep_case": false,
                     "sig": "ALID"
                   },
                   {
@@ -60083,13 +59572,11 @@
                                 {
                                   "kind": "string",
                                   "name": "Parameter #1",
-                                  "keep_case": false,
                                   "sig": "CIS1"
                                 },
                                 {
                                   "kind": "string",
                                   "name": "Parameter #2",
-                                  "keep_case": false,
                                   "sig": "CIS2"
                                 }
                               ]
@@ -60146,7 +59633,6 @@
         {
           "kind": "string",
           "name": "Description 2",
-          "keep_case": false,
           "sig": "NNAM",
           "sized": 0
         },
@@ -60161,13 +59647,11 @@
         {
           "kind": "string",
           "name": "SWF File",
-          "keep_case": false,
           "sig": "SNAM"
         },
         {
           "kind": "string",
           "name": "Comments",
-          "keep_case": false,
           "sig": "SCCM"
         },
         {
@@ -60227,7 +59711,6 @@
             {
               "kind": "string",
               "name": "Public Event Popup Info",
-              "keep_case": false,
               "sig": "PEPI"
             },
             {
@@ -60252,7 +59735,6 @@
                   {
                     "kind": "string",
                     "name": "Icon",
-                    "keep_case": false,
                     "sig": "PEWI"
                   },
                   {
@@ -60281,13 +59763,11 @@
               {
                 "kind": "string",
                 "name": "Key",
-                "keep_case": false,
                 "sig": "QQSK"
               },
               {
                 "kind": "string",
                 "name": "Value",
-                "keep_case": false,
                 "sig": "QQSV"
               }
             ]
@@ -60321,14 +59801,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Group Name",
-          "keep_case": false,
           "sig": "DURL"
         },
         {
@@ -60345,7 +59823,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -60999,7 +60476,6 @@
                 {
                   "kind": "string",
                   "name": "Male Skeletal Model",
-                  "keep_case": false,
                   "sig": "ANAM"
                 },
                 {
@@ -61021,7 +60497,6 @@
                 {
                   "kind": "string",
                   "name": "Female Skeletal Model",
-                  "keep_case": false,
                   "sig": "ANAM"
                 },
                 {
@@ -61039,7 +60514,6 @@
           "element": {
             "kind": "string",
             "name": "Name",
-            "keep_case": false,
             "sig": "MTNM",
             "sized": 4
           }
@@ -61214,7 +60688,6 @@
               {
                 "kind": "string",
                 "name": "Attack Event",
-                "keep_case": false,
                 "sig": "ATKE"
               },
               {
@@ -61236,7 +60709,6 @@
               {
                 "kind": "string",
                 "name": "Description",
-                "keep_case": false,
                 "sig": "ATKT"
               },
               {
@@ -61265,13 +60737,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -61320,7 +60790,6 @@
                           {
                             "kind": "string",
                             "name": "Model FileName",
-                            "keep_case": false,
                             "sig": "MODL"
                           },
                           {
@@ -61520,7 +60989,6 @@
                           {
                             "kind": "string",
                             "name": "Model FileName",
-                            "keep_case": false,
                             "sig": "MODL"
                           },
                           {
@@ -61735,7 +61203,6 @@
                     {
                       "kind": "string",
                       "name": "Model FileName",
-                      "keep_case": false,
                       "sig": "MODL"
                     },
                     {
@@ -61920,7 +61387,6 @@
                     {
                       "kind": "string",
                       "name": "Model FileName",
-                      "keep_case": false,
                       "sig": "MODL"
                     },
                     {
@@ -62153,7 +61619,6 @@
           "element": {
             "kind": "string",
             "name": "Name",
-            "keep_case": false,
             "sig": "NAME"
           }
         },
@@ -62952,7 +62417,6 @@
               {
                 "kind": "string",
                 "name": "Node",
-                "keep_case": false,
                 "sig": "ZNAM"
               }
             ]
@@ -62980,7 +62444,6 @@
           "element": {
             "kind": "string",
             "name": "Name",
-            "keep_case": false,
             "sig": "PHTN"
           }
         },
@@ -66730,13 +66193,11 @@
                                       {
                                         "kind": "string",
                                         "name": "Parameter #1",
-                                        "keep_case": false,
                                         "sig": "CIS1"
                                       },
                                       {
                                         "kind": "string",
                                         "name": "Parameter #2",
-                                        "keep_case": false,
                                         "sig": "CIS2"
                                       }
                                     ]
@@ -66751,7 +66212,6 @@
                               "element": {
                                 "kind": "string",
                                 "name": "Texture",
-                                "keep_case": false,
                                 "sig": "TTET"
                               }
                             },
@@ -66842,7 +66302,6 @@
                       {
                         "kind": "string",
                         "name": "Name",
-                        "keep_case": false,
                         "sig": "MPGN"
                       },
                       {
@@ -66874,7 +66333,6 @@
                             {
                               "kind": "string",
                               "name": "Morph Type",
-                              "keep_case": false,
                               "sig": "MPPM"
                             },
                             {
@@ -66955,7 +66413,6 @@
                 {
                   "kind": "string",
                   "name": "Male Wrinkle Map Path",
-                  "keep_case": false,
                   "sig": "WMAP"
                 }
               ]
@@ -67181,13 +66638,11 @@
                                       {
                                         "kind": "string",
                                         "name": "Parameter #1",
-                                        "keep_case": false,
                                         "sig": "CIS1"
                                       },
                                       {
                                         "kind": "string",
                                         "name": "Parameter #2",
-                                        "keep_case": false,
                                         "sig": "CIS2"
                                       }
                                     ]
@@ -67202,7 +66657,6 @@
                               "element": {
                                 "kind": "string",
                                 "name": "Texture",
-                                "keep_case": false,
                                 "sig": "TTET"
                               }
                             },
@@ -67293,7 +66747,6 @@
                       {
                         "kind": "string",
                         "name": "Name",
-                        "keep_case": false,
                         "sig": "MPGN"
                       },
                       {
@@ -67325,7 +66778,6 @@
                             {
                               "kind": "string",
                               "name": "Morph Type",
-                              "keep_case": false,
                               "sig": "MPPM"
                             },
                             {
@@ -67406,7 +66858,6 @@
                 {
                   "kind": "string",
                   "name": "Female Wrinkle Map Path",
-                  "keep_case": false,
                   "sig": "WMAP"
                 }
               ]
@@ -67475,7 +66926,6 @@
               {
                 "kind": "string",
                 "name": "Behaviour Graph",
-                "keep_case": false,
                 "sig": "SGNM"
               },
               {
@@ -67484,7 +66934,6 @@
                 "element": {
                   "kind": "string",
                   "name": "Path",
-                  "keep_case": false,
                   "sig": "SAPT"
                 }
               },
@@ -67568,13 +67017,11 @@
               {
                 "kind": "string",
                 "name": "Min Name",
-                "keep_case": false,
                 "sig": "MSM0"
               },
               {
                 "kind": "string",
                 "name": "Max Name",
-                "keep_case": false,
                 "sig": "MSM1"
               }
             ]
@@ -67590,13 +67037,11 @@
         {
           "kind": "string",
           "name": "Hair Color Lookup Texture",
-          "keep_case": false,
           "sig": "HNAM"
         },
         {
           "kind": "string",
           "name": "Hair Color Extended Lookup Texture",
-          "keep_case": false,
           "sig": "HLTX"
         },
         {
@@ -67635,7 +67080,6 @@
                         {
                           "kind": "string",
                           "name": "Name",
-                          "keep_case": false,
                           "sig": "BSMB"
                         },
                         {
@@ -67683,7 +67127,6 @@
                         {
                           "kind": "string",
                           "name": "Name",
-                          "keep_case": false,
                           "sig": "BSMB"
                         },
                         {
@@ -67792,7 +67235,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -69508,7 +68950,6 @@
                         {
                           "kind": "string",
                           "name": "Subtype",
-                          "keep_case": false,
                           "sized": 4
                         }
                       ]
@@ -70246,7 +69687,6 @@
         {
           "kind": "string",
           "name": "Comments",
-          "keep_case": false,
           "sig": "MNAM"
         },
         {
@@ -70268,7 +69708,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -70397,7 +69836,6 @@
               {
                 "kind": "string",
                 "name": "Icon Image",
-                "keep_case": false,
                 "sig": "ICON"
               },
               {
@@ -70732,7 +70170,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -70817,7 +70254,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -70862,7 +70298,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -70970,7 +70405,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -71035,14 +70469,12 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Name",
-          "keep_case": false,
           "sig": "NNAM"
         },
         {
@@ -71084,7 +70516,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -71174,7 +70605,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -71225,7 +70655,6 @@
               {
                 "kind": "string",
                 "name": "Name",
-                "keep_case": false,
                 "sig": "NAM0"
               },
               {
@@ -71258,13 +70687,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -71310,13 +70737,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -71480,7 +70905,6 @@
               {
                 "kind": "string",
                 "name": "Name",
-                "keep_case": false,
                 "sig": "NAM0"
               },
               {
@@ -71784,7 +71208,6 @@
                             {
                               "kind": "string",
                               "name": "Start Phase for Scene",
-                              "keep_case": false,
                               "sig": "SSPN"
                             },
                             {
@@ -71820,13 +71243,11 @@
                                       {
                                         "kind": "string",
                                         "name": "Parameter #1",
-                                        "keep_case": false,
                                         "sig": "CIS1"
                                       },
                                       {
                                         "kind": "string",
                                         "name": "Parameter #2",
-                                        "keep_case": false,
                                         "sig": "CIS2"
                                       }
                                     ]
@@ -72172,13 +71593,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -72209,7 +71628,6 @@
         {
           "kind": "string",
           "name": "Notes",
-          "keep_case": false,
           "sig": "NNAM"
         },
         {
@@ -72243,7 +71661,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -72436,7 +71853,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -72698,7 +72114,6 @@
         {
           "kind": "string",
           "name": "Filter",
-          "keep_case": false,
           "sig": "FLTR"
         },
         {
@@ -72808,7 +72223,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -72849,7 +72263,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -72899,7 +72312,6 @@
         {
           "kind": "string",
           "name": "Description",
-          "keep_case": false,
           "sig": "NNAM"
         },
         {
@@ -72972,7 +72384,6 @@
               {
                 "kind": "string",
                 "name": "Description",
-                "keep_case": false,
                 "sig": "NNAM"
               },
               {
@@ -72991,7 +72402,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -73050,13 +72460,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -73093,7 +72501,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -73152,13 +72559,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -73202,7 +72607,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -73261,13 +72665,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -73356,7 +72758,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -73431,7 +72832,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -73481,7 +72881,6 @@
         {
           "kind": "string",
           "name": "Notes",
-          "keep_case": false,
           "sig": "NNAM"
         },
         {
@@ -73516,7 +72915,6 @@
           "element": {
             "kind": "string",
             "name": "Sound",
-            "keep_case": false,
             "sig": "ANAM"
           }
         },
@@ -73554,13 +72952,11 @@
                   {
                     "kind": "string",
                     "name": "Parameter #1",
-                    "keep_case": false,
                     "sig": "CIS1"
                   },
                   {
                     "kind": "string",
                     "name": "Parameter #2",
-                    "keep_case": false,
                     "sig": "CIS2"
                   }
                 ]
@@ -73725,7 +73121,6 @@
                 "element": {
                   "kind": "string",
                   "name": "File",
-                  "keep_case": false,
                   "sig": "FNAM"
                 }
               },
@@ -73755,7 +73150,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -73995,7 +73389,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -74159,7 +73552,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -74609,13 +74001,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -74685,7 +74075,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -74809,7 +74198,6 @@
         {
           "kind": "string",
           "name": "Particle Texture",
-          "keep_case": false,
           "sig": "MNAM"
         }
       ]
@@ -74820,7 +74208,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -74884,8 +74271,7 @@
               },
               {
                 "kind": "string",
-                "name": "Action",
-                "keep_case": false
+                "name": "Action"
               }
             ],
             "sig": "TNAM"
@@ -74899,7 +74285,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -75096,7 +74481,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -75119,7 +74503,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -75430,13 +74813,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -75576,7 +74957,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -75589,7 +74969,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -76211,25 +75590,21 @@
             {
               "kind": "string",
               "name": "True",
-              "keep_case": false,
               "sized": 260
             },
             {
               "kind": "string",
               "name": "True 2",
-              "keep_case": false,
               "sized": 260
             },
             {
               "kind": "string",
               "name": "True 3",
-              "keep_case": false,
               "sized": 260
             },
             {
               "kind": "string",
               "name": "True 4",
-              "keep_case": false,
               "sized": 260
             }
           ],
@@ -76259,7 +75634,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -76315,7 +75689,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -76531,7 +75904,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -76600,7 +75972,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -76884,7 +76255,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -77004,7 +76374,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -77255,13 +76624,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -77401,7 +76768,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -77414,7 +76780,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -77708,13 +77073,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -77762,13 +77125,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -77825,7 +77186,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -77911,7 +77271,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -78121,7 +77480,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -78372,13 +77730,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -78518,7 +77874,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -78531,7 +77886,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -78923,7 +78277,6 @@
         {
           "kind": "string",
           "name": "Marker Model",
-          "keep_case": false,
           "sig": "XMRK"
         },
         {
@@ -79094,13 +78447,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -79182,7 +78533,6 @@
               {
                 "kind": "string",
                 "name": "Show Image",
-                "keep_case": false,
                 "sig": "VNAM"
               },
               {
@@ -79219,13 +78569,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -79240,7 +78588,6 @@
         {
           "kind": "string",
           "name": "Comments",
-          "keep_case": false,
           "sig": "SCFC"
         }
       ]
@@ -79251,7 +78598,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -79553,7 +78899,6 @@
           "element": {
             "kind": "string",
             "name": "Form Tag",
-            "keep_case": false,
             "sig": "FTAG"
           }
         },
@@ -79569,7 +78914,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -79820,13 +79164,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -79966,7 +79308,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -79979,7 +79320,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -80495,13 +79835,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -80549,13 +79887,11 @@
                             {
                               "kind": "string",
                               "name": "Parameter #1",
-                              "keep_case": false,
                               "sig": "CIS1"
                             },
                             {
                               "kind": "string",
                               "name": "Parameter #2",
-                              "keep_case": false,
                               "sig": "CIS2"
                             }
                           ]
@@ -81078,7 +80414,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -81193,7 +80528,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -81531,7 +80865,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -81610,7 +80943,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -81729,7 +81061,6 @@
         {
           "kind": "string",
           "name": "Filter",
-          "keep_case": false,
           "sig": "FLTR"
         },
         {
@@ -81739,67 +81070,56 @@
             {
               "kind": "string",
               "name": "Diffuse",
-              "keep_case": false,
               "sig": "TX00"
             },
             {
               "kind": "string",
               "name": "Normal/Gloss",
-              "keep_case": false,
               "sig": "TX01"
             },
             {
               "kind": "string",
               "name": "Glow",
-              "keep_case": false,
               "sig": "TX03"
             },
             {
               "kind": "string",
               "name": "Height",
-              "keep_case": false,
               "sig": "TX04"
             },
             {
               "kind": "string",
               "name": "Environment",
-              "keep_case": false,
               "sig": "TX05"
             },
             {
               "kind": "string",
               "name": "Wrinkles",
-              "keep_case": false,
               "sig": "TX02"
             },
             {
               "kind": "string",
               "name": "Multilayer",
-              "keep_case": false,
               "sig": "TX06"
             },
             {
               "kind": "string",
               "name": "Smooth Spec",
-              "keep_case": false,
               "sig": "TX07"
             },
             {
               "kind": "string",
               "name": "Specular",
-              "keep_case": false,
               "sig": "TX08"
             },
             {
               "kind": "string",
               "name": "Lighting",
-              "keep_case": false,
               "sig": "TX09"
             },
             {
               "kind": "string",
               "name": "Flow",
-              "keep_case": false,
               "sig": "TX10"
             }
           ]
@@ -81997,7 +81317,6 @@
         {
           "kind": "string",
           "name": "Material",
-          "keep_case": false,
           "sig": "MNAM"
         }
       ]
@@ -82008,7 +81327,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -82119,7 +81437,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -82433,7 +81750,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -82511,7 +81827,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -82537,7 +81852,6 @@
         {
           "kind": "string",
           "name": "TTS voice name",
-          "keep_case": false,
           "sig": "ENAM"
         }
       ]
@@ -82548,7 +81862,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -82928,25 +82241,21 @@
         {
           "kind": "string",
           "name": "Layer 1 Noise Texture",
-          "keep_case": false,
           "sig": "NAM2"
         },
         {
           "kind": "string",
           "name": "Layer 2 Noise Texture",
-          "keep_case": false,
           "sig": "NAM3"
         },
         {
           "kind": "string",
           "name": "Layer 3 Noise Texture",
-          "keep_case": false,
           "sig": "NAM4"
         },
         {
           "kind": "string",
           "name": "Flow Normals Noise Texture",
-          "keep_case": false,
           "sig": "NAM5"
         },
         {
@@ -82967,7 +82276,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -83038,7 +82346,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -83297,7 +82604,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MODL"
             },
             {
@@ -83467,13 +82773,11 @@
         {
           "kind": "string",
           "name": "Icon Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
           "kind": "string",
           "name": "Message Icon",
-          "keep_case": false,
           "sig": "MICO"
         },
         {
@@ -83569,13 +82873,11 @@
                       {
                         "kind": "string",
                         "name": "Parameter #1",
-                        "keep_case": false,
                         "sig": "CIS1"
                       },
                       {
                         "kind": "string",
                         "name": "Parameter #2",
-                        "keep_case": false,
                         "sig": "CIS2"
                       }
                     ]
@@ -83715,7 +83017,6 @@
                   {
                     "kind": "string",
                     "name": "Sequence Name",
-                    "keep_case": false,
                     "sig": "DSTA"
                   },
                   {
@@ -83728,7 +83029,6 @@
                         {
                           "kind": "string",
                           "name": "Model FileName",
-                          "keep_case": false,
                           "sig": "DMDL",
                           "sized": 0
                         },
@@ -84612,7 +83912,6 @@
             {
               "kind": "string",
               "name": "Model FileName",
-              "keep_case": false,
               "sig": "MOD4"
             },
             {
@@ -85440,7 +84739,6 @@
         {
           "kind": "string",
           "name": "Filter",
-          "keep_case": false,
           "sig": "FLTR"
         },
         {
@@ -85597,7 +84895,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -85841,7 +85138,6 @@
         {
           "kind": "string",
           "name": "Map Image",
-          "keep_case": false,
           "sig": "ICON"
         },
         {
@@ -85855,7 +85151,6 @@
                 {
                   "kind": "string",
                   "name": "Model FileName",
-                  "keep_case": false,
                   "sig": "MODL"
                 },
                 {
@@ -86192,7 +85487,6 @@
             {
               "kind": "string",
               "name": "Texture",
-              "keep_case": false,
               "sig": "NAM5"
             },
             {
@@ -86239,26 +85533,22 @@
         {
           "kind": "string",
           "name": "Canopy Shadow (unused)",
-          "keep_case": false,
           "sig": "NNAM",
           "sized": 0
         },
         {
           "kind": "string",
           "name": "Water Environment Map",
-          "keep_case": false,
           "sig": "XWEM"
         },
         {
           "kind": "string",
           "name": "HD LOD Diffuse Texture",
-          "keep_case": false,
           "sig": "TNAM"
         },
         {
           "kind": "string",
           "name": "HD LOD Normal Texture",
-          "keep_case": false,
           "sig": "UNAM"
         },
         {
@@ -86327,7 +85617,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -86392,7 +85681,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -86429,61 +85717,51 @@
             {
               "kind": "string",
               "name": "Layer #0",
-              "keep_case": false,
               "sig": "00TX"
             },
             {
               "kind": "string",
               "name": "Layer #1",
-              "keep_case": false,
               "sig": "10TX"
             },
             {
               "kind": "string",
               "name": "Layer #2",
-              "keep_case": false,
               "sig": "20TX"
             },
             {
               "kind": "string",
               "name": "Layer #3",
-              "keep_case": false,
               "sig": "30TX"
             },
             {
               "kind": "string",
               "name": "Layer #4",
-              "keep_case": false,
               "sig": "40TX"
             },
             {
               "kind": "string",
               "name": "Layer #5",
-              "keep_case": false,
               "sig": "50TX"
             },
             {
               "kind": "string",
               "name": "Layer #6",
-              "keep_case": false,
               "sig": "60TX"
             },
             {
               "kind": "string",
               "name": "Layer #7",
-              "keep_case": false,
               "sig": "70TX"
             },
             {
               "kind": "string",
               "name": "Layer #8",
-              "keep_case": false,
               "sig": "80TX"
             },
             {
               "kind": "string",
               "name": "Layer #9",
-              "keep_case": false,
               "sig": "90TX"
             },
             {
@@ -86524,91 +85802,76 @@
             {
               "kind": "string",
               "name": "Layer #17",
-              "keep_case": false,
               "sig": "A0TX"
             },
             {
               "kind": "string",
               "name": "Layer #18",
-              "keep_case": false,
               "sig": "B0TX"
             },
             {
               "kind": "string",
               "name": "Layer #19",
-              "keep_case": false,
               "sig": "C0TX"
             },
             {
               "kind": "string",
               "name": "Layer #20",
-              "keep_case": false,
               "sig": "D0TX"
             },
             {
               "kind": "string",
               "name": "Layer #21",
-              "keep_case": false,
               "sig": "E0TX"
             },
             {
               "kind": "string",
               "name": "Layer #22",
-              "keep_case": false,
               "sig": "F0TX"
             },
             {
               "kind": "string",
               "name": "Layer #23",
-              "keep_case": false,
               "sig": "G0TX"
             },
             {
               "kind": "string",
               "name": "Layer #24",
-              "keep_case": false,
               "sig": "H0TX"
             },
             {
               "kind": "string",
               "name": "Layer #25",
-              "keep_case": false,
               "sig": "I0TX"
             },
             {
               "kind": "string",
               "name": "Layer #26",
-              "keep_case": false,
               "sig": "J0TX"
             },
             {
               "kind": "string",
               "name": "Layer #27",
-              "keep_case": false,
               "sig": "K0TX"
             },
             {
               "kind": "string",
               "name": "Layer #28",
-              "keep_case": false,
               "sig": "L0TX"
             },
             {
               "kind": "string",
               "name": "Layer #29",
-              "keep_case": false,
               "sig": "M0TX"
             },
             {
               "kind": "string",
               "name": "Layer #30",
-              "keep_case": false,
               "sig": "N0TX"
             },
             {
               "kind": "string",
               "name": "Layer #31",
-              "keep_case": false,
               "sig": "O0TX"
             }
           ],
@@ -87213,7 +86476,6 @@
                 {
                   "kind": "string",
                   "name": "Model FileName",
-                  "keep_case": false,
                   "sig": "MODL"
                 },
                 {
@@ -87481,7 +86743,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sig": "EDID",
           "sized": 0
         },
@@ -87533,7 +86794,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sized": 0,
           "sig": "EDID"
         },

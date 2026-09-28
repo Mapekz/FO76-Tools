@@ -345,20 +345,6 @@ pub(super) fn choose_union_variant(
                 .or(*edid_default);
             variant.map(|v| v.min(n.saturating_sub(1)))
         }
-        UnionDecider::FromVersion { from_version } => {
-            if form_version >= *from_version {
-                Some(0)
-            } else {
-                None
-            }
-        }
-        UnionDecider::BelowVersion { below_version } => {
-            if form_version < *below_version {
-                Some(0)
-            } else {
-                None
-            }
-        }
         // ByteAtOffset, FieldValue, BySignature, FormIdTargetType, and
         // PayloadSize are handled by the callers
         UnionDecider::ByteAtOffset { .. }
@@ -366,7 +352,6 @@ pub(super) fn choose_union_variant(
         | UnionDecider::BySignature { .. }
         | UnionDecider::FormIdTargetType { .. }
         | UnionDecider::PayloadSize { .. } => None,
-        UnionDecider::Raw => None,
     }
 }
 

@@ -209,22 +209,6 @@ def _compare_single(
     pk = pm.get("kind", "?")
     sk = sm.get("kind", "?")
 
-    # ── Schema uses raw_fallback ───────────────────────────────────────────
-    if sk == "raw_fallback":
-        findings.append({
-            "record": record,
-            "path": path,
-            "class_": "fell-back-to-raw",
-            "sev": MED,
-            "detail": (
-                f"schema uses raw_fallback (reason: '{sm.get('reason', '?')}'); "
-                f"pascal kind={pk}"
-            ),
-            "pascal": _summarize(pm),
-            "schema": _summarize(sm),
-        })
-        return
-
     # ── Kind mismatch ──────────────────────────────────────────────────────
     # Allowed equivalences (no byte-layout impact):
     # - empty ↔ unused: both consume 0 bytes

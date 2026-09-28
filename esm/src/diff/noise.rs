@@ -145,7 +145,6 @@ fn member_name(member: &MemberDef) -> Option<&str> {
         | MemberDef::Vec3 { name, .. }
         | MemberDef::Empty { name, .. }
         | MemberDef::Unknown { name, .. }
-        | MemberDef::RawFallback { name, .. }
         | MemberDef::Vmad { name, .. }
         | MemberDef::Ctda { name, .. }
         | MemberDef::ModelInfo { name, .. } => Some(name),

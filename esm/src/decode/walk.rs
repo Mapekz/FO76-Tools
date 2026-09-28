@@ -99,16 +99,6 @@ pub(crate) fn decode_member(
             variants,
             ..
         } => decode_union(ctx, name, decider, variants, out, data),
-        MemberDef::RawFallback {
-            sig: None,
-            name,
-            reason,
-        } => {
-            out.insert(
-                name.clone(),
-                Node::raw(None, RawReason::Unmodelled(reason.clone())),
-            );
-        }
         MemberDef::String { name, sized, .. } => {
             out.insert(name.clone(), scalar_string(data, sized));
         }
@@ -125,7 +115,6 @@ pub(crate) fn decode_member(
         | MemberDef::Empty { .. }
         | MemberDef::Unused { .. }
         | MemberDef::Unknown { .. }
-        | MemberDef::RawFallback { .. }
         | MemberDef::Vmad { .. }
         | MemberDef::Array { .. }
         | MemberDef::RStruct { .. }
@@ -422,16 +411,6 @@ pub(crate) fn decode_struct_fields(
                     pos += 12;
                 }
             }
-            MemberDef::RawFallback { name, reason, .. } => {
-                if pos < data.len() {
-                    struct_out.insert(
-                        name.clone(),
-                        Node::raw(Some(&data[pos..]), RawReason::Unmodelled(reason.clone())),
-                    );
-                }
-                pos = data.len();
-                break;
-            }
             MemberDef::Struct { name, fields, .. } => {
                 let sub_data = data.get(pos..).unwrap_or(&[]);
                 let consumed = decode_struct_fields(ctx, name, fields, sub_data, &mut struct_out);
@@ -498,7 +477,7 @@ pub(crate) fn decode_struct_fields(
                     }
                     Some(ArrayCount::Fixed(n)) => Some(*n),
                     Some(ArrayCount::PayloadDiv(div)) => Some(data.len() / (*div).max(1)),
-                    Some(ArrayCount::FillToEnd) | None => None,
+                    None => None,
                 };
                 let elem_size = field_byte_size(ctx, element).filter(|&size| size > 0);
                 let n = match (n, elem_size) {
@@ -1592,7 +1571,6 @@ mod tests {
                             sig: None,
                             name: "Subtype".into(),
                             sized: Some(4),
-                            keep_case: false,
                         },
                     ],
                 },

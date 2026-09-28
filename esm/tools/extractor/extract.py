@@ -7,6 +7,7 @@ import copy
 import json
 import re
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 # Bootstrap: ensure this file's own directory is on sys.path so `import
@@ -1619,7 +1620,7 @@ class Extractor:
             name = sig or "String"
         else:
             name = unquote(parts[idx]) if parts[idx].strip().startswith("'") else parts[0]
-        out: dict = {"kind": "string", "name": name, "keep_case": "KC" in expr[:20]}
+        out: dict = {"kind": "string", "name": name}
         if sig:
             out["sig"] = sig
         for p in parts:
@@ -1974,22 +1975,12 @@ class Extractor:
             _dedup_field_names(rec.get("members", []))
 
         # ── Extraction coverage summary ──────────────────────────────────────
-        # Count total raw_fallback members across all extracted records.
-        def _count_rf(mlist: list) -> int:
-            c = 0
-            for _m in mlist:
-                if not isinstance(_m, dict):
-                    continue
-                if _m.get("kind") == "raw_fallback":
-                    c += 1
-                for _k in ("members", "fields", "variants"):
-                    c += _count_rf(_m.get(_k, []))
-                _elem = _m.get("element")
-                if isinstance(_elem, dict):
-                    c += _count_rf([_elem])
-            return c
-
-        total_raw = sum(_count_rf(r.get("members", [])) for r in records.values())
+        # Count the placeholders overrides must cover (checked after merging).
+        total_raw = sum(
+            m.get("kind") == "raw_fallback"
+            for r in records.values()
+            for m in _iter_members(r.get("members", []))
+        )
         print("=== extraction coverage ===", file=sys.stderr)
         print(
             f"records: {len(records)} ok, {self.report.failed_records} failed",
@@ -2028,6 +2019,19 @@ class Extractor:
 # Names xEdit misspells inside SetCountPath strings, mapped to the element name
 # the same definition file declares.
 _COUNT_PATH_TYPOS: dict[str, str] = {"Couner Effect Count": "Counter Effect Count"}
+
+
+def _iter_members(members: list) -> Iterator[dict]:
+    """Every member dict in `members`, depth first, including nested
+    fields, members, variants and array elements."""
+    for m in members:
+        if not isinstance(m, dict):
+            continue
+        yield m
+        for key in ("members", "fields", "variants"):
+            yield from _iter_members(m.get(key, []))
+        if isinstance(m.get("element"), dict):
+            yield from _iter_members([m["element"]])
 
 
 def _child_nodes(node: dict) -> list[dict]:
@@ -2479,6 +2483,22 @@ def main() -> None:
     for rec in schema["records"].values():
         _apply_schema_kinds(rec.get("members", []))
         _normalize_count_paths(rec.get("members", []))
+
+    # A raw_fallback is the extractor's placeholder for Pascal it cannot model;
+    # the decoder has no such kind, so every one must be covered by an override.
+    unmodelled = [
+        f"{sig} {m.get('name', '?')!r} ({m.get('reason', '?')})"
+        for sig, rec in schema["records"].items()
+        for m in _iter_members(rec.get("members", []))
+        if m.get("kind") == "raw_fallback"
+    ]
+    if unmodelled:
+        print(
+            "ERROR: unmodelled members with no override in "
+            f"{OVERRIDES.name}:\n  " + "\n  ".join(unmodelled),
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     write_schema_json(OUT, schema)

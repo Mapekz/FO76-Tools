@@ -25,8 +25,8 @@ pub(super) fn coverage(db: &Database, args: &CoverageArgs) -> anyhow::Result<Cov
 #[cfg_attr(test, ts(export))]
 pub struct Markers {
     pub unknown_record: u64,
-    /// `_raw` values the schema couldn't decode: members the extractor
-    /// couldn't model, and unions with no variant for their bytes.
+    /// `_raw` values the schema couldn't decode: unions with no variant for
+    /// their bytes.
     pub raw_fallback: u64,
     /// `_raw` values whose bytes don't fit their declared layout (truncated
     /// VMAD, short CTDA, inconsistent Model Information).
@@ -99,7 +99,7 @@ fn count_markers(db: &Database, node: &Node, m: &mut Markers) {
         Node::Array(items) => items.iter().for_each(|item| count_markers(db, item, m)),
         Node::Raw { reason, .. } => match reason {
             RawReason::Unknown => m.unknown_bytes += 1,
-            RawReason::Unmodelled(_) | RawReason::UnresolvedUnion => m.raw_fallback += 1,
+            RawReason::UnresolvedUnion => m.raw_fallback += 1,
             RawReason::Malformed(_) => m.malformed += 1,
             RawReason::Trailing => m.trailing += 1,
         },

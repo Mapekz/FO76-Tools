@@ -143,8 +143,6 @@ pub enum MemberDef {
         name: String,
         #[serde(default)]
         sized: Option<u32>,
-        #[serde(default)]
-        keep_case: bool,
     },
     #[serde(rename = "lstring")]
     LString {
@@ -231,13 +229,6 @@ pub enum MemberDef {
         sig: Option<String>,
         name: String,
     },
-    #[serde(rename = "raw_fallback")]
-    RawFallback {
-        #[serde(default)]
-        sig: Option<String>,
-        name: String,
-        reason: String,
-    },
     #[serde(rename = "vmad")]
     Vmad {
         #[serde(default)]
@@ -296,7 +287,6 @@ impl MemberDef {
             | MemberDef::Empty { sig, .. }
             | MemberDef::Unused { sig, .. }
             | MemberDef::Unknown { sig, .. }
-            | MemberDef::RawFallback { sig, .. }
             | MemberDef::Vmad { sig, .. }
             | MemberDef::Ctda { sig, .. }
             | MemberDef::ModelInfo { sig, .. } => sig.as_deref(),
@@ -322,7 +312,6 @@ impl MemberDef {
             | MemberDef::Vec3 { name, .. }
             | MemberDef::Empty { name, .. }
             | MemberDef::Unknown { name, .. }
-            | MemberDef::RawFallback { name, .. }
             | MemberDef::Vmad { name, .. }
             | MemberDef::Ctda { name, .. }
             | MemberDef::ModelInfo { name, .. } => name,
@@ -382,7 +371,6 @@ pub enum IntegerWidth {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArrayCount {
-    FillToEnd,
     Fixed(usize),
     CountPath(CountPath),
     /// The array is prefixed by a little-endian unsigned integer that gives the element count.
@@ -417,22 +405,12 @@ fn default_width_bytes() -> usize {
 pub enum UnionDecider {
     /// Binary form-version decider: variant 1 when `form_version` is in `[min, max]`,
     /// variant 0 otherwise. Matches Pascal `wbFormVersionDecider(N)`.
-    FormVersion {
-        form_version: FormVersionRange,
-    },
+    FormVersion { form_version: FormVersionRange },
     /// Multi-threshold form-version decider: `wbFormVersionDecider([N1, N2, ...])`.
     /// Returns the index of the first threshold where `form_version < threshold`.
     /// If `form_version >= all thresholds`, returns `thresholds.len()` (last variant).
     /// N thresholds produce N+1 variants (indices 0..=N).
-    FormVersionThresholds {
-        form_version_thresholds: Vec<u16>,
-    },
-    FromVersion {
-        from_version: u16,
-    },
-    BelowVersion {
-        below_version: u16,
-    },
+    FormVersionThresholds { form_version_thresholds: Vec<u16> },
     /// Select a variant by reading bytes at a fixed offset in the payload.
     /// `byte_offset` is relative to the union's position in the enclosing struct data.
     /// `width_bytes` controls how many bytes are read (1, 2, or 4, little-endian); default 1.
@@ -487,10 +465,7 @@ pub enum UnionDecider {
     },
     /// A `wbRUnion` without a decider: the first variant that can bind the
     /// current subrecord (see `decode/bind.rs`). Always `{"by_signature": true}`.
-    BySignature {
-        by_signature: bool,
-    },
-    Raw,
+    BySignature { by_signature: bool },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

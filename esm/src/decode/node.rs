@@ -22,8 +22,6 @@ pub type Fields = IndexMap<String, Node>;
 pub enum RawReason {
     /// The schema itself declares the bytes unknown (xEdit `wbUnknown`).
     Unknown,
-    /// The extractor could not model this part of the schema.
-    Unmodelled(String),
     /// No union variant could be chosen for the bytes.
     UnresolvedUnion,
     /// The bytes don't fit their declared layout (truncated or inconsistent).
@@ -37,7 +35,7 @@ impl RawReason {
     pub fn text(&self) -> &str {
         match self {
             RawReason::Unknown => "unknown",
-            RawReason::Unmodelled(reason) | RawReason::Malformed(reason) => reason,
+            RawReason::Malformed(reason) => reason,
             RawReason::UnresolvedUnion => "union decider unresolved",
             RawReason::Trailing => "trailing bytes",
         }

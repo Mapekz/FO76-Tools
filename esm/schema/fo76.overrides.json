@@ -151,13 +151,11 @@
                 {
                   "kind": "string",
                   "name": "Parameter #1",
-                  "keep_case": false,
                   "sig": "CIS1"
                 },
                 {
                   "kind": "string",
                   "name": "Parameter #2",
-                  "keep_case": false,
                   "sig": "CIS2"
                 }
               ]
@@ -775,13 +773,11 @@
                         {
                           "kind": "string",
                           "name": "Parameter #1",
-                          "keep_case": false,
                           "sig": "CIS1"
                         },
                         {
                           "kind": "string",
                           "name": "Parameter #2",
-                          "keep_case": false,
                           "sig": "CIS2"
                         }
                       ]
@@ -1508,7 +1504,6 @@
         {
           "kind": "string",
           "name": "Editor ID",
-          "keep_case": true,
           "sized": 0,
           "sig": "EDID"
         },
