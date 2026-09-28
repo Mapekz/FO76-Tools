@@ -111,9 +111,9 @@ impl Ba2Entry {
 /// An open BA2 archive (GNRL or DX10), memory-mapped for zero-copy reads.
 pub struct Ba2Archive {
     mmap: Mmap,
-    pub entries: Vec<Ba2Entry>,
+    entries: Vec<Ba2Entry>,
     by_name: HashMap<String, usize>,
-    pub header: Header,
+    header: Header,
     kind: ArchiveKind,
 }
 
@@ -296,6 +296,18 @@ impl Ba2Archive {
     }
 
     /// Return all file entries in the archive.
+    /// The archive header as read.
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+
+    /// The entry named `name` (matched case-insensitively, either separator).
+    pub fn get(&self, name: &str) -> Option<&Ba2Entry> {
+        self.by_name
+            .get(&normalize_name(name))
+            .map(|&idx| &self.entries[idx])
+    }
+
     pub fn list(&self) -> &[Ba2Entry] {
         &self.entries
     }
@@ -309,12 +321,9 @@ impl Ba2Archive {
     pub fn read(&self, name: &str, codec: ReadCodec) -> Result<Vec<u8>> {
         // Names in the archive are lowercased and backslash-separated.
         // Normalise the caller's input to match.
-        let name_lower = normalize_name(name);
-        let &idx = self
-            .by_name
-            .get(&name_lower)
+        let entry = self
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("file not found in BA2: {}", name))?;
-        let entry = &self.entries[idx];
         let data = &*self.mmap;
 
         match &entry.data {

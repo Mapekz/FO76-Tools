@@ -205,7 +205,7 @@ fn main() -> Result<()> {
 fn cmd_info(archive_path: &Path) -> Result<()> {
     let archive = Ba2Archive::open(archive_path)
         .with_context(|| format!("cannot open '{}'", archive_path.display()))?;
-    let h = &archive.header;
+    let h = archive.header();
     let type_str = std::str::from_utf8(&h.archive_type).unwrap_or("????");
     println!("File:               {}", archive_path.display());
     println!("Magic:              BTDX");

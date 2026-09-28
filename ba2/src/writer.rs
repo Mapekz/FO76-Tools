@@ -63,7 +63,12 @@ impl Default for WriteOptions {
 /// `files` is a slice of `(archive_path, source_path)` pairs. `archive_path`
 /// may use `/` or `\`; it will be lowercased and backslash-normalised. The
 /// order of `files` determines the order of entries in the archive.
-pub fn write_ba2(output: &Path, files: &[(String, PathBuf)], opts: &WriteOptions) -> Result<()> {
+pub fn write_ba2(
+    output: impl AsRef<Path>,
+    files: &[(String, PathBuf)],
+    opts: &WriteOptions,
+) -> Result<()> {
+    let output = output.as_ref();
     let file_count = files.len();
     if file_count > u32::MAX as usize {
         bail!("too many files: {} (max {})", file_count, u32::MAX);

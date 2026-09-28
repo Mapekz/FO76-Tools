@@ -7,7 +7,6 @@
 //! directory.
 
 use crate::compress::ReadCodec;
-use crate::hash::normalize_name;
 use crate::reader::{Ba2Archive, Ba2Entry};
 use anyhow::{Context, Result, bail};
 use globset::GlobSet;
@@ -105,11 +104,8 @@ pub fn extract_one(
     out_dir: &Path,
     codec: ReadCodec,
 ) -> Result<PathBuf> {
-    let name_lower = normalize_name(name);
     let entry = archive
-        .list()
-        .iter()
-        .find(|e| e.name == name_lower)
+        .get(name)
         .ok_or_else(|| anyhow::anyhow!("'{}' not found in archive", name))?;
     extract_entry(archive, entry, out_dir, codec)
 }

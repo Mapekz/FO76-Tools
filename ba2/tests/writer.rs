@@ -88,7 +88,7 @@ fn empty_file_list() {
 
     let archive = Ba2Archive::open(out.path()).unwrap();
     assert_eq!(archive.list().len(), 0);
-    assert_eq!(archive.header.file_count, 0);
+    assert_eq!(archive.header().file_count, 0);
 }
 
 /// An archive with a mix of compressible and incompressible files should have

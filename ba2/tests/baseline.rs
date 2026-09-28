@@ -41,7 +41,9 @@ const FNV_OFFSET: u64 = 0xcbf29ce484222325;
 fn index_digest(archive: &Ba2Archive) -> u64 {
     let mut text = format!(
         "{} {:?} {}\n",
-        archive.header.version, archive.header.archive_type, archive.header.file_count
+        archive.header().version,
+        archive.header().archive_type,
+        archive.header().file_count
     );
     for e in archive.list() {
         let _ = write!(
