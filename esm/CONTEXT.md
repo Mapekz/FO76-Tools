@@ -5,6 +5,31 @@ Read-only engine for explaining Fallout 76 ESM records: decoding, diffing, and a
 
 ## Language
 
+**Op**:
+One typed request against an open `Database` (`ops::Op`; on the wire
+`{"op": "<tag>", ...args}`), answered by one typed output. Every **Surface** is a transport
+for ops; adding an op needs no surface code.
+_Avoid_: command (that's a CLI subcommand, which may run several ops), endpoint, route
+
+**Surface**:
+A way callers reach ops: the CLI's subcommands, `esm batch`'s line protocol, or the N-API
+addon's `EsmHost::run`. All of them run ops in-process through `host::Host`
+([ADR 0013](docs/adr/0013-in-process-only.md)); `walk` is the interactive surface and `chase`
+the pipeline one ([ADR 0001](docs/adr/0001-walk-interactive-chase-pipeline-json.md)).
+_Avoid_: server, backend, client (there is no daemon)
+
+**Selector**:
+How a caller names one record (`ops::RecordSel`): a FormID, an EditorID, or a bare token that
+looks like a FormID and resolves as one before falling back to an EditorID
+([ADR 0010](docs/adr/0010-formid-input-base.md)).
+_Avoid_: id, key; confusing it with a **Seed selector**, which names a starting set for `refs`
+
+**Source override**:
+A CLI flag (`--localization-ba2`, `--strings-dir`, `--startup-ba2`, `--curves-dir`) that
+takes localized strings or curve tables from somewhere other than the ESM's own snapshot
+folder, for the `Database` that one command opens.
+_Avoid_: config; confusing it with `--esm`/`FO76_ESM_PATH`, which picks the ESM itself
+
 **Mechanism**:
 One of the four ways an OMOD implements its gameplay effect: direct property, perk grant,
 keyword hook, or projectile override. That four-way *domain* taxonomy is a different axis
@@ -125,6 +150,7 @@ unkeyed array's elements are fully present, just unpaired)
   a consumer — a **hub keyword/AV**'s consumers are why the slice exists
 - **Obtainability signals** are a subset of a record's reverse references
 - An **unkeyed array** is the array-diff outcome when no **element identity** applies
+- Each **Surface** carries **Ops**; an op names its records by **Selector**
 - A **Seed selector** resolves into the BFS roots a **Reference graph** walk starts from;
   a **Carrier** is one such root emitted as a row
 
@@ -138,6 +164,9 @@ unkeyed array's elements are fully present, just unpaired)
 > unrelated legendary effects."
 
 ## Flagged ambiguities
+
+- "slice": an **Evidence slice** is esm's; patch-notes' writer input is a **DEEP slice**
+  (`patch-notes/CONTEXT.md`). Never say bare "slice" across the two.
 
 - "chase" was used both for the mechanism-classification pattern and for generic
   reference-following — resolved: the **chase pattern** is only the former; everything
