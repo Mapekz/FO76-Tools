@@ -305,6 +305,19 @@ fn mip_size_rounds_block_formats_up_to_whole_blocks() {
     assert_eq!(mip_size(&desc(71, 1000, 600), 2).unwrap(), 63 * 38 * 8);
     // R8G8B8A8, 4x4 at mip 3 is 1x1.
     assert_eq!(mip_size(&desc(28, 4, 4), 3).unwrap(), 4);
+    // A level past every dimension's bits is 1x1 too, not a shift overflow.
+    for level in [16, 63, 64, 255, u32::MAX] {
+        assert_eq!(
+            mip_size(&desc(28, 4096, 4096), level).unwrap(),
+            4,
+            "{level}"
+        );
+        assert_eq!(
+            mip_size(&desc(71, 4096, 4096), level).unwrap(),
+            8,
+            "{level}"
+        );
+    }
 }
 
 // ── parse_header round-trips synth_header ────────────────────────────────────

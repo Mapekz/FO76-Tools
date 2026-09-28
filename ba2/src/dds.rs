@@ -255,8 +255,9 @@ pub fn bits_per_pixel(dxgi_format: u8) -> Result<u32> {
 /// `width * height * bits / 8 >> 2 * level`.)
 pub fn mip_size(desc: &TextureDesc, level: u32) -> Result<u32> {
     let spec = spec_for(desc.dxgi_format)?;
-    let w = (u64::from(desc.width) >> level).max(1);
-    let h = (u64::from(desc.height) >> level).max(1);
+    // A level past the widths' bits is a 1x1 mip, like any deep level.
+    let halve = |dim: u16| u64::from(dim).checked_shr(level).unwrap_or(0).max(1);
+    let (w, h) = (halve(desc.width), halve(desc.height));
     let bits = if spec.block_compressed {
         w.div_ceil(4) * h.div_ceil(4) * 16 * u64::from(spec.bits_per_pixel)
     } else {
