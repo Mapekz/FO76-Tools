@@ -793,12 +793,22 @@ fn is_condition_list(items: &[Value]) -> bool {
 }
 
 /// A string that is equal for two values exactly when they are equal up to
-/// object key order and the order of any array other than a condition list.
+/// object key order and the order of any array other than a condition list
+/// or an [`ORDER_SIGNIFICANT_FIELDS`] member, at any depth.
 fn order_free_key(v: &Value) -> String {
+    order_free_key_ordered(v, false)
+}
+
+fn order_free_key_ordered(v: &Value, keep_order: bool) -> String {
     match v {
         Value::Object(o) => {
-            let mut members: Vec<(&String, String)> =
-                o.iter().map(|(k, v)| (k, order_free_key(v))).collect();
+            let mut members: Vec<(&String, String)> = o
+                .iter()
+                .map(|(k, v)| {
+                    let ordered = ORDER_SIGNIFICANT_FIELDS.contains(&k.as_str());
+                    (k, order_free_key_ordered(v, ordered))
+                })
+                .collect();
             members.sort();
             let body: Vec<String> = members
                 .into_iter()
@@ -808,7 +818,7 @@ fn order_free_key(v: &Value) -> String {
         }
         Value::Array(items) => {
             let mut keys: Vec<String> = items.iter().map(order_free_key).collect();
-            if !is_condition_list(items) {
+            if !keep_order && !is_condition_list(items) {
                 keys.sort_unstable();
             }
             format!("[{}]", keys.join(","))
@@ -919,6 +929,17 @@ mod tests {
         let diff = super::super::json_diff(&a, &b);
         assert!(diff["Points"].get("_array_diff").is_some());
         assert!(!reorder_only(&diff["Points"]));
+    }
+
+    #[test]
+    fn a_reordered_polygon_inside_an_element_is_a_real_change() {
+        let point = |x: i64, y: i64| json!({"x": x, "y": y});
+        let area = |pts: Vec<Value>| json!({"Region Areas": [{"Edge Fall-off": 0, "Points": pts}]});
+        let a = area(vec![point(0, 0), point(1, 0), point(0, 1)]);
+        let b = area(vec![point(1, 0), point(0, 0), point(0, 1)]);
+        let diff = super::super::json_diff(&a, &b);
+        assert!(diff["Region Areas"].get("_array_diff").is_some());
+        assert!(!reorder_only(&diff["Region Areas"]));
     }
 
     #[test]

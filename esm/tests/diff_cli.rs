@@ -65,3 +65,34 @@ fn unlocalized_sides_need_no_string_tables() {
     assert_eq!(result["changed"], serde_json::json!([]));
     cleanup(&[&a, &b]);
 }
+
+#[test]
+fn a_cache_build_in_progress_is_reported_on_stderr() {
+    let (a, b) = (
+        snapshot("diff_progress_a", false),
+        snapshot("diff_progress_b", false),
+    );
+    let esm_b = std::fs::canonicalize(b.join("SeventySix.esm")).unwrap();
+    let lease = esm::progress::BuildLease::acquire(&esm_b, esm::progress::BuildStage::Forms, 1)
+        .expect("hold side b's build lease");
+    let child = Command::new(env!("CARGO_BIN_EXE_esm"))
+        .args(["diff", "--json"])
+        .arg(&a)
+        .arg(&b)
+        .env_remove("ESM_NO_PROGRESS")
+        .env("ESM_PROGRESS_GRACE_MS", "0")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn esm diff");
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    drop(lease);
+    let out = child.wait_with_output().expect("wait for esm diff");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "diff failed: {stderr}");
+    assert!(
+        stderr.contains("building index cache"),
+        "diff reports the build it waits on: {stderr}"
+    );
+    cleanup(&[&a, &b]);
+}

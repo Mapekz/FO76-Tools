@@ -138,29 +138,32 @@ pub(crate) fn cmd_diff(
     // the diff is noise, so that bails instead of running.
     let esm_a = esm::discover::resolve_sources(file_a, "en")?.esm;
     let esm_b = esm::discover::resolve_sources(file_b, "en")?.esm;
-    let mut db_a = Database::open(&esm_a)?;
-    let mut db_b = Database::open(&esm_b)?;
-    apply_localization(&mut db_a, &esm_a, lba2_a, sd_a, lang)?;
-    apply_localization(&mut db_b, &esm_b, lba2_b, sd_b, lang)?;
+    // Opening either side may build or wait on its cache.
+    let mut result = crate::progress_ui::watched(&[&esm_a, &esm_b], || {
+        let mut db_a = Database::open(&esm_a)?;
+        let mut db_b = Database::open(&esm_b)?;
+        apply_localization(&mut db_a, &esm_a, lba2_a, sd_a, lang)?;
+        apply_localization(&mut db_b, &esm_b, lba2_b, sd_b, lang)?;
 
-    // Curves: an override replaces what the ESM's folder supplied.
-    if let Some(ba2) = sb_a {
-        db_a.load_curves(&ba2)?;
-    } else if let Some(dir) = cd_a {
-        db_a.load_curves_from_dir(&dir)?;
-    }
-    if let Some(ba2) = sb_b {
-        db_b.load_curves(&ba2)?;
-    } else if let Some(dir) = cd_b {
-        db_b.load_curves_from_dir(&dir)?;
-    }
+        // Curves: an override replaces what the ESM's folder supplied.
+        if let Some(ba2) = sb_a {
+            db_a.load_curves(&ba2)?;
+        } else if let Some(dir) = cd_a {
+            db_a.load_curves_from_dir(&dir)?;
+        }
+        if let Some(ba2) = sb_b {
+            db_b.load_curves(&ba2)?;
+        } else if let Some(dir) = cd_b {
+            db_b.load_curves_from_dir(&dir)?;
+        }
 
-    let args = esm::ops::DiffArgs {
-        b: file_b.to_path_buf(),
-        record_type: record_type.map(str::to_string),
-        options,
-    };
-    let mut result = esm::ops::diff(&db_a, &db_b, &args)?;
+        let args = esm::ops::DiffArgs {
+            b: file_b.to_path_buf(),
+            record_type: record_type.map(str::to_string),
+            options,
+        };
+        esm::ops::diff(&db_a, &db_b, &args)
+    })?;
     convert_diff_form_ids(&mut result, base);
     print_diff(file_a, file_b, &mut result, record_type, as_json, pretty)
 }

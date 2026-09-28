@@ -1,6 +1,6 @@
 //! CLI-side rendering of `esm::progress`'s cache-build heartbeat: a
 //! background watcher thread that polls `esm::progress::read` while a
-//! `Backend::run` call is in flight, plus the pure formatting functions it
+//! command opens or queries an ESM, plus the pure formatting functions it
 //! (and `--no-wait`/`esm cache status`) share.
 //!
 //! Not part of the `esm` library: `esm::progress` is the domain module every
@@ -10,18 +10,20 @@
 //!
 //! # Where this hooks in
 //!
-//! [`Watcher::spawn`]/[`Watcher::stop`] wrap `main.rs`'s `Backend::run`
-//! method — not `dispatch_command` — because every `cmd_*` function prints
-//! its result immediately after its `backend.run(...)` call returns (see
-//! e.g. `cmd_info` in `inspect.rs`). Wrapping `run` itself means `stop()`
-//! (which blocks until the in-progress render, if any, is erased) completes
-//! synchronously before control returns to whichever `cmd_*` function is
-//! about to write to stdout — the only place that ordering can be guaranteed
-//! without threading a stop signal through every individual print call site.
+//! [`watched`] wraps each call that opens or queries an ESM — `main.rs`'s
+//! `Backend::run`, and the commands that open a `Database` themselves
+//! (`diff`, and `get`/`list`/`search`/`refs` with source overrides) — not
+//! `dispatch_command`, because every `cmd_*` function prints its result
+//! immediately after that call returns (see e.g. `cmd_info` in
+//! `inspect.rs`). Wrapping the call itself means `stop()` (which blocks
+//! until the in-progress render, if any, is erased) completes synchronously
+//! before control returns to whichever `cmd_*` function is about to write to
+//! stdout — the only place that ordering can be guaranteed without threading
+//! a stop signal through every individual print call site.
 
 use esm::progress::{self, BuildProgress, ProgressUnit};
 use std::io::{IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -57,6 +59,16 @@ fn env_duration_ms(var: &str) -> Option<Duration> {
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .map(Duration::from_millis)
+}
+
+/// Runs `f` under a [`Watcher`] over `esms` (every ESM whose cache `f` may
+/// build or wait on), stopping it before returning so no progress line
+/// outlives the call.
+pub fn watched<T>(esms: &[&Path], f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+    let watcher = Watcher::spawn(esms.iter().map(|e| crate::progress_watch_path(e)).collect());
+    let result = f();
+    watcher.stop();
+    result
 }
 
 /// Background thread that renders `esm::progress::read`'s output to stderr

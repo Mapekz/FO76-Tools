@@ -569,26 +569,21 @@ impl From<RefSortArg> for esm::ops::RefSort {
     }
 }
 
-/// The CLI's [`esm::host::Host`]: every real query goes through [`Self::run`], which wraps
-/// the inner call with a [`progress_ui::Watcher`] — this is the one place
-/// all ~15 `cmd_*` functions' `backend.run(...)` calls funnel through, and
-/// `watcher.stop()` (which blocks until any rendered line is erased) runs
-/// synchronously before this returns, so whichever `cmd_*` function is
-/// about to `println!`/`print_json` its result never races a still-visible
-/// progress line. See `progress_ui`'s module doc for why this site, not
+/// The CLI's [`esm::host::Host`]: every query without source overrides goes
+/// through [`Self::run`], which wraps the inner call in
+/// [`progress_ui::watched`], so whichever `cmd_*` function is about to
+/// `println!`/`print_json` its result never races a still-visible progress
+/// line. See `progress_ui`'s module doc for why this site, not
 /// `dispatch_command`, is the right one.
 struct Backend(esm::host::Host);
 
 impl Backend {
     fn run(&mut self, esm: &Path, op: esm::ops::Op) -> anyhow::Result<serde_json::Value> {
-        let mut watched = vec![progress_watch_path(esm)];
+        let mut esms = vec![esm];
         if let esm::ops::Op::Diff(esm::ops::DiffArgs { b, .. }) = &op {
-            watched.push(progress_watch_path(b));
+            esms.push(b);
         }
-        let watcher = progress_ui::Watcher::spawn(watched);
-        let result = self.0.run(esm, &op);
-        watcher.stop();
-        result
+        progress_ui::watched(&esms, || self.0.run(esm, &op))
     }
 }
 

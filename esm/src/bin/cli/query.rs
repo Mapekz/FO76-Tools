@@ -93,12 +93,14 @@ pub(crate) fn cmd_get(
 
     let mut v = if localization_ba2.is_some() || strings_dir.is_some() || startup_ba2.is_some() {
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
-        let mut db = Database::open(&esm_path)?;
-        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
-        if let Some(ba2_path) = startup_ba2 {
-            db.load_curves(&ba2_path)?;
-        }
-        esm::ops::run(&db, &op)?
+        crate::progress_ui::watched(&[&esm_path], || {
+            let mut db = Database::open(&esm_path)?;
+            apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
+            if let Some(ba2_path) = startup_ba2 {
+                db.load_curves(&ba2_path)?;
+            }
+            esm::ops::run(&db, &op)
+        })?
     } else {
         backend.run(file, op)?
     };
@@ -123,9 +125,11 @@ pub(crate) fn cmd_list(
     let has_overrides = localization_ba2.is_some() || strings_dir.is_some();
     if has_overrides {
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
-        let mut db = Database::open(&esm_path)?;
-        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
-        let rows = db.list_type_records(sig, 0, limit)?;
+        let rows = crate::progress_ui::watched(&[&esm_path], || {
+            let mut db = Database::open(&esm_path)?;
+            apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
+            db.list_type_records(sig, 0, limit)
+        })?;
         print_record_rows(&rows, limit, json, pretty, base);
         return Ok(());
     }
@@ -166,9 +170,11 @@ pub(crate) fn cmd_search(
     let has_overrides = localization_ba2.is_some() || strings_dir.is_some();
     if has_overrides {
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
-        let mut db = Database::open(&esm_path)?;
-        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
-        let results = db.search(pattern, &types, field, limit)?;
+        let results = crate::progress_ui::watched(&[&esm_path], || {
+            let mut db = Database::open(&esm_path)?;
+            apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
+            db.search(pattern, &types, field, limit)
+        })?;
         print_search_results(&results, limit, json, pretty, base);
         return Ok(());
     }

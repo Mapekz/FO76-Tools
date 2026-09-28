@@ -80,8 +80,6 @@ pub(crate) fn cmd_refs(
     };
     if localization_ba2.is_some() || strings_dir.is_some() {
         let esm_path = esm::discover::resolve_sources(file, "en")?.esm;
-        let mut db = Database::open(&esm_path)?;
-        apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
         let op = Op::ReferencedBy(esm::ops::ReferencedByArgs {
             sel,
             limit,
@@ -90,7 +88,11 @@ pub(crate) fn cmd_refs(
             paths,
             sort,
         });
-        let v = esm::ops::run(&db, &op)?;
+        let v = crate::progress_ui::watched(&[&esm_path], || {
+            let mut db = Database::open(&esm_path)?;
+            apply_strings_override(&mut db, &esm_path, localization_ba2, strings_dir, lang);
+            esm::ops::run(&db, &op)
+        })?;
         let mut ref_list: RefList = serde_json::from_value(v)?;
         convert_ref_list_form_ids(&mut ref_list, base);
         print_refs(&ref_list, sort, json, pretty);
