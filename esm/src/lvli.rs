@@ -301,9 +301,9 @@ const MIN_LEVEL: ScalarFields = ScalarFields {
 /// `ActorTier02`–`12` on `CT_Creatures_Tier_*`'s 1–12). A flat value beside a
 /// Global mostly repeats it (`LL_Chems_High_ChanceNone_ECON` = 75 with flat
 /// 75); the Global is the tunable source. A source that can't be read (a
-/// curve not loaded, a Global naming a non-GLOB) is noted; a curve that
-/// can't be evaluated falls back to the flat value, since its Global is its
-/// input.
+/// curve not loaded, a Global naming a non-GLOB or a record that doesn't
+/// resolve) is still set: it is noted, and a curve that can't be evaluated
+/// falls back to the flat value, since its Global is its input.
 /// `None` when no source is set.
 fn resolve_scalar(
     node: &Resolved,
@@ -311,7 +311,7 @@ fn resolve_scalar(
     level: f32,
     notes: &mut Vec<DropNote>,
 ) -> Option<f64> {
-    let is_set = |v: &&Resolved| v.is_object();
+    let is_set = |v: &&Resolved| v.ref_id().is_some();
     let global_ref = node.get(fields.global).filter(is_set);
     let global = glob_stub_value(global_ref);
     if let Some(reference) = global_ref
@@ -320,7 +320,10 @@ fn resolve_scalar(
         let name = reference
             .get("editor_id")
             .and_then(Resolved::as_str)
-            .unwrap_or("?");
+            .map_or_else(
+                || reference.ref_id().unwrap_or_default().display(),
+                str::to_string,
+            );
         notes.push(DropNote::Unresolved {
             reason: format!("{} {name} has no GLOB value", fields.global),
         });
@@ -1291,6 +1294,48 @@ mod tests {
         assert_eq!(
             resolve_scalar(&r(&node), &CHANCE_NONE, 50.0, &mut notes),
             Some(5.0)
+        );
+    }
+
+    /// A Global or curve reference whose record doesn't resolve is still set:
+    /// an unresolved curve falls back to the flat value (never to its tier
+    /// Global), and an unresolved Global leaves its curve's input unknown
+    /// (never the level). Both are noted.
+    #[test]
+    fn unresolved_references_still_count_as_set() {
+        let with = |v: Value, key: &str, reference: Resolved| {
+            let mut node = r(&v);
+            if let Resolved::Object(map) = &mut node {
+                map.insert(key.to_string(), reference);
+            }
+            node
+        };
+        let tier = glob_stub(FormId::new(0x1000), "Some_Tier", 10.0);
+        let node = with(
+            json!({"Chance None Value": 25.0, "Chance None Global": tier}),
+            "Chance None Curve Table",
+            Resolved::unresolved(FormId::new(0xDEAD02)),
+        );
+        let mut notes = Vec::new();
+        assert_eq!(
+            resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes),
+            Some(25.0)
+        );
+        assert_eq!(notes.len(), 1, "{notes:?}");
+
+        let node = with(
+            json!({"Chance None Value": 25.0, "Chance None Curve Table": falling_curve()}),
+            "Chance None Global",
+            Resolved::unresolved(FormId::new(0xDEAD03)),
+        );
+        let mut notes = Vec::new();
+        assert_eq!(
+            resolve_scalar(&node, &CHANCE_NONE, 50.0, &mut notes),
+            Some(25.0)
+        );
+        assert!(
+            matches!(&notes[..], [DropNote::Unresolved { reason }] if reason.contains("0x00DEAD03")),
+            "{notes:?}"
         );
     }
 
