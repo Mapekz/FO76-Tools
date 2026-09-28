@@ -9,3 +9,6 @@ description = "Repo-wide documentation policy test, and the CLI-doc checks the c
 
 [lints]
 workspace = true
+
+[dependencies]
+pulldown-cmark = { version = "0.13", default-features = false }

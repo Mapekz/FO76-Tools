@@ -140,30 +140,52 @@ fn parse_subcommands(help: &str) -> Vec<String> {
         .collect()
 }
 
-/// Fenced code-block bodies (between ``` pairs) plus inline code spans
-/// outside them.
+/// Every code block's body and inline code span in a Markdown document, as
+/// CommonMark reads them (any fence, any backtick-run length), in document
+/// order.
 pub fn code_regions(doc: &str) -> Vec<String> {
+    use pulldown_cmark::{Event, Parser, Tag, TagEnd};
     let mut regions = Vec::new();
-    let mut prose = String::new();
-    for (i, part) in doc.split("```").enumerate() {
-        if i % 2 == 1 {
-            regions.push(part.to_string());
-        } else {
-            prose.push_str(part);
-            prose.push(' ');
+    let mut block: Option<String> = None;
+    for event in Parser::new(doc) {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => block = Some(String::new()),
+            Event::End(TagEnd::CodeBlock) => regions.extend(block.take()),
+            Event::Text(text) if block.is_some() => {
+                block.get_or_insert_default().push_str(&text);
+            }
+            Event::Code(code) => regions.push(code.into_string()),
+            _ => {}
         }
     }
-    regions.extend(inline_spans(&prose));
     regions
 }
 
-/// Inline code spans in text that holds no fences.
-pub fn inline_spans(text: &str) -> Vec<String> {
-    text.split('`')
-        .skip(1)
-        .step_by(2)
-        .map(str::to_string)
-        .collect()
+/// Local link targets in a Markdown document outside code: inline and
+/// reference links and images, and every reference definition, as
+/// CommonMark reads them.
+pub fn link_targets(doc: &str) -> Vec<String> {
+    use pulldown_cmark::{Event, Parser, Tag};
+    let parser = Parser::new(doc);
+    let definitions: Vec<String> = parser
+        .reference_definitions()
+        .iter()
+        .map(|(_, def)| def.dest.to_string())
+        .collect();
+    let links = parser.filter_map(|event| match event {
+        Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
+            Some(dest_url.into_string())
+        }
+        _ => None,
+    });
+    let mut targets: Vec<String> = links
+        .chain(definitions)
+        .filter(|t| !t.contains("://") && !t.starts_with('#') && !t.starts_with("mailto:"))
+        .map(|t| t.split('#').next().unwrap_or("").to_string())
+        .filter(|t| !t.is_empty())
+        .collect();
+    targets.dedup();
+    targets
 }
 
 /// Strips markdown and prose decoration from a token. `<`, `>`, `[`, `]`
@@ -274,7 +296,17 @@ mod tests {
     #[test]
     fn code_regions_take_fences_and_spans() {
         let doc = "a `esm get` b\n```\nesm walk X\n```\nc `ba2 list`";
-        assert_eq!(code_regions(doc), ["\nesm walk X\n", "esm get", "ba2 list"]);
+        assert_eq!(code_regions(doc), ["esm get", "esm walk X\n", "ba2 list"]);
+    }
+
+    #[test]
+    fn code_regions_read_any_fence_and_backtick_run() {
+        let doc = "``a `b` c`` and ``esm/x.rs``\n\n~~~text\n[link](esm/y.md)\n~~~\n";
+        assert_eq!(
+            code_regions(doc),
+            ["a `b` c", "esm/x.rs", "[link](esm/y.md)\n"]
+        );
+        assert_eq!(link_targets(doc), Vec::<String>::new());
     }
 
     #[test]

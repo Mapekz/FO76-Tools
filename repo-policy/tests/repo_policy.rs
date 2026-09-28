@@ -16,7 +16,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use repo_policy::code_regions;
+use repo_policy::{code_regions, link_targets};
 
 /// Consumer projects no tracked file may name (case-insensitive). This file
 /// is the one exception.
@@ -401,35 +401,6 @@ fn is_markdown(path: &str) -> bool {
     path.ends_with(".md")
 }
 
-/// Local targets of inline links (`[text](target)`, `[text](<target>)`) and
-/// reference definitions (`[label]: target`) outside code.
-fn link_targets(doc: &str) -> Vec<String> {
-    let prose: String = doc.split("```").step_by(2).collect::<Vec<_>>().join("\n");
-    let prose: String = prose.split('`').step_by(2).collect();
-    let inline = prose.match_indices("](").filter_map(|(i, _)| {
-        let rest = &prose[i + 2..];
-        match rest.strip_prefix('<') {
-            Some(angled) => angled.split_once('>').map(|(t, _)| t),
-            None => rest[..rest.find(')')?].split_whitespace().next(),
-        }
-    });
-    let definitions = prose.lines().filter_map(|l| {
-        let (label, rest) = l.trim_start().strip_prefix('[')?.split_once("]:")?;
-        let rest = rest.trim_start();
-        let target = match rest.strip_prefix('<') {
-            Some(angled) => angled.split_once('>')?.0,
-            None => rest.split_whitespace().next()?,
-        };
-        (!label.is_empty()).then_some(target)
-    });
-    inline
-        .chain(definitions)
-        .filter(|t| !t.contains("://") && !t.starts_with('#') && !t.starts_with("mailto:"))
-        .map(|t| t.split('#').next().unwrap_or("").to_string())
-        .filter(|t| !t.is_empty())
-        .collect()
-}
-
 fn line_of(text: &str, needle: &str) -> usize {
     text.find(needle)
         .map_or(0, |i| text[..i].lines().count().max(1))
@@ -611,7 +582,7 @@ fn comments_skip_strings_and_read_block_comments() {
 
 #[test]
 fn links_include_angled_and_reference_forms() {
-    let doc = "[a](<esm/a.md>) [b](esm/b.md#x) [c](https://x/y)\n\
+    let doc = "[a](<esm/a.md>) [b](esm/b.md#x) [c](https://x/y)\n\n\
                [label]: esm/c.md\n`[d](esm/d.md)`\n";
     assert_eq!(link_targets(doc), ["esm/a.md", "esm/b.md", "esm/c.md"]);
 }
