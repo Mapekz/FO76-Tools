@@ -1004,6 +1004,75 @@ fn omod_template_include_renders_its_properties_under_the_template() {
     );
 }
 
+/// A template's ENCH property is the includer's own, so the ENCH is walked
+/// (OMOD -> ENCH -> MGEF chains through `_PARENT_*` blocks land in one walk),
+/// and a template with no properties still shows as included.
+#[test]
+fn omod_template_ench_is_walked_and_empty_templates_are_listed() {
+    const ENCH_FID: &str = "0x0060005E";
+    const EMPTY_FID: &str = "0x0060005F";
+    let mut f = MemorySource::new();
+    put(
+        &mut f,
+        OMOD_SHELL_FID,
+        "OMOD",
+        "mod_Test_Barbed",
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {"Includes": [
+                include_row(OMOD_PARENT_FID, "_PARENT_mod_Barbed", 0),
+                include_row(EMPTY_FID, "_PARENT_mod_Empty", 0),
+            ]},
+        }),
+    );
+    let ench =
+        json!({"formid": ENCH_FID, "editor_id": "enchModArmorPenetration", "record_type": "ENCH"});
+    f.insert(
+        fid(OMOD_PARENT_FID),
+        "OMOD",
+        "_PARENT_mod_Barbed",
+        0x100, // Mod Template
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {"Properties": [{
+                "Value Type": {"value": 4, "name": "FormID,Int"},
+                "Function Type": {"value": 2, "name": "ADD"},
+                "Property": {"value": 1, "name": "Enchantments"},
+                "Value 1": ench,
+                "Value 2": 1,
+            }]},
+        }),
+    );
+    f.insert(
+        fid(EMPTY_FID),
+        "OMOD",
+        "_PARENT_mod_Empty",
+        0x100,
+        json!({"_record_type": "Object Modification", "Data": {}}),
+    );
+    put(
+        &mut f,
+        ENCH_FID,
+        "ENCH",
+        "enchModArmorPenetration",
+        json!({"_record_type": "Object Effect", "Effects": []}),
+    );
+
+    let result = walk_at(&mut f, OMOD_SHELL_FID, 1);
+    assert!(
+        result.nodes.iter().any(|n| n.formid == ENCH_FID),
+        "the template's ENCH must be walked; nodes = {:?}",
+        result.nodes.iter().map(|n| &n.formid).collect::<Vec<_>>()
+    );
+    let text = node_digest(&result, OMOD_SHELL_FID).join("\n");
+    assert!(
+        text.contains(&format!(
+            "from OMOD {EMPTY_FID} _PARENT_mod_Empty  (no properties)"
+        )),
+        "{text}"
+    );
+}
+
 /// A Mod Collection's includes are alternatives: listed with their minimum
 /// level and walked as nodes, never merged into the collection.
 #[test]

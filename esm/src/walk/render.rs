@@ -958,16 +958,35 @@ fn render_omod(d: &OmodDigest, lines: &mut Vec<String>) {
             .collect()
     };
     render_omod_hops(&hops_from(None), lines);
+    // The OMOD's own templates in include order, then any a template
+    // includes in turn.
     let mut templates: Vec<&Value> = Vec::new();
-    for source in d.hops.iter().filter_map(|hop| hop.source_omod.as_ref()) {
-        if !templates.contains(&source) {
+    for source in d
+        .templates
+        .iter()
+        .chain(d.hops.iter().filter_map(|hop| hop.source_omod.as_ref()))
+    {
+        let fid = |v: &Value| v.get("formid").cloned();
+        if !templates.iter().any(|t| fid(t) == fid(source)) {
             templates.push(source);
         }
     }
     for template in templates {
+        let hops = d
+            .hops
+            .iter()
+            .filter(|hop| {
+                hop.source_omod.as_ref().and_then(|s| s.get("formid")) == template.get("formid")
+            })
+            .cloned()
+            .collect::<Vec<Hop>>();
+        if hops.is_empty() {
+            lines.push(format!("from {}  (no properties)", fmt_stub(template)));
+            continue;
+        }
         lines.push(format!("from {}", fmt_stub(template)));
         let mut group = Vec::new();
-        render_omod_hops(&hops_from(Some(template)), &mut group);
+        render_omod_hops(&hops, &mut group);
         lines.extend(group.into_iter().map(|line| format!("  {line}")));
     }
     for alt in &d.alternatives {

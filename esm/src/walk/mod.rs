@@ -591,6 +591,11 @@ pub struct OmodDigest {
     /// `DirectProperty` hop rather than a separate ENCH-follow pass — see
     /// [`omod_hops_enqueue`].
     pub hops: Vec<Hop>,
+    /// The mod templates this OMOD includes, in include order; their
+    /// properties are in `hops`, marked with `source_omod`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(type = "Array<unknown>"))]
+    pub templates: Vec<Value>,
     /// A `Mod Collection`/`Mod Selector`'s alternatives, capped at
     /// [`OMOD_INCLUDE_ENQUEUE_CAP`] and each walked as its own node.
     pub alternatives: Vec<crate::chase::IncludeAlternative>,
@@ -1251,13 +1256,11 @@ fn digest_omod_mechanisms(
 /// attached projectile override) or an ENCH (so an OMOD → ENCH → MGEF →
 /// granted-perk chain lands in one `walk` call, reusing what the classifier
 /// already knows via `chase::FORWARD_FETCH_TYPES` rather than a separate
-/// re-scan). Hops from an included mod template (`source_omod.is_some()`)
-/// are part of the includer's digest and aren't enqueued.
+/// re-scan). A hop from an included mod template (`source_omod`) is the
+/// includer's own property, so its target is walked the same way, labelled
+/// with the template.
 fn omod_hops_enqueue(hops: &[Hop], enqueue: &mut Vec<EnqueueTarget>) {
     for hop in hops {
-        if hop.source_omod.is_some() {
-            continue;
-        }
         let Some(target) = &hop.target else {
             continue;
         };
@@ -1269,7 +1272,11 @@ fn omod_hops_enqueue(hops: &[Hop], enqueue: &mut Vec<EnqueueTarget>) {
             && (target_rt == "PROJ" || target_rt == "ENCH")
             && let Some(fid) = stub_formid(Some(target))
         {
-            enqueue.push((fid, "OMOD property".to_string()));
+            let via = match hop.source_omod.as_ref().and_then(|t| t.get("editor_id")) {
+                Some(Value::String(template)) => format!("OMOD property via {template}"),
+                _ => "OMOD property".to_string(),
+            };
+            enqueue.push((fid, via));
         }
     }
 }
@@ -1439,10 +1446,19 @@ fn digest_node(
             // own BFS nodes.
             let tree = digest_omod_mechanisms(f, header, editor_id, fields, ref_limit)?;
             omod_hops_enqueue(&tree.hops, &mut enqueue);
+            let templates = match crate::chase::include_role(header.flags) {
+                crate::chase::IncludeRole::Compose => crate::chase::include_alternatives(fields)
+                    .into_iter()
+                    .map(|include| include.omod)
+                    .take(OMOD_INCLUDE_ENQUEUE_CAP)
+                    .collect(),
+                crate::chase::IncludeRole::Alternatives => Vec::new(),
+            };
             let (alternatives, alternatives_total) =
                 digest_omod_alternatives(tree.alternatives, editor_id, &mut enqueue);
             Digest::Omod(OmodDigest {
                 hops: tree.hops,
+                templates,
                 alternatives,
                 alternatives_total,
             })

@@ -13,6 +13,11 @@ export type OmodDigest = {
  */
 hops: Array<Hop>, 
 /**
+ * The mod templates this OMOD includes, in include order; their
+ * properties are in `hops`, marked with `source_omod`.
+ */
+templates?: Array<unknown>, 
+/**
  * A `Mod Collection`/`Mod Selector`'s alternatives, capped at
  * [`OMOD_INCLUDE_ENQUEUE_CAP`] and each walked as its own node.
  */
