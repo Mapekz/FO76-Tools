@@ -64,7 +64,9 @@ subcommand.
   `search` needs `"*"` to match all; `""` matches nothing.
 - `--limit 0` means unlimited on `list`/`search`/`refs`. All three print
   `note: output capped at N of M results; use --limit 0 to show all` to
-  **stderr**, never stdout, so `--json` stays parseable when capped.
+  **stderr**, never stdout, so `--json` stays parseable when capped. `refs
+  --json` is the whole walk result — `rows` plus `total`, `capped` and the
+  depth fields — not a bare row array.
 - **Source-override flags (`--localization-ba2`/`--strings-dir`, plus
   `--startup-ba2` on `get`/`diff`) parse those sources for this one call**,
   skipping the `lstrings`/`curves` cache. For sweeps needing localized strings, put the

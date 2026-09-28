@@ -183,7 +183,7 @@ fn ref_columns(ref_list: &RefList) -> RefColumns {
 fn print_refs(ref_list: &RefList, sort: esm::ops::RefSort, json: bool, pretty: bool) {
     let columns = ref_columns(ref_list);
     if json {
-        print_json(&serde_json::to_value(&ref_list.rows).unwrap(), pretty);
+        print_json(&serde_json::to_value(ref_list).unwrap(), pretty);
     } else {
         if ref_list.rows.is_empty() {
             eprintln!("note: no records reference {}", ref_list.target);
