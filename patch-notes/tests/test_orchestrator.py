@@ -241,7 +241,6 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         self.assertEqual(counts["changed"], 11)
         self.assertIn("bundles", counts)
         self.assertIn("singletons", counts)
-        self.assertIn("uncategorized", counts)
         self.assertEqual(set(counts["lints"].keys()), {"error", "warn", "info"})
 
     def test_manifest_stages_shape(self):

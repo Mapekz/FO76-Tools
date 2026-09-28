@@ -7,8 +7,7 @@ first-match-wins ordering (both within one rule list and across the rollout
 round-trip, brief-line templating, and rerun determinism. Small synthetic
 bundle/comprehensive dicts throughout -- no game data. A handful of tests
 also exercise the real shipped pn/patch_notes_tiers.json to confirm it
-behaves as documented (mirroring test_build_bundles.py's use of the real
-patch_notes_categories.json).
+behaves as documented.
 """
 
 from __future__ import annotations
@@ -44,7 +43,7 @@ def make_member(fid, record_type, editor_id=None, name=None, status="changed", r
     )
 
 
-def make_bundle(bid, members, category="uncategorized", title=None):
+def make_bundle(bid, members, title=None):
     """members[0] is the anchor (role forced to "anchor"); the rest keep
     their own role (default "satellite" via make_member)."""
     members = [dict(m) for m in members]
@@ -52,8 +51,6 @@ def make_bundle(bid, members, category="uncategorized", title=None):
     anchor = members[0]
     return builders.bundle(
         id=bid,
-        category=category,
-        category_label=category,
         title=title or f"{anchor.get('name') or anchor.get('editor_id')} ({anchor['record_type']})",
         anchor=builders.anchor_of(anchor),
         members=members,
@@ -927,9 +924,6 @@ class TestDeepSlicePayload(unittest.TestCase):
             set(payload["bundles"][0].keys()),
             {"id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids"},
         )
-        self.assertNotIn("category", payload["bundles"][0])
-        self.assertNotIn("category_label", payload["bundles"][0])
-        self.assertNotIn("category_rule", payload["bundles"][0])
 
     def test_top_level_shape(self):
         payload = tb.build_deep_slice_payload([], {})

@@ -102,6 +102,11 @@ Edge = TypedDict(
 )
 
 
+#: fnmatch patterns for the placeholder keywords that mark a "unique" item
+#: (bundle context ranking and the `orphaned_unique` lint).
+UNIQUE_KEYWORD_PATTERNS = ["if_tmp_*"]
+
+
 class BundleAnchor(TypedDict):
     form_id: str
     record_type: str | None
@@ -111,9 +116,6 @@ class BundleAnchor(TypedDict):
 
 
 class Bundle(TypedDict):
-    category: str
-    category_label: str
-    category_rule: str | None
     title: str
     anchor: BundleAnchor
     members: list[Member]
@@ -483,12 +485,6 @@ def validate_bundle(value: object, *, path: str = "bundle") -> Bundle:
     for i, lid in enumerate(lint_ids_raw):
         _require_str(lid, f"{path}.lint_ids[{i}]")
     return {
-        "category": _require_str(_require_key(bundle, "category", path), f"{path}.category"),
-        "category_label": _require_str(_require_key(bundle, "category_label", path), f"{path}.category_label"),
-        "category_rule": _require_optional_str(
-            _require_key(bundle, "category_rule", path),
-            f"{path}.category_rule",
-        ),
         "title": _require_str(_require_key(bundle, "title", path), f"{path}.title"),
         "anchor": validate_bundle_anchor(_require_key(bundle, "anchor", path), path=f"{path}.anchor"),
         "members": members,

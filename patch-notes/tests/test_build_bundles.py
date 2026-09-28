@@ -16,9 +16,6 @@ Covers:
     no-ops).
   - Bundle merging (same-anchor, overlap-ratio fixpoint).
   - Context-member attachment (cap + preference order).
-  - Categorization against the real patch_notes_categories.json (first-
-    rule-match-wins, the "keyword" scope's `client.record()` lookup +
-    caching + failure-as-no-match, the uncategorized fallback).
   - The full offline pipeline (FakeGateway + refs_graph.json + a
     hand-written comprehensive_mini.json aligned to that fixture's node
     ids): the WEAP/OMOD/LVLI/KYWD cluster forming one bundle with a WEAP
@@ -47,8 +44,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pn"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import build_bundles as bb  # noqa: E402
-import builders  # noqa: E402
-import esm_gateway  # noqa: E402
 from builders import load_json  # noqa: E402
 from fake_gateway import FakeGateway  # noqa: E402
 
@@ -56,7 +51,6 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "pn" / "build_bundles.py"
 REFS_FIXTURE_PATH = FIXTURES_DIR / "refs_graph.json"
 COMPREHENSIVE_MINI_PATH = FIXTURES_DIR / "comprehensive_mini.json"
-CATEGORIES_PATH = Path(__file__).resolve().parents[1] / "pn" / "patch_notes_categories.json"
 
 
 def _edge(frm, to, source="forward"):
@@ -486,187 +480,21 @@ class TestAttachContext(unittest.TestCase):
         )
 
 
-# ---------------------------------------------------------------------------
-# Categorization
-# ---------------------------------------------------------------------------
-
-
-class _NoKeywordsClient:
-    """A client whose record() always resolves but reports no Keywords."""
-
-    def record(self, esm, formid, *, resolve="stub"):
-        return {"fields": {}}
-
-
-class TestCategorization(unittest.TestCase):
-    def setUp(self):
-        self.config = load_json(CATEGORIES_PATH)
-        self.categories = self.config["categories"]
-        self.client = _NoKeywordsClient()
-
-    @staticmethod
-    def _member(form_id, record_type, editor_id=None, name=None, role="anchor", status="changed"):
-        return builders.member(
-            form_id=form_id, record_type=record_type, editor_id=editor_id,
-            name=name, status=status, role=role,
-        )
-
-    def test_perk_anchor_matches_perks_rule_0(self):
-        anchor = self._member("0x01", "PERK", "SomePerk")
-        cat_id, _label, rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
-        self.assertEqual(cat_id, "perks")
-        self.assertEqual(rule, "perks/rule_0")
-
-    def test_first_match_wins_unique_weapons_over_weapons_combat(self):
-        anchor = self._member("0x01", "WEAP", "SomeRifle")
-        kywd_member = self._member("0x02", "KYWD", "if_tmp_Something", role="satellite")
-        cat_id, _label, rule = bb.categorize_bundle(
-            anchor, [anchor, kywd_member], self.categories, self.client, "esm", {}
-        )
-        self.assertEqual(cat_id, "unique_weapons_gear")
-        self.assertEqual(rule, "unique_weapons_gear/rule_0")
-
-    def test_falls_through_to_weapons_combat_without_unique_keyword(self):
-        anchor = self._member("0x01", "WEAP", "SomeRifle")
-        cat_id, _label, _rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
-        self.assertEqual(cat_id, "weapons_combat")
-
-    def test_omod_anchor_with_mod_custom_edid_is_unique_weapons_gear(self):
-        # Regression test: an OMOD anchor named per Bethesda's unique-item
-        # mod convention (mod_Custom_*) must categorize as unique gear even
-        # with no if_tmp_* keyword member at all (the real-world
-        # "Salt Of The Earth (OMOD)" bundle had none -- the WEAP it modifies
-        # was crowded out of the context cap, see attach_context tests).
-        anchor = self._member("0x04", "OMOD", "mod_Custom_SaltOfTheEarth")
-        cat_id, _label, rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
-        self.assertEqual(cat_id, "unique_weapons_gear")
-        self.assertEqual(rule, "unique_weapons_gear/rule_2")
-
-    def test_plain_omod_anchor_still_falls_through_to_weapons_combat(self):
-        # A plain (non mod_Custom_*) OMOD anchor, with no if_tmp_* keyword
-        # anywhere, must still land in weapons_combat -- the new OMOD rule
-        # must not over-match every OMOD.
-        anchor = self._member("0x05", "OMOD", "mod_LegendaryEffect_Bloodied")
-        cat_id, _label, rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
-        self.assertEqual(cat_id, "weapons_combat")
-        self.assertEqual(rule, "weapons_combat/rule_0")
-
-    def test_member_scope_if_tmp_keyword_routes_to_unique_weapons_gear_with_other_anchor(self):
-        # The member-scoped keyword rule catches bundles whose weapon
-        # carries the unique keyword even when the anchor is something
-        # else entirely (here MISC, which would otherwise fall to ui_misc).
-        anchor = self._member("0x06", "MISC", "SomeJunkItem")
-        kywd_member = self._member("0x07", "KYWD", "if_tmp_UniqueThing", role="satellite")
-        cat_id, _label, _rule = bb.categorize_bundle(
-            anchor, [anchor, kywd_member], self.categories, self.client, "esm", {}
-        )
-        self.assertEqual(cat_id, "unique_weapons_gear")
-
-    def test_member_scope_omod_routes_cobj_anchor_to_weapons_combat(self):
-        # Regression test: ANCHOR_PRIORITY ranks COBJ above OMOD, so a
-        # crafting-recipe bundle for a legendary mod always anchors on the
-        # COBJ. Without a member-scope rule here, the OMOD satellite (the
-        # actually-interesting new content) was invisible to every
-        # anchor-only rule and fell through to uncategorized.
-        anchor = self._member("0x08", "COBJ", "co_mod_Legendary_Weapon2_Cryo")
-        omod_member = self._member(
-            "0x09", "OMOD", "mod_Legendary_Weapon2_Cryo", role="satellite"
-        )
-        cat_id, _label, rule = bb.categorize_bundle(
-            anchor, [anchor, omod_member], self.categories, self.client, "esm", {}
-        )
-        self.assertEqual(cat_id, "weapons_combat")
-        self.assertEqual(rule, "weapons_combat/rule_1")
-
-    def test_member_scope_armo_routes_cobj_anchor_to_armor(self):
-        anchor = self._member("0x0A", "COBJ", "co_Headwear_Clothes_SlasherHat01")
-        armo_member = self._member("0x0B", "ARMO", "Headwear_SlasherHat01", role="satellite")
-        cat_id, _label, rule = bb.categorize_bundle(
-            anchor, [anchor, armo_member], self.categories, self.client, "esm", {}
-        )
-        self.assertEqual(cat_id, "armor")
-        self.assertEqual(rule, "armor/rule_1")
-
-    def test_member_scope_alch_routes_cobj_anchor_to_consumables(self):
-        anchor = self._member("0x0C", "COBJ", "co_Chem_NewStimpak")
-        alch_member = self._member("0x0D", "ALCH", "Chem_NewStimpak", role="satellite")
-        cat_id, _label, rule = bb.categorize_bundle(
-            anchor, [anchor, alch_member], self.categories, self.client, "esm", {}
-        )
-        self.assertEqual(cat_id, "consumables")
-        self.assertEqual(rule, "consumables/rule_1")
-
-    def test_member_scope_context_role_does_not_match(self):
-        # A weapon/armor/chem that's only pulled in as loose "context"
-        # (role="context") must not trigger the member-scope rule -- only
-        # real satellite members should route a COBJ bundle out of
-        # uncategorized.
-        anchor = self._member("0x0E", "COBJ", "co_SomeUnrelatedRecipe")
-        weap_context = self._member("0x0F", "WEAP", "SomeContextWeapon", role="context")
-        cat_id, _label, rule = bb.categorize_bundle(
-            anchor, [anchor, weap_context], self.categories, self.client, "esm", {}
-        )
-        self.assertEqual(cat_id, "uncategorized")
-        self.assertIsNone(rule)
-
-    def test_uncategorized_fallback_has_no_rule(self):
-        anchor = self._member("0x02", "CONT", "SomeContainer")
-        cat_id, _label, rule = bb.categorize_bundle(anchor, [anchor], self.categories, self.client, "esm", {})
-        self.assertEqual(cat_id, "uncategorized")
-        self.assertIsNone(rule)
-
-    def test_keyword_scope_rule_via_client_record_stub(self):
-        class _KeywordClient:
-            def record(self, esm, formid, *, resolve="stub"):
-                return {"fields": {"Keywords": [{"formid": "0x00999999", "editor_id": "if_tmp_SpecialGear"}]}}
-
-        anchor = self._member("0x03", "WEAP", "PlainNamedRifle")
-        cat_id, _label, rule = bb.categorize_bundle(
-            anchor, [anchor], self.categories, _KeywordClient(), "esm", {}
-        )
-        self.assertEqual(cat_id, "unique_weapons_gear")
-        self.assertEqual(rule, "unique_weapons_gear/rule_1")
-
-    def test_keyword_lookup_is_cached_per_anchor(self):
-        class _CountingClient:
-            def __init__(self):
-                self.calls = 0
-
-            def record(self, esm, formid, *, resolve="stub"):
-                self.calls += 1
-                return {"fields": {"Keywords": [{"editor_id": "if_tmp_X"}]}}
-
-        client = _CountingClient()
-        cache = {}
-        self.assertEqual(bb._anchor_keyword_edids(client, "esm", "0xAA", cache), ["if_tmp_X"])
-        self.assertEqual(bb._anchor_keyword_edids(client, "esm", "0xAA", cache), ["if_tmp_X"])
-        self.assertEqual(client.calls, 1)
-
-    def test_keyword_lookup_failure_is_treated_as_no_match(self):
-        class _FailingClient:
-            def record(self, esm, formid, *, resolve="stub"):
-                raise esm_gateway.EsmError("not found")
-
-        self.assertEqual(bb._anchor_keyword_edids(_FailingClient(), "esm", "0xBB", {}), [])
-
-
 class TestSettingsPrecedence(unittest.TestCase):
-    def test_resolve_settings_merges_config_over_defaults(self):
-        settings = bb.resolve_settings({"settings": {"hub_degree": 99}})
+    def test_resolve_settings_applies_overrides_over_defaults(self):
+        settings = bb.resolve_settings({"hub_degree": 99})
         self.assertEqual(settings["hub_degree"], 99)
         self.assertEqual(settings["max_members"], bb.DEFAULT_SETTINGS["max_members"])
 
-    def test_resolve_settings_empty_config_uses_defaults(self):
-        self.assertEqual(bb.resolve_settings({}), bb.DEFAULT_SETTINGS)
+    def test_resolve_settings_without_overrides_uses_defaults(self):
+        self.assertEqual(bb.resolve_settings(), bb.DEFAULT_SETTINGS)
 
 
 # ---------------------------------------------------------------------------
 # Regression: "Salt Of The Earth (OMOD)" bundle -- an OMOD anchor whose only
 # forward-facing "true" bundle-mate (the WEAP it's a mod for) was crowded
-# out of the context cap by CONT/COBJ candidates, and mis-categorized as
-# weapons_combat instead of unique_weapons_gear. Runs the real, current
-# patch_notes_categories.json end to end through build_bundles(), but with
-# an inline FakeGateway fixture (not the shared refs_graph.json /
+# out of the context cap by CONT/COBJ candidates. Runs build_bundles() end
+# to end with an inline FakeGateway fixture (not the shared refs_graph.json /
 # comprehensive_mini.json, which other test modules also depend on).
 # ---------------------------------------------------------------------------
 
@@ -677,8 +505,6 @@ class TestModForOmodBundleRegression(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.config = load_json(CATEGORIES_PATH)
-
         records = {
             cls.OMOD_FID: {
                 "record_type": "OMOD", "editor_id": "mod_Custom_SaltOfTheEarth", "name": "Salt Of The Earth",
@@ -717,18 +543,13 @@ class TestModForOmodBundleRegression(unittest.TestCase):
         }
 
         client = FakeGateway(refs_fixture)
-        cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm", cls.config)
+        cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm")
 
     def test_single_bundle_anchored_on_the_omod(self):
         self.assertEqual(len(self.result["bundles"]), 1)
         bundle = self.result["bundles"][0]
         self.assertEqual(bundle["anchor"]["form_id"], self.OMOD_FID)
         self.assertEqual(bundle["anchor"]["record_type"], "OMOD")
-
-    def test_categorized_as_unique_weapons_gear_not_weapons_combat(self):
-        bundle = self.result["bundles"][0]
-        self.assertEqual(bundle["category"], "unique_weapons_gear")
-        self.assertEqual(bundle["category_rule"], "unique_weapons_gear/rule_2")
 
     def test_weap_survives_the_context_cap_ahead_of_cont_cobj_crowd(self):
         bundle = self.result["bundles"][0]
@@ -751,9 +572,8 @@ class TestFullPipelineOffline(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.comp = load_json(COMPREHENSIVE_MINI_PATH)
-        cls.config = load_json(CATEGORIES_PATH)
         cls.client = FakeGateway(REFS_FIXTURE_PATH)
-        cls.result = bb.build_bundles(cls.comp, cls.client, "OLD.esm", "NEW.esm", cls.config)
+        cls.result = bb.build_bundles(cls.comp, cls.client, "OLD.esm", "NEW.esm")
 
     def _bundle_containing(self, form_id):
         for b in self.result["bundles"]:
@@ -770,8 +590,6 @@ class TestFullPipelineOffline(unittest.TestCase):
             non_context,
             {"0x00100001", "0x00100010", "0x00100011", "0x00100020", "0x00100040", "0x00100050"},
         )
-        self.assertEqual(b["category"], "unique_weapons_gear")
-        self.assertEqual(b["category_rule"], "unique_weapons_gear/rule_0")
 
     def test_npc_and_cont_are_context_members_with_expected_edges(self):
         b = self._bundle_containing("0x00100001")
@@ -835,12 +653,6 @@ class TestFullPipelineOffline(unittest.TestCase):
         edge = next(e for e in b["edges"] if e["from"] == "0x00100071" and e["to"] == "0x00100070")
         self.assertEqual(edge["relation"], "card_for")
         self.assertEqual(edge["label"], "card for")
-        self.assertEqual(b["category"], "perks")
-
-    def test_uncategorized_fallback_for_unmapped_record_type(self):
-        b = self._bundle_containing("0x00300002")  # CONT_UncategorizedTest
-        self.assertEqual(b["category"], "uncategorized")
-        self.assertIsNone(b["category_rule"])
 
     def test_removed_record_is_queried_against_old_esm(self):
         class _SpyClient:
@@ -856,7 +668,7 @@ class TestFullPipelineOffline(unittest.TestCase):
                 return self.inner.record(esm, formid, resolve=resolve)
 
         spy = _SpyClient(FakeGateway(REFS_FIXTURE_PATH))
-        bb.build_bundles(self.comp, spy, "OLD.esm", "NEW.esm", self.config)
+        bb.build_bundles(self.comp, spy, "OLD.esm", "NEW.esm")
 
         removed_calls = [c for c in spy.calls if c[1] == "0x00300001"]  # ALCH_TestChem, status=removed
         self.assertTrue(removed_calls)
@@ -868,9 +680,9 @@ class TestFullPipelineOffline(unittest.TestCase):
 
     def test_deterministic_ids_across_two_runs(self):
         client2 = FakeGateway(REFS_FIXTURE_PATH)
-        result2 = bb.build_bundles(self.comp, client2, "OLD.esm", "NEW.esm", self.config)
-        ids1 = [(b["id"], b["category"], b["anchor"]["form_id"]) for b in self.result["bundles"]]
-        ids2 = [(b["id"], b["category"], b["anchor"]["form_id"]) for b in result2["bundles"]]
+        result2 = bb.build_bundles(self.comp, client2, "OLD.esm", "NEW.esm")
+        ids1 = [(b["id"], b["anchor"]["form_id"]) for b in self.result["bundles"]]
+        ids2 = [(b["id"], b["anchor"]["form_id"]) for b in result2["bundles"]]
         self.assertEqual(ids1, ids2)
 
     def test_meta_counts_match_bundle_list(self):
@@ -881,18 +693,14 @@ class TestFullPipelineOffline(unittest.TestCase):
             if sum(1 for m in b["members"] if m["role"] != "context") == 1
         )
         self.assertEqual(counts["singletons"], singleton_count)
-        uncategorized_count = sum(1 for b in self.result["bundles"] if b["category"] == "uncategorized")
-        self.assertEqual(counts["uncategorized"], uncategorized_count)
 
 
 class TestBundleShapeContract(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         comp = load_json(COMPREHENSIVE_MINI_PATH)
-        config = load_json(CATEGORIES_PATH)
         client = FakeGateway(REFS_FIXTURE_PATH)
-        cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm", config)
-        cls.categories = config["categories"]
+        cls.result = bb.build_bundles(comp, client, "OLD.esm", "NEW.esm")
 
     def test_top_level_shape(self):
         for key in ("schema_version", "meta", "bundles", "lints"):
@@ -905,13 +713,13 @@ class TestBundleShapeContract(unittest.TestCase):
         for key in ("patch_date", "generated_at", "source", "refs_depth", "hub_degree", "max_members", "counts"):
             self.assertIn(key, meta)
         self.assertEqual(meta["source"], "comprehensive.json")
-        for key in ("bundles", "singletons", "uncategorized"):
+        for key in ("bundles", "singletons"):
             self.assertIn(key, meta["counts"])
 
     def test_bundle_shape(self):
         for b in self.result["bundles"]:
             for key in (
-                "id", "category", "category_label", "category_rule", "title",
+                "id", "title",
                 "anchor", "members", "edges", "bug_watch", "lint_ids",
             ):
                 self.assertIn(key, b)
@@ -934,9 +742,8 @@ class TestBundleShapeContract(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(ids, [f"B{i:04d}" for i in range(1, len(ids) + 1)])
 
-    def test_bundle_sort_order_is_category_then_anchor_form_id(self):
-        cat_order = {c["id"]: i for i, c in enumerate(self.categories)}
-        keys = [(cat_order.get(b["category"], len(self.categories)), bb._int_fid(b["anchor"]["form_id"])) for b in self.result["bundles"]]
+    def test_bundle_sort_order_is_anchor_form_id(self):
+        keys = [bb._int_fid(b["anchor"]["form_id"]) for b in self.result["bundles"]]
         self.assertEqual(keys, sorted(keys))
 
 
@@ -972,10 +779,6 @@ class TestCli(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
 
-    def test_missing_categories_file_is_hard_error(self):
-        result = self._run("--offline", "--refs-fixture", str(REFS_FIXTURE_PATH), "--categories", "/nonexistent/cats.json")
-        self.assertNotEqual(result.returncode, 0)
-
     def test_full_subprocess_run_writes_valid_bundles_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "bundles.json"
@@ -986,7 +789,7 @@ class TestCli(unittest.TestCase):
             self.assertIn("bundles", data)
             self.assertEqual(data["meta"]["counts"]["bundles"], len(data["bundles"]))
 
-    def test_cli_flag_overrides_config_settings(self):
+    def test_cli_flag_overrides_default_settings(self):
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "bundles.json"
             result = self._run(

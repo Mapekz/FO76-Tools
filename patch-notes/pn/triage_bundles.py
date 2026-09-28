@@ -703,10 +703,7 @@ def build_triage_payload(bundles, tiers_by_id, rollout_shapes, extra_stats=None)
 # --------------------------------------------------------------------------
 
 #: The exact per-bundle key set the writer contract documents (see
-#: ../skill/deep-writer-prompt.md) -- drops
-#: category/category_label/category_rule: the DEEP tier has no per-category
-#: concept, since writers work across bundles rather than one category at a
-#: time.
+#: ../skill/deep-writer-prompt.md).
 _DEEP_SLICE_BUNDLE_KEYS = ("id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids")
 
 
@@ -808,7 +805,6 @@ def build_ambiguous_digest(bundle, records, max_bundle_chars, max_change_chars):
     digest = {
         "id": bundle.get("id"),
         "title": bundle.get("title"),
-        "category": bundle.get("category"),
         "anchor": {
             "record_type": anchor.get("record_type"),
             "editor_id": anchor.get("editor_id"),

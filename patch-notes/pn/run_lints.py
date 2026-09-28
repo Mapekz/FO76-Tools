@@ -53,10 +53,6 @@ import patchnotes_lib as pl  # noqa: E402
 # Tunables / defaults
 # --------------------------------------------------------------------------
 
-#: Default fnmatch patterns for "unique item" placeholder keywords (rule
-#: `orphaned_unique`). Overridable via a `--categories` config file's
-#: `unique_keyword_patterns` (or `settings.unique_keyword_patterns`) list.
-DEFAULT_UNIQUE_KEYWORD_PATTERNS = ["if_tmp_*"]
 
 #: Record types that count as "this item/perk/keyword can actually reach a
 #: player" for the reverse-reference walks in `orphaned_unique` /
@@ -234,7 +230,7 @@ def _matches_any(edid, patterns):
 
 def _unique_keyword_patterns(ctx: pl.RuleContext):
     patterns = (ctx.get("settings") or {}).get("unique_keyword_patterns")
-    return patterns if patterns else DEFAULT_UNIQUE_KEYWORD_PATTERNS
+    return patterns if patterns else pl.UNIQUE_KEYWORD_PATTERNS
 
 
 def _bundle_matching_keyword(bundle, records, ref_names, patterns):
@@ -957,34 +953,6 @@ def run_lints(comp, bundles, client, new_esm=None, settings=None, rules=None):
 # --------------------------------------------------------------------------
 
 
-def load_settings(categories_path):
-    """Load rule tunables from a `--categories` config file. Accepts either
-    `{"settings": {...}}` or a flat dict directly containing tunable keys
-    (e.g. `unique_keyword_patterns`).
-
-    `categories_path` falsy (no `--categories` flag given -- there is no
-    implicit default file to fail on) -> empty settings, silently, so rules
-    fall back to their defaults.
-
-    `categories_path` given but missing/unreadable/malformed -> raises
-    (`OSError`, `json.JSONDecodeError`, or `ValueError` for a non-dict
-    top-level shape) instead of silently degrading to empty settings, so a
-    typo'd `--categories` path can't silently change lint behavior with no
-    indication anything was wrong; the caller (`main`, below) turns the
-    raised exception into a clean CLI error instead of a bare traceback."""
-    if not categories_path:
-        return {}
-    with open(categories_path, encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        raise ValueError(
-            f"--categories {categories_path}: expected a JSON object at the top level, "
-            f"got {type(data).__name__}"
-        )
-    settings = data.get("settings")
-    return settings if isinstance(settings, dict) else data
-
-
 def print_summary(lints_payload, rule_names, stream=sys.stderr):
     lints = lints_payload.get("lints", [])
     counts_by_rule = Counter(lint.get("rule") for lint in lints)
@@ -1018,7 +986,6 @@ def build_arg_parser():
     ap.add_argument(
         "--esm-bin", default="target/release/esm", help="Path to the esm CLI binary."
     )
-    ap.add_argument("--categories", help="Config file supplying rule tunables (e.g. unique_keyword_patterns).")
     ap.add_argument("--offline", action="store_true", help="Use a fixture-backed FakeGateway instead of live esm lookups.")
     ap.add_argument("--refs-fixture", help="Fixture JSON for --offline mode (see tests/fake_gateway.FakeGateway).")
     ap.add_argument("--rules", help="Comma-separated subset of rules to run (default: all).")
@@ -1038,12 +1005,6 @@ def main(argv=None):
             bundles = pl.validate_bundles_payload(json.load(f), label=str(bundles_path))
     except (OSError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
         print(f"error: failed to read pipeline output from {out_dir}: {exc}", file=sys.stderr)
-        return 1
-
-    try:
-        settings = load_settings(args.categories)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(f"error: failed to load --categories {args.categories}: {exc}", file=sys.stderr)
         return 1
 
     rule_names = None
@@ -1075,7 +1036,7 @@ def main(argv=None):
             new_esm = args.new_esm
 
         lints_payload, updated_bundles = run_lints(
-            comp, bundles, client, new_esm, settings, rules=rule_names
+            comp, bundles, client, new_esm, rules=rule_names
         )
     finally:
         if client is not None:

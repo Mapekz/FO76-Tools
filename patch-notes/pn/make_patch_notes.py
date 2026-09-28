@@ -7,14 +7,14 @@ Wires together, in-process, the four deterministic pipeline tools that turn a
 raw `esm diff --json` into a reviewable, bundled, linted output directory:
 
     1. `esm diff` (subprocess)              -> diff.json
-    2. render_comprehensive.py (library)    -> comprehensive.json + .md
+    2. render_comprehensive.py (library)    -> comprehensive.json
     3. build_bundles.py (library)           -> bundles.json
     4. run_lints.py (library)               -> lints.json + updated bundles.json
     5. patchnotes_lib.py (manifest helpers) -> manifest.json
 
 This is the **mechanical** stage only — deterministic, no LLM involved. The
-narrative stage (slicing, per-category writer subagents, Discord chunking,
-`update_manifest.py`) is the `/patch-notes` Claude skill; see
+narrative stage (triage, deep writers, gates, Discord chunking,
+`update_manifest.py`) is the `/patch-notes` skill; see
 `../skill/SKILL.md`.
 
 Usage:
@@ -48,10 +48,7 @@ Options:
                           bookkeeping, Object Bounds) instead of suppressing them.
     --exclude-type LIST   Comma-delimited record-type signatures to omit entirely
                           (default: LAND,NAVM). Pass --exclude-type '' to disable.
-    --categories FILE     Path to patch_notes_categories.json (default: the copy
-                          next to this script).
-    --refs-depth N        Override the categorization config's base reverse-ref
-                          BFS depth.
+    --refs-depth N        Override the bundles stage's base reverse-ref BFS depth.
     --skip-bundles        Skip bundles.json (and, necessarily, lints.json).
     --skip-lints          Skip lints.json (bundles.json is still built).
     --offline             Use a fixture-backed FakeGateway (tests/fake_gateway.py) instead of live esm lookups
@@ -95,7 +92,6 @@ from typing import NoReturn
 
 # Locate the esm/ workspace root (directory containing this script's parent).
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_CATEGORIES_PATH = SCRIPT_DIR / "patch_notes_categories.json"
 
 # Sibling pipeline-tool modules live next to this script.
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -348,11 +344,8 @@ def build_arg_parser():
     ap.add_argument("--exclude-type", default=DEFAULT_EXCLUDE_TYPE, metavar="LIST",
                     help=f"Comma-delimited record-type signatures to omit entirely "
                          f"(default: {DEFAULT_EXCLUDE_TYPE}). Pass --exclude-type '' to disable.")
-    ap.add_argument("--categories", default=str(DEFAULT_CATEGORIES_PATH), metavar="FILE",
-                    help="Path to patch_notes_categories.json (default: the copy next to "
-                         "this script)")
     ap.add_argument("--refs-depth", type=int, default=None, metavar="N",
-                    help="Override the categorization config's base reverse-ref BFS depth")
+                    help="Override the bundles stage's base reverse-ref BFS depth")
     ap.add_argument("--skip-bundles", action="store_true",
                     help="Skip bundles.json (and, necessarily, lints.json)")
     ap.add_argument("--skip-lints", action="store_true",
@@ -413,18 +406,7 @@ def main(argv=None):
 
     exclude_type = (args.exclude_type or "").strip()
 
-    categories_path = Path(args.categories)
-    if not categories_path.is_file():
-        die(1, f"--categories not found: {categories_path}")
-    try:
-        with categories_path.open(encoding="utf-8") as f:
-            config = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        die(1, f"failed to load --categories {categories_path}: {e}")
-    settings = dict(config.get("settings") or {})
-    if args.refs_depth is not None:
-        settings["refs_depth"] = args.refs_depth
-    config = {**config, "settings": settings}
+    overrides = {} if args.refs_depth is None else {"refs_depth": args.refs_depth}
 
     localized = {"old": pl.esm_is_localized(esm_a), "new": pl.esm_is_localized(esm_b)}
     if None not in localized.values() and localized["old"] != localized["new"]:
@@ -492,7 +474,7 @@ def main(argv=None):
                     client = FakeGateway(args.refs_fixture)
                 else:
                     client = eg.EsmGateway(esm_bin)
-                bundles_result = bb.build_bundles(comp, client, str(esm_a), str(esm_b), config)
+                bundles_result = bb.build_bundles(comp, client, str(esm_a), str(esm_b), overrides)
                 bundles_json_path = layout.bundles_json(out_dir)
                 with bundles_json_path.open("w", encoding="utf-8") as f:
                     json.dump(bundles_result, f, indent=2, ensure_ascii=False)
@@ -502,8 +484,7 @@ def main(argv=None):
             files_written["bundles"] = bundles_json_path.name
             bc = bundles_result["meta"]["counts"]
             eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "
-                   f"({bc['bundles']} bundles, {bc['singletons']} singletons, "
-                   f"{bc['uncategorized']} uncategorized)")
+                   f"({bc['bundles']} bundles, {bc['singletons']} singletons)")
 
             if args.skip_lints:
                 eprint("\nSkipping lint checks (--skip-lints)")
@@ -514,7 +495,6 @@ def main(argv=None):
                     lints_payload, updated_bundles = rl.run_lints(
                         comp, bundles_result, client,
                         new_esm=str(esm_b),
-                        settings=config.get("settings"),
                     )
                     lints_json_path = layout.lints_json(out_dir)
                     with lints_json_path.open("w", encoding="utf-8") as f:

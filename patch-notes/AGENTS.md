@@ -17,7 +17,7 @@ Run commands from `patch-notes/`; `justfile` owns the recipes.
 
 | Path | Purpose |
 |---|---|
-| `pn/` | Pipeline stages (scripts) and their tuning configs (`patch_notes_categories.json`, `patch_notes_tiers.json`) |
+| `pn/` | Pipeline stages (scripts) and the tier rules (`patch_notes_tiers.json`); bundling tunables are `build_bundles.DEFAULT_SETTINGS` |
 | `tests/` | unittest suite, `fixtures/`, `builders.py`, and `fake_gateway.py` (the `--offline` test double) |
 | `skill/` | The `/patch-notes` skill: `SKILL.md`, the writer and review prompts, `style-guide.md`, and `kb/` |
 

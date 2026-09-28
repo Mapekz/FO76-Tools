@@ -69,10 +69,10 @@ def make_comp(records, ref_names=None):
     return {"records": {r["form_id"]: r for r in records}, "ref_names": ref_names or {}}
 
 
-def make_bundle(bundle_id, category, anchor_fid, anchor_type, members=None, edges=None, **extra):
+def make_bundle(bundle_id, anchor_fid, anchor_type, members=None, edges=None, **extra):
     # Field set/shape mirrors patchnotes_lib.Bundle exactly (role "primary"
     # isn't a real MemberRole -- "anchor"/"satellite"/"context" are -- and
-    # "status"/"category_rule" are required-but-nullable keys) so this
+    # "status" is a required-but-nullable key) so this
     # round-trips through pl.validate_bundles_payload() unchanged, which
     # TestEndToEndCli exercises via run_lints.main()'s bundles.json read.
     # The anchor/member dicts stay literal rather than going through
@@ -81,8 +81,6 @@ def make_bundle(bundle_id, category, anchor_fid, anchor_type, members=None, edge
     # anchor to prove lint injection leaves it untouched.
     return builders.bundle(**{
         "id": bundle_id,
-        "category": category,
-        "category_label": category,
         "title": f"Bundle {bundle_id}",
         "anchor": {"form_id": anchor_fid, "record_type": anchor_type, "status": "changed"},
         "members": members
@@ -405,7 +403,6 @@ class TestOrphanedUnique(TestRunLintsBase):
         weap = make_record("0x00100091", "WEAP", "added", editor_id="WEAP_HubRef01")
         bundle = make_bundle(
             "B0001",
-            "unique_weapons_gear",
             "0x00100091",
             "WEAP",
             members=[
@@ -428,7 +425,6 @@ class TestOrphanedUnique(TestRunLintsBase):
         weap = make_record("0x00100001", "WEAP", "changed", editor_id="WEAP_TestRifle")
         bundle = make_bundle(
             "B0002",
-            "unique_weapons_gear",
             "0x00100001",
             "WEAP",
             members=[
@@ -689,10 +685,9 @@ class TestInjection(unittest.TestCase):
         )
         comp = make_comp([lvli_rec])
 
-        matching_bundle = make_bundle("B0001", "loot", "0x01000001", "LVLI")
+        matching_bundle = make_bundle("B0001", "0x01000001", "LVLI")
         untouched_bundle = make_bundle(
             "B0002",
-            "weapons",
             "0x09999999",
             "WEAP",
             lint_ids=["L9999"],
@@ -707,10 +702,10 @@ class TestInjection(unittest.TestCase):
         self.assertTrue(by_id["B0001"]["bug_watch"])
 
         # B0002 has no matching lint this run: recomputed to empty/false, and
-        # every OTHER field (category, anchor, ...) is left exactly as-is.
+        # every OTHER field (title, anchor, ...) is left exactly as-is.
         self.assertEqual(by_id["B0002"]["lint_ids"], [])
         self.assertFalse(by_id["B0002"]["bug_watch"])
-        self.assertEqual(by_id["B0002"]["category"], "weapons")
+        self.assertEqual(by_id["B0002"]["title"], "Bundle B0002")
         self.assertEqual(
             by_id["B0002"]["anchor"], {"form_id": "0x09999999", "record_type": "WEAP", "status": "changed"}
         )
@@ -722,7 +717,6 @@ class TestInjection(unittest.TestCase):
         comp = make_comp([weap_rec])
         bundle = make_bundle(
             "B0003",
-            "unique_weapons_gear",
             "0x00100091",
             "WEAP",
             members=[
@@ -829,7 +823,7 @@ class TestEndToEndCli(unittest.TestCase):
             cut={"marker": "ZZZ", "confidence": "high", "kind": "newly_deprecated"},
         )
         comp = make_comp([lvli_rec, cut_rec])
-        bundle = make_bundle("B0001", "loot", "0x08000001", "LVLI")
+        bundle = make_bundle("B0001", "0x08000001", "LVLI")
         bundles = make_bundles([bundle])
 
         with TempOutDir(bundles_data=bundles, comprehensive_data=comp) as out_dir:

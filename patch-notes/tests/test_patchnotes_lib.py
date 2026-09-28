@@ -123,9 +123,6 @@ class TestWireShapeValidation(unittest.TestCase):
 
     def test_validate_bundle_rejects_bad_member_role(self):
         bundle = {
-            "category": "x",
-            "category_label": "x",
-            "category_rule": None,
             "title": "t",
             "anchor": {
                 "form_id": "0x01",

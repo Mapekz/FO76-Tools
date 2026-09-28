@@ -10,9 +10,8 @@ it + the keyword that marks it "unique") that a human patch-notes writer (or
 an LLM writer subagent, see `slice_bundles.py`) should describe together
 rather than as N disconnected bullet points.
 
-Pipeline position: render_comprehensive.py -> **build_bundles.py** -> a lint
-tool (fills `bug_watch`/`lint_ids`/`lints`, not built here) -> slice_bundles.py
--> per-category writer subagents.
+Pipeline position: render_comprehensive.py -> **build_bundles.py** ->
+run_lints.py (fills `bug_watch`/`lint_ids`/`lints`) -> triage_bundles.py.
 
 Algorithm (see module docstring sections below for each step):
   1. Universe = diff records minus WRLD/CELL (excluded upstream already, but
@@ -27,10 +26,9 @@ Algorithm (see module docstring sections below for each step):
      same-anchor / high-overlap bundle merging.
   6. Context-member attachment (nodes outside the diff that the bundle
      references or is referenced by), capped and preference-ordered.
-  7. Categorization against `patch_notes_categories.json`.
-  8. Deterministic sort + ID assignment + meta counts.
+  7. Deterministic sort by anchor FormID + ID assignment + meta counts.
 
-`build_bundles(comp, client, old_esm, new_esm, config) -> dict` is the
+`build_bundles(comp, client, old_esm, new_esm, overrides) -> dict` is the
 library entry point; `main()` is a thin CLI wrapper. `client` is anything
 implementing `esm_gateway.EsmGateway`'s `refs()`/`record()` surface —
 normally an `esm_gateway.EsmGateway`,
@@ -54,7 +52,7 @@ import esm_gateway
 import patchnotes_lib as pl
 
 # --------------------------------------------------------------------------
-# Constants / tunables (mirror patch_notes_categories.json's "settings")
+# Tunables (CLI flags override a few; see resolve_settings)
 # --------------------------------------------------------------------------
 
 DEFAULT_SETTINGS = {
@@ -62,7 +60,7 @@ DEFAULT_SETTINGS = {
     "max_members": 40,
     "refs_depth": 2,
     "context_cap": 12,
-    "unique_keyword_patterns": ["if_tmp_*"],
+    "unique_keyword_patterns": pl.UNIQUE_KEYWORD_PATTERNS,
     # Types whose "true" bundle-mates are typically >1 direct hop away
     # (e.g. a KYWD's actual family is reached via the item that carries it,
     # then that item's container/NPC) -- these get base_depth + 1 for the
@@ -731,108 +729,13 @@ def attach_context(
 
 
 # --------------------------------------------------------------------------
-# Step 7 (part 2): categorization
-# --------------------------------------------------------------------------
-
-
-def _fnmatch_any(value, patterns):
-    if not value:
-        return False
-    v = value.lower()
-    return any(fnmatch.fnmatch(v, pat.lower()) for pat in patterns)
-
-
-def _scope_members(scope, anchor_member, all_members):
-    if scope == "anchor":
-        return [anchor_member]
-    if scope == "member":
-        return [m for m in all_members if m["role"] != "context"]
-    return list(all_members)  # "any"
-
-
-def _rule_fields_match(rule, scope_members):
-    record_types = rule.get("record_type")
-    edids = rule.get("edid")
-    names = rule.get("name")
-    if record_types is None and edids is None and names is None:
-        return True  # nothing to check against members (e.g. a keyword-only rule)
-    for m in scope_members:
-        if record_types is not None and m.get("record_type") not in record_types:
-            continue
-        if edids is not None and not _fnmatch_any(m.get("editor_id"), edids):
-            continue
-        if names is not None and not _fnmatch_any(m.get("name"), names):
-            continue
-        return True
-    return False
-
-
-def _anchor_keyword_edids(client, esm, anchor_fid, cache):
-    """Resolve the anchor's own decoded Keywords list to a list of editor
-    IDs, via one `client.record(esm, anchor_fid, resolve="stub")` call,
-    cached per anchor_fid. Any failure (esm error, missing/malformed
-    Keywords field) is treated as "no keywords" -- never raises."""
-    if anchor_fid in cache:
-        return cache[anchor_fid]
-    edids = []
-    try:
-        rec = client.record(esm, anchor_fid, resolve="stub")
-        for kw in (rec.get("fields") or {}).get("Keywords") or []:
-            if isinstance(kw, dict):
-                e = kw.get("editor_id")
-                if e:
-                    edids.append(e)
-            elif isinstance(kw, str):
-                edids.append(kw)
-    except esm_gateway.EsmError:
-        edids = []
-    cache[anchor_fid] = edids
-    return edids
-
-
-def rule_matches(rule, anchor_member, all_members, client, esm, keyword_cache):
-    scope = rule.get("scope", "any")
-    if not _rule_fields_match(rule, _scope_members(scope, anchor_member, all_members)):
-        return False
-    keyword_patterns = rule.get("keyword")
-    if keyword_patterns:
-        edids = _anchor_keyword_edids(client, esm, anchor_member["form_id"], keyword_cache)
-        if not any(_fnmatch_any(e, keyword_patterns) for e in edids):
-            return False
-    return True
-
-
-def categorize_bundle(anchor_member, all_members, categories, client, esm, keyword_cache):
-    """Step 7b. Categories are evaluated in the config's fixed order; the
-    first category with any matching rule wins (rule matches = ALL of that
-    rule's specified fields hold). A category with an empty `rules` list
-    (the config's trailing "uncategorized" entry) always matches -- that's
-    the fallback, so its `category_rule` is None."""
-    for cat in categories:
-        rules = cat.get("rules") or []
-        if not rules:
-            return cat["id"], cat.get("label", cat["id"]), None
-        for i, rule in enumerate(rules):
-            if rule_matches(rule, anchor_member, all_members, client, esm, keyword_cache):
-                return cat["id"], cat.get("label", cat["id"]), f"{cat['id']}/rule_{i}"
-    return None, None, None
-
-
-# --------------------------------------------------------------------------
 # Orchestration
 # --------------------------------------------------------------------------
 
 
-def resolve_settings(config):
-    """Merge patch_notes_categories.json's "settings" section over the
-    hardcoded defaults. (CLI-flag overrides are merged into config by
-    main() before it calls build_bundles(), per the documented "CLI flag >
-    config settings > defaults" precedence.)"""
-    return {**DEFAULT_SETTINGS, **(config.get("settings") or {})}
-
-
-def _esm_for_status(status, old_esm, new_esm):
-    return old_esm if status == "removed" else new_esm
+def resolve_settings(overrides=None):
+    """DEFAULT_SETTINGS with any CLI-flag overrides applied."""
+    return {**DEFAULT_SETTINGS, **(overrides or {})}
 
 
 def _bundle_title(anchor_rec, anchor_fid):
@@ -840,11 +743,10 @@ def _bundle_title(anchor_rec, anchor_fid):
     return f"{label} ({(anchor_rec or {}).get('record_type')})"
 
 
-def build_bundles(comp, client, old_esm, new_esm, config):
+def build_bundles(comp, client, old_esm, new_esm, overrides=None):
     """Library entry point: comprehensive.json dict -> bundles.json dict.
     See module docstring for the full algorithm."""
-    settings = resolve_settings(config)
-    categories = config.get("categories") or []
+    settings = resolve_settings(overrides)
     ref_names = comp.get("ref_names") or {}
 
     # Derive set/rank views once per run (not per record / per property row).
@@ -885,8 +787,6 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         incident[e["from"]].append(i)
         incident[e["to"]].append(i)
 
-    keyword_cache = {}
-
     raw_bundles = []
     for member_fids in merged_groups:
         anchor_fid = select_anchor(member_fids, u, full_degree, anchor_rank, unlisted_rank)
@@ -906,7 +806,6 @@ def build_bundles(comp, client, old_esm, new_esm, config):
                 }
             )
         member_dicts.sort(key=lambda m: (0 if m["role"] == "anchor" else 1, _int_fid(m["form_id"])))
-        anchor_member = member_dicts[0]
 
         context_members, context_edges = attach_context(
             member_fids, context_incidence, context_stubs,
@@ -926,16 +825,9 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         bundle_edges = dedupe_edges(internal_edges + context_edges)
 
         all_members = member_dicts + context_members
-        esm_for_anchor = _esm_for_status(anchor_rec.get("status"), old_esm, new_esm)
-        cat_id, cat_label, cat_rule = categorize_bundle(
-            anchor_member, all_members, categories, client, esm_for_anchor, keyword_cache,
-        )
 
         raw_bundles.append(
             {
-                "category": cat_id,
-                "category_label": cat_label,
-                "category_rule": cat_rule,
                 "title": _bundle_title(anchor_rec, anchor_fid),
                 "anchor": {
                     "form_id": anchor_fid,
@@ -952,10 +844,7 @@ def build_bundles(comp, client, old_esm, new_esm, config):
             }
         )
 
-    cat_order = {c.get("id"): i for i, c in enumerate(categories)}
-    raw_bundles.sort(
-        key=lambda b: (cat_order.get(b["category"], len(categories)), _int_fid(b["_anchor_fid"]))
-    )
+    raw_bundles.sort(key=lambda b: _int_fid(b["_anchor_fid"]))
     for i, b in enumerate(raw_bundles, start=1):
         b["id"] = f"B{i:04d}"
         del b["_anchor_fid"]
@@ -971,7 +860,6 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         )
         == 1
     )
-    n_uncategorized = sum(1 for b in raw_bundles if b["category"] == "uncategorized")
 
     meta = {
         "patch_date": (comp.get("meta") or {}).get("patch_date", ""),
@@ -990,7 +878,6 @@ def build_bundles(comp, client, old_esm, new_esm, config):
         "counts": {
             "bundles": n_bundles,
             "singletons": n_singletons,
-            "uncategorized": n_uncategorized,
         },
     }
 
@@ -1002,7 +889,6 @@ def build_bundles(comp, client, old_esm, new_esm, config):
 # --------------------------------------------------------------------------
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DEFAULT_CATEGORIES_PATH = SCRIPT_DIR / "patch_notes_categories.json"
 
 
 def eprint(*args, **kwargs):
@@ -1018,10 +904,6 @@ def build_arg_parser():
     ap.add_argument("--new-esm", required=True, help="Path to the NEW .esm.")
     ap.add_argument("--old-esm", required=True, help="Path to the OLD .esm.")
     ap.add_argument("--out", default="bundles.json", help="Output path (default: bundles.json).")
-    ap.add_argument(
-        "--categories", default=str(DEFAULT_CATEGORIES_PATH),
-        help="Path to patch_notes_categories.json (default: the copy next to this script).",
-    )
     ap.add_argument("--refs-depth", type=int, default=None, help="Override base reverse-ref BFS depth.")
     ap.add_argument("--hub-degree", type=int, default=None, help="Override the hub-degree threshold.")
     ap.add_argument("--max-members", type=int, default=None, help="Override the oversized-split threshold.")
@@ -1048,22 +930,15 @@ def main(argv=None):
         eprint(f"error: failed to load {args.comprehensive_json}: {e}")
         return 1
 
-    try:
-        with open(args.categories, encoding="utf-8") as f:
-            config = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        eprint(f"error: failed to load {args.categories}: {e}")
-        return 1
-
-    settings = dict(config.get("settings") or {})
-    for key, value in (
-        ("refs_depth", args.refs_depth),
-        ("hub_degree", args.hub_degree),
-        ("max_members", args.max_members),
-    ):
-        if value is not None:
-            settings[key] = value
-    config = {**config, "settings": settings}
+    overrides = {
+        key: value
+        for key, value in (
+            ("refs_depth", args.refs_depth),
+            ("hub_degree", args.hub_degree),
+            ("max_members", args.max_members),
+        )
+        if value is not None
+    }
 
     if args.offline:
         # FakeGateway is a test double (tests/fake_gateway.py, not
@@ -1081,7 +956,7 @@ def main(argv=None):
             return 1
         client = esm_gateway.EsmGateway(esm_bin)
 
-    result = build_bundles(comp, client, args.old_esm, args.new_esm, config)
+    result = build_bundles(comp, client, args.old_esm, args.new_esm, overrides)
 
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
@@ -1089,8 +964,7 @@ def main(argv=None):
 
     counts = result["meta"]["counts"]
     eprint(
-        f"wrote {args.out} ({counts['bundles']} bundles, {counts['singletons']} singletons, "
-        f"{counts['uncategorized']} uncategorized)"
+        f"wrote {args.out} ({counts['bundles']} bundles, {counts['singletons']} singletons)"
     )
     return 0
 
