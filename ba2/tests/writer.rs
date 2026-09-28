@@ -103,6 +103,31 @@ fn rewriting_an_archive_leaves_an_open_reader_intact() {
     assert_eq!(new.read("data/a.txt", ReadCodec::Auto).unwrap(), b"second");
 }
 
+/// A new archive gets the mode any new file would (the umask applies); a
+/// replaced one keeps its own.
+#[cfg(unix)]
+#[test]
+fn an_archive_gets_a_new_files_mode_and_a_replaced_one_keeps_its_own() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("a.txt");
+    std::fs::write(&file, b"content").unwrap();
+    let files = vec![("data/a.txt".to_string(), file)];
+    let mode =
+        |path: &std::path::Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+
+    let out = dir.path().join("out.ba2");
+    write_ba2(&out, &files, &WriteOptions::default()).unwrap();
+    let plain = dir.path().join("plain");
+    std::fs::File::create(&plain).unwrap();
+    assert_eq!(mode(&out), mode(&plain));
+
+    std::fs::set_permissions(&out, std::fs::Permissions::from_mode(0o600)).unwrap();
+    write_ba2(&out, &files, &WriteOptions::default()).unwrap();
+    assert_eq!(mode(&out), 0o600);
+}
+
 /// An empty file list must produce a valid empty archive.
 #[test]
 fn empty_file_list() {

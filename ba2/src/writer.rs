@@ -120,15 +120,22 @@ fn create_output_with_header(
         .parent()
         .filter(|dir| !dir.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let guard = tempfile::NamedTempFile::new_in(dir)
-        .with_context(|| format!("failed to create '{}'", output.display()))?;
+    let mut builder = tempfile::Builder::new();
     #[cfg(unix)]
     {
-        // The default for a new file, rather than the temporary's private 0600.
+        // A new archive gets a new file's mode (0666 less the umask), not
+        // the temporary's private 0600.
         use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let guard = builder
+        .tempfile_in(dir)
+        .with_context(|| format!("failed to create '{}'", output.display()))?;
+    // A replaced archive keeps its mode.
+    if let Ok(existing) = std::fs::metadata(output) {
         guard
             .as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o644))
+            .set_permissions(existing.permissions())
             .context("failed to set the output archive's permissions")?;
     }
     let mut out = BufWriter::new(
