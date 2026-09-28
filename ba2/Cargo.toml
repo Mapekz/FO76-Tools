@@ -14,14 +14,21 @@ path = "src/lib.rs"
 [[bin]]
 name = "ba2"
 path = "src/bin/cli.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# The `ba2` binary's own dependencies; the library needs none of them
+# (`default-features = false` for library-only use).
+cli = ["dep:clap", "dep:walkdir", "dep:libc"]
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 lz4_flex = "0.14"
 flate2 = "1"
 memmap2 = "0.9"
-walkdir = "2"
+walkdir = { version = "2", optional = true }
 globset = "0.4"
 tempfile = "3"
 
@@ -33,7 +40,7 @@ tempfile = "3"
 # (memmap2); promoted to a direct dependency here because the signal call
 # needs `use libc::...` in bin code.
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 globset = "0.4"

@@ -111,8 +111,10 @@ impl Ba2Archive {
         let path = path.as_ref();
         let file =
             File::open(path).with_context(|| format!("failed to open BA2: {}", path.display()))?;
-        // SAFETY: We hold `file` open for the entire lifetime of `mmap`.
-        // No other process is expected to truncate the file while it is mapped.
+        // SAFETY: the mapping is only sound while nothing truncates or
+        // rewrites the file, which the OS doesn't prevent. BA2s are game
+        // data written by an installer or `write_ba2` (to a temp file then
+        // renamed over, never in place), not while a reader has them open.
         let mmap = unsafe { Mmap::map(&file)? };
         let data = &*mmap;
 

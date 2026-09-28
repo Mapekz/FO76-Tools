@@ -5,6 +5,11 @@
 //! files on disk — `Ba2Archive::read` synthesizes a complete `.dds` file from
 //! each entry's texture header and mip chunks; see [`dds`].
 
+// Compiles the README's library example as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctest;
+
 pub mod compress;
 pub mod dds;
 pub mod extract;

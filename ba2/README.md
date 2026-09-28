@@ -106,10 +106,9 @@ ba2 create textures.ba2 --type dx10 --from ./textures/
 
 The crate exposes a stable public API. Key re-exports from `ba2`:
 
-```rust
+```rust,no_run
 use ba2::{
-    ArchiveKind, Ba2Archive, Ba2Entry, Codec, ExtractOptions, ReadCodec, WriteOptions, write_ba2, extract_all,
-    extract_one,
+    ArchiveKind, Ba2Archive, Codec, ExtractOptions, ReadCodec, WriteOptions, extract_all, write_ba2,
 };
 
 // Read an archive (works for both GNRL and DX10)
@@ -142,8 +141,10 @@ write_ba2("textures.ba2", &files, &opts)?;
 
 // Inspect a texture entry's dimensions/format without extracting
 if let Some(t) = archive.list()[0].texture() {
-    println!("{}x{} {:?}, {} mips, {} chunks", t.width, t.height, t.dxgi_format, t.mip_count, t.chunks.len());
+    let d = &t.desc;
+    println!("{}x{} format {}, {} mips, {} chunks", d.width, d.height, d.dxgi_format, d.mip_count, t.chunks.len());
 }
+# Ok::<(), anyhow::Error>(())
 ```
 
 ## Tests
