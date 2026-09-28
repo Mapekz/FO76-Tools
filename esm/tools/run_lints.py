@@ -1168,7 +1168,7 @@ def main(argv=None):
             if not args.new_esm:
                 print("error: --new-esm is required unless --offline", file=sys.stderr)
                 return 1
-            client = esm_gateway.ensure_daemon(args.esm_bin, args.new_esm)
+            client = esm_gateway.EsmGateway(args.esm_bin)
             new_esm = args.new_esm
             old_esm = args.old_esm
 

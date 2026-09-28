@@ -268,14 +268,11 @@ jobs:
           python3 tools/extractor/extract.py
           git diff --exit-code schema/fo76.json schema/fo76.ctda.json
 
-      # --features server: hardcoded.py's `list` step below now goes through
-      # esm_gateway.py's warm-daemon EsmGateway (Op::ListTypeRecords) instead
-      # of its own subprocess call, so esm-server must exist alongside esm
-      # for the auto-spawn in ensure_daemon() to find (see backend.rs's
-      # "esm-server not found ... build with --features server").
+      # hardcoded.py drives the esm CLI (`esm batch`), so the drift guard
+      # below needs a release build on PATH.
       - name: build esm CLI (release)
         working-directory: esm
-        run: cargo build --release --features server
+        run: cargo build --release
 
       # Regenerates schema/hardcoded_fo76.json via the esm CLI and fails if the
       # checked-in table drifts from Fallout76.esp at the pinned TES5Edit commit.
@@ -285,16 +282,3 @@ jobs:
           export PATH="$PWD/target/release:$PATH"
           python3 tools/extractor/hardcoded.py
           git diff --exit-code schema/hardcoded_fo76.json
-
-      # Regenerates tools/wire_constants.py from `esm dump-wire-constants`
-      # (see tools/regen_wire_constants.py) and fails if the checked-in
-      # module drifts from the Rust source of truth it mirrors (backend.rs's
-      # timeout constants, ipc.rs's Op discriminants / DEFAULT_MAX_DEPTH,
-      # formid.rs's FormId display format, cli.rs's DiffArgs flag names) --
-      # same shape as the hardcoded.py drift guard above.
-      - name: regen wire_constants.py drift guard
-        working-directory: esm
-        run: |
-          export PATH="$PWD/target/release:$PATH"
-          python3 tools/regen_wire_constants.py
-          git diff --exit-code tools/wire_constants.py

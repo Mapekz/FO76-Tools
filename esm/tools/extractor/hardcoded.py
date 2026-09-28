@@ -165,11 +165,7 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
-    try:
-        client = esm_gateway.ensure_daemon(esm_bin, HARDCODED_ESP)
-    except esm_gateway.DaemonError as exc:
-        print(f"failed to reach the esm daemon for `list`: {exc}", file=sys.stderr)
-        sys.exit(1)
+    client = esm_gateway.EsmGateway(esm_bin)
     try:
         entries = extract(HARDCODED_ESP, esm_bin, client)
     except RuntimeError as exc:

@@ -1,3 +1,4 @@
+mod batch;
 mod cache;
 mod curve;
 mod daemon;
@@ -9,7 +10,6 @@ mod query;
 mod refs;
 mod skill;
 mod walk;
-mod wire_constants;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use esm::BodyDetail;
@@ -434,14 +434,12 @@ enum Commands {
         #[command(subcommand)]
         action: CacheAction,
     },
-    /// Print the Rust-side constants `tools/esm_gateway.py` hand-mirrors
-    /// (timeouts, the `Op` discriminant strings, the FormId display format,
-    /// the `diff` subcommand's flag names) as JSON. Takes no ESM path, like
-    /// `daemon`/`skill`. Consumed only by `tools/regen_wire_constants.py`,
-    /// which writes the checked-in `tools/wire_constants.py` module CI
-    /// drift-guards against — see that script's docstring.
-    #[command(hide = true)]
-    DumpWireConstants,
+    /// Answer JSON requests from stdin, one per line: each line is
+    /// `{"esm": <path>, "op": {...}}` and gets one `{"status": "ok", "data":
+    /// ...}` or `{"status": "err", "error": ...}` line back, in order.
+    /// Databases stay open until stdin closes, so a script owning one
+    /// `esm batch` child pays each ESM's open cost once.
+    Batch,
 }
 
 #[derive(Subcommand)]
@@ -671,9 +669,11 @@ fn main() -> anyhow::Result<()> {
         return skill::cmd_skill(install, dir, force);
     }
 
-    // `dump-wire-constants` needs no ESM either — same exemption as `skill`.
-    if let Commands::DumpWireConstants = cli.command {
-        return wire_constants::cmd_dump_wire_constants();
+    // `batch` names its ESM per request, and installs the detached build
+    // delegate like every other query command.
+    if let Commands::Batch = cli.command {
+        esm::progress::delegate_builds(cache::build_in_detached_process);
+        return batch::cmd_batch();
     }
 
     // `cache status` reads `esm_cache/` and the build lock/heartbeat
@@ -703,7 +703,7 @@ fn main() -> anyhow::Result<()> {
         Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
         Commands::Cache { .. } => unreachable!(),
-        Commands::DumpWireConstants => unreachable!(),
+        Commands::Batch => unreachable!(),
         _ => resolve_esm(esm_opt.clone())?,
     };
 
@@ -1024,7 +1024,7 @@ fn dispatch_command(
         Commands::Daemon { .. } => unreachable!(),
         Commands::Skill { .. } => unreachable!(),
         Commands::Cache { .. } => unreachable!(),
-        Commands::DumpWireConstants => unreachable!(),
+        Commands::Batch => unreachable!(),
     }
 }
 

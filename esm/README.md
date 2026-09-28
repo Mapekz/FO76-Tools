@@ -91,6 +91,8 @@ esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 | `curve <target>...` | Ad-hoc lookup/sum over any Curve Table record's points (`--at X...`, `--sum FROM TO [--step N]`) |
 | `daemon {start,stop,status}` | Manage the background warm daemon (see [Daemon](#daemon) below) |
 | `cache status [--json]` | Inspect the on-disk index cache without opening the ESM |
+| `cache build [--section S]`, `cache clear` | Build cache sections now, or delete them all |
+| `batch` | Answer one JSON `{"esm", "op"}` request per stdin line, keeping databases open (for scripts) |
 | `skill [--install]` | Print (or install into another repo's `.claude/skills/`) the agent usage-knowledge doc |
 
 A bare positional `<target>` auto-detects FormID (`0x`-prefixed or bare hex — see `--decimal`

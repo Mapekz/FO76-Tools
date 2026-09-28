@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import esm_gateway  # noqa: E402
-from esm_gateway import DaemonError, formid_to_hex  # noqa: E402
+from esm_gateway import EsmError, formid_to_hex  # noqa: E402
 from fake_gateway import FakeGateway  # noqa: E402
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "refs_graph.json"
@@ -148,9 +148,9 @@ class FakeGatewayRefsTests(unittest.TestCase):
         self.assertEqual(rec, rec2)
 
     def test_record_not_found_raises(self):
-        with self.assertRaises(DaemonError):
+        with self.assertRaises(EsmError):
             self.client.record("esm", 0xFFFFFFFF)
-        with self.assertRaises(DaemonError):
+        with self.assertRaises(EsmError):
             self.client.record_by_edid("esm", "NoSuchEditorId")
 
     def test_exists(self):
@@ -380,10 +380,10 @@ class FakeGatewayConformanceTests(unittest.TestCase):
             )
         try:
             esm_bin = esm_gateway.find_esm_binary(None)
-        except DaemonError as exc:
+        except EsmError as exc:
             raise unittest.SkipTest(f"esm binary not found -- skipping: {exc}")
         cls.esm_path = esm_path
-        cls.gateway = esm_gateway.ensure_daemon(esm_bin, esm_path)
+        cls.gateway = esm_gateway.EsmGateway(esm_bin)
 
         target = None
         for stub in cls.gateway.search(esm_path, "*", record_type="OMOD", limit=40):

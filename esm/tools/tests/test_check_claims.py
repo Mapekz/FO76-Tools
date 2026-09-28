@@ -2,7 +2,7 @@
 """Tests for tools/check_claims.py.
 
 Synthetic comprehensive.json + deep-writer reports in a temp out-dir; the
-live-daemon fallback is exercised through a tiny in-memory gateway stub
+live-esm fallback is exercised through a tiny in-memory gateway stub
 (the same `bulk_get(esm, sels, resolve=)` surface as `EsmGateway`).
 """
 
@@ -138,7 +138,7 @@ class TestVerifyClaim(unittest.TestCase):
         bad = self.verify({"record": "0x00000001", "path": "Effects", "from": 1, "to": 2})
         self.assertEqual((ok["status"], bad["status"]), ("ok", "mismatch"))
 
-    def test_unknown_row_without_daemon_is_unverifiable(self):
+    def test_unknown_row_without_esm_is_unverifiable(self):
         r = self.verify({"record": "0x00000001", "path": "Keywords / [0x00000099]", "from": 1, "to": 2})
         self.assertEqual(r["status"], "unverifiable")
         self.assertIn("no changed row", r["detail"])
@@ -158,7 +158,7 @@ class TestVerifyClaim(unittest.TestCase):
         bad = self.verify({"record": "ArmoB", "path": "Data / Weight", "value": 3})
         self.assertEqual((ok["status"], ok["source"], bad["status"]), ("ok", "changes", "mismatch"))
 
-    def test_value_claim_on_old_side_needs_daemon(self):
+    def test_value_claim_on_old_side_needs_esm(self):
         r = self.verify({"record": "NewName", "path": "Data / Value", "value": 7, "side": "old"})
         self.assertEqual((r["status"], r["source"]), ("unverifiable", "none"))
 
@@ -166,14 +166,14 @@ class TestVerifyClaim(unittest.TestCase):
         gw = StubGateway({"old.esm": {"OldName": {"Data": {"Value": 7}}}, "new.esm": {"NewName": {"Data": {"Value": 9}}}})
         live = cc.LiveLookup(gw, "old.esm", "new.esm")
         r = self.verify({"record": "NewName", "path": "Data / Value", "value": 7, "side": "old"}, live)
-        self.assertEqual((r["status"], r["source"]), ("ok", "daemon"))
+        self.assertEqual((r["status"], r["source"]), ("ok", "esm"))
         self.assertIn(("old.esm", "OldName"), gw.calls)
 
     def test_changed_claim_not_in_changes_falls_back_to_both_sides(self):
         gw = StubGateway({"old.esm": {"OldName": {"Data": {"Value": 7}}}, "new.esm": {"NewName": {"Data": {"Value": 9}}}})
         live = cc.LiveLookup(gw, "old.esm", "new.esm")
         ok = self.verify({"record": "NewName", "path": "Data / Value", "from": 7, "to": 9}, live)
-        self.assertEqual((ok["status"], ok["source"]), ("ok", "daemon"))
+        self.assertEqual((ok["status"], ok["source"]), ("ok", "esm"))
         same = StubGateway({"old.esm": {"OldName": {"Data": {"Value": 9}}}, "new.esm": {"NewName": {"Data": {"Value": 9}}}})
         r = self.verify({"record": "NewName", "path": "Data / Value", "from": 7, "to": 9}, cc.LiveLookup(same, "old.esm", "new.esm"))
         self.assertEqual(r["status"], "mismatch")
@@ -209,16 +209,16 @@ class TestRunCheck(TempDirTestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["reports"][0]["unbacked_numbers"], ["999"])
         self.assertTrue(layout.work_claims_check_json(self.tmp).is_file())
-        self.assertEqual(cc.main([str(self.tmp), "--no-daemon"]), 0)
+        self.assertEqual(cc.main([str(self.tmp), "--no-esm"]), 0)
 
     def test_mismatch_fails_the_gate(self):
         write_out_dir(self.tmp, [{"record": "0x00000001", "path": "Data / Damage", "from": 20, "to": 99}])
         self.assertFalse(cc.run_check(self.tmp)["ok"])
-        self.assertEqual(cc.main([str(self.tmp), "--no-daemon"]), 1)
+        self.assertEqual(cc.main([str(self.tmp), "--no-esm"]), 1)
 
     def test_unverifiable_fails_the_gate(self):
         write_out_dir(self.tmp, [{"record": "NewName", "path": "Data / Value", "value": 7, "side": "old"}])
-        self.assertEqual(cc.main([str(self.tmp), "--no-daemon"]), 1)
+        self.assertEqual(cc.main([str(self.tmp), "--no-esm"]), 1)
 
     def test_no_reports_is_not_ok(self):
         self.tmp.joinpath("comprehensive.json").write_text(json.dumps({"records": RECORDS, "ref_names": {}}))

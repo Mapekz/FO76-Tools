@@ -1,79 +1,46 @@
 #!/usr/bin/env python3
 """
 `EsmGateway` -- the one seam every `tools/*.py` pipeline stage uses to reach
-the `esm` CLI/daemon (see ../AGENTS.md, "Bulk / sweep workflow"). Talks the
-same wire protocol the Rust CLI/N-API/MCP clients use so external tooling
-(patch-notes generators, clustering scripts, ...) can reuse the resident
-daemon instead of paying the ~280 MiB cold-index cost per call.
+the `esm` CLI. It owns one `esm batch` child process and sends it JSON
+`{"esm", "op"}` requests, one per line, reading one response envelope per line
+back (see `src/bin/cli/batch.rs`). The child keeps each ESM's database open
+for the gateway's lifetime, so a stage pays each ESM's open cost once, and it
+exits when the gateway closes. The request/response shapes are the `Op`,
+`Request` and `Response` types in `src/ipc.rs`.
 
 A full gateway, not just single-record lookups: `bulk_get` (`Op::RecordBulk`,
-one round-trip for N selectors), `list_type` (`Op::ListTypeRecords`, the
+one request for N selectors), `list_type` (`Op::ListTypeRecords`, the
 `esm list --type SIG` op), `refs(..., paths=True, type_filter=...)` (the
-`--paths`/`--type` refs capabilities), `diff` (the two-ESM `esm --local
-diff` subprocess), and the one canonical `find_esm_binary` all live here, so
+`--paths`/`--type` refs capabilities), `diff` (the two-ESM `esm diff`
+subprocess), and the one canonical `find_esm_binary` all live here, so
 nothing else in `tools/` needs to shell out to `esm` directly
 (`extractor/hardcoded.py` routes its `esm list --type SIG` calls through
 `list_type` for exactly this reason).
 
 `FakeGateway`, the fixture-backed test double, lives in
-`tools/tests/fake_gateway.py` -- it is a test double, not a wire client, so
+`tools/tests/fake_gateway.py` -- it is a test double, not an `esm` client, so
 it does not belong in the "one seam" module itself. See that module's
 docstring for why `--offline` mode still reaches it from production code
 (`make_patch_notes.py`/`build_bundles.py`/`run_lints.py`).
-
-Wire format mirrors, exactly, the following Rust sources (re-verify there if
-this file and the Rust side ever drift):
-
-    src/backend.rs   -- daemon discovery file, health check, spawn/respawn
-    src/ipc.rs        -- Op enum, Request/Response envelope, RefRow/RefList
-    src/bin/server.rs -- /op, /health routes + bearer-token auth
-    src/formid.rs     -- FormId Display format ("0x{:08X}", uppercase)
-    src/bin/cli.rs    -- cmd_diff's --local/force-local rule (see `diff`'s
-                         own docstring for why it stays subprocess-based)
-
-The constants below (timeouts, `DEFAULT_MAX_DEPTH`) and the `Op`
-discriminant strings / `diff` flag names used elsewhere in this file are no
-longer hand-copied -- they're imported from `wire_constants.py`, a
-"# GENERATED" module `tools/regen_wire_constants.py` (re)writes from the
-Rust source of truth itself (`esm dump-wire-constants`). CI regenerates and
-`git diff --exit-code`s it, so a Rust-side rename/value change that isn't
-matched here fails the build instead of silently drifting -- see
-`regen_wire_constants.py`'s own docstring.
 
 Python 3, stdlib only -- no third-party dependencies.
 """
 
 from __future__ import annotations
 
-import http.client
 import json
 import os
 import shutil
 import subprocess
-import sys
-import tempfile
-import time
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence, Union
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from wire_constants import (  # noqa: E402
-    CONNECT_TIMEOUT_SECS,
-    DAEMON_FILENAME,
-    DIFF_FLAGS,
-    HEALTH_POLL_INTERVAL_SECS,
-    HEALTH_POLL_MAX_SECS,
-    OP_NAMES,
-    OP_TIMEOUT_SECS,
-)
+from typing import IO, Any, Iterable, Mapping, Sequence, Union
 
 FormIdLike = Union[int, str]
 
 
-class DaemonError(Exception):
-    """Raised for a daemon error envelope, a non-2xx HTTP response, or a
-    malformed reply. The message is the daemon's own error string when one
+class EsmError(Exception):
+    """Raised for an `esm` error envelope, a failed or exited `esm` process,
+    or a malformed reply. The message is `esm`'s own error string when one
     is available."""
 
 
@@ -169,18 +136,18 @@ def find_esm_binary(explicit: str | Path | None = None) -> Path:
     release build (`WORKSPACE_ROOT/target/release/esm`), else whatever is on
     `$PATH` as `esm`.
 
-    Raises `DaemonError` (never calls `sys.exit`/prints to stderr) -- this is
+    Raises `EsmError` (never calls `sys.exit`/prints to stderr) -- this is
     a library function shared by every CLI entry point in `tools/`, each of
     which translates the error into its own exit-code convention (see
     `make_patch_notes.py::find_esm_binary`'s former `die(1, ...)` and
     `build_bundles.py::find_esm_binary`'s former `raise SystemExit(...)` --
-    both now catch `DaemonError` instead and keep their own exit code).
+    both now catch `EsmError` instead and keep their own exit code).
     """
     if explicit:
         p = Path(explicit)
         if p.is_file() and os.access(p, os.X_OK):
             return p
-        raise DaemonError(f"--esm-bin path not executable: {explicit}")
+        raise EsmError(f"--esm-bin path not executable: {explicit}")
 
     release = WORKSPACE_ROOT / "target" / "release" / "esm"
     if release.is_file() and os.access(release, os.X_OK):
@@ -190,186 +157,10 @@ def find_esm_binary(explicit: str | Path | None = None) -> Path:
     if found:
         return Path(found)
 
-    raise DaemonError(
+    raise EsmError(
         "Cannot find esm binary. Build it first:\n"
-        "  cargo build --release --features server\n"
+        "  cargo build --release\n"
         "Or pass --esm-bin /path/to/esm"
-    )
-
-
-# ─── Daemon discovery (mirror backend.rs::runtime_dir / read_daemon_info) ───
-
-
-def _absolute_env_path(name: str) -> Path | None:
-    """Mirror `dirs_sys::is_absolute_path`: the env var must be set AND hold
-    an absolute path, otherwise treat it as unset."""
-    value = os.environ.get(name)
-    if not value:
-        return None
-    p = Path(value)
-    return p if p.is_absolute() else None
-
-
-def runtime_dir() -> Path:
-    """Mirror `backend.rs::runtime_dir()`:
-
-        dirs::runtime_dir().or_else(dirs::cache_dir).unwrap_or_else(temp_dir)
-
-    On Linux (`dirs` 5.x, src/lin.rs):
-        runtime_dir() = $XDG_RUNTIME_DIR (absolute path only), else None
-        cache_dir()   = $XDG_CACHE_HOME (absolute path only), else $HOME/.cache
-
-    Final fallback is the OS temp directory (`std::env::temp_dir()`).
-    """
-    xdg_runtime = _absolute_env_path("XDG_RUNTIME_DIR")
-    if xdg_runtime is not None:
-        return xdg_runtime
-
-    xdg_cache = _absolute_env_path("XDG_CACHE_HOME")
-    if xdg_cache is not None:
-        return xdg_cache
-
-    home = os.environ.get("HOME")
-    if home:
-        return Path(home) / ".cache"
-
-    return Path(tempfile.gettempdir())
-
-
-def daemon_info_path() -> Path:
-    return runtime_dir() / DAEMON_FILENAME
-
-
-def read_daemon_info() -> dict | None:
-    """Read and parse the discovery file written by the daemon on start.
-
-    Returns None if the file is missing, unreadable, or not valid JSON --
-    mirrors the `anyhow::Result` -> `.ok()` pattern the Rust callers use.
-
-    A legacy discovery file (written before the exe-fingerprint fields
-    existed) has no `exe_*`/`pid` keys at all; `#[serde(default)]` on the
-    Rust side lets it still deserialize, so we fill in the same defaults
-    here (empty exe_path => always treated as stale by `daemon_fresh`).
-    """
-    path = daemon_info_path()
-    try:
-        raw = path.read_text()
-    except OSError:
-        return None
-    try:
-        info = json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(info, dict) or "port" not in info or "token" not in info:
-        return None
-    info.setdefault("pid", 0)
-    info.setdefault("exe_path", "")
-    info.setdefault("exe_size", 0)
-    info.setdefault("exe_mtime_secs", 0)
-    info.setdefault("exe_mtime_nanos", 0)
-    return info
-
-
-def _exe_sig(path: Path) -> tuple[int, int, int]:
-    """(size, mtime_secs, mtime_nanos) for `path`, mirroring
-    `backend.rs::exe_sig()`'s use of `SystemTime::duration_since(UNIX_EPOCH)`."""
-    st = path.stat()
-    mtime_ns = st.st_mtime_ns
-    return st.st_size, mtime_ns // 1_000_000_000, mtime_ns % 1_000_000_000
-
-
-def daemon_fresh(info: Mapping[str, Any]) -> bool:
-    """Mirror `backend.rs::daemon_fresh`: is the daemon still running the
-    exact binary it was started with?
-
-    This stats `info["exe_path"]` -- the path the *daemon itself* recorded
-    for its own running executable (`esm-server`, a sibling of the `esm` CLI
-    binary) at `DaemonInfo::current()` time -- and compares size + mtime
-    against the fingerprint stored alongside it. It does NOT stat the `esm`
-    CLI binary passed to `ensure_daemon`; that binary is a different file
-    with its own (unrelated) mtime, so comparing against it directly would
-    not reproduce the Rust self-heal behaviour.
-    """
-    exe_path = info.get("exe_path") or ""
-    if not exe_path:
-        return False
-    try:
-        size, secs, nanos = _exe_sig(Path(exe_path))
-    except OSError:
-        return False
-    return (
-        size == info.get("exe_size", 0)
-        and secs == info.get("exe_mtime_secs", 0)
-        and nanos == info.get("exe_mtime_nanos", 0)
-    )
-
-
-def health_check(port: int, token: str, timeout: float = CONNECT_TIMEOUT_SECS) -> bool:
-    """GET /health with the bearer token; True only on HTTP 200."""
-    try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
-        try:
-            conn.request("GET", "/health", headers={"Authorization": f"Bearer {token}"})
-            resp = conn.getresponse()
-            resp.read()
-            return resp.status == 200
-        finally:
-            conn.close()
-    except OSError:
-        return False
-
-
-def _connect_if_healthy_and_fresh() -> "EsmGateway | None":
-    info = read_daemon_info()
-    if info is None:
-        return None
-    if not health_check(info["port"], info["token"]):
-        return None
-    if not daemon_fresh(info):
-        return None
-    return EsmGateway(info["port"], info["token"])
-
-
-def ensure_daemon(
-    esm_bin: Path | str,
-    esm_path: Path | str,
-    *,
-    timeout: float = HEALTH_POLL_MAX_SECS,
-) -> "EsmGateway":
-    """Return an `EsmGateway` for a healthy, up-to-date resident daemon,
-    spawning (or respawning a stale) one if necessary.
-
-    Mirrors `RemoteBackend::connect_or_spawn` in backend.rs: if a discovery
-    file exists, points at a live daemon, AND that daemon is running the
-    binary it started with (`daemon_fresh`), reuse it. Otherwise run one
-    `esm --esm <esm_path> info` subprocess -- the Rust CLI itself performs
-    the spawn-lock-coordinated spawn/stale-eviction dance (see
-    `spawn_daemon_and_wait` in backend.rs) -- then poll the discovery file
-    and `/health` until the (new) daemon is ready.
-    """
-    client = _connect_if_healthy_and_fresh()
-    if client is not None:
-        return client
-
-    esm_bin = Path(esm_bin)
-    esm_path = Path(esm_path)
-    subprocess.run(
-        [str(esm_bin), "--esm", str(esm_path), "info"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        client = _connect_if_healthy_and_fresh()
-        if client is not None:
-            return client
-        time.sleep(HEALTH_POLL_INTERVAL_SECS)
-
-    raise DaemonError(
-        f"daemon did not become healthy within {timeout:.0f}s after running "
-        f"'{esm_bin} info {esm_path}'"
     )
 
 
@@ -422,22 +213,6 @@ def build_diff_cmd(
     elif curves_dir:
         cmd += ["--curves-dir", str(curves_dir)]
 
-    # Defensive check against wire_constants.DIFF_FLAGS (generated from
-    # DiffArgs, cli.rs): every long flag built above must be one `esm
-    # --local diff` actually accepts today, so a typo'd or Rust-renamed
-    # flag name fails immediately here instead of as an opaque clap error
-    # from the subprocess. `--local`/`diff` aren't DiffArgs' own flags (the
-    # former is a top-level Cli flag, the latter the subcommand name) so
-    # they're allowed alongside DIFF_FLAGS. A heuristic, not a real argv
-    # parser: assumes no flag VALUE (a path, a lang code) ever itself
-    # starts with "--", true for every value this function ever builds.
-    known = DIFF_FLAGS | {"--local"}
-    for token in cmd[2:]:  # skip [esm_bin, "--local"]; "diff" is next but doesn't start with "--"
-        if token.startswith("--") and token not in known:
-            raise DaemonError(
-                f"build_diff_cmd emitted {token!r}, not in wire_constants.DIFF_FLAGS -- "
-                "regenerate tools/wire_constants.py or fix the flag name"
-            )
     return cmd
 
 
@@ -452,7 +227,7 @@ class DiffResult:
     write to `diff.json` verbatim, so the file matches byte-for-byte.
     `cmd`: the argv that was run (for verbose/debug echo).
     `stderr`: the subprocess's captured stderr (for verbose echo on success;
-    failure already folds stderr into the raised `DaemonError` instead).
+    failure already folds stderr into the raised `EsmError` instead).
     """
 
     __slots__ = ("data", "raw_json", "cmd", "stderr")
@@ -464,64 +239,48 @@ class DiffResult:
         self.stderr = stderr
 
 
-# ─── EsmGateway: real HTTP client + subprocess diff ─────────────────────────
+# ─── EsmGateway: an `esm batch` child + subprocess diff ─────────────────────
 
 
 class EsmGateway:
-    """Persistent HTTP client for one resident `esm-server` daemon, plus the
-    one `diff` entry point that stays subprocess-based (see `diff`'s own
-    docstring).
+    """One `esm batch` child process, plus the `diff` entry point that runs
+    its own subprocess (see `diff`'s docstring).
 
-    Keeps one keep-alive `http.client.HTTPConnection` open and reconnects
-    (once) on a stale/closed connection. Not thread-safe -- use one instance
-    per thread, as the underlying `http.client.HTTPConnection` isn't either.
+    The child starts on the first request and keeps every ESM it has opened
+    warm until `close()` (or the end of a `with` block) closes its stdin.
+    Not thread-safe: requests and responses share one pipe pair, so use one
+    instance per thread.
     """
 
-    def __init__(self, port: int, token: str, *, timeout: float = OP_TIMEOUT_SECS):
-        self.port = port
-        self.token = token
-        self.timeout = timeout
-        self._conn: http.client.HTTPConnection | None = None
+    def __init__(self, esm_bin: str | Path | None = None):
+        self.esm_bin = find_esm_binary(esm_bin)
+        self._proc: subprocess.Popen[str] | None = None
 
     # ---- low-level transport ----
 
-    def _connection(self) -> http.client.HTTPConnection:
-        if self._conn is None:
-            self._conn = http.client.HTTPConnection(
-                "127.0.0.1", self.port, timeout=self.timeout
+    def _pipes(self) -> tuple[IO[str], IO[str]]:
+        if self._proc is None or self._proc.poll() is not None:
+            self._proc = subprocess.Popen(
+                [str(self.esm_bin), "batch"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
             )
-        return self._conn
-
-    def _reset_connection(self) -> None:
-        if self._conn is not None:
-            try:
-                self._conn.close()
-            except Exception:
-                pass
-        self._conn = None
-
-    def _request(
-        self, method: str, path: str, body: bytes | None = None
-    ) -> tuple[int, bytes]:
-        headers = {"Authorization": f"Bearer {self.token}"}
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-        last_exc: Exception | None = None
-        for _ in range(2):  # one reconnect-and-retry on a stale connection
-            conn = self._connection()
-            try:
-                conn.request(method, path, body=body, headers=headers)
-                resp = conn.getresponse()
-                data = resp.read()
-                return resp.status, data
-            except (http.client.HTTPException, OSError) as exc:
-                last_exc = exc
-                self._reset_connection()
-        assert last_exc is not None
-        raise DaemonError(f"HTTP request to {path} failed after retry: {last_exc}")
+        assert self._proc.stdin is not None and self._proc.stdout is not None
+        return self._proc.stdin, self._proc.stdout
 
     def close(self) -> None:
-        self._reset_connection()
+        proc, self._proc = self._proc, None
+        if proc is None:
+            return
+        if proc.stdin is not None:
+            proc.stdin.close()
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
     def __enter__(self) -> "EsmGateway":
         return self
@@ -530,42 +289,35 @@ class EsmGateway:
         del _exc
         self.close()
 
-    # ---- op() : POST /op, envelope handling ----
+    # ---- op() : one request line, one response line ----
 
-    def op(self, esm: str, op: Mapping[str, Any]) -> Any:
-        """POST `{"esm": esm, "op": op}` to /op and return the `data` payload
-        of an `{"status":"ok", ...}` envelope.
-
-        Raises `DaemonError` for an `{"status":"err","error":...}` envelope,
-        for a non-2xx HTTP response (e.g. 401 from `check_auth`, whose body
-        is the differently-shaped `{"error": "..."}` from `ApiError`, not the
-        `Response` envelope), or for an unparsable body. Also raises
-        `DaemonError` client-side, before ever making the request, if
-        `op["op"]` isn't one of `wire_constants.OP_NAMES` -- a typo'd or
-        stale (renamed on the Rust side) op string would otherwise reach the
-        server as an opaque unrecognized-op error.
+    def op(self, esm: str | Path, op: Mapping[str, Any]) -> Any:
+        """Send `{"esm": esm, "op": op}` and return the `data` payload of an
+        `{"status": "ok", ...}` response. Raises `EsmError` for an
+        `{"status": "err", "error": ...}` response, for an `esm batch`
+        process that exited, or for an unparsable reply.
         """
-        kind = op.get("op")
-        if kind not in OP_NAMES:
-            raise DaemonError(f"unknown Op discriminant {kind!r} (not in wire_constants.OP_NAMES)")
-        body = json.dumps({"esm": esm, "op": op}).encode("utf-8")
-        status, data = self._request("POST", "/op", body)
-
+        stdin, stdout = self._pipes()
         try:
-            parsed: Any = json.loads(data.decode("utf-8")) if data else {}
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise DaemonError(f"invalid JSON response (HTTP {status}): {data!r}") from exc
-
-        if status != 200:
-            message = parsed.get("error", parsed) if isinstance(parsed, dict) else parsed
-            raise DaemonError(f"HTTP {status}: {message}")
-
-        status_field = parsed.get("status") if isinstance(parsed, dict) else None
-        if status_field == "ok":
+            stdin.write(json.dumps({"esm": str(esm), "op": op}) + "\n")
+            stdin.flush()
+            line = stdout.readline()
+        except OSError as exc:
+            raise EsmError(f"esm batch pipe failed: {exc}") from exc
+        if not line:
+            code = self._proc.wait() if self._proc is not None else None
+            self._proc = None
+            raise EsmError(f"esm batch exited (status {code}) before answering")
+        try:
+            parsed: Any = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise EsmError(f"invalid JSON from esm batch: {line[:500]!r}") from exc
+        status = parsed.get("status") if isinstance(parsed, dict) else None
+        if status == "ok":
             return parsed.get("data")
-        if status_field == "err":
-            raise DaemonError(parsed.get("error", "unknown daemon error"))
-        raise DaemonError(f"unrecognized response envelope: {parsed!r}")
+        if status == "err":
+            raise EsmError(parsed.get("error", "unknown esm error"))
+        raise EsmError(f"unrecognized response envelope: {parsed!r}")
 
     # ---- convenience wrappers over Op variants (ipc.rs::Op) ----
 
@@ -705,7 +457,7 @@ class EsmGateway:
         try:
             self.record(esm, formid, resolve="none")
             return True
-        except DaemonError:
+        except EsmError:
             return False
 
     # ---- diff() : cold two-ESM subprocess, not the /op route ----
@@ -726,41 +478,17 @@ class EsmGateway:
         startup_ba2: Path | None = None,
         curves_dir: Path | None = None,
     ) -> "DiffResult":
-        """Run `esm --local diff <A> <B> --json ...` as a one-shot subprocess
-        and return a `DiffResult` (parsed JSON + the exact raw JSON text +
-        the argv + captured stderr).
+        """Run `esm diff <A> <B> --json ...` as a one-shot subprocess and
+        return a `DiffResult` (parsed JSON + the exact raw JSON text + the argv
+        + captured stderr).
 
-        A `@staticmethod`, not an instance method: unlike every other
-        `EsmGateway` capability, `diff` does not go over this class's `/op`
-        HTTP transport (`self.port`/`self.token` are unused), so it needs no
-        connected instance -- callers can reach it as `EsmGateway.diff(...)`
-        before any daemon has even been spawned (this is exactly how
-        `make_patch_notes.py` uses it: the diff step runs before the
-        bundles/lints stage ever calls `ensure_daemon`).
+        A `@staticmethod` that bypasses the `esm batch` child: the pipeline
+        always passes explicit per-side string and curve sources, which are
+        `esm diff` flags rather than `Op::Diff` fields, and one diff runs once
+        per pipeline run, so a subprocess costs nothing extra. Callers reach it
+        as `EsmGateway.diff(...)` without constructing a gateway.
 
-        **Why subprocess + `--local`, not the warm daemon's `/op Diff` route,
-        even though that route works fine** (`Op::Diff` dispatches through a
-        `Registry` two-key lookup and is exercised today by plain
-        `esm diff A B`): `make_patch_notes.py`'s `locate_strings_dirs`
-        always resolves and passes an explicit `--strings-dir`/
-        `--strings-dir-a`/`--strings-dir-b` (it's a hard error to omit one,
-        by design -- "Refusing to diff without strings"), and optionally
-        `--startup-ba2`/`--curves-dir`. `cli.rs::cmd_diff`'s `force_local`
-        check explicitly rejects every one of those flags when `daemon_mode`
-        is set ("... are not supported in daemon mode for diff; use
-        --local"). So for *this* pipeline's actual call pattern, `--local`
-        isn't a leftover habit, it's the only mode the Rust CLI accepts --
-        routing through `/op Diff` would require dropping per-side strings
-        control and relying on the daemon's sibling-file auto-load instead,
-        which is a real behavior change, not a plumbing one, and out of scope
-        here (see esm/AGENTS.md's "Bulk / sweep workflow" for how daemon
-        auto-load works when no override flags are given).
-
-        `stdin=DEVNULL` is defensive hygiene for any subprocess call, not a
-        workaround for anything `esm` does here -- there is no interactive
-        fallback left in the CLI for a closed stdin to trip over.
-
-        Raises `DaemonError` on a non-zero exit or unparsable JSON. Has no
+        Raises `EsmError` on a non-zero exit or unparsable JSON. Has no
         CLI-output side effects (no `eprint`/`die`/banners) -- callers that
         need process-exit semantics (see `make_patch_notes.py::run_esm_diff`)
         catch this and translate it themselves.
@@ -785,7 +513,7 @@ class EsmGateway:
         )
 
         if result.returncode != 0:
-            raise DaemonError(
+            raise EsmError(
                 f"esm diff failed with exit code {result.returncode}: "
                 f"{result.stderr.strip() or '(no stderr)'}"
             )
@@ -794,7 +522,7 @@ class EsmGateway:
         try:
             data = json.loads(raw_output)
         except json.JSONDecodeError as exc:
-            raise DaemonError(
+            raise EsmError(
                 f"esm diff produced invalid JSON: {exc}\n"
                 f"First 500 chars: {raw_output[:500]}"
             ) from exc

@@ -56,7 +56,7 @@ Options:
                           BFS depth.
     --skip-bundles        Skip bundles.json (and, necessarily, lints.json).
     --skip-lints          Skip lints.json (bundles.json is still built).
-    --offline             Use a fixture-backed FakeGateway (tools/tests/fake_gateway.py) instead of a live warm daemon
+    --offline             Use a fixture-backed FakeGateway (tools/tests/fake_gateway.py) instead of live esm lookups
                           for the bundles/lints stages (requires --refs-fixture).
     --refs-fixture F      FakeGateway fixture JSON (required with --offline).
     -v, --verbose         Show full diff command + esm output.
@@ -354,11 +354,10 @@ def locate_strings_dirs(
 # Step 2: Run esm diff
 # --------------------------------------------------------------------------
 
-# `build_diff_cmd` now lives in esm_gateway.py (re-exported above via
-# `from esm_gateway import build_diff_cmd` so existing call sites/tests
-# keep working as `mpn.build_diff_cmd`) -- this stage's own transport is
-# `esm_gateway.EsmGateway.diff` (see its docstring for why it stays a
-# subprocess against `--local`, never the warm daemon's `/op Diff` route).
+# `build_diff_cmd` lives in esm_gateway.py (re-exported above via
+# `from esm_gateway import build_diff_cmd` so call sites/tests reach it as
+# `mpn.build_diff_cmd`); this stage's transport is `esm_gateway.EsmGateway.diff`
+# (see its docstring for why it is a subprocess, not an `Op::Diff` request).
 
 
 def run_esm_diff(
@@ -406,7 +405,7 @@ def run_esm_diff(
             keep_noise=keep_noise, exclude_type=exclude_type,
             startup_ba2=startup_ba2, curves_dir=curves_dir,
         )
-    except eg.DaemonError as exc:
+    except eg.EsmError as exc:
         die(2,
             f"esm diff failed.\n{exc}\n"
             "Check the error above. Common causes:\n"
@@ -495,7 +494,7 @@ def build_arg_parser():
     ap.add_argument("--skip-lints", action="store_true",
                     help="Skip lints.json (bundles.json is still built)")
     ap.add_argument("--offline", action="store_true",
-                    help="Use esm_gateway.FakeGateway instead of a live warm daemon for the "
+                    help="Use esm_gateway.FakeGateway instead of live esm lookups for the "
                          "bundles/lints stages (requires --refs-fixture)")
     ap.add_argument("--refs-fixture", default=None, metavar="F",
                     help="FakeGateway fixture JSON (required with --offline)")
@@ -522,7 +521,7 @@ def main(argv=None):
 
     try:
         esm_bin = eg.find_esm_binary(args.esm_bin)
-    except eg.DaemonError as exc:
+    except eg.EsmError as exc:
         die(1, str(exc))
     eprint(f"  esm binary: {esm_bin}")
 
@@ -666,7 +665,7 @@ def main(argv=None):
 
                     client = FakeGateway(args.refs_fixture)
                 else:
-                    client = eg.ensure_daemon(esm_bin, esm_b)
+                    client = eg.EsmGateway(esm_bin)
                 bundles_result = bb.build_bundles(comp, client, str(esm_a), str(esm_b), config)
                 bundles_json_path = layout.bundles_json(out_dir)
                 with bundles_json_path.open("w", encoding="utf-8") as f:

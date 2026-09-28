@@ -33,7 +33,7 @@ Algorithm (see module docstring sections below for each step):
 `build_bundles(comp, client, old_esm, new_esm, config) -> dict` is the
 library entry point; `main()` is a thin CLI wrapper. `client` is anything
 implementing `esm_gateway.EsmGateway`'s `refs()`/`record()` surface —
-normally a live warm-daemon `EsmGateway` (see `esm_gateway.ensure_daemon`),
+normally an `esm_gateway.EsmGateway`,
 or `tools/tests/fake_gateway.FakeGateway` for `--offline` / tests.
 
 Python 3, stdlib only.
@@ -244,7 +244,7 @@ def gather_reverse_edges(u, client, old_esm, new_esm, refs_depth, special_depth_
     multi-hop type (KYWD/LVLI/OMOD/ENCH/MGEF, `special_depth_types`) reach
     its true bundle-mates through one extra hop. `removed`-status records
     only exist pre-patch, so they're queried against `old_esm`; everything
-    else against `new_esm`. A daemon error for one record is skipped rather
+    else against `new_esm`. An esm error for one record is skipped rather
     than aborting the whole run (never panics on missing/unreachable data)."""
     edges = []
     context = {}
@@ -256,7 +256,7 @@ def gather_reverse_edges(u, client, old_esm, new_esm, refs_depth, special_depth_
             continue
         try:
             result = client.refs(esm_path, fid, depth=depth, limit=0)
-        except esm_gateway.DaemonError:
+        except esm_gateway.EsmError:
             continue
         for row in (result or {}).get("rows") or []:
             rf = row.get("form_id")
@@ -770,7 +770,7 @@ def _rule_fields_match(rule, scope_members):
 def _anchor_keyword_edids(client, esm, anchor_fid, cache):
     """Resolve the anchor's own decoded Keywords list to a list of editor
     IDs, via one `client.record(esm, anchor_fid, resolve="stub")` call,
-    cached per anchor_fid. Any failure (daemon error, missing/malformed
+    cached per anchor_fid. Any failure (esm error, missing/malformed
     Keywords field) is treated as "no keywords" -- never raises."""
     if anchor_fid in cache:
         return cache[anchor_fid]
@@ -784,7 +784,7 @@ def _anchor_keyword_edids(client, esm, anchor_fid, cache):
                     edids.append(e)
             elif isinstance(kw, str):
                 edids.append(kw)
-    except esm_gateway.DaemonError:
+    except esm_gateway.EsmError:
         edids = []
     cache[anchor_fid] = edids
     return edids
@@ -1025,10 +1025,10 @@ def build_arg_parser():
     ap.add_argument("--refs-depth", type=int, default=None, help="Override base reverse-ref BFS depth.")
     ap.add_argument("--hub-degree", type=int, default=None, help="Override the hub-degree threshold.")
     ap.add_argument("--max-members", type=int, default=None, help="Override the oversized-split threshold.")
-    ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live daemon mode only).")
+    ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live mode only).")
     ap.add_argument(
         "--offline", action="store_true",
-        help="Use a fixture-backed FakeGateway (--refs-fixture) instead of a live warm daemon.",
+        help="Use a fixture-backed FakeGateway (--refs-fixture) instead of live esm lookups.",
     )
     ap.add_argument("--refs-fixture", default=None, help="FakeGateway fixture JSON (required with --offline).")
     return ap
@@ -1076,10 +1076,10 @@ def main(argv=None):
     else:
         try:
             esm_bin = esm_gateway.find_esm_binary(args.esm_bin)
-        except esm_gateway.DaemonError as exc:
+        except esm_gateway.EsmError as exc:
             eprint(f"error: {exc}")
             return 1
-        client = esm_gateway.ensure_daemon(esm_bin, args.new_esm)
+        client = esm_gateway.EsmGateway(esm_bin)
 
     result = build_bundles(comp, client, args.old_esm, args.new_esm, config)
 

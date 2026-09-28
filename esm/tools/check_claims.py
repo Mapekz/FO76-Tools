@@ -8,7 +8,7 @@ structured claim in `drafts/deep[.partN].report.json` (`claims: [...]`, see
 `patchnotes_lib.Claim`). This script re-derives every claim from the data:
 
     python3 tools/check_claims.py <out_dir> [--old-esm P --new-esm P]
-                                            [--esm-bin P] [--no-daemon]
+                                            [--esm-bin P] [--no-esm]
 
 Claim kinds (exactly one per claim):
     changed    {"record", "path", "from", "to"}
@@ -25,7 +25,7 @@ counts.
 Verification order per claim: the record's `changes[]` in
 `comprehensive.json` (what the writer read via `slice_bundles.py --extract`)
 first; a live `EsmGateway.bulk_get` against the OLD or NEW snapshot second
-(only when both ESM paths were given and `--no-daemon` is absent); else
+(only when both ESM paths were given and `--no-esm` is absent); else
 `unverifiable`.
 
 Writes `<out_dir>/work/claims-check.json` and exits 1 iff any claim is a
@@ -222,7 +222,7 @@ def resolve_change(entries: list[dict], segs: list[str]) -> tuple[dict | None, s
 
 
 # --------------------------------------------------------------------------
-# Live field walking (daemon)
+# Live field walking (esm)
 # --------------------------------------------------------------------------
 
 
@@ -287,7 +287,7 @@ class LiveLookup:
             if self.available(side):
                 try:
                     got = self.gateway.bulk_get(self.esm[side], [selector], resolve="stub")
-                except Exception as exc:  # daemon hiccup: treat as unavailable, never crash the gate
+                except Exception as exc:  # esm error: treat as unavailable, never crash the gate
                     eprint(f"warning: bulk_get({side}, {selector}) failed: {exc}")
                     got = []
                 first = got[0] if got else None
@@ -375,13 +375,13 @@ def verify_claim(claim: dict, index: RecordIndex, live: LiveLookup) -> dict:
         old_state, old_val = _live_value(live, "old", _old_selector(claim, rec), segs)
         new_state, new_val = _live_value(live, "new", claim["record"].strip(), segs)
         if old_state == "unavailable" or new_state == "unavailable":
-            return _result(claim, "unverifiable", "none", f"{reason}; no daemon to check live")
+            return _result(claim, "unverifiable", "none", f"{reason}; no esm to check live")
         if old_state == "missing" or new_state == "missing":
-            return _result(claim, "unverifiable", "daemon", f"{reason}; live lookup found no such field/record")
+            return _result(claim, "unverifiable", "esm", f"{reason}; live lookup found no such field/record")
         if values_match(old_val, new_val):
-            return _result(claim, "mismatch", "daemon", f"{reason}; live value is {_short(new_val)} on BOTH sides (did not change)")
+            return _result(claim, "mismatch", "esm", f"{reason}; live value is {_short(new_val)} on BOTH sides (did not change)")
         ok = values_match(claim["from"], old_val) and values_match(claim["to"], new_val)
-        return _result(claim, "ok" if ok else "mismatch", "daemon", f"live: {_short(old_val)} -> {_short(new_val)}")
+        return _result(claim, "ok" if ok else "mismatch", "esm", f"live: {_short(old_val)} -> {_short(new_val)}")
 
     if "value" in claim:
         side = claim.get("side") or "new"
@@ -395,11 +395,11 @@ def verify_claim(claim: dict, index: RecordIndex, live: LiveLookup) -> dict:
         selector = _old_selector(claim, rec) if side == "old" else claim["record"].strip()
         state, value = _live_value(live, side, selector, segs)
         if state == "unavailable":
-            return _result(claim, "unverifiable", "none", "value claim needs a live daemon (--old-esm/--new-esm)")
+            return _result(claim, "unverifiable", "none", "value claim needs live esm lookups (--old-esm/--new-esm)")
         if state == "missing":
-            return _result(claim, "unverifiable", "daemon", "live lookup found no such field/record")
+            return _result(claim, "unverifiable", "esm", "live lookup found no such field/record")
         ok = values_match(claim["value"], value)
-        return _result(claim, "ok" if ok else "mismatch", "daemon", f"live ({side}): {_short(value)}")
+        return _result(claim, "ok" if ok else "mismatch", "esm", f"live ({side}): {_short(value)}")
 
     return _result(claim, "unverifiable", "none", "claim has neither status, from/to, nor value")
 
@@ -545,24 +545,24 @@ def build_arg_parser():
     ap = argparse.ArgumentParser(
         prog="check_claims.py",
         description="Re-verify every structured claim in drafts/deep*.report.json against "
-                    "comprehensive.json (and, optionally, the live esm daemon).",
+                    "comprehensive.json (and, optionally, live esm lookups).",
     )
     ap.add_argument("out_dir", type=Path, help="Pipeline output directory")
     ap.add_argument("--old-esm", default=None, help="OLD snapshot ESM (enables live lookups)")
     ap.add_argument("--new-esm", default=None, help="NEW snapshot ESM (enables live lookups)")
     ap.add_argument("--esm-bin", default=None, help="Path to the esm binary (default: auto)")
-    ap.add_argument("--no-daemon", action="store_true", help="Never query the daemon; such claims are unverifiable")
+    ap.add_argument("--no-esm", action="store_true", help="Never query esm; such claims are unverifiable")
     return ap
 
 
 def main(argv=None) -> int:
     args = build_arg_parser().parse_args(argv)
     gateway = None
-    if not args.no_daemon and args.old_esm and args.new_esm:
+    if not args.no_esm and args.old_esm and args.new_esm:
         try:
-            gateway = eg.ensure_daemon(eg.find_esm_binary(args.esm_bin), args.new_esm)
-        except eg.DaemonError as exc:
-            eprint(f"warning: no daemon ({exc}); claims not in comprehensive.json will be unverifiable")
+            gateway = eg.EsmGateway(args.esm_bin)
+        except eg.EsmError as exc:
+            eprint(f"warning: no esm binary ({exc}); claims not in comprehensive.json will be unverifiable")
     try:
         payload = run_check(args.out_dir, gateway, args.old_esm, args.new_esm)
     finally:

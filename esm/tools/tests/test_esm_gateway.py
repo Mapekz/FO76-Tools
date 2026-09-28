@@ -2,37 +2,31 @@
 """Tests for tools/esm_gateway.py.
 
 Covers:
-  - Wire-format correctness against a stdlib `http.server`-based stub daemon
-    (request path, auth header, JSON body shape, ok/err envelope handling,
-    keep-alive connection reuse, reconnect-after-close retry).
-  - Discovery-path resolution (`runtime_dir` / `read_daemon_info`) with
-    monkeypatched environment variables pointing at a temp dir.
+  - The `esm batch` protocol, against a stub executable that logs each
+    request line and answers from a scripted list (request shapes, ok/err
+    envelopes, one process serving many requests, restart after exit).
   - `EsmGateway.diff`/`build_diff_cmd`/`find_esm_binary`, exercised against a
     tiny shell-script stand-in for the `esm` binary.
 
-`FakeGateway` (the fixture-backed test double) now lives in
+`FakeGateway` (the fixture-backed test double) lives in
 `tools/tests/fake_gateway.py`, with its own tests in
-`tools/tests/test_fake_gateway.py` -- it is not a wire client, so it isn't
-covered here.
+`tools/tests/test_fake_gateway.py`.
 
-Every test above uses only synthetic fixtures/stubs -- no real daemon or game
-data. `RealEsmIntegrationTests` at the bottom is the one exception: it drives
-`EsmGateway` end-to-end against the real `esm` binary and a live warm daemon,
-gated on `$FO76_ESM_PATH` (see esm/CLAUDE.local.md) exactly like
-`tests/diff.rs`'s `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B` gate the Rust side --
-it skips silently (via `setUpClass` raising `SkipTest`) when unset, so it is
-a no-op in CI/sandboxes without game data.
+Every test above uses only synthetic fixtures/stubs. `RealEsmIntegrationTests`
+at the bottom is the one exception: it drives `EsmGateway` end-to-end against
+the real `esm` binary, gated on `$FO76_ESM_PATH` exactly like `tests/diff.rs`'s
+`RUST_TEST_ESM_A`/`RUST_TEST_ESM_B` gate the Rust side -- it skips silently
+(via `setUpClass` raising `SkipTest`) when unset, so it is a no-op in
+CI/sandboxes without game data.
 """
 
 from __future__ import annotations
 
-import http.server
 import json
 import os
 import stat
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from typing import Any, cast
@@ -42,155 +36,76 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import esm_gateway  # noqa: E402
-import wire_constants  # noqa: E402
 from builders import TempDirTestCase, fake_esm_script  # noqa: E402
 from esm_gateway import (  # noqa: E402
-    DaemonError,
+    EsmError,
     EsmGateway,
-    daemon_fresh,
-    daemon_info_path,
     formid_to_hex,
     formid_to_int,
-    read_daemon_info,
-    runtime_dir,
 )
 
-# ─── Stub HTTP daemon ────────────────────────────────────────────────────────
+# ─── Stub `esm batch` ─────────────────────────────────────────────────────────
 
-
-class _StubHandler(http.server.BaseHTTPRequestHandler):
-    """Minimal stand-in for esm-server's daemon router (build_daemon_router
-    in src/bin/server.rs): /health (auth-gated 200), /op (auth-gated, echoes
-    back a scripted response keyed by request body), and request-log capture
-    for assertions."""
-
-    protocol_version = "HTTP/1.1"  # keep-alive, so we can test connection reuse
-
-    # Populated per-test via class attributes (see `_serve_with` below).
-    token = "test-token-abc123"
-    op_responses: list = []
-    requests_seen: list = []
-    close_after_n: int | None = None  # force-close connection after N requests
-
-    def log_message(self, format: str, *args):  # silence default stderr logging
-        pass
-
-    def _check_auth(self) -> bool:
-        return self.headers.get("Authorization") == f"Bearer {self.token}"
-
-    def do_GET(self):
-        if self.path == "/health":
-            if not self._check_auth():
-                self._send_json(401, {"error": "invalid or missing bearer token"})
-                return
-            self._send_json(200, {})
-            return
-        self._send_json(404, {"error": "not found"})
-
-    def do_POST(self):
-        if self.path != "/op":
-            self._send_json(404, {"error": "not found"})
-            return
-
-        length = int(self.headers.get("Content-Length", 0))
-        raw_body = self.rfile.read(length)
-
-        type(self).requests_seen.append(
-            {
-                "path": self.path,
-                "authorization": self.headers.get("Authorization"),
-                "content_type": self.headers.get("Content-Type"),
-                "body": json.loads(raw_body.decode("utf-8")) if raw_body else None,
-            }
-        )
-
-        if not self._check_auth():
-            self._send_json(401, {"error": "invalid or missing bearer token"})
-            return
-
-        idx = len(type(self).requests_seen) - 1
-        responses = type(self).op_responses
-        status, payload = responses[min(idx, len(responses) - 1)]
-
-        force_close = (
-            type(self).close_after_n is not None
-            and len(type(self).requests_seen) == type(self).close_after_n
-        )
-        self._send_json(status, payload, force_close=force_close)
-
-    def _send_json(self, status: int, payload: dict, force_close: bool = False) -> None:
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        if force_close:
-            self.send_header("Connection", "close")
-        self.end_headers()
-        self.wfile.write(body)
-        if force_close:
-            self.close_connection = True
-
-
-class _StubServer:
-    """Runs `_StubHandler` on a background thread on 127.0.0.1:<ephemeral>."""
-
-    def __init__(self, op_responses: list, token: str = "test-token-abc123"):
-        handler = type(
-            "ScopedHandler",
-            (_StubHandler,),
-            {"op_responses": list(op_responses), "requests_seen": [], "token": token},
-        )
-        self.handler = handler
-        self.httpd = http.server.HTTPServer(("127.0.0.1", 0), handler)
-        self.port = self.httpd.server_address[1]
-        self.token = token
-        self._thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
-        self._thread.start()
-
-    @property
-    def requests_seen(self) -> list:
-        return self.handler.requests_seen
-
-    def stop(self) -> None:
-        self.httpd.shutdown()
-        self.httpd.server_close()
-        self._thread.join(timeout=5)
+# Logs every request line to $STUB_LOG and answers request N with entry N of
+# the JSON list in $STUB_RESPONSES; past the end of that list it exits
+# without answering, like an `esm` that crashed.
+_STUB_BATCH = """#!/usr/bin/env python3
+import json, os, sys
+assert sys.argv[1:] == ["batch"], sys.argv
+responses = json.load(open(os.environ["STUB_RESPONSES"]))
+with open(os.environ["STUB_LOG"], "a") as log:
+    for i, line in enumerate(sys.stdin):
+        log.write(json.dumps({"pid": os.getpid(), "request": json.loads(line)}) + "\\n")
+        log.flush()
+        if i >= len(responses):
+            sys.exit(3)
+        sys.stdout.write(json.dumps(responses[i]) + "\\n")
+        sys.stdout.flush()
+"""
 
 
 # ─── Wire-format tests ───────────────────────────────────────────────────────
 
 
-class WireFormatTests(unittest.TestCase):
+class WireFormatTests(TempDirTestCase):
     def setUp(self):
-        self.server: _StubServer | None = None
+        super().setUp()
         self.client: EsmGateway | None = None
+        self.log = self.tmp / "requests.log"
+        stub = self.tmp / "esm"
+        stub.write_text(_STUB_BATCH)
+        stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
+        self.stub = stub
+        env = mock.patch.dict(
+            os.environ,
+            {"STUB_LOG": str(self.log), "STUB_RESPONSES": str(self.tmp / "responses.json")},
+        )
+        env.start()
+        self.addCleanup(env.stop)
 
     def tearDown(self):
         if self.client is not None:
             self.client.close()
-        if self.server is not None:
-            self.server.stop()
+        super().tearDown()
 
-    def _client(self, op_responses: list, token: str = "test-token-abc123") -> EsmGateway:
-        self.server = _StubServer(op_responses, token=token)
-        self.client = EsmGateway(self.server.port, token)
+    def _client(self, responses: list) -> EsmGateway:
+        (self.tmp / "responses.json").write_text(json.dumps(responses))
+        self.client = EsmGateway(self.stub)
         return self.client
 
-    def _require_server(self) -> _StubServer:
-        assert self.server is not None
-        return self.server
+    def _requests(self) -> list[dict]:
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def _bodies(self) -> list[dict]:
+        return [entry["request"] for entry in self._requests()]
 
     def test_refs_request_shape(self):
-        client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
+        client = self._client([{"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}}])
         result = client.refs("/data/SeventySix.esm", 0x00100001, depth=2, limit=0)
         self.assertEqual(result["target"], "0x00100001")
 
-        req = self._require_server().requests_seen[0]
-        self.assertEqual(req["path"], "/op")
-        self.assertEqual(req["authorization"], "Bearer test-token-abc123")
-        self.assertEqual(req["content_type"], "application/json")
         self.assertEqual(
-            req["body"],
+            self._bodies()[0],
             {
                 "esm": "/data/SeventySix.esm",
                 "op": {
@@ -203,25 +118,25 @@ class WireFormatTests(unittest.TestCase):
         )
 
     def test_refs_accepts_hex_string_formid(self):
-        client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
+        client = self._client([{"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}}])
         client.refs("/data/x.esm", "0x00100001", depth=1)
-        body = self._require_server().requests_seen[0]["body"]
+        body = self._bodies()[0]
         self.assertEqual(body["op"]["sel"], {"kind": "form_id", "value": 0x00100001})
 
     def test_refs_request_shape_omits_type_filter_and_paths_by_default(self):
         # Same assertion as test_refs_request_shape but named to make the
         # backward-compat guarantee explicit: callers that never pass
         # type_filter/paths get the exact pre-existing wire shape.
-        client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
+        client = self._client([{"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}}])
         client.refs("/data/x.esm", 0x00100001, depth=2, limit=0)
-        body = self._require_server().requests_seen[0]["body"]["op"]
+        body = self._bodies()[0]["op"]
         self.assertNotIn("type_filter", body)
         self.assertNotIn("paths", body)
 
     def test_refs_request_shape_with_type_filter_and_paths(self):
-        client = self._client([(200, {"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}})])
+        client = self._client([{"status": "ok", "data": {"target": "0x00100001", "rows": [], "total": 0, "capped": False}}])
         client.refs("/data/x.esm", 0x00100001, depth=1, limit=25, type_filter="SPEL", paths=True)
-        body = self._require_server().requests_seen[0]["body"]["op"]
+        body = self._bodies()[0]["op"]
         self.assertEqual(
             body,
             {
@@ -235,9 +150,9 @@ class WireFormatTests(unittest.TestCase):
         )
 
     def test_bulk_get_request_shape_mixed_formid_and_edid(self):
-        client = self._client([(200, {"status": "ok", "data": []})])
+        client = self._client([{"status": "ok", "data": []}])
         client.bulk_get("/data/x.esm", [0x463F, "0x00100010", "AssaultRifle"], resolve="stub")
-        body = self._require_server().requests_seen[0]["body"]["op"]
+        body = self._bodies()[0]["op"]
         self.assertEqual(
             body,
             {
@@ -256,221 +171,89 @@ class WireFormatTests(unittest.TestCase):
             {"sel": "0x0000463F", "header": {}, "editor_id": "Foo", "fields": {}},
             {"sel": "0xDEADBEEF", "error": "FormID 0xDEADBEEF not found"},
         ]
-        client = self._client([(200, {"status": "ok", "data": entries})])
+        client = self._client([{"status": "ok", "data": entries}])
         result = client.bulk_get("/data/x.esm", [0x463F, 0xDEADBEEF])
         self.assertEqual(result, entries)
 
     def test_record_request_shape(self):
-        client = self._client([(200, {"status": "ok", "data": {"header": {}, "editor_id": "WEAP_TestRifle", "fields": {}}})])
+        client = self._client([{"status": "ok", "data": {"header": {}, "editor_id": "WEAP_TestRifle", "fields": {}}}])
         client.record("/data/x.esm", 0x463F, resolve="full")
-        body = self._require_server().requests_seen[0]["body"]
+        body = self._bodies()[0]
         self.assertEqual(
             body["op"],
             {"op": "record", "sel": {"kind": "form_id", "value": 0x463F}, "depth": "full"},
         )
 
     def test_record_by_edid_request_shape(self):
-        client = self._client([(200, {"status": "ok", "data": {"header": {}, "editor_id": "Foo", "fields": {}}})])
+        client = self._client([{"status": "ok", "data": {"header": {}, "editor_id": "Foo", "fields": {}}}])
         client.record_by_edid("/data/x.esm", "AssaultRifle")
-        body = self._require_server().requests_seen[0]["body"]
+        body = self._bodies()[0]
         self.assertEqual(
             body["op"],
             {"op": "record", "sel": {"kind": "edid", "value": "AssaultRifle"}, "depth": "stub"},
         )
 
     def test_search_request_shape(self):
-        client = self._client([(200, {"status": "ok", "data": []})])
+        client = self._client([{"status": "ok", "data": []}])
         client.search("/data/x.esm", "*Rifle*", record_type="WEAP", limit=50, field="name")
-        body = self._require_server().requests_seen[0]["body"]
+        body = self._bodies()[0]
         self.assertEqual(
             body["op"],
             {"op": "search", "pattern": "*Rifle*", "types": ["WEAP"], "field": "name", "limit": 50},
         )
 
     def test_list_type_request_shape(self):
-        client = self._client([(200, {"status": "ok", "data": []})])
+        client = self._client([{"status": "ok", "data": []}])
         client.list_type("/data/x.esm", "OMOD", offset=5, limit=10)
-        body = self._require_server().requests_seen[0]["body"]
+        body = self._bodies()[0]
         self.assertEqual(
             body["op"],
             {"op": "list_type_records", "sig": "OMOD", "offset": 5, "limit": 10},
         )
 
-    def test_op_rejects_unknown_discriminant_client_side(self):
-        # Never even reaches the stub server -- see EsmGateway.op's docstring.
-        client = self._client([])
-        with self.assertRaises(DaemonError) as ctx:
-            client.op("/data/x.esm", {"op": "not_a_real_op"})
-        self.assertIn("not_a_real_op", str(ctx.exception))
-
     def test_ok_envelope_returns_data(self):
-        client = self._client([(200, {"status": "ok", "data": {"hello": "world"}})])
+        client = self._client([{"status": "ok", "data": {"hello": "world"}}])
         self.assertEqual(client.file_info("/data/x.esm"), {"hello": "world"})
 
-    def test_err_envelope_raises_daemon_error(self):
-        client = self._client([(200, {"status": "err", "error": "EditorID 'Nope' not found"})])
-        with self.assertRaises(DaemonError) as ctx:
+    def test_err_envelope_raises_esm_error(self):
+        client = self._client([{"status": "err", "error": "EditorID 'Nope' not found"}])
+        with self.assertRaises(EsmError) as ctx:
             client.record_by_edid("/data/x.esm", "Nope")
         self.assertIn("Nope", str(ctx.exception))
 
-    def test_non_200_error_body_shape_raises(self):
-        # Mirrors ApiError's body shape ({"error": ...}), distinct from the
-        # {"status": "ok"/"err"} Response envelope -- e.g. a 401 from check_auth.
-        client = self._client([(401, {"error": "invalid or missing bearer token"})], token="right-token")
-        # Force a wrong token on the client side to trigger the stub's 401 path.
-        client.token = "wrong-token"
-        with self.assertRaises(DaemonError) as ctx:
+    def test_process_exiting_without_an_answer_raises(self):
+        client = self._client([])
+        with self.assertRaises(EsmError) as ctx:
             client.file_info("/data/x.esm")
-        self.assertIn("401", str(ctx.exception))
+        self.assertIn("exited", str(ctx.exception))
 
     def test_exists_true_and_false(self):
         client = self._client(
             [
-                (200, {"status": "ok", "data": {"header": {}, "editor_id": "X", "fields": {}}}),
-                (200, {"status": "err", "error": "FormID 0xDEADBEEF not found"}),
+                {"status": "ok", "data": {"header": {}, "editor_id": "X", "fields": {}}},
+                {"status": "err", "error": "FormID 0xDEADBEEF not found"},
             ]
         )
         self.assertTrue(client.exists("/data/x.esm", 0x1))
         self.assertFalse(client.exists("/data/x.esm", 0xDEADBEEF))
 
-    def test_keep_alive_connection_reused(self):
+    def test_one_process_answers_every_request(self):
         client = self._client(
-            [
-                (200, {"status": "ok", "data": {"a": 1}}),
-                (200, {"status": "ok", "data": {"b": 2}}),
-            ]
+            [{"status": "ok", "data": {"a": 1}}, {"status": "ok", "data": {"b": 2}}]
         )
+        self.assertEqual(client.file_info("/data/x.esm"), {"a": 1})
+        self.assertEqual(client.file_info("/data/y.esm"), {"b": 2})
+        requests = self._requests()
+        self.assertEqual(len({entry["pid"] for entry in requests}), 1)
+        self.assertEqual([entry["request"]["esm"] for entry in requests], ["/data/x.esm", "/data/y.esm"])
+
+    def test_restarts_the_process_after_it_exits(self):
+        client = self._client([{"status": "ok", "data": {"a": 1}}])
         client.file_info("/data/x.esm")
-        conn_after_first = client._conn
-        client.file_info("/data/x.esm")
-        self.assertIs(client._conn, conn_after_first, "connection object should be reused across calls")
-        self.assertEqual(len(self._require_server().requests_seen), 2)
-
-    def test_reconnect_after_server_closes_connection(self):
-        client = self._client(
-            [
-                (200, {"status": "ok", "data": {"a": 1}}),
-                (200, {"status": "ok", "data": {"b": 2}}),
-            ]
-        )
-        # Force the stub to close the TCP connection after the first response,
-        # simulating an idle/stale keep-alive connection the daemon dropped.
-        self._require_server().handler.close_after_n = 1
-
-        client.file_info("/data/x.esm")
-        result = client.file_info("/data/x.esm")  # must transparently reconnect
-        self.assertEqual(result, {"b": 2})
-        self.assertEqual(len(self._require_server().requests_seen), 2)
-
-
-# ─── Discovery-path tests ────────────────────────────────────────────────────
-
-
-class DiscoveryPathTests(TempDirTestCase):
-    def setUp(self):
-        super().setUp()
-        self._env_backup = dict(os.environ)
-
-    def tearDown(self):
-        os.environ.clear()
-        os.environ.update(self._env_backup)
-
-    def _clear_xdg_env(self):
-        for var in ("XDG_RUNTIME_DIR", "XDG_CACHE_HOME", "HOME"):
-            os.environ.pop(var, None)
-
-    def test_runtime_dir_prefers_xdg_runtime_dir(self):
-        self._clear_xdg_env()
-        runtime = self.tmp / "runtime"
-        runtime.mkdir()
-        os.environ["XDG_RUNTIME_DIR"] = str(runtime)
-        os.environ["XDG_CACHE_HOME"] = str(self.tmp / "cache")
-        self.assertEqual(runtime_dir(), runtime)
-
-    def test_runtime_dir_falls_back_to_xdg_cache_home(self):
-        self._clear_xdg_env()
-        cache = self.tmp / "cache"
-        os.environ["XDG_CACHE_HOME"] = str(cache)
-        self.assertEqual(runtime_dir(), cache)
-
-    def test_runtime_dir_falls_back_to_home_cache(self):
-        self._clear_xdg_env()
-        home = self.tmp / "home"
-        home.mkdir()
-        os.environ["HOME"] = str(home)
-        self.assertEqual(runtime_dir(), home / ".cache")
-
-    def test_runtime_dir_rejects_relative_xdg_runtime_dir(self):
-        # dirs_sys::is_absolute_path treats a non-absolute value as unset.
-        self._clear_xdg_env()
-        os.environ["XDG_RUNTIME_DIR"] = "relative/path"
-        home = self.tmp / "home"
-        home.mkdir()
-        os.environ["HOME"] = str(home)
-        self.assertEqual(runtime_dir(), home / ".cache")
-
-    def test_read_daemon_info_missing_file_returns_none(self):
-        self._clear_xdg_env()
-        os.environ["XDG_RUNTIME_DIR"] = str(self.tmp)
-        self.assertIsNone(read_daemon_info())
-
-    def test_read_daemon_info_round_trip(self):
-        self._clear_xdg_env()
-        os.environ["XDG_RUNTIME_DIR"] = str(self.tmp)
-        info = {
-            "port": 12345,
-            "token": "abc",
-            "pid": 999,
-            "exe_path": "/usr/local/bin/esm-server",
-            "exe_size": 42,
-            "exe_mtime_secs": 100,
-            "exe_mtime_nanos": 200,
-        }
-        daemon_info_path().write_text(json.dumps(info))
-        self.assertEqual(read_daemon_info(), info)
-
-    def test_read_daemon_info_legacy_file_gets_defaults(self):
-        # Legacy discovery file written before exe_* fields existed.
-        self._clear_xdg_env()
-        os.environ["XDG_RUNTIME_DIR"] = str(self.tmp)
-        daemon_info_path().write_text(json.dumps({"port": 1, "token": "x", "pid": 2}))
-        info = read_daemon_info()
-        assert info is not None
-        self.assertEqual(info["port"], 1)
-        self.assertEqual(info["exe_path"], "")
-        self.assertFalse(daemon_fresh(info))
-
-    def test_daemon_fresh_true_when_binary_signature_matches(self):
-        exe = self.tmp / "esm-server"
-        exe.write_bytes(b"fake binary contents")
-        st = exe.stat()
-        info = {
-            "exe_path": str(exe),
-            "exe_size": st.st_size,
-            "exe_mtime_secs": st.st_mtime_ns // 1_000_000_000,
-            "exe_mtime_nanos": st.st_mtime_ns % 1_000_000_000,
-        }
-        self.assertTrue(daemon_fresh(info))
-
-    def test_daemon_fresh_false_after_binary_changes(self):
-        exe = self.tmp / "esm-server"
-        exe.write_bytes(b"fake binary contents")
-        st = exe.stat()
-        info = {
-            "exe_path": str(exe),
-            "exe_size": st.st_size,
-            "exe_mtime_secs": st.st_mtime_ns // 1_000_000_000,
-            "exe_mtime_nanos": st.st_mtime_ns % 1_000_000_000,
-        }
-        exe.write_bytes(b"rebuilt, different size and mtime now")
-        os.utime(exe, ns=(st.st_mtime_ns + 5_000_000_000, st.st_mtime_ns + 5_000_000_000))
-        self.assertFalse(daemon_fresh(info))
-
-    def test_daemon_fresh_false_for_empty_exe_path(self):
-        self.assertFalse(daemon_fresh({"exe_path": ""}))
-
-    def test_daemon_fresh_false_for_missing_exe(self):
-        self.assertFalse(daemon_fresh({"exe_path": "/nonexistent/esm-server-nowhere"}))
+        with self.assertRaises(EsmError):
+            client.file_info("/data/x.esm")
+        self.assertEqual(client.file_info("/data/x.esm"), {"a": 1})
+        self.assertEqual(len({entry["pid"] for entry in self._requests()}), 2)
 
 
 # ─── FormID helper tests ─────────────────────────────────────────────────────
@@ -505,13 +288,6 @@ class FormIdHelperTests(unittest.TestCase):
         self.assertEqual(formid_to_hex(0x00ABCDEF), "0x00ABCDEF")
         self.assertEqual(formid_to_hex("0x00abcdef"), "0x00ABCDEF")
 
-    def test_formid_to_hex_matches_generated_wire_examples(self):
-        # wire_constants.FORM_ID_DISPLAY_EXAMPLES is generated straight from
-        # FormId::display() (see regen_wire_constants.py) -- this is the
-        # actual drift guard for the hand-written f"0x{...:08X}" above.
-        for raw, expected in wire_constants.FORM_ID_DISPLAY_EXAMPLES.items():
-            self.assertEqual(formid_to_hex(int(raw)), expected)
-
 
 # ─── find_esm_binary tests ───────────────────────────────────────────────────
 
@@ -521,7 +297,7 @@ class FindEsmBinaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             not_exec = Path(tmp) / "esm"
             not_exec.write_text("not executable")
-            with self.assertRaises(DaemonError):
+            with self.assertRaises(EsmError):
                 esm_gateway.find_esm_binary(str(not_exec))
 
     def test_explicit_executable_path_is_returned(self):
@@ -534,7 +310,7 @@ class FindEsmBinaryTests(unittest.TestCase):
     def test_nothing_found_raises(self):
         with mock.patch.object(esm_gateway, "WORKSPACE_ROOT", Path("/nonexistent-workspace-root")):
             with mock.patch("shutil.which", return_value=None):
-                with self.assertRaises(DaemonError):
+                with self.assertRaises(EsmError):
                     esm_gateway.find_esm_binary(None)
 
 
@@ -601,7 +377,7 @@ class EsmGatewayDiffTests(TempDirTestCase):
         # no longer an `esm` quirk to route around -- any bytes trailing the
         # JSON blob are a hard error now, same as invalid JSON outright.
         fake_esm = self._fake_esm('{"added": [], "removed": [], "changed": []}esm> ')
-        with self.assertRaises(DaemonError):
+        with self.assertRaises(EsmError):
             self._diff(fake_esm)
 
     def test_cmd_reflects_argv_used(self):
@@ -611,15 +387,15 @@ class EsmGatewayDiffTests(TempDirTestCase):
         self.assertIn("--local", result.cmd)
         self.assertIn("--strings-dir", result.cmd)
 
-    def test_nonzero_exit_raises_daemon_error(self):
+    def test_nonzero_exit_raises_esm_error(self):
         fake_esm = self._fake_esm("irrelevant", exit_code=1)
-        with self.assertRaises(DaemonError) as ctx:
+        with self.assertRaises(EsmError) as ctx:
             self._diff(fake_esm)
         self.assertIn("exit code 1", str(ctx.exception))
 
-    def test_invalid_json_raises_daemon_error(self):
+    def test_invalid_json_raises_esm_error(self):
         fake_esm = self._fake_esm("not json at all")
-        with self.assertRaises(DaemonError):
+        with self.assertRaises(EsmError):
             self._diff(fake_esm)
 
 
@@ -628,10 +404,10 @@ class EsmGatewayDiffTests(TempDirTestCase):
 
 class RealEsmIntegrationTests(unittest.TestCase):
     """End-to-end smoke test of `EsmGateway` against the real `esm` binary
-    and a live warm daemon it spawns/reuses -- no fixtures, no stub server.
+    -- no fixtures, no stub.
 
     Gated on `$FO76_ESM_PATH` (an absolute path to a real `SeventySix.esm`,
-    per esm/CLAUDE.local.md), mirroring `tests/diff.rs`'s
+    ), mirroring `tests/diff.rs`'s
     `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B` silent-skip convention on the Rust
     side. Skips (not fails) in any environment without real game data --
     this must be a no-op in CI/sandboxes.
@@ -661,9 +437,9 @@ class RealEsmIntegrationTests(unittest.TestCase):
         cls.esm_path = esm_path
         try:
             cls.esm_bin = esm_gateway.find_esm_binary(None)
-        except DaemonError as exc:
+        except EsmError as exc:
             raise unittest.SkipTest(f"esm binary not found -- skipping: {exc}")
-        cls.gateway = esm_gateway.ensure_daemon(cls.esm_bin, cls.esm_path)
+        cls.gateway = EsmGateway(cls.esm_bin)
 
     @classmethod
     def tearDownClass(cls):

@@ -21,9 +21,8 @@ impl FormId {
     /// Render in the given [`FormIdBase`]: hex is `display()`'s `0x########`,
     /// decimal is the bare `u32` value. Used only where a caller (currently
     /// just the CLI's `--decimal` flag) needs to switch rendering at
-    /// runtime — every other call site keeps using `display()` directly,
-    /// including the wire-format drift fixture in `wire_constants.rs`, which
-    /// pins `display()`'s exact output and must not change.
+    /// runtime — every other call site keeps using `display()` directly, and
+    /// `display()`'s exact output is part of every JSON contract.
     pub fn display_base(self, base: FormIdBase) -> String {
         match base {
             FormIdBase::Hex => self.display(),

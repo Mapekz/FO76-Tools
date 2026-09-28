@@ -37,7 +37,12 @@ subcommand.
   every record). It streams progress to stderr rather than hanging silently and
   still returns the real result — just wait. A second concurrent query reuses
   whichever build is already running instead of starting a redundant one.
-  `esm cache status [--json]` inspects without triggering anything.
+  `esm cache status [--json]` inspects without triggering anything;
+  `esm cache build` builds ahead of time and `esm cache clear` deletes an
+  ESM's cache.
+- Scripts making many calls can keep one `esm batch` child: it reads one
+  `{"esm": <path>, "op": {...}}` JSON request per line and answers each with
+  one `{"status": "ok"|"err", ...}` line, keeping each ESM open in between.
   `ESM_NO_PROGRESS=1` suppresses heartbeat *publishing* only (e.g. in an
   embedding context where a stray file write is unwanted) — lock-based dedup
   between concurrent builders keeps working regardless.

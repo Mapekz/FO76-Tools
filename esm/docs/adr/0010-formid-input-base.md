@@ -56,8 +56,8 @@ hold pre-formatted hex strings (`RecordRow::form_id`, `RecordHeaderInfo::form_id
 move already-formatted strings into columns. Converting output under `--decimal` is therefore a
 handful of small, explicit rewrites at each CLI handler — reparsing an already-hex string back to
 a `FormId` and re-rendering via `FormId::display_base(FormIdBase::Dec)` — never a change to
-`FormId::display()` itself (which stays pinned by the `wire_constants.rs`/`tools/wire_constants.py`
-drift fixture) and never a new field on `Op`.
+`FormId::display()` itself (whose exact output every JSON contract depends on) and never a new
+field on `Op`.
 
 **Why identity-only, not every FormID in the payload.** `src/decode/model_info.rs` renders BA2
 path hashes as `"File Hash": "0xDA67C578"` — byte-identical in shape to a rendered FormID but not

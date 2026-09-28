@@ -6,7 +6,7 @@
 `run_lints.py`).
 
 This lives under `tools/tests/`, not `tools/`, because it is a test double,
-not a wire client: it never talks to a real `esm` daemon, it replays a JSON
+not an `esm` client: it never runs a real `esm`, it replays a JSON
 fixture (see `FakeGateway`'s own docstring below for the fixture shape).
 `esm_gateway.py` (the real seam) is intentionally kept free of it -- see
 that module's docstring for the "one seam" property this split preserves.
@@ -35,7 +35,7 @@ from typing import Any, Iterable, Mapping, Sequence, Union
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from esm_gateway import (  # noqa: E402
-    DaemonError,
+    EsmError,
     FormIdLike,
     _sel_display,
     _sel_for_edid,
@@ -45,7 +45,9 @@ from esm_gateway import (  # noqa: E402
     formid_to_hex,
     formid_to_int,
 )
-from wire_constants import DEFAULT_MAX_DEPTH  # noqa: E402
+
+# Matches `ipc::DEFAULT_MAX_DEPTH`, the refs walk's hop cap.
+DEFAULT_MAX_DEPTH = 8
 
 
 class FakeGateway:
@@ -102,7 +104,7 @@ class FakeGateway:
     non-matching nodes), and `paths=True` passes each matching adjacency
     row's own `field_paths` entry straight through -- there's no real record
     body to decode a path from in a fixture, so it's fixture-authored data,
-    not a computed one, unlike the real daemon's `Database.formid_reference_paths`.
+    not a computed one, unlike the real `Database.formid_reference_paths`.
 
     `list_type()`/the `list_type_records` op are derived purely from
     `self.records` (grouped by `record_type`, sorted by ascending numeric
@@ -144,8 +146,8 @@ class FakeGateway:
         if kind == "file_info":
             return self.file_info(esm)
         if kind == "search":
-            raise DaemonError("FakeGateway does not support op 'search' (no search index in fixture)")
-        raise DaemonError(f"FakeGateway does not support op {kind!r}")
+            raise EsmError("FakeGateway does not support op 'search' (no search index in fixture)")
+        raise EsmError(f"FakeGateway does not support op {kind!r}")
 
     def record(self, esm: str, formid: FormIdLike, *, resolve: str = "stub") -> dict:
         return self.op(esm, {"op": "record", "sel": _sel_for_formid(formid), "depth": resolve})
@@ -201,14 +203,14 @@ class FakeGateway:
         field: str = "both",
         limit: int = 100,
     ) -> list:
-        raise DaemonError(
+        raise EsmError(
             "FakeGateway does not support 'search' (fixture has no search index): "
             f"esm={esm!r} pattern={pattern!r} record_type={record_type!r} "
             f"types={types!r} field={field!r} limit={limit!r}"
         )
 
     def file_info(self, esm: str) -> dict:
-        raise DaemonError(
+        raise EsmError(
             f"FakeGateway does not support 'file_info' (fixture has no header data): esm={esm!r}"
         )
 
@@ -218,7 +220,7 @@ class FakeGateway:
         try:
             self.record(esm, formid, resolve="none")
             return True
-        except DaemonError:
+        except EsmError:
             return False
 
     def close(self) -> None:
@@ -241,15 +243,15 @@ class FakeGateway:
             for key, meta in self.records.items():
                 if meta.get("editor_id") == value:
                     return formid_to_int(key)
-            raise DaemonError(f"EditorID '{value}' not found")
-        raise DaemonError(f"unknown RecordSel kind {kind!r}")
+            raise EsmError(f"EditorID '{value}' not found")
+        raise EsmError(f"unknown RecordSel kind {kind!r}")
 
     def _record(self, sel: Mapping[str, Any]) -> dict:
         fid = self._resolve_sel(sel)
         key = formid_to_hex(fid)
         rec = self.records.get(key)
         if rec is None:
-            raise DaemonError(f"FormID {key} not found")
+            raise EsmError(f"FormID {key} not found")
         return rec
 
     def _bulk_record_entries(self, wire_sels: Sequence[Mapping[str, Any]]) -> list[dict]:
@@ -261,7 +263,7 @@ class FakeGateway:
             display = _sel_display(sel)
             try:
                 rec = self._record(sel)
-            except DaemonError as exc:
+            except EsmError as exc:
                 entries.append({"sel": display, "error": str(exc)})
                 continue
             entries.append(
@@ -363,7 +365,7 @@ class FakeGateway:
                     }
                     # RefRow's `path` is `#[serde(skip_serializing_if =
                     # "Vec::is_empty")]` on the wire -- omit the key entirely
-                    # at depth 1, same as the real daemon's JSON.
+                    # at depth 1, same as real `esm` JSON.
                     if path_here:
                         out_row["path"] = list(path_here)
                     if include_paths:

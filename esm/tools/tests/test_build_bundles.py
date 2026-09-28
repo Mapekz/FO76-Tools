@@ -30,7 +30,7 @@ Covers:
   - CLI behavior (argument validation, settings precedence, a subprocess
     smoke test).
 
-No real daemon or ESM is touched -- everything runs against
+No real `esm` or ESM is touched -- everything runs against
 FakeGateway and the checked-in fixtures.
 """
 
@@ -645,7 +645,7 @@ class TestCategorization(unittest.TestCase):
     def test_keyword_lookup_failure_is_treated_as_no_match(self):
         class _FailingClient:
             def record(self, esm, formid, *, resolve="stub"):
-                raise esm_gateway.DaemonError("not found")
+                raise esm_gateway.EsmError("not found")
 
         self.assertEqual(bb._anchor_keyword_edids(_FailingClient(), "esm", "0xBB", {}), [])
 
