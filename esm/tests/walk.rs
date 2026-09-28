@@ -26,6 +26,17 @@ impl FakeFetcher {
     }
 
     fn insert(&mut self, formid: &str, sig: &str, edid: &str, fields: serde_json::Value) {
+        self.insert_flagged(formid, sig, edid, 0, fields);
+    }
+
+    fn insert_flagged(
+        &mut self,
+        formid: &str,
+        sig: &str,
+        edid: &str,
+        flags: u32,
+        fields: serde_json::Value,
+    ) {
         self.records.insert(
             formid.to_string(),
             BulkRecordEntry {
@@ -33,7 +44,7 @@ impl FakeFetcher {
                 header: Some(RecordHeaderInfo {
                     signature: sig.to_string(),
                     form_id: formid.parse().unwrap(),
-                    flags: 0,
+                    flags,
                     form_version: 0,
                     data_size: 0,
                     offset: 0,
@@ -1013,45 +1024,100 @@ fn omod_keyword_hook_consumer_fetch_bounded_by_ref_limit() {
 
 const OMOD_SHELL_FID: &str = "0x0060005A";
 const OMOD_PARENT_FID: &str = "0x0060005B";
+const OMOD_COLLECTION_FID: &str = "0x0060005C";
+const OMOD_ALT_FID: &str = "0x0060005D";
 
-/// A `_PARENT_*`-style empty-shell OMOD (no `Data.Properties[]` at all, its
-/// real payload lives on the OMOD it `Data.Includes[]`) should render an
-/// `include →` line pointing at the included OMOD — read straight off the
-/// already-stub-resolved fields, no extra fetch.
+fn include_row(formid: &str, edid: &str, minimum_level: u64) -> serde_json::Value {
+    json!({
+        "Mod": {"formid": formid, "editor_id": edid, "record_type": "OMOD"},
+        "Minimum Level": minimum_level,
+        "Optional": {"value": 0, "name": "False"},
+        "Don't Use All": {"value": 1, "name": "True"},
+    })
+}
+
+fn weight_property(value: f64) -> serde_json::Value {
+    json!({
+        "Value Type": {"value": 1, "name": "Float"},
+        "Function Type": {"value": 1, "name": "MUL+ADD"},
+        "Property": {"value": 0, "name": "Weight"},
+        "Value 1": value,
+        "Value 2": 0.0,
+    })
+}
+
+/// A plain OMOD's include is a mod template: its properties are the
+/// includer's, rendered under the template's name, and the template isn't
+/// walked as a node of its own.
 #[test]
-fn omod_includes_stub_renders_include_line() {
+fn omod_template_include_renders_its_properties_under_the_template() {
     let mut f = FakeFetcher::new();
     f.insert(
         OMOD_SHELL_FID,
         "OMOD",
-        "_PARENT_Legendary_Weapon1_Shell",
+        "mod_Legendary_Weapon1_Shell",
         json!({
             "_record_type": "Object Modification",
-            "Data": {
-                "Includes": [
-                    {
-                        "Mod": {
-                            "formid": OMOD_PARENT_FID,
-                            "editor_id": "mod_Legendary_Weapon1_Parent",
-                            "record_type": "OMOD",
-                        },
-                        "Minimum Level": 0,
-                        "Optional": {"value": 0, "name": "False"},
-                        "Don't Use All": {"value": 0, "name": "False"},
-                    }
-                ]
-            },
+            "Data": {"Includes": [include_row(OMOD_PARENT_FID, "_PARENT_mod_Weight", 0)]},
+        }),
+    );
+    f.insert_flagged(
+        OMOD_PARENT_FID,
+        "OMOD",
+        "_PARENT_mod_Weight",
+        0x100, // Mod Template
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {"Properties": [weight_property(0.25)]},
         }),
     );
 
-    let result = walk_at(&mut f, OMOD_SHELL_FID, 0);
+    let result = walk_at(&mut f, OMOD_SHELL_FID, 1);
     let text = node_digest(&result, OMOD_SHELL_FID).join("\n");
     assert!(
-        text.contains(&format!(
-            "include → OMOD {OMOD_PARENT_FID} mod_Legendary_Weapon1_Parent"
-        )),
-        "expected an include stub line, got:\n{text}"
+        text.contains(&format!("from OMOD {OMOD_PARENT_FID} _PARENT_mod_Weight")),
+        "expected the template's name, got:\n{text}"
     );
+    assert!(text.contains("Weight") && text.contains("0.25"), "{text}");
+    assert!(
+        result.nodes.iter().all(|n| n.formid != OMOD_PARENT_FID),
+        "a template is part of its includer, not a walked node"
+    );
+}
+
+/// A Mod Collection's includes are alternatives: listed with their minimum
+/// level and walked as nodes, never merged into the collection.
+#[test]
+fn omod_collection_walks_its_alternatives() {
+    let mut f = FakeFetcher::new();
+    f.insert_flagged(
+        OMOD_COLLECTION_FID,
+        "OMOD",
+        "modcol_Test_Barrels",
+        0x80, // Mod Collection
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {"Includes": [include_row(OMOD_ALT_FID, "mod_Test_Barrel_Long", 20)]},
+        }),
+    );
+    f.insert(
+        OMOD_ALT_FID,
+        "OMOD",
+        "mod_Test_Barrel_Long",
+        json!({
+            "_record_type": "Object Modification",
+            "Data": {"Properties": [weight_property(0.5)]},
+        }),
+    );
+
+    let result = walk_at(&mut f, OMOD_COLLECTION_FID, 1);
+    let text = node_digest(&result, OMOD_COLLECTION_FID).join("\n");
+    assert_eq!(
+        text,
+        format!("alternative → OMOD {OMOD_ALT_FID} mod_Test_Barrel_Long  (level 20+)")
+    );
+    let alt = node_digest(&result, OMOD_ALT_FID).join("\n");
+    assert!(alt.contains("Weight") && alt.contains("0.5"), "{alt}");
 }
 
 // ─── LVLI digest ────────────────────────────────────────────────────────────

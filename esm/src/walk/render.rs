@@ -959,15 +959,40 @@ fn render_armo(d: &ArmoDigest, lines: &mut Vec<String>) {
 
 // ─── OMOD mechanism rendering ───────────────────────────────────────────────
 
+/// The OMOD's own hops, then each included mod template's hops under a
+/// `from <template>` line, then a collection's alternatives.
 fn render_omod(d: &OmodDigest, lines: &mut Vec<String>) {
-    render_omod_hops(&d.hops, lines);
-    for target in &d.includes {
-        lines.push(format!("include → {}", fmt_stub(target)));
+    let hops_from = |source: Option<&Value>| -> Vec<Hop> {
+        d.hops
+            .iter()
+            .filter(|hop| hop.source_omod.as_ref() == source)
+            .cloned()
+            .collect()
+    };
+    render_omod_hops(&hops_from(None), lines);
+    let mut templates: Vec<&Value> = Vec::new();
+    for source in d.hops.iter().filter_map(|hop| hop.source_omod.as_ref()) {
+        if !templates.contains(&source) {
+            templates.push(source);
+        }
     }
-    if d.includes_total > d.includes.len() {
+    for template in templates {
+        lines.push(format!("from {}", fmt_stub(template)));
+        let mut group = Vec::new();
+        render_omod_hops(&hops_from(Some(template)), &mut group);
+        lines.extend(group.into_iter().map(|line| format!("  {line}")));
+    }
+    for alt in &d.alternatives {
+        let level = match alt.minimum_level {
+            0 => String::new(),
+            n => format!("  (level {n}+)"),
+        };
+        lines.push(format!("alternative → {}{level}", fmt_stub(&alt.omod)));
+    }
+    if d.alternatives_total > d.alternatives.len() {
         lines.push(format!(
-            "  … +{} more includes (truncated)",
-            d.includes_total - d.includes.len()
+            "  … +{} more alternatives (truncated)",
+            d.alternatives_total - d.alternatives.len()
         ));
     }
 }
@@ -975,9 +1000,7 @@ fn render_omod(d: &OmodDigest, lines: &mut Vec<String>) {
 /// Render classified [`Hop`]s in classifier order. Consecutive bare-value
 /// properties (no record to chase, e.g. `AttackDamage MUL+ADD -0.4`) collapse
 /// into one `properties` block and consecutive [`HopKind::TagKeyword`] hops
-/// into one `tags` block; include-sourced hops (`source_omod.is_some()`) are
-/// skipped here — walk enqueues includes as their own BFS nodes instead of
-/// folding them into the includer's digest. A directly-attached ENCH property
+/// into one `tags` block. A directly-attached ENCH property
 /// renders through the same `DirectProperty` path as a PROJ or SPEL (no
 /// separate ENCH-follow pass to suppress against — see
 /// `super::omod_hops_enqueue`).
@@ -985,14 +1008,10 @@ pub(super) fn render_omod_hops(hops: &[Hop], lines: &mut Vec<String>) {
     let mut i = 0;
     while i < hops.len() {
         let hop = &hops[i];
-        if hop.source_omod.is_some() {
-            i += 1;
-            continue;
-        }
         if hop.target.is_none() {
             let start = i;
             i += 1;
-            while i < hops.len() && hops[i].source_omod.is_none() && hops[i].target.is_none() {
+            while i < hops.len() && hops[i].target.is_none() {
                 i += 1;
             }
             render_property_block(&hops[start..i], lines);
@@ -1003,7 +1022,7 @@ pub(super) fn render_omod_hops(hops: &[Hop], lines: &mut Vec<String>) {
             i += 1;
             while i < hops.len() {
                 let next = &hops[i];
-                if next.source_omod.is_some() || next.kind != HopKind::TagKeyword {
+                if next.kind != HopKind::TagKeyword {
                     break;
                 }
                 i += 1;

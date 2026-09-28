@@ -26,8 +26,9 @@ export type Hop = { property_index: number, property: unknown, function: unknown
  */
 resolution: FetchDirection | null, 
 /**
- * When this hop's property row was sourced from a `Data.Includes[]`
- * target rather than the root OMOD itself — the included OMOD's stub.
+ * When this hop's property row comes from a mod template the root
+ * includes (see [`IncludeRole::Compose`]) rather than the root OMOD
+ * itself — the included OMOD's stub.
  * `None` for the root's own properties (additive to the frozen chase
  * JSON shape; see ADR 0001).
  */

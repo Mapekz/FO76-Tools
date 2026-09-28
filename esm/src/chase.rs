@@ -117,6 +117,67 @@ pub const OMOD_INCLUDE_ENQUEUE_CAP: usize = 20;
 /// Measured corpus max is 3; do not search deeper.
 const OMOD_INCLUDE_MAX_DEPTH: usize = 3;
 
+/// OMOD record flags (xEdit `wbDefinitionsFO76.pas`) that make an OMOD's
+/// `Data.Includes[]` a set of alternatives rather than parts of itself.
+const OMOD_MOD_COLLECTION: u32 = 0x0000_0080;
+const OMOD_MOD_SELECTOR: u32 = 0x0000_0200;
+
+/// How an OMOD's `Data.Includes[]` relate to it, by its record flags.
+///
+/// On 20260918 every include of a plain OMOD names a `Mod Template`
+/// (`_PARENT_*`, which has no includes itself): the template's properties
+/// apply as the includer's own. A `Mod Collection` (`modcol_*`) or
+/// `Mod Selector` has no properties of its own; its includes are the plain
+/// mods it picks among (collections gate them by `Minimum Level`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum IncludeRole {
+    /// The includes' properties are this OMOD's properties.
+    Compose,
+    /// Each include is a separate mod this OMOD stands for one of.
+    Alternatives,
+}
+
+pub(crate) fn include_role(record_flags: u32) -> IncludeRole {
+    if record_flags & (OMOD_MOD_COLLECTION | OMOD_MOD_SELECTOR) != 0 {
+        IncludeRole::Alternatives
+    } else {
+        IncludeRole::Compose
+    }
+}
+
+/// One include of a `Mod Collection` or `Mod Selector` (see [`IncludeRole`]):
+/// a mod it stands for, available from `minimum_level`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct IncludeAlternative {
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub omod: Value,
+    pub minimum_level: u64,
+}
+
+/// The alternatives a `Mod Collection`/`Mod Selector` OMOD's decoded
+/// `fields` include, in order.
+pub(crate) fn include_alternatives(fields: &Value) -> Vec<IncludeAlternative> {
+    fields
+        .pointer("/Data/Includes")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|inc| {
+            let omod = inc.get("Mod").filter(|v| is_formid_stub(v))?.clone();
+            let minimum_level = inc
+                .get("Minimum Level")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            Some(IncludeAlternative {
+                omod,
+                minimum_level,
+            })
+        })
+        .collect()
+}
+
 // ─── fetch seam ─────────────────────────────────────────────────────────────
 
 /// Everything [`chase`] needs from the outside world: a bulk record fetch
@@ -166,11 +227,12 @@ impl Default for ChaseOptions {
 }
 
 /// The evidence tree returned by [`chase`]. `hops` is populated for an OMOD
-/// root (classified `Data.Properties[]` rows); `effect_hops` for a
-/// PERK/SPEL/ALCH/ENCH root (classified `Effects[]` entries) — exactly one of
-/// the two is ever non-empty for a given `chase()` call. Kept as a flat
-/// struct with two vectors (rather than an enum) so existing OMOD callers/
-/// tests don't need to match on a variant just to reach `.hops`.
+/// root (classified `Data.Properties[]` rows, including those of the mod
+/// templates it includes), and `alternatives` for a `Mod Collection` or
+/// `Mod Selector` OMOD (see [`IncludeRole`]); `effect_hops` for a
+/// PERK/SPEL/ALCH/ENCH root (classified `Effects[]` entries). Kept as a flat
+/// struct (rather than an enum) so existing OMOD callers/tests don't need to
+/// match on a variant just to reach `.hops`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -180,6 +242,8 @@ pub struct ChaseTree {
     pub hops: Vec<Hop>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effect_hops: Vec<EffectHop>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternatives: Vec<IncludeAlternative>,
 }
 
 /// The chased record's own identity — mirrors the Python prototype's
@@ -257,8 +321,9 @@ pub struct Hop {
     /// frozen chase JSON shape (ADR 0001's addendum).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolution: Option<FetchDirection>,
-    /// When this hop's property row was sourced from a `Data.Includes[]`
-    /// target rather than the root OMOD itself — the included OMOD's stub.
+    /// When this hop's property row comes from a mod template the root
+    /// includes (see [`IncludeRole::Compose`]) rather than the root OMOD
+    /// itself — the included OMOD's stub.
     /// `None` for the root's own properties (additive to the frozen chase
     /// JSON shape; see ADR 0001).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -873,11 +938,14 @@ enum FetchDest {
 }
 
 /// Collect `(properties, source_omod)` batches for the root plus a bounded
-/// BFS over `Data.Includes[]` (depth ≤ [`OMOD_INCLUDE_MAX_DEPTH`], breadth ≤
-/// [`OMOD_INCLUDE_ENQUEUE_CAP`] per level).
+/// BFS over the `Data.Includes[]` that compose into it (depth ≤
+/// [`OMOD_INCLUDE_MAX_DEPTH`], breadth ≤ [`OMOD_INCLUDE_ENQUEUE_CAP`] per
+/// level). An OMOD whose includes are alternatives contributes only its own
+/// properties.
 fn collect_property_sources(
     f: &mut impl ChaseFetcher,
     root_fields: &Value,
+    root_flags: u32,
 ) -> anyhow::Result<Vec<(Vec<Value>, Option<Value>)>> {
     let root_properties: Vec<Value> = root_fields
         .pointer("/Data/Properties")
@@ -888,9 +956,10 @@ fn collect_property_sources(
 
     let mut visited: HashSet<String> = HashSet::new();
     let mut queue: VecDeque<(String, usize)> = VecDeque::new();
-    if let Some(includes) = root_fields
-        .pointer("/Data/Includes")
-        .and_then(Value::as_array)
+    if include_role(root_flags) == IncludeRole::Compose
+        && let Some(includes) = root_fields
+            .pointer("/Data/Includes")
+            .and_then(Value::as_array)
     {
         for inc in includes.iter().take(OMOD_INCLUDE_ENQUEUE_CAP) {
             if let Some(fid) = inc
@@ -930,7 +999,9 @@ fn collect_property_sources(
             .unwrap_or_default();
         sources.push((properties, Some(omod_stub)));
 
+        let flags = entry.header.as_ref().map_or(0, |h| h.flags);
         if depth < OMOD_INCLUDE_MAX_DEPTH
+            && include_role(flags) == IncludeRole::Compose
             && let Some(includes) = fields.pointer("/Data/Includes").and_then(Value::as_array)
         {
             for inc in includes.iter().take(OMOD_INCLUDE_ENQUEUE_CAP) {
@@ -1134,7 +1205,8 @@ pub fn chase(
 
     if let Some(rt) = record_type {
         if rt == "Object Modification" {
-            return omod_chase(f, root, &fields, opts);
+            let flags = entry.header.as_ref().map_or(0, |h| h.flags);
+            return omod_chase(f, root, &fields, flags, opts);
         }
         if EFFECT_ROOT_TYPES.contains(&rt) {
             return effect_chase(f, root, &fields);
@@ -1153,9 +1225,12 @@ pub fn chase(
 
 /// Run the chase for an OMOD root: classify each `Data.Properties[]` row into
 /// direct-property/perk-grant/keyword-hook/tag-keyword (see the module docs)
-/// and forward- or reverse-fetch whatever record carries the mechanic. Also
-/// expands `Data.Includes[]` up to [`OMOD_INCLUDE_MAX_DEPTH`] /
-/// [`OMOD_INCLUDE_ENQUEUE_CAP`], tagging those hops with [`Hop::source_omod`].
+/// and forward- or reverse-fetch whatever record carries the mechanic. The
+/// mod templates it includes contribute their rows too, up to
+/// [`OMOD_INCLUDE_MAX_DEPTH`] / [`OMOD_INCLUDE_ENQUEUE_CAP`], tagged with
+/// [`Hop::source_omod`]; a `Mod Collection`/`Mod Selector` root lists its
+/// includes as [`ChaseTree::alternatives`] instead (see [`IncludeRole`]).
+/// `root_flags` is the root's record-header flags.
 ///
 /// `pub(crate)` (rather than only reachable through [`chase`]'s dispatch) so
 /// `esm::walk`'s OMOD digest can classify an already-fetched root directly —
@@ -1165,9 +1240,10 @@ pub(crate) fn omod_chase(
     f: &mut impl ChaseFetcher,
     root: RootStub,
     fields: &Value,
+    root_flags: u32,
     opts: &ChaseOptions,
 ) -> anyhow::Result<ChaseTree> {
-    let sources = collect_property_sources(f, fields)?;
+    let sources = collect_property_sources(f, fields, root_flags)?;
 
     // ---- one bulk_get for every KYWD-typed property target (Type/Notes) ----
     let mut kywd_fids: Vec<String> = Vec::new();
@@ -1346,10 +1422,15 @@ pub(crate) fn omod_chase(
         hop.evidence = vec![tag_keyword_evidence(&target, Some(fields), json!("None"))];
     }
 
+    let alternatives = match include_role(root_flags) {
+        IncludeRole::Alternatives => include_alternatives(fields),
+        IncludeRole::Compose => Vec::new(),
+    };
     Ok(ChaseTree {
         root,
         hops,
         effect_hops: Vec::new(),
+        alternatives,
     })
 }
 
@@ -1458,6 +1539,7 @@ fn effect_chase(
         root,
         hops: Vec::new(),
         effect_hops: hops,
+        alternatives: Vec::new(),
     })
 }
 

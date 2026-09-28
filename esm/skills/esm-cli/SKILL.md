@@ -146,9 +146,11 @@ One rule: **read records with `walk`; `chase` is the machine contract.**
     unrelated effects never print. `AV hook → AVIF …` is that same
     reverse-chase rendering; what distinguishes it from a forward-fetched
     direct property is the hop's typed `resolution` field, not the target's
-    record type. Perk grants render the granted perk's effect rows, and
-    `Data.Includes[]` stubs are named so `_PARENT_*` empty-shell OMODs point at
-    the include carrying the real mechanic. A hook keyword that no SPEL/PERK
+    record type. Perk grants render the granted perk's effect rows. The
+    properties of an included mod template (`_PARENT_*`) are the includer's
+    own and render under `from OMOD … _PARENT_…`; a mod collection
+    (`modcol_*`) or selector lists its includes as `alternative →` lines
+    (with any minimum level) and walks each as its own node. A hook keyword that no SPEL/PERK
     condition references renders a `dead end` note instead (tag keywords:
     `FeaturedItem`, `NonDroppable`, naming keywords, …).
   - **LVLI root**: resolves the actual drop odds as a tree bounded by
@@ -163,13 +165,14 @@ One rule: **read records with `walk`; `chase` is the machine contract.**
   - For how to read `--refs` output, see "Obtainability verdicts" below.
 
 **Worked example** (`mod_Legendary_Weapon1_DmgConsecutiveHits` / "Furious",
-`0x004F577D`, a directly-attached ENCH property plus a KYWD-hook property —
-both mechanisms, one call):
+`0x004F577D`, a directly-attached ENCH property, a KYWD-hook property and an
+included template's property — every mechanism, one call):
 
 ```
 $ esm walk mod_Legendary_Weapon1_DmgConsecutiveHits --depth 3
+
 ▸ OMOD 0x004F577D mod_Legendary_Weapon1_DmgConsecutiveHits "Furious"
-  direct property → ENCH 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits
+  direct property → ENCH 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits  (ADD 1)
     Effects[0] AbLegendary_Weapon_DmgConsecutiveHits  Magnitude=0  Actor Value=LGND_Furious
     Perk to Apply → PERK 0x006C3175 Legendary_Weapon_DmgConsecutiveHits
   tags
@@ -179,14 +182,14 @@ $ esm walk mod_Legendary_Weapon1_DmgConsecutiveHits --depth 3
       Effects[11] Set Damage on Consecutive Hits/Set Value  Float=10  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1
       Effects[12] Mod Max Consecutive Hits Allowed/Set Value  Float=9  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1
       Effects[13] Mod Damage on Consecutive Hits/Set Value  Float=0.05  Conditions: WornHasKeyword(HasLegendary_Weapon_DamageConsecutiveHits) Equal To 1
-  include → OMOD 0x004519F4 _PARENT_mod_Legendary_Weapon_WEIGHTVALUE_1
+  from OMOD 0x004519F4 _PARENT_mod_Legendary_Weapon_WEIGHTVALUE_1
+    properties
+        Value  MUL+ADD  1
 
 ▸▸ ENCH 0x006C3173 ench_Legendary_Weapon_DmgConsecutiveHits  (via OMOD property)
   effect[0] → MGEF 0x006C3174 AbLegendary_Weapon_DmgConsecutiveHits (Script)
     magnitude 0  duration 0
     Perk to Apply → 0x006C3175 Legendary_Weapon_DmgConsecutiveHits
-
-▸▸ OMOD 0x004519F4 _PARENT_mod_Legendary_Weapon_WEIGHTVALUE_1  (via include of mod_Legendary_Weapon1_DmgConsecutiveHits)
 
 ▸▸▸ PERK 0x006C3175 Legendary_Weapon_DmgConsecutiveHits  (via Perk to Apply)
   ranks ?  playable False
@@ -416,8 +419,15 @@ those surface as notes rather than being silently guessed.
   keyword rows, yet includes `_PARENT_mod_WEAPON_GENERIC_Cryo_Split2`
   (`AttackDamage` −40%, `DamageTypeValues dtCryo` +60%) — the entire physical→cryo
   split lives in the parent. In a 90-weapon sweep, 60 weapons had properties
-  reachable only through `Includes[]`. Resolve the chain recursively (parents can
-  include parents) before concluding an OMOD "does nothing".
+  reachable only through `Includes[]`. `walk` and `chase` fold an included
+  template's properties in (`from OMOD …` / `source_omod`), so read those rows
+  before concluding an OMOD "does nothing".
+- **A mod collection's or selector's includes are alternatives, not parents.**
+  The record flags say which: `Mod Collection` (`modcol_*`) and `Mod Selector`
+  OMODs have no properties and include the mods they pick among (collections
+  gate each by `Minimum Level`); every other OMOD's includes are `Mod Template`
+  building blocks. `chase` lists a collection's includes as `alternatives`;
+  chase each one separately.
 - The `dn_UniqueEffect<Type>Damage` keyword family is a **display label**, not a
   mechanism — when it appears with no matching damage row, the damage is in an
   included `_PARENT_` mod, not engine-side magic. Chase `Includes[]` before

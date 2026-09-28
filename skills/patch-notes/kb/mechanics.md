@@ -43,8 +43,9 @@ module docstring lists the limits). It accepts an OMOD, or a PERK/SPEL/ALCH/ENCH
    magnitude is on its EXPL's `Data / Damage Curve Table`. Curves swap wholesale by FormID and
    name (`..._Tier28` → `..._Tier40`), so a bulk get of old and new curves quantifies the delta.
 
-An empty-shell OMOD pulls its effect from `Data/Includes[]` (`_PARENT_*` blocks, recursively);
-`chase` returns nothing useful on it, so chase the include.
+An empty-shell OMOD pulls its effect from the `_PARENT_*` templates in `Data/Includes[]`;
+`chase` folds their rows in as hops carrying `source_omod`. A `modcol_*` collection's includes
+are `alternatives` in `chase` output, each a separate mod to chase.
 
 **Example:** `RD01_Mod_Custom_ResolveBreaker_CustomName` (0x007934FE) → PROJ 0x007CA02E → EXPL
 0x007CA02D.

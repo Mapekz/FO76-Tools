@@ -827,3 +827,58 @@ fn chase_tree_json_uses_snake_case_hop_kind_tags() {
     let effect_json = serde_json::to_value(&effect_tree).unwrap();
     assert_eq!(effect_json["effect_hops"][0]["kind"], json!("base_effect"));
 }
+
+/// A Mod Collection's includes are alternatives: chase lists them (with their
+/// minimum level) and never merges their properties into the collection.
+#[test]
+fn mod_collection_lists_alternatives_without_merging_them() {
+    const COLLECTION_FID: &str = "0x00500100";
+    const ALT_FID: &str = "0x00500101";
+    let mut header = header("OMOD", COLLECTION_FID);
+    header.flags = 0x80; // Mod Collection
+    let collection = json!({
+        "_record_type": "Object Modification",
+        "Data": {"Includes": [{
+            "Mod": {"formid": ALT_FID, "editor_id": "mod_Test_Barrel_Long", "record_type": "OMOD"},
+            "Minimum Level": 20,
+            "Optional": {"value": 0, "name": "False"},
+            "Don't Use All": {"value": 1, "name": "True"},
+        }]},
+    });
+    let alternative = json!({
+        "_record_type": "Object Modification",
+        "Data": {"Properties": [{
+            "Property": {"value": 0, "name": "Weight"},
+            "Function Type": {"value": 1, "name": "MUL+ADD"},
+            "Value 1": 0.5,
+            "Value 2": 0.0,
+        }]},
+    });
+    let mut f = FakeFetcher {
+        records: HashMap::from([
+            (
+                COLLECTION_FID.to_string(),
+                ok_entry(COLLECTION_FID, header, "modcol_Test_Barrels", collection),
+            ),
+            (
+                ALT_FID.to_string(),
+                ok_entry(
+                    ALT_FID,
+                    self::header("OMOD", ALT_FID),
+                    "mod_Test_Barrel_Long",
+                    alternative,
+                ),
+            ),
+        ]),
+        refs_by_type: HashMap::new(),
+    };
+    let tree = chase(&mut f, sel(COLLECTION_FID), &ChaseOptions::default()).unwrap();
+    assert!(
+        tree.hops.is_empty(),
+        "alternatives must not merge: {:?}",
+        tree.hops
+    );
+    assert_eq!(tree.alternatives.len(), 1);
+    assert_eq!(tree.alternatives[0].omod["formid"], json!(ALT_FID));
+    assert_eq!(tree.alternatives[0].minimum_level, 20);
+}

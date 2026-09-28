@@ -42,10 +42,11 @@
 //! *enqueueing*, not whether the root's own mechanisms get classified. A
 //! directly-attached ENCH or PROJ property is also enqueued as its own BFS
 //! node (see [`omod_hops_enqueue`]), so an OMOD → ENCH → MGEF →
-//! granted-perk chain still lands in one `walk` call. `Data.Includes[]`
-//! stubs (the `_PARENT_*` empty-shell OMOD pattern) are named too, straight
-//! off the already-stub-resolved fields — zero extra
-//! fetches.
+//! granted-perk chain still lands in one `walk` call. The properties of
+//! the mod templates an OMOD includes (`_PARENT_*`) render under the
+//! template's name as part of the includer; a `Mod Collection`/`Mod
+//! Selector`'s includes are alternatives, each walked as its own node (see
+//! `crate::chase::IncludeRole`).
 //!
 //! **LVLI roots get resolved drop odds, not a raw field dump.** [`digest_node`]'s
 //! `"LVLI"` arm calls [`crate::lvli::drop_table`] (pool/`Use All`/`Use First
@@ -146,9 +147,10 @@ const GENERIC_NOISE_KEYS: &[&str] = &[
     "Animation Sound",
 ];
 
-/// Cap on `Data.Includes[]` targets enqueued into the walk BFS per OMOD node.
-/// Shares [`crate::chase::OMOD_INCLUDE_ENQUEUE_CAP`] (corpus peak 79 on one
-/// selector; 20 covers the overwhelming majority while bounding BFS breadth).
+/// Cap on a `Mod Collection`/`Mod Selector`'s alternatives enqueued into the
+/// walk BFS per OMOD node. Shares [`crate::chase::OMOD_INCLUDE_ENQUEUE_CAP`]
+/// (corpus peak 79 on one selector; 20 covers the overwhelming majority
+/// while bounding BFS breadth).
 const OMOD_INCLUDE_ENQUEUE_CAP: usize = crate::chase::OMOD_INCLUDE_ENQUEUE_CAP;
 
 /// A digest function's request to enqueue one more hop: the target FormID
@@ -568,11 +570,11 @@ pub struct OmodDigest {
     /// `DirectProperty` hop rather than a separate ENCH-follow pass — see
     /// [`omod_hops_enqueue`].
     pub hops: Vec<Hop>,
-    /// `Data.Includes[]` targets, capped at [`OMOD_INCLUDE_ENQUEUE_CAP`].
-    #[cfg_attr(test, ts(type = "unknown"))]
-    pub includes: Vec<Value>,
-    /// Pre-cap count of valid `Data.Includes[]` rows.
-    pub includes_total: usize,
+    /// A `Mod Collection`/`Mod Selector`'s alternatives, capped at
+    /// [`OMOD_INCLUDE_ENQUEUE_CAP`] and each walked as its own node.
+    pub alternatives: Vec<crate::chase::IncludeAlternative>,
+    /// Pre-cap count of alternatives.
+    pub alternatives_total: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1240,8 +1242,8 @@ fn digest_armo(fields: &Value, level: f32) -> ArmoDigest {
 }
 
 /// Classify an OMOD root's `Data.Properties[]` rows via `esm::chase`'s
-/// mechanism classifier ([`omod_chase`]) and return its classified [`Hop`]s
-/// directly — [`render::render_omod_hops`] turns them into path-sliced
+/// mechanism classifier ([`omod_chase`]) and return its tree (classified
+/// [`Hop`]s plus any alternatives) directly — [`render::render_omod_hops`] turns them into path-sliced
 /// evidence lines. Runs on the already-fetched root — `fields` was already
 /// pulled down by [`walk`]'s own `bulk_get`, so this only spends fetches on
 /// whatever forward/reverse evidence the classifier needs. `ref_limit`
@@ -1250,18 +1252,17 @@ fn digest_armo(fields: &Value, level: f32) -> ArmoDigest {
 /// governs BFS enqueueing.
 fn digest_omod_mechanisms(
     f: &mut impl ChaseFetcher,
-    formid: FormId,
-    sig: &str,
+    header: &crate::reader::RecordHeaderInfo,
     editor_id: &str,
     fields: &Value,
     ref_limit: usize,
-) -> anyhow::Result<Vec<Hop>> {
+) -> anyhow::Result<crate::chase::ChaseTree> {
     // `tree.root` is discarded below (walk already knows the root's identity
     // from its own `WalkNode`) — Name/Description are left `None` since
     // `omod_chase` never reads them back off `root`, only echoes them.
     let root = RootStub {
-        formid: Some(formid.display()),
-        record_type: Some(sig.to_string()),
+        formid: Some(header.form_id.display()),
+        record_type: Some(header.signature.clone()),
         editor_id: Some(editor_id.to_string()),
         name: None,
         description: None,
@@ -1270,8 +1271,7 @@ fn digest_omod_mechanisms(
         depth: crate::chase::DEFAULT_DEPTH,
         ref_limit,
     };
-    let tree = omod_chase(f, root, fields, &opts)?;
-    Ok(tree.hops)
+    omod_chase(f, root, fields, header.flags, &opts)
 }
 
 /// Scan classified [`Hop`]s for the forward-fetched targets worth visiting as
@@ -1279,9 +1279,8 @@ fn digest_omod_mechanisms(
 /// attached projectile override) or an ENCH (so an OMOD → ENCH → MGEF →
 /// granted-perk chain lands in one `walk` call, reusing what the classifier
 /// already knows via `chase::FORWARD_FETCH_TYPES` rather than a separate
-/// re-scan). Include-sourced hops (`source_omod.is_some()`) are skipped —
-/// walk enqueues includes as their own BFS nodes separately (see
-/// [`digest_omod_includes`]).
+/// re-scan). Hops from an included mod template (`source_omod.is_some()`)
+/// are part of the includer's digest and aren't enqueued.
 fn omod_hops_enqueue(hops: &[Hop], enqueue: &mut Vec<EnqueueTarget>) {
     for hop in hops {
         if hop.source_omod.is_some() {
@@ -1303,38 +1302,21 @@ fn omod_hops_enqueue(hops: &[Hop], enqueue: &mut Vec<EnqueueTarget>) {
     }
 }
 
-/// `Data.Includes[]` names another OMOD this one composes from — the
-/// `_PARENT_*` empty-shell pattern (properties compose onto the includer) or
-/// a `modcol_*` collection (each include is an alternative). Nothing in the
-/// data reliably distinguishes the two, so we don't merge: each include is
-/// enqueued into the BFS as its own walked node (same pattern as
-/// [`omod_hops_enqueue`]'s ENCH/PROJ case), bounded by
-/// [`OMOD_INCLUDE_ENQUEUE_CAP`]. Returns the shown (capped) include targets
-/// plus the pre-cap total.
-fn digest_omod_includes(
-    fields: &Value,
+/// Enqueue a `Mod Collection`/`Mod Selector`'s alternatives (capped at
+/// [`OMOD_INCLUDE_ENQUEUE_CAP`]) and return the shown ones plus the total.
+fn digest_omod_alternatives(
+    mut alternatives: Vec<crate::chase::IncludeAlternative>,
     editor_id: &str,
     enqueue: &mut Vec<EnqueueTarget>,
-) -> (Vec<Value>, usize) {
-    let Some(includes) = fields.pointer("/Data/Includes").and_then(Value::as_array) else {
-        return (Vec::new(), 0);
-    };
-    let mut shown = Vec::new();
-    let mut total = 0usize;
-    for inc in includes {
-        let Some(target) = inc.get("Mod").filter(|v| is_ref_stub(v)) else {
-            continue;
-        };
-        total += 1;
-        if shown.len() >= OMOD_INCLUDE_ENQUEUE_CAP {
-            continue;
+) -> (Vec<crate::chase::IncludeAlternative>, usize) {
+    let total = alternatives.len();
+    alternatives.truncate(OMOD_INCLUDE_ENQUEUE_CAP);
+    for alt in &alternatives {
+        if let Some(fid) = stub_formid(Some(&alt.omod)) {
+            enqueue.push((fid, format!("alternative in {editor_id}")));
         }
-        if let Some(fid) = stub_formid(Some(target)) {
-            enqueue.push((fid, format!("include of {editor_id}")));
-        }
-        shown.push(target.clone());
     }
-    (shown, total)
+    (alternatives, total)
 }
 
 fn digest_proj(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> ProjDigest {
@@ -1450,13 +1432,13 @@ pub fn build_refs_digest(rows: &[RefRow]) -> RefsDigest {
 /// spends on drop-tree nesting.
 fn digest_node(
     f: &mut impl ChaseFetcher,
-    sig: &str,
-    formid: FormId,
+    header: &crate::reader::RecordHeaderInfo,
     editor_id: &str,
     fields: &Value,
     opts: &WalkOptions,
     remaining_depth: usize,
 ) -> anyhow::Result<(Digest, Vec<EnqueueTarget>)> {
+    let (sig, formid) = (header.signature.as_str(), header.form_id);
     let (ref_limit, level) = (opts.ref_limit, opts.level);
     let mut enqueue = Vec::new();
     let digest = match sig {
@@ -1482,18 +1464,19 @@ fn digest_node(
         "RACE" => Digest::Race(digest_race(fields, level)),
         "ARMO" => Digest::Armo(digest_armo(fields, level)),
         "OMOD" => {
-            // Classify Data.Properties[] via chase's mechanism classifier
-            // first (ENCH/PROJ direct attachments are enqueued from the same
-            // classified hops — see `omod_hops_enqueue` — rather than a
-            // separate re-scan), then the Includes[] pointers (enqueued as
-            // their own BFS nodes — no property merge).
-            let hops = digest_omod_mechanisms(f, formid, sig, editor_id, fields, ref_limit)?;
-            omod_hops_enqueue(&hops, &mut enqueue);
-            let (includes, includes_total) = digest_omod_includes(fields, editor_id, &mut enqueue);
+            // Classify Data.Properties[] (and those of included mod
+            // templates) via chase's mechanism classifier; ENCH/PROJ direct
+            // attachments are enqueued from the same classified hops (see
+            // `omod_hops_enqueue`), and a collection's alternatives as their
+            // own BFS nodes.
+            let tree = digest_omod_mechanisms(f, header, editor_id, fields, ref_limit)?;
+            omod_hops_enqueue(&tree.hops, &mut enqueue);
+            let (alternatives, alternatives_total) =
+                digest_omod_alternatives(tree.alternatives, editor_id, &mut enqueue);
             Digest::Omod(OmodDigest {
-                hops,
-                includes,
-                includes_total,
+                hops: tree.hops,
+                alternatives,
+                alternatives_total,
             })
         }
         _ => Digest::Generic(digest_generic(fields)),
@@ -1566,8 +1549,7 @@ pub fn walk(
 
         let (digest, enqueue) = digest_node(
             f,
-            &header.signature,
-            formid,
+            &header,
             &editor_id,
             &fields,
             opts,
