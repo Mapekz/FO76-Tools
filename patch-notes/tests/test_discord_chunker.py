@@ -93,14 +93,12 @@ class TestConvertToDiscordMdLines(unittest.TestCase):
 
 class TestNoChunkEndsWithHeading(unittest.TestCase):
     def test_forced_boundary_regression(self):
-        # Sized so that, under the OLD blank-line-only splitter, the
-        # accumulated chunk would overflow right after "## Section Two"'s
-        # heading + its trailing blank line, and the nearest blank line
-        # found by a naive backward scan is that very one -- flushing a
-        # chunk that ends on the heading and starting the next chunk on an
-        # orphaned body with no heading at all. Confirmed against a
-        # reimplementation of the pre-refactor algorithm during development:
-        # it produces a chunk ending in "**── Section Two ──**".
+        # Sized so that the accumulated chunk overflows right after
+        # "## Section Two"'s heading + its trailing blank line, and the
+        # nearest blank line found by a naive backward scan is that very one.
+        # A blank-line-only splitter would flush a chunk ending on the
+        # heading ("**── Section Two ──**") and start the next chunk on an
+        # orphaned body with no heading at all.
         doc = (
             "## Section One\n"
             + ("X" * 1700) + "\n"

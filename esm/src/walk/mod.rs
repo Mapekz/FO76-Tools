@@ -66,20 +66,20 @@
 //! as `{"formid", "editor_id", "record_type"}` (the same annotation
 //! `esm get --resolve stub` produces) — no follow-up per-reference fetch
 //! needed, including for a GLOB reference's own `Value` (a value-bearing
-//! leaf type, see `src/decode/leaf_values.rs`), which Stub resolution now
+//! leaf type, see `src/decode/leaf_values.rs`), which Stub resolution
 //! inlines directly onto the reference too.
 //!
-//! Two responsibilities stay with the caller (`cmd_walk` in
-//! `src/bin/cli/walk.rs`) rather than living in this module, since neither fits
+//! Two responsibilities stay with the caller (`Op::Walk`'s dispatch in
+//! `src/ops/analysis.rs`) rather than living in this module, since neither fits
 //! through `RecordSource`'s narrow bulk_get/refs-with-type-filter seam:
 //! - **not-found → search fallback**: when the root selector doesn't
 //!   resolve, [`walk`] returns a [`WalkResult`] with [`WalkResult::not_found`]
-//!   set and an empty `matches` list; the CLI driver runs one `Op::Search`
-//!   and fills `matches` in before rendering.
+//!   set and an empty `matches` list; the caller runs one
+//!   `Database::search` and fills `matches` in before rendering.
 //! - **`--refs` reverse-reference summary**: needs an *unfiltered* reverse
 //!   `refs` walk (every referencing record type, not just SPEL/PERK), which
 //!   `RecordSource::refs`'s mandatory type-filter parameter can't express.
-//!   The CLI driver runs one unfiltered `Op::ReferencedBy` call and passes
+//!   The caller runs one unfiltered reverse-reference walk and passes
 //!   the raw rows to [`build_refs_digest`] (a pure function, easily unit
 //!   tested without any fetcher).
 
@@ -220,8 +220,8 @@ pub struct WalkResult {
 
 /// Set instead of `nodes` when the root selector's initial `bulk_get` came
 /// back with an error entry. `matches` starts empty — [`walk`] itself never
-/// searches (see module docs); `Op::Walk`'s dispatch (or, pre-D4, the CLI
-/// driver) fills it in via one search call before rendering/serializing.
+/// searches (see module docs); `Op::Walk`'s dispatch fills it in via one
+/// search call before rendering/serializing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -235,8 +235,8 @@ pub struct NotFound {
 /// [`Digest`]. `--json` serializes `digest` as real structured data (an
 /// externally-tagged `{"kind": "...", ...}` object, one shape per record
 /// type); the plain-text CLI path renders it via [`render::render_digest`],
-/// two-space-indented relative to the node header (matching the TS
-/// original's `emit(2, ...)` sub-bullets) — see [`render::render_text`].
+/// two-space-indented relative to the node header — see
+/// [`render::render_text`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -321,7 +321,7 @@ pub enum Digest {
     Lvli(LvliDigest),
     Omod(OmodDigest),
     /// NPC_: level-keyed curves (Properties[] AV curves) plus the same
-    /// trimmed field tree the wildcard arm used to show for this type — see
+    /// trimmed field tree `digest_generic` produces — see
     /// [`digest_npc`].
     Npc(NpcDigest),
     /// RACE: level-keyed curves (Properties[] AV curves, EWS Actor Cost)
@@ -612,8 +612,8 @@ pub struct GenericDigest {
 }
 
 /// NPC_: level-keyed curves (`Properties[].Curve Table`, AV-labeled) plus
-/// the same trimmed field tree the wildcard [`GenericDigest`] arm used to
-/// show for this type before it got its own arm — see [`digest_npc`]. Kept
+/// the same trimmed field tree `digest_generic` produces — see
+/// [`digest_npc`]. Kept
 /// as its own struct rather than sharing one shape with [`RaceDigest`]/
 /// [`ArmoDigest`] (all three happen to be `{level, level_curves, generic}`
 /// today) — a deliberate choice, not an oversight: each is free to diverge
@@ -892,7 +892,7 @@ fn digest_magic_item(
 
     // One batched bulk_get for every MGEF (Base Effect) reference across all
     // effects. Magnitude/Duration GLOB refs and condition-operand GLOB refs
-    // need no fetch of their own anymore — the Stub-depth fetch that
+    // need no fetch of their own — the Stub-depth fetch that
     // produced `fields` already inlined their `Value` directly onto each
     // stub (see `src/decode/leaf_values.rs`).
     let mut want: Vec<FormId> = Vec::new();
@@ -997,8 +997,8 @@ fn digest_magic_item(
 
 /// PERK: description; ranks/playable/next; per-effect Ability (enqueue) or
 /// Entry Point (fn/value/AV + perk conditions), or `NO effects` when the
-/// bonus is engine/script-side. Perk-entry field misattribution is already
-/// fixed upstream in the decoder, so no repair shim is needed here.
+/// bonus is engine/script-side. The decoder attributes perk-entry fields
+/// correctly, so no repair shim is needed here.
 fn digest_perk(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> anyhow::Result<PerkDigest> {
     let data = fields.get("Data");
     let description = fields
@@ -1177,9 +1177,9 @@ fn digest_generic(fields: &Value) -> GenericDigest {
 
 /// Shared internal helper behind [`digest_npc`]/[`digest_race`]/
 /// [`digest_armo`]: level-keyed curves for `sig` plus the same trimmed
-/// field tree [`digest_generic`] already computes for every other type —
-/// these three record types don't lose their generic field dump just
-/// because they now also get curve evaluation.
+/// field tree [`digest_generic`] computes for every other type — these
+/// three record types keep their generic field dump alongside curve
+/// evaluation.
 fn digest_generic_leveled(
     sig: &str,
     fields: &Value,

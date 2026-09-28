@@ -17,8 +17,8 @@
 //!
 //! Automates the "chase pattern" for unique-weapon OMOD effects documented
 //! under "Chasing a unique-weapon effect" in
-//! `patch-notes/skill/kb/mechanics.md`, generalized past the
-//! OMOD-only original to also accept PERK, SPEL, ALCH, and ENCH selectors
+//! `patch-notes/skill/kb/mechanics.md`, generalized past OMODs to also
+//! accept PERK, SPEL, ALCH, and ENCH selectors
 //! directly — the record types an OMOD's own forward-fetch hops resolve
 //! into. Read the KB section first — this module is a mechanical
 //! implementation of the walks it describes, nothing more.
@@ -111,7 +111,8 @@ pub const DEFAULT_REF_LIMIT: usize = 25;
 /// Cap on `Data.Includes[]` targets expanded per OMOD level (chase hop
 /// expansion and walk BFS enqueue share this bound). Corpus include-breadth
 /// peaks at 79 on one selector OMOD; 20 covers the overwhelming majority
-/// while keeping chase/walk BFS bounded and fail-fast per ADR 0001.
+/// while keeping chase/walk BFS bounded and fail-fast per
+/// `docs/adr/0001-walk-interactive-chase-pipeline-json.md`.
 pub const OMOD_INCLUDE_ENQUEUE_CAP: usize = 20;
 
 /// Max depth when expanding `Data.Includes[]` chains inside [`omod_chase`].
@@ -222,8 +223,7 @@ pub struct ChaseTree {
     pub alternatives: Vec<IncludeAlternative>,
 }
 
-/// The chased record's own identity — mirrors the Python prototype's
-/// `omod_stub` dict, generalized to any root type [`chase`] accepts.
+/// The chased record's own identity, for any root type [`chase`] accepts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -294,14 +294,15 @@ pub struct Hop {
     /// inside [`classify_property_row`]'s internal `FetchDest`) so
     /// `esm::walk`'s renderer doesn't have to re-derive the same fact by
     /// string-matching `target.record_type == "AVIF"`. Additive to the
-    /// frozen chase JSON shape (ADR 0001's addendum).
+    /// frozen chase JSON shape
+    /// (`docs/adr/0001-walk-interactive-chase-pipeline-json.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolution: Option<FetchDirection>,
     /// When this hop's property row comes from a mod template the root
     /// includes (see [`IncludeRole::Compose`]) rather than the root OMOD
     /// itself — the included OMOD's stub.
     /// `None` for the root's own properties (additive to the frozen chase
-    /// JSON shape; see ADR 0001).
+    /// JSON shape; see `docs/adr/0001-walk-interactive-chase-pipeline-json.md`).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(type = "unknown"))]
     pub source_omod: Option<Value>,
@@ -374,7 +375,7 @@ pub struct Evidence {
 }
 
 /// What an [`Evidence`] found, by how it was found. Untagged: the JSON is the
-/// variant's own fields (the chase JSON contract predates the type).
+/// variant's own fields (the frozen chase JSON contract carries no tag).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
@@ -1322,9 +1323,9 @@ fn build_root_stub(entry: &BulkRecordEntry, fields: &Value) -> RootStub {
 /// `Data.Properties[]` walk ([`omod_chase`]); PERK/SPEL/ALCH/ENCH get the
 /// `Effects[]` walk ([`effect_chase`]); anything else is rejected.
 ///
-/// `f` is anything implementing [`RecordSource`] — normally a
-/// `Backend`-backed fetcher (see `cmd_chase` in `src/bin/cli/walk.rs`), or a fake
-/// for tests (see `tests/chase.rs`).
+/// `f` is anything implementing [`RecordSource`] — normally the
+/// `Database`-backed `DbSource` behind `Op::Chase` (`src/ops/analysis.rs`),
+/// or a fake for tests (see `tests/chase.rs`).
 pub fn chase(
     f: &mut impl RecordSource,
     selector: RecordSel,
@@ -1600,9 +1601,10 @@ fn effect_chase(
     })
 }
 
-// No rendering primitives remain in this module — `esm::walk::render` owns
-// all of them (`fmt_stub`, `summarize_effect`, ...), matching the module
-// docs' and ADR-0001's "chase has no human text renderer of its own".
+// This module has no rendering primitives — `esm::walk::render` owns all of
+// them (`fmt_stub`, `summarize_effect`, ...), matching the module docs' and
+// `docs/adr/0001-walk-interactive-chase-pipeline-json.md`'s "chase has no
+// human text renderer of its own".
 
 // ─── colocated unit tests for private helpers ───────────────────────────────
 // `first_array_container`/`walk_path`/`named`/`is_formid_stub`/`stub` are

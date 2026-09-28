@@ -32,11 +32,9 @@ only_type: string | null,
 /**
  * Minimum appearance count for a `(leaf_name, value)` pair to be treated
  * as a serializer default and stripped when `form_version`s differ
- * (issue #22). Measured on the 20260710→20260717 snapshot: N=100 lands
- * `changed` at 10,571 records (also stripping 3,484 padding-zeroed `_raw`
- * leaves), collapsing 40 distinct serializer-default rules — near the
- * issue's ~11.6K true-churn estimate. Wiring this to CLI/config is issue
- * #15 — the field exists so that can land without another diff-engine
- * change.
+ * (noise stage 5, calibrated). Measured on the 20260710→20260717
+ * snapshot: N=100 lands `changed` at 10,571 records (also stripping 3,484
+ * padding-zeroed `_raw` leaves), collapsing 40 distinct serializer-default
+ * rules — near the ~11.6K true-churn estimate.
  */
 restamp_default_min_count: number, };

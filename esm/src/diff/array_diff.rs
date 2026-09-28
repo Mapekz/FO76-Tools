@@ -1,7 +1,8 @@
 //! Per-element array diffing — the four pairing strategies [`array_diff`]
 //! (called from [`super::json_diff`]'s array arm) chooses between, and the
-//! `_array_diff` envelope shape ADR 0005 freezes: `strategy` is one of
-//! `keyed`/`positional`/`set`/`unkeyed`, alongside `key_fields`/`count_from`/
+//! `_array_diff` envelope shape
+//! `docs/adr/0005-element-identity-owned-by-rust.md` freezes: `strategy` is
+//! one of `keyed`/`positional`/`set`/`unkeyed`, alongside `key_fields`/`count_from`/
 //! `count_to`/`added`/`removed`/`changed`/`unchanged_count`, and
 //! `reorder_only: true` when the two sides hold the same elements in a
 //! different order (see [`is_reorder_only`]).
@@ -83,7 +84,7 @@ fn unkeyed_array_diff(a: &[Value], b: &[Value]) -> Value {
 /// Order-preserving rather than a multiset intersection — a
 /// multiset diff would report a pure reorder (e.g. two conditions in a
 /// `GetRandomPercent` cascade swapping position, where order changes
-/// behavior) as no change at all, which is worse than today's whole-list
+/// behavior) as no change at all, which is worse than a whole-list
 /// dump for exactly the arrays `unkeyed` exists to describe honestly. LCS
 /// keeps one copy of a moved element aligned and reports the move as a
 /// removed + added pair instead — a plain insertion or removal still trims

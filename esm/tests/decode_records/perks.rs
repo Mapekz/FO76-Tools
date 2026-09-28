@@ -94,9 +94,8 @@ fn perk_test_tame_decodes_correctly() {
 /// PERK 0x0085B9A0 — `HTO_Legendary_Armor_RagingPerk` — decodes `EPF2` to an
 /// integer instead of raw hex.
 ///
-/// Regression test for the originally reported bug: this effect has
-/// `Function Type` = 5 ("Spell Item"), so `EPF2` must decode as the u32
-/// "Unknown Spell Value" field rather than `{"hex": "03000000"}`.
+/// This effect has `Function Type` = 5 ("Spell Item"), so `EPF2` must decode
+/// as the u32 "Unknown Spell Value" field rather than `{"hex": "03000000"}`.
 #[test]
 fn perk_raging_armor_epf2_decodes_to_int() {
     // Verbatim subrecords from `esm get <esm> HTO_Legendary_Armor_RagingPerk --raw`.
@@ -218,11 +217,11 @@ fn perk_ability_then_entry_point_effects_do_not_cross_contaminate_optional_trail
     assert_eq!(conditions.len(), 1, "expected exactly 1 Perk Condition");
 }
 
-/// PERK 0x003DE597 — `Suppressor_TargetDebuff` — regression test for a bug
-/// where an `EPFT`=8 ("Actor Value and Value") entry-point effect with an
-/// 8-byte `EPFD` payload (FormID + float) was decoded as a single bare
-/// `float`, reinterpreting the leading FormID bytes as garbage (e.g.
-/// `6.211654813182083e-39` for FormID `0x0043A391`) and silently dropping the
+/// PERK 0x003DE597 — `Suppressor_TargetDebuff` — an `EPFT`=8 ("Actor Value
+/// and Value") entry-point effect with an 8-byte `EPFD` payload (FormID +
+/// float) must decode as a struct. Decoding it as a single bare `float` would
+/// reinterpret the leading FormID bytes as garbage (e.g.
+/// `6.211654813182083e-39` for FormID `0x0043A391`) and silently drop the
 /// trailing float value.
 ///
 /// Ground truth (TES5Edit `wbEPFDAVDataDecider`,
@@ -284,8 +283,8 @@ fn perk_suppressor_target_debuff_actor_value_and_value_decodes_formid() {
     );
 }
 
-/// PERK 0x00913B5F — `custom_TickettoRevenge_Perk` — companion regression
-/// case for the fix above: an `EPFT`=8 effect whose `EPFD` payload is only 4
+/// PERK 0x00913B5F — `custom_TickettoRevenge_Perk` — companion case to the
+/// test above: an `EPFT`=8 effect whose `EPFD` payload is only 4
 /// bytes (the actor value instead lives in the sibling `EPF3` FormID field)
 /// must keep decoding as a bare `Float`, not the `{Actor Value, Float}`
 /// struct.

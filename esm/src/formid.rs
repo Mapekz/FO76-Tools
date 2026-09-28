@@ -124,7 +124,7 @@ pub fn parse_form_id_input(s: &str) -> anyhow::Result<FormId> {
 /// pure-decimal-looking input like `18000`, read as *hex* `0x18000` by
 /// `parse_formid`, not decimal) rather than an EditorID.
 ///
-/// Used to auto-route ambiguous CLI/server input to the right lookup. Anything
+/// Used to auto-route ambiguous CLI and addon input to the right lookup. Anything
 /// with non-hex characters, or longer than 8 hex digits, is treated as an
 /// EditorID. Short all-hex EditorIDs (e.g. `cafe`) are read as FormIDs; an
 /// explicit `--edid` flag disambiguates those cases. There is no implicit

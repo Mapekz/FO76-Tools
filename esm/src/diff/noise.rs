@@ -7,8 +7,8 @@
 //!    sides' Localized flags differ;
 //! 3. version-gated — pure appearances/disappearances a schema version gate
 //!    explains, when the form versions differ;
-//! 4. restamp (#18) — re-save appearances no gate explains, same condition;
-//! 5. calibrated (#22) — padding zeroing and engine-default appearances on
+//! 4. restamp — re-save appearances no gate explains, same condition;
+//! 5. calibrated — padding zeroing and engine-default appearances on
 //!    restamped records, which needs frequencies across every record.
 //!
 //! [`suppress_record`] runs stages 1–4 per record; stage 5
@@ -230,8 +230,8 @@ fn member_subtree_crosses_gate(
 /// A pure appearance is removed only when the corresponding top-level schema
 /// member or one of its descendants changes from inactive to active. A pure
 /// disappearance is handled symmetrically for active-to-inactive transitions.
-/// The former blanket `null -> X` rule was incorrect: it discarded genuine new
-/// ungated subrecords and hid the addition half of field swaps.
+/// A blanket `null -> X` rule would discard genuine new ungated subrecords
+/// and hide the addition half of field swaps.
 pub(crate) fn strip_version_gated_transitions(
     field_changes: &mut Value,
     schema: &Schema,
@@ -265,7 +265,7 @@ pub(crate) fn strip_version_gated_transitions(
 }
 
 // ---------------------------------------------------------------------------
-// Restamp-appearance suppression (issue #18)
+// Restamp-appearance suppression (stage 4)
 // ---------------------------------------------------------------------------
 //
 // `strip_version_gated_transitions` only catches noise explained by a schema
@@ -292,7 +292,7 @@ pub(crate) fn strip_version_gated_transitions(
 // loop, so the two stay independently testable.
 
 /// `(record signature, top-level member name)` pairs whose `null -> X`
-/// appearance is known to be a subrecord the game's serializer now writes
+/// appearance is known to be a subrecord the game's newer serializer writes
 /// explicitly on re-save where an older serializer left it implicit — not an
 /// authored edit. Directional only: an `X -> null` disappearance of one of
 /// these members could be a genuine authored unlink (e.g. clearing a PNAM
@@ -325,8 +325,8 @@ fn is_zero_raw_blob(v: &Value) -> bool {
 /// Rule (b): a leaf `{"from": F, "to": T}` change is restamp noise when
 /// either side is `null` and the other is an all-zero `_raw` blob
 /// ([`is_zero_raw_blob`]). Symmetric — zero-padding growing OR shrinking
-/// across a re-save carries no information in either direction (see design
-/// review Q2, in contrast to rule (c) which stays directional).
+/// across a re-save carries no information in either direction (in contrast
+/// to rule (c), which stays directional).
 fn is_zero_raw_transition(from: &Value, to: &Value) -> bool {
     (from.is_null() && is_zero_raw_blob(to)) || (to.is_null() && is_zero_raw_blob(from))
 }
@@ -478,10 +478,11 @@ pub(crate) fn strip_localization_flip_text(field_changes: &mut Value) -> usize {
 }
 
 // ---------------------------------------------------------------------------
-// Restamp calibrated-default + padding-zero suppression (issue #22)
+// Restamp calibrated-default + padding-zero suppression (stage 5)
 // ---------------------------------------------------------------------------
 //
-// After #18, a PTS form_version bump still leaves two residual noise shapes:
+// After the restamp pass, a PTS form_version bump still leaves two residual
+// noise shapes:
 //
 //   (d) padding-zeroing — a `_raw` hex leaf whose value goes from garbage
 //       bytes to all zeros, e.g. `{"hex": {"from": "3809c7", "to": "000000"}}`.
@@ -497,7 +498,7 @@ pub(crate) fn strip_localization_flip_text(field_changes: &mut Value) -> usize {
 //       `Model.Enlighten Auto UV` / `Female.World Model.Enlighten Auto UV` /
 //       `Male.World Model.Enlighten Auto UV` collapses into one rule.
 //
-// Both run only when form_versions differ (same gate as #18), and only when
+// Both run only when form_versions differ (same gate as stage 4), and only when
 // `DiffOptions::suppress_noise` is on. The calibrated pass needs a global
 // frequency count, so it runs after the per-record loop.
 
@@ -526,7 +527,7 @@ fn is_from_to_leaf(v: &Value) -> bool {
 
 /// True when a `hex` leaf goes from padding bytes to all zeros: the residual
 /// `_raw` shape `{"hex": {"from": <str>, "to": <all-zeros, non-empty>}}`
-/// once `json_diff` has dropped the equal `_raw: true` (issue #22 rule (d)).
+/// once `json_diff` has dropped the equal `_raw: true` (rule (d)).
 fn is_padding_zeroed_hex_diff(from: &Value, to: &Value) -> bool {
     let (Some(from), Some(to)) = (from.as_str(), to.as_str()) else {
         return false;
@@ -536,7 +537,7 @@ fn is_padding_zeroed_hex_diff(from: &Value, to: &Value) -> bool {
 
 /// Walk every from/to leaf under a `field_changes` tree, invoking `f(path, leaf)`.
 /// Paths use `.` for nesting and append `[]` when descending into an
-/// `_array_diff` envelope (matching the issue #22 leaf-name examples).
+/// `_array_diff` envelope (matching the rule (e) leaf-name examples).
 fn walk_diff_leaves(v: &Value, path: &str, f: &mut dyn FnMut(&str, &Value)) {
     let Some(map) = v.as_object() else {
         return;
@@ -586,7 +587,7 @@ type DefaultKey = (String, String);
 type AppearanceCounts = HashMap<DefaultKey, (Value, usize)>;
 
 /// Collect global appearance frequencies and the "seen as real edit" set
-/// across every `changed` record (issue #22 pass 1).
+/// across every `changed` record (the calibrated pass's first half).
 fn collect_restamp_default_stats(
     changed: &[RecordDiff],
 ) -> (AppearanceCounts, HashSet<DefaultKey>) {
@@ -629,7 +630,7 @@ fn collect_restamp_default_stats(
     (appearance_counts, real_edits)
 }
 
-/// Strip every padding-zeroed `_raw` hex leaf (issue #22 rule (d)); returns
+/// Strip every padding-zeroed `_raw` hex leaf (rule (d)); returns
 /// how many.
 fn strip_padding_zeroed(field_changes: &mut Value) -> usize {
     let Some(map) = field_changes.as_object_mut() else {
@@ -660,7 +661,7 @@ fn strip_calibrated_defaults(field_changes: &mut Value, suppressible: &HashSet<D
     });
 }
 
-/// Issue #22 second-stage suppression: padding-zeroing + calibrated
+/// Stage 5 suppression: padding-zeroing + calibrated
 /// appearance defaults. Mutates `changed` in place (drops emptied restamp
 /// records), updates `suppressed_counts`, and returns the audit list of
 /// auto-classified defaults (sorted by count descending).
@@ -1017,7 +1018,7 @@ mod tests {
     }
 
     // `strip_restamp_appearances` and its helpers are private, so these live
-    // here too (issue #18). Same over-suppression risk as above, plus a new
+    // here too. Same over-suppression risk as above, plus a new
     // one specific to this pass: rule (b)/(c) are content-based heuristics,
     // not schema-verified, so the tests lean extra hard on the boundary
     // cases (non-zero hex, wrong signature/member, wrong direction).
@@ -1033,7 +1034,7 @@ mod tests {
 
     #[test]
     fn restamp_suppresses_zero_raw_to_null_disappearance() {
-        // Symmetric with the appearance case above (design review Q2): the
+        // Symmetric with the appearance case above: the
         // serializer shrinking away all-zero padding carries no information
         // either, same as it growing.
         let mut fc = json!({
@@ -1199,7 +1200,7 @@ mod tests {
 
     #[test]
     fn restamp_keeps_materialized_member_disappearance() {
-        // Directional guard (design review Q2): unlike rule (b), rule (c)
+        // Directional guard: unlike rule (b), rule (c)
         // must NOT be symmetric — an authored unlink of a PNAM chain must
         // stay visible.
         let fc = json!({
@@ -1239,7 +1240,7 @@ mod tests {
 
     #[test]
     fn materialized_on_resave_members_are_still_ungated_in_live_schema() {
-        // Canary (design review Q6 #9): MATERIALIZED_ON_RESAVE exists only
+        // Canary: MATERIALIZED_ON_RESAVE exists only
         // because the live schema does NOT version-gate these members — if
         // the extractor ever adds proper from_version/below_version gating
         // for one of them, `strip_version_gated_transitions` would already
@@ -1267,7 +1268,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------
-    // Issue #22: padding-zeroing + calibrated appearance-default suppression
+    // Stage 5: padding-zeroing + calibrated appearance-default suppression
     // -------------------------------------------------------------------
 
     fn stub_diff(form_id: &str, record_type: &str, field_changes: Value) -> RecordDiff {
@@ -1311,7 +1312,7 @@ mod tests {
             &json!("3809c7"),
             &json!("000001")
         ));
-        // Appearance (null → zero raw) is #18's job, not this shape.
+        // Appearance (null → zero raw) is the restamp pass's job, not this shape.
         let mut appearance =
             json!({"Unknown": {"from": null, "to": {"hex": "000000", "_raw": true}}});
         assert_eq!(strip_padding_zeroed(&mut appearance), 0);
@@ -1419,7 +1420,7 @@ mod tests {
     fn calibrated_disappearance_does_not_poison_appearance_default() {
         // A `V → null` disappearance records the old value on `from`, but that
         // must NOT block suppressing `null → V` appearances of the same
-        // serializer default (issue #22: only authored `to` values poison).
+        // serializer default (only authored `to` values poison).
         let default = json!("0x0000000F");
         let mut changed = vec![
             stub_diff(

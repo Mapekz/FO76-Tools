@@ -186,8 +186,8 @@ fn json_diff_nested_object_recurses() {
 
 #[test]
 fn json_diff_array_of_numbers_uses_set_diff() {
-    // Arrays of primitives (numbers, strings, ...) are no longer opaque —
-    // they get a multiset "set" diff instead.
+    // Arrays of primitives (numbers, strings, ...) are not opaque — they get
+    // a multiset "set" diff.
     let a = json!({"items": [1, 2, 3]});
     let b = json!({"items": [1, 2, 4]});
     let d = json_diff(&a, &b);
@@ -401,22 +401,21 @@ fn array_diff_lvli_alternate_field_names_canonicalize_to_same_key() {
 #[test]
 fn array_diff_lvli_duplicate_keys_widen_to_honest_add_remove() {
     // Two entries share the same (Reference, Minimum Level) key on both
-    // sides. Before key-uniqueness validation existed, this paired
-    // positionally within the group (1st with 1st, 2nd with 2nd) and
-    // reported a `changed` entry (Count 2 -> 9) — a guess with no evidence
-    // behind it: nothing about the data says the 2nd occurrence on the old
-    // side is "the same" leveled-list row as the 2nd occurrence on the new
-    // side, only that they happened to sort into the same list position.
+    // sides. Pairing them positionally within the group (1st with 1st, 2nd
+    // with 2nd) would report a `changed` entry (Count 2 -> 9) — a guess with
+    // no evidence behind it: nothing about the data says the 2nd occurrence
+    // on the old side is "the same" leveled-list row as the 2nd occurrence on
+    // the new side, only that they sort into the same list position.
     //
-    // `widen_key_spec_until_unique` now detects the (Reference, Minimum
+    // `widen_key_spec_until_unique` detects that the (Reference, Minimum
     // Level) group isn't unique on either side and widens with the next
     // available scalar field, `Count` — which makes every group unique, but
-    // also means `Count` is now part of the identity, so a genuine "this
-    // row's count changed" can no longer be expressed as a `changed` entry;
-    // it reports as the old Count=2 row removed and a new Count=9 row
-    // added. This is deliberately the more honest of the two readings: a
-    // stricter key can only turn an unsupported `changed` guess into an
-    // honest `added` + `removed`, never the reverse.
+    // also makes `Count` part of the identity, so a genuine "this row's count
+    // changed" cannot be expressed as a `changed` entry; it reports as the
+    // old Count=2 row removed and a new Count=9 row added. This is
+    // deliberately the more honest of the two readings: a stricter key can
+    // only turn an unsupported `changed` guess into an honest `added` +
+    // `removed`, never the reverse.
     let a = json!({"Entries": [
         {"Leveled List Entry": {"Reference": "0x00000010", "Minimum Level": 5, "Count": 1}},
         {"Leveled List Entry": {"Reference": "0x00000010", "Minimum Level": 5, "Count": 2}},
@@ -447,12 +446,11 @@ fn array_diff_lvli_duplicate_keys_widen_to_honest_add_remove() {
 fn array_diff_location_reference_reshuffle_is_omitted_from_parent() {
     // LCTN reference-list elements (`{"Loc Ref Type", "Ref", "World/Cell",
     // "Grid X", "Grid Y"}`) have three FormID-shaped members, so heuristic
-    // 12 (exactly one) never applied before this composite key existed —
-    // without it, a reshuffle with no real edit fell to `positional`, and
-    // every element read as changed (measured: 81% of all array-diff
-    // envelopes in a real run, 68,067 flagged index rows). With
-    // `(Ref, Loc Ref Type)` keying,
-    // a pure reshuffle now diffs to nothing, same as any other keyed array.
+    // 12 (exactly one) does not apply — without the composite key, a
+    // reshuffle with no real edit falls to `positional` and every element
+    // reads as changed (measured: 81% of all array-diff envelopes in a real
+    // run, 68,067 flagged index rows). With `(Ref, Loc Ref Type)` keying, a
+    // pure reshuffle diffs to nothing, same as any other keyed array.
     let a = json!({"Refs": [
         {"Loc Ref Type": "0x00000011", "Ref": "0x00000001", "World/Cell": "0x00000099", "Grid X": 7, "Grid Y": 36},
         {"Loc Ref Type": "0x00000012", "Ref": "0x00000002", "World/Cell": "0x00000099", "Grid X": 8, "Grid Y": 40},
@@ -742,10 +740,10 @@ fn array_diff_unkeyed_fallback_unkeyable_length_mismatch() {
 #[test]
 fn array_diff_unkeyed_insertion_trims_to_the_real_delta() {
     // Same unkeyable `{"X", "Y"}` shape as above, but the new list is the
-    // old one plus one appended element. Before LCS trimming, `unkeyed`
-    // reported both whole lists — measured on a real run, 87% of elements
-    // reported this way were byte-identical on both sides. The trim must
-    // recognize the shared element and report only the real insertion.
+    // old one plus one appended element. Reporting both whole lists would
+    // be mostly noise — measured on a real run, 87% of elements reported that
+    // way were byte-identical on both sides. The LCS trim must recognize the
+    // shared element and report only the real insertion.
     let a = json!({"Pairs": [
         {"X": 1, "Y": 2},
     ]});
@@ -972,8 +970,8 @@ fn removed_record_gets_full_body_from_a() {
 
 #[test]
 fn added_record_any_type_gets_body() {
-    // BOOK is not in the old ADDED_DETAIL_TYPES safelist — it must still get
-    // a decoded body now that every added type qualifies.
+    // Every added record gets a decoded body, whatever its type; BOOK stands
+    // in for a type with no special handling.
     let mut subs = Vec::new();
     append_subrecord(&mut subs, b"EDID", &cstr("NewBook"));
     let mut recs = Vec::new();
@@ -1304,7 +1302,7 @@ fn suppress_noise_false_keeps_position_only_refr_change() {
 }
 
 // ---------------------------------------------------------------------------
-// Restamp-appearance suppression (issue #18): call-site gating
+// Restamp-appearance suppression: call-site gating
 // ---------------------------------------------------------------------------
 
 /// `strip_restamp_appearances` is only invoked when `meta_a.form_version !=

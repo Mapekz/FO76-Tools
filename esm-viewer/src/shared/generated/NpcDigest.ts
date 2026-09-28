@@ -4,8 +4,8 @@ import type { LevelCurveRow } from "./LevelCurveRow";
 
 /**
  * NPC_: level-keyed curves (`Properties[].Curve Table`, AV-labeled) plus
- * the same trimmed field tree the wildcard [`GenericDigest`] arm used to
- * show for this type before it got its own arm — see [`digest_npc`]. Kept
+ * the same trimmed field tree `digest_generic` produces — see
+ * [`digest_npc`]. Kept
  * as its own struct rather than sharing one shape with [`RaceDigest`]/
  * [`ArmoDigest`] (all three happen to be `{level, level_curves, generic}`
  * today) — a deliberate choice, not an oversight: each is free to diverge

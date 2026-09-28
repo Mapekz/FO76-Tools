@@ -4,7 +4,7 @@
 //! `digest_*` function in the parent module computes values, never prose
 //! (see that module's docs). Kept as a private submodule with two `pub`
 //! re-exports ([`render_text`], [`render_digest`]) rather than merged back
-//! into `mod.rs`, mirroring `decode.rs`/`decode/vmad.rs`'s existing
+//! into `mod.rs`, mirroring `decode/mod.rs`/`decode/vmad.rs`'s
 //! compute/sub-concern split in this crate.
 
 use super::{
@@ -65,9 +65,9 @@ fn pyish_opt(v: Option<&Value>) -> String {
     v.map(pyish).unwrap_or_else(|| "?".to_string())
 }
 
-/// "0xID EditorID" — the universal reference rendering (mirrors the TS
-/// original's `ref()`, minus the extra round-trip: Stub resolution already
-/// annotated `v` when its enclosing record was fetched).
+/// "0xID EditorID" — the universal reference rendering. No extra fetch:
+/// Stub resolution already annotated `v` when its enclosing record was
+/// fetched.
 fn fmt_ref(v: &Value) -> String {
     match v.as_object() {
         Some(obj) if obj.contains_key("formid") => {
@@ -83,10 +83,10 @@ fn fmt_ref(v: &Value) -> String {
     }
 }
 
-/// "EditorID=Value" — the magnitude/duration GLOB annotation (mirrors the TS
-/// original's `globValue()`; no leading hex, unlike condition operand
-/// rendering). `v` already carries `"Value"` inline (Stub resolution's
-/// value-bearing-leaf inline — see `src/decode/leaf_values.rs`) when known.
+/// "EditorID=Value" — the magnitude/duration GLOB annotation (no leading
+/// hex, unlike condition operand rendering). `v` already carries `"Value"`
+/// inline (Stub resolution's value-bearing-leaf inline — see
+/// `src/decode/leaf_values.rs`) when known.
 fn fmt_glob_annotation(v: &Value) -> String {
     let Some(obj) = v.as_object() else {
         return "?".to_string();
@@ -159,10 +159,8 @@ fn fmt_curve(v: &Value) -> Option<String> {
     }
 }
 
-/// `a or b` (Python truthiness), rendered as text — used wherever the
-/// original chase.py-derived logic does `x.get("editor_id") or
-/// x.get("formid")`. Moved here from `chase.rs` along with
-/// [`summarize_effect`]/[`fmt_stub`] — see this module's doc comment.
+/// `a or b` (Python truthiness), rendered as text — used for the
+/// `editor_id`-else-`formid` fallback in [`summarize_effect`]/[`fmt_stub`].
 fn py_or_display(a: Option<&Value>, b: Option<&Value>) -> String {
     if is_truthy(a) {
         return pyish(a.unwrap());
@@ -248,9 +246,8 @@ const HANDLED_EFFECT_KEYS: &[&str] = &[
 /// ([`render_forward_evidence`]) and a reverse-chased consumer's path-sliced
 /// gated `Effects[N]` row ([`render_reverse_evidence`]).
 ///
-/// Moved here from `chase.rs` (see this module's doc comment) — nothing on
-/// `chase`'s own `ChaseTree`-JSON-emitting path ever called it; only
-/// `esm::walk`'s rendering did.
+/// Only `esm::walk`'s rendering calls this; `chase`'s `ChaseTree` JSON path
+/// never does.
 fn summarize_effect(effect_entry: &Value) -> String {
     let inner = match effect_entry.as_object() {
         Some(map) => map.get("Effect").unwrap_or(effect_entry),
@@ -343,9 +340,8 @@ fn summarize_effect(effect_entry: &Value) -> String {
 
 /// "record_type formid editor_id" — the universal stub rendering this
 /// module's tests and the OMOD mechanism-slice renderer use to name a
-/// classified hop's target or a reverse-chased consumer. Moved here from
-/// `chase.rs` (see this module's doc comment) — `esm::chase`'s own
-/// `ChaseTree` JSON never called it, only `esm::walk`'s rendering did.
+/// classified hop's target or a reverse-chased consumer. Only `esm::walk`'s
+/// rendering calls this; `esm::chase`'s `ChaseTree` JSON never does.
 fn fmt_stub(stub: &Value) -> String {
     let rt = stub
         .get("record_type")

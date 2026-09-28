@@ -33,10 +33,11 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// Uses form_version 208 (the standard FO76 post-C.A.M.P. version), no
 /// localization, curves, or FormID resolver.
 ///
-/// **Note:** an identical `bare_ctx` exists inside `src/decode.rs`'s private
-/// `#[cfg(test)] mod tests` block for the unit tests that exercise the private
-/// `decode_struct_fields` function.  If `DecodeContext` gains or loses a field,
-/// update both copies.
+/// **Note:** the private `#[cfg(test)] mod tests` blocks in
+/// `src/decode/mod.rs` and `src/decode/walk.rs` keep their own `bare_ctx` for
+/// unit tests of crate-private functions such as `decode_struct_fields`. Every
+/// copy delegates to `DecodeContext::bare`, so a `DecodeContext` field change
+/// lands there once.
 pub fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
     bare_ctx_fv(schema, 208)
 }
@@ -261,8 +262,9 @@ pub fn make_xref_esm() -> Vec<u8> {
 /// table, not a decode bug.  Tests in this suite run against a non-localized
 /// ESM, so `_unresolved` cannot appear.
 ///
-/// The fourth marker catches a schema-generation bug class discovered via the
-/// WEAP EILV/IBSD/PHST stubs (see extract.py's `self.vars` hand overrides):
+/// The fourth marker catches a schema-generation bug class, exemplified by the
+/// WEAP EILV/IBSD/PHST stubs (see `tools/extractor/extract.py`'s `self.vars`
+/// hand overrides):
 /// a member whose JSON key is a bare 4-char raw signature (e.g. `"EILV"`,
 /// `"NVNM"`) rendering as an opaque `{"hex": ...}` leaf. Genuine, intentionally
 /// opaque fields are always named descriptively by the schema's Pascal source (e.g.
@@ -437,8 +439,7 @@ pub fn write_and_open(buf: &[u8], stem: &str) -> (PathBuf, Database) {
 /// Two synthetic ESMs opened as [`Database`]s, for the diff-engine tests.
 ///
 /// The temp files are removed on drop, so a panicking assertion cleans up
-/// after itself — the hand-written `remove_file` tail each test used to end
-/// with only ran when the test passed.
+/// after itself.
 pub struct EsmPair {
     pub a: Database,
     pub b: Database,

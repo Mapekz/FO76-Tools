@@ -39,9 +39,7 @@ def unwrap_entry(e: Any) -> dict:
     one whose wrapper value is itself falsy, into `{}`, silently discarding
     it instead of reading it). Also guards against a malformed `"Leveled
     List Entry"` value that isn't itself a dict (e.g. a stray scalar in a
-    corrupt/unexpected decode shape) — `run_lints.py`'s prior copy of this
-    logic had this guard and `patchnotes_lib.py`'s didn't; every caller
-    gets it now rather than only the one that happened to add it."""
+    corrupt/unexpected decode shape)."""
     if not isinstance(e, dict):
         return {}
     inner = e.get("Leveled List Entry", e)

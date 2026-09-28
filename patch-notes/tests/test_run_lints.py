@@ -904,7 +904,8 @@ class TestEndToEndCli(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Per-record error surfacing (issue #11)
+# Per-record error surfacing: one record's failure becomes a note and never
+# aborts the rule's other records
 # ---------------------------------------------------------------------------
 
 

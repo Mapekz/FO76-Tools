@@ -173,11 +173,9 @@ pub fn resolve_sel(db: &Database, sel: &RecordSel) -> anyhow::Result<FormId> {
                 .ok_or_else(|| anyhow::anyhow!("EditorID '{}' not found", edid))
         }
         RecordSel::Auto(token) => {
-            // Try the FormID interpretation first — byte-identical to today's
-            // behavior when it actually resolves to a present record. Only
-            // fall back to an EditorID lookup when that fails, so a real
-            // FormID never gets silently redirected to an unrelated
-            // same-named EditorID.
+            // Try the FormID interpretation first. Only fall back to an
+            // EditorID lookup when that fails, so a real FormID never gets
+            // silently redirected to an unrelated same-named EditorID.
             //
             // A bare all-digit token is always read as hex here (see
             // `parse_formid`) — never decimal. Decimal is available only via

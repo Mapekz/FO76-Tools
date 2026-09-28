@@ -796,8 +796,8 @@ fn scen_start_scene_action_scenes_array_not_stranded_by_trailing_htid() {
             ("INTT", "0000"),         // Phase Index = 0
             ("SSPN", "537461727400"), // "Start\0"
             ("CITC", "00000000"),     // Condition Count = 0
-            // HTID sits *after* the whole Scenes cluster — this is what made the
-            // old find_map-based scope_min land on HTID instead of LCEP.
+            // HTID sits *after* the whole Scenes cluster, so a first-match
+            // scope search would land on HTID instead of LCEP.
             ("HTID", ""),
             ("ANAM", ""), // Action's own End Marker
         ],

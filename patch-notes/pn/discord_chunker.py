@@ -239,12 +239,11 @@ def _split_large_section(flagged_lines, max_chars):
 
     `flagged_lines` is a list of (line, is_heading) pairs. Prefers blank-line
     split points and closes/reopens code fences when forced to split
-    mid-block (the legacy whole-document splitter's local algorithm) -- but
-    a candidate split point is rejected if the chunk it would produce ends
-    (at its last non-blank line) on a heading line, and accumulation is
-    deferred (letting the chunk grow past max_chars if truly necessary)
-    while the chunk built so far ends on a heading, so a heading is never
-    left childless.
+    mid-block -- but a candidate split point is rejected if the chunk it
+    would produce ends (at its last non-blank line) on a heading line, and
+    accumulation is deferred (letting the chunk grow past max_chars if truly
+    necessary) while the chunk built so far ends on a heading, so a heading
+    is never left childless.
     """
     chunks = []
     current = []  # list of (line, is_heading)
@@ -317,9 +316,8 @@ def split_into_chunks(lines, heading_indices, max_chars=MAX_CHARS):
       non-empty chunk, the chunk is flushed and a new one started at that
       section's heading.
     - A single section larger than max_chars is split internally at blank
-      lines (falling back to the legacy whole-document behavior, including
-      the code-fence close/reopen trick), but never immediately after its
-      heading.
+      lines (closing and reopening a code fence when a split lands inside
+      one), but never immediately after its heading.
     - Invariant: no chunk's last non-blank line is ever a heading line --
       heading-only sections (including a heading run like H2 immediately
       followed by H3) are folded into the next section before packing.

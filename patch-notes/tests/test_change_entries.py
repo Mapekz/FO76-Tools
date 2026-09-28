@@ -260,11 +260,11 @@ class TestArrayDiffNewShape(unittest.TestCase):
 
     def test_changed_entry_has_nested_change_entry_list(self):
         # Two "changed" pairs are fixtured: [0] uses plain-scalar key values
-        # ("MUL"/"Damage" strings, the pre-Fix-A shape still legitimately
-        # emitted when the underlying decoded field is just a string) and
-        # [1] uses the enum-object ({"value", "name"}) shape Fix A now
-        # preserves on `changed[].key` instead of collapsing to a bare int —
-        # see TestArrayDiffEnumObjectKeyShape below for [1]'s key_display.
+        # ("MUL"/"Damage" strings, the shape emitted when the underlying
+        # decoded field is just a string) and [1] uses the enum-object
+        # ({"value", "name"}) shape the diff preserves on `changed[].key`
+        # rather than collapsing to a bare int — see
+        # TestArrayDiffEnumObjectKeyShape below for [1]'s key_display.
         self.assertEqual(len(self.array["changed"]), 2)
         changed = self.array["changed"][0]
         self.assertIn("key_display", changed)
@@ -279,12 +279,12 @@ class TestArrayDiffNewShape(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # _array_diff normalization — enum-object ({value,name}) key shape.
 #
-# Fix A (src/diff.rs) now emits the ORIGINAL B-side value for a keyed
-# array's `changed[].key` fields instead of the collapsed canonical scalar
+# The diff (esm/src/diff/array_diff.rs) emits the ORIGINAL B-side value for a
+# keyed array's `changed[].key` fields, not the collapsed canonical scalar
 # used only for pairing — e.g. `{"value": 1, "name": "MUL+ADD"}` rather than
 # bare `1`. changed[0] on the 0x01002001 fixture record above covers the
-# (still valid) plain-scalar-key shape; changed[1] covers this enum-object
-# shape so both are exercised end to end through extract_changes().
+# plain-scalar-key shape; changed[1] covers this enum-object shape so both
+# are exercised end to end through extract_changes().
 # ---------------------------------------------------------------------------
 
 
@@ -315,9 +315,9 @@ class TestArrayDiffEnumObjectKeyShape(unittest.TestCase):
 
 class TestStructDisplay(unittest.TestCase):
     def test_dict_values_render_via_format_scalar_not_dropped(self):
-        # Previously dict-valued fields were silently dropped from the
-        # comprehension; an enum {value,name} dict must now render as its
-        # name, and a resolved FormID stub must render as an annotated ref.
+        # Dict-valued fields must not be dropped: an enum {value,name} dict
+        # renders as its name, and a resolved FormID stub renders as an
+        # annotated ref.
         ref_names = {"0x00000099": {"record_type": "WEAP", "editor_id": "SomeGun"}}
         elem = {
             "Function Type": {"value": 1, "name": "MUL+ADD"},
@@ -454,9 +454,10 @@ class TestStructDisplay(unittest.TestCase):
 
     def test_unwrap_stops_at_max_depth(self):
         # A three-level single-key nest only unwraps two levels, matching
-        # diff.rs::unwrap_wrapper's one-level intent plus one extra hop for
-        # the Condition/Condition Data shape specifically — deeper nests
-        # degrade to a labeled struct rather than unwrapping indefinitely.
+        # esm/src/diff/array_diff.rs::unwrap_wrapper's one-level intent plus
+        # one extra hop for the Condition/Condition Data shape specifically —
+        # deeper nests degrade to a labeled struct rather than unwrapping
+        # indefinitely.
         elem = {"A": {"B": {"C": {"D": 1, "E": 2}}}}
         out = change_entries._unwrap_element_wrapper(elem)
         self.assertEqual(out, {"C": {"D": 1, "E": 2}})
@@ -529,9 +530,8 @@ class TestPresenceArrayDiff(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# lvli_entry.py consolidation (Stage H): patchnotes_lib.py now delegates its
-# unwrap/reference/quantity reading to lvli_entry.py instead of keeping its
-# own copies -- these tests lock in the delegation's observable behavior,
+# patchnotes_lib.py delegates its unwrap/reference/quantity reading to
+# lvli_entry.py -- these tests lock in the delegation's observable behavior,
 # in particular the honest-None quantity default (never fabricated as 1).
 # ---------------------------------------------------------------------------
 

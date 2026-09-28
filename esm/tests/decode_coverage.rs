@@ -24,35 +24,18 @@
 //! `_unresolved` (unresolved LString IDs) is intentionally NOT checked — that
 //! marker indicates a missing localization BA2, not a decode bug.
 //!
-//! # Skipped (dirty) types
+//! # Coverage scope
 //!
-//! The following types are **excluded** from `CLEAN_TYPES` because they still
-//! emit `raw_fallback` or undocumented `_unmapped` markers on at least some
-//! records in a reference ESM.
-//! Types marked partial† in the README decode only with documented drift
-//! (`LVLD` / `NAM5`) and have drift-locked tests in `decode_records/`.
+//! A type joins `CLEAN_TYPES` once every record of it decodes with zero
+//! markers on a reference ESM; types that still emit `raw_fallback` or
+//! undocumented `_unmapped` markers on some records stay out. Types that
+//! decode only with documented drift (`LVLD` / `NAM5`) have drift-locked
+//! tests in `decode_records/` instead.
 //!
-//! Recently cleaned (now in `CLEAN_TYPES` or basic-tested): TERM, FLOR, FURN,
-//! INFO, MISC, QMDL, NOTE, ENCH, BOOK, WEAP, PERK, RACE, CONT,
-//! LVLI, LVLN, LVPC, LVLP, RESO, GMRW, QUST, NPC_.
-//! Batch-promoted 2026-06-27: 97 additional types confirmed zero-marker on
-//! a reference ESM — AACT, AAMD, ADDN, AECH, ANIO, AORU, ARMA, ARTO,
-//! ASPC, ASTM, ASTP, ATXO, AUVF, AVTR, BNDS, CAMS, CLAS, CLFM, CLMT, CNCY,
-//! CNDF, CPRD, CPTH, CSEN, CSTY, DCGF, DEBR, DIAL, DIST, DOBJ, ECAT, EFSH,
-//! EMOT, EQUP, FSTP, FSTS, GCVR, GRAS, HDPT, IDLE, IDLM, IMAD, IMGS, INGR,
-//! IPCT, IPDS, KSSM, LAYR, LCRT, LCTN, LENS, LOUT, LSCR, LTEX, MATO, MATT,
-//! MESG, MOVT, MUSC, MUST, NAVI, NOCM, OVIS, PACH, PACK, PKIN, PMFT, PPAK,
-//! REGN, RELA, REVB, RFCT, RFGP, SCEN, SCOL, SCSN, SECH, SMBN, SMEN, SMQN,
-//! SNCT, SNDR, SOPM, SOUN, SPGD, STAG, STHD, STMP, STND, TRNS, TXST, UTIL,
-//! VOLI, VTYP, WATR, WSPR, ZOOM.
-//! Also promoted: MGEF (3109 records, zero markers — prior exclusion was stale).
-//! Batch-promoted 2026-07-02 (schema parity A+B): AAPD, ACHR, ACTI, COLL,
-//! DLBR, DOOR, KEYM, LGTM, LIGH, MSTT, PGRE, PHZD, PLYR, PMIS, REFR, SCCO,
-//! STAT, TACT.
-//! DLVW, GDRY, TREE absent from this ESM version (no records); deferred.
-//! PGTR, MSCS added (2026-09-04): new record types on the 20260903 Pets PTS
-//! snapshot (World Pets progression tracks / misc item spawner), zero
-//! markers once safelisted/hand-authored.
+//! DLVW, GDRY and TREE have no records in the reference ESM, so they are not
+//! listed. PGTR (World Pets progression tracks) and MSCS (misc item spawner)
+//! exist from the 20260903 snapshot on; an older ESM checks zero records of
+//! them.
 
 mod common;
 
@@ -60,15 +43,17 @@ use common::collect_decode_problems;
 use esm::{Database, FormId};
 
 /// All record types verified (via `esm coverage`) to decode with zero markers
-/// on every record in a reference ESM.
+/// on every record in a reference ESM. Unformatted so each group comment
+/// stays above its group.
+#[rustfmt::skip]
 const CLEAN_TYPES: &[&str] = &[
-    // Original + incrementally promoted batch
+    // Core gameplay records: items, perks, spells, leveled lists, quests, actors
     "ARMO", "SPEL", "GLOB", "KYWD", "OMOD", "AMMO", "PROJ", "EXPL", "ALCH", "COBJ", "ENTM", "DMGT",
     "FISH", "FACT", "FLST", "WTHR", "WAVE", "OTFT", "MSWP", "CURV", "DFOB", "CHAL", "CMPO", "CMPT",
     "COEN", "MDSP", "TEPF", "TRAP", "LGDI", "AVIF", "BPTD", "PEPF", "PCRD", "PLYT", "HAZD", "INNR",
     "GMST", "AMDL", "ENCH", "BOOK", "WEAP", "PERK", "TERM", "FLOR", "FURN", "INFO", "MISC", "QMDL",
     "NOTE", "RACE", "CONT", "LVLI", "LVLN", "LVPC", "LVLP", "RESO", "GMRW", "QUST", "NPC_",
-    // Batch-promoted (97 types confirmed zero-marker on a reference ESM)
+    // Supporting records: AI, audio, visuals, dialogue, world data, effects
     "AACT", "AAMD", "ADDN", "AECH", "ANIO", "AORU", "ARMA", "ARTO", "ASPC", "ASTM", "ASTP", "ATXO",
     "AUVF", "AVTR", "BNDS", "CAMS", "CLAS", "CLFM", "CLMT", "CNCY", "CNDF", "CPRD", "CPTH", "CSEN",
     "CSTY", "DCGF", "DEBR", "DIAL", "DIST", "DOBJ", "ECAT", "EFSH", "EMOT", "EQUP", "FSTP", "FSTS",
@@ -78,12 +63,12 @@ const CLEAN_TYPES: &[&str] = &[
     "RFGP", "SCEN", "SCOL", "SCSN", "SECH", "SMBN", "SMEN", "SMQN", "SNCT", "SNDR", "SOPM", "SOUN",
     "SPGD", "STAG", "STHD", "STMP", "STND", "TRNS", "TXST", "UTIL", "VOLI", "VTYP", "WATR", "WSPR",
     "ZOOM", "MGEF",
-    // Batch-promoted 2026-07-02 (schema parity A+B — zero markers on reference ESM)
+    // Placed references and the base objects they place
     "AAPD", "ACHR", "ACTI", "COLL", "DLBR", "DOOR", "KEYM", "LGTM", "LIGH", "MSTT", "PGRE", "PHZD",
     "PLYR", "PMIS", "REFR", "SCCO", "STAT", "TACT",
-    // Part C — coverage expansion (2026-07-02)
+    // World structure
     "NAVM", "WRLD", "CELL",
-    // Pets PTS snapshot 20260903 — new record types, zero markers (2026-09-04)
+    // World Pets records (20260903 snapshot on)
     "PGTR", "MSCS",
 ];
 

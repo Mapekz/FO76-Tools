@@ -298,7 +298,7 @@ enum Commands {
         #[arg(long, default_value = "1", value_parser = parse_ref_depth)]
         depth: esm::ops::RefDepth,
         /// Narrow rows to referencing records of this 4-character type
-        /// (e.g. `OMOD`); case-insensitive. Applied server-side, so `--limit`/
+        /// (e.g. `OMOD`); case-insensitive. Applied inside the op, so `--limit`/
         /// `--depth` interact correctly with the filter.
         #[arg(long = "type")]
         record_type: Option<String>,
@@ -505,8 +505,8 @@ enum SearchInArg {
 /// CLI-facing mirror of `esm::BodyDetail` for `--bodies <none|stub|full>`.
 ///
 /// A separate type (rather than implementing `ValueEnum` on `BodyDetail`
-/// itself) because `BodyDetail` lives in `diff.rs`, which this crate doesn't
-/// own — clap's derive can't be added there without touching that file.
+/// itself) because `BodyDetail` is a library type (`esm::diff`) and the clap
+/// derive stays in the binary.
 #[derive(Clone, Copy, ValueEnum)]
 enum BodiesArg {
     None,
@@ -1069,12 +1069,11 @@ mod tests {
         assert!(Cli::try_parse_from(["esm"]).is_err());
     }
 
-    /// `-p`/`--print` is not a recognized flag — removed as dead surface
-    /// area rather than left for callers to still reach for.
+    /// `-p`/`--print` is not a recognized flag.
     #[test]
     fn dash_p_no_longer_exists() {
         let err = match Cli::try_parse_from(["esm", "-p", "get", "0x463F"]) {
-            Ok(_) => panic!("-p should no longer parse"),
+            Ok(_) => panic!("-p should not parse"),
             Err(e) => e,
         };
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);

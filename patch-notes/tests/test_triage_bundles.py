@@ -628,11 +628,9 @@ class TestFirstMatchWins(unittest.TestCase):
         self.assertEqual((tier, reason), ("deep", "deep:substantive_major"))
 
     def test_pure_model_filename_swap_on_major_type_no_longer_auto_deeps(self):
-        # Regression: this exact scenario used to demonstrate "deep
-        # outranks drop" before require_numeric_change tightened the rule --
-        # a bare filename string swap on a "major type" is not itself a
-        # numeric stat delta, so it now correctly falls through to
-        # drop_rules/field_path_drop instead.
+        # A bare filename string swap on a "major type" is not itself a
+        # numeric stat delta (require_numeric_change), so it falls through to
+        # drop_rules/field_path_drop rather than auto-DEEPing.
         records = {
             "0x01": make_record("0x01", "WEAP", "SomeGun", changes=[make_change("Model / Model Filename", "a", "b")])
         }
@@ -1030,13 +1028,11 @@ class TestAmbiguousDigest(unittest.TestCase):
         self.assertTrue(summary.endswith("…"))
 
     def test_unkeyed_array_change_summary_is_not_falsely_zero(self):
-        # Regression: `diff.rs`'s `unkeyed` _array_diff strategy (CTDA
+        # esm/src/diff/array_diff.rs's `unkeyed` _array_diff strategy (CTDA
         # Conditions[] is the canonical producer) reports the two whole
         # element lists as `removed`/`added` — a real 2->1 condition swap
-        # must summarize as "+1 -2 ~0", not "+0 -0 ~0". Before the fix, the
-        # legacy opaque {"from":[...], "to":[...]} leaf carried no
-        # `array.added`/`array.removed` at all, so a real structural change
-        # summarized identically to "nothing happened" — misleading the
+        # must summarize as "+1 -2 ~0", not "+0 -0 ~0". A summary that reads
+        # a real structural change as "nothing happened" misleads the
         # tier-assessor agent into a DROP verdict for a live combat-mechanics
         # change (measured on a real run: the PiercingLove COBJ recipe
         # gaining a HasLearnedRecipe gate).
@@ -1408,12 +1404,11 @@ class TestRealConfig(unittest.TestCase):
         self.assertEqual((tier, reason), ("deep", "deep:substantive_change_major_record_type"))
 
     def test_qust_qtfs_numeric_change_is_deep(self):
-        # Schema-gap follow-up: QTFS used to decode as an opaque hex blob
-        # (never numeric, so a QTFS-only change fell to ambiguous like the
-        # HAZD flag-bit case above). Now that it's mapped to a u16 ("QTFS
-        # (Repeat Limit?)"), a real value change (e.g. 65535 "no limit" ->
-        # 50, the shape seen on SDOW_SQ01_Graves_Repeatable) is a genuine
-        # numeric delta on a major record type and must auto-DEEP.
+        # QTFS decodes as a u16 ("QTFS (Repeat Limit?)"), not an opaque hex
+        # blob, so a real value change (e.g. 65535 "no limit" -> 50, the
+        # shape seen on SDOW_SQ01_Graves_Repeatable) is a genuine numeric
+        # delta on a major record type and must auto-DEEP, unlike the HAZD
+        # flag-bit case above.
         records = {
             "0x01": make_record(
                 "0x01", "QUST", "SomeRepeatableQuest",

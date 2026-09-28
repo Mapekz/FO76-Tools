@@ -15,8 +15,8 @@ use esm::{CarrierKind, CarrierTag, Database, EntryPointSpec, FormId, OmodPropert
 ///   - WEAP form_id=1  (target — no subrecords)
 ///   - WEAP form_id=2  (referencer — YNAM and ZNAM both pointing at form_id=1)
 ///
-/// Before the dedup fix, two `RecordRow`s for form_id=2 would be returned.
-/// After the fix, exactly one must appear.
+/// Exactly one `RecordRow` for form_id=2 must appear, not one per
+/// referencing subrecord.
 #[test]
 fn referenced_by_deduplicates_within_record() {
     let buf = make_xref_esm();
@@ -44,16 +44,15 @@ fn referenced_by_deduplicates_within_record() {
 /// canonical example of an engine-hardcoded form with no backing ESM record.
 const KILL_STREAK: u32 = 0x0000_0399;
 
-/// Regression test for issue #27: `esm refs` silently dropped every real
-/// reference to an engine-hardcoded FormID (e.g. AVIF `DamageRecieved`/
-/// `KillStreak`), because `ensure_xref_index`'s `index.contains(target)`
-/// check required the *target* to have a backing ESM record — hardcoded
-/// forms never do, by design (they live in `Fallout76.exe`, not the ESM).
+/// `esm refs` must return every real reference to an engine-hardcoded FormID
+/// (e.g. AVIF `DamageRecieved`/`KillStreak`), so the xref index must not
+/// require the *target* to have a backing ESM record — hardcoded forms never
+/// do, by design (they live in `Fallout76.exe`, not the ESM).
 ///
 /// This fixture's WEAP(2) references `KillStreak` (0x399) via `YNAM`, the
-/// same FormID-carrier subrecord `make_xref_esm` uses. Before the fix,
-/// `referenced_by(FormId(KILL_STREAK))` returned an empty `Vec` even though
-/// the edge is real; after the fix it must return exactly the one referencer.
+/// same FormID-carrier subrecord `make_xref_esm` uses.
+/// `referenced_by(FormId(KILL_STREAK))` must return exactly that one
+/// referencer.
 #[test]
 fn referenced_by_resolves_hardcoded_target() {
     let mut buf = tes4_header();
@@ -123,7 +122,7 @@ fn referenced_by_still_excludes_out_of_range_and_null_targets() {
     let _ = std::fs::remove_file(&tmp);
 }
 
-/// Part 2 of issue #27: a hardcoded form's EditorID, not just its raw hex
+/// A hardcoded form's EditorID, not just its raw hex
 /// FormID, must resolve — `esm refs DamageRecieved`, not only
 /// `esm refs --formid 0x397`. Drives the same selector-resolution path
 /// (`ops::resolve_sel`) the `refs`/`ref-path`/raw-`get` CLI surfaces share.
@@ -251,12 +250,12 @@ fn open_chain_db() -> (std::path::PathBuf, Database) {
 
 // ── recursive refs tests ─────────────────────────────────────────────────────
 
-/// depth=1 yields exactly the direct referencers (single-level, today's behaviour).
+/// depth=1 yields exactly the direct referencers (single-level).
 #[test]
 fn recursive_refs_depth1_matches_direct() {
     let (path, db) = open_chain_db();
 
-    // Single-level old path
+    // Single-level path
     let direct = db.referenced_by(FormId(1)).expect("referenced_by");
     assert_eq!(direct.len(), 1);
     assert_eq!(direct[0].form_id, FormId(2).display());
@@ -393,7 +392,7 @@ fn recursive_refs_depth6_reaches_all_hops() {
 }
 
 /// depth=0 requests an unbounded walk — it must reach exactly as deep as the
-/// full chain, not clamp to 1 (the old semantics) or to DEFAULT_MAX_DEPTH.
+/// full chain, not clamp to 1 or to DEFAULT_MAX_DEPTH.
 #[test]
 fn recursive_refs_depth0_is_unbounded() {
     let (path, db) = open_chain_db();
@@ -737,7 +736,7 @@ fn recursive_refs_limit_caps_output() {
     let _ = std::fs::remove_file(&path);
 }
 
-// ── --paths tests (P2) ───────────────────────────────────────────────────────
+// ── --paths tests ────────────────────────────────────────────────────────────
 
 /// `include_paths = false` (the default fast walk) never populates
 /// `field_paths` — it must stay `None` so it's omitted from serialized JSON.
@@ -827,7 +826,7 @@ fn formid_reference_paths_unknown_referencer_returns_empty() {
     let _ = std::fs::remove_file(&path);
 }
 
-// ── --type tests (P3) ────────────────────────────────────────────────────────
+// ── --type tests ─────────────────────────────────────────────────────────────
 
 /// `type_filter` narrows emitted rows to the matching type but the walk keeps
 /// traversing through non-matching nodes — CONT(4) (3 hops away, behind two
@@ -977,9 +976,7 @@ fn build_perk_entry_points(form_id: u32, edid: &str, entry_points: &[u8]) -> Vec
 ///   11 CarrierB          — entry point 39 (Mod Percent Blocked)
 ///   12 OtherPerk         — entry point 40 (Mod Shield Deflect Arrow Chance)
 ///   13 UnnamedPerk       — entry point 213 (outside the 213-entry name
-///                          table; entry point 212 used to be this case in
-///                          real game data — `mod_custom_V63-BERTHA_Perk` —
-///                          until it was labeled "Mod Chain Damage Falloff")
+///                          table, so it has no label)
 ///   14 MultiEffectPerk   — entry point 39 on *two* separate effects
 ///   15 GlobA             — entry point 41 (Mod Incoming Spell Magnitude)
 ///   16 GlobB             — entry point 42 (Mod Incoming Spell Duration)
@@ -1576,8 +1573,8 @@ fn referenced_by_walk_preserves_seed_order_for_carriers_and_attribution() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// A Direct (single-target) walk keeps empty `tags` and empty
-/// depth-1 `path` — bit-compatible with pre-EP-attribution behavior.
+/// A Direct (single-target) walk keeps empty `tags` and an empty
+/// depth-1 `path`.
 #[test]
 fn referenced_by_enriched_direct_has_empty_entry_points_and_path_at_depth_1() {
     let (path, db) = open_entry_point_db();

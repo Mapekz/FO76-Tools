@@ -9,7 +9,9 @@ import type { RecordSel } from "./RecordSel";
  * resolved, one extra unfiltered reverse-reference walk runs on the root and
  * is folded into [`crate::walk::WalkResult::refs`]. When the root selector
  * doesn't resolve, `not_found.matches` is filled in by one in-process
- * [`Database::search`] call (see `docs/adr/0001`'s dated amendment).
+ * [`Database::search`] call (see
+ * `docs/adr/0001-walk-interactive-chase-pipeline-json.md`'s section on where
+ * the computation runs).
  */
 export type WalkArgs = { sel: RecordSel, 
 /**

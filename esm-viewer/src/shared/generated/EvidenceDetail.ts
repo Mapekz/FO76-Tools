@@ -6,6 +6,6 @@ import type { TagDetail } from "./TagDetail";
 
 /**
  * What an [`Evidence`] found, by how it was found. Untagged: the JSON is the
- * variant's own fields (the chase JSON contract predates the type).
+ * variant's own fields (the frozen chase JSON contract carries no tag).
  */
 export type EvidenceDetail = { note: string, } | TagDetail | { effect: unknown, } | RecordDetail | PassThroughDetail | ProjectileDetail;

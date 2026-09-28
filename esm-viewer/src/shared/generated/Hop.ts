@@ -22,7 +22,8 @@ export type Hop = { property_index: number, property: unknown, function: unknown
  * inside [`classify_property_row`]'s internal `FetchDest`) so
  * `esm::walk`'s renderer doesn't have to re-derive the same fact by
  * string-matching `target.record_type == "AVIF"`. Additive to the
- * frozen chase JSON shape (ADR 0001's addendum).
+ * frozen chase JSON shape
+ * (`docs/adr/0001-walk-interactive-chase-pipeline-json.md`).
  */
 resolution: FetchDirection | null, 
 /**
@@ -30,6 +31,6 @@ resolution: FetchDirection | null,
  * includes (see [`IncludeRole::Compose`]) rather than the root OMOD
  * itself — the included OMOD's stub.
  * `None` for the root's own properties (additive to the frozen chase
- * JSON shape; see ADR 0001).
+ * JSON shape; see `docs/adr/0001-walk-interactive-chase-pipeline-json.md`).
  */
 source_omod: unknown, evidence: Array<Evidence>, };

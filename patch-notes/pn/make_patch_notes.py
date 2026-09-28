@@ -224,8 +224,8 @@ def source_args(args: argparse.Namespace) -> list[str]:
 # Step 2: Run esm diff
 # --------------------------------------------------------------------------
 
-# `build_diff_cmd` lives in esmcli.py (re-exported above via
-# `from pn.esmcli import build_diff_cmd` so call sites/tests reach it as
+# `build_diff_cmd` lives in esmcli.py (re-exported above as
+# `build_diff_cmd = eg.build_diff_cmd` so call sites/tests reach it as
 # `mpn.build_diff_cmd`); this stage's transport is `esmcli.EsmGateway.diff`
 # (see its docstring for why it is a subprocess, not an `Op::Diff` request).
 

@@ -1039,8 +1039,8 @@ mod tests {
     const TEST_CACHE_VERSION: u32 = 42;
 
     /// Proves the `fnv1a_u64` composition pattern documented on that
-    /// function against a real (test-only) `Archive`-derived type, since no
-    /// production cache type exists yet for it to be wired to for real.
+    /// function against a real (test-only) `Archive`-derived type,
+    /// independent of any production section.
     const TEST_LAYOUT_FINGERPRINT: u64 = {
         let acc = fnv1a_u64(
             FNV_OFFSET_BASIS,

@@ -358,8 +358,8 @@ pub(super) fn choose_union_variant(
 /// Form-version activation bounds `(from_version, below_version)` for the
 /// member kinds that carry them. The single source both the decoder
 /// ([`member_version_ok`]) and `diff`'s version-gated-transition stripping
-/// read (issue #29): active iff `fv >= from` (when set) and `fv < below`
-/// (when set, strict).
+/// read, so the two can never disagree on whether a member is active:
+/// active iff `fv >= from` (when set) and `fv < below` (when set, strict).
 pub(crate) fn member_version_bounds(member: &MemberDef) -> (Option<u16>, Option<u16>) {
     match member {
         MemberDef::Struct {

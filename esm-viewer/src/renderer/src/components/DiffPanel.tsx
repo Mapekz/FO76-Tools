@@ -15,8 +15,8 @@ function basename(path: string): string {
 /** Recursively counts `{from, to}` leaves in a `field_changes` sparse tree for
  * the one-line "N fields changed" summary; an `_array_diff` node (keyed
  * per-element array diff) counts as a single change rather than being
- * expanded — the detail pane's side-by-side columns are now where you'd
- * actually inspect what changed. */
+ * expanded — the detail pane's side-by-side columns are where you inspect
+ * what changed. */
 function countFieldChanges(node: unknown): number {
   if (typeof node !== 'object' || node === null || Array.isArray(node)) return 0
   const obj = node as Record<string, unknown>

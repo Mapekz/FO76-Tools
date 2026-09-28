@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-build_bundles.py — Tool 2 of the FO76 patch-notes pipeline.
+build_bundles.py — the bundle-clustering stage of the FO76 patch-notes pipeline.
 
-Consumes `comprehensive.json` (Tool 1, `render_comprehensive.py`'s output —
-see `build_comprehensive()` there for the authoritative record shape) and
+Consumes `comprehensive.json` (the comprehensive-render stage's output from
+`render_comprehensive.py` — see `build_comprehensive()` there for the
+authoritative record shape) and
 clusters the flat per-FormID diff records into narrative "bundles": groups of
 related records (e.g. a weapon + its mod slots + the leveled list that drops
 it + the keyword that marks it "unique") that a human patch-notes writer (or
@@ -882,9 +883,9 @@ def eprint(*args, **kwargs):
 def build_arg_parser():
     ap = argparse.ArgumentParser(
         prog="pn bundles",
-        description="Tool 2: cluster comprehensive.json diff records into narrative bundles.json.",
+        description="Bundle-clustering stage: cluster comprehensive.json diff records into narrative bundles.json.",
     )
-    ap.add_argument("comprehensive_json", help="Path to comprehensive.json (Tool 1 output).")
+    ap.add_argument("comprehensive_json", help="Path to comprehensive.json (comprehensive-render stage output).")
     ap.add_argument("--new-esm", required=True, help="Path to the NEW .esm.")
     ap.add_argument("--old-esm", required=True, help="Path to the OLD .esm.")
     ap.add_argument("--out", default="bundles.json", help="Output path (default: bundles.json).")

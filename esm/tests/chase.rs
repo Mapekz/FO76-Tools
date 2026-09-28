@@ -76,13 +76,13 @@ fn source(
     f
 }
 
-/// Build the fixture described in `tools/tests/test_chase.py`'s `_fixture()`,
-/// extended with:
-/// - a 4th OMOD `Data.Properties[]` row (a direct ENCH attachment) that
-///   exercises the MGEF pass-through fix on the existing OMOD forward-fetch
-///   path (ENCH -> Base Effect -> MGEF -> "Perk to Apply", the exact
-///   "Severing's confirmed chase" scenario from the mechanics KB);
-/// - standalone PERK/SPEL/ALCH root fixtures for the new `effect_chase` walk.
+/// Build the shared fixture:
+/// - an OMOD whose `Data.Properties[]` rows are a bare scalar stat, a direct
+///   PERK, a KYWD that a SPEL condition hooks, and a direct ENCH attachment
+///   that exercises the MGEF pass-through on the OMOD forward-fetch path
+///   (ENCH -> Base Effect -> MGEF -> "Perk to Apply", the mechanics KB's
+///   "Severing's confirmed chase" scenario);
+/// - standalone PERK/SPEL/ALCH root fixtures for the `effect_chase` walk.
 fn fixture() -> MemorySource {
     let omod_fields = json!({
         "_record_type": "Object Modification",
@@ -422,8 +422,7 @@ fn four_hops_classified_by_pattern() {
     assert!(tree.effect_hops.is_empty());
 }
 
-/// `Hop::resolution` (added in the walk/chase architecture-deepening pass)
-/// carries the forward-vs-reverse fetch direction `classify_property_row`
+/// `Hop::resolution` carries the forward-vs-reverse fetch direction `classify_property_row`
 /// actually resolved each hop by — the fact `HopKind::DirectProperty` alone
 /// can't express (see `CONTEXT.md`'s **Mechanism** entry). A bare-scalar
 /// property has no target at all, so no resolution either.
@@ -630,9 +629,9 @@ fn keyword_hook_with_no_matching_consumer_is_a_dead_end() {
 
 #[test]
 fn omod_forward_fetch_follows_base_effect_to_mgef_perk_to_apply() {
-    // The literal fix for the mechanics KB's "Severing's confirmed chase" gap:
-    // OMOD -> (direct ENCH property) -> ENCH's Base Effect -> MGEF -> "Perk to
-    // Apply" now surfaces automatically instead of needing a manual chase.
+    // The mechanics KB's "Severing's confirmed chase" path: OMOD -> (direct
+    // ENCH property) -> ENCH's Base Effect -> MGEF -> "Perk to Apply" surfaces
+    // automatically, with no manual chase.
     let mut f = fixture();
     let tree = chase(&mut f, sel(OMOD_FID), &ChaseOptions::default()).unwrap();
     let hop = &tree.hops[3];

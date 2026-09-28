@@ -1,9 +1,8 @@
-//! Regression test for GitHub issue #30: the CLI must not panic (or surface
-//! an `anyhow`-wrapped `Broken pipe (os error 32)`) when its stdout pipe is
-//! closed on the reader's side, e.g. `ba2 info archive.ba2 | head -6`.
-//! Conventional CLI behavior (`cat`/`rg`/`jq`) is to die silently via
-//! SIGPIPE. See `src/bin/cli.rs::reset_sigpipe_to_default` for the fix
-//! under test.
+//! The CLI must not panic (or surface an `anyhow`-wrapped `Broken pipe (os
+//! error 32)`) when its stdout pipe is closed on the reader's side, e.g.
+//! `ba2 info archive.ba2 | head -6`. Conventional CLI behavior
+//! (`cat`/`rg`/`jq`) is to die silently via SIGPIPE;
+//! `src/bin/cli.rs::reset_sigpipe_to_default` restores that default.
 //!
 //! To make the repro deterministic — not a race against however fast the
 //! child happens to produce output vs. how large the OS pipe buffer is — the

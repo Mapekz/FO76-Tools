@@ -62,9 +62,8 @@ fn list_by_type() {
 
 /// `limit: 0` must mean "no limit" for `list_by_type`, matching `search`'s and
 /// `filter_type_records`' existing limit=0-means-unlimited contract (and the
-/// CLI's own `--limit 0` help text) — regression test for a bug where
-/// `.take(limit)` was called unconditionally, so `limit: 0` silently returned
-/// zero records instead of all of them.
+/// CLI's own `--limit 0` help text) — an unconditional `.take(limit)` would
+/// silently return zero records instead of all of them.
 #[test]
 fn list_by_type_limit_zero_is_unlimited() {
     let (path, reg) = open_test_db();
@@ -429,8 +428,8 @@ fn record_sel_json_round_trip() {
 /// clean, shortest-round-trip string like `"2.803e-42"` can land on a
 /// *different* nearby f64 whose own shortest representation needs many more
 /// digits (`"2.8030000000000003e-42"`), silently reintroducing noise that
-/// `decode::json_f32` (see decode.rs) already removed at decode time. This is
-/// fixed by enabling serde_json's `float_roundtrip` feature in Cargo.toml —
+/// `decode::json_f32` (see `src/decode/scalars.rs`) already removed at decode
+/// time. serde_json's `float_roundtrip` feature in Cargo.toml prevents this;
 /// this test guards against that feature flag ever being dropped.
 #[test]
 fn response_json_round_trip_preserves_extreme_float_precision() {
@@ -454,8 +453,7 @@ fn response_json_round_trip_preserves_extreme_float_precision() {
     }
 }
 
-/// A pre-`options` wire client (e.g. an older N-API build) sends `Op::Diff`
-/// JSON with no `options` field at all. `#[serde(default)]` on that field
+/// `Op::Diff` JSON may omit the `options` field entirely. `#[serde(default)]` on that field
 /// must fill in `DiffOptions::default()` rather than failing to deserialize.
 #[test]
 fn op_diff_without_options_field_deserializes() {
@@ -484,8 +482,8 @@ fn op_diff_without_options_field_deserializes() {
     }
 }
 
-/// A pre-`type_filter`/`paths` wire client (e.g. an older N-API build) sends
-/// `Op::ReferencedBy` JSON with neither field. `#[serde(default)]` on both
+/// `Op::ReferencedBy` JSON may omit both `type_filter` and `paths`.
+/// `#[serde(default)]` on both
 /// must fill in `None`/`false` rather than failing to deserialize.
 #[test]
 fn op_referenced_by_without_new_fields_deserializes() {
@@ -697,12 +695,11 @@ fn dispatch_diff_two_esms_with_options() {
 
 // ─── Op::RecordBulk ─────────────────────────────────────────────────────────
 
-/// A pre-bulk wire client only ever sends `Op::Record`'s shape (no `sels` /
-/// `RecordBulk` tag at all). Adding the new `RecordBulk` variant to `Op` must
-/// not disturb decoding that old shape — `#[serde(tag = "op")]` dispatches
-/// purely on the `"op"` discriminant string, but this locks the invariant in
-/// with a literal hand-written wire payload rather than relying on that
-/// reasoning alone.
+/// An `Op::Record` payload carries no `sels` / `RecordBulk` tag at all. The
+/// `RecordBulk` variant of `Op` must not disturb decoding that shape —
+/// `#[serde(tag = "op")]` dispatches purely on the `"op"` discriminant string,
+/// but this locks the invariant in with a literal hand-written wire payload
+/// rather than relying on that reasoning alone.
 #[test]
 fn op_record_old_wire_shape_still_deserializes() {
     let json = r#"{
@@ -978,9 +975,9 @@ fn dispatch_record_bulk_with_resolve_stub_annotates_references() {
     let _ = std::fs::remove_file(&tmp);
 }
 
-/// `Op::Walk.depth` became optional; a request that omits it must still
-/// parse (the walk then picks a default per root type), and an explicit
-/// depth from an older client still lands as `Some`.
+/// `Op::Walk.depth` is optional: a request that omits it must still parse
+/// (the walk then picks a default per root type), and an explicit depth
+/// lands as `Some`.
 #[test]
 fn walk_op_depth_is_optional_on_the_wire() {
     let sel = serde_json::to_value(RecordSel::Edid("SomeList".to_string())).unwrap();

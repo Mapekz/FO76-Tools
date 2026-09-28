@@ -324,10 +324,10 @@ fn print_field_changes(changes: &Value, indent: &str) {
 }
 
 /// Typed form of an `_array_diff` envelope's `"strategy"` field (see
-/// `diff.rs`'s `array_diff`/`unkeyed_array_diff`/`keyed_array_diff` etc. for
-/// the four cases this crate's diff pipeline actually produces — `keyed`,
-/// `positional`, `set`, `unkeyed`, per `esm/AGENTS.md`'s `diff.rs` entry).
-/// `diff.rs` itself never keeps a Rust-side enum for this — every strategy
+/// `diff/array_diff.rs`'s `array_diff`/`keyed_diff`/`positional_diff`/
+/// `set_diff`/`unkeyed_array_diff` for the four cases the diff pipeline
+/// produces — `keyed`, `positional`, `set`, `unkeyed`).
+/// The library `diff` module never keeps a Rust-side enum for this — every strategy
 /// is written straight to an untyped `serde_json::Value` string at the point
 /// it's decided, so this is CLI-local: a named, testable home for the
 /// strategy dispatch, kept out of `print_array_diff` itself. `Other` covers
@@ -434,9 +434,9 @@ fn summarize_array_diff(array_diff: &serde_json::Map<String, Value>) -> ArrayDif
     }
 }
 
-/// Render one `{"_array_diff": {...}}` envelope (see `json_diff`/`array_diff`
-/// in `diff.rs`) as a one-line summary plus compact per-element detail lines,
-/// e.g.:
+/// Render one `{"_array_diff": {...}}` envelope (see `json_diff` in
+/// `diff/mod.rs` and `array_diff` in `diff/array_diff.rs`) as a one-line
+/// summary plus compact per-element detail lines, e.g.:
 ///
 /// ```text
 ///     Entries: +3 −1 ~2 entries (12 → 13, keyed by Reference, Minimum Level)
@@ -526,7 +526,7 @@ mod tests {
     use super::*;
 
     // ── ArrayDiffStrategy / summarize_array_diff: the four `_array_diff`
-    // strategies `diff.rs` produces ───────────────────────────────────────
+    // strategies `diff/array_diff.rs` produces ───────────────────────────
 
     fn array_diff_obj(json: Value) -> serde_json::Map<String, Value> {
         json.as_object().unwrap().clone()

@@ -52,7 +52,7 @@ def discover_patch_summary(out_dir: Path) -> str | None:
 
 def discover_discord_chunks(out_dir: Path) -> list[str]:
     """Sorted `discord/chunk_*.md` paths, relative to out_dir -- a single
-    flat directory now (one merged patch-summary.md, not one per category),
+    flat directory (one merged patch-summary.md, not one per category),
     filenames are zero-padded (chunk_001.md, ...) so a plain name sort is
     already numeric order."""
     chunk_dir = layout.discord_dir(out_dir)

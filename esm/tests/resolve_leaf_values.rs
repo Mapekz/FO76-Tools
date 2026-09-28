@@ -201,13 +201,13 @@ fn glob_ref_with_no_fltv_degrades_to_plain_stub() {
     );
 }
 
-/// Pins the accepted new behaviour: target-signature keying means a CURV
-/// reached through an empty-`valid_refs` call site (here, `decode_ctda`'s
-/// `Reference` field — same shape as the real `PROJ."Speed Curve Table"` /
-/// `"Seek Strength Curve Table"` fields, whose schema `valid_refs` is also
-/// empty) now inlines its points too, not just bare hex. No `record_type`
-/// key on the result — CURV's inline shape is deliberately unchanged from
-/// what `resolve_formid`'s `valid_refs`-keyed branch has always produced.
+/// Target-signature keying means a CURV reached through an empty-`valid_refs`
+/// call site (here, `decode_ctda`'s `Reference` field — same shape as the
+/// real `PROJ."Speed Curve Table"` / `"Seek Strength Curve Table"` fields,
+/// whose schema `valid_refs` is also empty) inlines its points too, not just
+/// bare hex. No `record_type` key on the result — CURV's inline shape is
+/// deliberately the same one `resolve_formid`'s `valid_refs`-keyed branch
+/// produces.
 #[test]
 fn curv_ref_from_empty_valid_refs_inlines_via_target_signature() {
     let dir = std::env::temp_dir().join(format!(

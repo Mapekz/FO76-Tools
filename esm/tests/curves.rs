@@ -228,8 +228,7 @@ fn get_curv_record_without_curves_loaded_omits_curve_field() {
 
 #[test]
 fn sum_range_basic_case() {
-    // x=0..10 step 1 -> 0,10,20,...,100 -> sum = 550 (matches
-    // curvelib.py's own basic sum_range test, before it was ported here).
+    // x=0..10 step 1 -> 0,10,20,...,100 -> sum = 550.
     let pts = vec![
         CurvePoint { x: 0.0, y: 0.0 },
         CurvePoint { x: 10.0, y: 100.0 },
@@ -263,9 +262,7 @@ fn sum_range_rejects_end_before_start() {
 
 /// `CT_WorldPets_XP_LevelingProgression` — real curve data, fetched live via
 /// `esm get CT_WorldPets_XP_LevelingProgression --json` against
-/// `$FO76_ESM_PATH` (Data/20260903/SeventySix.esm). Ported from
-/// `tools/tests/test_curvelib.py`'s `sum_range` golden-value tests (removed
-/// there — `sum_range` now lives only in `src/curves.rs`).
+/// `$FO76_ESM_PATH` (Data/20260903/SeventySix.esm).
 fn worldpets_xp_leveling_progression() -> Vec<CurvePoint> {
     [
         (1.0, 0.0),

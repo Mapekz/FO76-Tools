@@ -11,9 +11,8 @@ runtime assessor agent) -- then writes five files under
 `<out_dir>/work/`:
 
     triage.json       Tier assignment + per-bundle reasons + summary stats.
-    deep-slice.json   DEEP bundles in the same {"bundles": [...], "lints":
-                      [...]} shape the old per-category slices used, so
-                      writer agents work unchanged (see
+    deep-slice.json   DEEP bundles in the {"bundles": [...], "lints": [...]}
+                      shape the deep writers read (see
                       ../skill/deep-writer-prompt.md).
     ambiguous.json    A compact per-bundle field-diff digest for every
                       `ambiguous` bundle, small enough to paste into one

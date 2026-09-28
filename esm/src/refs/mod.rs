@@ -135,8 +135,8 @@ pub fn referenced_by_enriched_multi(
 /// `emit_seeds` is true, each seed is also emitted as its own `depth: 0` row
 /// *before* the BFS-found referencer rows, and the queue is seeded with the
 /// carrier's own [`RefPathNode`] so descendants' `path`/`VIA` trace back to
-/// that carrier. When false (the legacy single-target path), seeds are only
-/// BFS roots with empty paths — exactly as `target` always was.
+/// that carrier. When false (Direct mode, a single target), seeds are only
+/// BFS roots with empty paths.
 ///
 /// Seed order is preserved (stable-dedup by FormID only). Callers that care
 /// about display/attribution order — notably
@@ -193,7 +193,7 @@ fn referenced_by_walk(
     // Queue entries: (node_to_expand, originating_carrier, path).
     // In EP mode (`emit_seeds`), path[0] is the carrier itself; hop_depth
     // subtracts 1 so direct referencers still report depth 1. In Direct mode
-    // the origin is None and the path starts empty (legacy behavior).
+    // the origin is None and the path starts empty.
     let mut queue: VecDeque<(FormId, Option<FormId>, Vec<RefPathNode>)> = VecDeque::new();
     let mut seed_rows: Vec<RefRow> = Vec::new();
 
@@ -732,9 +732,10 @@ mod tests {
     // ── resolve_ref_seeds ─────────────────────────────────────────────────
 
     /// A plain EditorID selector resolves to `RefSeeds::Direct` — the single
-    /// FormID it names, per ADR-0004's Direct shape. The target itself is
-    /// never emitted as a row (only its referencers are); `resolve_ref_seeds`
-    /// only has to hand back the seed FormID.
+    /// FormID it names, per `docs/adr/0004-refs-seed-selectors.md`'s Direct
+    /// shape. The target itself is never emitted as a row (only its
+    /// referencers are); `resolve_ref_seeds` only has to hand back the seed
+    /// FormID.
     #[test]
     fn resolve_ref_seeds_direct_selector_resolves_edid_to_single_target() {
         let mut subs = Vec::new();
@@ -758,7 +759,8 @@ mod tests {
 
     /// An `--entry-point`/`--ep` selector (`RecordSel::EntryPoint`) resolves to
     /// `RefSeeds::Carriers` — every PERK declaring that entry point, per
-    /// ADR-0004's Carriers shape, each carried alongside its `CarrierTag`s.
+    /// `docs/adr/0004-refs-seed-selectors.md`'s Carriers shape, each carried
+    /// alongside its `CarrierTag`s.
     #[test]
     fn resolve_ref_seeds_carriers_selector_resolves_entry_point_to_seeds() {
         // One PERK carrying entry point id 39 ("Mod Percent Blocked"): a PRKE

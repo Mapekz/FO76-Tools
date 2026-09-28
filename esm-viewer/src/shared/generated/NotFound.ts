@@ -4,7 +4,7 @@ import type { RecordRow } from "./RecordRow";
 /**
  * Set instead of `nodes` when the root selector's initial `bulk_get` came
  * back with an error entry. `matches` starts empty — [`walk`] itself never
- * searches (see module docs); `Op::Walk`'s dispatch (or, pre-D4, the CLI
- * driver) fills it in via one search call before rendering/serializing.
+ * searches (see module docs); `Op::Walk`'s dispatch fills it in via one
+ * search call before rendering/serializing.
  */
 export type NotFound = { target: string, matches?: Array<RecordRow>, };

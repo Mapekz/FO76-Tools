@@ -301,10 +301,7 @@ impl Database {
     // "no referencers"/"not found" answer is indistinguishable from "the
     // index isn't built yet", so a caller that forgets the matching
     // `ensure_*_index` call gets a wrong answer with no error. Rather than
-    // documenting "call ensure first" as a convention (the pre-Stage-C
-    // shape, enforced three different ways: an `assert!` after
-    // `ensure_search_index`, nothing at all before `get_xref`, and separate
-    // `.expect(...)` sites for the filter-cache trio below), those three
+    // relying on a "call ensure first" convention, those three
     // Index accessors are `pub(crate)` and reachable only through the
     // wrappers below, each of which ensures internally — there is no way to
     // read a lazy index's data from within this crate without going through
@@ -397,10 +394,9 @@ impl Database {
         field: SearchField,
         limit: usize,
     ) -> anyhow::Result<Vec<RecordRow>> {
-        // No `assert!`-after-ensure needed here (unlike the pre-Stage-C
-        // shape this replaced): `ensure_search_index`'s only two return
-        // paths either propagate an `Err` or leave `search` mapped — see
-        // its doc comment.
+        // No `assert!`-after-ensure needed here: `ensure_search_index`'s only
+        // two return paths either propagate an `Err` or leave `search`
+        // mapped — see its doc comment.
         self.ensure_search_index()?;
 
         let type_filter: Option<HashSet<&str>> = if types.is_empty() {
@@ -822,7 +818,7 @@ impl Database {
         // (see schema `JSON File Path[/2]`) — inline the parsed points too, so a
         // plain `get` on a CURV record doesn't require a second out-of-band read
         // of that file. Referencing records already get this via `render_formid`
-        // (decode.rs); this covers the CURV record itself.
+        // (`decode/mod.rs`); this covers the CURV record itself.
         if parsed.header.signature == "CURV"
             && let Some(curve) = self
                 .curves

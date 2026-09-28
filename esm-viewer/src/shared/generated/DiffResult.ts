@@ -32,14 +32,14 @@ ref_names?: { [key in string]: RefName },
  * Count of `changed` records dropped entirely by noise suppression
  * (`DiffOptions::suppress_noise`), keyed by record-type signature.
  * Telemetry for renderers, e.g. "312 placement moves omitted".
- * Also holds leaf-level counters: issue #22 shapes (e.g.
+ * Also holds leaf-level counters: calibrated-pass shapes (e.g.
  * `"padding_zeroed"`) and `"localization_flip_text"`, string leaves
  * dropped because only the Localized flag changed how they're stored.
  */
 suppressed_counts?: { [key in string]: number }, 
 /**
  * Serializer-default `(leaf_name, value, count)` rules the calibrated
- * appearance-default pass (issue #22) auto-classified and applied,
+ * appearance-default pass auto-classified and applied,
  * sorted by `count` descending. Empty when the pass did not run.
  */
 auto_suppressed_defaults?: Array<SuppressedDefault>, };

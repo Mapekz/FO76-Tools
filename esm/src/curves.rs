@@ -96,8 +96,7 @@ pub fn points_from_json(v: &serde_json::Value) -> Option<Vec<CurvePoint>> {
 
 /// Sum [`eval`] over x stepping from `start` to `end` inclusive.
 ///
-/// Exact Rust port of `tools/curvelib.py::sum_range`'s semantics: steps are
-/// *counted* (`n = round((end - start) / step)`) rather than accumulated in
+/// Steps are *counted* (`n = round((end - start) / step)`) rather than accumulated in
 /// a `while x <= end` loop, so float drift can't cause the loop to overshoot
 /// or miss the last point. Accumulates in `f64` for precision on large sums.
 pub fn sum_range(points: &[CurvePoint], start: f32, end: f32, step: f32) -> Result<f64> {

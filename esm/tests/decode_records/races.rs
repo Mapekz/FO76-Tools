@@ -7,17 +7,10 @@ use crate::common::{assert_fully_decoded, decode_fixture};
 /// RACE 0x00002ECF — `LiberatorRace` — full-record decode.
 ///
 /// form_version 209. 204 subrecords. Exercises ATKD/ATKE Attack Data
-/// alongside the rest of the RACE schema. Asserts fully decoded.
-///
-/// Replaces the three former RACE morph-subset tests
-/// (`race_power_armor_morph_subset_decodes_correctly`,
-/// `race_human_race_subset_decodes_correctly`,
-/// `race_ghoul_race_subset_decodes_correctly`) which only tested partial
-/// subsets to avoid the Attack Data section. Now that the full record decodes
-/// cleanly (CMDT/CMDN/CMDI appended by an override, wbUnknown clobber fixed),
-/// full-record tests give broader coverage.  Large races (HumanRace 115 KB,
+/// alongside the rest of the RACE schema (CMDT/CMDN/CMDI come from an
+/// override). Asserts fully decoded. Large races (HumanRace 115 KB,
 /// GhoulRace 65 KB, PowerArmorRace 72 KB) are covered by the env-gated
-/// `decode_all_clean_types_fully` sweep once RACE is in `CLEAN_TYPES`.
+/// `decode_all_clean_types_fully` sweep, since RACE is in `CLEAN_TYPES`.
 #[test]
 fn race_liberator_decodes_correctly() {
     // Verbatim subrecords from `esm get <esm>

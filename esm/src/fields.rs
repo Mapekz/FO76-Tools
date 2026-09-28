@@ -1,6 +1,6 @@
 //! Readers for decoded record JSON shared by chase, walk and the drop table:
 //! schema enums, FormID stubs at [`crate::ResolveDepth::Stub`], condition
-//! rows, and the prototype's truthiness.
+//! rows, and Python-style truthiness.
 
 use serde_json::Value;
 
@@ -20,7 +20,7 @@ pub(crate) fn named(field: Option<&Value>) -> Value {
 }
 
 /// Python-truthiness for a JSON value (`None`/`0`/`""`/`[]`/`{}`/`false` are
-/// falsy, matching the chase prototype's bare `if x:` checks).
+/// falsy, as in a bare Python `if x:`).
 pub(crate) fn is_truthy(v: Option<&Value>) -> bool {
     match v {
         None => false,

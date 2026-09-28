@@ -270,10 +270,10 @@ impl TreeIndex {
 
     /// Convert an arena entry to a presentation [`GroupNode`].
     ///
-    /// Test-only: since Stage 4 moved [`TreeView`]'s real read path onto the
-    /// archived `rkyv::Archived<TreeIndex>` (see [`TreeView::group_node`]),
-    /// this direct-field-access version has no production caller left — it
-    /// exists solely as the "known good" comparison side for the round-trip
+    /// Test-only: [`TreeView`]'s real read path goes through the archived
+    /// `rkyv::Archived<TreeIndex>` (see [`TreeView::group_node`]), so this
+    /// direct-field-access version has no production caller — it exists
+    /// solely as the "known good" comparison side for the round-trip
     /// test below.
     #[cfg(test)]
     fn group_node(&self, idx: usize) -> GroupNode {
@@ -540,7 +540,7 @@ mod tests {
         );
     }
 
-    // ── Stage 4: TreeIndex/TreeView through the rkyv `tree` section ─────────
+    // ── TreeIndex/TreeView through the rkyv `tree` section ─────────
 
     /// Arbitrary, test-only `cache_version` — this test exercises the
     /// `write_section`/`Section::map` mechanics in isolation, not

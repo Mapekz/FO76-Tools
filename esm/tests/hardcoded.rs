@@ -87,8 +87,8 @@ fn real_esm_record_wins_over_hardcoded_table_entry() {
 
 /// `esm get`'s serving path (`ops::run` → `Op::Record` →
 /// `record_resolved`), not just `DatabaseResolver`, must also recognize a
-/// hardcoded-form miss and explain it instead of a bare "not found" — issue
-/// #27's selector-resolution half. `KillStreak` now resolves as an
+/// hardcoded-form miss and explain it instead of a bare "not found".
+/// `KillStreak` resolves as an
 /// EditorID (via `ops::resolve_sel`'s hardcoded fallback) but still has no
 /// record to decode, so the miss must name the form and point at `esm refs`.
 #[test]

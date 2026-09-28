@@ -6,12 +6,14 @@
 //!
 //! Two self-contained subsystems live in their own submodules: [`noise`]
 //! suppresses noise in a `changed` record's `field_changes` (its module docs
-//! list the stages and their load-bearing order), and [`array_diff`] is `json_diff`'s per-element array-diff
-//! engine (the four `keyed`/`positional`/`set`/`unkeyed` pairing strategies
-//! ADR 0005 documents). The two cross paths only through ordinary mutual
-//! recursion — `json_diff` calls `array_diff::array_diff` for array fields,
-//! and `array_diff`'s `keyed_diff`/`positional_diff` call back into
-//! `json_diff` for per-element sub-diffs.
+//! list the stages and their load-bearing order), and [`array_diff`] is
+//! `json_diff`'s per-element array-diff engine (the four
+//! `keyed`/`positional`/`set`/`unkeyed` pairing strategies
+//! `docs/adr/0005-element-identity-owned-by-rust.md` documents). The two
+//! cross paths only through ordinary mutual recursion — `json_diff` calls
+//! `array_diff::array_diff` for array fields, and `array_diff`'s
+//! `keyed_diff`/`positional_diff` call back into `json_diff` for
+//! per-element sub-diffs.
 
 mod array_diff;
 mod noise;
@@ -81,12 +83,10 @@ pub struct DiffOptions {
     pub only_type: Option<String>,
     /// Minimum appearance count for a `(leaf_name, value)` pair to be treated
     /// as a serializer default and stripped when `form_version`s differ
-    /// (issue #22). Measured on the 20260710→20260717 snapshot: N=100 lands
-    /// `changed` at 10,571 records (also stripping 3,484 padding-zeroed `_raw`
-    /// leaves), collapsing 40 distinct serializer-default rules — near the
-    /// issue's ~11.6K true-churn estimate. Wiring this to CLI/config is issue
-    /// #15 — the field exists so that can land without another diff-engine
-    /// change.
+    /// (noise stage 5, calibrated). Measured on the 20260710→20260717
+    /// snapshot: N=100 lands `changed` at 10,571 records (also stripping 3,484
+    /// padding-zeroed `_raw` leaves), collapsing 40 distinct serializer-default
+    /// rules — near the ~11.6K true-churn estimate.
     pub restamp_default_min_count: usize,
 }
 
@@ -192,7 +192,7 @@ pub struct RefName {
 }
 
 /// A `(leaf_name, value)` serializer-default rule auto-classified by the
-/// calibrated appearance-default pass (issue #22), with the global appearance
+/// calibrated appearance-default pass (noise stage 5), with the global appearance
 /// count that triggered it. Emitted in [`DiffResult::auto_suppressed_defaults`]
 /// so a human/agent can audit exactly what a given diff run dropped.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -231,13 +231,13 @@ pub struct DiffResult {
     /// Count of `changed` records dropped entirely by noise suppression
     /// (`DiffOptions::suppress_noise`), keyed by record-type signature.
     /// Telemetry for renderers, e.g. "312 placement moves omitted".
-    /// Also holds leaf-level counters: issue #22 shapes (e.g.
+    /// Also holds leaf-level counters: calibrated-pass shapes (e.g.
     /// `"padding_zeroed"`) and `"localization_flip_text"`, string leaves
     /// dropped because only the Localized flag changed how they're stored.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub suppressed_counts: BTreeMap<String, usize>,
     /// Serializer-default `(leaf_name, value, count)` rules the calibrated
-    /// appearance-default pass (issue #22) auto-classified and applied,
+    /// appearance-default pass auto-classified and applied,
     /// sorted by `count` descending. Empty when the pass did not run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub auto_suppressed_defaults: Vec<SuppressedDefault>,
@@ -272,8 +272,8 @@ pub fn diff_databases(a: &Database, b: &Database) -> anyhow::Result<DiffResult> 
 /// for the noise shapes that carry no schema gate at all (nested inside
 /// `_array_diff` elements, all-zero `_raw` padding growth, and known
 /// materialized-on-resave subrecords like INFO's PNAM chain link),
-/// `noise::strip_restamp_appearances` (issue #18); then a global calibrated
-/// appearance-default pass plus padding-zeroing suppression (issue #22) —
+/// `noise::strip_restamp_appearances`; then a global calibrated
+/// appearance-default pass plus padding-zeroing suppression —
 /// see `noise::apply_restamp_calibrated_suppression`. A record is dropped
 /// entirely when nothing else changed. Dropped counts are recorded in
 /// `DiffResult::suppressed_counts`; auto-classified defaults land in
@@ -362,8 +362,8 @@ pub fn diff_databases_with(
     // Common: compare payloads, decode only on mismatch
     let mut changed = Vec::new();
     // Parallel to `changed`: true when this record's form_versions differed
-    // (gates the issue #18/#22 restamp passes). Kept aside so #22's global
-    // frequency pass can run after the per-record loop.
+    // (gates the restamp and calibrated passes). Kept aside so the calibrated
+    // pass's global frequency count can run after the per-record loop.
     let mut changed_restamp: Vec<bool> = Vec::new();
     let mut suppressed_counts: BTreeMap<String, usize> = BTreeMap::new();
     let localization_flip = a.is_localized != b.is_localized;

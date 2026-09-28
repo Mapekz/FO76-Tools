@@ -15,7 +15,7 @@ Covers:
 Every test above uses only synthetic fixtures and stubs. `RealEsmIntegrationTests`
 at the bottom is the one exception: it drives `EsmGateway` end-to-end against
 the repo's `esm` binary, opted into with `$PN_TEST_ESM` (a real
-`SeventySix.esm`) the way `tests/diff.rs`'s `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B`
+`SeventySix.esm`) the way `esm/tests/diff.rs`'s `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B`
 gate the Rust side -- it skips (via `setUpClass` raising `SkipTest`) when
 unset, so the suite stays hermetic by default. A dedicated variable, not
 `$FO76_ESM_PATH`, so a shell that has the latter set never points a
@@ -255,14 +255,14 @@ class FormIdHelperTests(unittest.TestCase):
         self.assertEqual(formids.to_int(0x463F), 0x463F)
 
     def test_formid_to_int_reads_bare_all_digit_token_as_hex_first(self):
-        # Mirrors src/formid.rs's parse_formid: a bare token is hex first,
+        # Mirrors esm/src/formid.rs's parse_formid: a bare token is hex first,
         # even one that's also plain-decimal-looking. "00568635" is hex
         # 0x00568635, not decimal 568635.
         self.assertEqual(formids.to_int("00568635"), 0x00568635)
         self.assertEqual(formids.to_int("18000"), 0x18000)
 
     def test_formid_to_int_accepts_bare_hex_with_letters(self):
-        # Previously raised: formid_to_int had no bare-hex branch at all.
+        # A bare hex token (no 0x prefix) containing letters parses as hex.
         self.assertEqual(formids.to_int("463F"), 0x463F)
         self.assertEqual(formids.to_int("DEADBEEF"), 0xDEADBEEF)
 
@@ -270,7 +270,7 @@ class FormIdHelperTests(unittest.TestCase):
         self.assertEqual(formids.to_int("123456789"), 123456789)
 
     def test_formid_to_hex_matches_rust_display_format(self):
-        # src/formid.rs: `format!("0x{:08X}", self.0)` -- uppercase, 8 digits.
+        # esm/src/formid.rs: `format!("0x{:08X}", self.0)` -- uppercase, 8 digits.
         self.assertEqual(formids.display(0x463F), "0x0000463F")
         self.assertEqual(formids.display(0x00ABCDEF), "0x00ABCDEF")
         self.assertEqual(formids.display("0x00abcdef"), "0x00ABCDEF")
@@ -354,13 +354,9 @@ class EsmGatewayDiffTests(TempDirTestCase):
         self.assertEqual(result.raw_json, '{"added": [], "removed": [], "changed": []}')
 
     def test_trailing_garbage_after_json_is_rejected(self):
-        # Previously tolerated via `raw_decode` as a workaround for a CLI bug
-        # where a subcommand ran and then fell through into the REPL, which
-        # wrote its `esm> ` prompt to stdout right after the JSON. That bug
-        # was fixed at the CLI level (a subcommand always exits after
-        # running) and the REPL has since been removed entirely, so this is
-        # no longer an `esm` quirk to route around -- any bytes trailing the
-        # JSON blob are a hard error now, same as invalid JSON outright.
+        # `esm diff --json` writes exactly one JSON document to stdout, so
+        # any bytes trailing the JSON blob are a hard error, same as invalid
+        # JSON outright.
         fake_esm = self._fake_esm('{"added": [], "removed": [], "changed": []}esm> ')
         with self.assertRaises(EsmError):
             self._diff(fake_esm)
@@ -455,8 +451,8 @@ class RealEsmIntegrationTests(unittest.TestCase):
         # walk any OMOD's first Keywords-typed property back to find it, then
         # confirm the reverse walk (type_filter="OMOD", paths=True) rediscovers
         # this exact OMOD with a field_paths entry pointing back at that
-        # property (see chase/chase.py's keyword_hook pattern, which this
-        # capability was added for).
+        # property (the capability `esm::chase`'s keyword-hook pattern relies
+        # on).
         omods = self.gateway.search(self.esm_path, "*", record_type="OMOD", limit=25)
         self.assertTrue(omods)
         for stub in omods:

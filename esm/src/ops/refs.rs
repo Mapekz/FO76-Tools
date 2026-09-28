@@ -92,7 +92,7 @@ pub(super) fn ref_path(
     find_ref_path(db, from, to, args.max_hops, args.paths)
 }
 
-/// Row ordering for a [`Op::ReferencedBy`] walk, applied server-side inside
+/// Row ordering for a [`Op::ReferencedBy`] walk, applied inside the op in
 /// `refs::referenced_by_walk` before `limit` truncation (sorting after
 /// truncation would be meaningless — the truncation has already happened).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,8 +100,7 @@ pub(super) fn ref_path(
 #[cfg_attr(test, ts(export))]
 #[serde(rename_all = "snake_case")]
 pub enum RefSort {
-    /// Sort by FormID ascending — today's behavior, and the wire default for
-    /// older clients that predate this field.
+    /// Sort by FormID ascending — the default when the field is omitted.
     #[default]
     Formid,
     /// Sort by `(depth, form_id)` — under `--limit`, this yields a

@@ -1582,9 +1582,8 @@ fn npc_properties_curve_rows_labeled_by_actor_value() {
         text.contains("DamageResist: 40"),
         "expected the DamageResist property row labeled by Actor Value and evaluated, got:\n{text}"
     );
-    // The generic field tree must still be present too — NPC_ used to fall
-    // through to `Digest::Generic` and must not lose that on gaining its own
-    // digest arm.
+    // The generic field tree must still be present too — NPC_ keeps the
+    // generic field tree alongside its own digest arm.
     assert!(
         text.contains("\"Properties\""),
         "expected the generic field tree to still render Properties, got:\n{text}"

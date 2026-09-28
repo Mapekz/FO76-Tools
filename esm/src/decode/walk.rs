@@ -1610,10 +1610,10 @@ mod tests {
         );
     }
 
-    /// Payload-context `Unused` (no `sig`, the pre-existing/common case: byte
-    /// padding skipped *within* an already-consumed struct payload) must keep
-    /// working unchanged — this is a guard against Fix E's `sig` addition
-    /// regressing the far more common path.
+    /// Payload-context `Unused` (no `sig`, the common case: byte padding
+    /// skipped *within* an already-consumed struct payload) still skips only
+    /// payload bytes — guards the common path against the sig-bearing
+    /// subrecord-level variant.
     #[test]
     fn unused_without_sig_still_skips_payload_bytes_only() {
         let schema = empty_schema();

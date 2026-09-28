@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""curvelib.py — dependency-free linear-interpolation helpers. `curvelookup.py`
-(hardcoded tiered curve files) is the sole remaining consumer; the ad-hoc
-any-CURV-record lookup this used to also serve (`curvetable.py`) was replaced
-by the native `esm curve` subcommand (`src/curves.rs`) and removed."""
+"""curvelib.py — dependency-free linear-interpolation helpers. Consumer:
+`curvelookup.py` (hardcoded tiered curve files). Any-CURV-record lookup is
+the native `esm curve` subcommand (`src/curves.rs`)."""
 
 from __future__ import annotations
 

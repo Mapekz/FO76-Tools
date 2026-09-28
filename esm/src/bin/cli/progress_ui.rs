@@ -10,15 +10,14 @@
 //!
 //! # Where this hooks in
 //!
-//! [`Watcher::spawn`]/[`Watcher::stop`] wrap `cli.rs`'s `Backend::run`
-//! method — not `dispatch_command` — because
-//! every `cmd_*` function prints its result immediately after its
-//! `backend.run(...)` call returns (see e.g. `cmd_info`). Wrapping `run`
-//! itself means `stop()` (which blocks until the in-progress render, if
-//! any, is erased) completes synchronously before control returns to
-//! whichever `cmd_*` function is about to write to stdout — the only place
-//! that ordering can be guaranteed without threading a stop signal through
-//! every individual print call site.
+//! [`Watcher::spawn`]/[`Watcher::stop`] wrap `main.rs`'s `Backend::run`
+//! method — not `dispatch_command` — because every `cmd_*` function prints
+//! its result immediately after its `backend.run(...)` call returns (see
+//! e.g. `cmd_info` in `inspect.rs`). Wrapping `run` itself means `stop()`
+//! (which blocks until the in-progress render, if any, is erased) completes
+//! synchronously before control returns to whichever `cmd_*` function is
+//! about to write to stdout — the only place that ordering can be guaranteed
+//! without threading a stop signal through every individual print call site.
 
 use esm::progress::{self, BuildProgress, ProgressUnit};
 use std::io::{IsTerminal, Write};

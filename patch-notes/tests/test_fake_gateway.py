@@ -10,12 +10,12 @@ Covers:
 Every test above uses only synthetic fixtures -- no real `esm` or game
 data. `FakeGatewayConformanceTests` at the bottom is the one exception: it
 asserts `FakeGateway`'s Python reimplementation of the reverse-reference BFS
-agrees with the REAL gateway/backend's own `ops::referenced_by_enriched`
+agrees with the REAL gateway/backend's own `refs::referenced_by_enriched`
 walk. Opted into with `$PN_TEST_ESM`, like `test_esmcli.py`'s
 `RealEsmIntegrationTests` -- skips when unset, so it is a no-op in
 CI/sandboxes without game data. This is the
 actual drift guard for the ~250-line Python BFS reimplementation in
-fake_gateway.py, previously guaranteed only by that class's own docstring.
+fake_gateway.py.
 """
 
 from __future__ import annotations
@@ -235,7 +235,7 @@ class FakeGatewayPathsAndBulkGetTests(unittest.TestCase):
         self.assertEqual(entries[1]["sel"], "0xFFFFFFFF")
         self.assertIn("error", entries[1])
         # EditorID selectors display as the literal input text (mirrors
-        # RecordSel::display() in src/ops/sel.rs), not the resolved FormID.
+        # RecordSel::display() in esm/src/ops/sel.rs), not the resolved FormID.
         self.assertEqual(entries[2]["sel"], "mod_Custom_Test")
         self.assertEqual(entries[2]["fields"], {"Data": {"Properties": []}})
 

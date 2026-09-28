@@ -33,8 +33,7 @@ fn ts_string_literal(s: &str) -> String {
 }
 
 /// Generate `recordTypeNames.generated.ts`: signature -> display name, sourced
-/// from the embedded schema's `records[sig].name` (the same data
-/// `esm-viewer/src/renderer/src/recordTypeNames.ts` used to hand-copy).
+/// from the embedded schema's `records[sig].name`.
 #[test]
 fn export_bindings_record_type_names() {
     let schema = Schema::load_embedded().expect("load embedded schema");

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-run_lints.py — Tool 3 of the FO76 patch-notes pipeline: automated lint checks
-over the mechanical diff output.
+run_lints.py — the lint stage of the FO76 patch-notes pipeline: automated lint
+checks over the mechanical diff output.
 
 Reads `<out_dir>/comprehensive.json` (full per-record detail, keyed by
 FormID — see `change_entries.py` for the `ChangeEntry` shape each record's

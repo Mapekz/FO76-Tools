@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 change_entries.py — the single owner of patch-notes `ChangeEntry` construction,
-consumed only by `render_comprehensive.py` (Tool 1 of the pipeline), in a
+consumed only by `render_comprehensive.py` (the comprehensive-render stage), in a
 sibling module so that CLI entry point stays thin.
 
 It owns cut/deprecation detection (`classify_cut`/`annotate_cut`),
@@ -19,7 +19,7 @@ shared across the pipeline (`pl.format_scalar`, `pl.annotate_ref`,
 `pl.is_curve`, `pl.fmt_num`);
 `patchnotes_lib.py` never imports this module.
 
-Input is the `esm diff --json` output (`DiffResult` in `src/diff/`): each
+Input is the `esm diff --json` output (`DiffResult` in `esm/src/diff/mod.rs`): each
 changed record's sparse `field_changes` map. Rust owns element identity
 (ADR 0005), so every array edit arrives as an `_array_diff`; a `{"from",
 "to"}` leaf holding a list means the array field appeared or disappeared.
@@ -122,7 +122,7 @@ CUT_MARKERS = ["ZZZ", "CUT", "POST", "DEPRECATED", "DELETE"]
 
 # The full set of values `ChangeEntry["suppressed"]` may take (besides None).
 # "noise" is retained for wire-schema compatibility (run_lints skips it;
-# fixtures/historical JSON may still carry it) but extract_changes no longer
+# fixtures and earlier runs' JSON may carry it) but extract_changes never
 # assigns it.
 # "reorder" marks an array whose two sides hold the same elements in a
 # different order (esm's `_array_diff.reorder_only`).
@@ -247,9 +247,10 @@ def _unwrap_element_wrapper(elem, max_depth=_STRUCT_DISPLAY_UNWRAP_MAX_DEPTH):
     """Unwrap the single-member "rstruct" wrapper rarray elements are often
     decoded into (e.g. a CTDA `Conditions[]` element,
     `{"Condition": {"Condition Data": {...}}}`) down to the first object
-    carrying real fields, mirroring `diff.rs::unwrap_wrapper`. Stops at the
-    first object with more than one key, a non-dict value, or after
-    `max_depth` unwraps — whichever comes first. Elements that aren't
+    carrying real fields, mirroring `unwrap_wrapper` in
+    esm/src/diff/array_diff.rs. Stops at the first object with more than one
+    key, a non-dict value, or after `max_depth` unwraps — whichever comes
+    first. Elements that aren't
     wrapper-shaped (e.g. an already-flat OMOD property, or a resolved
     FormID stub with sibling `editor_id`/`record_type` keys) are returned
     unchanged, since `len(elem) == 1` never matches them."""

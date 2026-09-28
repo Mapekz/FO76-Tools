@@ -3,10 +3,10 @@
 `EsmGateway` -- the one seam every `pn/*.py` pipeline stage uses to reach
 the `esm` CLI. It owns one `esm batch` child process and sends it JSON
 `{"esm", "op"}` requests, one per line, reading one response envelope per line
-back (see `src/bin/cli/batch.rs`). The child keeps each ESM's database open
+back (see `esm/src/bin/cli/batch.rs`). The child keeps each ESM's database open
 for the gateway's lifetime, so a stage pays each ESM's open cost once, and it
 exits when the gateway closes. The request/response shapes are the `Op`,
-`Request` and `Response` types in `src/ops/mod.rs`.
+`Request` and `Response` types in `esm/src/ops/mod.rs`.
 
 A full gateway, not just single-record lookups: `bulk_get` (`Op::RecordBulk`,
 one request for N selectors), `refs(..., paths=True, type_filter=...)` (the
@@ -52,7 +52,7 @@ def _sel_for_edid(edid: str) -> dict:
 def _sel_for_input(value: formids.FormIdLike) -> dict:
     """Build a `RecordSel` wire value from one ambiguous token, auto-detecting
     FormID vs EditorID via `_looks_like_formid` -- mirrors `RecordSel::from_input`
-    in src/ops/sel.rs. Used by `bulk_get`, whose selectors may be a mix of both
+    in esm/src/ops/sel.rs. Used by `bulk_get`, whose selectors may be a mix of both
     (e.g. a caller's initial lookup token can be a FormID or an EditorID,
     while FormIDs discovered by a subsequent reverse-ref walk are always
     FormIDs)."""
@@ -66,7 +66,7 @@ def _sel_kind(sel: Mapping[str, Any]) -> tuple[str, Any]:
 
 
 def _sel_display(sel: Mapping[str, Any]) -> str:
-    """Mirror `RecordSel::display()` in src/ops/sel.rs: a FormID hex string
+    """Mirror `RecordSel::display()` in esm/src/ops/sel.rs: a FormID hex string
     (`0x0000463F`) for a `form_id` selector, or the literal EditorID text for
     an `edid` selector."""
     kind, value = _sel_kind(sel)
@@ -86,10 +86,7 @@ def find_esm_binary(explicit: str | Path | None = None) -> Path:
 
     Raises `EsmError` (never calls `sys.exit`/prints to stderr) -- this is
     a library function shared by every CLI entry point in `pn/`, each of
-    which translates the error into its own exit-code convention (see
-    `make_patch_notes.py::find_esm_binary`'s former `die(1, ...)` and
-    `build_bundles.py::find_esm_binary`'s former `raise SystemExit(...)` --
-    both now catch `EsmError` instead and keep their own exit code).
+    which catches `EsmError` and maps it to its own exit code.
     """
     if explicit:
         p = Path(explicit)
@@ -129,9 +126,8 @@ def build_diff_cmd(
 ) -> list[str]:
     """Build the `esm diff ...` argv list. Pure / side-effect-free so
     it can be unit-tested directly without spawning a subprocess (see
-    `make_patch_notes.py`'s `TestBuildDiffCmd`, which calls this via
-    `make_patch_notes.build_diff_cmd` -- re-exported there for that existing
-    call site)."""
+    `tests/test_orchestrator.py`'s `TestBuildDiffCmd`, which calls it via
+    the `make_patch_notes.build_diff_cmd` re-export)."""
     cmd = [
         str(esm_bin), "diff", str(esm_a), str(esm_b),
         "--lang", lang, "--json", "--bodies", bodies,
@@ -153,7 +149,7 @@ class DiffResult:
     """Result of `EsmGateway.diff()`.
 
     `data`: the parsed `esm diff --json` output (a `DiffResult`-shaped
-    dict on the Rust side -- see `src/diff.rs`; unrelated to this Python
+    dict on the Rust side -- see `esm/src/diff/mod.rs`; unrelated to this Python
     class despite the name collision, which mirrors the Rust type name for
     the reader's convenience).
     `raw_json`: the exact JSON text `esm` produced on stdout -- what callers
@@ -252,14 +248,15 @@ class EsmGateway:
             raise EsmError(parsed.get("error", "unknown esm error"))
         raise EsmError(f"unrecognized response envelope: {parsed!r}")
 
-    # ---- convenience wrappers over Op variants (ops/mod.rs::Op) ----
+    # ---- convenience wrappers over Op variants (esm/src/ops/mod.rs::Op) ----
 
     def file_info(self, esm: str) -> dict:
         return self.op(esm, {"op": "file_info"})
 
     def record(self, esm: str, formid: formids.FormIdLike, *, resolve: str = "stub") -> dict:
         """`Op::Record { sel: FormId, depth }`. `resolve` is one of
-        "none" | "stub" | "full" (`ResolveDepth` in src/decode/mod.rs, default "stub")."""
+        "none" | "stub" | "full" (`ResolveDepth` in esm/src/decode/mod.rs, default
+        "stub")."""
         return self.op(
             esm, {"op": "record", "sel": _sel_for_formid(formid), "depth": resolve}
         )
@@ -273,19 +270,18 @@ class EsmGateway:
     ) -> list[dict]:
         """`Op::RecordBulk { sels: Vec<RecordSel>, depth }` -- the bulk
         counterpart to `record`/`record_by_edid`: resolves every selector in
-        one HTTP round-trip instead of N. Each element of `sels` may be a
+        one request instead of N. Each element of `sels` may be a
         FormID (int or hex/decimal string) or an EditorID string; kind is
         auto-detected per-selector via `_looks_like_formid`, mirroring the
-        Rust CLI's own `RecordSel::from_input` (see src/ops/sel.rs).
+        Rust CLI's own `RecordSel::from_input` (see esm/src/ops/sel.rs).
 
         Returns the raw list of `BulkRecordEntry` dicts, each shaped
         `{"sel": <selector display string>, "header"?, "editor_id"?,
         "fields"?, "error"?}` -- one bad selector produces an `error` entry
-        for itself only, it never fails the whole call (see src/ops/records.rs's
-        `RecordBulk` docs). This lets a caller drop any single-vs-multi-target
-        special case entirely: even a length-1 `sels` list gets the same
-        per-selector error isolation a subprocess `esm get` with one bad
-        target did not have.
+        for itself only, it never fails the whole call (see
+        esm/src/ops/records.rs's `RecordBulkArgs` docs). A caller needs no
+        single-vs-multi-target special case: even a length-1 `sels` list gets
+        the same per-selector error isolation.
         """
         wire_sels = [_sel_for_input(s) for s in sels]
         return self.op(esm, {"op": "record_bulk", "sels": wire_sels, "depth": resolve})
@@ -302,7 +298,8 @@ class EsmGateway:
     ) -> list:
         """`Op::Search { pattern, types, field, limit }`.
 
-        `field` is one of "edid" | "name" | "both" (lib.rs `SearchField`).
+        `field` is one of "edid" | "name" | "both" (`SearchField` in
+        esm/src/database.rs).
         Pass either `record_type` (single 4-char signature) or `types` (a
         list); `record_type` is a convenience for the common single-type
         case and is folded into `types`.
@@ -331,16 +328,16 @@ class EsmGateway:
     ) -> dict:
         """`Op::ReferencedBy { sel: FormId, limit, depth, type_filter, paths }`.
         `limit=0` means unlimited; `depth=0` requests an UNBOUNDED walk (no
-        fixed hop cap), any other value clamps server-side to `[1,
+        fixed hop cap), any other value clamps on the Rust side to `[1,
         DEFAULT_MAX_DEPTH]`. Returns the `RefList` dict: `{target, rows,
         total, capped, requested_depth, effective_depth, depth_capped,
         frontier_remaining, per_depth_totals, shown_max_depth}` (see
-        `RefList` in src/ops/refs.rs for each field's exact meaning; `effective_depth`
-        is `None` when `requested_depth == 0`). `carrier_total`/`tag_total`
-        are also part of the wire struct but only populated for
-        entry-point/carrier-seeded walks, which this single-target method
-        never produces -- they're omitted from a plain `refs()` response,
-        same as the server's own `skip_serializing_if` omission.
+        `RefList` in esm/src/ops/refs.rs for each field's exact meaning;
+        `effective_depth` is `None` when `requested_depth == 0`).
+        `carrier_total`/`tag_total` are also part of the wire struct but only
+        populated for entry-point/carrier-seeded walks, which this
+        single-target method never produces -- the Rust struct's own
+        `skip_serializing_if` omits them from a plain `refs()` response.
 
         `type_filter`, if given, must be a 4-character record-type signature
         (case-insensitive, e.g. `"OMOD"`) -- only referencing records of that
@@ -349,14 +346,12 @@ class EsmGateway:
         true, annotates each emitted row with `field_paths`: the JSON field
         path(s) inside that row's decoded body referencing its predecessor in
         the hop chain -- opt-in because it requires a full decode per row.
-        Both mirror `esm refs --type SIG --paths` (see src/ops/refs.rs's
-        `Op::ReferencedBy` and cli.rs's `cmd_refs`).
+        Both mirror `esm refs --type SIG --paths` (see esm/src/ops/refs.rs's
+        `ReferencedByArgs` and esm/src/bin/cli/refs.rs's `cmd_refs`).
 
         `type_filter`/`paths` are omitted from the wire request entirely
-        when left at their defaults, keeping the request body byte-identical
-        to the pre-existing wire shape for callers that never use them
-        (`ReferencedByArgs`'s `#[serde(default)]` on both fields makes this safe for
-        older/newer clients either way).
+        when left at their defaults; `ReferencedByArgs`'s `#[serde(default)]`
+        on both fields fills them back in.
         """
         op: dict[str, Any] = {
             "op": "referenced_by",
@@ -378,7 +373,7 @@ class EsmGateway:
         except EsmError:
             return False
 
-    # ---- diff() : cold two-ESM subprocess, not the /op route ----
+    # ---- diff() : cold two-ESM subprocess, not an `esm batch` request ----
 
     @staticmethod
     def diff(

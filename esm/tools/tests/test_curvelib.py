@@ -2,11 +2,8 @@
 """Tests for tools/curvelib.py.
 
 Pure-function coverage only -- `interpolate`/`fmt_value` take plain data and
-return plain values, no gateway/fixture dependency needed. `curvelookup.py`
-is the sole remaining consumer of this module (the ad-hoc any-CURV-record
-lookup/sum functionality that used to also live here, via `curvetable.py`,
-moved to the native `esm curve` subcommand and `sum_range` moved with it —
-see `esm/tests/curves.rs`)."""
+return plain values, no gateway/fixture dependency needed. Consumer:
+`curvelookup.py`."""
 
 from __future__ import annotations
 

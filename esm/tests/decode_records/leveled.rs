@@ -8,7 +8,7 @@ use crate::common::{assert_fully_decoded, assert_record_type, decode_fixture};
 ///
 /// form_version 197 (≥174).  `wbBelowVersion(174, LVLD …)` means the existing
 /// LVLD schema member is inactive at fv≥174; an `empty` member with
-/// `from_version:174` in `fo76.overrides.json` now consumes the empty subrecord.
+/// `from_version:174` in `fo76.overrides.json` consumes the empty subrecord.
 #[test]
 fn lvli_flora_corn_decodes_correctly() {
     // Verbatim subrecords from `esm get <esm>

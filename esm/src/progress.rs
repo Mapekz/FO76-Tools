@@ -65,8 +65,7 @@ const STALL_TIMEOUT: Duration = Duration::from_secs(60);
 /// (a second process seeing the lock held and skipping a redundant rebuild)
 /// is the valuable half of this module and stays on regardless. Meant for
 /// hosts where a stray file write is undesirable, e.g. the N-API/Electron
-/// embedding. Same naming convention as `ESM_CACHE_VERIFY`/`ESM_BULK_CHUNK`/
-/// `ESM_OP_TIMEOUT_SECS` (`backend.rs`).
+/// embedding. Same convention as `ESM_CACHE_VERIFY` (`rkyvcache.rs`).
 const NO_PROGRESS_ENV: &str = "ESM_NO_PROGRESS";
 
 fn progress_disabled() -> bool {
@@ -82,8 +81,8 @@ fn progress_disabled() -> bool {
 /// explicit discriminants: this doubles as the on-disk `section_kind` field
 /// `rkyvcache`'s 64-byte header stores (see that module's layout table), so
 /// the numeric values are load-bearing on-disk identity, not just an
-/// internal implementation detail — kept at their pre-unification values
-/// (`Tree = 1` etc.) so this refactor doesn't force a cache rebuild.
+/// internal implementation detail. Never renumber: the values are on-disk
+/// identity, and changing one forces a cache rebuild.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[repr(u32)]

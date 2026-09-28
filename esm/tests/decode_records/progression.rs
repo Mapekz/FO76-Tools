@@ -93,7 +93,7 @@ fn pcrd_data_decodes_race_restriction() {
         assert_record_type(&result, "Perk Card");
         assert_fully_decoded(&result);
 
-        // Rename regression guard: the old placeholder key must be gone.
+        // The DATA struct carries its schema name, not a placeholder key.
         assert!(
             result.get("Unknown").is_none(),
             "PCRD DATA struct must not be keyed 'Unknown'"

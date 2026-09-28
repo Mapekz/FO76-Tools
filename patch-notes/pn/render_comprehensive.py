@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-render_comprehensive.py — Tool 1 of the FO76 patch-notes pipeline.
+render_comprehensive.py — the comprehensive-render stage of the FO76 patch-notes
+pipeline.
 
 Consumes the raw `esm diff --json` output and writes comprehensive.json into
 an output directory: an exhaustive, machine-readable diff with every

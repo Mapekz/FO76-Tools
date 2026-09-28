@@ -39,11 +39,9 @@ pub(crate) const CACHE_VERSION: u32 = 20;
 /// [`Localization`] table.  For **non-localized** ESMs the inline text is
 /// stored directly (`full_text`, `desc_text`) so no localization BA2 is needed.
 ///
-/// rkyv-archived directly (no serde derives) — nothing in this crate
-/// serde-encodes a bare `SearchMeta` once `search_index` leaves the bincode
-/// blob (Stage 6); it only ever travels inside [`SearchSection`] via
-/// [`write_section`]/[`Section::map`], same reasoning `018d7a8` documents for
-/// dropping `RecordMeta`'s serde derives.
+/// rkyv-archived directly (no serde derives) — never serde-encoded; it only
+/// ever travels inside [`SearchSection`] via
+/// [`write_section`]/[`Section::map`], like `RecordMeta`.
 #[derive(Debug, Clone, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
 pub struct SearchMeta {
     /// EditorID of the record, if present.
@@ -93,9 +91,8 @@ impl crate::rkyvcache::SectionSpec for rkyv::Archived<FormsSection> {
 }
 
 /// One rkyv section: the EditorID → raw FormID map (`edid`). A thin
-/// named wrapper around the map, matching how `018d7a8` wrapped
-/// `records`/`types` in [`FormsSection`] rather than archiving a bare
-/// top-level collection.
+/// named wrapper around the map, the same wrapper shape as
+/// [`FormsSection`] rather than a bare top-level collection.
 ///
 /// `edid_to_form`'s archived key type is `ArchivedString`, which — unlike
 /// the `rend` endian-wrapper integer types (see [`XrefSection`]'s doc
@@ -226,25 +223,18 @@ impl Index {
     /// Load the on-disk cache for `esm`, building whatever pieces are
     /// missing or stale.
     ///
-    /// `tree`/`forms` are eager and all-or-nothing (unchanged since Stage
-    /// 5): both must independently map against the same [`CacheSig`], or
-    /// both are rebuilt together from a fresh ESM walk (see
+    /// `tree`/`forms` are eager and all-or-nothing: both must independently
+    /// map against the same [`CacheSig`], or both are rebuilt together from a fresh ESM walk (see
     /// [`build_tree_and_forms`]).
     ///
     /// `edid`/`search`/`xref` are lazy and independently optional — each is
     /// opportunistically mapped on its own right here. This is what gives
     /// this crate its cross-process warm-reuse property for the three lazy
-    /// indexes: before Stage 6, all three lived in the same bincode
-    /// `CacheFile` blob as `form_index`/`tree`, so if process A called
-    /// `Database::ensure_edid_index` (building it and persisting the whole
-    /// blob), process B starting later and loading that blob got
-    /// `edid_index: Some(...)` for free, purely because the whole blob
-    /// decoded in one shot. Now that each of the three lives in its own
-    /// independent section file (the whole point of sectioning —
-    /// `ensure_edid_index` only ever writes the `edid` section, never a
-    /// shared blob), that property has to be reconstructed explicitly:
-    /// `Section::map` already degrades a missing/stale/corrupt file to
-    /// `Section::Absent` on its own (never an `Err` for that reason), so
+    /// indexes: each lives in its own independent section file
+    /// (`ensure_edid_index` only ever writes the `edid` section), so a
+    /// section another process built is picked up only if it is mapped
+    /// explicitly. `Section::map` already degrades a missing/stale/corrupt
+    /// file to `Section::Absent` on its own (never an `Err` for that reason), so
     /// mapping all three here — unconditionally, no extra "is it there"
     /// branch — is sufficient. If process A already called the matching
     /// `ensure_*_index` and its write landed on disk, process B's
@@ -659,8 +649,8 @@ pub(crate) fn build_xref_section(
             // one of the ~229 engine-hardcoded FormIDs (`crate::hardcoded`,
             // e.g. AVIF `DamageRecieved`/`KillStreak`) — hardcoded forms
             // have no backing record by design, so without this fallback
-            // every real reference to one was silently dropped while the
-            // index was built (issue #27). `index.contains` still runs
+            // every real reference to one would be silently dropped while
+            // the index is built. `index.contains` still runs
             // first and short-circuits for the overwhelming majority of
             // targets, so the 229-entry binary search only fires on an
             // index miss — matching `hardcoded::lookup`'s own "consult
@@ -722,7 +712,7 @@ type TreeAndFormsSections = (
 
 /// Build `tree`/`forms` fresh from a full ESM walk, write each to its own
 /// rkyv section, then drop the owned data and map both straight back in —
-/// the write→drop→re-map protocol `9e7c160`/`018d7a8` established. Called
+/// the write→drop→re-map protocol every section follows. Called
 /// from [`Index::build`] whenever either section fails to map against the
 /// current [`CacheSig`] (`sig`, computed once by the caller) — `tree`/`forms`
 /// are eager and all-or-nothing, so this always rebuilds and returns both
@@ -789,9 +779,7 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     // machine `TreeIndex::build_with_tick` drives on its own) and, for
     // `WalkEvent::Record`, also inserts a `RecordMeta` into the forms table
     // — derived straight from the event's own fields, no second header parse
-    // needed (the pre-unification version above re-parsed each record's
-    // header a second time here just to recover `form_id`, since
-    // `walk_records`'s `RecordMeta` didn't carry it).
+    // needed.
     let mut form_index = HashMap::new();
     let mut tree_builder = crate::tree::TreeBuilder::new();
     esm.walk_structure(|event| {
@@ -1684,7 +1672,7 @@ mod tests {
         // write_section — exactly the write half of what
         // ensure_edid_index/ensure_search_index/ensure_xref_index would have
         // done, without actually calling them (keeps this test independent
-        // of decode.rs/schema.rs plumbing those methods need).
+        // of the `decode`/`schema` plumbing those methods need).
         let sig = CacheSig::read(&esm.path).expect("read cache sig");
 
         let mut edid_to_form = HashMap::new();

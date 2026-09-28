@@ -425,13 +425,12 @@ mod tests {
         crate::schema::Schema::from_json(r#"{"records":{}}"#).unwrap()
     }
 
-    /// Regression test: `resolve_formid`'s CURV branch inlines `formid`,
-    /// `curve_path`, and `curve`, but was missing `editor_id` even though
-    /// `Curve` already carries the EditorID parsed off the CURV record at
-    /// index-build time — every FormID field referencing a curve table (e.g.
-    /// ALCH `Health`, ENCH `Curve Table`) silently dropped the curve's own
-    /// EditorID. Pin that it's now surfaced, and that a curve with no EDID
-    /// subrecord serializes as `null` rather than an empty string.
+    /// `resolve_formid`'s CURV branch inlines `formid`, `curve_path`,
+    /// `curve`, and `editor_id` (the EditorID `Curve` carries from the CURV
+    /// record at index-build time), so every FormID field referencing a curve
+    /// table (e.g. ALCH `Health`, ENCH `Curve Table`) keeps the curve's own
+    /// EditorID. A curve with no EDID subrecord serializes `editor_id` as
+    /// `null` rather than an empty string.
     #[test]
     fn resolve_formid_curv_branch_includes_editor_id() {
         let curve = crate::curves::Curve {

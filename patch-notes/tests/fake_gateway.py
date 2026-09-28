@@ -70,17 +70,18 @@ class FakeGateway:
     `refs[X]` lists only the *direct* (depth-1) referencers of `X` -- exactly
     what `Database::referenced_by` returns for one node in the real backend.
     `FakeGateway.refs()` performs the same breadth-first walk that
-    `refs.rs::referenced_by_walk` performs server-side: expanding one hop at
-    a time up to the requested depth (`depth=0` = unbounded, no fixed hop
-    cap, mirroring `RefList.effective_depth == None`), visiting each node at
-    most once (cycle-safe), and recording the intermediate-node `path` and
-    hop `depth` exactly as the real `RefRow`/`RefPathNode` structs do, plus
-    the same `RefList` walk-stats fields (`requested_depth`,
-    `effective_depth`, `depth_capped`, `frontier_remaining`,
-    `per_depth_totals`, `shown_max_depth` -- see `refs.rs`'s `WalkStats` for
-    each field's exact meaning). `test_fake_gateway.py`'s
-    `FakeGatewayConformanceTests` is what keeps this in sync with the real
-    engine when the Rust side's walk logic changes. Final ordering also
+    `esm/src/refs/mod.rs::referenced_by_walk` performs in-process: expanding
+    one hop at a time up to the requested depth (`depth=0` = unbounded, no
+    fixed hop cap, mirroring `RefList.effective_depth == None`), visiting
+    each node at most once (cycle-safe), and recording the intermediate-node
+    `path` and hop `depth` exactly as the real `RefRow`/`RefPathNode`
+    structs do, plus the same `RefList` walk-stats fields
+    (`requested_depth`, `effective_depth`, `depth_capped`,
+    `frontier_remaining`, `per_depth_totals`, `shown_max_depth` -- see
+    esm/src/refs/mod.rs's `WalkStats` for each field's exact meaning).
+    `test_fake_gateway.py`'s `FakeGatewayConformanceTests` is what keeps
+    this in sync with the real engine when the Rust side's walk logic
+    changes. Final ordering also
     matches: rows are sorted by ascending numeric FormID (not by depth or
     discovery order), matching `referenced_by_walk`'s default `RefSort::Formid`.
     `type_filter` narrows *emission* only (the walk still traverses through
@@ -134,7 +135,7 @@ class FakeGateway:
         """Fixture-backed counterpart to `EsmGateway.bulk_get`: resolves each
         selector against `self.records`, isolating a lookup failure to its
         own `{"sel", "error"}` entry exactly like the real `Op::RecordBulk`
-        dispatch does (see `bulk_record_entry` in src/ops/records.rs)."""
+        dispatch does (see `bulk_record_entry` in esm/src/ops/records.rs)."""
         wire_sels = [_sel_for_input(s) for s in sels]
         return self.op(esm, {"op": "record_bulk", "sels": wire_sels, "depth": resolve})
 
@@ -223,8 +224,8 @@ class FakeGateway:
 
     def _bulk_record_entries(self, wire_sels: Sequence[Mapping[str, Any]]) -> list[dict]:
         """Shared by `bulk_get()` and `op()`'s `record_bulk` dispatch --
-        mirrors `bulk_record_entry` in src/ops/records.rs: one bad selector becomes an
-        isolated `error` entry, never aborting the whole batch."""
+        mirrors `bulk_record_entry` in esm/src/ops/records.rs: one bad selector
+        becomes an isolated `error` entry, never aborting the whole batch."""
         entries = []
         for sel in wire_sels:
             display = _sel_display(sel)
@@ -252,12 +253,10 @@ class FakeGateway:
         type_filter: str | None = None,
         include_paths: bool = False,
     ) -> dict:
-        # Mirror refs.rs::referenced_by_walk's clamp exactly: `depth == 0`
-        # requests an UNBOUNDED walk (max_depth = None, no fixed hop cap,
-        # RefList.effective_depth = None) -- NOT "treated as depth 1", which
-        # is what this used to do before the conformance test in
-        # test_fake_gateway.py caught the drift. Any other value clamps to
-        # `[1, DEFAULT_MAX_DEPTH]` as before.
+        # Mirror esm/src/refs/mod.rs::referenced_by_walk's clamp exactly:
+        # `depth == 0` requests an UNBOUNDED walk (max_depth = None, no fixed
+        # hop cap, RefList.effective_depth = None) -- NOT "treated as depth
+        # 1". Any other value clamps to `[1, DEFAULT_MAX_DEPTH]`.
         requested_depth = depth
         max_depth: int | None = None if depth == 0 else max(1, min(depth, DEFAULT_MAX_DEPTH))
         effective_depth = max_depth
@@ -269,11 +268,12 @@ class FakeGateway:
         queue: deque[tuple[int, list[dict]]] = deque([(target, [])])
         rows: list[dict] = []
         # Newly-discovered nodes at the depth cutoff that were not expanded
-        # further -- mirrors refs.rs's `frontier_remaining` exactly: counted
-        # for EVERY newly-discovered edge at the cutoff, regardless of
-        # type_filter (the `if type_matches {...}` row-emission block and
-        # the `if hop_depth < max_depth {...} else {frontier_remaining += 1}`
-        # expansion block are independent in the Rust source).
+        # further -- mirrors esm/src/refs/mod.rs's `frontier_remaining`
+        # exactly: counted for EVERY newly-discovered edge at the cutoff,
+        # regardless of type_filter (the `if type_matches {...}` row-emission
+        # block and the `if hop_depth < max_depth {...} else
+        # {frontier_remaining += 1}` expansion block are independent in the
+        # Rust source).
         frontier_remaining = 0
 
         while queue:
@@ -295,7 +295,7 @@ class FakeGateway:
                 # `type_filter` narrows *emission* only -- the walk below still
                 # expands through a non-matching node so a matching node
                 # further away stays reachable (mirrors
-                # src/refs.rs::referenced_by_enriched's `type_matches` gate).
+                # esm/src/refs/mod.rs::referenced_by_walk's `type_matches` gate).
                 type_matches = type_filter_upper is None or (
                     (record_type or "").upper() == type_filter_upper
                 )
@@ -334,7 +334,8 @@ class FakeGateway:
 
         # per_depth_totals: row count per hop depth (index = depth), over the
         # emitted (type-filtered) rows, BEFORE --limit truncation -- mirrors
-        # refs.rs computing this from `all_rows` prior to the `limit` slice.
+        # esm/src/refs/mod.rs computing this from `all_rows` prior to the
+        # `limit` slice.
         max_depth_seen = max((r["depth"] for r in rows), default=0)
         per_depth_totals = [0] * (max_depth_seen + 1)
         for r in rows:

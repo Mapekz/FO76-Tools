@@ -2,10 +2,10 @@
 //!
 //! Pure math + fetch logic behind `esm walk`'s LVLI digest ([`crate::walk`]'s
 //! `digest_lvli`) — kept as its own module (rather than inlined in
-//! `walk.rs`) so a future `chase` root or MCP tool can wrap [`drop_table`]
+//! `walk/mod.rs`) so another caller can wrap [`drop_table`]
 //! without duplicating the selection math, per
 //! `docs/adr/0001-walk-interactive-chase-pipeline-json.md`'s "one classifier
-//! core, verbs differ in contract" shape. `walk.rs` is still the only
+//! core, verbs differ in contract" shape. `walk/mod.rs` is the only
 //! *renderer* — this module returns structured [`DropTable`]/[`DropRow`]
 //! data, never a formatted string.
 //!
@@ -244,9 +244,7 @@ fn is_legacy_entry(entry: &Value) -> bool {
 
 /// A GLOB reference's own `Value` field, already inlined onto the stub by
 /// `--resolve stub` (see `src/decode/leaf_values.rs`) — no separate fetch
-/// needed, unlike before that inline existed (this module used to run its
-/// own extra `bulk_fetch_map` over every `*_Global`/condition GLOB ref for
-/// exactly this; see `esm/docs/adr/0011-value-bearing-leaf-inlining.md`).
+/// needed (see `docs/adr/0011-value-bearing-leaf-inlining.md`).
 fn glob_stub_value(stub: Option<&Value>) -> Option<f64> {
     let obj = stub?.as_object()?;
     if obj.get("record_type").and_then(Value::as_str) != Some("GLOB") {

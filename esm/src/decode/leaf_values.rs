@@ -27,11 +27,11 @@
 //!   too would (a) break `--resolve none`'s documented contract of leaving
 //!   FormIDs untouched, and (b) force every `None` decode to build a
 //!   resolver it doesn't otherwise need (`Database::record_at_meta_with_depth`
-//!   skips resolver construction entirely at `None` today) — including
-//!   `diff::run`, which decodes both snapshot sides at `None` and can process
+//!   skips resolver construction entirely at `None`) — including
+//!   `diff::diff_databases_with`, which decodes both snapshot sides at `None` and can process
 //!   tens of thousands of records in one call. (Measured, not assumed: gating
 //!   was *not* chosen to suppress diff re-stamp noise — a byte-equality fast
-//!   path in `diff::run` already skips unchanged records before either side
+//!   path in `diff::diff_databases_with` already skips unchanged records before either side
 //!   is decoded, and across all locally available snapshot diffs, zero
 //!   changed GLOB records had any referrer that was itself in the same
 //!   week's changed set. See the ADR for the numbers.)

@@ -131,7 +131,7 @@ pub enum MemberDef {
         below_version: Option<u16>,
         /// `wbFromSize(N, ...)` gate (xEdit wbRecordSizeDecider): present
         /// only when the enclosing subrecord's DataSize >= N; see
-        /// `member_from_size_ok` in decode.rs.
+        /// `member_from_size_ok` in `decode/scalars.rs`.
         #[serde(default)]
         from_size: Option<usize>,
     },

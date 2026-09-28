@@ -2,7 +2,7 @@
 
 /**
  * A `(leaf_name, value)` serializer-default rule auto-classified by the
- * calibrated appearance-default pass (issue #22), with the global appearance
+ * calibrated appearance-default pass (noise stage 5), with the global appearance
  * count that triggered it. Emitted in [`DiffResult::auto_suppressed_defaults`]
  * so a human/agent can audit exactly what a given diff run dropped.
  */

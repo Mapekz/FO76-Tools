@@ -48,15 +48,16 @@ fn glob_game_year_decodes_correctly() {
 /// round-trip precision (52-bit mantissa) instead of the value's real f32
 /// precision (23-bit mantissa) — surfacing bits that were never meaningful
 /// (e.g. `0.10000000149011612` instead of `0.1`) unless the decoder corrects
-/// for it. This asserts the fix runs and preserves real precision rather than
-/// truncating it:
+/// for it. This asserts the correction runs and preserves real precision
+/// rather than truncating it:
 ///   - clean values pass through unchanged (0.5, 0.0)
 ///   - f32->f64 widening noise on an exact-in-decimal value is erased (0.1)
 ///   - a value with genuine f32 precision beyond 5 decimal places keeps all
 ///     of it (1/3 as f32 -> 0.33333334, matching `f32::to_string()` exactly —
 ///     not truncated to 0.33333)
 ///   - a huge-magnitude value (f32::MAX, used elsewhere as a sentinel) also
-///     comes out clean, since the fix isn't a decimal-place rounding hack
+///     comes out clean, since the correction isn't a decimal-place rounding
+///     hack
 #[test]
 fn glob_float_value_has_no_f64_widening_noise() {
     let schema = Schema::load_embedded().expect("embedded schema must load");

@@ -72,8 +72,9 @@ class TestExcludedTypes(unittest.TestCase):
 
 # ---------------------------------------------------------------------------
 # Unkeyed arrays (CTDA `Conditions[]`: position is semantic AND/OR chaining,
-# so it has no element_key_spec entry) arrive from `diff.rs` as an `unkeyed`
-# `_array_diff` strategy with whole element lists under `removed`/`added`.
+# so it has no element_key_spec entry) arrive from esm/src/diff/array_diff.rs
+# as an `unkeyed` `_array_diff` strategy with whole element lists under
+# `removed`/`added`.
 # This is the round-trip test for that contract; the Rust side is
 # `array_diff_unkeyed_ctda_conditions_length_mismatch` in `esm/tests/diff.rs`.
 # ---------------------------------------------------------------------------
