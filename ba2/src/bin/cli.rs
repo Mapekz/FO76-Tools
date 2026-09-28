@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use ba2::{
     ArchiveKind, WriteOptions,
-    compress::Codec,
+    compress::{Codec, ReadCodec},
     dds,
     extract::{ExtractOptions, extract_all, extract_one},
     reader::Ba2Archive,
@@ -49,9 +49,9 @@ enum Commands {
         /// Only extract entries whose path matches this glob (e.g. "strings/*").
         #[arg(long)]
         filter: Option<String>,
-        /// Force decompression codec: auto (default), lz4, zlib.
+        /// Force decompression codec: auto (default, sniffed per blob), lz4, zlib.
         #[arg(long, default_value = "auto", value_name = "CODEC")]
-        format: CodecArg,
+        format: ReadCodecArg,
         /// Specific archive paths to extract (default: all).
         files: Vec<String>,
     },
@@ -87,10 +87,9 @@ enum Commands {
     },
 }
 
-/// Codec selection for CLI arguments.
+/// `create --compress`: the codec blobs are written with.
 #[derive(Clone, Copy, ValueEnum)]
 enum CodecArg {
-    Auto,
     Lz4,
     Zlib,
     Store,
@@ -99,10 +98,27 @@ enum CodecArg {
 impl From<CodecArg> for Codec {
     fn from(a: CodecArg) -> Codec {
         match a {
-            CodecArg::Auto => Codec::Auto,
             CodecArg::Lz4 => Codec::Lz4,
             CodecArg::Zlib => Codec::Zlib,
             CodecArg::Store => Codec::Store,
+        }
+    }
+}
+
+/// `extract --format`: how compressed blobs are decompressed.
+#[derive(Clone, Copy, ValueEnum)]
+enum ReadCodecArg {
+    Auto,
+    Lz4,
+    Zlib,
+}
+
+impl From<ReadCodecArg> for ReadCodec {
+    fn from(a: ReadCodecArg) -> ReadCodec {
+        match a {
+            ReadCodecArg::Auto => ReadCodec::Auto,
+            ReadCodecArg::Lz4 => ReadCodec::Lz4,
+            ReadCodecArg::Zlib => ReadCodec::Zlib,
         }
     }
 }
@@ -296,7 +312,7 @@ fn cmd_extract(
     archive_path: &Path,
     out_dir: &Path,
     filter: Option<&str>,
-    codec: Codec,
+    codec: ReadCodec,
     specific: &[String],
 ) -> Result<()> {
     let archive = Ba2Archive::open(archive_path)

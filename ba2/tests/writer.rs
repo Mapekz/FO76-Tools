@@ -1,6 +1,6 @@
 //! Integration tests for `ba2::writer` — round-trips and layout properties.
 
-use ba2::compress::Codec;
+use ba2::compress::{Codec, ReadCodec};
 use ba2::hash::hash_path;
 use ba2::reader::Ba2Archive;
 use ba2::{ArchiveKind, WriteOptions, write_ba2};
@@ -44,8 +44,8 @@ fn round_trip(codec: Codec) -> (Vec<u8>, Vec<u8>) {
     assert_eq!(entry_a.dir_hash, dh);
     assert_eq!(entry_a.ext, ext);
 
-    let out_a = archive.read("data/a.txt", Codec::Auto).unwrap();
-    let out_b = archive.read("data/b.bin", Codec::Auto).unwrap();
+    let out_a = archive.read("data/a.txt", ReadCodec::Auto).unwrap();
+    let out_b = archive.read("data/b.bin", ReadCodec::Auto).unwrap();
     (out_a, out_b)
 }
 
@@ -134,8 +134,8 @@ fn mixed_compress_and_store() {
         "incompressible 1-byte file must be stored"
     );
 
-    let data_c = archive.read("test/c.bin", Codec::Auto).unwrap();
-    let data_i = archive.read("test/i.bin", Codec::Auto).unwrap();
+    let data_c = archive.read("test/c.bin", ReadCodec::Auto).unwrap();
+    let data_i = archive.read("test/i.bin", ReadCodec::Auto).unwrap();
     assert_eq!(data_c, compressible);
     assert_eq!(data_i, incompressible);
 }
@@ -156,7 +156,7 @@ fn forward_slash_paths_normalised() {
     assert_eq!(archive.list()[0].name, "some\\dir\\file.txt");
     // read() normalises forward-slash input, so both forms work.
     assert_eq!(
-        archive.read("some/dir/file.txt", Codec::Auto).unwrap(),
+        archive.read("some/dir/file.txt", ReadCodec::Auto).unwrap(),
         content.to_vec()
     );
 }
@@ -229,7 +229,7 @@ fn dx10_create_small_texture_round_trips() {
         "below the 512x512 area threshold: 1 chunk"
     );
 
-    let round_tripped = archive.read("textures/small.dds", Codec::Auto).unwrap();
+    let round_tripped = archive.read("textures/small.dds", ReadCodec::Auto).unwrap();
     assert_eq!(
         round_tripped, dds,
         "extracted .dds must match the source byte-for-byte"
@@ -261,7 +261,7 @@ fn dx10_create_multi_chunk_round_trips() {
     assert_eq!(t.chunks[1].unpacked_size, 131072);
     assert_eq!(t.chunks[2].unpacked_size, 43704);
 
-    let round_tripped = archive.read("textures/large.dds", Codec::Auto).unwrap();
+    let round_tripped = archive.read("textures/large.dds", ReadCodec::Auto).unwrap();
     assert_eq!(round_tripped, dds);
 }
 
@@ -276,7 +276,7 @@ fn dx10_create_zlib_compressed_round_trips() {
     let entry = &archive.list()[0];
     assert!(entry.is_compressed());
 
-    let round_tripped = archive.read("textures/large.dds", Codec::Auto).unwrap();
+    let round_tripped = archive.read("textures/large.dds", ReadCodec::Auto).unwrap();
     assert_eq!(round_tripped, dds);
 }
 
@@ -291,7 +291,7 @@ fn dx10_create_cubemap_is_single_chunk() {
     assert!(t.cubemap);
     assert_eq!(t.chunks.len(), 1);
 
-    let round_tripped = archive.read("textures/cube.dds", Codec::Auto).unwrap();
+    let round_tripped = archive.read("textures/cube.dds", ReadCodec::Auto).unwrap();
     assert_eq!(round_tripped, dds);
 }
 
@@ -305,6 +305,6 @@ fn dx10_create_dxt10_extension_format_round_trips() {
     let t = archive.list()[0].texture().unwrap();
     assert_eq!(t.dxgi_format, 98);
 
-    let round_tripped = archive.read("textures/bc7.dds", Codec::Auto).unwrap();
+    let round_tripped = archive.read("textures/bc7.dds", ReadCodec::Auto).unwrap();
     assert_eq!(round_tripped, dds);
 }

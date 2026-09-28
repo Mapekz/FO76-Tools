@@ -1,7 +1,7 @@
 //! Integration tests for `ba2::compress` — codec dispatch, round-trips, sniffing.
 
 use ba2::compress::{
-    Codec, MAX_DECOMP_SIZE, compress_entry, compress_lz4, compress_zlib, decompress,
+    Codec, MAX_DECOMP_SIZE, ReadCodec, compress_entry, compress_lz4, compress_zlib, decompress,
     decompress_lz4, decompress_zlib, is_zlib,
 };
 
@@ -39,7 +39,7 @@ fn zlib_round_trip() {
 #[test]
 fn decompress_rejects_oversized_unpacked_size_via_dispatch() {
     let oversized = (MAX_DECOMP_SIZE + 1) as u32;
-    for codec in [Codec::Lz4, Codec::Zlib] {
+    for codec in [ReadCodec::Lz4, ReadCodec::Zlib] {
         let result = decompress(b"", oversized, codec);
         assert!(
             result.is_err(),
@@ -51,16 +51,6 @@ fn decompress_rejects_oversized_unpacked_size_via_dispatch() {
             "{codec:?}: unexpected error message: {msg}"
         );
     }
-}
-
-// ── Codec::Store ─────────────────────────────────────────────────────────
-
-/// `Codec::Store` passes data through unchanged without any decompression.
-#[test]
-fn decompress_store_codec() {
-    let data = b"raw bytes that must not be touched".to_vec();
-    let out = decompress(&data, data.len() as u32, Codec::Store).unwrap();
-    assert_eq!(out, data, "Store codec must return data verbatim");
 }
 
 // ── is_zlib / Auto sniffing ───────────────────────────────────────────────
@@ -133,7 +123,7 @@ fn auto_decompresses_small_window_zlib() {
     let flg = compressed[1] & 0xE0;
     compressed[1] = flg + (31 - ((0x48u16 << 8 | flg as u16) % 31) as u8) % 31;
     assert!(is_zlib(&compressed));
-    let out = decompress(&compressed, data.len() as u32, Codec::Auto).unwrap();
+    let out = decompress(&compressed, data.len() as u32, ReadCodec::Auto).unwrap();
     assert_eq!(out, data);
 }
 
@@ -155,7 +145,7 @@ fn is_zlib_too_short() {
 fn auto_decompresses_zlib() {
     let data = sample();
     let compressed = compress_zlib(&data).unwrap();
-    let out = decompress(&compressed, data.len() as u32, Codec::Auto).unwrap();
+    let out = decompress(&compressed, data.len() as u32, ReadCodec::Auto).unwrap();
     assert_eq!(out, data);
 }
 
@@ -163,7 +153,7 @@ fn auto_decompresses_zlib() {
 fn auto_decompresses_lz4() {
     let data = sample();
     let compressed = compress_lz4(&data);
-    let out = decompress(&compressed, data.len() as u32, Codec::Auto).unwrap();
+    let out = decompress(&compressed, data.len() as u32, ReadCodec::Auto).unwrap();
     assert_eq!(out, data);
 }
 
@@ -189,15 +179,13 @@ fn compress_entry_lz4_compresses_repeated_data() {
     assert_eq!(out, data);
 }
 
-/// `Codec::Store` and `Codec::Auto` always return packed_size==0 (stored).
+/// `Codec::Store` always returns packed_size==0 (stored).
 #[test]
-fn compress_entry_store_and_auto_always_uncompressed() {
+fn compress_entry_store_is_uncompressed() {
     let data = sample();
-    for codec in [Codec::Store, Codec::Auto] {
-        let (blob, packed_size) = compress_entry(&data, codec, 1.0).unwrap();
-        assert_eq!(packed_size, 0, "{:?} must produce packed_size==0", codec);
-        assert_eq!(blob, data, "{:?} blob must equal input verbatim", codec);
-    }
+    let (blob, packed_size) = compress_entry(&data, Codec::Store, 1.0).unwrap();
+    assert_eq!(packed_size, 0);
+    assert_eq!(blob, data);
 }
 
 /// `min_shrink_ratio` 0.0 means compression is never accepted, not always:

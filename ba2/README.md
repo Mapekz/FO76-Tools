@@ -70,7 +70,7 @@ ba2 extract SeventySix-Startup.ba2 --out ./out --format lz4
 |---|---|---|
 | `--out <DIR>` | `.` | Output directory (created if absent) |
 | `--filter <GLOB>` | — | Glob pattern to filter entries (e.g. `strings/*`) |
-| `--format <CODEC>` | `auto` | Decompression hint: `auto`, `lz4`, `zlib`, `store` |
+| `--format <CODEC>` | `auto` | Decompression codec for compressed blobs: `auto` (sniffed per blob), `lz4`, `zlib` |
 | `[FILES...]` | all | Specific archive paths to extract |
 
 ### `create` — Create a new BA2 archive
@@ -108,7 +108,7 @@ The crate exposes a stable public API. Key re-exports from `ba2`:
 
 ```rust
 use ba2::{
-    ArchiveKind, Ba2Archive, Ba2Entry, Codec, ExtractOptions, WriteOptions, write_ba2, extract_all,
+    ArchiveKind, Ba2Archive, Ba2Entry, Codec, ExtractOptions, ReadCodec, WriteOptions, write_ba2, extract_all,
     extract_one,
 };
 
@@ -122,10 +122,10 @@ for entry in archive.list() {
 
 // Read a specific entry (auto-detects compression). For a DX10 entry this
 // returns a complete synthesized .dds file — header + concatenated mip data.
-let bytes = archive.read("strings/en/interface.dlstrings", Codec::Auto)?;
+let bytes = archive.read("strings/en/interface.dlstrings", ReadCodec::Auto)?;
 
 // Extract everything to a directory
-let opts = ExtractOptions { codec: Codec::Auto, filter: None };
+let opts = ExtractOptions { codec: ReadCodec::Auto, filter: None };
 let count = extract_all(&archive, "./out".as_ref(), &opts)?;
 
 // Create a new GNRL archive

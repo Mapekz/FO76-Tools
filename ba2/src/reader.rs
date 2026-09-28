@@ -4,11 +4,11 @@
 //! `Ba2Archive` memory-maps the file and indexes entries by name. Each
 //! `Ba2Entry` exposes its name/dir hashes, extension, and per-kind data
 //! (`EntryData::Gnrl` or `EntryData::Texture`). `read()` sniffs the first two
-//! bytes to detect zlib vs LZ4 and also accepts an explicit `Codec` override.
+//! bytes to detect zlib vs LZ4 and also accepts an explicit `ReadCodec` override.
 //! DX10 entries come back from `read()` as complete synthesized `.dds` files
 //! — see [`crate::dds`]. Unsupported archive versions are a hard error.
 
-use crate::compress::{Codec, decompress};
+use crate::compress::{ReadCodec, decompress};
 use crate::dds;
 pub use crate::format::TexChunk;
 use crate::format::{
@@ -307,7 +307,7 @@ impl Ba2Archive {
     /// `Auto` (default) sniffs each blob for zlib vs LZ4. For DX10 entries,
     /// returns a complete synthesized `.dds` file (header + concatenated,
     /// decompressed mip chunks).
-    pub fn read(&self, name: &str, codec: Codec) -> Result<Vec<u8>> {
+    pub fn read(&self, name: &str, codec: ReadCodec) -> Result<Vec<u8>> {
         // Names in the archive are lowercased and backslash-separated.
         // Normalise the caller's input to match.
         let name_lower = name.to_lowercase().replace('/', "\\");
@@ -372,7 +372,7 @@ impl Ba2Archive {
         data_offset: u64,
         packed_size: u32,
         unpacked_size: u32,
-        codec: Codec,
+        codec: ReadCodec,
     ) -> Result<Vec<u8>> {
         let start = data_offset as usize;
         let stored_len = if packed_size == 0 {

@@ -16,18 +16,27 @@ use std::io::{Read, Write};
 /// allocation (a classic decompression-bomb vector).
 pub const MAX_DECOMP_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
 
-/// Compression codec for BA2 data blobs.
+/// The codec blobs are written with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Codec {
-    /// Raw LZ4 block (FO76 default).
+    /// Raw LZ4 block (FO76 GNRL).
     #[default]
     Lz4,
-    /// Zlib/DEFLATE (FO4).
+    /// Zlib/DEFLATE (FO76 DX10 textures, FO4).
     Zlib,
     /// Uncompressed.
     Store,
-    /// Auto-detect on read by sniffing the first two bytes.
+}
+
+/// How a compressed blob is decompressed on read. (An uncompressed blob is
+/// recognised by its zero packed size and needs no codec.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReadCodec {
+    /// Sniff zlib vs LZ4 from each blob's first two bytes.
+    #[default]
     Auto,
+    Lz4,
+    Zlib,
 }
 
 // ── Decompression ────────────────────────────────────────────────────────────
@@ -86,16 +95,15 @@ pub fn is_zlib(data: &[u8]) -> bool {
     b0 & 0x0F == 8 && b0 >> 4 <= 7 && ((b0 as u16) << 8 | b1 as u16).is_multiple_of(31)
 }
 
-/// Decompress a blob according to `codec`.  `Auto` sniffs the first two bytes.
-pub fn decompress(data: &[u8], unpacked_size: u32, codec: Codec) -> Result<Vec<u8>> {
+/// Decompress a compressed blob according to `codec`.
+pub fn decompress(data: &[u8], unpacked_size: u32, codec: ReadCodec) -> Result<Vec<u8>> {
     let expected = unpacked_size as usize;
     match codec {
-        Codec::Store => Ok(data.to_vec()),
-        Codec::Lz4 => decompress_lz4(data, expected),
-        Codec::Zlib => decompress_zlib(data, expected),
+        ReadCodec::Lz4 => decompress_lz4(data, expected),
+        ReadCodec::Zlib => decompress_zlib(data, expected),
         // A raw LZ4 block can start with bytes that pass the zlib sniff, so a
         // sniffed zlib blob that fails to inflate is retried as LZ4.
-        Codec::Auto => {
+        ReadCodec::Auto => {
             if is_zlib(data) {
                 decompress_zlib(data, expected)
                     .or_else(|zlib_err| decompress_lz4(data, expected).map_err(|_| zlib_err))
@@ -130,7 +138,7 @@ pub fn compress_zlib(data: &[u8]) -> Result<Vec<u8>> {
 ///   compressed bytes.
 pub fn compress_entry(data: &[u8], codec: Codec, min_shrink_ratio: f32) -> Result<(Vec<u8>, u32)> {
     let compressed = match codec {
-        Codec::Store | Codec::Auto => return Ok((data.to_vec(), 0)),
+        Codec::Store => return Ok((data.to_vec(), 0)),
         Codec::Lz4 => compress_lz4(data),
         Codec::Zlib => compress_zlib(data)?,
     };

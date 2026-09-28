@@ -3,7 +3,7 @@
 
 mod common;
 
-use ba2::compress::{Codec, MAX_DECOMP_SIZE};
+use ba2::compress::{Codec, MAX_DECOMP_SIZE, ReadCodec};
 use ba2::format::{RECORD_FLAGS, Record, write_header, write_record};
 use ba2::hash::hash_path;
 use ba2::reader::Ba2Archive;
@@ -47,11 +47,11 @@ fn open_and_read_stored_entries() {
     let archive = Ba2Archive::open(tmp.path()).unwrap();
     assert_eq!(archive.list().len(), 2);
 
-    let txt = archive.read("interface/test.txt", Codec::Auto).unwrap();
+    let txt = archive.read("interface/test.txt", ReadCodec::Auto).unwrap();
     assert_eq!(txt, b"hello world");
 
     // `read` is case-insensitive.
-    let bin = archive.read("DATA/CONFIG.BIN", Codec::Auto).unwrap();
+    let bin = archive.read("DATA/CONFIG.BIN", ReadCodec::Auto).unwrap();
     assert_eq!(bin, b"\x00\x01\x02\x03");
 }
 
@@ -60,7 +60,7 @@ fn missing_entry_returns_error() {
     let entries: &[(&str, &[u8])] = &[("foo/bar.txt", b"data")];
     let tmp = common::make_test_archive(entries);
     let archive = Ba2Archive::open(tmp.path()).unwrap();
-    assert!(archive.read("foo/missing.txt", Codec::Auto).is_err());
+    assert!(archive.read("foo/missing.txt", ReadCodec::Auto).is_err());
 }
 
 /// An empty archive (0 files) can be opened and produces an empty entry list.
@@ -94,7 +94,7 @@ fn read_lz4_compressed_entry() {
     let entry = &archive.list()[0];
     assert!(entry.is_compressed(), "entry should be LZ4-compressed");
 
-    let out_data = archive.read("data/payload.bin", Codec::Auto).unwrap();
+    let out_data = archive.read("data/payload.bin", ReadCodec::Auto).unwrap();
     assert_eq!(out_data, data);
 }
 
@@ -118,7 +118,7 @@ fn read_zlib_compressed_entry() {
     let entry = &archive.list()[0];
     assert!(entry.is_compressed(), "entry should be zlib-compressed");
 
-    let out_data = archive.read("data/payload.bin", Codec::Auto).unwrap();
+    let out_data = archive.read("data/payload.bin", ReadCodec::Auto).unwrap();
     assert_eq!(out_data, data);
 }
 
@@ -158,7 +158,7 @@ fn read_rejects_oversized_declared_unpacked_size() {
     }
 
     let archive = Ba2Archive::open(tmp.path()).unwrap();
-    let result = archive.read(path, Codec::Lz4);
+    let result = archive.read(path, ReadCodec::Lz4);
     let err = result.expect_err(
         "expected the decompression-bomb cap to reject a crafted oversized unpacked_size",
     );
@@ -313,7 +313,7 @@ fn read_data_out_of_range() {
     let tmp = write_tmp(&buf);
     let archive = Ba2Archive::open(tmp.path()).unwrap(); // open should succeed
     assert!(
-        archive.read("data/x.bin", Codec::Auto).is_err(),
+        archive.read("data/x.bin", ReadCodec::Auto).is_err(),
         "read() must fail when data extent exceeds file size"
     );
 }
@@ -335,7 +335,7 @@ fn dx10_multi_chunk_reassembly_order() {
     let archive = Ba2Archive::open(tmp.path()).unwrap();
     assert_eq!(archive.kind(), ArchiveKind::Dx10);
 
-    let data = archive.read("textures/multi.dds", Codec::Auto).unwrap();
+    let data = archive.read("textures/multi.dds", ReadCodec::Auto).unwrap();
     let mut expected = ba2::dds::synth_header(77, 8, 8, 2, false).unwrap();
     expected.extend_from_slice(&[0xAAu8; 16]);
     expected.extend_from_slice(&[0xBBu8; 4]);
@@ -361,7 +361,9 @@ fn dx10_stored_chunk_reads_raw() {
     let tmp = common::make_test_texture_archive(&[tex]);
     let archive = Ba2Archive::open(tmp.path()).unwrap();
     assert!(!archive.list()[0].is_compressed());
-    let data = archive.read("textures/stored.dds", Codec::Auto).unwrap();
+    let data = archive
+        .read("textures/stored.dds", ReadCodec::Auto)
+        .unwrap();
     assert!(data.ends_with(&[0x11u8; 8]));
 }
 
@@ -382,7 +384,7 @@ fn dx10_cubemap_flag_decoded() {
     assert!(t.cubemap);
 
     let data = archive
-        .read("textures/shared/cubemaps/test.dds", Codec::Auto)
+        .read("textures/shared/cubemaps/test.dds", ReadCodec::Auto)
         .unwrap();
     let caps2 = u32::from_le_bytes(data[112..116].try_into().unwrap());
     assert_eq!(
@@ -404,7 +406,11 @@ fn dx10_unknown_dxgi_format_errors_at_read_not_open() {
     };
     let tmp = common::make_test_texture_archive(&[tex]);
     let archive = Ba2Archive::open(tmp.path()).unwrap(); // open doesn't validate dxgi_format
-    assert!(archive.read("textures/unknown.dds", Codec::Auto).is_err());
+    assert!(
+        archive
+            .read("textures/unknown.dds", ReadCodec::Auto)
+            .is_err()
+    );
 }
 
 #[test]
@@ -452,7 +458,7 @@ fn dx10_chunk_decompressed_length_mismatch_errors() {
     let tmp = write_tmp(&buf);
     let archive = Ba2Archive::open(tmp.path()).unwrap();
     assert!(
-        archive.read("textures/bad.dds", Codec::Auto).is_err(),
+        archive.read("textures/bad.dds", ReadCodec::Auto).is_err(),
         "a chunk decompressing to a different length than its unpacked_size must error"
     );
 }

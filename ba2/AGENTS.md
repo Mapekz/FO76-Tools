@@ -18,13 +18,13 @@ Clean layering — edit at the right level:
 | `format.rs` | Binary (de)serialization: `Header`/`Record` (GNRL), `TexRecord`/`TexChunk` (DX10), `ArchiveKind`, magic/tag constants, `read_*/write_*` |
 | `dds.rs` | DDS header synthesis (`synth_header`) and parsing (`parse_header`) for the 15 `DXGI_FORMAT` values FO76 ships |
 | `hash.rs` | Bethesda path hashing: `beth_crc`, `hash_path` |
-| `compress.rs` | Codec dispatch: `Codec` enum, `compress_entry`, `decompress`, LZ4/zlib helpers |
+| `compress.rs` | Codecs: `Codec` (write) and `ReadCodec` (read), `compress_entry`, `decompress`, LZ4/zlib helpers |
 | `reader.rs` | `Ba2Archive` (memory-mapped read, name index), `Ba2Entry`, `EntryData` (GNRL vs `Texture`), `TextureInfo` |
 | `writer.rs` | `write_ba2`, `WriteOptions` — two-pass streaming writer, GNRL and DX10 |
 | `extract.rs` | `extract_all`, `extract_one`, `ExtractOptions`, `safe_output_path` |
 | `bin/cli.rs` | Thin CLI over the library API — clap subcommands `info`, `list`, `extract`, `create` |
 
-Public API re-exported from `lib.rs`: `ArchiveKind`, `Codec`, `Ba2Archive`, `Ba2Entry`, `EntryData`, `TextureInfo`, `extract_all`, `extract_one`, `ExtractOptions`, `write_ba2`, `WriteOptions`, plus the `dds` module.
+Public API re-exported from `lib.rs`: `ArchiveKind`, `Codec`, `ReadCodec`, `Ba2Archive`, `Ba2Entry`, `EntryData`, `TextureInfo`, `extract_all`, `extract_one`, `ExtractOptions`, `write_ba2`, `WriteOptions`, plus the `dds` module.
 
 esm maintains its own minimal read-only BA2 reader (BTDX header, GNRL record layout, LZ4
 decompress) instead of depending on this crate — see

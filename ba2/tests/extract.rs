@@ -2,7 +2,7 @@
 
 mod common;
 
-use ba2::compress::Codec;
+use ba2::compress::ReadCodec;
 use ba2::extract::{ExtractOptions, extract_all, extract_one};
 use common::TestTexture;
 use tempfile::TempDir;
@@ -49,7 +49,7 @@ fn extract_all_with_glob_filter() {
     let gs = builder.build().unwrap();
 
     let opts = ExtractOptions {
-        codec: Codec::Auto,
+        codec: ReadCodec::Auto,
         filter: Some(gs),
     };
     let count = extract_all(&archive, out.path(), &opts).unwrap();
@@ -71,7 +71,7 @@ fn extract_one_writes_named_file() {
     let archive = ba2::reader::Ba2Archive::open(tmp.path()).unwrap();
     let out = TempDir::new().unwrap();
 
-    let dest = extract_one(&archive, "strings/en.strings", out.path(), Codec::Auto).unwrap();
+    let dest = extract_one(&archive, "strings/en.strings", out.path(), ReadCodec::Auto).unwrap();
 
     assert_eq!(std::fs::read(&dest).unwrap(), b"english strings");
     // The other entry must not have been extracted.
@@ -86,7 +86,7 @@ fn extract_one_is_case_insensitive() {
     let out = TempDir::new().unwrap();
 
     // Archive stores the name lowercased; the caller may pass mixed case.
-    let dest = extract_one(&archive, "INTERFACE/hud.swf", out.path(), Codec::Auto).unwrap();
+    let dest = extract_one(&archive, "INTERFACE/hud.swf", out.path(), ReadCodec::Auto).unwrap();
     assert_eq!(std::fs::read(&dest).unwrap(), b"swf bytes");
 }
 
@@ -98,7 +98,7 @@ fn extract_one_missing_returns_error() {
     let out = TempDir::new().unwrap();
 
     assert!(
-        extract_one(&archive, "foo/nonexistent.txt", out.path(), Codec::Auto).is_err(),
+        extract_one(&archive, "foo/nonexistent.txt", out.path(), ReadCodec::Auto).is_err(),
         "extract_one for a missing entry must return an error"
     );
 }
@@ -126,7 +126,7 @@ fn extract_one_writes_texture_as_dds() {
         &archive,
         "textures/props/test_d.dds",
         out.path(),
-        Codec::Auto,
+        ReadCodec::Auto,
     )
     .unwrap();
     assert!(dest.ends_with("textures/props/test_d.dds"));

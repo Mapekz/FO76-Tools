@@ -8,7 +8,7 @@
 //! matches the manifest (the install updated) is reported and skipped; run
 //! `just baseline` to rewrite the manifest from the archives on disk.
 
-use ba2::{Ba2Archive, Codec, EntryData};
+use ba2::{Ba2Archive, EntryData, ReadCodec};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -83,7 +83,7 @@ fn content_digest(archive: &Ba2Archive, stride: usize) -> u64 {
     let mut h = FNV_OFFSET;
     for e in archive.list().iter().step_by(stride) {
         let bytes = archive
-            .read(&e.name, Codec::Auto)
+            .read(&e.name, ReadCodec::Auto)
             .unwrap_or_else(|err| panic!("read {}: {err}", e.name));
         h = fnv(h, e.name.as_bytes());
         h = fnv(h, &(bytes.len() as u64).to_le_bytes());

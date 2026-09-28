@@ -6,7 +6,7 @@
 //! (e.g. `C:`) are rejected so a hostile archive cannot escape the output
 //! directory.
 
-use crate::compress::Codec;
+use crate::compress::ReadCodec;
 use crate::reader::{Ba2Archive, Ba2Entry};
 use anyhow::{Context, Result, bail};
 use globset::GlobSet;
@@ -66,7 +66,7 @@ fn safe_output_path(out_dir: &Path, archive_name: &str) -> Result<PathBuf> {
 /// Options for extraction.
 pub struct ExtractOptions {
     /// Codec override for decompressing blobs.  `Auto` (default) sniffs each blob.
-    pub codec: Codec,
+    pub codec: ReadCodec,
     /// If set, only entries whose lowercased names match this glob set are extracted.
     pub filter: Option<GlobSet>,
 }
@@ -74,7 +74,7 @@ pub struct ExtractOptions {
 impl Default for ExtractOptions {
     fn default() -> Self {
         ExtractOptions {
-            codec: Codec::Auto,
+            codec: ReadCodec::Auto,
             filter: None,
         }
     }
@@ -102,7 +102,7 @@ pub fn extract_one(
     archive: &Ba2Archive,
     name: &str,
     out_dir: &Path,
-    codec: Codec,
+    codec: ReadCodec,
 ) -> Result<PathBuf> {
     // Normalise the same way Ba2Archive::read() does: lowercase + `/` → `\`.
     let name_lower = name.to_lowercase().replace('/', "\\");
@@ -129,7 +129,7 @@ fn extract_entry(
     archive: &Ba2Archive,
     entry: &Ba2Entry,
     out_dir: &Path,
-    codec: Codec,
+    codec: ReadCodec,
 ) -> Result<PathBuf> {
     let dest = safe_output_path(out_dir, &entry.name)?;
     if let Some(parent) = dest.parent() {
