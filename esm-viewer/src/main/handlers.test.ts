@@ -18,9 +18,16 @@ const info: FileInfo = {
   is_localized: false,
 }
 
+/** The host keys a file by its canonical path: here a folder and the
+ * `.esm` inside it both resolve to `/real/<name>.esm`. */
+function canonical(path: string): string {
+  const name = path.endsWith('.esm') ? path.split('/').pop()! : 'A.esm'
+  return `/real/${name}`
+}
+
 function setup() {
   const host = {
-    open: vi.fn(async () => info),
+    open: vi.fn(async (path: string) => ({ ...info, path: canonical(path) })),
     run: vi.fn(async () => ({ ok: true })),
     close: vi.fn(),
   }
@@ -42,14 +49,14 @@ describe('createHandlers', () => {
   it('openDatabase opens through the host and registers the handle', async () => {
     const handle = await t.handlers[CH.openDatabase]!('/data/A.esm')
     expect(t.host.open).toHaveBeenCalledWith('/data/A.esm')
-    expect(handle).toEqual({ id: '1', path: '/data/A.esm', info })
+    expect(handle).toEqual({ id: '1', path: '/data/A.esm', info: { ...info, path: '/real/A.esm' } })
     expect(t.handlers[CH.listOpen]!()).toEqual([handle])
   })
 
-  it('run validates the op and runs it against the id’s path', async () => {
+  it('run validates the op and runs it against the id’s file', async () => {
     await t.handlers[CH.openDatabase]!('/data/A.esm')
     await t.handlers[CH.run]!('1', { op: 'referenced_by', depth: 0, limit: 0 })
-    expect(t.host.run).toHaveBeenCalledWith('/data/A.esm', {
+    expect(t.host.run).toHaveBeenCalledWith('/real/A.esm', {
       op: 'referenced_by',
       depth: 1,
       limit: 0,
@@ -64,25 +71,25 @@ describe('createHandlers', () => {
     expect(() => t.handlers[CH.run]!('1', { op: 'diff' })).toThrow(/invalid op/)
   })
 
-  it('diff runs on the first database with the second one’s path', async () => {
+  it('diff runs on the first database with the second one’s file', async () => {
     await t.handlers[CH.openDatabase]!('/data/A.esm')
     await t.handlers[CH.openDatabase]!('/data/B.esm')
     await t.handlers[CH.diff]!('1', '2', { record_type: 'WEAP', options: { bodies: 'none' } })
-    expect(t.host.run).toHaveBeenCalledWith('/data/A.esm', {
+    expect(t.host.run).toHaveBeenCalledWith('/real/A.esm', {
       op: 'diff',
-      b: '/data/B.esm',
+      b: '/real/B.esm',
       record_type: 'WEAP',
       options: { bodies: 'none' },
     })
   })
 
-  it('closeDatabase closes the host database only when no id still names it', async () => {
+  it('closeDatabase closes the host database only when no id still names its file', async () => {
     await t.handlers[CH.openDatabase]!('/data/A.esm')
-    await t.handlers[CH.openDatabase]!('/data/A.esm')
+    await t.handlers[CH.openDatabase]!('/data')
     t.handlers[CH.closeDatabase]!('1')
     expect(t.host.close).not.toHaveBeenCalled()
     t.handlers[CH.closeDatabase]!('2')
-    expect(t.host.close).toHaveBeenCalledWith('/data/A.esm')
+    expect(t.host.close).toHaveBeenCalledWith('/real/A.esm')
   })
 
   it('the file dialog passes its filter and returns null when canceled', async () => {

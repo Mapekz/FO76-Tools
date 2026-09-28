@@ -72,30 +72,46 @@ struct Resident {
 pub struct Host {
     inner: Mutex<HashMap<PathBuf, Resident>>,
     opener: Box<dyn Opener>,
+    /// Whether [`Self::run`] opens a database no one has opened.
+    opens_on_run: bool,
 }
 
 impl Host {
+    /// A host whose [`Self::run`] opens each ESM on first use.
     pub fn new() -> Self {
         Self::with_opener(RealOpener)
+    }
+
+    /// A host whose [`Self::run`] uses only databases opened with
+    /// [`Self::open`] and not closed since: work queued before a
+    /// [`Self::close`] fails instead of reopening the database.
+    pub fn explicit() -> Self {
+        Self {
+            opens_on_run: false,
+            ..Self::new()
+        }
     }
 
     fn with_opener(opener: impl Opener + 'static) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
             opener: Box::new(opener),
+            opens_on_run: true,
         }
     }
 
-    /// Run `op` against the ESM at `esm`, opening it first if needed.
-    /// `Op::Diff` opens its second ESM the same way.
+    /// Run `op` against the ESM at `esm`, opening it first if needed (and
+    /// this host opens on run). `Op::Diff` reaches its second ESM the same
+    /// way.
     pub fn run(&self, esm: &Path, op: &Op) -> anyhow::Result<Value> {
+        let db = |path: &Path| Ok::<_, anyhow::Error>(self.resolve(path, self.opens_on_run)?.1);
         match op {
             Op::Diff(args) => {
-                let db_a = self.open(esm)?;
-                let db_b = self.open(&args.b)?;
+                let db_a = db(esm)?;
+                let db_b = db(&args.b)?;
                 Ok(serde_json::to_value(crate::ops::diff(&db_a, &db_b, args)?)?)
             }
-            _ => crate::ops::run(&*self.open(esm)?, op),
+            _ => crate::ops::run(&*db(esm)?, op),
         }
     }
 
@@ -105,39 +121,84 @@ impl Host {
         Ok(self.open_with_key(path)?.1)
     }
 
-    /// Like [`Self::open`], but also returns the canonical path it is keyed by.
+    /// Like [`Self::open`], but also returns the canonical path it is keyed
+    /// by, which [`Self::close`] accepts even once the file is gone.
     pub fn open_with_key(&self, path: &Path) -> anyhow::Result<(PathBuf, Arc<Database>)> {
-        let canonical = crate::discover::resolve_esm_path(path)?;
-
-        let resident = {
-            let map = self.lock();
-            map.get(&canonical).map(|r| (r.sig.clone(), r.db.clone()))
-        };
-        if let Some((cached_sig, db)) = resident {
-            if cached_sig.matches(&self.opener.read_sig(&canonical)?) {
-                return Ok((canonical, db));
-            }
-            log::warn!("{} changed on disk; reopening", canonical.display());
-            self.lock().remove(&canonical);
-        }
-
-        let sig = self.opener.read_sig(&canonical)?;
-        let opened = Arc::new(self.opener.open(&canonical)?);
-        let db = self
-            .lock()
-            .entry(canonical.clone())
-            .or_insert(Resident { sig, db: opened })
-            .db
-            .clone();
-        Ok((canonical, db))
+        self.resolve(path, true)
     }
 
-    /// Forget the database for `path`; a later [`Self::open`] reopens it.
-    /// Callers still holding its `Arc` keep using it until they drop it.
-    pub fn close(&self, path: &Path) -> anyhow::Result<()> {
-        let canonical = crate::discover::resolve_esm_path(path)?;
-        self.lock().remove(&canonical);
-        Ok(())
+    /// The database `path` names, reopened if the file changed on disk.
+    /// Opens a database that isn't open only when `create`; a close that
+    /// lands while this call reopens a changed file wins.
+    fn resolve(&self, path: &Path, create: bool) -> anyhow::Result<(PathBuf, Arc<Database>)> {
+        let key = self.key(path)?;
+        let resident = {
+            let map = self.lock();
+            map.get(&key).map(|r| (r.sig.clone(), r.db.clone()))
+        };
+        match &resident {
+            Some((cached_sig, db)) => {
+                if cached_sig.matches(&self.opener.read_sig(&key)?) {
+                    return Ok((key, db.clone()));
+                }
+                log::warn!("{} changed on disk; reopening", key.display());
+            }
+            None if !create => anyhow::bail!("{} isn't open", key.display()),
+            None => {}
+        }
+
+        let sig = self.opener.read_sig(&key)?;
+        let opened = Arc::new(self.opener.open(&key)?);
+        let mut map = self.lock();
+        let db = match (map.get_mut(&key), &resident) {
+            // Replace the stale database, unless another caller already did.
+            (Some(current), Some((_, stale))) => {
+                if Arc::ptr_eq(&current.db, stale) {
+                    *current = Resident { sig, db: opened };
+                }
+                current.db.clone()
+            }
+            // Another caller's first open won the race.
+            (Some(current), None) => current.db.clone(),
+            // Closed while a changed file was reopened.
+            (None, Some(_)) if !create => anyhow::bail!("{} was closed", key.display()),
+            (None, _) => {
+                map.insert(
+                    key.clone(),
+                    Resident {
+                        sig,
+                        db: opened.clone(),
+                    },
+                );
+                opened
+            }
+        };
+        Ok((key, db))
+    }
+
+    /// The key `path` is open under: `path` itself when it is one (a
+    /// canonical path from [`Self::open_with_key`], which needn't exist any
+    /// more), else its canonical form.
+    fn key(&self, path: &Path) -> anyhow::Result<PathBuf> {
+        if self.lock().contains_key(path) {
+            return Ok(path.to_path_buf());
+        }
+        crate::discover::resolve_esm_path(path)
+    }
+
+    /// Forget the database for `path` (a path [`Self::open`] accepts, or the
+    /// canonical key [`Self::open_with_key`] returned, which works after the
+    /// file is renamed or deleted). Callers still holding its `Arc` keep
+    /// using it until they drop it. Closing what isn't open does nothing.
+    pub fn close(&self, path: &Path) {
+        if let Ok(key) = self.key(path) {
+            self.lock().remove(&key);
+        }
+    }
+
+    #[cfg(test)]
+    fn is_open(&self, key: &Path) -> bool {
+        self.lock().contains_key(key)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, Resident>> {
@@ -318,6 +379,32 @@ mod tests {
         assert!(Arc::ptr_eq(&after_evict, &after_evict_again));
         // Two opens total: the initial one and the one triggered by sig(2).
         assert_eq!(open_count.load(Ordering::SeqCst), 2);
+    }
+
+    // ─── Close ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn closing_by_key_works_after_the_file_is_gone() {
+        let path = temp_esm_path();
+        let host = Host::new();
+        let (key, _db) = host.open_with_key(&path).expect("open");
+        std::fs::remove_file(&path).expect("remove");
+        host.close(&key);
+        assert!(!host.is_open(&key));
+    }
+
+    #[test]
+    fn an_explicit_host_does_not_reopen_a_closed_database() {
+        let path = temp_esm_path();
+        let host = Host::explicit();
+        let (key, _db) = host.open_with_key(&path).expect("open");
+        let op = Op::FileInfo(crate::ops::NoArgs {});
+        host.run(&key, &op).expect("run while open");
+        host.close(&key);
+        let err = host.run(&key, &op).expect_err("run after close");
+        assert!(err.to_string().contains("isn't open"), "{err:#}");
+        assert!(!host.is_open(&key));
+        let _ = std::fs::remove_file(&path);
     }
 
     // ─── Double-open race guard ─────────────────────────────────────────

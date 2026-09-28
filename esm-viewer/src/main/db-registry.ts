@@ -1,7 +1,9 @@
 import type { DbHandle, DbId, FileInfo } from '../shared/api-types'
 
 /** The databases the renderer has open, by the opaque id it holds. Several
- * ids may name the same file; the host keeps one database per path. */
+ * ids may name the same file, under different paths; the host keeps one
+ * database per file, keyed by the canonical path its `FileInfo.path`
+ * reports. */
 export class DbRegistry {
   private readonly entries = new Map<DbId, DbHandle>()
   private nextId = 1
@@ -23,8 +25,9 @@ export class DbRegistry {
     return handle
   }
 
-  isOpen(path: string): boolean {
-    return [...this.entries.values()].some((h) => h.path === path)
+  /** Whether any id still names the file the host keys as `key`. */
+  isOpen(key: string): boolean {
+    return [...this.entries.values()].some((h) => h.info.path === key)
   }
 
   listAll(): DbHandle[] {

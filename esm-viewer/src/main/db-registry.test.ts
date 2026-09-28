@@ -36,13 +36,13 @@ describe('DbRegistry', () => {
     expect(registry.listAll()).toEqual([])
   })
 
-  it('isOpen reports whether any id still names a path', () => {
+  it('isOpen reports whether any id still names a file, whatever path opened it', () => {
     const registry = new DbRegistry()
     const a = registry.add('/data/A.esm', info)
-    const again = registry.add('/data/A.esm', info)
+    const alias = registry.add('/data', info)
     registry.remove(a.id)
-    expect(registry.isOpen('/data/A.esm')).toBe(true)
-    registry.remove(again.id)
-    expect(registry.isOpen('/data/A.esm')).toBe(false)
+    expect(registry.isOpen(info.path)).toBe(true)
+    registry.remove(alias.id)
+    expect(registry.isOpen(info.path)).toBe(false)
   })
 })

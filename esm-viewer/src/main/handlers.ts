@@ -40,19 +40,20 @@ export function createHandlers(deps: HandlerDeps): Record<string, Handler> {
     },
     [CH.closeDatabase]: (id) => {
       const closed = registry.remove(id as DbId)
-      if (closed && !registry.isOpen(closed.path)) host.close(closed.path)
+      if (closed && !registry.isOpen(closed.info.path)) host.close(closed.info.path)
     },
     [CH.listOpen]: () => registry.listAll(),
     [CH.parseFormId]: (s) => {
       if (typeof s !== 'string') throw new Error('invalid FormID')
       return deps.parseFormId(s)
     },
-    [CH.run]: (id, op) => host.run(entry(id).path, validateOp(op)),
+    // The host keys each open file by its canonical path (`info.path`).
+    [CH.run]: (id, op) => host.run(entry(id).info.path, validateOp(op)),
     [CH.diff]: (oldId, newId, request) => {
       const { record_type, options } = validateDiffRequest(request)
-      return host.run(entry(oldId).path, {
+      return host.run(entry(oldId).info.path, {
         op: 'diff',
-        b: entry(newId).path,
+        b: entry(newId).info.path,
         record_type,
         // Omitted fields take the engine's defaults (`DiffOptions` is
         // `#[serde(default)]`), which the generated type can't express.

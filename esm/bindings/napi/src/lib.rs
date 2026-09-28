@@ -45,12 +45,13 @@ impl EsmHost {
     #[napi(constructor)]
     pub fn new() -> Self {
         EsmHost {
-            host: Arc::new(Host::new()),
+            host: Arc::new(Host::explicit()),
         }
     }
 
     /// Open the ESM at `path` (a `.esm` file or its data folder), building its
-    /// cache if needed, and return its file info. Later `run` calls reuse it.
+    /// cache if needed, and return its file info, whose `path` is the key
+    /// `run` and `close` take. `run` works only on an open ESM.
     #[napi(ts_return_type = "Promise<unknown>")]
     pub async fn open(&self, path: String) -> napi::Result<serde_json::Value> {
         let host = self.host.clone();
@@ -62,8 +63,9 @@ impl EsmHost {
         .await
     }
 
-    /// Run one op (`{"op": "<tag>", ...args}`) against the ESM at `esm`.
-    /// `diff`'s `b` names the other ESM by path.
+    /// Run one op (`{"op": "<tag>", ...args}`) against the open ESM at `esm`.
+    /// `diff`'s `b` names the other open ESM. An op on an ESM closed before
+    /// it ran fails.
     #[napi(
         ts_args_type = "esm: string, op: object",
         ts_return_type = "Promise<unknown>"
@@ -77,12 +79,11 @@ impl EsmHost {
         .await
     }
 
-    /// Forget the ESM at `esm`; the next `open`/`run` reopens it.
+    /// Forget the ESM at `esm` (the `path` `open` returned, which works even
+    /// once the file is renamed or deleted); the next `open` reopens it.
     #[napi]
-    pub fn close(&self, esm: String) -> napi::Result<()> {
-        self.host
-            .close(esm.as_ref())
-            .map_err(|e| js_err(format!("{e:#}")))
+    pub fn close(&self, esm: String) {
+        self.host.close(esm.as_ref());
     }
 }
 

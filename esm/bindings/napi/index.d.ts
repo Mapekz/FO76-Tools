@@ -8,15 +8,20 @@ export declare class EsmHost {
   constructor()
   /**
    * Open the ESM at `path` (a `.esm` file or its data folder), building its
-   * cache if needed, and return its file info. Later `run` calls reuse it.
+   * cache if needed, and return its file info, whose `path` is the key
+   * `run` and `close` take. `run` works only on an open ESM.
    */
   open(path: string): Promise<unknown>
   /**
-   * Run one op (`{"op": "<tag>", ...args}`) against the ESM at `esm`.
-   * `diff`'s `b` names the other ESM by path.
+   * Run one op (`{"op": "<tag>", ...args}`) against the open ESM at `esm`.
+   * `diff`'s `b` names the other open ESM. An op on an ESM closed before
+   * it ran fails.
    */
   run(esm: string, op: object): Promise<unknown>
-  /** Forget the ESM at `esm`; the next `open`/`run` reopens it. */
+  /**
+   * Forget the ESM at `esm` (the `path` `open` returned, which works even
+   * once the file is renamed or deleted); the next `open` reopens it.
+   */
   close(esm: string): void
 }
 
