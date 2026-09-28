@@ -162,16 +162,19 @@ fn normalize(dir: &Path, rel: &str) -> Option<String> {
 /// stands for the directory before its first wildcard, and absolute,
 /// home-relative, URL and placeholder tokens are skipped.
 fn clean(token: &str) -> Option<String> {
+    // A leading `*` is emphasis, so a trailing one is too; otherwise a
+    // trailing `*` or `?` is a wildcard.
+    let emphasis = token.starts_with('*');
     let t = token
         .trim_start_matches(|c: char| "`*\"'(),;:!?[".contains(c))
-        .trim_end_matches(|c: char| "`*\"'(),;:.!?]".contains(c));
+        .trim_end_matches(|c: char| "`\"'(),;:.!]".contains(c) || (emphasis && c == '*'));
     let t = t.strip_suffix("'s").map_or(t, |t| t.trim_end_matches('`'));
     let t = t.split('#').next()?;
     let t = match t.rsplit_once(':') {
         Some((head, tail)) if tail.chars().all(|c| c.is_ascii_digit() || c == '-') => head,
         _ => t,
     };
-    let t = match t.find(['*', '?']) {
+    let t = match t.find(['*', '?', '[']) {
         Some(i) => t[..i].rsplit_once('/').map_or("", |(dir, _)| dir),
         None => t,
     };
@@ -233,6 +236,9 @@ fn slash_comments(text: &str, rust: bool) -> Vec<(usize, String)> {
     let c: Vec<char> = text.chars().collect();
     let mut acc = CommentLines::default();
     let ident = |ch: char| ch.is_alphanumeric() || ch == '_';
+    // The last code character before `i`, which tells a TypeScript regex
+    // literal (after an operator or opening bracket) from a division.
+    let mut last: Option<char> = None;
     let mut i = 0;
     while i < c.len() {
         let next = c.get(i + 1).copied();
@@ -254,6 +260,7 @@ fn slash_comments(text: &str, rust: bool) -> Vec<(usize, String)> {
                     } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
                         depth -= 1;
                         i += 2;
+                        acc.push(' ');
                         if depth == 0 || !rust {
                             break;
                         }
@@ -264,7 +271,12 @@ fn slash_comments(text: &str, rust: bool) -> Vec<(usize, String)> {
                 }
                 continue;
             }
-            'r' if rust && (i == 0 || !ident(c[i - 1])) => {
+            // Raw strings, including the `br` and `cr` forms.
+            'r' if rust
+                && (i == 0
+                    || !ident(c[i - 1])
+                    || (matches!(c[i - 1], 'b' | 'c') && (i < 2 || !ident(c[i - 2])))) =>
+            {
                 let hashes = c[i + 1..].iter().take_while(|&&ch| ch == '#').count();
                 if c.get(i + 1 + hashes) == Some(&'"') {
                     let close: Vec<char> = std::iter::once('"')
@@ -296,7 +308,25 @@ fn slash_comments(text: &str, rust: bool) -> Vec<(usize, String)> {
                     continue;
                 }
             }
+            '/' if !rust && last.is_none_or(|p| "(,=:[!&|?{};+-*%<>~^".contains(p)) => {
+                let mut class = false;
+                i += 1;
+                while i < c.len() && c[i] != '\n' {
+                    match c[i] {
+                        '\\' => i += 1,
+                        '[' => class = true,
+                        ']' => class = false,
+                        '/' if !class => break,
+                        _ => {}
+                    }
+                    i += 1;
+                }
+                i += 1;
+                last = Some('a');
+                continue;
+            }
             q @ ('"' | '\'' | '`') => {
+                last = Some(q);
                 i += 1;
                 while i < c.len() && c[i] != q {
                     if c[i] == '\\' {
@@ -311,6 +341,7 @@ fn slash_comments(text: &str, rust: bool) -> Vec<(usize, String)> {
                 continue;
             }
             '\n' => acc.newline(),
+            ch if !ch.is_whitespace() => last = Some(ch),
             _ => {}
         }
         i += 1;
@@ -383,9 +414,13 @@ fn link_targets(doc: &str) -> Vec<String> {
         }
     });
     let definitions = prose.lines().filter_map(|l| {
-        let (label, target) = l.trim_start().strip_prefix('[')?.split_once("]:")?;
-        let target = target.split_whitespace().next()?;
-        (!label.is_empty()).then(|| target.trim_start_matches('<').trim_end_matches('>'))
+        let (label, rest) = l.trim_start().strip_prefix('[')?.split_once("]:")?;
+        let rest = rest.trim_start();
+        let target = match rest.strip_prefix('<') {
+            Some(angled) => angled.split_once('>')?.0,
+            None => rest.split_whitespace().next()?,
+        };
+        (!label.is_empty()).then_some(target)
     });
     inline
         .chain(definitions)
@@ -491,6 +526,13 @@ fn clean_accepts_paths_and_rejects_prose() {
         Some("src/some-dir")
     );
     assert_eq!(clean("docs/adr/*.md").as_deref(), Some("docs/adr"));
+    assert_eq!(clean("esm/src/lib*").as_deref(), Some("esm/src"));
+    assert_eq!(clean("esm/src/lib?").as_deref(), Some("esm/src"));
+    assert_eq!(clean("esm/missing/[ab].rs").as_deref(), Some("esm/missing"));
+    assert_eq!(
+        clean("**esm/src/lib.rs**").as_deref(),
+        Some("esm/src/lib.rs")
+    );
     for prose in [
         "/tmp/x",
         "~/dev",
@@ -572,4 +614,36 @@ fn links_include_angled_and_reference_forms() {
     let doc = "[a](<esm/a.md>) [b](esm/b.md#x) [c](https://x/y)\n\
                [label]: esm/c.md\n`[d](esm/d.md)`\n";
     assert_eq!(link_targets(doc), ["esm/a.md", "esm/b.md", "esm/c.md"]);
+}
+
+#[test]
+fn lexer_edge_cases() {
+    let text = |path: &str, src: &str| {
+        comments(path, src)
+            .into_iter()
+            .map(|(_, c)| c)
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let blocks = text("x.rs", "/*esm/src/lib.rs*/ let x = 1; /*esm/Cargo.toml*/\n");
+    assert!(
+        blocks.split_whitespace().any(|t| t == "esm/src/lib.rs"),
+        "{blocks:?}"
+    );
+    let regex = text(
+        "x.ts",
+        "const re = /[\"]/;\nconst d = a / b; // esm/missing.rs\n",
+    );
+    assert!(regex.contains("esm/missing.rs"), "{regex:?}");
+    for raw in ["br#\"a \" // esm/x.rs\"#", "cr\"a // esm/x.rs\""] {
+        let found = text("x.rs", &format!("let s = {raw}; // esm/y.rs\n"));
+        assert!(
+            !found.contains("esm/x.rs") && found.contains("esm/y.rs"),
+            "{raw}: {found:?}"
+        );
+    }
+    assert_eq!(
+        link_targets("[label]: <esm/a b.md> \"title\"\n"),
+        ["esm/a b.md"]
+    );
 }
