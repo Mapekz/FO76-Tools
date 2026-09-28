@@ -15,6 +15,13 @@ function armoChild(formId: string): GroupChild {
 }
 
 describe('loadAllTypeRecords', () => {
+  it('stops when onChunk returns false', async () => {
+    const api = mockRun()
+    api.run.mockResolvedValue([armoRow('0x01'), armoRow('0x02')])
+    await loadAllTypeRecords(api, 'db1', 'ARMO', 10, 2, () => false)
+    expect(api.run).toHaveBeenCalledTimes(1)
+  })
+
   it('accumulates multiple chunks and reports progress after each one', async () => {
     const chunk1 = [armoRow('0x01'), armoRow('0x02')]
     const chunk2 = [armoRow('0x03')]

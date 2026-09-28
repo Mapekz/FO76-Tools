@@ -10,15 +10,16 @@ import type { Fo76Api, GroupChild, RecordRow } from '../../../shared/api-types'
  * round-trip blocks Electron's main process for too long. Invokes `onChunk`
  * with the accumulated array after every successful chunk fetch, so the
  * caller can show partial progress as it streams in (e.g. via `setRows`).
- * Stops once `offset >= total`, or defensively on an empty chunk (avoids an
- * infinite loop on a short backend response). */
+ * Stops once `offset >= total`, when `onChunk` returns false (the caller
+ * lost interest), or defensively on an empty chunk (avoids an infinite loop
+ * on a short backend response). */
 export async function loadAllTypeRecords(
   api: Pick<Fo76Api, 'run'>,
   dbId: string,
   sig: string,
   total: number,
   chunkSize: number,
-  onChunk: (accumulated: RecordRow[]) => void,
+  onChunk: (accumulated: RecordRow[]) => boolean | void,
 ): Promise<void> {
   let offset = 0
   let acc: RecordRow[] = []
@@ -35,7 +36,7 @@ export async function loadAllTypeRecords(
     if (chunk.length === 0) break // defensive: avoid an infinite loop on a short backend response
     acc = acc.concat(chunk)
     offset += chunk.length
-    onChunk(acc)
+    if (onChunk(acc) === false) break // the caller no longer wants the rest
   }
 }
 

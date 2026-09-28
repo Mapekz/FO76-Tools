@@ -3,24 +3,14 @@ import { useStore } from '../store'
 import { colors } from '../theme'
 
 export function OpenFilesPanel() {
-  const {
-    openDbs,
-    activeDbId,
-    recordColumns,
-    setOpenDbs,
-    setActiveDb,
-    setActiveRecord,
-    setRecordColumns,
-    setReferencedBy,
-  } = useStore()
+  const { openDbs, activeDbId, setOpenDbs, selectFile, fileClosed } = useStore()
 
   async function handleOpenPath(path: string | null) {
     if (!path) return
     try {
       const handle = await window.api.openDatabase(path)
-      const all = await window.api.listOpen()
-      setOpenDbs(all)
-      setActiveDb(handle.id)
+      setOpenDbs(await window.api.listOpen())
+      await selectFile(handle.id)
     } catch (e) {
       alert(String(e))
     }
@@ -36,27 +26,7 @@ export function OpenFilesPanel() {
 
   async function handleClose(id: string) {
     await window.api.closeDatabase(id)
-    const all = await window.api.listOpen()
-    setOpenDbs(all)
-    // Drop the closed file's column so RecordTable doesn't keep rendering a
-    // now-invalid dbId; other open files stay put until the next navigation.
-    setRecordColumns(recordColumns.filter((c) => c.dbId !== id))
-    if (activeDbId === id) {
-      setActiveDb(all[0]?.id ?? null)
-      setActiveRecord(null)
-      setReferencedBy({
-        target: '',
-        rows: [],
-        total: 0,
-        capped: false,
-        requested_depth: 0,
-        effective_depth: null,
-        depth_capped: false,
-        frontier_remaining: 0,
-        per_depth_totals: [],
-        shown_max_depth: 0,
-      })
-    }
+    fileClosed(id, await window.api.listOpen())
   }
 
   return (
@@ -77,7 +47,7 @@ export function OpenFilesPanel() {
               padding: '2px 4px',
               cursor: 'pointer',
             }}
-            onClick={() => setActiveDb(db.id)}
+            onClick={() => void selectFile(db.id)}
           >
             <span style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {db.path.split('/').pop()}

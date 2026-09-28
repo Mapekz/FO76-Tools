@@ -22,8 +22,8 @@ bun run lint                # oxlint (see .oxlintrc.json)
 bun run lint:fix            # oxlint --fix
 bun run format              # oxfmt, writes in place (see .oxfmtrc.json)
 bun run format:check        # oxfmt --check
-bun run typecheck          # tsc --noEmit against tsconfig.web.json and tsconfig.node.json
-bun run test                # bun test (unit tests for renderer/src/lib/*)
+bun run typecheck          # tsc --noEmit against tsconfig.{web,node,test}.json
+bun run test                # bun test (every src/**/*.test.ts)
 just                        # = just check = lint:ci -> format:check -> typecheck -> test
 just dev / just build       # thin wrappers over the bun scripts above
 ```
@@ -64,15 +64,17 @@ npm) — verify with `ls -la node_modules/@fo76/esm-napi/` and check the entries
 ## Type-checking
 
 Nothing in the electron-vite/esbuild build pipeline checks types — it strips them. `bun run
-typecheck` is the actual gate, run separately (and via `just check`). Main/preload and renderer
-target different environments, so each file belongs to one project; `tsconfig.json` only
-references them, for editors:
+typecheck` is the actual gate, run separately (and via `just check`). The renderer and
+main/preload target different environments, and tests run under Bun, so there are three
+projects on `tsconfig.base.json`; `tsconfig.json` only references them, for editors:
 
-- `tsconfig.web.json` — renderer (DOM + ES2023 lib). ES2023 (not ES2022) is deliberate — it's
-  what makes `Array.prototype.toSorted()`/`toReversed()` etc. available; Electron's bundled V8
-  already supports them at runtime.
-- `tsconfig.node.json` — main + preload (ES2022 lib, no DOM).
-- Both include `src/shared/` and `src/test-support/`, and extend `tsconfig.base.json`.
+- `tsconfig.web.json` — renderer app code plus `src/shared/` (DOM + ES2023 lib, no Node or Bun
+  types, so renderer code cannot reach for `process` or `require`). ES2023 (not ES2022) is
+  deliberate — it's what makes `Array.prototype.toSorted()`/`toReversed()` etc. available;
+  Electron's bundled V8 already supports them at runtime.
+- `tsconfig.node.json` — main + preload plus `src/shared/` (ES2022 lib, Node types, no DOM).
+- `tsconfig.test.json` — everything under `src/`, tests included, with Bun's types
+  (`src/test-support/bun-types.d.ts`).
 
 Read `package.json` for the TypeScript version; the native TS7 compiler still uses `tsc`.
 
@@ -103,7 +105,7 @@ app's docs/config files were never brought under formatter control.
 | Path | Purpose |
 |---|---|
 | `src/main/` | Electron main process: window creation and navigation lockdown (`index.ts`), the typed `EsmHost` (`addon.ts`), open-database ids (`db-registry.ts`), every IPC handler over injected dependencies (`handlers.ts`, wired to Electron by `ipc.ts`), trust-boundary checks (`ipc-validators.ts`) |
-| `src/preload/` | Preload bridge exposed to the renderer. The renderer is sandboxed (`sandbox: true`, context isolation, no Node integration), so the preload can require only `electron` — everything else is bundled into it |
+| `src/preload/` | Preload bridge exposed to the renderer. The renderer is sandboxed (`sandbox: true`, context isolation, no Node integration), so the preload can require only `electron`. Relative imports are bundled into it, but electron-vite externalizes `dependencies` packages, so the preload must not import one |
 | `src/renderer/` | React UI (record tree, detail panel, referenced-by panel, open-files panel, nav history) and the Zustand store, which owns navigation (`navigate`, `goBack`, `goForward`); `RecordRef` is the shared clickable record row |
 | `src/shared/api-types.ts` | The renderer ↔ main contract: re-exports the generated types (`Op`, `OpOutput`, DTOs) and defines `CH`, `Fo76Api` (`run(id, op)` typed by `OpOutput`), `DbHandle`, and `sel()` |
 | `src/shared/generated/` | Generated TypeScript mirrors (`ts-rs` + two hand-written generators) — follow the root validation map; never hand-edit |

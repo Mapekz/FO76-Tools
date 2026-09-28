@@ -108,7 +108,9 @@ export function DiffPanel() {
   const [recordType, setRecordType] = useState('')
   const [suppressNoise, setSuppressNoise] = useState(true)
   const [excludeTypes, setExcludeTypes] = useState('')
-  const [result, setResult] = useState<DiffResult | null>(null)
+  // The result remembers the files it compared, so its rows open there even
+  // after the Old/New selectors change.
+  const [result, setResult] = useState<(DiffResult & { oldId: string; newId: string }) | null>(null)
   const { loading, error, run } = useAsyncAction()
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
     added: true,
@@ -150,9 +152,10 @@ export function DiffPanel() {
 
   async function runDiff() {
     if (!oldId || !newId) return
+    const [from, to] = [oldId, newId]
     await run(async () => {
       const excludeList = parseSigList(excludeTypes)
-      const res = await window.api.diff(oldId, newId, {
+      const res = await window.api.diff(from, to, {
         record_type: recordType.trim() || null,
         options: {
           // Bodies are never rendered here (see ChangedRow's one-line summary +
@@ -163,7 +166,7 @@ export function DiffPanel() {
           exclude_types: excludeList,
         },
       })
-      setResult(res)
+      setResult({ ...res, oldId: from, newId: to })
     })
   }
 
@@ -252,7 +255,7 @@ export function DiffPanel() {
             onToggle={() => toggleSection('added')}
           >
             {result.added.map((row) => (
-              <StubRow key={row.form_id} row={row} dbId={newId} />
+              <StubRow key={row.form_id} row={row} dbId={result.newId} />
             ))}
           </Section>
           <Section
@@ -262,7 +265,7 @@ export function DiffPanel() {
             onToggle={() => toggleSection('removed')}
           >
             {result.removed.map((row) => (
-              <StubRow key={row.form_id} row={row} dbId={oldId} />
+              <StubRow key={row.form_id} row={row} dbId={result.oldId} />
             ))}
           </Section>
           <Section
@@ -272,7 +275,7 @@ export function DiffPanel() {
             onToggle={() => toggleSection('changed')}
           >
             {result.changed.map((c) => (
-              <ChangedRow key={c.stub.form_id} change={c} dbId={newId} />
+              <ChangedRow key={c.stub.form_id} change={c} dbId={result.newId} />
             ))}
           </Section>
         </div>

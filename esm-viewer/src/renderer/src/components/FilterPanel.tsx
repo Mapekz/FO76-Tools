@@ -27,7 +27,9 @@ export function FilterPanel() {
   const [path, setPath] = useState('')
   const [op, setOp] = useState<FilterOp>('exists')
   const [value, setValue] = useState('')
-  const [result, setResult] = useState<FilterResult | null>(null)
+  // The result remembers the file it was filtered in, so a row still opens
+  // there after the active file changes.
+  const [result, setResult] = useState<(FilterResult & { dbId: string }) | null>(null)
   const { loading, error, run } = useAsyncAction()
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export function FilterPanel() {
         value: op === 'exists' ? null : value,
         limit: LIMIT,
       })
-      setResult(res)
+      setResult({ ...res, dbId })
     })
   }
 
@@ -159,7 +161,7 @@ export function FilterPanel() {
           <RecordRef
             // oxlint-disable-next-line react/no-array-index-key
             key={`${row.form_id}-${i}`}
-            dbId={activeDbId}
+            dbId={result?.dbId ?? activeDbId}
             formId={row.form_id}
             editorId={row.editor_id}
             name={row.name}

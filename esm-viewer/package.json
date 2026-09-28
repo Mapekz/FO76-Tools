@@ -13,7 +13,7 @@
     "build:addon": "bun run --cwd ../esm/bindings/napi build",
     "preview": "electron-vite preview",
     "package:dir": "electron-builder --dir",
-    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json",
     "test": "bun test",
     "test:watch": "bun test --watch",
     "lint": "oxlint",

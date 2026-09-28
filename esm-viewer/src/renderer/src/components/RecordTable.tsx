@@ -320,11 +320,15 @@ export function RecordTable({ columns, activeDbId }: Props) {
                     if (col.record && col.dbId !== activeDbId)
                       void navigate(col.dbId, col.record.header.form_id)
                   }}
-                  title={`Click to show ${col.fileName}'s copy (drives the tree, Raw mode and Referenced By)`}
+                  title={
+                    col.dbId === activeDbId
+                      ? `Showing ${col.fileName}'s copy`
+                      : `Click to show ${col.fileName}'s copy (drives the tree, Raw mode and Referenced By)`
+                  }
                   style={{
                     textAlign: 'left',
                     padding: '4px 6px',
-                    cursor: 'pointer',
+                    cursor: col.dbId === activeDbId ? 'default' : 'pointer',
                     borderBottom:
                       col.dbId === activeDbId
                         ? `2px solid ${colors.traceBlue}`

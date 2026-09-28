@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store'
 import type { RecordRow, GroupChild } from '../../../shared/api-types'
 import { formatRecordType } from '../recordTypeNames'
@@ -32,15 +32,24 @@ export function RecordTree() {
   const [loading, setLoading] = useState<Set<string>>(new Set())
   const [focusedIndex, setFocusedIndex] = useState(0)
   const [sortStateBySig, setSortStateBySig] = useState<Record<string, SortState>>({})
+  // The file the tree currently shows. Loads started for another file drop
+  // their results instead of writing them into this file's tree.
+  const shownDb = useRef(activeDbId)
 
   useEffect(() => {
-    if (!activeDbId) {
-      setGroups([])
-      return
-    }
+    shownDb.current = activeDbId
+    setGroups([])
+    setExpanded(new Set())
+    setRows({})
+    setGroupChildren({})
+    setLoading(new Set())
+    setFocusedIndex(0)
+    if (!activeDbId) return
+    const db = activeDbId
     window.api
-      .run(activeDbId, { op: 'list_groups' })
+      .run(db, { op: 'list_groups' })
       .then((gs) => {
+        if (shownDb.current !== db) return
         const parsed: GroupEntry[] = gs.map((g) => {
           const sig = g.label.kind === 'record_type' ? g.label.sig : '????'
           return { sig, child_count: g.child_count }
@@ -48,10 +57,6 @@ export function RecordTree() {
         const filtered = parsed.filter((g) => g.child_count > 0)
         filtered.sort((a, b) => a.sig.localeCompare(b.sig))
         setGroups(filtered)
-        setExpanded(new Set())
-        setRows({})
-        setGroupChildren({})
-        setFocusedIndex(0)
       })
       .catch(console.error)
   }, [activeDbId])
@@ -67,19 +72,21 @@ export function RecordTree() {
     }
     setExpanded((s) => new Set([...s, sig]))
     if (!activeDbId) return
+    const db = activeDbId
 
     if (HIERARCHICAL.has(sig)) {
       if (groupChildren[sig]) return
       setLoading((s) => new Set([...s, sig]))
       try {
-        const children = await loadTypeChildrenPage(window.api, activeDbId, sig, [], PAGE_SIZE)
-        setGroupChildren((c) => ({ ...c, [sig]: children }))
+        const children = await loadTypeChildrenPage(window.api, db, sig, [], PAGE_SIZE)
+        if (shownDb.current === db) setGroupChildren((c) => ({ ...c, [sig]: children }))
       } finally {
-        setLoading((s) => {
-          const n = new Set(s)
-          n.delete(sig)
-          return n
-        })
+        if (shownDb.current === db)
+          setLoading((s) => {
+            const n = new Set(s)
+            n.delete(sig)
+            return n
+          })
       }
       return
     }
@@ -95,28 +102,32 @@ export function RecordTree() {
    * keeps running (and isn't cancelled) even if the group is collapsed again. */
   async function loadAllRecords(sig: string, total: number) {
     if (!activeDbId) return
+    const db = activeDbId
     setRows((r) => ({ ...r, [sig]: [] })) // arm "already loading" guard; shows "0 / total" immediately
     setLoading((s) => new Set([...s, sig]))
     try {
-      await loadAllTypeRecords(window.api, activeDbId, sig, total, CHUNK_SIZE, (acc) => {
+      await loadAllTypeRecords(window.api, db, sig, total, CHUNK_SIZE, (acc) => {
+        if (shownDb.current !== db) return false
         setRows((r) => ({ ...r, [sig]: acc }))
       })
     } catch (err) {
       console.error(err)
     } finally {
-      setLoading((s) => {
-        const n = new Set(s)
-        n.delete(sig)
-        return n
-      })
+      if (shownDb.current === db)
+        setLoading((s) => {
+          const n = new Set(s)
+          n.delete(sig)
+          return n
+        })
     }
   }
 
   async function loadMore(sig: string) {
     if (!activeDbId) return
+    const db = activeDbId
     const current = groupChildren[sig] ?? []
-    const next = await loadTypeChildrenPage(window.api, activeDbId, sig, current, PAGE_SIZE)
-    setGroupChildren((c) => ({ ...c, [sig]: next }))
+    const next = await loadTypeChildrenPage(window.api, db, sig, current, PAGE_SIZE)
+    if (shownDb.current === db) setGroupChildren((c) => ({ ...c, [sig]: next }))
   }
 
   function handleSortClick(sig: string, column: SortColumn) {

@@ -13,7 +13,12 @@ export function SearchPanel() {
   const [pattern, setPattern] = useState('')
   const [field, setField] = useState<'edid' | 'name' | 'both'>('both')
   const [typesText, setTypesText] = useState('')
-  const [results, setResults] = useState<RecordRow[]>([])
+  // Results remember the file they were searched in, so a row still opens
+  // there after the active file changes.
+  const [results, setResults] = useState<{ dbId: string; rows: RecordRow[] }>({
+    dbId: '',
+    rows: [],
+  })
   const { loading, error, run } = useAsyncAction()
 
   if (!activeDbId) return null
@@ -23,7 +28,8 @@ export function SearchPanel() {
     const dbId = activeDbId
     const types = parseSigList(typesText)
     await run(async () => {
-      setResults(await window.api.run(dbId, { op: 'search', pattern, types, field, limit: LIMIT }))
+      const rows = await window.api.run(dbId, { op: 'search', pattern, types, field, limit: LIMIT })
+      setResults({ dbId, rows })
     })
   }
 
@@ -75,16 +81,16 @@ export function SearchPanel() {
       {error && <div style={{ color: colors.faultRed, marginTop: 6 }}>{error}</div>}
 
       <div style={{ marginTop: 8, fontWeight: 'bold' }}>
-        {results.length} result{results.length === 1 ? '' : 's'}
-        {results.length === LIMIT ? ' (capped)' : ''}
+        {results.rows.length} result{results.rows.length === 1 ? '' : 's'}
+        {results.rows.length === LIMIT ? ' (capped)' : ''}
       </div>
       <div style={{ overflowY: 'auto', flex: 1, marginTop: 4 }}>
-        {results.map((row, i) => (
+        {results.rows.map((row, i) => (
           // Composite key: index guards against duplicate form_ids across pages.
           <RecordRef
             // oxlint-disable-next-line react/no-array-index-key
             key={`${row.form_id}-${i}`}
-            dbId={activeDbId}
+            dbId={results.dbId}
             formId={row.form_id}
             recordType={row.record_type}
             editorId={row.editor_id}
