@@ -1,228 +1,248 @@
+//! VMAD (Papyrus script attachment) subrecords.
+//!
+//! Every VMAD starts with the same header and script list; records with
+//! script fragments (xEdit's `wbVMADFragmented*`) add a tail whose layout the
+//! schema member names (`fragments`). The header, script list and fragment
+//! tails read through one [`VmadCursor`]: any read past the end stops the
+//! decode, and the value becomes a `_raw` "VMAD truncated" fallback holding
+//! the bytes from where it stopped. Property values are more forgiving: a
+//! property that runs short decodes to `null` (see [`decode_vmad_property`]).
+
 use super::node::{Node, RawReason};
 use super::*;
+use crate::schema::VmadFragments;
 
-/// The `_raw` fallback (reason "VMAD truncated") for VMAD data
-/// that ends early.
+/// The `_raw` fallback (reason "VMAD truncated") for VMAD data that ends early.
 fn vmad_truncated(rest: &[u8]) -> Node {
     Node::raw(Some(rest), RawReason::Malformed("VMAD truncated".into()))
 }
 
-/// Decode a VMAD (Papyrus scripts) subrecord into its boundary JSON.
+/// Decode a plain VMAD (Papyrus scripts) subrecord into its boundary JSON.
 pub fn decode_vmad(ctx: &DecodeContext<'_>, data: &[u8]) -> Value {
-    vmad_node(ctx, data).into_json(ctx)
+    vmad_node(ctx, data, None).into_json(ctx)
 }
 
-/// Decode a VMAD (Papyrus scripts) subrecord into a structured value.
-///
-/// VMAD stores Papyrus script attachments with properties in a compact binary format.
-/// Never panics on truncated or malformed input — returns a raw hex fallback instead.
-pub(super) fn vmad_node(ctx: &DecodeContext<'_>, data: &[u8]) -> Node {
-    let mut pos = 0usize;
+/// Decode a VMAD subrecord whose fragment tail (if any) has layout
+/// `fragments`. Never panics on truncated or malformed input.
+pub(super) fn vmad_node(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+    fragments: Option<VmadFragments>,
+) -> Node {
+    let mut cur = VmadCursor { data, pos: 0 };
+    match read_vmad(ctx, &mut cur, fragments) {
+        Some(node) => node,
+        None => vmad_truncated(&data[cur.pos.min(data.len())..]),
+    }
+}
 
-    macro_rules! need {
-        ($n:expr) => {
-            if pos + $n > data.len() {
-                return vmad_truncated(&data[pos..]);
-            }
-        };
+/// A read position in a VMAD payload. Each read either consumes its bytes or
+/// returns `None` without consuming them (a string's length prefix, once
+/// read, stays consumed).
+struct VmadCursor<'d> {
+    data: &'d [u8],
+    pos: usize,
+}
+
+impl VmadCursor<'_> {
+    fn need(&self, n: usize) -> Option<()> {
+        (self.pos + n <= self.data.len()).then_some(())
     }
 
-    macro_rules! read_u16 {
-        () => {{
-            need!(2);
-            let v = u16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 2;
-            v
-        }};
+    fn at_end(&self) -> bool {
+        self.pos >= self.data.len()
     }
 
-    macro_rules! read_wstring {
-        () => {{
-            let len = read_u16!() as usize;
-            need!(len);
-            let s = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
-            pos += len;
-            s
-        }};
+    fn take<const N: usize>(&mut self) -> Option<[u8; N]> {
+        self.need(N)?;
+        let bytes = self.data[self.pos..self.pos + N].try_into().ok()?;
+        self.pos += N;
+        Some(bytes)
     }
 
-    let version = read_u16!();
-    let obj_format = read_u16!();
-    let script_count = read_u16!();
+    fn u8(&mut self) -> Option<u8> {
+        self.take::<1>().map(|[b]| b)
+    }
 
-    let mut scripts = Vec::new();
-    for _ in 0..script_count {
-        let name = read_wstring!();
-        need!(1);
-        let status = data[pos];
-        pos += 1;
-        let prop_count = read_u16!();
-        let mut props = Vec::new();
-        for _ in 0..prop_count {
-            let prop_name = read_wstring!();
-            need!(2);
-            let prop_type = data[pos];
-            pos += 1;
-            let _prop_status = data[pos];
-            pos += 1;
-            let value = decode_vmad_property(ctx, data, &mut pos, prop_type, obj_format);
-            props.push(Node::obj([
-                ("name", Node::str(prop_name)),
-                ("type", Node::int(prop_type)),
-                ("value", value),
-            ]));
-        }
-        scripts.push(Node::obj([
-            ("name", Node::str(name)),
+    fn i8(&mut self) -> Option<i8> {
+        self.u8().map(|b| b as i8)
+    }
+
+    fn u16(&mut self) -> Option<u16> {
+        self.take().map(u16::from_le_bytes)
+    }
+
+    fn i16(&mut self) -> Option<i16> {
+        self.take().map(i16::from_le_bytes)
+    }
+
+    fn u32(&mut self) -> Option<u32> {
+        self.take().map(u32::from_le_bytes)
+    }
+
+    /// A u16-length-prefixed string.
+    fn wstring(&mut self) -> Option<String> {
+        let len = self.u16()? as usize;
+        self.need(len)?;
+        let s = String::from_utf8_lossy(&self.data[self.pos..self.pos + len]).into_owned();
+        self.pos += len;
+        Some(s)
+    }
+
+    /// One property: name, type, status (ignored), value.
+    fn property(&mut self, ctx: &DecodeContext<'_>, obj_format: u16) -> Option<Node> {
+        let name = self.wstring()?;
+        self.need(2)?;
+        let prop_type = self.u8()?;
+        let _status = self.u8()?;
+        let value = decode_vmad_property(ctx, self.data, &mut self.pos, prop_type, obj_format);
+        Some(Node::obj([
+            ("name", Node::Str(name)),
+            ("type", Node::int(prop_type)),
+            ("value", value),
+        ]))
+    }
+
+    /// `count` properties.
+    fn properties(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        count: usize,
+        obj_format: u16,
+    ) -> Option<Vec<Node>> {
+        (0..count).map(|_| self.property(ctx, obj_format)).collect()
+    }
+
+    /// One script: name, status, u16-counted properties.
+    fn script(&mut self, ctx: &DecodeContext<'_>, obj_format: u16) -> Option<Node> {
+        let name = self.wstring()?;
+        self.need(1)?;
+        let status = self.u8()?;
+        let count = self.u16()? as usize;
+        let properties = self.properties(ctx, count, obj_format)?;
+        Some(Node::obj([
+            ("name", Node::Str(name)),
             ("status", Node::int(status)),
-            ("properties", Node::Array(props)),
-        ]));
+            ("properties", Node::Array(properties)),
+        ]))
     }
 
-    Node::obj([
+    /// `count` scripts.
+    fn scripts(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        count: usize,
+        obj_format: u16,
+    ) -> Option<Vec<Node>> {
+        (0..count).map(|_| self.script(ctx, obj_format)).collect()
+    }
+}
+
+/// The header and scripts, then the fragment tail when the data continues.
+fn read_vmad(
+    ctx: &DecodeContext<'_>,
+    cur: &mut VmadCursor<'_>,
+    fragments: Option<VmadFragments>,
+) -> Option<Node> {
+    let version = cur.u16()?;
+    let obj_format = cur.u16()?;
+    let script_count = cur.u16()? as usize;
+    let scripts = cur.scripts(ctx, script_count, obj_format)?;
+    let mut out = Node::obj([
         ("version", Node::int(version)),
         ("scripts", Node::Array(scripts)),
-    ])
+    ]);
+    // Records with a fragmented layout can still carry only the plain header.
+    let Some(fragments) = fragments.filter(|_| !cur.at_end()) else {
+        return Some(out);
+    };
+    let Node::Struct(fields) = &mut out else {
+        unreachable!("Node::obj builds a struct");
+    };
+    match fragments {
+        VmadFragments::Qust => {
+            fields.insert(
+                "script_fragments".into(),
+                qust_fragments(ctx, cur, obj_format)?,
+            );
+            fields.insert(
+                "aliases".into(),
+                Node::Array(qust_aliases(ctx, cur, obj_format)?),
+            );
+        }
+        VmadFragments::Info => {
+            fields.insert(
+                "script_fragments".into(),
+                flag_fragments(ctx, cur, obj_format, 0x03, false)?,
+            );
+        }
+        VmadFragments::Pack => {
+            fields.insert(
+                "script_fragments".into(),
+                flag_fragments(ctx, cur, obj_format, 0x07, false)?,
+            );
+        }
+        VmadFragments::Scen => {
+            fields.insert(
+                "script_fragments".into(),
+                flag_fragments(ctx, cur, obj_format, 0x03, true)?,
+            );
+        }
+        VmadFragments::Perk => {
+            fields.insert(
+                "script_fragments".into(),
+                perk_fragments(ctx, cur, obj_format)?,
+            );
+        }
+    }
+    Some(out)
 }
 
-/// Decode a `wbVMADFragmentedQUST` VMAD subrecord.
-///
-/// Extends the flat `decode_vmad` output with the `wbVMADFragmentedQUST`-specific
-/// tail: a **Script Fragments** struct (extra bind data version, fragment count,
-/// script name + optional script data, then N quest-stage fragments) followed by
-/// an **Aliases** array (each alias carries a FormID/alias-ID, format version,
-/// and its own script entries).
-///
-/// On any bounds-check failure the function returns the same `{"_raw": true,
-/// "reason": "VMAD truncated", ...}` sentinel as `decode_vmad`, so callers can
-/// treat both uniformly.
-pub(super) fn decode_vmad_qust(ctx: &DecodeContext<'_>, data: &[u8]) -> Node {
-    let mut pos = 0usize;
+/// A fragment's script and fragment names.
+fn fragment_names(cur: &mut VmadCursor<'_>) -> Option<(Node, Node)> {
+    Some((Node::Str(cur.wstring()?), Node::Str(cur.wstring()?)))
+}
 
-    macro_rules! need {
-        ($n:expr) => {
-            if pos + $n > data.len() {
-                return vmad_truncated(&data[pos..]);
-            }
-        };
-    }
-    macro_rules! read_u16 {
-        () => {{
-            need!(2);
-            let v = u16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 2;
-            v
-        }};
-    }
-    macro_rules! read_u32 {
-        () => {{
-            need!(4);
-            let v = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
-            pos += 4;
-            v
-        }};
-    }
-    macro_rules! read_wstring {
-        () => {{
-            let len = read_u16!() as usize;
-            need!(len);
-            let s = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
-            pos += len;
-            s
-        }};
-    }
-
-    // ── Header + scripts (same layout as the flat decoder) ───────────────────
-    let version = read_u16!();
-    let obj_format = read_u16!();
-    let script_count = read_u16!();
-    let mut scripts = Vec::new();
-    for _ in 0..script_count {
-        let name = read_wstring!();
-        need!(1);
-        let status = data[pos];
-        pos += 1;
-        let prop_count = read_u16!();
-        let mut props = Vec::new();
-        for _ in 0..prop_count {
-            let prop_name = read_wstring!();
-            need!(2);
-            let prop_type = data[pos];
-            pos += 1;
-            let _prop_status = data[pos];
-            pos += 1;
-            let value = decode_vmad_property(ctx, data, &mut pos, prop_type, obj_format);
-            props.push(Node::obj([
-                ("name", Node::str(prop_name)),
-                ("type", Node::int(prop_type)),
-                ("value", value),
-            ]));
-        }
-        scripts.push(Node::obj([
-            ("name", Node::str(name)),
-            ("status", Node::int(status)),
-            ("properties", Node::Array(props)),
-        ]));
-    }
-
-    // ── Script Fragments (wbVMADFragmentedQUST tail) ─────────────────────────
-    // Some QUST records carry only the plain VMAD header without a script-fragments tail.
-    // Treat end-of-data here as a successful no-fragments result.
-    if pos >= data.len() {
-        return Node::obj([
-            ("version", Node::int(version)),
-            ("scripts", Node::Array(scripts)),
-        ]);
-    }
-    need!(1);
-    let extra_bind_data_version = data[pos] as i8;
-    pos += 1;
-    let frag_count = read_u16!() as usize;
-    let script_name = read_wstring!();
-    // Script union: if script_name == "" then wbNull, else Script Data
-    let script_data = if !script_name.is_empty() {
-        need!(3); // flags u8 + prop_count u16
-        let flags = data[pos];
-        pos += 1;
-        let pc = read_u16!() as usize;
-        let mut props = Vec::new();
-        for _ in 0..pc {
-            let pn = read_wstring!();
-            need!(2);
-            let pt = data[pos];
-            pos += 1;
-            let _ps = data[pos];
-            pos += 1;
-            let val = decode_vmad_property(ctx, data, &mut pos, pt, obj_format);
-            props.push(Node::obj([
-                ("name", Node::str(pn)),
-                ("type", Node::int(pt)),
-                ("value", val),
-            ]));
-        }
+/// `wbVMADFragmentedQUST`'s Script Fragments: extra bind data version,
+/// fragment count, script name, optional script data, then quest-stage
+/// fragments.
+fn qust_fragments(
+    ctx: &DecodeContext<'_>,
+    cur: &mut VmadCursor<'_>,
+    obj_format: u16,
+) -> Option<Node> {
+    cur.need(1)?;
+    let extra_bind_data_version = cur.i8()?;
+    let frag_count = cur.u16()? as usize;
+    let script_name = cur.wstring()?;
+    // Script union: an empty script name means no script data.
+    let script_data = if script_name.is_empty() {
+        Node::Null
+    } else {
+        cur.need(3)?; // flags u8 + prop_count u16
+        let flags = cur.u8()?;
+        let count = cur.u16()? as usize;
+        let properties = cur.properties(ctx, count, obj_format)?;
         Node::obj([
             ("flags", Node::int(flags)),
-            ("properties", Node::Array(props)),
+            ("properties", Node::Array(properties)),
         ])
-    } else {
-        Node::Null
     };
-    let mut fragments = Vec::new();
-    for _ in 0..frag_count {
-        let quest_stage = read_u32!();
-        let quest_stage_index = read_u32!();
-        need!(1);
-        pos += 1; // unknown byte
-        let frag_script_name = read_wstring!();
-        let fragment_name = read_wstring!();
-        fragments.push(Node::obj([
-            ("quest_stage", Node::int(quest_stage)),
-            ("quest_stage_index", Node::int(quest_stage_index)),
-            ("script_name", Node::Str(frag_script_name)),
-            ("fragment_name", Node::Str(fragment_name)),
-        ]));
-    }
-    let script_fragments = Node::obj([
+    let fragments = (0..frag_count)
+        .map(|_| {
+            let quest_stage = cur.u32()?;
+            let quest_stage_index = cur.u32()?;
+            cur.u8()?; // unknown
+            let (script_name, fragment_name) = fragment_names(cur)?;
+            Some(Node::obj([
+                ("quest_stage", Node::int(quest_stage)),
+                ("quest_stage_index", Node::int(quest_stage_index)),
+                ("script_name", script_name),
+                ("fragment_name", fragment_name),
+            ]))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(Node::obj([
         (
             "extra_bind_data_version",
             Node::int(extra_bind_data_version),
@@ -230,539 +250,144 @@ pub(super) fn decode_vmad_qust(ctx: &DecodeContext<'_>, data: &[u8]) -> Node {
         ("script_name", Node::Str(script_name)),
         ("script_data", script_data),
         ("fragments", Node::Array(fragments)),
-    ]);
-
-    // ── Aliases (wbArrayS, u16-prefixed) ─────────────────────────────────────
-    let alias_count = read_u16!() as usize;
-    let mut aliases = Vec::new();
-    for _ in 0..alias_count {
-        // ScriptPropertyObject, per xEdit ground truth (wbDefinitionsFO76.pas
-        // `wbScriptPropertyObject`, the same union `decode_vmad_property`'s
-        // `base_type == 1` arm reads): objFormat == 1 selects "Object v1"
-        // (FormID, Alias, Unused — FormID first); anything else, including the
-        // objFormat == 2 SeventySix.esm actually carries, selects "Object v2"
-        // (Unused, Alias, FormID — FormID last). Either layout is 8 bytes.
-        //
-        // `Alias` is itS16: -1 means "None" (a script attached to the quest
-        // itself rather than to one of its aliases), so it cannot be widened
-        // to an unsigned type. Reading `Unused` as the alias id — which this
-        // parser did until the layouts were reconciled — reports every alias
-        // as id 0, which erases the only field that tells two of a quest's
-        // aliases apart and makes `array_diff` fall back to an unkeyed diff
-        // that reprints every alias whenever one of them changes.
-        let (alias_id, form_id) = if obj_format == 1 {
-            need!(8);
-            let f = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
-            pos += 4;
-            let a = i16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 4; // Alias (2) + Unused (2)
-            (a, f)
-        } else {
-            need!(8);
-            let a = i16::from_le_bytes([data[pos + 2], data[pos + 3]]);
-            let f =
-                u32::from_le_bytes([data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7]]);
-            pos += 8;
-            (a, f)
-        };
-        need!(4);
-        let _version = i16::from_le_bytes([data[pos], data[pos + 1]]);
-        pos += 2;
-        let alias_obj_format = u16::from_le_bytes([data[pos], data[pos + 1]]);
-        pos += 2;
-        // Alias Scripts: u16-prefixed array of script entries
-        let alias_script_count = read_u16!() as usize;
-        let mut alias_scripts = Vec::new();
-        for _ in 0..alias_script_count {
-            let name = read_wstring!();
-            need!(1);
-            let status = data[pos];
-            pos += 1;
-            let pc = read_u16!() as usize;
-            let mut props = Vec::new();
-            for _ in 0..pc {
-                let pn = read_wstring!();
-                need!(2);
-                let pt = data[pos];
-                pos += 1;
-                let _ps = data[pos];
-                pos += 1;
-                let val = decode_vmad_property(ctx, data, &mut pos, pt, alias_obj_format);
-                props.push(Node::obj([
-                    ("name", Node::str(pn)),
-                    ("type", Node::int(pt)),
-                    ("value", val),
-                ]));
-            }
-            alias_scripts.push(Node::obj([
-                ("name", Node::str(name)),
-                ("status", Node::int(status)),
-                ("properties", Node::Array(props)),
-            ]));
-        }
-        aliases.push(Node::obj([
-            ("alias_id", Node::int(alias_id)),
-            (
-                "form_id",
-                Node::FormId {
-                    id: FormId::new(form_id),
-                    curve: false,
-                },
-            ),
-            ("alias_scripts", Node::Array(alias_scripts)),
-        ]));
-    }
-
-    Node::obj([
-        ("version", Node::int(version)),
-        ("scripts", Node::Array(scripts)),
-        ("script_fragments", script_fragments),
-        ("aliases", Node::Array(aliases)),
-    ])
-}
-
-/// Parse the common VMAD header + scripts section, returning `(version, obj_format, scripts, pos)`
-/// on success or a truncation `Value` on failure.
-fn vmad_parse_header(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-) -> Result<(u16, u16, Vec<Node>, usize), Node> {
-    let mut pos = 0usize;
-    macro_rules! need {
-        ($n:expr) => {
-            if pos + $n > data.len() {
-                return Err(vmad_truncated(&data[pos..]));
-            }
-        };
-    }
-    macro_rules! read_u16 {
-        () => {{
-            need!(2);
-            let v = u16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 2;
-            v
-        }};
-    }
-    macro_rules! read_wstring {
-        () => {{
-            let len = read_u16!() as usize;
-            need!(len);
-            let s = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
-            pos += len;
-            s
-        }};
-    }
-    let version = read_u16!();
-    let obj_format = read_u16!();
-    let script_count = read_u16!();
-    let mut scripts = Vec::new();
-    for _ in 0..script_count {
-        let name = read_wstring!();
-        need!(1);
-        let status = data[pos];
-        pos += 1;
-        let prop_count = read_u16!() as usize;
-        let mut props = Vec::new();
-        for _ in 0..prop_count {
-            let pn = read_wstring!();
-            need!(2);
-            let pt = data[pos];
-            pos += 1;
-            let _ps = data[pos];
-            pos += 1;
-            let val = decode_vmad_property(ctx, data, &mut pos, pt, obj_format);
-            props.push(Node::obj([
-                ("name", Node::str(pn)),
-                ("type", Node::int(pt)),
-                ("value", val),
-            ]));
-        }
-        scripts.push(Node::obj([
-            ("name", Node::str(name)),
-            ("status", Node::int(status)),
-            ("properties", Node::Array(props)),
-        ]));
-    }
-    Ok((version, obj_format, scripts, pos))
-}
-
-/// Read a single script entry (name + status + props) from `data[*pos..]`.
-/// Returns None on truncation; advances `*pos` on success.
-fn vmad_read_script_entry(
-    ctx: &DecodeContext<'_>,
-    data: &[u8],
-    pos: &mut usize,
-    obj_format: u16,
-) -> Option<Node> {
-    fn read_wstr(data: &[u8], pos: &mut usize) -> Option<String> {
-        if *pos + 2 > data.len() {
-            return None;
-        }
-        let len = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
-        *pos += 2;
-        if *pos + len > data.len() {
-            return None;
-        }
-        let s = String::from_utf8_lossy(&data[*pos..*pos + len]).into_owned();
-        *pos += len;
-        Some(s)
-    }
-    let name = read_wstr(data, pos)?;
-    if *pos >= data.len() {
-        return None;
-    }
-    let status = data[*pos];
-    *pos += 1;
-    if *pos + 2 > data.len() {
-        return None;
-    }
-    let pc = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
-    *pos += 2;
-    let mut props = Vec::new();
-    for _ in 0..pc {
-        let pn = read_wstr(data, pos)?;
-        if *pos + 2 > data.len() {
-            return None;
-        }
-        let pt = data[*pos];
-        *pos += 1;
-        let _ps = data[*pos];
-        *pos += 1;
-        let val = decode_vmad_property(ctx, data, pos, pt, obj_format);
-        props.push(Node::obj([
-            ("name", Node::str(pn)),
-            ("type", Node::int(pt)),
-            ("value", val),
-        ]));
-    }
-    Some(Node::obj([
-        ("name", Node::str(name)),
-        ("status", Node::int(status)),
-        ("properties", Node::Array(props)),
     ]))
 }
 
-/// Shared inner decoder for INFO/PACK/SCEN Script Fragments section.
-/// `flag_mask` controls how many bits of the flags byte map to fragments:
-/// 0x03 for INFO/SCEN (OnBegin|OnEnd), 0x07 for PACK (OnBegin|OnEnd|OnChange).
-/// Returns (flags, script_entry_value, fragments_vec, pos) or a truncation error.
-fn vmad_read_flags_fragments(
+/// `wbVMADFragmentedQUST`'s u16-counted Aliases.
+fn qust_aliases(
     ctx: &DecodeContext<'_>,
-    data: &[u8],
-    pos: &mut usize,
+    cur: &mut VmadCursor<'_>,
+    obj_format: u16,
+) -> Option<Vec<Node>> {
+    let alias_count = cur.u16()? as usize;
+    (0..alias_count)
+        .map(|_| {
+            // ScriptPropertyObject, per xEdit (wbDefinitionsFO76.pas
+            // `wbScriptPropertyObject`, the same union `decode_vmad_property`'s
+            // object type reads): objFormat == 1 selects "Object v1" (FormID,
+            // Alias, Unused — FormID first); anything else, including the
+            // objFormat == 2 SeventySix.esm carries, selects "Object v2"
+            // (Unused, Alias, FormID — FormID last). Either layout is 8 bytes.
+            // `Alias` is itS16: -1 means "None" (a script attached to the
+            // quest itself rather than to one of its aliases).
+            cur.need(8)?;
+            let (alias_id, form_id) = if obj_format == 1 {
+                let form_id = cur.u32()?;
+                let alias_id = cur.i16()?;
+                cur.u16()?; // unused
+                (alias_id, form_id)
+            } else {
+                cur.u16()?; // unused
+                let alias_id = cur.i16()?;
+                (alias_id, cur.u32()?)
+            };
+            cur.need(4)?;
+            let _version = cur.i16()?;
+            let alias_obj_format = cur.u16()?;
+            let script_count = cur.u16()? as usize;
+            let alias_scripts = cur.scripts(ctx, script_count, alias_obj_format)?;
+            Some(Node::obj([
+                ("alias_id", Node::int(alias_id)),
+                (
+                    "form_id",
+                    Node::FormId {
+                        id: FormId::new(form_id),
+                        curve: false,
+                    },
+                ),
+                ("alias_scripts", Node::Array(alias_scripts)),
+            ]))
+        })
+        .collect()
+}
+
+/// The INFO/PACK/SCEN Script Fragments: extra bind data version, flags, one
+/// script entry, then one fragment per set bit of `flags & flag_mask`
+/// (OnBegin/OnEnd, plus OnChange for PACK); SCEN adds u16-counted phase
+/// fragments.
+fn flag_fragments(
+    ctx: &DecodeContext<'_>,
+    cur: &mut VmadCursor<'_>,
     obj_format: u16,
     flag_mask: u8,
-) -> Result<(u8, Node, Vec<Node>), Node> {
-    macro_rules! trunc {
-        () => {
-            return Err(vmad_truncated(&data[*pos..]))
-        };
-    }
-    macro_rules! read_wstring {
-        () => {{
-            if *pos + 2 > data.len() {
-                trunc!();
-            }
-            let len = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
-            *pos += 2;
-            if *pos + len > data.len() {
-                trunc!();
-            }
-            let s = String::from_utf8_lossy(&data[*pos..*pos + len]).into_owned();
-            *pos += len;
-            s
-        }};
-    }
-    if *pos >= data.len() {
-        trunc!();
-    }
-    let extra_bind_data_version = data[*pos] as i8;
-    *pos += 1;
-    if *pos >= data.len() {
-        trunc!();
-    }
-    let flags = data[*pos];
-    *pos += 1;
-    let frag_count = (flags & flag_mask).count_ones() as usize;
-    let script_entry = vmad_read_script_entry(ctx, data, pos, obj_format)
-        .ok_or_else(|| vmad_truncated(&data[*pos..]))?;
-    let mut fragments = Vec::new();
-    for _ in 0..frag_count {
-        if *pos >= data.len() {
-            trunc!();
-        }
-        let _unknown = data[*pos];
-        *pos += 1;
-        let script_name = read_wstring!();
-        let fragment_name = read_wstring!();
-        fragments.push(Node::obj([
-            (
-                "extra_bind_data_version",
-                Node::int(extra_bind_data_version),
-            ),
-            ("script_name", Node::Str(script_name)),
-            ("fragment_name", Node::Str(fragment_name)),
-        ]));
-    }
-    Ok((flags, script_entry, fragments))
-}
-
-/// Decode a fragmented VMAD for INFO records (wbVMADFragmentedINFO).
-/// Script Fragments: extra_bind_data_version(s8) + flags(u8) + script_entry + fragments
-/// Fragment count = popcount(flags & 0x03) — OnBegin (bit 0) and OnEnd (bit 1).
-///
-/// Some INFO records have scripts but no script-fragments tail (they use plain VMAD
-/// layout even though INFO is classified as a fragmented type). When data ends right
-/// after the header, return a successful result with no script_fragments key.
-pub(super) fn decode_vmad_info(ctx: &DecodeContext<'_>, data: &[u8]) -> Node {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if pos >= data.len() {
-        return Node::obj([
-            ("version", Node::int(version)),
-            ("scripts", Node::Array(scripts)),
-        ]);
-    }
-    match vmad_read_flags_fragments(ctx, data, &mut pos, obj_format, 0x03) {
-        Err(e) => e,
-        Ok((flags, script_entry, fragments)) => Node::obj([
-            ("version", Node::int(version)),
-            ("scripts", Node::Array(scripts)),
-            (
-                "script_fragments",
-                Node::obj([
-                    ("flags", Node::int(flags)),
-                    ("script_entry", script_entry),
-                    ("fragments", Node::Array(fragments)),
-                ]),
-            ),
-        ]),
-    }
-}
-
-/// Decode a fragmented VMAD for PACK records (wbVMADFragmentedPACK).
-/// Script Fragments: extra_bind_data_version(s8) + flags(u8) + script_entry + fragments
-/// Fragment count = popcount(flags & 0x07) — OnBegin, OnEnd, OnChange (bits 0-2).
-///
-/// Like INFO, some PACK records carry only the plain VMAD header without a
-/// script-fragments tail. Return a no-fragments result when data ends after the header.
-pub(super) fn decode_vmad_pack(ctx: &DecodeContext<'_>, data: &[u8]) -> Node {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if pos >= data.len() {
-        return Node::obj([
-            ("version", Node::int(version)),
-            ("scripts", Node::Array(scripts)),
-        ]);
-    }
-    match vmad_read_flags_fragments(ctx, data, &mut pos, obj_format, 0x07) {
-        Err(e) => e,
-        Ok((flags, script_entry, fragments)) => Node::obj([
-            ("version", Node::int(version)),
-            ("scripts", Node::Array(scripts)),
-            (
-                "script_fragments",
-                Node::obj([
-                    ("flags", Node::int(flags)),
-                    ("script_entry", script_entry),
-                    ("fragments", Node::Array(fragments)),
-                ]),
-            ),
-        ]),
-    }
-}
-
-/// Decode a fragmented VMAD for PERK records (wbVMADFragmentedPERK).
-/// Script Fragments: extra_bind_data_version(s8) + script_entry + u16-count fragments
-/// Each fragment: fragment_index(u32) + unknown(1) + script_name(wstring) + fragment_name(wstring)
-/// Followed by trailing unknown bytes (wbUnknown — consumed but not decoded).
-///
-/// Some PERK records carry only the plain VMAD header without a script-fragments tail.
-/// Return a no-fragments result when data ends after the header.
-pub(super) fn decode_vmad_perk(ctx: &DecodeContext<'_>, data: &[u8]) -> Node {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    macro_rules! trunc {
-        () => {
-            return vmad_truncated(&data[pos..])
-        };
-    }
-    macro_rules! read_u16 {
-        () => {{
-            if pos + 2 > data.len() {
-                trunc!();
-            }
-            let v = u16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 2;
-            v
-        }};
-    }
-    macro_rules! read_u32 {
-        () => {{
-            if pos + 4 > data.len() {
-                trunc!();
-            }
-            let v = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
-            pos += 4;
-            v
-        }};
-    }
-    macro_rules! read_wstring {
-        () => {{
-            let len = read_u16!() as usize;
-            if pos + len > data.len() {
-                trunc!();
-            }
-            let s = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
-            pos += len;
-            s
-        }};
-    }
-    if pos >= data.len() {
-        return Node::obj([
-            ("version", Node::int(version)),
-            ("scripts", Node::Array(scripts)),
-        ]);
-    }
-    let extra_bind_data_version = data[pos] as i8;
-    pos += 1;
-    let script_entry = match vmad_read_script_entry(ctx, data, &mut pos, obj_format) {
-        Some(v) => v,
-        None => trunc!(),
-    };
-    let frag_count = read_u16!() as usize;
-    let mut fragments = Vec::new();
-    for _ in 0..frag_count {
-        let fragment_index = read_u32!();
-        if pos >= data.len() {
-            trunc!();
-        }
-        let _unknown = data[pos];
-        pos += 1;
-        let script_name = read_wstring!();
-        let fragment_name = read_wstring!();
-        fragments.push(Node::obj([
-            ("fragment_index", Node::int(fragment_index)),
-            ("script_name", Node::Str(script_name)),
-            ("fragment_name", Node::Str(fragment_name)),
-        ]));
-    }
-    Node::obj([
-        ("version", Node::int(version)),
-        ("scripts", Node::Array(scripts)),
-        (
-            "script_fragments",
-            Node::obj([
+    phases: bool,
+) -> Option<Node> {
+    let extra_bind_data_version = cur.i8()?;
+    let flags = cur.u8()?;
+    let script_entry = cur.script(ctx, obj_format)?;
+    let fragments = (0..(flags & flag_mask).count_ones())
+        .map(|_| {
+            cur.u8()?; // unknown
+            let (script_name, fragment_name) = fragment_names(cur)?;
+            Some(Node::obj([
                 (
                     "extra_bind_data_version",
                     Node::int(extra_bind_data_version),
                 ),
-                ("script_entry", script_entry),
-                ("fragments", Node::Array(fragments)),
-            ]),
-        ),
-    ])
+                ("script_name", script_name),
+                ("fragment_name", fragment_name),
+            ]))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let mut out = Node::obj([
+        ("flags", Node::int(flags)),
+        ("script_entry", script_entry),
+        ("fragments", Node::Array(fragments)),
+    ]);
+    if phases {
+        let count = cur.u16()? as usize;
+        let phase_fragments = (0..count)
+            .map(|_| {
+                let phase_flag = cur.u8()?;
+                let phase_index = cur.u32()?;
+                cur.u8()?; // unknown
+                let (script_name, fragment_name) = fragment_names(cur)?;
+                Some(Node::obj([
+                    ("phase_flag", Node::int(phase_flag)),
+                    ("phase_index", Node::int(phase_index)),
+                    ("script_name", script_name),
+                    ("fragment_name", fragment_name),
+                ]))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if let Node::Struct(fields) = &mut out {
+            fields.insert("phase_fragments".into(), Node::Array(phase_fragments));
+        }
+    }
+    Some(out)
 }
 
-/// Decode a fragmented VMAD for SCEN records (wbVMADFragmentedSCEN).
-/// Script Fragments: extra_bind_data_version(s8) + flags(u8) + script_entry + fragments + phase_fragments
-/// Fragment count = popcount(flags & 0x03) — OnBegin (bit 1) and OnEnd (bit 2 in Pascal, but flags byte bits 0-1).
-/// Phase fragments: u16-count-prefixed array; each = phase_flag(u8) + phase_index(u32) + unknown(1) + script_name + fragment_name.
-pub(super) fn decode_vmad_scen(ctx: &DecodeContext<'_>, data: &[u8]) -> Node {
-    let (version, obj_format, scripts, mut pos) = match vmad_parse_header(ctx, data) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    // Some SCEN records carry only the plain VMAD header without a script-fragments tail.
-    if pos >= data.len() {
-        return Node::obj([
-            ("version", Node::int(version)),
-            ("scripts", Node::Array(scripts)),
-        ]);
-    }
-    let (flags, script_entry, fragments) =
-        match vmad_read_flags_fragments(ctx, data, &mut pos, obj_format, 0x03) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
-    macro_rules! trunc {
-        () => {
-            return vmad_truncated(&data[pos..])
-        };
-    }
-    macro_rules! read_u16 {
-        () => {{
-            if pos + 2 > data.len() {
-                trunc!();
-            }
-            let v = u16::from_le_bytes([data[pos], data[pos + 1]]);
-            pos += 2;
-            v
-        }};
-    }
-    macro_rules! read_u32 {
-        () => {{
-            if pos + 4 > data.len() {
-                trunc!();
-            }
-            let v = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
-            pos += 4;
-            v
-        }};
-    }
-    macro_rules! read_wstring {
-        () => {{
-            let len = read_u16!() as usize;
-            if pos + len > data.len() {
-                trunc!();
-            }
-            let s = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
-            pos += len;
-            s
-        }};
-    }
-    let phase_frag_count = read_u16!() as usize;
-    let mut phase_fragments = Vec::new();
-    for _ in 0..phase_frag_count {
-        if pos >= data.len() {
-            trunc!();
-        }
-        let phase_flag = data[pos];
-        pos += 1;
-        let phase_index = read_u32!();
-        if pos >= data.len() {
-            trunc!();
-        }
-        let _unknown = data[pos];
-        pos += 1;
-        let script_name = read_wstring!();
-        let fragment_name = read_wstring!();
-        phase_fragments.push(Node::obj([
-            ("phase_flag", Node::int(phase_flag)),
-            ("phase_index", Node::int(phase_index)),
-            ("script_name", Node::Str(script_name)),
-            ("fragment_name", Node::Str(fragment_name)),
-        ]));
-    }
-    Node::obj([
-        ("version", Node::int(version)),
-        ("scripts", Node::Array(scripts)),
+/// `wbVMADFragmentedPERK`'s Script Fragments (also TERM's): extra bind data
+/// version, one script entry, then u16-counted fragments, each with a u32
+/// fragment index. Trailing unknown bytes after the fragments are ignored.
+fn perk_fragments(
+    ctx: &DecodeContext<'_>,
+    cur: &mut VmadCursor<'_>,
+    obj_format: u16,
+) -> Option<Node> {
+    let extra_bind_data_version = cur.i8()?;
+    let script_entry = cur.script(ctx, obj_format)?;
+    let count = cur.u16()? as usize;
+    let fragments = (0..count)
+        .map(|_| {
+            let fragment_index = cur.u32()?;
+            cur.u8()?; // unknown
+            let (script_name, fragment_name) = fragment_names(cur)?;
+            Some(Node::obj([
+                ("fragment_index", Node::int(fragment_index)),
+                ("script_name", script_name),
+                ("fragment_name", fragment_name),
+            ]))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(Node::obj([
         (
-            "script_fragments",
-            Node::obj([
-                ("flags", Node::int(flags)),
-                ("script_entry", script_entry),
-                ("fragments", Node::Array(fragments)),
-                ("phase_fragments", Node::Array(phase_fragments)),
-            ]),
+            "extra_bind_data_version",
+            Node::int(extra_bind_data_version),
         ),
-    ])
+        ("script_entry", script_entry),
+        ("fragments", Node::Array(fragments)),
+    ]))
 }
 
 fn decode_vmad_property(

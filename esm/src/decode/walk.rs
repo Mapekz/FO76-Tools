@@ -1216,22 +1216,15 @@ mod tests {
         assert!(obj.get("_unknown").is_none());
     }
 
-    /// Regression test: TERM's VMAD is `wbVMADFragmentedPERK` in xEdit's FO76
-    /// definitions ("same fragments format as in PERK"), but the
-    /// record-signature dispatch in `MemberDef::Vmad`'s decode arm had no
-    /// `"TERM"` case, so it fell through to the generic `decode_vmad`, which
-    /// stops after the base scripts array and never parses the fragment
-    /// tail. A prize terminal (e.g. `Arcade_PrizeTerminal_Tier02`) stores its
+    /// TERM's VMAD is `wbVMADFragmentedPERK` in xEdit's FO76 definitions. A
+    /// prize terminal (e.g. `Arcade_PrizeTerminal_Tier02`) stores its
     /// item-grant properties (`Form_NWOTShirt`, ...) as Object-type
-    /// properties of that tail's script entry — they were silently dropped
-    /// from the decoded record and therefore from the xref index (`refs`).
-    /// Pin that TERM now dispatches through `decode_vmad_perk` and the
-    /// tail's Object-property FormID surfaces intact.
+    /// properties of the fragment tail's script entry; a member with the PERK
+    /// fragment layout must decode that tail so the FormID reaches `refs`.
     #[test]
-    fn vmad_term_dispatches_to_perk_fragment_decoder_and_decodes_tail_formid() {
+    fn vmad_perk_fragments_decode_the_tail_formid() {
         let schema = empty_schema();
-        let mut ctx = bare_ctx(&schema);
-        ctx.record_signature = Some("TERM");
+        let ctx = bare_ctx(&schema);
 
         // Header: version=2, obj_format=2, script_count=0 — the prize
         // property lives in the fragment tail's script_entry, not the base
@@ -1255,6 +1248,7 @@ mod tests {
         let member = MemberDef::Vmad {
             sig: Some("VMAD".into()),
             name: "Virtual Machine Adapter".into(),
+            fragments: Some(crate::schema::VmadFragments::Perk),
         };
         let (out, _) = bind(&ctx, vec![member], &subrecords);
 
@@ -1271,8 +1265,7 @@ mod tests {
         assert_eq!(
             value,
             Some("0x006677E5"),
-            "TERM's fragment-tail Object property must decode via the PERK \
-             dispatch, not vanish through the generic decode_vmad fallback"
+            "the fragment tail's Object property must decode"
         );
     }
 

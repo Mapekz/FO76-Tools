@@ -31,10 +31,7 @@ use super::scalars::{
     choose_union_variant, field_int_value, field_value_key, member_version_ok, scalar_bytes,
     scalar_float, scalar_formid, scalar_int, scalar_rgba, scalar_string, scalar_vec3,
 };
-use super::vmad::{
-    decode_vmad_info, decode_vmad_pack, decode_vmad_perk, decode_vmad_qust, decode_vmad_scen,
-    vmad_node,
-};
+use super::vmad::vmad_node;
 use super::walk::{
     contains_field_value_union, counts_from_enclosing_scope, decode_array_payloads,
     decode_struct_fields, decode_union,
@@ -530,23 +527,10 @@ fn decode_subrecord(
                 Node::raw(Some(data), RawReason::Unmodelled(reason.clone())),
             );
         }
-        MemberDef::Vmad { name, .. } => {
-            let decoded = match ctx.record_signature {
-                Some("QUST") => decode_vmad_qust(ctx, data),
-                Some("INFO") => decode_vmad_info(ctx, data),
-                Some("PACK") => decode_vmad_pack(ctx, data),
-                Some("PERK") => decode_vmad_perk(ctx, data),
-                Some("SCEN") => decode_vmad_scen(ctx, data),
-                // TERM wires wbVMADFragmentedPERK in xEdit's FO76 definitions
-                // ("same fragments format as in PERK") — reuse that decoder so
-                // the fragment tail's script-entry properties (e.g. a prize
-                // terminal's `Form_*` item grants) are decoded and harvested
-                // into the xref index instead of being silently dropped by the
-                // generic `decode_vmad`, which stops after the base scripts.
-                Some("TERM") => decode_vmad_perk(ctx, data),
-                _ => vmad_node(ctx, data),
-            };
-            out.insert(name.clone(), decoded);
+        MemberDef::Vmad {
+            name, fragments, ..
+        } => {
+            out.insert(name.clone(), vmad_node(ctx, data, *fragments));
         }
         MemberDef::Ctda { name, .. } => {
             out.insert(name.clone(), crate::ctda::ctda_node(data, ctx));

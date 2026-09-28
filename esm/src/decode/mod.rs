@@ -28,10 +28,6 @@ pub(crate) use scalars::json_f32;
 pub(crate) use scalars::member_version_bounds;
 pub(crate) use scalars::member_version_ok;
 pub use vmad::decode_vmad;
-#[cfg(test)]
-use vmad::{
-    decode_vmad_info, decode_vmad_pack, decode_vmad_perk, decode_vmad_qust, decode_vmad_scen,
-};
 
 /// Single source of truth for the schema decode-coverage marker keys (see
 /// "Decode output key conventions" in esm/AGENTS.md). Exported to TypeScript
@@ -191,7 +187,7 @@ pub struct DecodeContext<'a> {
     pub outer_struct: Option<node::Fields>,
     /// Signature of the record type currently being decoded (e.g. `"QUST"`, `"NPC_"`).
     /// Set at the top of `decode_record` so record-type-aware sub-decoders can
-    /// branch on it (e.g. `decode_vmad_qust` vs `decode_vmad`).
+    /// branch on it (e.g. which string table an lstring reads).
     pub record_signature: Option<&'a str>,
     /// First character of the current record's EditorID subrecord.
     /// Pre-scanned in `decode_record` for use by `EdidPrefix` union deciders.
@@ -449,7 +445,7 @@ pub(crate) mod hex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::Schema;
+    use crate::schema::{Schema, VmadFragments};
     use serde_json::Map;
 
     fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
@@ -973,7 +969,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_info(&ctx, &data).into_json(&ctx);
+        let v = vmad::vmad_node(&ctx, &data, Some(VmadFragments::Info)).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -988,7 +984,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_pack(&ctx, &data).into_json(&ctx);
+        let v = vmad::vmad_node(&ctx, &data, Some(VmadFragments::Pack)).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -999,7 +995,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_perk(&ctx, &data).into_json(&ctx);
+        let v = vmad::vmad_node(&ctx, &data, Some(VmadFragments::Perk)).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -1010,7 +1006,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_scen(&ctx, &data).into_json(&ctx);
+        let v = vmad::vmad_node(&ctx, &data, Some(VmadFragments::Scen)).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");
@@ -1021,7 +1017,7 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let data = vmad_plain_header();
-        let v = decode_vmad_qust(&ctx, &data).into_json(&ctx);
+        let v = vmad::vmad_node(&ctx, &data, Some(VmadFragments::Qust)).into_json(&ctx);
         let obj = v.as_object().expect("must return an object");
         assert!(obj.get("_raw").is_none(), "must not be a raw fallback");
         assert!(obj.get("version").is_some(), "version must be present");

@@ -77,16 +77,16 @@ for _i in range(17, 32):  # layers 17-31: "A0TX"-"O0TX"
     _sig = chr(ord("A") + _i - 17) + "0TX"
     _cloud_tex_parts.append(f"wbString({_sig},'Layer #{_i}')")
 
-# VMAD: emit the existing vmad decoder kind.  All wbVMAD* variants
-# resolve to the __vmad__ sentinel which parse_member intercepts.
-_VMAD_VARS = (
-    "wbVMAD",
-    "wbVMADFragmentedPERK",
-    "wbVMADFragmentedPACK",
-    "wbVMADFragmentedQUST",
-    "wbVMADFragmentedSCEN",
-    "wbVMADFragmentedINFO",
-)
+# VMAD: every wbVMAD* variant resolves to a __vmad__ sentinel, which
+# parse_member turns into a vmad member; a wbVMADFragmentedXXXX variant's
+# sentinel carries its fragment layout ("__vmad__:perk").
+_VMAD_VARS = {
+    "wbVMAD": "__vmad__",
+    **{
+        f"wbVMADFragmented{_layout}": f"__vmad__:{_layout.lower()}"
+        for _layout in ("PERK", "PACK", "QUST", "SCEN", "INFO")
+    },
+}
 
 BUILTIN_HELPERS: dict[str, str] = {
     "wbOBND": (
@@ -685,7 +685,7 @@ BUILTIN_HELPERS: dict[str, str] = {
         "wbByteArray(DALC,'Late Sunset',0)"
         "])"
     ),
-    **{_v: "__vmad__" for _v in _VMAD_VARS},
+    **_VMAD_VARS,
 }
 
 # Binary IAD sig constants for IMAD record.

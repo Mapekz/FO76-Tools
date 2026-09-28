@@ -30353,7 +30353,8 @@
         {
           "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter"
+          "name": "Virtual Machine Adapter",
+          "fragments": "info"
         },
         {
           "kind": "struct",
@@ -49816,7 +49817,8 @@
         {
           "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter"
+          "name": "Virtual Machine Adapter",
+          "fragments": "pack"
         },
         {
           "kind": "rarray",
@@ -51470,7 +51472,8 @@
         {
           "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter"
+          "name": "Virtual Machine Adapter",
+          "fragments": "perk"
         },
         {
           "kind": "lstring",
@@ -57678,7 +57681,8 @@
         {
           "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter"
+          "name": "Virtual Machine Adapter",
+          "fragments": "qust"
         },
         {
           "kind": "lstring",
@@ -71177,7 +71181,8 @@
         {
           "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter"
+          "name": "Virtual Machine Adapter",
+          "fragments": "scen"
         },
         {
           "kind": "integer",
@@ -77913,7 +77918,8 @@
         {
           "kind": "vmad",
           "sig": "VMAD",
-          "name": "Virtual Machine Adapter"
+          "name": "Virtual Machine Adapter",
+          "fragments": "perk"
         },
         {
           "kind": "struct",

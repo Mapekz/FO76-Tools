@@ -40,8 +40,8 @@ own definitions via the extractor. Each bound subrecord's bytes are decoded by
 and array elements) into a `decode::node::Node` tree: leaf scalar codecs (`scalar_int`,
 `scalar_formid`, …) in `decode/scalars.rs`,
 self-describing Model Information blobs in `decode/model_info.rs`, `VMAD` script-attachment blobs to
-`src/decode/vmad.rs` (`decode_vmad`, plus type-specific `decode_vmad_{qust,info,pack,perk,scen}`
-for each record type's Script Fragments tail), and `CTDA` condition blocks to `src/ctda.rs`'s
+`src/decode/vmad.rs` (including the Script Fragments tail whose layout the schema member's
+`fragments` names), and `CTDA` condition blocks to `src/ctda.rs`'s
 `decode_ctda`, which looks up the condition function by index in a compiled-in table
 (`schema/fo76.ctda.json`) and decodes each parameter by its class character. After a record's
 fields are in, `src/decode/rules.rs`'s `apply_post_decode_rules` runs a small, named set of

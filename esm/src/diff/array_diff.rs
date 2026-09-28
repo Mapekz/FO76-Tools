@@ -295,7 +295,7 @@ fn element_key_spec(sample: &serde_json::Map<String, Value>) -> Option<KeySpec> 
     if body.contains_key("name") && body.contains_key("type") && body.contains_key("value") {
         return Some(vec![vec!["name".to_string()]]);
     }
-    // 11b. VMAD script fragments (`decode_vmad_*`'s `script_fragments.fragments`),
+    // 11b. VMAD script fragments (`script_fragments.fragments`),
     //    identified by the Papyrus fragment function they bind
     //    (`Fragment_Stage_0700_Item_00`). `quest_stage_index` is the row's
     //    ordinal, not its identity, and doesn't match heuristic 10's

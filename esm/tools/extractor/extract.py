@@ -992,9 +992,13 @@ class Extractor:
         if expr.startswith("__inline__:"):
             key = expr[len("__inline__:"):]
             return self._inline_members.get(key)
-        # __vmad__ sentinel: reuse the existing vmad decoder in decode.rs.
-        if expr == "__vmad__":
-            return {"kind": "vmad", "sig": "VMAD", "name": "Virtual Machine Adapter"}
+        # __vmad__[:layout] sentinel: the decoder's vmad kind, with the
+        # script-fragment layout when the record type has one.
+        if expr == "__vmad__" or expr.startswith("__vmad__:"):
+            member = {"kind": "vmad", "sig": "VMAD", "name": "Virtual Machine Adapter"}
+            if ":" in expr:
+                member["fragments"] = expr.split(":", 1)[1]
+            return member
         if expr in HARD_RAW_VARS:
             return {
                 "kind": "raw_fallback",

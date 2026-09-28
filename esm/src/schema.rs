@@ -243,6 +243,10 @@ pub enum MemberDef {
         #[serde(default)]
         sig: Option<String>,
         name: String,
+        /// The script-fragment tail after the scripts, when the record type
+        /// has one (xEdit's `wbVMADFragmented*`).
+        #[serde(default)]
+        fragments: Option<VmadFragments>,
     },
     #[serde(rename = "ctda")]
     Ctda {
@@ -256,6 +260,18 @@ pub enum MemberDef {
         sig: Option<String>,
         name: String,
     },
+}
+
+/// A VMAD's script-fragment layout, named for the xEdit
+/// `wbVMADFragmented*` definition that describes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VmadFragments {
+    Qust,
+    Info,
+    Pack,
+    Perk,
+    Scen,
 }
 
 // `SCHEMA_DIGEST`: FNV-1a over the embedded `fo76.json` and `fo76.ctda.json`,

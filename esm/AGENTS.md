@@ -90,8 +90,7 @@ Drift subrecords newer than the TES5Edit reference are handled as follows:
 - **PKIN Child Pack-In** — the game repeats the `HNAM`+`INAM` pair `GNAM` times; xEdit models a single pair, so a `record_patches` entry turns it into an rarray.
 - **CTDA function table** — generated to `schema/fo76.ctda.json` from Pascal; loaded at runtime in `src/ctda.rs`.
 - **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `src/decode/mod.rs`.
-- **QUST `VMAD` (fragmented)** — `decode_vmad_qust` in `src/decode/vmad.rs` handles Script Fragments + Aliases tail.
-- **INFO/PACK/PERK/SCEN `VMAD` (fragmented)** — `decode_vmad_{info,pack,perk,scen}` in `src/decode/vmad.rs` handle each record type's Script Fragments tail; dispatched by `ctx.record_signature`.
+- **Fragmented `VMAD`** (QUST, INFO, PACK, PERK, SCEN, TERM) — the extractor carries xEdit's `wbVMADFragmented*` layout as the vmad member's `fragments`; `src/decode/vmad.rs` reads that Script Fragments tail (plus QUST's Aliases).
 - **NPC_ `VMAD` type-0/type-7 properties** — `decode_vmad_property` handles type 0 (None → null) and type 7 (Struct → named-member array). NPC_ is now in `CLEAN_TYPES`.
 - **RACE `CMDT`/`CMDN`/`CMDI`/`CMDE`+`PGTF`** — the Pet Commands rarray and the Progression Track pointer, mapped via `record_additions` in `schema/fo76.overrides.json`; absent from every `wbDefinitions*.pas`.
 - **PGTR (whole record)** — the first use of the overrides file's `"records"` whole-record mechanism: no TES5Edit definition exists; field names come from the game's own UI model in the decompiled Scaleform movie `interface/petprogressiontrackmenu.swf`; fields that model doesn't name stay `Unknown` with the observed constant in a `_comment`. See `docs/adr/0012-whole-record-schema-overrides.md`.
