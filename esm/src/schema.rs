@@ -75,9 +75,10 @@ pub enum MemberDef {
         /// first member's) can open the struct.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         any_member: bool,
-        /// xEdit `aSkipSigs`: signatures passed over inside the struct.
+        /// Signatures whose member closes the struct once bound (xEdit
+        /// `dfTerminator`; an unordered struct's last member).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        skip_sigs: Vec<String>,
+        terminators: Vec<String>,
     },
     #[serde(rename = "rarray")]
     RArray {

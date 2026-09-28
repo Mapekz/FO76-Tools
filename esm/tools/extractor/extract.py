@@ -630,12 +630,16 @@ def sig_id(token: str) -> str | None:
 # Binding flags
 # ---------------------------------------------------------------------------
 
-def _sig_list(arg: str) -> list[str]:
-    """Signatures in a Pascal `[SIG1, SIG2]` list argument (`[]`/`nil` → [])."""
-    arg = arg.strip()
-    if not arg.startswith("["):
-        return []
-    return [t for t in (sig_id(x.strip()) for x in split_top_level(arg[1:-1])) if t]
+def _close_unordered_element(elem: dict | None) -> None:
+    """An unordered rstruct only ends when one of its members repeats, so as
+    an rarray element it would run into the next element whenever the current
+    one lacks a member the next one has. Its last member closes it instead, as
+    xEdit's Starfield definitions mark `OBTS` (`dfTerminator`)."""
+    if not elem or elem.get("kind") != "rstruct" or not elem.get("unordered"):
+        return
+    last = elem["members"][-1].get("sig") if elem.get("members") else None
+    if last and last not in elem.get("terminators", []):
+        elem.setdefault("terminators", []).append(last)
 
 
 def _allow_unordered_after(parts: list[str], members_idx: int) -> bool:
@@ -997,11 +1001,18 @@ class Extractor:
         cp = re.search(r"\.SetCountPath\s*\(\s*'([^']+)'", expr)
         if cp:
             count_path = cp.group(1)
-        # dfAllowAnyMember (a binding flag, see _parse_rstruct) lives in the
-        # method chain; read it before the chain is stripped.
+        # dfAllowAnyMember and dfTerminator (binding flags, see _parse_rstruct)
+        # live in the method chain; read them before the chain is stripped.
         stripped = self._strip_method_chain(expr)
-        any_member = "dfAllowAnyMember" in expr[len(stripped):]
+        chain = expr[len(stripped):]
+        any_member = "dfAllowAnyMember" in chain
+        terminator = "dfTerminator" in chain
         expr = stripped
+        if terminator:
+            result = self.parse_member(expr)
+            if isinstance(result, dict):
+                result["_terminator"] = True
+            return result
 
         if expr.startswith("__from_version__"):
             m = re.match(r"__from_version__\((\d+),\s*(.+)\)\s*$", expr, re.DOTALL)
@@ -1220,11 +1231,12 @@ class Extractor:
         # aDontShow, aAllowUnordered, ...).
         if members_idx >= 0:
             trailing = [p.strip() for p in parts[members_idx + 1 :]]
-            skip_sigs = _sig_list(trailing[0]) if trailing else []
-            if skip_sigs:
-                out["skip_sigs"] = skip_sigs
             if len(trailing) > 4 and trailing[4] == "True":
                 out["unordered"] = True
+        # A member marked dfTerminator closes the struct once bound.
+        terminators = [m["sig"] for m in members if m.pop("_terminator", False) and m.get("sig")]
+        if terminators:
+            out["terminators"] = terminators
         return out
 
     def _parse_rstructS(self, expr: str) -> dict:
@@ -1284,6 +1296,7 @@ class Extractor:
         # args[2:] may be count, priority, or other trailing options.
         elem_expr = args[1] if len(args) > 1 else args[-1]
         elem = self.parse_member(elem_expr)
+        _close_unordered_element(elem)
         return {"kind": "rarray", "name": name, "element": elem or {"kind": "unknown", "name": "element"}}
 
     def _parse_array(self, expr: str) -> dict:

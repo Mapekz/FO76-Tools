@@ -11,7 +11,8 @@
 //!   `unordered` container instead looks the member up by signature.
 //! - An `rstruct` handles the signatures of its first member only, unless it
 //!   is `unordered` or `any_member`, and it ends at the first subrecord none of
-//!   its members handles or the first one its cursor can't place.
+//!   its members handles, the first one its cursor can't place, or once a
+//!   member listed in its `terminators` binds.
 //! - An `rarray` takes elements while its element handles the next
 //!   subrecord, so each element ends where its struct ends.
 //! - A signature-less union takes the first variant that handles the
@@ -137,43 +138,53 @@ pub(super) fn bind_record(
     let mut bound = vec![false; members.len()];
     let mut def_pos = 0usize;
     while let Some(sig) = cur.peek_sig() {
-        let forward = if def.unordered {
-            None
-        } else {
-            (def_pos..members.len()).find(|&j| can_handle(ctx, &members[j], sig))
-        };
-        let Some(j) = forward.or_else(|| members.iter().position(|m| can_handle(ctx, m, sig)))
-        else {
-            cur.skip();
-            continue;
-        };
-        let member = &members[j];
-        if bound[j] && !matches!(member, MemberDef::RArray { .. }) {
-            // A second copy of a single-valued member.
-            cur.skip();
-            continue;
+        // The members at or after the cursor first, then (out of order, or
+        // an unordered record) the rest.
+        let start = if def.unordered { 0 } else { def_pos };
+        let candidates = (start..members.len()).chain(0..start);
+        let mut bound_here = false;
+        for j in candidates {
+            let member = &members[j];
+            if !can_handle(ctx, member, sig) || (bound[j] && !continues_across_runs(member)) {
+                continue;
+            }
+            let before = cur.pos;
+            bind_member(ctx, member, cur, &mut fields);
+            origin.resize(fields.len(), j);
+            if cur.pos == before {
+                continue;
+            }
+            bound[j] = true;
+            if !def.unordered && j >= def_pos {
+                def_pos = j + 1;
+            }
+            bound_here = true;
+            break;
         }
-        let before = cur.pos;
-        bind_member(ctx, member, cur, &mut fields);
-        origin.resize(fields.len(), j);
-        if cur.pos == before {
+        if !bound_here {
             cur.skip();
-            continue;
-        }
-        bound[j] = true;
-        if forward == Some(j) {
-            def_pos = j + 1;
         }
     }
     add_raw_fallback_markers(members, &mut fields, &mut origin);
     out.extend(in_member_order(members, fields, &origin));
 }
 
-/// Bind an `rstruct`'s members from the cursor into `out`.
+/// Whether a member bound once can bind again later in the record (a later,
+/// non-contiguous run continues it; see [`bind_member`]).
+fn continues_across_runs(member: &MemberDef) -> bool {
+    matches!(
+        member,
+        MemberDef::RArray { .. } | MemberDef::Array { sig: Some(_), .. }
+    )
+}
+
+/// Bind an `rstruct`'s members from the cursor into `out`. The struct ends
+/// after binding a member whose signature is one of its `terminators`.
 fn bind_struct(
     ctx: &DecodeContext<'_>,
     members: &[MemberDef],
     unordered: bool,
+    terminators: &[String],
     cur: &mut Cursor<'_>,
     out: &mut Fields,
 ) {
@@ -209,6 +220,12 @@ fn bind_struct(
             continue;
         }
         found[def_pos] = true;
+        if member
+            .sig()
+            .is_some_and(|sig| terminators.iter().any(|t| t == sig))
+        {
+            break;
+        }
         def_pos = if unordered { 0 } else { def_pos + 1 };
     }
     add_raw_fallback_markers(members, out, &mut origin);
@@ -297,10 +314,11 @@ fn bind_one(ctx: &DecodeContext<'_>, member: &MemberDef, cur: &mut Cursor<'_>, o
             name,
             members,
             unordered,
+            terminators,
             ..
         } => {
             let mut group = Fields::new();
-            bind_struct(ctx, members, *unordered, cur, &mut group);
+            bind_struct(ctx, members, *unordered, terminators, cur, &mut group);
             if !group.is_empty() {
                 out.insert(name.clone(), Node::Struct(group));
             }
@@ -405,7 +423,10 @@ fn bind_runion(
         )),
     };
     let chosen = match decided {
-        Some(idx) => idx.filter(|&i| variants.get(i).is_some_and(|v| can_handle(ctx, v, sig))),
+        // The decided variant can't take this subrecord: the union declines
+        // it (xEdit's union CanHandle only accepts the decided variant).
+        Some(Some(i)) if !variants.get(i).is_some_and(|v| can_handle(ctx, v, sig)) => return,
+        Some(idx) => idx,
         None => variants.iter().position(|v| can_handle(ctx, v, sig)),
     };
     let Some(variant) = chosen.and_then(|i| variants.get(i)) else {

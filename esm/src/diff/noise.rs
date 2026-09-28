@@ -1406,6 +1406,7 @@ mod tests {
             refs: Vec::new(),
             dangling_refs: Vec::new(),
             ref_ids: Default::default(),
+            new_ref_ids: Default::default(),
         }
     }
 

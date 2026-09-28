@@ -23,8 +23,8 @@ prev_editor_id?: string | null,
  */
 refs?: Array<string>, 
 /**
- * FormIDs the B-side record references that the A-side record did not,
- * and that resolve in neither snapshot (nor the engine-hardcoded
- * forms), sorted.
+ * The subset of `refs` the B-side record introduces (the A-side record
+ * doesn't reference it) that resolves in neither snapshot (nor the
+ * engine-hardcoded forms), sorted.
  */
 dangling_refs?: Array<string>, };

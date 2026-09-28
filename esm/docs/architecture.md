@@ -32,7 +32,7 @@ loaded once via `Schema::load_embedded()` from the compiled-in `schema/fo76.json
 xEdit does: a record or `rstruct` keeps a cursor over its member list and each subrecord goes
 to the next member at or after the cursor that can take its signature; an `rstruct` opens on
 its first member's signature (any member's when the schema marks it `any_member`) and ends at
-the first subrecord it can't place; an `rarray` takes elements while its element can open on
+the first subrecord it can't place or after a member listed in its `terminators`; an `rarray` takes elements while its element can open on
 the next subrecord; a signature-less union takes the first variant that can. Records and
 rstructs marked `unordered` look members up by signature instead. The flags come from xEdit's
 own definitions via the extractor. Each bound subrecord's bytes are decoded by

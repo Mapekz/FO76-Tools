@@ -18,12 +18,15 @@ object-template combination. Each case was patched with document-index windows, 
   at or after the cursor that can take its signature. An `unordered` container looks the member
   up by signature instead.
 - An `rstruct` opens on its first member's signature, or on any member's when it is marked
-  `any_member`, and ends at the first subrecord it can't place. An `rarray` takes elements while
-  its element can open on the next subrecord. A signature-less union (`by_signature`) takes the
-  first variant that can.
+  `any_member`, and ends at the first subrecord it can't place or once a member listed in its
+  `terminators` binds. An `rarray` takes elements while its element can open on the next
+  subrecord. A signature-less union (`by_signature`) takes the first variant that can; a union
+  whose decider picks a variant that can't take the subrecord declines it.
 - The extractor carries xEdit's `aAllowUnordered` (`unordered`), `dfAllowAnyMember`
-  (`any_member`) and `aSkipSigs` (`skip_sigs`) into the schema, including for the groups its
-  hand-written stubs model.
+  (`any_member`) and `dfTerminator` (`terminators`) into the schema, including for the groups
+  its hand-written stubs model. An unordered `rstruct` that is an `rarray` element also ends on
+  its last member (reward `ITME`, combination `OBTS`), as xEdit's Starfield definitions mark
+  `OBTS`: otherwise it only ends when a member repeats and runs into the next element.
 - A member that repeats an earlier sibling's definition keeps its name (xEdit lists `FULL`,
   `OPDS`, `LODP` and others at several positions so they bind wherever the data places them).
   The binder merges a repeat into the earlier value and keeps the field at the first position.

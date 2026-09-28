@@ -152,9 +152,9 @@ pub struct RecordDiff {
     /// flags value or a Model Information hash).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<String>,
-    /// FormIDs the B-side record references that the A-side record did not,
-    /// and that resolve in neither snapshot (nor the engine-hardcoded
-    /// forms), sorted.
+    /// The subset of `refs` the B-side record introduces (the A-side record
+    /// doesn't reference it) that resolves in neither snapshot (nor the
+    /// engine-hardcoded forms), sorted.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dangling_refs: Vec<String>,
     /// Every FormID either side's record references; filters `refs` once
@@ -162,6 +162,10 @@ pub struct RecordDiff {
     #[serde(skip)]
     #[cfg_attr(test, ts(skip))]
     pub(crate) ref_ids: HashSet<FormId>,
+    /// The FormIDs only the B-side record references.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub(crate) new_ref_ids: HashSet<FormId>,
 }
 
 /// Resolved display information for a FormID that appears in `field_changes`.
@@ -455,12 +459,11 @@ pub fn diff_databases_with(
         };
 
         let refs_a: HashSet<FormId> = refs_a.into_iter().collect();
-        let mut dangling_refs: Vec<String> = refs_b
+        let new_ref_ids: HashSet<FormId> = refs_b
             .iter()
-            .filter(|id| !refs_a.contains(id) && !resolves(a, b, **id))
-            .map(|id| id.display())
+            .copied()
+            .filter(|id| !refs_a.contains(id))
             .collect();
-        dangling_refs.sort();
         let mut ref_ids = refs_a;
         ref_ids.extend(refs_b);
         changed.push(RecordDiff {
@@ -468,8 +471,9 @@ pub fn diff_databases_with(
             field_changes,
             prev_editor_id,
             refs: Vec::new(),
-            dangling_refs,
+            dangling_refs: Vec::new(),
             ref_ids,
+            new_ref_ids,
         });
         changed_restamp.push(restamp);
     }
@@ -496,13 +500,19 @@ pub fn diff_databases_with(
     changed.sort_by(|x, y| x.stub.form_id.cmp(&y.stub.form_id));
 
     // Each changed record's `refs`: the typed references still visible in
-    // its (now final) field_changes.
+    // its (now final) field_changes; the new ones that resolve nowhere are
+    // its `dangling_refs`.
     for rd in &mut changed {
         let mut refs = HashSet::new();
         collect_typed_refs(&rd.field_changes, &rd.ref_ids, &mut refs);
-        let mut refs: Vec<String> = refs.into_iter().map(|id| id.display()).collect();
-        refs.sort();
-        rd.refs = refs;
+        let mut refs: Vec<FormId> = refs.into_iter().collect();
+        refs.sort_by_key(|id| id.raw());
+        rd.dangling_refs = refs
+            .iter()
+            .filter(|id| rd.new_ref_ids.contains(id) && !resolves(a, b, **id))
+            .map(|id| id.display())
+            .collect();
+        rd.refs = refs.iter().map(|id| id.display()).collect();
     }
 
     // Build ref_names: one-hop FormID resolution for every typed reference in
@@ -651,7 +661,13 @@ fn resolve_ref_name(fid_str: &str, primary: &Database, fallback: &Database) -> O
             });
         }
     }
-    None
+    // An engine-hardcoded form has no record, but it is a real reference.
+    crate::hardcoded::lookup(id).map(|form| RefName {
+        record_type: form.record_type.clone(),
+        editor_id: form.editor_id.clone(),
+        name: None,
+        description: None,
+    })
 }
 
 /// Apply optional record-type filter to a diff result in-place.

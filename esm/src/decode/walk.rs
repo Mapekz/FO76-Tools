@@ -855,7 +855,7 @@ mod tests {
                             members: vec![sig_int_field("MPPI", "Index", IntegerWidth::U32)],
                             unordered: false,
                             any_member: false,
-                            skip_sigs: Vec::new(),
+                            terminators: Vec::new(),
                         }),
                         count: Some(ArrayCount::CountPath(CountPath {
                             up: 0,
@@ -866,7 +866,7 @@ mod tests {
                 ],
                 unordered: false,
                 any_member: false,
-                skip_sigs: Vec::new(),
+                terminators: Vec::new(),
             }),
             count: None,
         };
@@ -1343,6 +1343,133 @@ mod tests {
             let out = decode_lstring(&ctx, &subrecord("DESC", data, 0));
             assert_eq!(out.get("Description"), Some(&json!(want)), "{raw:?}");
         }
+    }
+
+    fn u32_sub(sig: &str, v: u32, idx: usize) -> OwnedSubrecord {
+        subrecord(sig, v.to_le_bytes().to_vec(), idx)
+    }
+
+    fn rstruct(
+        name: &str,
+        members: Vec<MemberDef>,
+        unordered: bool,
+        terminators: &[&str],
+    ) -> MemberDef {
+        MemberDef::RStruct {
+            name: name.into(),
+            members,
+            unordered,
+            any_member: unordered,
+            terminators: terminators.iter().map(|s| (*s).to_owned()).collect(),
+        }
+    }
+
+    /// An unordered array element ends on its terminator, so a member the
+    /// current element lacks is taken by the next element, not this one.
+    #[test]
+    fn unordered_element_ends_on_its_terminator() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let element = |terminators: &[&str]| {
+            rstruct(
+                "Reward",
+                vec![
+                    sig_int_field("XPCT", "XP", IntegerWidth::U32),
+                    sig_int_field("NAM7", "Global", IntegerWidth::U32),
+                    sig_int_field("ITME", "End", IntegerWidth::U32),
+                ],
+                true,
+                terminators,
+            )
+        };
+        let rewards = |terminators: &[&str]| MemberDef::RArray {
+            name: "Rewards".into(),
+            element: Box::new(element(terminators)),
+            count: None,
+        };
+        let subrecords = [
+            u32_sub("XPCT", 1, 0),
+            u32_sub("ITME", 0, 1),
+            u32_sub("NAM7", 2, 2),
+            u32_sub("ITME", 0, 3),
+        ];
+        let (out, unbound) = bind(&ctx, vec![rewards(&["ITME"])], &subrecords);
+        assert!(unbound.is_empty(), "{unbound:?}");
+        assert_eq!(
+            out["Rewards"],
+            json!([
+                {"Reward": {"XP": 1, "End": 0}},
+                {"Reward": {"Global": 2, "End": 0}},
+            ])
+        );
+        // Without the terminator the first reward takes the next one's NAM7.
+        let (out, _) = bind(&ctx, vec![rewards(&[])], &subrecords);
+        assert_eq!(out["Rewards"][0]["Reward"]["Global"], json!(2));
+    }
+
+    /// A union whose field-value decider picks a variant that can't take the
+    /// current subrecord declines it: no marker, and the next member binds it.
+    #[test]
+    fn field_value_union_declines_a_subrecord_its_variant_cannot_take() {
+        use crate::schema::UnionDecider;
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let action = rstruct(
+            "Action",
+            vec![
+                sig_int_field("ANAM", "Type", IntegerWidth::U32),
+                MemberDef::Union {
+                    sig: None,
+                    name: "Data".into(),
+                    decider: UnionDecider::FieldValue {
+                        field: "Type".into(),
+                        default_variant: None,
+                        map: std::collections::HashMap::from([("0".into(), 0), ("1".into(), 1)]),
+                        bits: vec![],
+                    },
+                    variants: vec![
+                        sig_int_field("DATA", "Topic", IntegerWidth::U32),
+                        sig_int_field("SNAM", "Timer", IntegerWidth::U32),
+                    ],
+                },
+                sig_int_field("SNAM", "Start Phase", IntegerWidth::U32),
+            ],
+            false,
+            &[],
+        );
+        // Type 0 picks the DATA variant; the SNAM that follows is the
+        // action's Start Phase.
+        let subrecords = [u32_sub("ANAM", 0, 0), u32_sub("SNAM", 7, 1)];
+        let (out, unbound) = bind(&ctx, vec![action], &subrecords);
+        assert!(unbound.is_empty(), "{unbound:?}");
+        assert_eq!(out["Action"], json!({"Type": 0, "Start Phase": 7}));
+    }
+
+    /// A packed array subrecord that appears again later in the record
+    /// continues the same array.
+    #[test]
+    fn packed_array_runs_continue_one_array() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let keywords = MemberDef::Array {
+            sig: Some("KWDA".into()),
+            name: "Keywords".into(),
+            element: Box::new(int_field("Keyword", IntegerWidth::U32)),
+            count: None,
+        };
+        let members = vec![keywords, sig_int_field("DATA", "Data", IntegerWidth::U32)];
+        let subrecords = [
+            subrecord(
+                "KWDA",
+                [1u32, 2].iter().flat_map(|v| v.to_le_bytes()).collect(),
+                0,
+            ),
+            u32_sub("DATA", 9, 1),
+            u32_sub("KWDA", 3, 2),
+        ];
+        let (out, unbound) = bind(&ctx, members, &subrecords);
+        assert!(unbound.is_empty(), "{unbound:?}");
+        assert_eq!(out["Keywords"], json!([1, 2, 3]));
     }
 
     /// A sig-bearing `Unused` member (Pascal `wbUnused(INDX, 0)` — an entire
