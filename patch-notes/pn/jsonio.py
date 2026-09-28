@@ -26,7 +26,12 @@ def write(path: str | Path, payload: Any) -> None:
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     tmp = Path(tmp_name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        try:
+            f = os.fdopen(fd, "w", encoding="utf-8")
+        except BaseException:
+            os.close(fd)
+            raise
+        with f:
             json.dump(payload, f, indent=2, ensure_ascii=False)
             f.write("\n")
         os.replace(tmp, path)

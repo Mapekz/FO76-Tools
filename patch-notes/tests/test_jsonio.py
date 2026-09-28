@@ -55,5 +55,27 @@ class WriteTest(TempDirTestCase):
         self.assertEqual([p.name for p in self.tmp.iterdir()], ["a.json"])
 
 
+class WriteFailureTest(TempDirTestCase):
+    def test_a_failure_before_the_file_opens_closes_its_descriptor(self):
+        path = self.tmp / "a.json"
+        jsonio.write(path, {"old": True})
+        closed: list[int] = []
+        real_close = jsonio.os.close
+
+        def track_close(fd):
+            closed.append(fd)
+            real_close(fd)
+
+        with (
+            mock.patch.object(jsonio.os, "fdopen", side_effect=OSError("no memory")),
+            mock.patch.object(jsonio.os, "close", track_close),
+            self.assertRaises(OSError),
+        ):
+            jsonio.write(path, {"new": True})
+        self.assertEqual(len(closed), 1)
+        self.assertEqual(jsonio.read(path), {"old": True})
+        self.assertEqual([p.name for p in self.tmp.iterdir()], ["a.json"])
+
+
 if __name__ == "__main__":
     unittest.main()
