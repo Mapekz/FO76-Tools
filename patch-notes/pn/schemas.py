@@ -211,28 +211,58 @@ _ARRAY_KEYS = {"strategy", "reorder_only", "key_fields", "count_from", "count_to
 _ARRAY_ELEMENT_KEYS = {"key_display", "display", "raw"}
 
 
+def _require_bool(value: object, path: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{path}: expected bool, got {_validation_type_name(value)}")
+    return value
+
+
+def _require_optional_int(value: object, path: str) -> int | None:
+    return None if value is None else _require_int(value, path)
+
+
+def _validate_array_payload(value: object, path: str) -> None:
+    """A ChangeEntry's normalized array edit: every key present and typed,
+    each added/removed element displayed, each changed element's inner
+    edits valid ChangeEntries."""
+    array = _require_mapping(value, path)
+    _require_keys(array, path, _ARRAY_KEYS)
+    _require_str(array["strategy"], f"{path}.strategy")
+    _require_bool(array["reorder_only"], f"{path}.reorder_only")
+    if array["key_fields"] is not None:
+        _str_list(array["key_fields"], f"{path}.key_fields")
+    _require_optional_int(array["count_from"], f"{path}.count_from")
+    _require_optional_int(array["count_to"], f"{path}.count_to")
+    for side in ("added", "removed"):
+        for i, elem in enumerate(_require_list(array[side], f"{path}.{side}")):
+            elem_path = f"{path}.{side}[{i}]"
+            elem = _require_mapping(elem, elem_path)
+            _require_keys(elem, elem_path, _ARRAY_ELEMENT_KEYS)
+            _require_str(elem["key_display"], f"{elem_path}.key_display")
+            _require_str(elem["display"], f"{elem_path}.display")
+    for i, changed in enumerate(_require_list(array["changed"], f"{path}.changed")):
+        changed_path = f"{path}.changed[{i}]"
+        changed = _require_mapping(changed, changed_path)
+        _require_keys(changed, changed_path, {"key_display", "changes"})
+        _require_str(changed["key_display"], f"{changed_path}.key_display")
+        for j, inner in enumerate(_require_list(changed["changes"], f"{changed_path}.changes")):
+            validate_change_entry(inner, path=f"{changed_path}.changes[{j}]")
+
+
 def validate_change_entry(value: object, *, path: str = "change") -> dict[str, Any]:
-    """One ChangeEntry (see `change_entries.py`), nested array edits included."""
+    """One ChangeEntry (see `change_entries.py`), nested array edits
+    included. An `array` kind carries its array edit; no other kind does."""
     entry = _require_mapping(value, path)
-    _reject_unknown_keys(entry, _CHANGE_ENTRY_KEYS, path)
-    for key in _CHANGE_ENTRY_KEYS:
-        _require_key(entry, key, path)
+    _require_keys(entry, path, _CHANGE_ENTRY_KEYS)
     _require_str(entry["path"], f"{path}.path")
-    _require_literal_str(entry["kind"], f"{path}.kind", _CHANGE_KINDS)
+    kind = _require_literal_str(entry["kind"], f"{path}.kind", _CHANGE_KINDS)
     _require_optional_str(entry["suppressed"], f"{path}.suppressed")
-    if entry["array"] is not None:
-        array = _require_mapping(entry["array"], f"{path}.array")
-        _reject_unknown_keys(array, _ARRAY_KEYS, f"{path}.array")
-        for side in ("added", "removed"):
-            for i, elem in enumerate(_require_list(array.get(side) or [], f"{path}.array.{side}")):
-                elem_path = f"{path}.array.{side}[{i}]"
-                _reject_unknown_keys(_require_mapping(elem, elem_path), _ARRAY_ELEMENT_KEYS, elem_path)
-        for i, changed in enumerate(_require_list(array.get("changed") or [], f"{path}.array.changed")):
-            changed_path = f"{path}.array.changed[{i}]"
-            changed = _require_mapping(changed, changed_path)
-            _reject_unknown_keys(changed, {"key_display", "changes"}, changed_path)
-            for j, inner in enumerate(_require_list(_require_key(changed, "changes", changed_path), changed_path)):
-                validate_change_entry(inner, path=f"{changed_path}.changes[{j}]")
+    _require_optional_str(entry["from_display"], f"{path}.from_display")
+    _require_optional_str(entry["to_display"], f"{path}.to_display")
+    if kind == "array":
+        _validate_array_payload(entry["array"], f"{path}.array")
+    elif entry["array"] is not None:
+        raise ValueError(f"{path}.array: only an array change carries one, not a {kind!r} change")
     return entry
 
 
@@ -258,15 +288,19 @@ def validate_record_entry(value: object, *, path: str = "record") -> RecordEntry
     return entry
 
 
+_MEMBER_KEYS = set(Member.__annotations__)
+
+
 def validate_member(value: object, *, path: str = "member") -> Member:
     member = _require_mapping(value, path)
+    _require_keys(member, path, {"form_id", "status", "role"}, _MEMBER_KEYS)
     validated: Member = {
-        "form_id": _require_str(_require_key(member, "form_id", path), f"{path}.form_id"),
+        "form_id": _require_str(member["form_id"], f"{path}.form_id"),
         "record_type": _require_optional_str(member.get("record_type"), f"{path}.record_type"),
         "editor_id": _require_optional_str(member.get("editor_id"), f"{path}.editor_id"),
         "name": _require_optional_str(member.get("name"), f"{path}.name"),
-        "status": _require_str(_require_key(member, "status", path), f"{path}.status"),
-        "role": _require_member_role(_require_key(member, "role", path), f"{path}.role"),
+        "status": _require_str(member["status"], f"{path}.status"),
+        "role": _require_member_role(member["role"], f"{path}.role"),
     }
     return validated
 
@@ -351,8 +385,68 @@ def validate_triage(value: object, *, label: str = "triage.json") -> dict[str, A
         _require_str(reason, f"{label}.reasons[{bid!r}]")
     _require_mapping(_require_key(root, "stats", label), f"{label}.stats")
     for i, shape in enumerate(_require_list(_require_key(root, "rollout_shapes", label), f"{label}.rollout_shapes")):
-        shape_path = f"{label}.rollout_shapes[{i}]"
-        _reject_unknown_keys(_require_mapping(shape, shape_path), _ROLLOUT_SHAPE_KEYS, shape_path)
+        _validate_rollout_shape(shape, f"{label}.rollout_shapes[{i}]")
+    return root
+
+
+def _validate_rollout_shape(value: object, path: str) -> None:
+    shape = _require_mapping(value, path)
+    _require_keys(shape, path, _ROLLOUT_SHAPE_KEYS)
+    _require_optional_str(shape["record_type"], f"{path}.record_type")
+    _str_list(shape["paths"], f"{path}.paths")
+    _require_int(shape["record_count"], f"{path}.record_count")
+    _str_list(shape["example_form_ids"], f"{path}.example_form_ids")
+    _require_int(shape["numeric_excluded_count"], f"{path}.numeric_excluded_count")
+
+
+_LINT_KEYS = {"rule", "severity", "form_id", "message", "data", "id", "bundle_id"}
+_LINT_ID_RE = re.compile(r"^L\d{4,}$")
+
+
+def validate_lint(value: object, *, path: str = "lint") -> dict[str, Any]:
+    """One `run_lints.py` finding, with its central `id` and `bundle_id`."""
+    lint = _require_mapping(value, path)
+    _require_keys(lint, path, _LINT_KEYS)
+    _require_str(lint["rule"], f"{path}.rule")
+    _require_literal_str(lint["severity"], f"{path}.severity", {"error", "warn", "info"})
+    _require_optional_str(lint["form_id"], f"{path}.form_id")
+    _require_str(lint["message"], f"{path}.message")
+    _require_mapping(lint["data"], f"{path}.data")
+    lint_id = _require_str(lint["id"], f"{path}.id")
+    if not _LINT_ID_RE.match(lint_id):
+        raise ValueError(f"{path}.id: expected a lint id like 'L0001', got {lint_id!r}")
+    if lint["bundle_id"] is not None:
+        _require_bundle_id(lint["bundle_id"], f"{path}.bundle_id")
+    return lint
+
+
+def validate_lints_payload(value: object, *, label: str = "lints.json") -> dict[str, Any]:
+    root = _require_mapping(value, label)
+    _require_keys(root, label, {"meta", "lints"})
+    meta = _require_mapping(root["meta"], f"{label}.meta")
+    _require_keys(meta, f"{label}.meta", {"generated_at", "rules_run", "counts"}, {"notes"})
+    for i, lint in enumerate(_require_list(root["lints"], f"{label}.lints")):
+        validate_lint(lint, path=f"{label}.lints[{i}]")
+    return root
+
+
+def validate_diff_payload(value: object, *, label: str = "diff.json") -> dict[str, Any]:
+    """`esm diff --json` output: its record lists, each record addressed by
+    FormID. Field contents are the diff engine's contract, not checked here."""
+    root = _require_mapping(value, label)
+    for side in ("added", "removed"):
+        for i, stub in enumerate(_require_list(_require_key(root, side, label), f"{label}.{side}")):
+            stub_path = f"{label}.{side}[{i}]"
+            _require_str(_require_key(_require_mapping(stub, stub_path), "form_id", stub_path), f"{stub_path}.form_id")
+    for i, rec in enumerate(_require_list(_require_key(root, "changed", label), f"{label}.changed")):
+        rec_path = f"{label}.changed[{i}]"
+        rec = _require_mapping(rec, rec_path)
+        stub = _require_mapping(_require_key(rec, "stub", rec_path), f"{rec_path}.stub")
+        _require_str(_require_key(stub, "form_id", f"{rec_path}.stub"), f"{rec_path}.stub.form_id")
+        _require_mapping(_require_key(rec, "field_changes", rec_path), f"{rec_path}.field_changes")
+    for key in ("ref_names", "suppressed_counts"):
+        if key in root:
+            _require_mapping(root[key], f"{label}.{key}")
     return root
 
 
@@ -366,9 +460,13 @@ def validate_deep_slice(value: object, *, label: str = "deep-slice.json") -> dic
     _reject_unknown_keys(root, {"bundles", "lints"}, label)
     for i, bundle in enumerate(_require_list(_require_key(root, "bundles", label), f"{label}.bundles")):
         bundle_path = f"{label}.bundles[{i}]"
-        _reject_unknown_keys(_require_mapping(bundle, bundle_path), _DEEP_SLICE_BUNDLE_KEYS, bundle_path)
+        bundle = _require_mapping(bundle, bundle_path)
+        _require_keys(bundle, bundle_path, _DEEP_SLICE_BUNDLE_KEYS)
         validate_bundle(bundle, path=bundle_path)
-    _require_list(_require_key(root, "lints", label), f"{label}.lints")
+        _require_bool(bundle["bug_watch"], f"{bundle_path}.bug_watch")
+        _str_list(bundle["lint_ids"], f"{bundle_path}.lint_ids")
+    for i, lint in enumerate(_require_list(_require_key(root, "lints", label), f"{label}.lints")):
+        validate_lint(lint, path=f"{label}.lints[{i}]")
     return root
 
 

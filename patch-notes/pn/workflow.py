@@ -135,9 +135,9 @@ REQUIRED_ARTIFACTS = {
 }
 
 
-def reuse_problem(out_dir: Path, old_esm: Path, new_esm: Path, exclude_type: str) -> str | None:
+def reuse_problem(out_dir: Path, old_esm: Path, new_esm: Path, options: dict) -> str | None:
     """Why `out_dir` doesn't hold this pair's finished mechanical output
-    (both snapshots as they are now, the same excluded types, the current
+    (both snapshots as they are now, the same output options, the current
     pipeline version, every artifact present and well-formed); `None` when
     it does."""
     manifest = pl.load_manifest(out_dir)
@@ -154,8 +154,8 @@ def reuse_problem(out_dir: Path, old_esm: Path, new_esm: Path, exclude_type: str
             return f"the {side} snapshot differs from the run's"
     if inputs.get("pipeline_version") != schemas.PIPELINE_VERSION:
         return "made by another pipeline version"
-    if inputs.get("exclude_type") != exclude_type:
-        return "made with other excluded types"
+    if inputs.get("options") != options:
+        return "made with other options (types, bodies, noise, sources)"
     mechanical = (manifest.get("stages") or {}).get("mechanical") or {}
     files = mechanical.get("files") or {}
     if not mechanical.get("completed_at"):
@@ -164,21 +164,30 @@ def reuse_problem(out_dir: Path, old_esm: Path, new_esm: Path, exclude_type: str
         if key not in files or not path_of(out_dir).is_file():
             return f"{path_of(out_dir).name} is missing"
     try:
+        schemas.load(layout.diff_json(out_dir), schemas.validate_diff_payload)
         schemas.load(layout.comprehensive_json(out_dir), schemas.validate_comprehensive_payload)
         schemas.load(layout.bundles_json(out_dir), schemas.validate_bundles_payload)
+        schemas.load(layout.lints_json(out_dir), schemas.validate_lints_payload)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         return f"an artifact is malformed: {exc}"
     return None
 
 
 def triage_problem(out_dir: Path) -> str | None:
-    """Why `work/triage.json` and its DEEP slice aren't a usable triage of
-    `bundles.json` (every bundle in exactly one tier); `None` when they are."""
+    """Why the five `work/` triage files aren't a usable triage of
+    `bundles.json` (all present and well-formed, every bundle in exactly one
+    tier); `None` when they are."""
     if not layout.work_triage_json(out_dir).is_file():
         return "no triage yet"
+    for path_of in (layout.work_ambiguous_json, layout.work_brief_lines_md, layout.work_rollouts_md):
+        if not path_of(out_dir).is_file():
+            return f"{path_of(out_dir).name} is missing"
     try:
         triage = schemas.load(layout.work_triage_json(out_dir), schemas.validate_triage)
         deep_slice = schemas.load(layout.work_deep_slice_json(out_dir), schemas.validate_deep_slice)
+        ambiguous = jsonio.read(layout.work_ambiguous_json(out_dir))
+        if not isinstance(ambiguous, dict) or not isinstance(ambiguous.get("bundles"), list):
+            raise ValueError("ambiguous.json: expected {\"bundles\": [...]}")
         bundles = jsonio.read(layout.bundles_json(out_dir))["bundles"]
     except (OSError, ValueError, TypeError, KeyError) as exc:
         return f"malformed: {exc}"
@@ -188,6 +197,18 @@ def triage_problem(out_dir: Path) -> str | None:
     if {b["id"] for b in deep_slice["bundles"]} != set(triage["deep"]):
         return "the DEEP slice doesn't match the DEEP tier"
     return None
+
+
+def had_merged_assessment(out_dir: Path) -> bool:
+    """Whether the kept `work/triage.json` records assessor verdicts (read
+    leniently: it may be the file that failed validation)."""
+    try:
+        reasons = jsonio.read(layout.work_triage_json(out_dir))["reasons"]
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+    return isinstance(reasons, dict) and any(
+        isinstance(r, str) and r.startswith("assessor:") for r in reasons.values()
+    )
 
 
 # --------------------------------------------------------------------------
@@ -308,12 +329,13 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
     out_dir = args.out_dir or default_out_dir(old_esm, new_esm, root)
 
     exclude_type = args.exclude_type.strip()
-    problem = "--force-pipeline" if args.force_pipeline else reuse_problem(out_dir, old_esm, new_esm, exclude_type)
+    run_args = [str(old_dir), str(new_dir), "--out-dir", str(out_dir), "--esm-bin", str(esm_bin)]
+    run_args += ["--exclude-type", exclude_type]
+    options = mpn.output_options(mpn.build_arg_parser().parse_args(run_args))
+    problem = "--force-pipeline" if args.force_pipeline else reuse_problem(out_dir, old_esm, new_esm, options)
     reused = problem is None
     if not reused:
         eprint(f"running the mechanical stage ({problem})")
-        run_args = [str(old_dir), str(new_dir), "--out-dir", str(out_dir), "--esm-bin", str(esm_bin)]
-        run_args += ["--exclude-type", exclude_type]
         if args.force_pipeline:
             run_args.append("--force-pipeline")
         rc = mpn.main(run_args, client=client)
@@ -347,11 +369,24 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
         return 1, None
     # Reused output keeps its triage, including a merged assessment, unless
     # asked; the pipeline having run, or no usable triage, means triaging now.
+    # Repairing a kept triage re-applies its merged assessment.
+    warnings: list[str] = []
     stale_triage = triage_problem(out_dir) if reused else None
     if stale_triage and stale_triage != "no triage yet":
         eprint(f"re-triaging: the kept triage is unusable ({stale_triage})")
     retriaged = not reused or args.retriage or stale_triage is not None
-    if retriaged:
+    remerge = bool(stale_triage) and not args.retriage and had_merged_assessment(out_dir)
+    if retriaged and remerge:
+        try:
+            triage_bundles.run_merge_assessment(out_dir, layout.work_assessment_json(out_dir))
+            eprint("re-merged work/assessment.json into the repaired triage")
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            remerge = False
+            warnings.append(
+                f"the kept triage's merged assessment couldn't be re-applied ({exc}): "
+                "re-run the assessor and merge-assessment"
+            )
+    if retriaged and not remerge:
         triage_bundles.run_triage(out_dir)
     slices = split_deep_slice(out_dir)
 
@@ -367,7 +402,7 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
             "tiers": triage_summary(out_dir),
             "ambiguous_json": str(layout.work_ambiguous_json(out_dir)),
             "deep_slices": [str(p) for p in slices],
-            "warnings": tier_warnings(out_dir),
+            "warnings": [*warnings, *tier_warnings(out_dir)],
         }
     )
 

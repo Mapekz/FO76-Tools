@@ -34,7 +34,8 @@ class TestCoverage(TempDirTestCase):
         super().setUp()
         layout.work_dir(self.tmp).mkdir()
         layout.work_triage_json(self.tmp).write_text(json.dumps(builders.triage(deep=["B0001", "B0002", "B0003"])))
-        layout.work_deep_slice_json(self.tmp).write_text(json.dumps({"bundles": BUNDLES, "lints": []}))
+        deep_slice = [{**b, "bug_watch": False, "lint_ids": []} for b in BUNDLES]
+        layout.work_deep_slice_json(self.tmp).write_text(json.dumps({"bundles": deep_slice, "lints": []}))
         layout.drafts_dir(self.tmp).mkdir()
 
     def report(self, name, covered, text, deferred=None):

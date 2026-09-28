@@ -193,6 +193,58 @@ class TestPrepareGatePublish(TempDirTestCase):
         self.assertTrue(summary["reused"])
         self.assertTrue(summary["retriaged"])
 
+    def test_a_malformed_diff_or_lints_is_not_reused(self):
+        self.prepare()
+        for path_of in (layout.diff_json, layout.lints_json):
+            with self.subTest(path_of(self.out).name):
+                path_of(self.out).write_text("{", encoding="utf-8")
+                _, summary = self.prepare()
+                assert summary is not None
+                self.assertFalse(summary["reused"])
+
+    def test_a_missing_triage_output_is_regenerated(self):
+        self.prepare()
+        for path_of in (layout.work_ambiguous_json, layout.work_brief_lines_md, layout.work_rollouts_md):
+            with self.subTest(path_of(self.out).name):
+                path_of(self.out).unlink()
+                _, summary = self.prepare()
+                assert summary is not None
+                self.assertTrue(summary["reused"])
+                self.assertTrue(summary["retriaged"])
+                self.assertTrue(path_of(self.out).is_file())
+
+    def merge_an_assessment(self) -> str:
+        """Resolve one ambiguous bundle to `brief` and merge it; its id."""
+        bid = jsonio.read(layout.work_ambiguous_json(self.out))["bundles"][0]["id"]
+        verdict = {"tier": "brief", "reason": "a one-liner", "bucket": "Other"}
+        jsonio.write(layout.work_assessment_json(self.out), {"tiers": {bid: verdict}})
+        rc, _ = run_verb(workflow.merge_assessment, [str(self.out)])
+        self.assertEqual(rc, 0)
+        return bid
+
+    def test_repairing_a_triage_reapplies_its_merged_assessment(self):
+        self.prepare()
+        bid = self.merge_an_assessment()
+        layout.work_brief_lines_md(self.out).unlink()
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["retriaged"])
+        self.assertEqual(summary["warnings"], [])
+        triage = jsonio.read(layout.work_triage_json(self.out))
+        self.assertIn(bid, triage["brief"])
+        self.assertEqual(triage["reasons"][bid], "assessor:a one-liner")
+
+    def test_a_merged_assessment_that_cant_be_reapplied_is_reported(self):
+        self.prepare()
+        bid = self.merge_an_assessment()
+        layout.work_assessment_json(self.out).unlink()
+        layout.work_rollouts_md(self.out).unlink()
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["retriaged"])
+        self.assertTrue(any("merge-assessment" in w for w in summary["warnings"]), summary["warnings"])
+        self.assertIn(bid, jsonio.read(layout.work_triage_json(self.out))["ambiguous"])
+
     def test_a_decode_coverage_gap_stops_prepare(self):
         gap = (False, {"trailing": 3}, "gate check failed: 3 trailing")
         with mock.patch.object(workflow, "coverage_gate", return_value=gap) as gate:

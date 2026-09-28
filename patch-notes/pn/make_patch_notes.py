@@ -220,6 +220,20 @@ def source_args(args: argparse.Namespace) -> list[str]:
     return out
 
 
+def output_options(args: argparse.Namespace) -> dict:
+    """The options that shape the mechanical stage's output, as its manifest
+    records them: a run is reusable only for the same ones."""
+    return {
+        "record_type": args.record_type,
+        "bodies": args.bodies,
+        "keep_noise": args.keep_noise,
+        "exclude_type": (args.exclude_type or "").strip(),
+        "refs_depth": args.refs_depth,
+        "lang": args.lang,
+        "sources": source_args(args),
+    }
+
+
 # --------------------------------------------------------------------------
 # Step 2: Run esm diff
 # --------------------------------------------------------------------------
@@ -513,6 +527,7 @@ def main(argv=None, *, client=None):
         new_esm_mtime=int(esm_b.stat().st_mtime),
         old_esm_size=esm_a.stat().st_size,
         old_esm_mtime=int(esm_a.stat().st_mtime),
+        options=output_options(args),
         pipeline_version=schemas.PIPELINE_VERSION,
         counts=manifest_counts,
         localized=localized,

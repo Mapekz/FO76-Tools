@@ -37,14 +37,14 @@ def record(fid, rtype, status="changed", editor_id=None, name=None, changes=None
 
 
 EFFECTS_ARRAY = {
-    "strategy": "keyed", "key_fields": ["Effect"], "count_from": 2, "count_to": 2,
+    "strategy": "keyed", "reorder_only": False, "key_fields": ["Effect"], "count_from": 2, "count_to": 2,
     "added": [], "removed": [],
     "changed": [
         {"key_display": "Effect=0x00000010", "changes": [change("Magnitude", 10.0, 15.0)]},
     ],
 }
 KEYWORDS_ARRAY = {
-    "strategy": "set", "key_fields": None, "count_from": 3, "count_to": 4,
+    "strategy": "set", "reorder_only": False, "key_fields": None, "count_from": 3, "count_to": 4,
     "added": [{"key_display": "0x00000030", "display": "0x00000030", "raw": "0x00000030"}],
     "removed": [], "changed": [],
 }

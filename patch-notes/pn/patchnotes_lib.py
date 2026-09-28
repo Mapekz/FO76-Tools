@@ -210,7 +210,7 @@ def esm_is_localized(esm_path) -> bool | None:
 
 
 def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, pipeline_version, counts=None,
-                 localized=None, exclude_type="", old_esm_size=None, old_esm_mtime=None):
+                 localized=None, exclude_type="", old_esm_size=None, old_esm_mtime=None, options=None):
     """
     Build a fresh manifest dict for the mechanical stage to write:
         {"patch_date": ..., "inputs": {...}, "counts": {...},
@@ -239,6 +239,7 @@ def new_manifest(patch_date, old_token, new_token, new_esm_size, new_esm_mtime, 
             "pipeline_version": pipeline_version,
             "localized": localized or {"old": None, "new": None},
             "exclude_type": exclude_type,
+            "options": options or {},
         },
         "counts": counts or {},
         "stages": {
