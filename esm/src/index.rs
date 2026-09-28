@@ -917,7 +917,7 @@ fn build_tree_and_forms(esm: &EsmFile, sig: CacheSig) -> anyhow::Result<TreeAndF
     // archived section via `Index::tree()`), never a second one that keeps
     // the owned `TreeIndex` around. `write_and_remap` is the one helper
     // every section build (this one and the three lazy `ensure_*_index`
-    // builds in `lib.rs`) uses for this write→drop→re-map→ensure-mapped
+    // builds in `database.rs`) uses for this write→drop→re-map→ensure-mapped
     // sequence.
     let tree_section = write_and_remap(&tree_path, sig, CACHE_VERSION, tree)?;
 

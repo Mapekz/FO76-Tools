@@ -109,6 +109,31 @@ pub mod hex_string {
     }
 }
 
+pub fn parse_form_id_input(s: &str) -> anyhow::Result<FormId> {
+    parse_formid(s)
+}
+
+/// Heuristic: returns `true` if `s` looks like a FormID literal (a `0x`-prefixed
+/// hex value, or a bare run of only hex digits up to 8 chars — which also covers
+/// pure-decimal-looking input like `18000`, read as *hex* `0x18000` by
+/// `parse_formid`, not decimal) rather than an EditorID.
+///
+/// Used to auto-route ambiguous CLI/server input to the right lookup. Anything
+/// with non-hex characters, or longer than 8 hex digits, is treated as an
+/// EditorID. Short all-hex EditorIDs (e.g. `cafe`) are read as FormIDs; an
+/// explicit `--edid` flag disambiguates those cases. There is no implicit
+/// decimal fallback for a bare digit token — decimal is reachable only via
+/// an explicit `FormIdBase::Dec` (the CLI's `--decimal` flag), see
+/// `docs/adr/0010-formid-input-base.md`.
+pub fn looks_like_formid(s: &str) -> bool {
+    let s = s.trim();
+    let body = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
+    !body.is_empty() && body.len() <= 8 && body.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

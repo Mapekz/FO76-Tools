@@ -617,7 +617,7 @@ fn field_or_null(field: Option<&Value>) -> Value {
     field.cloned().unwrap_or(Value::Null)
 }
 
-/// `collect_formid_paths` (`src/lib.rs`) builds paths as dot-joined JSON
+/// `Node::formid_paths` (`src/decode/node.rs`) builds paths as dot-joined JSON
 /// object keys with array indices appended directly to the preceding key,
 /// e.g. `"Effects[1].Effect.Conditions.Conditions[0].Condition.Condition
 /// Data.Parameter 1"`. Key names may contain spaces but never dots or

@@ -181,7 +181,7 @@ pub(super) fn record_resolved(
 ///
 /// Applied only at this serving boundary (`record_resolved`, `Op::RecordRaw`
 /// below), not inside `Database::get_formid_meta` itself: that method is also
-/// called from `DatabaseResolver::stub`/`decode_full` (`src/lib.rs`), which
+/// called from `DatabaseResolver::stub`/`decode_full` (`src/database.rs`), which
 /// already do their own `hardcoded::lookup` and discard the miss error
 /// entirely (`let Ok(meta) = ... else { ... }`), and from `resolve_sel`'s
 /// `Auto` probe, which only checks `.is_ok()`. Building this string there

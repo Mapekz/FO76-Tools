@@ -342,7 +342,7 @@ impl TreeIndex {
 /// Wraps `Option<&Archived<TreeIndex>>` rather than a bare reference because
 /// the backing [`crate::rkyvcache::Section`] can be `Section::Absent` —
 /// [`crate::index::Index::empty`]'s state, or no cache built yet — and every
-/// existing caller in `lib.rs` (`list_groups`, `list_type_children`,
+/// existing caller in `database.rs` (`list_groups`, `list_type_children`,
 /// `list_group_children`, `group_children_at`) expects a working,
 /// empty-result answer in that case rather than a panic, exactly as before
 /// this type moved to an archived backing. Every method below preserves that:

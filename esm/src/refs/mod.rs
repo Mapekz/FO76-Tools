@@ -12,6 +12,8 @@
 //! for the Direct/Carriers seed-selector vocabulary ([`RefSeeds`] is that
 //! ADR's central type).
 
+pub mod seeds;
+
 use crate::ops::{RecordSel, RefDepth, RefList, RefPathNode, RefRow, RefSort, resolve_sel};
 use crate::{CarrierTag, Database, EntryPointSpec, FormId, OmodPropertySpec, RecordRow};
 use anyhow::bail;

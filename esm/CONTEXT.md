@@ -76,7 +76,7 @@ _Avoid_: treating hardcoded AVIFs as a third selector kind
 
 **Reference graph**:
 The reverse-reference index plus the seed resolution, depth-bounded walk, and path search
-over it; `refs.rs` owns all three.
+over it; `refs/` owns all three.
 _Avoid_: "xref" (that's the persisted index section, one input to the graph)
 
 **Enum space**:

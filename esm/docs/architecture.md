@@ -78,12 +78,12 @@ hand-editing the 2.3 MB generated JSON.
 
 ## Index & cache lifecycle
 
-`Database::open(path)` (`src/lib.rs`) mmaps the ESM, loads the schema, and eagerly builds
+`Database::open(path)` (`src/database.rs`) mmaps the ESM, loads the schema, and eagerly builds
 `Index`'s `tree`/`forms` sections. Three further sections are lazy — built on first use, not at
 open:
 
 ```
-Database (src/lib.rs)
+Database (src/database.rs)
   ├─ esm, schema, localization, curves           (mmap'd / loaded once)
   └─ index: Index (src/index.rs)
        ├─ tree     — GRUP arena, built eagerly by Index::build
@@ -218,7 +218,7 @@ drop table fetch through: `ops::analysis`'s `DbSource` reads the open `Database`
 **`src/fields.rs`** holds the decoded-JSON readers the three share (reference stubs, schema
 enums, condition rows), so none of them imports another for a helper.
 
-**`src/refs.rs`** — the reverse-reference graph engine: `referenced_by_enriched`/
+**`src/refs/`** (`mod.rs`, with the entry-point/OMOD-property carrier seeds in `seeds.rs`) — the reverse-reference graph engine: `referenced_by_enriched`/
 `_multi` (BFS from one or more seeds) and `find_ref_path` (bidirectional path search between two
 records). `RefSeeds` resolves a CLI selector to BFS seeds along exactly two shapes (ADR 0004):
 **Direct** (a FormID, a real EditorID, or an engine-hardcoded EditorID from `src/hardcoded.rs`'s

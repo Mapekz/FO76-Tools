@@ -2,7 +2,7 @@
 //!
 //! `src/hardcoded.rs` has its own unit tests for the raw table lookup; these
 //! tests exercise the integration point in `DatabaseResolver::stub`/`decode_full`
-//! (`src/lib.rs`) — the index-miss fallback to `hardcoded::lookup` — against a
+//! (`src/database.rs`) — the index-miss fallback to `hardcoded::lookup` — against a
 //! real (synthetic) `Database`, and confirm a real ESM record always wins over
 //! the hardcoded table when both exist for the same FormID.
 
