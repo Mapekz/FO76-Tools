@@ -44,6 +44,10 @@ serde_json = { version = "1", features = ["preserve_order", "float_roundtrip", "
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+
 [dev-dependencies]
 ts-rs = "12.0.1"
 

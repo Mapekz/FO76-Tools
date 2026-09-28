@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
@@ -7,19 +8,29 @@ use std::sync::OnceLock;
 /// The decoder's record definitions, keyed by signature.
 ///
 /// Each definition stays raw JSON until first use: a query touches a handful
-/// of record types, and parsing all ~300 definitions up front was most of
-/// what opening a database cost. The embedded schema is parsed and
-/// validated in full by `tests::embedded_schema_parses_and_validates`; a
-/// schema loaded from a file is parsed and validated eagerly.
+/// of record types, and parsing all ~180 definitions up front was most of
+/// what opening a database cost. The embedded schema arrives already split
+/// per record type (`build.rs`) and is parsed and validated in full by
+/// `tests::embedded_schema_parses_and_validates`; a schema loaded from a
+/// file is parsed and validated eagerly.
 #[derive(Debug)]
 pub struct Schema {
-    records: HashMap<String, LazyRecord>,
+    records: HashMap<Cow<'static, str>, LazyRecord>,
 }
 
 #[derive(Debug)]
 struct LazyRecord {
-    raw: Box<RawValue>,
+    raw: Cow<'static, str>,
     parsed: OnceLock<RecordDef>,
+}
+
+impl LazyRecord {
+    fn new(raw: Cow<'static, str>) -> Self {
+        LazyRecord {
+            raw,
+            parsed: OnceLock::new(),
+        }
+    }
 }
 
 impl LazyRecord {
@@ -27,7 +38,7 @@ impl LazyRecord {
         if let Some(def) = self.parsed.get() {
             return Ok(def);
         }
-        let def: RecordDef = serde_json::from_str(self.raw.get())
+        let def: RecordDef = serde_json::from_str(&self.raw)
             .map_err(|e| anyhow::anyhow!("schema record {sig}: {e}"))?;
         def.validate(sig)?;
         Ok(self.parsed.get_or_init(|| def))
@@ -268,6 +279,10 @@ pub enum VmadFragments {
 // `SCHEMA_DIGEST`: FNV-1a over the embedded `fo76.json` and `fo76.ctda.json`,
 // computed by `build.rs`.
 include!(concat!(env!("OUT_DIR"), "/schema_digest.rs"));
+
+// `EMBEDDED_RECORDS`: `fo76.json`'s record definitions as raw JSON, one
+// `(signature, definition)` pair per record type, split by `build.rs`.
+include!(concat!(env!("OUT_DIR"), "/schema_records.rs"));
 
 impl MemberDef {
     /// Returns this member's directly declared subrecord signature, if any.
@@ -516,7 +531,12 @@ impl MemberDef {
 
 impl Schema {
     pub fn load_embedded() -> anyhow::Result<Self> {
-        Self::from_json_lazy(include_str!("../schema/fo76.json"))
+        Ok(Schema {
+            records: EMBEDDED_RECORDS
+                .iter()
+                .map(|&(sig, raw)| (Cow::Borrowed(sig), LazyRecord::new(Cow::Borrowed(raw))))
+                .collect(),
+        })
     }
 
     pub fn load_path(path: impl AsRef<Path>) -> anyhow::Result<Self> {
@@ -526,30 +546,21 @@ impl Schema {
 
     /// Parse and validate every record definition in `text`.
     pub fn from_json(text: &str) -> anyhow::Result<Self> {
-        let schema = Self::from_json_lazy(text)?;
-        for (sig, record) in &schema.records {
-            record.parse(sig)?;
-        }
-        Ok(schema)
-    }
-
-    fn from_json_lazy(text: &str) -> anyhow::Result<Self> {
         let raw: RawSchema = serde_json::from_str(text)?;
-        Ok(Schema {
+        let schema = Schema {
             records: raw
                 .records
                 .into_iter()
                 .map(|(sig, raw)| {
-                    (
-                        sig,
-                        LazyRecord {
-                            raw,
-                            parsed: OnceLock::new(),
-                        },
-                    )
+                    let raw = Cow::Owned(raw.get().to_owned());
+                    (Cow::Owned(sig), LazyRecord::new(raw))
                 })
                 .collect(),
-        })
+        };
+        for (sig, record) in &schema.records {
+            record.parse(sig)?;
+        }
+        Ok(schema)
     }
 
     /// The definition for record type `sig`, parsed on first use.
@@ -567,7 +578,7 @@ impl Schema {
     pub fn records(&self) -> impl Iterator<Item = (&str, &RecordDef)> {
         self.records
             .keys()
-            .filter_map(|sig| Some((sig.as_str(), self.record(sig)?)))
+            .filter_map(|sig| Some((sig.as_ref(), self.record(sig)?)))
     }
 }
 
