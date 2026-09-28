@@ -9,11 +9,8 @@
 //! *renderer* — this module returns structured [`DropTable`]/[`DropRow`]
 //! data, never a formatted string.
 //!
-//! Mechanics ported from `skills/esm-cli/SKILL.md`'s "Drop-chance math (LVLI
-//! chains)" section and the untracked `tools/lvli_audit.py` prototype's
-//! `compute_pool_odds`/`_random_percent_prob` (a linter over the same
-//! records, not a drop-rate calculator — this module is the first thing in
-//! the repo that actually computes one).
+//! Implements the selection model in `skills/esm-cli/SKILL.md`'s "Drop-chance
+//! math (LVLI chains)" section.
 //!
 //! ## Selection models (LVLF flags)
 //!
@@ -64,8 +61,7 @@ pub const DEFAULT_LEVEL: f32 = 50.0;
 pub const MAX_RECURSION_DEPTH: usize = 8;
 
 /// Above this many entries, [`compute_pool_odds`]'s O(2^n) subset
-/// enumeration stops being worth it (mirrors
-/// `tools/lvli_audit.py::MAX_EXACT_ODDS_ENTRIES`).
+/// enumeration stops being worth it.
 pub const MAX_EXACT_POOL_ENTRIES: usize = 16;
 
 const CALC_ALL_LEVELS: &str = "Calculate from all levels <= player's level";
@@ -474,8 +470,7 @@ fn entry_gate_prob(rows: &[Value], strict: bool, notes: &mut Vec<DropNote>) -> f
 /// Exact pool-then-uniform-pick odds per entry: enumerate every subset of
 /// entries whose gates currently pass, weight by that subset's joint
 /// probability, split evenly among the subset's members. O(2^n) — capped by
-/// [`MAX_EXACT_POOL_ENTRIES`] before calling this (mirrors
-/// `tools/lvli_audit.py::compute_pool_odds`).
+/// [`MAX_EXACT_POOL_ENTRIES`] before calling this.
 fn compute_pool_odds(probs: &[f64]) -> Vec<f64> {
     let n = probs.len();
     let mut odds = vec![0.0; n];

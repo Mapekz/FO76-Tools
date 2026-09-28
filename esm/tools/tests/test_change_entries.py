@@ -599,9 +599,9 @@ class TestLvliEntryConsolidation(unittest.TestCase):
         self.assertIsNone(lvli_entry.entry_quantity({"Reference": "0x00AA0001"}))
 
     def test_unwrap_entry_passes_through_already_unwrapped_dict(self):
-        # The bug lvli_audit.py had (`raw.get("Leveled List Entry") or {}`)
-        # silently dropped an already-unwrapped entry to `{}`. The canonical
-        # behavior (`e.get("Leveled List Entry", e)`) must not do that.
+        # `raw.get("Leveled List Entry") or {}` would silently drop an
+        # already-unwrapped entry to `{}`; `e.get("Leveled List Entry", e)`
+        # must not.
         entry = {"Reference": "0x00AA0001", "Minimum Level": 5}
         self.assertEqual(lvli_entry.unwrap_entry(entry), entry)
 

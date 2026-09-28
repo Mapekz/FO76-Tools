@@ -1357,13 +1357,19 @@ mod tests {
         let hop = |v: Value| -> Hop { serde_json::from_value(v).unwrap() };
         let dmgt = json!({"formid": "0x00060A83", "editor_id": "dtCryo", "record_type": "DMGT"});
         let hops = vec![
-            hop(json!({"property_index": 0, "property": "Weight", "function": "MUL+ADD",
-                       "value1": 0.1, "value2": 0.0, "kind": "direct_property", "evidence": []})),
-            hop(json!({"property_index": 1, "property": "AttackDamage", "function": "MUL+ADD",
-                       "value1": -0.4, "value2": -0.4, "kind": "direct_property", "evidence": []})),
-            hop(json!({"property_index": 2, "property": "DamageTypeValues", "function": "MUL+ADD",
+            hop(
+                json!({"property_index": 0, "property": "Weight", "function": "MUL+ADD",
+                       "value1": 0.1, "value2": 0.0, "kind": "direct_property", "evidence": []}),
+            ),
+            hop(
+                json!({"property_index": 1, "property": "AttackDamage", "function": "MUL+ADD",
+                       "value1": -0.4, "value2": -0.4, "kind": "direct_property", "evidence": []}),
+            ),
+            hop(
+                json!({"property_index": 2, "property": "DamageTypeValues", "function": "MUL+ADD",
                        "value1": dmgt, "value2": 0.6, "kind": "direct_property",
-                       "target": dmgt, "evidence": []})),
+                       "target": dmgt, "evidence": []}),
+            ),
         ];
         let mut lines = Vec::new();
         render_omod_hops(&hops, &mut lines);

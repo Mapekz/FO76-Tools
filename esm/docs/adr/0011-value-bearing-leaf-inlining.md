@@ -7,7 +7,7 @@ identify the target, never enough to read its value. For a GLOB reference (a tun
 magnitudes, durations, required counts, condition thresholds) that meant `--resolve full`
 (recursive, unbounded) or a second `get` just to read one float, and three call sites
 (`src/walk/mod.rs`'s `resolve_glob_ref`/`resolve_condition_row`, `src/lvli.rs`'s
-`resolve_glob_value`, `tools/lvli_audit.py`'s second `bulk_get(..., resolve="none")`) paid that
+`resolve_glob_value`, and the LVLI audit script's second `bulk_get(..., resolve="none")`) paid that
 round-trip themselves rather than have `stub` carry it.
 
 CURV already inlines its points onto a reference (`resolve_formid`'s first branch in
@@ -99,12 +99,12 @@ Two reasons hold, and a third — the one that looked most likely going in — t
 - Three round-trip workarounds are deleted: `src/walk/mod.rs`'s `resolve_glob_ref`/
   `resolve_condition_row` (and the `collect_condition_refs`/`collect_ref_formids` helpers that
   existed only to feed them), `src/lvli.rs`'s `resolve_glob_value` and its batched `*_Global`/
-  condition-ref prefetch, and `tools/lvli_audit.py`'s second `bulk_get(..., resolve="none")` plus
+  condition-ref prefetch, and the LVLI audit script's second `bulk_get(..., resolve="none")` plus
   `collect_glob_refs`. Each of these read a stub, then paid a second fetch to learn what `stub`
   now already says.
 - `esm walk --json`'s digest payload changes: the injected key renames from `"resolved_value"` to
   `"Value"`, matching the wire shape everywhere else. Confirmed confined to `src/walk/`,
-  `tools/lvli_audit.py`, and one generated TypeScript doc comment (`MagicEffectRow.ts`, regenerated
+  the LVLI audit script, and one generated TypeScript doc comment (`MagicEffectRow.ts`, regenerated
   via `just gen-types`) — absent from `src/chase.rs`, so this does not touch the `chase` JSON
   pipeline contract ADR 0001 established.
 - `esm-viewer` does not benefit yet: `bindings/napi` defaults to `ResolveDepth::None`, and

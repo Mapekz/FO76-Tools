@@ -290,7 +290,7 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         out_dir = self.tmp_dir / "out"
         self.assertEqual(self._run(out_dir), 0)
         for fname in (
-            "diff.json", "comprehensive.json", "comprehensive.md",
+            "diff.json", "comprehensive.json",
             "bundles.json", "lints.json", "manifest.json",
         ):
             self.assertTrue((out_dir / fname).is_file(), f"missing {fname}")
@@ -335,7 +335,7 @@ class TestOrchestratorEndToEnd(TempDirTestCase):
         self.assertIsNotNone(mech["completed_at"])
         self.assertEqual(
             set(mech["files"].values()),
-            {"diff.json", "comprehensive.json", "comprehensive.md", "bundles.json", "lints.json"},
+            {"diff.json", "comprehensive.json", "bundles.json", "lints.json"},
         )
         narrative = manifest["stages"]["narrative"]
         self.assertIsNone(narrative["completed_at"])

@@ -78,21 +78,11 @@ class TestExcludedTypes(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# `unkeyed` _array_diff rendering — the producer/consumer join
-#
-# Regression coverage for a real production defect: `diff.rs` emitting a
-# bare `{"from": [...], "to": [...]}` leaf for an unkeyable array (CTDA
-# `Conditions[]` is the canonical case — position is semantic AND/OR
-# chaining, so it deliberately has no element_key_spec entry) rendered as a
-# content-free `- **Conditions / Conditions:**` bullet, because
-# `_render_change_bullet`'s `kind == "array"` branch had no fallback for an
-# empty array block. Measured on a real run: 54 of 1579 array changes,
-# 26 of them Conditions. `diff.rs` now wraps the fallback as an `unkeyed`
-# `_array_diff` strategy (whole element lists under `removed`/`added`); this
-# is the round-trip test that would have caught the original defect — the
-# Rust side (`array_diff_unkeyed_ctda_conditions_length_mismatch` in
-# `esm/tests/diff.rs`) and the Python side were each well tested against
-# their own idea of the contract, but nothing tested the join.
+# Unkeyed arrays (CTDA `Conditions[]`: position is semantic AND/OR chaining,
+# so it has no element_key_spec entry) arrive from `diff.rs` as an `unkeyed`
+# `_array_diff` strategy with whole element lists under `removed`/`added`.
+# This is the round-trip test for that contract; the Rust side is
+# `array_diff_unkeyed_ctda_conditions_length_mismatch` in `esm/tests/diff.rs`.
 # ---------------------------------------------------------------------------
 
 
@@ -134,12 +124,11 @@ def _unkeyed_conditions_diff():
     }
 
 
-class TestUnkeyedArrayRendering(unittest.TestCase):
+class TestUnkeyedArrayShape(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.diff = _unkeyed_conditions_diff()
         cls.comp = rc.build_comprehensive(cls.diff, generated_at="X")
-        cls.md = rc.render_markdown(cls.comp)
 
     def test_change_entry_carries_normalized_array_shape(self):
         changes = self.comp["records"]["0x00200001"]["changes"]
@@ -149,22 +138,6 @@ class TestUnkeyedArrayRendering(unittest.TestCase):
         self.assertEqual(len(arr["removed"]), 1)
         self.assertEqual(len(arr["added"]), 2)
 
-    def test_markdown_bullet_is_not_content_free(self):
-        # The defect this guards against: a bullet with a header and nothing
-        # else. `_render_change_bullet` must reach the added/removed loops.
-        self.assertIn("**Conditions:**", self.md)
-        idx = self.md.index("**Conditions:**")
-        # The next ~5 lines must contain the actual condition content, not
-        # just the header followed by the next section.
-        following = self.md[idx : idx + 500]
-        self.assertIn("HasLearnedRecipe", following)
-        self.assertIn("HasEntitlement", following)
-
-    def test_markdown_unwraps_condition_wrapper_to_readable_fields(self):
-        # Without the _struct_display wrapper-unwrap, added/removed elements
-        # would render as the useless `Condition=`(struct: Condition Data)``.
-        self.assertIn("Function=`HasLearnedRecipe`", self.md)
-        self.assertNotIn("(struct:", self.md)
 
 
 # ---------------------------------------------------------------------------
@@ -232,81 +205,7 @@ class TestBuildComprehensiveConformance(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# render_fields: nesting / depth-cap / list rendering
-# ---------------------------------------------------------------------------
-
-
-class TestRenderFields(unittest.TestCase):
-    def test_flat_dict(self):
-        lines = rc.render_fields({"Damage": 25, "Value": 150}, {})
-        self.assertEqual(lines, ["- **Damage:** `25`", "- **Value:** `150`"])
-
-    def test_nested_dict_indents(self):
-        lines = rc.render_fields({"Data": {"Damage": 25}}, {})
-        self.assertEqual(lines, ["- **Data:**", "  - **Damage:** `25`"])
-
-    def test_list_of_scalars_indexed(self):
-        lines = rc.render_fields(["0x00000001", "0x00000002"], {})
-        self.assertEqual(lines[0], "- [0] `0x00000001`")
-        self.assertEqual(lines[1], "- [1] `0x00000002`")
-
-    def test_list_of_structs_recurse_with_index(self):
-        lines = rc.render_fields([{"Reference": "0x00000001", "Quantity": 2}], {})
-        self.assertEqual(lines[0], "- [0]")
-        self.assertIn("  - **Reference:** `0x00000001`", lines)
-        self.assertIn("  - **Quantity:** `2`", lines)
-
-    def test_empty_dict_and_list(self):
-        self.assertEqual(rc.render_fields({}, {}), ["- *(empty)*"])
-        self.assertEqual(rc.render_fields([], {}), ["- *(empty list)*"])
-
-    def test_empty_nested_dict_and_list_values(self):
-        lines = rc.render_fields({"Sub": {}, "Items": []}, {})
-        self.assertIn("- **Sub:** *(empty)*", lines)
-        self.assertIn("- **Items:** *(empty list)*", lines)
-
-    def test_depth_cap_terminates_pathological_nesting(self):
-        # 10 levels deep; rendering must terminate with an ellipsis marker
-        # rather than recursing without bound.
-        deep = 1
-        for _ in range(10):
-            deep = {"a": deep}
-        lines = rc.render_fields(deep, {})
-        self.assertTrue(any("…" in line for line in lines))
-        a_headers = [line for line in lines if line.strip() == "- **a:**"]
-        self.assertLessEqual(len(a_headers), rc.MAX_RENDER_DEPTH + 1)
-
-    def test_shallow_nesting_not_truncated(self):
-        # Well within the cap: every level must render, no "…" marker.
-        shallow = 1
-        for _ in range(3):
-            shallow = {"a": shallow}
-        lines = rc.render_fields(shallow, {})
-        self.assertFalse(any("…" in line for line in lines))
-
-    def test_enum_flags_curve_unresolved_render_as_leaves_not_recursed(self):
-        fields = {
-            "Firing Type": {"value": 1, "name": "Burst"},
-            "Weapon Flags": {"value": "0x00000001", "flags": ["Automatic"]},
-            "Some Curve": {"formid": "0x00000009", "curve_path": "x", "curve": [{"x": 0, "y": 1}]},
-            "Unresolved Text": {"_unresolved": True, "lstring_id": 42},
-        }
-        lines = rc.render_fields(fields, {})
-        joined = "\n".join(lines)
-        self.assertIn("**Firing Type:** `Burst`", joined)
-        self.assertIn("Automatic", joined)
-        self.assertIn("**Some Curve:** `0x00000009`", joined)
-        self.assertIn("unresolved", joined)
-        self.assertNotIn("curve_path", joined)  # never recursed into
-
-    def test_formid_ref_resolved_via_ref_names(self):
-        ref_names = {"0x00000001": {"record_type": "KYWD", "editor_id": "SomeKeyword"}}
-        lines = rc.render_fields({"Keyword": "0x00000001"}, ref_names)
-        self.assertIn("SomeKeyword", lines[0])
-
-
-# ---------------------------------------------------------------------------
-# MD drop-vs-keep rule for "fully covered" changed records
+# Records whose every change is covered elsewhere stay in the JSON
 # ---------------------------------------------------------------------------
 
 
@@ -342,106 +241,10 @@ def _drop_vs_keep_diff():
     return {"added": [], "removed": [], "changed": changed, "ref_names": {}}
 
 
-class TestMdDropVsKeepRule(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.comp = rc.build_comprehensive(_drop_vs_keep_diff(), generated_at="X")
-        cls.md = rc.render_markdown(cls.comp)
-
-    def test_fully_covered_record_dropped_from_md(self):
-        self.assertNotIn("PlainRecord", self.md)
-
+class TestFullyCoveredRecordKept(unittest.TestCase):
     def test_fully_covered_record_stays_in_json(self):
-        self.assertIn("0x02000001", self.comp["records"])
-
-    def test_fully_covered_note_counts_exactly_the_dropped_record(self):
-        self.assertIn("*(+1 records fully covered by Common Changes or suppressed noise)*", self.md)
-
-    def test_cut_record_with_no_renderable_changes_still_shown(self):
-        self.assertIn("zzz_CutRecord", self.md)
-
-    def test_renamed_record_with_no_renderable_changes_still_shown(self):
-        self.assertIn("RenamedRecord", self.md)
-
-    def test_covered_elsewhere_marker_line_present(self):
-        self.assertIn("*(all changes covered by Common Changes / suppressed noise)*", self.md)
-
-    def test_record_with_a_real_change_renders_that_change(self):
-        self.assertIn("RenderableRecord", self.md)
-        self.assertIn("Data / Value", self.md)
-
-
-# ---------------------------------------------------------------------------
-# _record_heading_line fallback logic
-# ---------------------------------------------------------------------------
-
-
-class TestRecordHeadingFallback(unittest.TestCase):
-    def test_name_and_edid(self):
-        rec = {"name": "Foo", "editor_id": "FooEdid", "form_id": "0x01", "cut": None, "prev_editor_id": None}
-        self.assertEqual(rc._record_heading_line(rec), "**Foo** `FooEdid` `0x01`")
-
-    def test_edid_only(self):
-        rec = {"name": None, "editor_id": "FooEdid", "form_id": "0x01", "cut": None, "prev_editor_id": None}
-        self.assertEqual(rc._record_heading_line(rec), "**FooEdid** `0x01`")
-
-    def test_neither_name_nor_edid(self):
-        rec = {"name": None, "editor_id": None, "form_id": "0x01", "cut": None, "prev_editor_id": None}
-        self.assertEqual(rc._record_heading_line(rec), "`0x01`")
-
-    def test_cut_annotation_appended(self):
-        rec = {
-            "name": None, "editor_id": "zzz_Foo", "form_id": "0x01", "prev_editor_id": None,
-            "cut": {"marker": "ZZZ", "confidence": "high", "kind": "added_cut"},
-        }
-        self.assertIn("cut: ZZZ, high confidence", rc._record_heading_line(rec))
-
-
-# ---------------------------------------------------------------------------
-# Cut section bucketing + common-changes / VMAD rendering (structural checks)
-# ---------------------------------------------------------------------------
-
-
-class TestCutSectionAndRenderingStructure(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.comp = rc.build_comprehensive(load_fixture("diff_small.json"), generated_at="X")
-        cls.md = rc.render_markdown(cls.comp)
-
-    def test_newly_deprecated_section_present_with_rename(self):
-        self.assertIn("### Newly Deprecated This Patch", self.md)
-        self.assertIn("`TestPerkRank03` → `zzz_TestPerkRank03`", self.md)
-
-    def test_empty_cut_subsections_omitted(self):
-        self.assertNotIn("### Added Already-Cut", self.md)
-        self.assertNotIn("### Still-Cut Changed", self.md)
-        self.assertNotIn("### Removed Previously-Cut", self.md)
-
-    def test_common_changes_block_present(self):
-        self.assertIn("**Common Changes:**", self.md)
-        self.assertIn("CC001", self.md)
-        self.assertIn("Stats / Confidence", self.md)
-
-    def test_common_change_lists_all_six_members(self):
-        for i in range(1, 7):
-            self.assertIn(f"TestNPC0{i}", self.md)
-
-    def test_individual_npc_records_still_show_uncollapsed_aggression(self):
-        self.assertIn("Stats / Aggression", self.md)
-
-    def test_vmad_section_rendered(self):
-        self.assertIn("Script Properties (VMAD)", self.md)
-        self.assertIn("`Count`: `3` → `5`", self.md)
-        self.assertIn("`Flag`: `false` → `true`", self.md)
-
-    def test_array_diff_bullets_added_removed_changed(self):
-        self.assertIn("**+**", self.md)
-        self.assertIn("**−**", self.md)
-        self.assertIn("**~**", self.md)
-
-    def test_object_bounds_rendered_when_present(self):
-        # diff_small.json includes Object Bounds (as --keep-noise would surface them).
-        self.assertIn("Object Bounds / X1", self.md)
+        comp = rc.build_comprehensive(_drop_vs_keep_diff(), generated_at="X")
+        self.assertIn("0x02000001", comp["records"])
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +369,7 @@ class TestCliArgParsing(unittest.TestCase):
 
 
 class TestCliEndToEnd(unittest.TestCase):
-    def test_main_writes_both_files_and_summary(self):
+    def test_main_writes_json_and_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             diff_path = tmp / "diff.json"
@@ -581,7 +384,7 @@ class TestCliEndToEnd(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((out_dir / "comprehensive.json").exists())
-            self.assertTrue((out_dir / "comprehensive.md").exists())
+            self.assertFalse((out_dir / "comprehensive.md").exists())
             self.assertIn("added", result.stderr)
             comp = json.loads((out_dir / "comprehensive.json").read_text(encoding="utf-8"))
             self.assertEqual(comp["schema_version"], pl.SCHEMA_VERSION)
@@ -661,7 +464,7 @@ class TestJsonSchemaKeys(unittest.TestCase):
 
 class TestGoldenComprehensive(unittest.TestCase):
     """
-    comprehensive_small.json/.md under tools/tests/fixtures/golden/ were
+    comprehensive_small.json under tools/tests/fixtures/golden/ were
     generated from diff_small.json with the fixed args used below
     (old_label="20260626", new_label="20260703", patch_date="2026-07-03",
     a pinned generated_at sentinel, and the default common_threshold=5),
@@ -686,16 +489,12 @@ class TestGoldenComprehensive(unittest.TestCase):
             old_label="20260626", new_label="20260703", patch_date="2026-07-03",
             generated_at=cls.GENERATED_AT,
         )
-        cls.md = rc.render_markdown(cls.comp)
 
     def test_json_matches_golden(self):
         with open(GOLDEN_DIR / "comprehensive_small.json", encoding="utf-8") as f:
             golden = json.load(f)
         self.assertEqual(self.comp, golden)
 
-    def test_md_matches_golden(self):
-        golden_md = (GOLDEN_DIR / "comprehensive_small.md").read_text(encoding="utf-8")
-        self.assertEqual(self.md, golden_md)
 
 
 if __name__ == "__main__":

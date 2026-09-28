@@ -492,8 +492,8 @@ def diff_omod_properties(from_list, to_list, ref_names=None):
 
 # ---- Leveled list entries --------------------------------------------------
 #
-# unwrap/reference/quantity reading now lives in lvli_entry.py (the single
-# owner shared with run_lints.py / lvli_audit.py) — see that module's
+# unwrap/reference/quantity reading lives in lvli_entry.py (the single
+# owner shared with run_lints.py) — see that module's
 # docstring for the canonical behavior on each axis, including why
 # entry_quantity() defaults to None rather than fabricating 1.
 

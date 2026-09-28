@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 lvli_entry.py — the single owner of "read one leveled-list (LVLI) entry",
-consumed by `patchnotes_lib.py`, `run_lints.py`, and `lvli_audit.py`. Encodes
+consumed by `patchnotes_lib.py` and `run_lints.py`. Encodes
 three rules every caller shares:
 
   - **Unwrap**: `unwrap_entry` is a safe pass-through —
@@ -14,12 +14,9 @@ three rules every caller shares:
     never fabricated as `1`. A caller that needs a display value handles
     `None` explicitly (e.g. `patchnotes_lib.fmt_num` renders it as `"?"`).
 
-`lvli_audit.py`'s `resolve_min_level` additionally GLOB-resolves a
-`"Minimum Level Global"` field when present, falling back to a static
-`"Minimum Level"` otherwise; `patchnotes_lib.py`/`run_lints.py`'s
-level-reading logic (`ue.get("Minimum Level", ue.get("Level"))`) does not
-attempt any GLOB resolution. Unifying that is out of scope for this module:
-`patchnotes_lib.py`/`run_lints.py` operate over an already-decoded
+Level reading (`ue.get("Minimum Level", ue.get("Level"))`) does not resolve
+a `"Minimum Level Global"` GLOB: `patchnotes_lib.py`/`run_lints.py` operate
+over an already-decoded
 `diff.json`/`comprehensive.json`, not a live ESM `Database`, so whether a
 GLOB reference carries a resolved value at that point in the pipeline is
 unverified — a known gap for a future pass.

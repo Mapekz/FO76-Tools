@@ -54,7 +54,7 @@ Padding?`, which surfaced 353 OMODs that lost their `Attribute Descriptor Keywor
 prints `Localized flag flips` when they differ. Text decodes the same either way, so nothing needs
 skipping; what a writer should know is in `diff-traps.md`'s Localized entry.
 
-**Symptom:** `comprehensive.md` reports `localization_flip_text omitted at diff level`: string
+**Symptom:** `comprehensive.json`'s `meta.suppressed_counts` carries `localization_flip_text`: string
 leaves differing only by the tables' NBSP/CRLF rewrites were dropped. Expected, no action.
 **Example:** 20260821 → 20260903 (`true` → `false`) dropped 53 leaves; 244,420 of 244,484 inline
 strings matched that snapshot's own table exactly.

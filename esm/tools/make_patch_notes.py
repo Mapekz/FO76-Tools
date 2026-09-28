@@ -621,8 +621,8 @@ def main(argv=None):
     )
     files_written["diff"] = diff_json_path.name
 
-    # ---- Step 3: comprehensive.json / comprehensive.md ----------------------
-    banner("Step 3: Building comprehensive.json / comprehensive.md")
+    # ---- Step 3: comprehensive.json ----------------------------------------
+    banner("Step 3: Building comprehensive.json")
     t_start = time.time()
     try:
         old_label, new_label, patch_date = rc.derive_labels_and_date(
@@ -633,19 +633,13 @@ def main(argv=None):
             old_esm=str(esm_a), new_esm=str(esm_b),
             old_label=old_label, new_label=new_label, patch_date=patch_date,
         )
-        md = rc.render_markdown(comp)
-
         comp_json_path = layout.comprehensive_json(out_dir)
-        comp_md_path = layout.comprehensive_md(out_dir)
         with comp_json_path.open("w", encoding="utf-8") as f:
             json.dump(comp, f, indent=2, ensure_ascii=False)
             f.write("\n")
-        with comp_md_path.open("w", encoding="utf-8") as f:
-            f.write(md)
     except Exception as e:
-        die(3, f"building comprehensive.json/.md failed: {e}")
+        die(3, f"building comprehensive.json failed: {e}")
     files_written["comprehensive_json"] = comp_json_path.name
-    files_written["comprehensive_md"] = comp_md_path.name
 
     counts = dict(comp["meta"]["counts"])
     eprint(f"\n  ✓ Done in {time.time() - t_start:.1f}s "

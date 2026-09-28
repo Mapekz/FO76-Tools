@@ -241,7 +241,7 @@ patch-notes OLD NEW`, which drives `tools/make_patch_notes.py` through a fixed o
 ```
 esm --local diff (subprocess)         → diff.json
   │
-render_comprehensive.py  (Tool 1)     → comprehensive.json + comprehensive.md
+render_comprehensive.py  (Tool 1)     → comprehensive.json
   │   uses change_entries.py's ChangeEntry construction + array-diff reading
   ▼
 build_bundles.py         (Tool 2)     → bundles.json

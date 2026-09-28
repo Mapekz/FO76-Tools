@@ -450,8 +450,8 @@ fn array_diff_location_reference_reshuffle_is_omitted_from_parent() {
     // 12 (exactly one) never applied before this composite key existed —
     // without it, a reshuffle with no real edit fell to `positional`, and
     // every element read as changed (measured: 81% of all array-diff
-    // envelopes in a real run, 68,067 flagged index rows, 91% of
-    // `comprehensive.md`'s line count). With `(Ref, Loc Ref Type)` keying,
+    // envelopes in a real run, 68,067 flagged index rows). With
+    // `(Ref, Loc Ref Type)` keying,
     // a pure reshuffle now diffs to nothing, same as any other keyed array.
     let a = json!({"Refs": [
         {"Loc Ref Type": "0x00000011", "Ref": "0x00000001", "World/Cell": "0x00000099", "Grid X": 7, "Grid Y": 36},

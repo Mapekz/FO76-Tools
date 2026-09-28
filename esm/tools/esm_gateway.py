@@ -12,8 +12,8 @@ one round-trip for N selectors), `list_type` (`Op::ListTypeRecords`, the
 `--paths`/`--type` refs capabilities), `diff` (the two-ESM `esm --local
 diff` subprocess), and the one canonical `find_esm_binary` all live here, so
 nothing else in `tools/` needs to shell out to `esm` directly
-(`lvli_audit.py`/`extractor/hardcoded.py` route their `esm list --type SIG`
-calls through `list_type` for exactly this reason).
+(`extractor/hardcoded.py` routes its `esm list --type SIG` calls through
+`list_type` for exactly this reason).
 
 `FakeGateway`, the fixture-backed test double, lives in
 `tools/tests/fake_gateway.py` -- it is a test double, not a wire client, so
@@ -642,8 +642,8 @@ class EsmGateway:
         "editor_id", "name", "offset"}`. `limit=0` means unlimited, matching
         the CLI's own convention.
 
-        This is the seam `lvli_audit.py`/`extractor/hardcoded.py` route
-        their `esm list --type SIG` calls through instead of shelling out to
+        This is the seam `extractor/hardcoded.py` routes its
+        `esm list --type SIG` calls through instead of shelling out to
         the `esm` binary directly -- see this module's docstring's "one
         seam" claim.
         """
