@@ -18,10 +18,11 @@ on:
       - 'esm/build.rs'
       - 'esm/skills/**'
       - 'esm/Cargo.toml'
-      - 'esm/Cargo.lock'
       - 'ba2/src/**'
       - 'ba2/Cargo.toml'
-      - 'ba2/Cargo.lock'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/config.toml'
       - 'rust-toolchain.toml'
       - '.github/workflows/release.yml'
   workflow_dispatch:

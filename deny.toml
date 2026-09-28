@@ -1,21 +1,10 @@
-# cargo-deny policy, shared by both Rust crates (esm/ and ba2/).
-#
-# The two crates are independently versioned with separate Cargo.lock files, so
-# CI runs cargo-deny once per crate with `--config ../deny.toml`. Keeping one
-# policy here rather than a copy in each crate means the two cannot drift apart.
-#
-# Run locally from either crate directory:
-#   cargo deny --config ../deny.toml --all-features check
-#
-# One consequence of sharing: an `ignore` entry that applies to only one
-# crate's dependency tree produces an informational "advisory was not
-# encountered" warning when checking the other crate. Warnings do not fail
-# the run — both crates exit 0 — and the noise is cheaper than two configs
-# drifting apart.
+# cargo-deny policy for the root workspace's one Cargo.lock. Run from the repo
+# root (CI's `deps` job does the same):
+#   cargo deny --all-features check
 
 [graph]
-# Check the `server` feature's tree too (axum, tokio, tower-http). Without this,
-# an advisory reachable only through an optional feature would go unnoticed.
+# Check every optional feature's tree too, so an advisory reachable only
+# through an optional feature is not missed.
 all-features = true
 
 [advisories]
@@ -26,16 +15,15 @@ ignore = []
 [licenses]
 version = 2
 
-# Everything in both graphs is permissive except MPL-2.0. Expressions like
+# Everything in the graph is permissive except MPL-2.0. Expressions like
 # "MIT OR Apache-2.0 OR LGPL-2.1-or-later" are satisfied by the MIT arm, so
 # copyleft arms of OR expressions need no entry here.
 allow = [
     "0BSD",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
-    # matchit (via axum, `server` feature) is "MIT AND BSD-3-Clause" — an AND,
-    # so both arms must be allowed.
-    "BSD-3-Clause",
+    # libloading, via napi-sys (the esm-napi addon).
+    "ISC",
     "MIT",
     # Reached only via option-ext <- dirs-sys <- dirs. MPL-2.0 copyleft is
     # file-scoped and does not extend to our own sources; these crates are built
@@ -56,6 +44,9 @@ private = { ignore = false }
 # surfacing, not worth failing the build over.
 multiple-versions = "warn"
 wildcards = "deny"
+# Workspace members depend on each other by path; every member is
+# `publish = false`, so a path dependency never reaches a registry.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
