@@ -52,9 +52,11 @@ A DEEP **Bundle** deliberately left out of the summary, with a reason, in `work/
 _Avoid_: drop (that's a **Tier**); see Flagged ambiguities
 
 **Cut record**:
-A record whose EditorID carries a cut marker (`ZZZ`, `CUT`, `DEPRECATED`, …): content
-Bethesda removed or parked. The post lists these under "Cut / Vaulted".
-_Avoid_: deleted record
+A record whose EditorID carries a cut marker (`ZZZ`, `CUT`, `DEPRECATED`, …), classified
+with a confidence by `change_entries.classify_cut`. The marker is a hint, not proof of
+removal: liveness needs other evidence (see the skill's guardrails), and `POST_` content is
+datamined, not cut.
+_Avoid_: deleted record; calling content removed on the marker alone
 
 ## Relationships
 

@@ -7,14 +7,15 @@ Read-only engine for explaining Fallout 76 ESM records: decoding, diffing, and a
 
 **Op**:
 One typed request against an open `Database` (`ops::Op`; on the wire
-`{"op": "<tag>", ...args}`), answered by one typed output. Every **Surface** is a transport
-for ops; adding an op needs no surface code.
+`{"op": "<tag>", ...args}`), answered by one typed output. `esm batch` and the N-API addon
+carry any op without per-op code; a CLI subcommand still needs its own `Commands` variant.
 _Avoid_: command (that's a CLI subcommand, which may run several ops), endpoint, route
 
 **Surface**:
 A way callers reach ops: the CLI's subcommands, `esm batch`'s line protocol, or the N-API
-addon's `EsmHost::run`. All of them run ops in-process through `host::Host`
-([ADR 0013](docs/adr/0013-in-process-only.md)); `walk` is the interactive surface and `chase`
+addon's `EsmHost::run`. All of them run in-process ([ADR 0013](docs/adr/0013-in-process-only.md)):
+through `host::Host`, except CLI commands that open a `Database` themselves (`diff`, and
+source-overridden queries); `walk` is the interactive surface and `chase`
 the pipeline one ([ADR 0001](docs/adr/0001-walk-interactive-chase-pipeline-json.md)).
 _Avoid_: server, backend, client (there is no daemon)
 
