@@ -85,7 +85,7 @@ fn referenced_by_resolves_hardcoded_target() {
 }
 
 /// Negative guard on the same fix: the hardcoded-table fallback must stay a
-/// bounded, curated allowlist (~228 entries), not a relaxation of the
+/// bounded, curated allowlist (~229 entries), not a relaxation of the
 /// existence check itself. `harvest_formids` collects every `0x…`-shaped
 /// string in decoded output, including from misdecoded bytes, so a target
 /// that is in *neither* the ESM index nor the hardcoded table (here 0x39E,

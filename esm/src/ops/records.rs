@@ -173,7 +173,7 @@ pub(super) fn record_resolved(
         .map_err(|e| explain_hardcoded_miss(fid, e))
 }
 
-/// If `form_id` is one of the ~228 engine-hardcoded FormIDs (`crate::hardcoded`)
+/// If `form_id` is one of the ~229 engine-hardcoded FormIDs (`crate::hardcoded`)
 /// with no backing ESM record, replace a "not found" error with an
 /// explanation of *why* — it's baked into the game executable, not decodable
 /// data — plus a pointer at `esm refs` for its referrers. Otherwise passes

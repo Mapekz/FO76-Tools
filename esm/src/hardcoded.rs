@@ -7,10 +7,11 @@
 //! (`Core/Hardcoded/Fallout76.esp`) purely so it has something to resolve
 //! these FormIDs against.
 //!
-//! `tools/extractor/hardcoded.py` parses that pseudo-plugin and emits
+//! `tools/extractor/hardcoded.py` parses that pseudo-plugin, adds the
+//! `PlayerRef` xEdit synthesizes in code, and emits
 //! `schema/hardcoded_fo76.json`, embedded here at compile time (mirrors the
 //! `Schema::load_embedded` pattern in `src/schema.rs` and the CTDA table in
-//! `src/ctda.rs`). The table is small (~228 entries) and looked up rarely
+//! `src/ctda.rs`). The table is small (~229 entries) and looked up rarely
 //! (only on an index miss), so a sorted `Vec` + binary search is plenty.
 
 use crate::formid::FormId;
@@ -92,7 +93,8 @@ fn table() -> &'static HardcodedTable {
 /// Look up a hardcoded engine form by FormID.
 ///
 /// Returns `None` for the overwhelming majority of FormIDs — this table only
-/// covers the ~228 forms xEdit's `Fallout76.esp` pseudo-plugin ships. Callers
+/// covers the ~228 forms xEdit's `Fallout76.esp` pseudo-plugin ships, plus the
+/// `PlayerRef` (PLYR 0x14) xEdit adds in code. Callers
 /// should only consult this as a fallback after a real ESM index lookup misses.
 pub fn lookup(id: FormId) -> Option<&'static HardcodedForm> {
     let t = table();
@@ -137,6 +139,13 @@ mod tests {
     }
 
     #[test]
+    fn player_ref_resolves() {
+        let form = lookup(FormId::new(0x0000_0014)).expect("0x14 should resolve");
+        assert_eq!(form.record_type, "PLYR");
+        assert_eq!(form.editor_id.as_deref(), Some("PlayerRef"));
+    }
+
+    #[test]
     fn missing_ids_return_none() {
         assert!(lookup(FormId::new(0x0092_4E31)).is_none());
         assert!(lookup(FormId::new(0xFFFF_FFFF)).is_none());
@@ -147,7 +156,7 @@ mod tests {
         let t = table();
         assert!(
             t.entries.len() >= 220,
-            "expected ~228 hardcoded entries, got {}",
+            "expected ~229 hardcoded entries, got {}",
             t.entries.len()
         );
     }

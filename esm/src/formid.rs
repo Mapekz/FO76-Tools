@@ -16,6 +16,12 @@ impl FormId {
         self.0
     }
 
+    /// Whether this is a "none" value rather than a reference: fields store
+    /// no reference as 0, and some (INFO `Emotion`, for one) as 0xFFFFFFFF.
+    pub fn is_null(self) -> bool {
+        self.0 == 0 || self.0 == u32::MAX
+    }
+
     pub fn display(self) -> String {
         format!("0x{:08X}", self.0)
     }
@@ -137,6 +143,13 @@ pub fn looks_like_formid(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_and_all_ones_are_null() {
+        assert!(FormId::new(0).is_null());
+        assert!(FormId::new(0xFFFF_FFFF).is_null());
+        assert!(!FormId::new(0x14).is_null());
+    }
 
     #[test]
     fn hex_prefix_is_always_hex() {

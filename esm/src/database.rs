@@ -783,7 +783,7 @@ impl Database {
     }
 
     /// [`Self::record_at_meta_with_depth`] plus every FormID the record's
-    /// schema-typed fields reference (null FormIDs excluded), in tree order
+    /// schema-typed fields reference ([`FormId::is_null`] excluded), in tree order
     /// with duplicates removed.
     pub(crate) fn record_at_meta_with_refs(
         &self,
@@ -796,7 +796,7 @@ impl Database {
         let fields = self.decode_parsed_with(&parsed, depth, |node| {
             let mut seen = std::collections::HashSet::new();
             node.for_each_formid(&mut |id| {
-                if id.0 != 0 && seen.insert(id) {
+                if !id.is_null() && seen.insert(id) {
                     refs.push(id);
                 }
             });
@@ -954,7 +954,7 @@ impl Database {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
         tree.for_each_formid(&mut |f| {
-            if f != node && f.0 != 0 && seen.insert(f) {
+            if f != node && !f.is_null() && seen.insert(f) {
                 out.push(f);
             }
         });

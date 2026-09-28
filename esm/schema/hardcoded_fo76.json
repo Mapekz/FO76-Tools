@@ -1,5 +1,10 @@
 [
   {
+    "formid": "0x00000014",
+    "type": "PLYR",
+    "editor_id": "PlayerRef"
+  },
+  {
     "formid": "0x0000001A",
     "type": "EYES",
     "editor_id": "eyeReanimate",

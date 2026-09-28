@@ -655,13 +655,13 @@ pub(crate) fn build_xref_section(
         let mut seen = HashSet::new();
         for target in refs {
             // A target is kept if it's either a real indexed record or
-            // one of the ~228 engine-hardcoded FormIDs (`crate::hardcoded`,
+            // one of the ~229 engine-hardcoded FormIDs (`crate::hardcoded`,
             // e.g. AVIF `DamageRecieved`/`KillStreak`) — hardcoded forms
             // have no backing record by design, so without this fallback
             // every real reference to one was silently dropped while the
             // index was built (issue #27). `index.contains` still runs
             // first and short-circuits for the overwhelming majority of
-            // targets, so the 228-entry binary search only fires on an
+            // targets, so the 229-entry binary search only fires on an
             // index miss — matching `hardcoded::lookup`'s own "consult
             // only as a fallback" contract.
             //

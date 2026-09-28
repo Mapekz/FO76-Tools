@@ -29,6 +29,11 @@ TES5 = ROOT.parent / "TES5Edit"
 HARDCODED_ESP = TES5 / "Core" / "Hardcoded" / "Fallout76.esp"
 OUT = ROOT / "schema" / "hardcoded_fo76.json"
 
+#: xEdit adds PlayerRef to the hardcoded file in code rather than from the
+#: pseudo-plugin (wbImplementation.pas: a PLYR record the engine places at
+#: FormID 0x14), so it is appended here.
+PLAYER_REF = {"formid": "0x00000014", "type": "PLYR", "editor_id": "PlayerRef"}
+
 
 def read_zstring(data: bytes) -> str | None:
     """Read a NUL-terminated inline string, stripping an optional `<ID=...>` prefix.
@@ -139,6 +144,7 @@ def extract(esp_path: Path, esm_bin: str) -> list[dict]:
                 entry["full"] = full
         out.append(entry)
 
+    out.append(PLAYER_REF)
     out.sort(key=lambda e: e["formid"])
     return out
 
