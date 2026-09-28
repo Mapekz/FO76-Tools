@@ -4,9 +4,9 @@ every one to ground truth. Run all commands from the repo root.
 
 ## INPUTS
 
-- **Your work queue:** `{SLICE_PATH}` — DEEP-tier bundles (same shape as before:
+- **Your work queue:** `{SLICE_PATH}` — DEEP-tier bundles:
   `{"bundles": [{"id", "title", "anchor", "members", "edges", "bug_watch", "lint_ids"}],
-  "lints": [...]}`). Edges (`dropped via`/`mod for`/`crafts`) are your story connective tissue.
+  "lints": [...]}`. Edges (`dropped via`/`mod for`/`crafts`) are your story connective tissue.
 - **Knowledge base (read BOTH, FIRST):**
   - `{MECHANICS_KB}` — game mechanics: the OMOD chase pattern, damage-bonus taxonomy, OMOD
     property semantics, engine counters, curve semantics. Consult before chasing; only chase
@@ -62,8 +62,9 @@ every one to ground truth. Run all commands from the repo root.
    all the affected FormIDs for a lint into one bulk call rather than looping — before writing
    it up (irreproducible lints go in the report's `lints_not_reproduced`, never the draft).
    Check it against `{TRAPS_KB}`'s "Lint false positives" section first — e.g.
-   `unreferenced_perk_rank` on an item-granted perk — and verify the grant path via `refs
-   "{NEW_ESM}" <perk-id> --type PCRD --paths --pretty` before calling anything orphaned. Never
+   `unreferenced_perk_rank` on an item-granted perk — and verify the grant path via
+   `target/release/esm --esm "{NEW_ESM}" refs <perk-id> --type PCRD --paths --pretty` before
+   calling anything orphaned. Never
    assert liveness from an EDID prefix alone
    (`zzz_`/`CUT_`/`DEL_`/`POST_` are heuristics); POST_ content goes only under the datamined
    section with the standing disclaimer.

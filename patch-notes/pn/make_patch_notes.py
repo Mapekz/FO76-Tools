@@ -3,8 +3,8 @@
 make_patch_notes.py — mechanical-stage orchestrator for the FO76 patch-notes
 pipeline.
 
-Wires together, in-process, the four deterministic pipeline tools that turn a
-raw `esm diff --json` into a reviewable, bundled, linted output directory:
+Wires together, in-process, the deterministic pipeline steps that turn a raw
+`esm diff --json` into a reviewable, bundled, linted output directory:
 
     1. `esm diff` (subprocess)              -> diff.json
     2. render_comprehensive.py (library)    -> comprehensive.json
@@ -204,12 +204,16 @@ def source_args(args: argparse.Namespace) -> list[str]:
     """The explicit string and curve sources, as `esm diff` flags. Without
     them `esm diff` discovers each side's sources from its own folder."""
     out: list[str] = []
+    curves_dir = args.curves_dir
+    if args.startup_ba2 and curves_dir:
+        eprint("  note: --startup-ba2 wins over --curves-dir (esm takes one curve source)")
+        curves_dir = None
     for flag, value in (
         ("--strings-dir", args.strings_dir),
         ("--strings-dir-a", args.strings_dir_a),
         ("--strings-dir-b", args.strings_dir_b),
         ("--startup-ba2", args.startup_ba2),
-        ("--curves-dir", args.curves_dir),
+        ("--curves-dir", curves_dir),
     ):
         if value:
             out += [flag, str(Path(value).resolve())]
@@ -445,6 +449,9 @@ def main(argv=None, *, client=None):
     try:
         if args.skip_bundles:
             eprint("\nSkipping bundles.json and lint checks (--skip-bundles)")
+            # A previous run's files would otherwise be read as this run's.
+            layout.bundles_json(out_dir).unlink(missing_ok=True)
+            layout.lints_json(out_dir).unlink(missing_ok=True)
         else:
             banner("Step 4: Building bundles.json")
             t_start = time.time()
@@ -463,6 +470,7 @@ def main(argv=None, *, client=None):
 
             if args.skip_lints:
                 eprint("\nSkipping lint checks (--skip-lints)")
+                layout.lints_json(out_dir).unlink(missing_ok=True)
             else:
                 banner("Step 5: Running lint checks")
                 t_start = time.time()
@@ -516,8 +524,8 @@ def main(argv=None, *, client=None):
         eprint(f"  ✓ {out_dir / fname}")
     eprint(f"\n  Total time: {t_total:.1f}s")
     eprint(
-        "\n  Narrative stage: run the /patch-notes skill "
-        "(writes notes/, discord/, then update_manifest.py)."
+        "\n  Narrative stage: the /patch-notes skill "
+        "(pn prepare, then writers, pn gate, pn publish)."
     )
     eprint()
     return 0

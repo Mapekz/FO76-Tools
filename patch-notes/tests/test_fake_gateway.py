@@ -5,15 +5,15 @@ Covers:
   - `FakeGateway`'s BFS reverse-reference walk against the checked-in
     `refs_graph.json` fixture (depth-1 vs depth-3 expansion, cycle safety,
     path/depth fields, int vs hex FormID acceptance, type_filter narrowing).
-  - `paths=`/`bulk_get`/`list_type` against a small inline fixture.
+  - `paths=`/`bulk_get` against a small inline fixture.
 
 Every test above uses only synthetic fixtures -- no real `esm` or game
 data. `FakeGatewayConformanceTests` at the bottom is the one exception: it
 asserts `FakeGateway`'s Python reimplementation of the reverse-reference BFS
 agrees with the REAL gateway/backend's own `ops::referenced_by_enriched`
-walk. Gated on `$FO76_ESM_PATH` (see esm/CLAUDE.local.md) exactly like
-`test_esm_gateway.py`'s `RealEsmIntegrationTests` -- skips silently when
-unset, so it is a no-op in CI/sandboxes without game data. This is the
+walk. Opted into with `$PN_TEST_ESM`, like `test_esmcli.py`'s
+`RealEsmIntegrationTests` -- skips when unset, so it is a no-op in
+CI/sandboxes without game data. This is the
 actual drift guard for the ~250-line Python BFS reimplementation in
 fake_gateway.py, previously guaranteed only by that class's own docstring.
 """
@@ -175,26 +175,6 @@ class FakeGatewayRefsTests(unittest.TestCase):
             self._form_ids(result["rows"]), {formids.display(self.OMOD1), formids.display(self.OMOD2)}
         )
 
-    def test_list_type_returns_records_of_that_type_sorted_by_formid(self):
-        result = self.client.list_type("esm", "OMOD")
-        self.assertEqual([r["form_id"] for r in result], [formids.display(self.OMOD1), formids.display(self.OMOD2)])
-        for r in result:
-            self.assertEqual(r["record_type"], "OMOD")
-
-    def test_list_type_is_case_insensitive_and_respects_limit(self):
-        result = self.client.list_type("esm", "omod", limit=1)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["form_id"], formids.display(self.OMOD1))
-
-    def test_list_type_unknown_type_returns_empty(self):
-        self.assertEqual(self.client.list_type("esm", "ZZZZ"), [])
-
-    def test_list_type_via_generic_op_matches_convenience_method(self):
-        via_op = self.client.op("esm", {"op": "list_type_records", "sig": "OMOD", "offset": 0, "limit": 0})
-        via_method = self.client.list_type("esm", "OMOD")
-        self.assertEqual(via_op, via_method)
-
-
 # ─── FakeGateway paths= / bulk_get tests (inline fixture) ───────────────────
 
 
@@ -323,8 +303,8 @@ class FakeGatewayConformanceTests(unittest.TestCase):
     """Asserts `FakeGateway.refs()`'s Python BFS reimplementation agrees
     with the REAL gateway/backend's own `ops::referenced_by_enriched` walk.
 
-    Gated on `$FO76_ESM_PATH`, mirroring `test_esm_gateway.py`'s
-    `RealEsmIntegrationTests` silent-skip convention -- a no-op in
+    Opted into with `$PN_TEST_ESM`, like `test_esmcli.py`'s
+    `RealEsmIntegrationTests` -- a no-op in
     CI/sandboxes without real game data. This is intentionally LOCAL-ONLY:
     there is no committed real `.esm` the real gateway could run against
     (game data is gitignored/non-redistributable), so exercising the real
@@ -345,7 +325,7 @@ class FakeGatewayConformanceTests(unittest.TestCase):
 
     Targets an OMOD (not a "hub" KYWD) deliberately: an OMOD's own direct
     referencers are typically 0-2 WEAP/ARMO records (see
-    `test_esm_gateway.py`'s `test_refs_with_type_filter_and_paths_matches_a_
+    `test_esmcli.py`'s `test_refs_with_type_filter_and_paths_matches_a_
     real_omod_keyword`), which keeps the number of depth-1 probes
     `_live_fixture_from_gateway` needs to build a 2-round fixture small and
     bounded regardless of ESM size.
@@ -369,10 +349,10 @@ class FakeGatewayConformanceTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        esm_path = os.environ.get("FO76_ESM_PATH")
+        esm_path = os.environ.get("PN_TEST_ESM")
         if not esm_path or not Path(esm_path).is_file():
             raise unittest.SkipTest(
-                "FO76_ESM_PATH not set (or not a file) -- skipping real-ESM conformance test"
+                "PN_TEST_ESM not set (or not a file) -- skipping real-ESM conformance test"
             )
         try:
             esm_bin = esmcli.find_esm_binary(None)

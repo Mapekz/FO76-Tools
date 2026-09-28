@@ -16,7 +16,7 @@ Covers:
     no-ops).
   - Bundle merging (same-anchor, overlap-ratio fixpoint).
   - Context-member attachment (cap + preference order).
-  - The full offline pipeline (FakeGateway + refs_graph.json + a
+  - The full pipeline over a fixture gateway (FakeGateway + refs_graph.json + a
     hand-written comprehensive_mini.json aligned to that fixture's node
     ids): the WEAP/OMOD/LVLI/KYWD cluster forming one bundle with a WEAP
     anchor, NPC_/CONT/QUST context members with the right edge labels, the
@@ -559,7 +559,7 @@ class TestModForOmodBundleRegression(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Full offline pipeline (FakeGateway + refs_graph.json + comprehensive_mini.json)
+# Full pipeline over a fixture gateway (FakeGateway + refs_graph.json + comprehensive_mini.json)
 # ---------------------------------------------------------------------------
 
 

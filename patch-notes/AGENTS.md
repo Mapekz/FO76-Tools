@@ -8,7 +8,9 @@ in [../AGENTS.md](../AGENTS.md).
 Run commands from `patch-notes/`; `justfile` owns the recipes.
 
 - `just` runs `test` (the hermetic unittest suite: no game data, no `esm` binary) and `lint`
-  (ruff + ty, pinned to CI's versions). CI runs both.
+  (ruff + ty, pinned to CI's versions). CI runs both. `PN_TEST_ESM=<path to a SeventySix.esm>`
+  adds the real-`esm` integration tests, which drive the repo's `target/release/esm`: point
+  it at a snapshot that binary may write caches for.
 - `just run OLD NEW` runs the mechanical stage; the `/patch-notes` skill drives the whole run.
 - Every stage is a verb: `python3 -m pn <verb>` from here, or `python3 patch-notes/cli.py
   <verb>` from anywhere; `python3 -m pn --help` lists them.

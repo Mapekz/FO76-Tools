@@ -414,7 +414,7 @@ def rule_lvli_blocked_entry(ctx: RuleContext):
 
             else:  # status == "changed"
                 for ce in rec.get("changes") or []:
-                    if not isinstance(ce, dict) or ce.get("kind") != "array":
+                    if not isinstance(ce, dict) or ce.get("kind") != "array" or ce.get("suppressed"):
                         continue
                     arr = ce.get("array") or {}
 
@@ -692,7 +692,7 @@ def rule_desc_changed_stats_same(ctx: RuleContext):
                     continue
                 if _is_description_change(ce):
                     desc_entries.append(ce)
-                if ce.get("suppressed") == "noise":
+                if ce.get("suppressed") in ("noise", "reorder"):
                     continue
                 if ce.get("kind") == "scalar":
                     if _is_real_number(ce.get("from")) or _is_real_number(ce.get("to")):
@@ -754,7 +754,7 @@ def rule_stats_changed_desc_same(ctx: RuleContext):
             for ce in changes:
                 if not isinstance(ce, dict) or ce.get("kind") != "scalar":
                     continue
-                if ce.get("suppressed") == "noise":
+                if ce.get("suppressed") in ("noise", "reorder"):
                     continue
                 fv = ce.get("from")
                 if not _is_real_number(fv):
@@ -956,7 +956,7 @@ def build_arg_parser():
         "comprehensive.json + bundles.json, writing lints.json.",
     )
     ap.add_argument("out_dir", help="Pipeline output directory (contains comprehensive.json, bundles.json).")
-    ap.add_argument("--new-esm", help="Path to the new-snapshot ESM (required unless --offline).")
+    ap.add_argument("--new-esm", help="Path to the new-snapshot ESM (required).")
     ap.add_argument("--esm-bin", default=None, help="Path to the esm CLI binary (live mode only).")
     ap.add_argument("--rules", help="Comma-separated subset of rules to run (default: all).")
     return ap

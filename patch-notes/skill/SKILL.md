@@ -57,10 +57,11 @@ date token or an absolute snapshot directory. The out-dir defaults to
 
 `prepare` reuses the out-dir's mechanical output when its manifest matches the two tokens,
 the NEW ESM's size and mtime, the excluded types, and the pipeline version; otherwise it runs
-the pipeline. It then
-builds the new snapshot's `esm` cache so no writer's first query waits on it, triages, and
-slices the DEEP tier for the writers. From its JSON, take `out_dir` (`OUT`), `old`/`new`
-(`token`, `esm`), `tiers`, `deep_slices`, `official_notes`, and `warnings`.
+the pipeline. It then builds the new snapshot's `esm` cache so no writer's first query waits
+on it, triages (reused output keeps its triage, merged assessment included, unless
+`--retriage`), and slices the DEEP tier for the writers. From its JSON, take `out_dir`
+(`OUT`), `old`/`new` (`token`, `esm`: `OLD_ESM`/`NEW_ESM`), `tiers`, `deep_slices`,
+`official_notes`, and `warnings`.
 
 `official_notes` reports the `--official-notes` input: `fetched`/`copied` (in
 `$OUT/work/official-notes.txt`), `client_rendered` (use an available browser or page-fetch
@@ -120,16 +121,19 @@ way: skim `work/rollouts.md` and confirm each row really is uniform bulk churn. 
 recurs often can still matter — "1,056 weapons gained a sneak-attack multiplier" is a
 headline, not noise. Anything that reads like a gameplay change gets a line in the summary
 (Step 4); if a rollout row hides something a player would feel, raise `rollout_min_records`
-and re-run `prepare`. The tier exists to aggregate the story, never to discard it.
+and re-run `prepare --retriage` (then Step 2 again). The tier exists to aggregate the story,
+never to discard it.
 
 ## 3. Deep pass
 
-**Resume rule:** on a plain re-run, skip straight to Step 4 if `$OUT/drafts/deep.md` is newer
-than `$OUT/work/triage.json`; `--force` disables the skip.
+**Resume rule:** on a plain re-run, skip straight to Step 4 if every slice's draft
+(`$OUT/drafts/deep.md`, or `deep.partN.md` for each part) is newer than
+`$OUT/work/triage.json`; `--force` disables the skip.
 
 Spawn one writer per file in `deep_slices`: one slice (up to 20 DEEP bundles) gets one writer;
-two slices (`deep-slice.part1.json`, `deep-slice.part2.json`, contiguous halves of the
-dependency-sorted tier) get two writers, launched concurrently. Each gets
+two slices (`deep-slice.part1.json`, `deep-slice.part2.json`, contiguous halves of the tier
+in bundle-id order, so related bundles can land in different halves; the writers defer to
+each other through `{OTHER_SLICES}`) get two writers, launched concurrently. Each gets
 `patch-notes/skill/deep-writer-prompt.md`, substituting:
 
 | Placeholder | Value |
@@ -150,7 +154,7 @@ Record each writer's token usage for Step 6 only if the client reports it.
 ### Gate — run before reading a single draft
 
 ```sh
-python3 patch-notes/cli.py gate "$OUT"
+python3 patch-notes/cli.py gate "$OUT" --old-esm "$OLD_ESM" --new-esm "$NEW_ESM"
 ```
 
 It re-derives every `claims[]` entry from `comprehensive.json` (and live `esm` lookups for
@@ -177,7 +181,7 @@ Read every draft + report. Then, in order:
    `$OUT/drafts/deep.orchestrator.report.json` (`bundles_covered` + `claims`, same contract as
    the writers) so the gate covers your additions too; soften what you cannot resolve to
    "Unconfirmed:", or cut it. Never pass one through silently.
-2. **Re-run `gate "$OUT"`** after any edit to a draft or report.
+2. **Re-run the gate** after any edit to a draft or report.
 3. **Merge `kb_proposals[]`** into the KB, routing by each proposal's `kind`: `mechanic` →
    `patch-notes/skill/kb/mechanics.md`, `trap` →
    `patch-notes/skill/kb/diff-traps.md`. These are the only files outside `$OUT` this
@@ -207,7 +211,7 @@ Read every draft + report. Then, in order:
    `{"cuts": [{"bundle_id": "B0123", "reason": "<why>"}]}` — then:
 
    ```sh
-   python3 patch-notes/cli.py gate "$OUT" --summary
+   python3 patch-notes/cli.py gate "$OUT" --old-esm "$OLD_ESM" --new-esm "$NEW_ESM" --summary
    ```
 
    Loop until it exits 0: a DEEP anchor absent from the summary and absent from `cuts.json`
@@ -219,7 +223,7 @@ Spawn one subagent with `patch-notes/skill/review-prompt.md`,
 substituting `{OUT}`, `{OLD_ESM}`, `{NEW_ESM}`. It reads only the artifacts — never your
 reasoning — and writes `$OUT/work/review.json`. Then: fix every `high` finding in the summary
 and in the draft + claim it came from; decide `med` on merit; ignore `low`. Re-run
-`gate "$OUT" --summary` after the fixes. Record the reviewer's token usage for Step 6 only if
+the gate with `--summary` after the fixes. Record the reviewer's token usage for Step 6 only if
 the client reports it.
 
 ## 6. Publish
@@ -233,6 +237,9 @@ previous usage file so old counts cannot be attributed to this run. Then:
 ```sh
 python3 patch-notes/cli.py publish "$OUT"
 ```
+
+It refuses to run without `work/review.json`; when no independent reviewer was available,
+pass `--no-review` and say so in the report.
 
 It validates `work/review.json` and `work/usage.json`, chunks the summary into
 `$OUT/discord/`, and records the narrative stage in the manifest. It exits 1 when any chunk

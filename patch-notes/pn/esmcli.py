@@ -9,19 +9,14 @@ exits when the gateway closes. The request/response shapes are the `Op`,
 `Request` and `Response` types in `src/ops/mod.rs`.
 
 A full gateway, not just single-record lookups: `bulk_get` (`Op::RecordBulk`,
-one request for N selectors), `list_type` (`Op::ListTypeRecords`, the
-`esm list --type SIG` op), `refs(..., paths=True, type_filter=...)` (the
+one request for N selectors), `refs(..., paths=True, type_filter=...)` (the
 `--paths`/`--type` refs capabilities), `diff` (the two-ESM `esm diff`
 subprocess), and the one canonical `find_esm_binary` all live here, so
-nothing else in `pn/` needs to shell out to `esm` directly
-(`extractor/hardcoded.py` routes its `esm list --type SIG` calls through
-`list_type` for exactly this reason).
+nothing else in `pn/` needs to shell out to `esm` directly (apart from
+`workflow.prepare`'s cache build).
 
-`FakeGateway`, the fixture-backed test double, lives in
-`tests/fake_gateway.py` -- it is a test double, not an `esm` client, so
-it does not belong in the "one seam" module itself. See that module's
-docstring for why `--offline` mode still reaches it from production code
-(`make_patch_notes.py`/`build_bundles.py`/`run_lints.py`).
+`tests/fake_gateway.py`'s `FakeGateway` is the fixture-backed stand-in the
+tests pass as a stage's `client=`.
 
 Python 3, stdlib only -- no third-party dependencies.
 """
@@ -324,21 +319,6 @@ class EsmGateway:
                 "limit": limit,
             },
         )
-
-    def list_type(self, esm: str, sig: str, *, offset: int = 0, limit: int = 0) -> list[dict]:
-        """`Op::ListTypeRecords { sig, offset, limit }` -- the wire op behind
-        `esm list --type SIG --limit N --json` (see cli.rs's `cmd_list`,
-        which sends this exact op for the non-BA2-override case). Returns a
-        list of `RecordRow`-shaped dicts: `{"form_id", "record_type",
-        "editor_id", "name", "offset"}`. `limit=0` means unlimited, matching
-        the CLI's own convention.
-
-        This is the seam `extractor/hardcoded.py` routes its
-        `esm list --type SIG` calls through instead of shelling out to
-        the `esm` binary directly -- see this module's docstring's "one
-        seam" claim.
-        """
-        return self.op(esm, {"op": "list_type_records", "sig": sig, "offset": offset, "limit": limit})
 
     def refs(
         self,

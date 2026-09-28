@@ -115,7 +115,7 @@ def run_extract(out_dir, requested):
                 file=sys.stderr,
             )
         data = schemas.validate_comprehensive_payload(jsonio.read(path), label=str(path))
-    except (OSError, json.JSONDecodeError) as e:
+    except (OSError, ValueError, TypeError, KeyError) as e:
         print(f"error: failed to load {path}: {e}", file=sys.stderr)
         return 1
 

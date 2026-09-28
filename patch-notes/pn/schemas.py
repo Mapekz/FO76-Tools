@@ -1,7 +1,7 @@
-"""Every artifact shape the pipeline reads, with one strict validator each.
+"""The pipeline's artifact shapes and their strict validators.
 
-Mechanical artifacts (comprehensive.json, bundles.json, triage outputs) are
-written by one stage and read by later ones. Agent-written artifacts -- the
+Mechanical artifacts that later stages parse (comprehensive.json, bundles.json)
+are validated on read. Agent-written artifacts -- the
 deep writers' reports, the assessor's assessment, the orchestrator's cuts and
 usage, the reviewer's review -- follow the skill's prompts; their validators
 also reject unknown keys, so a misspelled or drifted field fails its gate

@@ -142,20 +142,6 @@ def reusable(out_dir: Path, old_esm: Path, new_esm: Path, exclude_type: str) -> 
     )
 
 
-def esms_from_manifest(out_dir: Path) -> tuple[Path | None, Path | None]:
-    """The run's OLD/NEW ESMs, from the manifest's snapshot tokens under
-    `$FO76_DATA_DIR`; None for a side that doesn't resolve."""
-    root = data_dir()
-    inputs = (pl.load_manifest(out_dir) or {}).get("inputs") or {}
-    found: list[Path | None] = []
-    for key in ("old_token", "new_token"):
-        token = inputs.get(key)
-        snapshot = root / token if root and token else None
-        esms = sorted(snapshot.glob("*.esm")) if snapshot and snapshot.is_dir() else []
-        found.append(esms[0] if len(esms) == 1 else None)
-    return found[0], found[1]
-
-
 # --------------------------------------------------------------------------
 # Triage follow-ups
 # --------------------------------------------------------------------------
@@ -163,9 +149,10 @@ def esms_from_manifest(out_dir: Path) -> tuple[Path | None, Path | None]:
 
 def split_deep_slice(out_dir: Path) -> list[Path]:
     """The slice file(s) writers get: `deep-slice.json` itself for up to
-    SPLIT_DEEP_ABOVE bundles, else two contiguous halves (triage emits the
-    bundles dependency-sorted, so a contiguous cut keeps related ones
-    together). Stale part files are removed."""
+    SPLIT_DEEP_ABOVE bundles, else two contiguous halves in bundle-id
+    (anchor FormID) order. Related bundles can land in different halves;
+    the writers resolve those through deferrals. Stale part files are
+    removed."""
     for stale in layout.work_dir(out_dir).glob("deep-slice.part*.json"):
         stale.unlink()
     full = layout.work_deep_slice_json(out_dir)
@@ -194,6 +181,7 @@ def tier_warnings(out_dir: Path) -> list[str]:
     dropped = {
         m["record_type"]
         for bid in triage["drop"]
+        if triage["reasons"].get(bid) != "drop:reorder_only"
         for m in bundles.get(bid, {}).get("members", [])
         if m["role"] != "context"
     }
@@ -229,6 +217,11 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
     ap.add_argument("snapshots", nargs="*", help="[OLD] NEW: tokens under $FO76_DATA_DIR or absolute dirs")
     ap.add_argument("--out-dir", type=Path, default=None)
     ap.add_argument("--force-pipeline", action="store_true", help="Re-run the mechanical stage")
+    ap.add_argument(
+        "--retriage",
+        action="store_true",
+        help="Re-run rule triage on reused output (drops a merged assessment)",
+    )
     ap.add_argument("--official-notes", default=None, metavar="URL_OR_FILE")
     ap.add_argument(
         "--exclude-type",
@@ -274,8 +267,16 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
             notes = {0: "fetched", 3: "client_rendered"}.get(rc, "failed")
 
     eprint("building the new snapshot's cache")
-    build_cache(esm_bin, new_esm)
-    triage_bundles.run_triage(out_dir)
+    try:
+        build_cache(esm_bin, new_esm)
+    except subprocess.CalledProcessError as exc:
+        eprint(f"error: esm cache build failed ({exc.returncode})")
+        return 1, None
+    # Reused output keeps its triage, including a merged assessment, unless
+    # asked; the pipeline having run, or no triage yet, means triaging now.
+    retriaged = not reused or args.retriage or not layout.work_triage_json(out_dir).is_file()
+    if retriaged:
+        triage_bundles.run_triage(out_dir)
     slices = split_deep_slice(out_dir)
 
     return 0, (
@@ -284,6 +285,7 @@ def prepare(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | 
             "old": {"token": mpn.esm_token(old_esm), "esm": str(old_esm)},
             "new": {"token": mpn.esm_token(new_esm), "esm": str(new_esm)},
             "reused": reused,
+            "retriaged": retriaged,
             "official_notes": notes,
             "tiers": triage_summary(out_dir),
             "ambiguous_json": str(layout.work_ambiguous_json(out_dir)),
@@ -328,23 +330,22 @@ def gate(argv: list[str] | None = None, *, client=None) -> tuple[int, dict | Non
     )
     ap.add_argument("out_dir", type=Path)
     ap.add_argument("--summary", action="store_true", help="Also check patch-summary.md coverage")
-    ap.add_argument("--old-esm", default=None, help="Default: from the manifest under $FO76_DATA_DIR")
-    ap.add_argument("--new-esm", default=None, help="Default: from the manifest under $FO76_DATA_DIR")
+    ap.add_argument("--old-esm", required=True, help="The run's OLD ESM (prepare prints it)")
+    ap.add_argument("--new-esm", required=True, help="The run's NEW ESM (prepare prints it)")
     ap.add_argument("--esm-bin", default=None)
     args = ap.parse_args(argv)
 
-    old_esm, new_esm = esms_from_manifest(args.out_dir)
-    old = args.old_esm or (str(old_esm) if old_esm else None)
-    new = args.new_esm or (str(new_esm) if new_esm else None)
-    claims_args = [str(args.out_dir)]
-    if old and new:
-        claims_args += ["--old-esm", old, "--new-esm", new]
+    claims_args = [str(args.out_dir), "--old-esm", args.old_esm, "--new-esm", args.new_esm]
     if args.esm_bin:
         claims_args += ["--esm-bin", args.esm_bin]
-    claims_rc = check_claims.main(claims_args, client=client)
-    coverage_rc = check_coverage.main([str(args.out_dir), *(["--summary"] if args.summary else [])])
-    claims = jsonio.read(layout.work_claims_check_json(args.out_dir))
-    coverage = jsonio.read(layout.work_coverage_json(args.out_dir))
+    try:
+        claims_rc = check_claims.main(claims_args, client=client)
+        coverage_rc = check_coverage.main([str(args.out_dir), *(["--summary"] if args.summary else [])])
+        claims = jsonio.read(layout.work_claims_check_json(args.out_dir))
+        coverage = jsonio.read(layout.work_coverage_json(args.out_dir))
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        eprint(f"error: {exc}")
+        return 1, None
     ok = claims_rc == 0 and coverage_rc == 0
     return (0 if ok else 1), (
         {
@@ -370,11 +371,19 @@ def publish(argv: list[str] | None = None) -> tuple[int, dict | None]:
     )
     ap.add_argument("out_dir", type=Path)
     ap.add_argument("--allow-oversize", action="store_true", help="Accept a hard-truncated chunk")
+    ap.add_argument(
+        "--no-review",
+        action="store_true",
+        help="Publish without work/review.json (no independent reviewer was available)",
+    )
     args = ap.parse_args(argv)
     out_dir = args.out_dir
 
     review = layout.work_review_json(out_dir)
     findings: dict[str, int] = {}
+    if not review.is_file() and not args.no_review:
+        eprint(f"error: no {review.name}; run the cold review, or pass --no-review when none is possible")
+        return 1, None
     if review.is_file():
         try:
             for finding in schemas.load(review, schemas.validate_review)["findings"]:
@@ -393,6 +402,7 @@ def publish(argv: list[str] | None = None) -> tuple[int, dict | None]:
     narrative = (pl.load_manifest(out_dir) or {})["stages"]["narrative"]
     return 0, (
         {
+            "reviewed": review.is_file(),
             "review_findings": findings,
             "chunks": narrative["chunk_count"],
             "usage": narrative.get("usage"),

@@ -5,25 +5,16 @@ layout: every artifact filename any pipeline stage reads or writes under an
 `OUT_DIR`, as a `snake_case` function taking `out_dir: Path -> Path` (or, for
 a bare directory name with no path component, a module-level constant).
 
-Before this module existed, ~20 artifact filenames were pure convention,
-hardcoded independently across every stage that touched them (the mechanical
-scripts in this directory, plus the `/patch-notes` narrative skill's own
-prose in `../skill/SKILL.md`). Two concrete files
-already disagreed as a result (`discord_chunker.py`'s CLI default vs.
-`update_manifest.py`'s hardcoded dirname) with no compiler or test to catch
-it — see `DISCORD_DIRNAME` below.
-
 Covers three groups of artifacts:
 
   - **Mechanical stage** (`make_patch_notes.py` + `run_lints.py`):
-    `diff.json`, `comprehensive.{json,md}`, `bundles.json`, `lints.json`,
+    `diff.json`, `comprehensive.json`, `bundles.json`, `lints.json`,
     `manifest.json`.
   - **Triage** (`triage_bundles.py`), under `work/`: `triage.json`,
-    `deep-slice.json`, `ambiguous.json`, `brief-lines.md`, `rollouts.md`.
-  - **Narrative stage** (the `/patch-notes` skill, an LLM orchestrator —
-    no Python here reads or writes these yet, but the layout is only
-    genuinely complete, and only usable as SKILL.md's future source of
-    truth instead of repeated prose, if it names these too):
+    `deep-slice.json` (and its `deep-slice.partN.json` halves),
+    `ambiguous.json`, `brief-lines.md`, `rollouts.md`.
+  - **Narrative stage** (written by the `/patch-notes` skill's agents, read
+    by the gates, the merge and `publish`):
     `work/assessment.json` (assessor-subagent output), `work/official-
     notes.txt` (optional pasted-in official patch notes), `drafts/deep[.
     partN].md` + `drafts/deep[.partN].report.json` (deep-writer subagent
@@ -189,7 +180,7 @@ def work_cuts_json(out_dir: Path) -> Path:
 
 def work_review_json(out_dir: Path) -> Path:
     """The cold-review subagent's findings against `patch-summary.md`
-    (`{"findings": [{"severity", "summary", "location"}]}`)."""
+    (a `schemas.Review`)."""
     return work_dir(out_dir) / "review.json"
 
 

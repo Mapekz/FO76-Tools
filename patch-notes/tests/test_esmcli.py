@@ -14,10 +14,12 @@ Covers:
 
 Every test above uses only synthetic fixtures/stubs. `RealEsmIntegrationTests`
 at the bottom is the one exception: it drives `EsmGateway` end-to-end against
-the real `esm` binary, gated on `$FO76_ESM_PATH` exactly like `tests/diff.rs`'s
-`RUST_TEST_ESM_A`/`RUST_TEST_ESM_B` gate the Rust side -- it skips silently
-(via `setUpClass` raising `SkipTest`) when unset, so it is a no-op in
-CI/sandboxes without game data.
+the repo's `esm` binary, opted into with `$PN_TEST_ESM` (a real
+`SeventySix.esm`) the way `tests/diff.rs`'s `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B`
+gate the Rust side -- it skips (via `setUpClass` raising `SkipTest`) when
+unset, so the suite stays hermetic by default. A dedicated variable, not
+`$FO76_ESM_PATH`, so a shell that has the latter set never points a
+development build at shared game data by accident.
 """
 
 from __future__ import annotations
@@ -194,15 +196,6 @@ class WireFormatTests(TempDirTestCase):
         self.assertEqual(
             body["op"],
             {"op": "search", "pattern": "*Rifle*", "types": ["WEAP"], "field": "name", "limit": 50},
-        )
-
-    def test_list_type_request_shape(self):
-        client = self._client([{"status": "ok", "data": []}])
-        client.list_type("/data/x.esm", "OMOD", offset=5, limit=10)
-        body = self._bodies()[0]
-        self.assertEqual(
-            body["op"],
-            {"op": "list_type_records", "sig": "OMOD", "offset": 5, "limit": 10},
         )
 
     def test_ok_envelope_returns_data(self):
@@ -398,11 +391,8 @@ class RealEsmIntegrationTests(unittest.TestCase):
     """End-to-end smoke test of `EsmGateway` against the real `esm` binary
     -- no fixtures, no stub.
 
-    Gated on `$FO76_ESM_PATH` (an absolute path to a real `SeventySix.esm`,
-    ), mirroring `tests/diff.rs`'s
-    `RUST_TEST_ESM_A`/`RUST_TEST_ESM_B` silent-skip convention on the Rust
-    side. Skips (not fails) in any environment without real game data --
-    this must be a no-op in CI/sandboxes.
+    Opted into with `$PN_TEST_ESM` (an absolute path to a real
+    `SeventySix.esm`); skips when unset, so it is a no-op in CI/sandboxes.
 
     Deliberately does not exercise `EsmGateway.diff` here: `diff` needs a
     second snapshot. `bulk_get`/`refs`/`record`/`file_info` need only one and
@@ -415,10 +405,10 @@ class RealEsmIntegrationTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        esm_path = os.environ.get("FO76_ESM_PATH")
+        esm_path = os.environ.get("PN_TEST_ESM")
         if not esm_path or not Path(esm_path).is_file():
             raise unittest.SkipTest(
-                "FO76_ESM_PATH not set (or not a file) -- skipping real-ESM integration test"
+                "PN_TEST_ESM not set (or not a file) -- skipping real-ESM integration test"
             )
         cls.esm_path = esm_path
         try:

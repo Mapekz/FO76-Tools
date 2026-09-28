@@ -119,20 +119,66 @@ class TestPrepareGatePublish(TempDirTestCase):
         assert summary is not None
         self.assertTrue(summary["reused"])
 
+    def gate(self, *extra):
+        esms = ["--old-esm", str(self.data / "20260626" / "SeventySix.esm")]
+        esms += ["--new-esm", str(self.data / "20260703" / "SeventySix.esm")]
+        return run_verb(workflow.gate, [str(self.out), *esms, *extra], client=FakeGateway(REFS_GRAPH))
+
     def test_gate_fails_without_drafts_and_publish_records_the_run(self):
         self.prepare()
-        rc, summary = run_verb(workflow.gate, [str(self.out)], client=FakeGateway(REFS_GRAPH))
+        rc, summary = self.gate()
         self.assertEqual(rc, 1)
         assert summary is not None
         self.assertFalse(summary["ok"])
+        self.assertTrue(summary["live_lookups"])
 
         layout.patch_summary_md(self.out).write_text("# FO76 Datamine\n\nOne story.\n", encoding="utf-8")
-        rc, summary = run_verb(workflow.publish, [str(self.out)])
+        rc, summary = run_verb(workflow.publish, [str(self.out), "--no-review"])
         self.assertEqual(rc, 0)
         assert summary is not None
         self.assertEqual(summary["chunks"], 1)
+        self.assertFalse(summary["reviewed"])
         narrative = jsonio.read(layout.manifest_json(self.out))["stages"]["narrative"]
         self.assertIsNotNone(narrative["completed_at"])
+
+    def test_gate_requires_the_run_esms(self):
+        self.prepare()
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            workflow.gate([str(self.out)])
+
+    def test_publish_needs_a_review_unless_told_otherwise(self):
+        self.prepare()
+        layout.patch_summary_md(self.out).write_text("# FO76 Datamine\n", encoding="utf-8")
+        rc, _ = run_verb(workflow.publish, [str(self.out)])
+        self.assertEqual(rc, 1)
+
+    def test_republishing_a_shorter_summary_leaves_no_stale_chunks(self):
+        self.prepare()
+        long_summary = "# FO76 Datamine\n\n" + "\n\n".join(f"## Section {i}\n" + "word " * 250 for i in range(6))
+        layout.patch_summary_md(self.out).write_text(long_summary, encoding="utf-8")
+        rc, summary = run_verb(workflow.publish, [str(self.out), "--no-review"])
+        assert summary is not None
+        self.assertGreater(summary["chunks"], 1)
+        layout.patch_summary_md(self.out).write_text("# FO76 Datamine\n\nShort.\n", encoding="utf-8")
+        rc, summary = run_verb(workflow.publish, [str(self.out), "--no-review"])
+        assert summary is not None
+        self.assertEqual(summary["chunks"], 1)
+        self.assertEqual(sorted(p.name for p in layout.discord_dir(self.out).iterdir()), ["chunk_001.md"])
+
+    def test_reusing_output_keeps_a_merged_assessment(self):
+        _, summary = self.prepare()
+        assert summary is not None
+        triage = jsonio.read(layout.work_triage_json(self.out))
+        triage["reasons"]["marker"] = "kept"
+        jsonio.write(layout.work_triage_json(self.out), triage)
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["reused"])
+        self.assertFalse(summary["retriaged"])
+        self.assertEqual(jsonio.read(layout.work_triage_json(self.out))["reasons"]["marker"], "kept")
+        _, summary = self.prepare("--retriage")
+        assert summary is not None
+        self.assertTrue(summary["retriaged"])
 
     def test_publish_rejects_a_malformed_review(self):
         self.prepare()

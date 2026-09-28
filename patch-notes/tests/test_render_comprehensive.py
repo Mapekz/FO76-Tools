@@ -245,21 +245,13 @@ class TestFullyCoveredRecordKept(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 
-class TestMetaEsmPaths(unittest.TestCase):
-    def test_paths_resolved_absolute(self):
+class TestMetaCarriesNoPaths(unittest.TestCase):
+    def test_esm_paths_stay_out_of_the_artifact(self):
         comp = rc.build_comprehensive(
             {"added": [], "removed": [], "changed": [], "ref_names": {}},
             old_esm="/fake/old/Game.esm", new_esm="/fake/new/Game.esm", generated_at="X",
         )
-        self.assertEqual(comp["meta"]["old_esm"], str(Path("/fake/old/Game.esm").resolve()))
-        self.assertEqual(comp["meta"]["new_esm"], str(Path("/fake/new/Game.esm").resolve()))
-
-    def test_blank_when_not_given(self):
-        comp = rc.build_comprehensive(
-            {"added": [], "removed": [], "changed": [], "ref_names": {}}, generated_at="X"
-        )
-        self.assertEqual(comp["meta"]["old_esm"], "")
-        self.assertEqual(comp["meta"]["new_esm"], "")
+        self.assertNotIn("/fake/", json.dumps(comp))
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +409,7 @@ class TestJsonSchemaKeys(unittest.TestCase):
         self.assertEqual(
             set(self.comp["meta"].keys()),
             {
-                "old_esm", "new_esm", "old_label", "new_label", "patch_date", "generated_at",
+                "old_label", "new_label", "patch_date", "generated_at",
                 "excluded_types", "counts_excluded", "suppressed_counts", "counts",
             },
         )

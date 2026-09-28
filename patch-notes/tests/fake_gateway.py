@@ -37,7 +37,7 @@ class FakeGateway:
     """In-memory stand-in for `EsmGateway`, backed by a JSON fixture.
 
     Exposes the same public surface (`op`, `refs`, `record`, `record_by_edid`,
-    `bulk_get`, `list_type`, `search`, `file_info`, `exists`, `close`,
+    `bulk_get`, `search`, `file_info`, `exists`, `close`,
     context-manager) so tests can swap it in for `EsmGateway` without
     branching. No `diff()` -- nothing in `pn/` calls `.diff()` on an
     injected client (it's a `@staticmethod` invoked directly, see
@@ -88,12 +88,6 @@ class FakeGateway:
     row's own `field_paths` entry straight through -- there's no real record
     body to decode a path from in a fixture, so it's fixture-authored data,
     not a computed one, unlike the real `Database.formid_reference_paths`.
-
-    `list_type()`/the `list_type_records` op are derived purely from
-    `self.records` (grouped by `record_type`, sorted by ascending numeric
-    FormID) -- there is no separate "list index" in the fixture schema, the
-    same way the real `Database::list_type_records` is just a filtered scan
-    over the same underlying record set `Database::referenced_by` walks.
     """
 
     def __init__(self, fixture: Union[dict, str, Path]):
@@ -122,10 +116,6 @@ class FakeGateway:
             return self._record(op["sel"])
         if kind == "record_bulk":
             return self._bulk_record_entries(op.get("sels") or [])
-        if kind == "list_type_records":
-            return self._list_type_records(
-                op["sig"], offset=op.get("offset", 0), limit=op.get("limit", 0)
-            )
         if kind == "file_info":
             return self.file_info(esm)
         if kind == "search":
@@ -147,12 +137,6 @@ class FakeGateway:
         dispatch does (see `bulk_record_entry` in src/ops/records.rs)."""
         wire_sels = [_sel_for_input(s) for s in sels]
         return self.op(esm, {"op": "record_bulk", "sels": wire_sels, "depth": resolve})
-
-    def list_type(self, esm: str, sig: str, *, offset: int = 0, limit: int = 0) -> list[dict]:
-        """Fixture-backed counterpart to `EsmGateway.list_type`: every
-        `self.records` entry whose `record_type` matches `sig`
-        (case-insensitive), sorted by ascending numeric FormID."""
-        return self.op(esm, {"op": "list_type_records", "sig": sig, "offset": offset, "limit": limit})
 
     def refs(
         self,
@@ -258,28 +242,6 @@ class FakeGateway:
                 }
             )
         return entries
-
-    def _list_type_records(self, sig: str, *, offset: int, limit: int) -> list[dict]:
-        sig_upper = sig.upper()
-        # Explicit dict[str, Any]: a bare `dict` literal gives every key the
-        # SAME inferred value type (the union of every value in this one
-        # literal, e.g. "form_id"'s str gets muddied with "offset"'s int and
-        # meta.get(...)'s `Unknown | None`) -- annotating widens each value
-        # to Any so `r["form_id"]` below is still known-str at the call site.
-        rows: list[dict[str, Any]] = [
-            {
-                "form_id": fid,
-                "record_type": meta.get("record_type"),
-                "editor_id": meta.get("editor_id"),
-                "name": meta.get("name"),
-                "offset": 0,
-            }
-            for fid, meta in self.records.items()
-            if (meta.get("record_type") or "").upper() == sig_upper
-        ]
-        rows.sort(key=lambda r: formids.to_int(r["form_id"]))
-        sliced = rows[offset:]
-        return sliced[:limit] if limit > 0 else sliced
 
     def _referenced_by(
         self,

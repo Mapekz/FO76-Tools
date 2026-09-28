@@ -10,7 +10,7 @@ bundles/lints stages run against `esmcli.FakeGateway` backed by
 ESM is touched.
 
 (`esmcli`'s own tests cover the stricter JSON-parsing contract this fake
-binary complies with -- see `test_esm_gateway.py`'s
+binary complies with -- see `test_esmcli.py`'s
 `test_trailing_garbage_after_json_is_rejected`.)
 """
 
@@ -72,7 +72,7 @@ class TestEsmTokenAndOutDir(unittest.TestCase):
 
     def test_dated_parent_dir_fallback(self):
         # Real snapshot layout: the parent dir carries the date, not the file
-        # itself (see CLAUDE.local.md's $FO76_DATA_DIR/<snapshot>/SeventySix.esm).
+        # itself ($FO76_DATA_DIR/<snapshot>/SeventySix.esm).
         p = Path("/data/20260626/SeventySix.esm")
         self.assertEqual(mpn.esm_token(p), "20260626")
 
@@ -106,6 +106,10 @@ class TestSourceArgs(unittest.TestCase):
 
     def test_no_flags_leave_discovery_to_esm(self):
         self.assertEqual(mpn.source_args(self._args()), [])
+
+    def test_startup_ba2_wins_over_curves_dir(self):
+        args = self._args("--startup-ba2", "/startup.ba2", "--curves-dir", "/misc")
+        self.assertEqual(mpn.source_args(args), ["--startup-ba2", "/startup.ba2"])
 
     def test_flags_pass_through_as_absolute_paths(self):
         args = self._args("--strings-dir-a", "old/strings", "--strings-dir-b", "/new/strings",

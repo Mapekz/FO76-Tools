@@ -136,6 +136,15 @@ MINI_CONFIG = {
 # --------------------------------------------------------------------------
 
 
+class TestNestedReorderIsNotNumeric(unittest.TestCase):
+    def test_a_suppressed_nested_numeric_change_does_not_count(self):
+        nested = {"path": "Scale", "kind": "scalar", "from": 1.0, "to": 2.0, "suppressed": "reorder"}
+        array = {"added": [], "removed": [], "changed": [{"changes": [nested]}]}
+        self.assertFalse(tb._array_entry_is_numeric(array))
+        nested["suppressed"] = None
+        self.assertTrue(tb._array_entry_is_numeric(array))
+
+
 class TestNumericValue(unittest.TestCase):
     def test_int_and_float_are_numeric(self):
         self.assertEqual(tb._numeric_value(5), 5.0)
@@ -1253,7 +1262,7 @@ class TestTruncatedDigestVeto(unittest.TestCase):
         tb.merge_assessment(tiers, {"tiers": {"B0001": {"tier": "drop", "reason": "churn"}}}, truncated_ids=set())
         self.assertEqual(tiers["B0001"]["tier"], "drop")
 
-    def test_run_merge_assessment_reads_truncation_from_ambiguous_json(self):
+    def test_run_merge_assessment_keeps_the_truncation_guard_on_a_second_merge(self):
         bundles_data, comprehensive_data = _sample_pipeline_output()
         with TempOutDir(bundles_data, comprehensive_data) as out_dir:
             config = json.loads(json.dumps(MINI_CONFIG))
@@ -1264,14 +1273,14 @@ class TestTruncatedDigestVeto(unittest.TestCase):
             first = tb.run_triage(out_dir, tiers_path)
             self.assertEqual(first["triage"]["ambiguous"], ["B0004"])
             self.assertTrue(first["ambiguous"]["bundles"][0].get("truncated"))
-            self.assertEqual(tb.load_truncated_ids(out_dir), {"B0004"})
 
             assessment_path = out_dir / "work" / "assessment.json"
             assessment_path.write_text(json.dumps({"tiers": {"B0004": {"tier": "drop", "reason": "looks like churn"}}}))
-            second = tb.run_merge_assessment(out_dir, assessment_path, tiers_path)
-            self.assertEqual(second["triage"]["drop"], ["B0003"])
-            self.assertIn("B0004", second["triage"]["brief"])
-            self.assertIn("promoted from drop", second["triage"]["reasons"]["B0004"])
+            for _ in range(2):
+                merged = tb.run_merge_assessment(out_dir, assessment_path, tiers_path)
+                self.assertEqual(merged["triage"]["drop"], ["B0003"])
+                self.assertIn("B0004", merged["triage"]["brief"])
+                self.assertIn("promoted from drop", merged["triage"]["reasons"]["B0004"])
 
 
 class TestRunMergeAssessment(unittest.TestCase):

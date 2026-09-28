@@ -278,6 +278,15 @@ class TestLvliBlockedEntry(TestRunLintsBase):
         self.assertEqual(lints[0]["data"]["reason"], "quantity_zero")
         self.assertEqual(lints[0]["data"]["item"], "0x00AA0002")
 
+    def test_a_reordered_list_is_not_a_new_blocked_entry(self):
+        blocked = {"Leveled List Entry": {"Reference": "0x00AA0002", "Minimum Level": 5, "Quantity": 0}}
+        rec = self._changed_lvli_record("0x0100000A", [blocked], [blocked])
+        for ce in rec["changes"]:
+            ce["suppressed"] = "reorder"
+            ce["array"] = {"strategy": "unkeyed", "added": [{"raw": blocked}], "removed": [], "changed": []}
+        ctx = self.ctx_for(make_comp([rec]))
+        self.assertEqual(rl.RULES["lvli_blocked_entry"](ctx), [])
+
     def test_changed_lvli_existing_entry_newly_blocked(self):
         from_list = [{"Leveled List Entry": {"Reference": "0x00AA0003", "Minimum Level": 1, "Quantity": 2}}]
         to_list = [{"Leveled List Entry": {"Reference": "0x00AA0003", "Minimum Level": 1, "Quantity": 0}}]

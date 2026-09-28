@@ -465,7 +465,11 @@ def _array_entry_is_numeric(array_diff):
             continue
         changes = row.get("changes")
         if isinstance(changes, list):
-            if any(is_numeric_change_entry(nested) for nested in changes if isinstance(nested, dict)):
+            if any(
+                is_numeric_change_entry(nested)
+                for nested in changes
+                if isinstance(nested, dict) and not nested.get("suppressed")
+            ):
                 return True
         elif isinstance(changes, dict):
             # Defensive: some array diffs (e.g. inlined curve-table point
@@ -1119,22 +1123,20 @@ def merge_assessment(tiers_by_id, assessment, truncated_ids=None):
     return resolved
 
 
-def load_truncated_ids(out_dir) -> set[str]:
-    """Bundle ids whose digest in `work/ambiguous.json` carries
-    `"truncated": true` (written by the previous `run_triage`); empty when
-    the file is missing or unreadable."""
-    path = layout.work_ambiguous_json(out_dir)
-    if not path.is_file():
-        return set()
-    try:
-        payload = jsonio.read(path)
-    except (OSError, json.JSONDecodeError):
-        return set()
-    return {
-        b.get("id")
-        for b in (payload.get("bundles") or [])
-        if isinstance(b, dict) and b.get("truncated") and b.get("id")
-    }
+def truncated_ids(bundles, records, tiers_by_id, config) -> set[str]:
+    """Ids of the rule-ambiguous bundles whose assessor digest hits the size
+    cap. Recomputed from the rule tiers rather than read back from
+    `work/ambiguous.json`, which a merge rewrites with only the bundles still
+    ambiguous, so merging twice keeps the truncated-drop guard."""
+    settings = config.get("settings") or {}
+    ambiguous = [b for b in bundles if tiers_by_id[b["id"]]["tier"] == "ambiguous"]
+    payload = build_ambiguous_payload(
+        ambiguous,
+        records,
+        settings.get("ambiguous_digest_max_chars", DEFAULT_AMBIGUOUS_DIGEST_MAX_CHARS),
+        settings.get("ambiguous_change_truncate_chars", DEFAULT_AMBIGUOUS_CHANGE_TRUNCATE_CHARS),
+    )
+    return {d["id"] for d in payload["bundles"] if d.get("truncated")}
 
 
 def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH):
@@ -1151,7 +1153,8 @@ def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH
     lints_by_id = lints_index(lints)
 
     tiers_by_id, rollout_shapes = compute_bundle_tiers(bundles, records, config)
-    resolved = merge_assessment(tiers_by_id, assessment, load_truncated_ids(out_dir))
+    truncated = truncated_ids(bundles, records, tiers_by_id, config)
+    resolved = merge_assessment(tiers_by_id, assessment, truncated)
 
     result = assemble_outputs(
         bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config,

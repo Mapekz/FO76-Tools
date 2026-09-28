@@ -13,7 +13,8 @@ live there.
 
 An `_array_diff` with `reorder_only: true` holds the same elements on both sides in a new order,
 compared order-insensitively at every depth; a CTDA condition list never qualifies, because its
-order is semantic. The pipeline suppresses these (`suppressed: "reorder"`) and triage drops a
+order is semantic, and neither do a region's `Points`, navmesh `Vertices` or an INNR ruleset's
+`Names`. The pipeline suppresses these (`suppressed: "reorder"`) and triage drops a
 bundle that only reorders. Seen on VMAD `scripts[]`/`script_fragments`/alias slots, RACE
 `Attacks[]`/`Bone Scale Data[]`, LCTN `Master Worldspace Cells`/`Master Reference`, NPC_
 `Attacks[]` and PERK `Effects`. An array without the flag differs for real, though a mirrored

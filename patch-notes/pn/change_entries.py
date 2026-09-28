@@ -14,9 +14,9 @@ and FormID reference harvesting (`collect_refs_out`), plus the constants scoped
 to them (`TYPE_DESC`, `EXCLUDED_TYPES`, `CUT_MARKERS`, `SUPPRESSED_REASONS`,
 `DEFAULT_COMMON_THRESHOLD`).
 
-It reaches into `patchnotes_lib` (`import patchnotes_lib as pl`) only for the
-formatting helpers shared across the pipeline (`pl.format_scalar`,
-`pl.annotate_ref`, `pl.is_curve`, `pl.is_formid_str`, `pl.fmt_num`);
+It reaches into `patchnotes_lib` (as `pl`) only for the formatting helpers
+shared across the pipeline (`pl.format_scalar`, `pl.annotate_ref`,
+`pl.is_curve`, `pl.fmt_num`);
 `patchnotes_lib.py` never imports this module.
 
 Input is the `esm diff --json` output (`DiffResult` in `src/diff/`): each

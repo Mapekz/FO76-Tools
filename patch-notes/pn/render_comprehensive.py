@@ -84,7 +84,7 @@ def _label_for_esm(esm_path):
     Default display label for an ESM path: its own filename, unless the
     filename's stem carries no digits at all — this pipeline's snapshot
     layout dates the *parent directory*, not the file itself (e.g.
-    `$FO76_DATA_DIR/20260703/SeventySix.esm`, see CLAUDE.local.md), so the
+    `$FO76_DATA_DIR/20260703/SeventySix.esm`), so the
     sibling directory name is the far more useful/distinguishing label in
     that case (plain "SeventySix.esm" would be identical for both sides).
     """
@@ -294,8 +294,6 @@ def build_comprehensive(
     common_changes = change_entries.compute_common_changes(records, threshold=common_threshold)
 
     meta = {
-        "old_esm": str(Path(old_esm).resolve()) if old_esm else "",
-        "new_esm": str(Path(new_esm).resolve()) if new_esm else "",
         "old_label": old_label or "",
         "new_label": new_label or "",
         "patch_date": patch_date or "",

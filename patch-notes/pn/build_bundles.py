@@ -7,7 +7,7 @@ see `build_comprehensive()` there for the authoritative record shape) and
 clusters the flat per-FormID diff records into narrative "bundles": groups of
 related records (e.g. a weapon + its mod slots + the leveled list that drops
 it + the keyword that marks it "unique") that a human patch-notes writer (or
-an LLM writer subagent, see `slice_bundles.py`) should describe together
+an LLM deep writer, which reads records with `pn extract`) should describe together
 rather than as N disconnected bullet points.
 
 Pipeline position: render_comprehensive.py -> **build_bundles.py** ->
@@ -32,7 +32,7 @@ Algorithm (see module docstring sections below for each step):
 library entry point; `main()` is a thin CLI wrapper. `client` is anything
 implementing `esmcli.EsmGateway`'s `refs()`/`record()` surface —
 normally an `esmcli.EsmGateway`,
-or `tests/fake_gateway.FakeGateway` for `--offline` / tests.
+or `tests/fake_gateway.FakeGateway` in tests.
 
 Python 3, stdlib only.
 """
