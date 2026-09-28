@@ -40,9 +40,10 @@ Both Rust crates share root `deny.toml`, enforced by the dependency CI job.
 For dependency changes, run `cargo deny --config ../deny.toml --all-features check`
 from the affected crate. This differs from the TES5Edit schema audit.
 
-Keep each crate's `Cargo.toml` `rust-version`, `clippy.toml` `msrv`, and
-`rust-toolchain.toml` aligned. The declared Rust version intentionally tracks the
-toolchain so MSRV-aware dependency resolution does not hold upgrades back.
+The repo-root `rust-toolchain.toml` pins the toolchain and `rustfmt.toml` sets formatting for
+every crate; clippy takes its MSRV from each `Cargo.toml` `rust-version`. Keep `rust-version`
+aligned with the pinned toolchain: it intentionally tracks the toolchain so MSRV-aware dependency
+resolution does not hold upgrades back.
 
 ## Repository conventions
 

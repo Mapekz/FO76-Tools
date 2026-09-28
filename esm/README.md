@@ -19,9 +19,9 @@ The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the 
 
 ## Requirements
 
-- Toolchain pinned to **Rust 1.97.1** via `rust-toolchain.toml` (rustup installs it automatically).
+- Toolchain pinned by the repo-root `rust-toolchain.toml` (rustup installs it automatically).
 - Edition **2024**.
-- `rust-version` in `Cargo.toml` tracks the pinned toolchain (**1.97**) rather than the true language
+- `rust-version` in `Cargo.toml` tracks the pinned toolchain rather than the true language
   floor. Edition 2024 selects Cargo's MSRV-aware dependency resolver, which treats `rust-version` as
   a ceiling on dependency selection — a lower value would silently hold dependencies back at older
   releases. This crate has no external consumers, so there is nothing to gain from a low MSRV. The

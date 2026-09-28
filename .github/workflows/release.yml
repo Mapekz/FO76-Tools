@@ -19,11 +19,10 @@ on:
       - 'esm/skills/**'
       - 'esm/Cargo.toml'
       - 'esm/Cargo.lock'
-      - 'esm/rust-toolchain.toml'
       - 'ba2/src/**'
       - 'ba2/Cargo.toml'
       - 'ba2/Cargo.lock'
-      - 'ba2/rust-toolchain.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -116,11 +115,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # rust-src-dir: esm makes the action read esm/rust-toolchain.toml and
-      # install 1.97.1 directly.  Without it the action installs `stable` and
-      # runs `rustup override set stable` at the repo root; builds would still
-      # work via rustup's proximity rule, but `rustc --version` would then
-      # report stable and BUILD_INFO.txt would lie.
+      # The action reads the repo-root rust-toolchain.toml and installs the
+      # pinned toolchain, which both crates build with.
       #
       # rustflags: "" is load-bearing — the action's default injects
       # `-D warnings` into RUSTFLAGS, which would fail a release build on any
@@ -132,15 +128,9 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ''
-          rust-src-dir: esm
           cache-workspaces: |
             esm
             ba2
-
-      # Only esm/rust-toolchain.toml is read above; if ba2 ever drifts, the two
-      # halves of a single release would be built by different compilers.
-      - name: assert pinned toolchains agree
-        run: diff <(grep '^channel' esm/rust-toolchain.toml) <(grep '^channel' ba2/rust-toolchain.toml)
 
       # -p esm keeps the bindings/napi workspace member out of the build.
       - name: build esm

@@ -10,9 +10,9 @@ on:
 jobs:
   # ── Rust: fmt / clippy / test ──────────────────────────────────────────────
   #
-  # Matrix covers both independent Rust crates.  Each crate has its own
-  # rust-toolchain.toml (both currently pin 1.97.1); setup-rust-toolchain reads
-  # that file automatically so CI always matches the pinned local toolchain.
+  # Matrix covers both independent Rust crates.  setup-rust-toolchain reads the
+  # repo-root rust-toolchain.toml, so CI always matches the pinned local
+  # toolchain.
   rust:
     name: ${{ matrix.crate }} (fmt / clippy / test)
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Reads rust-toolchain.toml from $working-directory automatically.
+      # Reads the repo-root rust-toolchain.toml.
       # rustflags: "" prevents the action from injecting its own -D warnings
       # (we pass that flag explicitly per-step so it shows up in the log).
       - uses: actions-rust-lang/setup-rust-toolchain@v1

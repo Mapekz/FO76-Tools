@@ -53,5 +53,5 @@ decompress) instead of depending on this crate — see
 
 ## Toolchain
 
-Read `rust-toolchain.toml` for the pin; keep Cargo's `rust-version` and clippy's
-`msrv` aligned as described in the root dependency policy.
+The repo-root `rust-toolchain.toml` pins the toolchain; keep Cargo's `rust-version` aligned
+with it as described in the root dependency policy.

@@ -12,7 +12,7 @@ A Rust CLI and library for reading, extracting, and creating Bethesda **BA2 / BT
 
 ## Requirements
 
-- Toolchain pinned to **Rust 1.97.1** via `rust-toolchain.toml` (rustup installs it automatically).
+- Toolchain pinned by the repo-root `rust-toolchain.toml` (rustup installs it automatically).
 - Edition **2024**.
 
 ## Build
