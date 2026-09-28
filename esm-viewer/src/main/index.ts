@@ -11,7 +11,7 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   })
 
@@ -25,6 +25,12 @@ function createWindow(): void {
       // invalid URL — ignore
     }
     return { action: 'deny' }
+  })
+
+  // The app is one page: a clicked link or a file dropped on the window must
+  // never replace it.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow.webContents.getURL()) event.preventDefault()
   })
 
   const VITE_DEV_SERVER_URL = process.env['ELECTRON_RENDERER_URL']

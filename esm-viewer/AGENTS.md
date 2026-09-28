@@ -22,7 +22,7 @@ bun run lint                # oxlint (see .oxlintrc.json)
 bun run lint:fix            # oxlint --fix
 bun run format              # oxfmt, writes in place (see .oxfmtrc.json)
 bun run format:check        # oxfmt --check
-bun run typecheck          # tsc --noEmit against both tsconfig.json and tsconfig.node.json
+bun run typecheck          # tsc --noEmit against tsconfig.web.json and tsconfig.node.json
 bun run test                # bun test (unit tests for renderer/src/lib/*)
 just                        # = just check = lint:ci -> format:check -> typecheck -> test
 just dev / just build       # thin wrappers over the bun scripts above
@@ -64,14 +64,15 @@ npm) — verify with `ls -la node_modules/@fo76/esm-napi/` and check the entries
 ## Type-checking
 
 Nothing in the electron-vite/esbuild build pipeline checks types — it strips them. `bun run
-typecheck` is the actual gate, run separately (and via `just check`). There are two tsconfigs
-because main/preload and renderer target different environments:
+typecheck` is the actual gate, run separately (and via `just check`). Main/preload and renderer
+target different environments, so each file belongs to one project; `tsconfig.json` only
+references them, for editors:
 
-- `tsconfig.json` — renderer (DOM + ES2023 lib, `composite: true`). ES2023 (not ES2022) is
-  deliberate — it's what makes `Array.prototype.toSorted()`/`toReversed()` etc. available;
-  Electron's bundled V8 already supports them at runtime.
-- `tsconfig.node.json` — main + preload (Node-oriented; extends `tsconfig.json`, overrides
-  `lib`/`jsx`; also picks up `src/shared/**/*` since main/preload import shared types).
+- `tsconfig.web.json` — renderer (DOM + ES2023 lib). ES2023 (not ES2022) is deliberate — it's
+  what makes `Array.prototype.toSorted()`/`toReversed()` etc. available; Electron's bundled V8
+  already supports them at runtime.
+- `tsconfig.node.json` — main + preload (ES2022 lib, no DOM).
+- Both include `src/shared/` and `src/test-support/`, and extend `tsconfig.base.json`.
 
 Read `package.json` for the TypeScript version; the native TS7 compiler still uses `tsc`.
 
@@ -87,7 +88,7 @@ plugins; `style` stays off since `oxfmt` owns formatting. Type-aware linting
 (`oxlint-tsgolint`) is intentionally not wired up — it's a separate devDependency
 regardless of the `typescript` version installed, since TS 7.0 ships no programmatic
 compiler API for it to call. `oxlint --type-check` is also intentionally not used as a
-`tsc` replacement — this app's two tsconfigs (divergent `lib`/`jsx`) are the shape oxlint's
+`tsc` replacement — this app's two projects (divergent `lib`/`jsx`) are the shape oxlint's
 single-program discovery is least tested against.
 
 `.oxfmtrc.json` sets `semi: false` / `singleQuote: true` to match the pre-existing house
@@ -101,8 +102,8 @@ app's docs/config files were never brought under formatter control.
 
 | Path | Purpose |
 |---|---|
-| `src/main/` | Electron main process: window creation (`index.ts`), the typed `EsmHost` (`addon.ts`), open-database ids (`db-registry.ts`), every IPC handler over injected dependencies (`handlers.ts`, wired to Electron by `ipc.ts`), trust-boundary checks (`ipc-validators.ts`) |
-| `src/preload/` | Context-isolated preload bridge exposed to the renderer |
+| `src/main/` | Electron main process: window creation and navigation lockdown (`index.ts`), the typed `EsmHost` (`addon.ts`), open-database ids (`db-registry.ts`), every IPC handler over injected dependencies (`handlers.ts`, wired to Electron by `ipc.ts`), trust-boundary checks (`ipc-validators.ts`) |
+| `src/preload/` | Preload bridge exposed to the renderer. The renderer is sandboxed (`sandbox: true`, context isolation, no Node integration), so the preload can require only `electron` — everything else is bundled into it |
 | `src/renderer/` | React UI (record tree, detail panel, referenced-by panel, open-files panel, nav history) and the Zustand store, which owns navigation (`navigate`, `goBack`, `goForward`); `RecordRef` is the shared clickable record row |
 | `src/shared/api-types.ts` | The renderer ↔ main contract: re-exports the generated types (`Op`, `OpOutput`, DTOs) and defines `CH`, `Fo76Api` (`run(id, op)` typed by `OpOutput`), `DbHandle`, and `sel()` |
 | `src/shared/generated/` | Generated TypeScript mirrors (`ts-rs` + two hand-written generators) — follow the root validation map; never hand-edit |

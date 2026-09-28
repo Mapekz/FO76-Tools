@@ -1,18 +1,4 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "lib": ["ES2023", "DOM"],
-    "moduleResolution": "bundler",
-    "strict": true,
-    "jsx": "react-jsx",
-    "composite": true,
-    "declaration": true,
-    "declarationMap": true,
-    "paths": {
-      "@renderer/*": ["./src/renderer/src/*"]
-    },
-    "skipLibCheck": true
-  },
-  "include": ["src/**/*", "electron.vite.config.*"]
+  "files": [],
+  "references": [{ "path": "./tsconfig.web.json" }, { "path": "./tsconfig.node.json" }]
 }

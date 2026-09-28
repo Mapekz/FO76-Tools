@@ -1,8 +1,13 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022"],
-    "jsx": "preserve"
+    "lib": ["ES2022"]
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*", "electron.vite.config.*"]
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/shared/**/*",
+    "src/test-support/**/*",
+    "electron.vite.config.*"
+  ]
 }
