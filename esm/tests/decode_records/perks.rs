@@ -144,24 +144,11 @@ fn perk_raging_armor_epf2_decodes_to_int() {
 }
 
 /// Synthetic PERK with an `Ability` effect immediately followed by an `Entry
-/// Point` effect — regression test for the PERK-shaped case of the
-/// cross-effect trailer-stealing bug fixed generically by the
-/// `DecodeContext::with_scope`/`take_first_in_scope` scoping in
-/// `MemberDef::RArray` (`src/decode.rs`). That fix's own regression test only
-/// covered ALCH's (much simpler) `Effects[]` shape
-/// (`alch_two_effects_do_not_cross_contaminate_optional_trailers`); this
-/// locks the same fix for PERK's considerably more involved per-effect
-/// layout — a nested `Perk Conditions` rarray of its own, plus a `Function
-/// Data` union whose chosen variant is itself sig-bearing (`EPFD`).
-///
-/// Effect 0 (`Ability`, `PRKE` Effect Type=1) carries only its mandatory
-/// `PRKE`/`DATA`/`PRKF` — no `PRKC` (Perk Conditions) or `EPFT`/`EPFD`
-/// (Function Type/Data) of its own. Effect 1 (`Entry Point`, `PRKE` Effect
-/// Type=2) carries its own `PRKC`+`CTDA` (one Perk Condition) and
-/// `EPFT`("Float")/`EPFB`/`EPFD` (a Function Data float). Before the generic
-/// RArray-scoping fix, Effect 0's unscoped `PRKC`/`EPFT` lookups would steal
-/// Effect 1's — Effect 0 would wrongly gain a `Perk Conditions` array and a
-/// `Float` value, and Effect 1 would decode with neither.
+/// Point` effect: each effect's optional members bind to that effect, across
+/// PERK's per-effect layout — a nested `Perk Conditions` rarray of its own,
+/// plus a `Function Data` union whose chosen variant is itself sig-bearing
+/// (`EPFD`). The ALCH shape is
+/// `alch_two_effects_do_not_cross_contaminate_optional_trailers`.
 #[test]
 fn perk_ability_then_entry_point_effects_do_not_cross_contaminate_optional_trailers() {
     let result = decode_fixture(

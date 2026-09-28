@@ -1,599 +1,146 @@
-use super::node::{Fields, Node, insert_unique};
-use crate::reader::OwnedSubrecord;
-use crate::schema::{ArrayCount, CountPath, FieldDef, LStringTable, MemberDef, UnionDecider};
-use std::collections::{HashMap, VecDeque};
+//! Payload decoding: the bytes of one subrecord (or a slice of them) into
+//! nodes. Which subrecord a member reads is `bind.rs`'s business.
 
+use crate::reader::OwnedSubrecord;
+use crate::schema::{ArrayCount, CountPath, FieldDef, MemberDef, UnionDecider};
+
+use super::DecodeContext;
 use super::model_info::decode_model_info;
+use super::node::{Fields, Node, insert_unique};
 use super::rules::{PostDecodeTarget, apply_post_decode_rules};
 use super::scalars::{
     choose_union_variant, count_path_value, field_int_value, field_value_key, int_size,
     member_from_size_ok, member_version_ok, read_le_uint, scalar_bytes, scalar_float,
     scalar_formid, scalar_int, scalar_rgba, scalar_string, scalar_vec3, sibling_target_sig,
 };
-use super::scope::*;
-use super::vmad::{
-    decode_vmad_info, decode_vmad_pack, decode_vmad_perk, decode_vmad_qust, decode_vmad_scen,
-    vmad_node,
-};
-use super::{DecodeContext, lstring_table_to_kind};
 
+/// Decode `member` from `data`, a payload slice already in hand: a union
+/// variant or an array element inside a subrecord.
 pub(crate) fn decode_member(
     ctx: &DecodeContext<'_>,
     member: &MemberDef,
     out: &mut Fields,
-    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
-    payload: Option<&[u8]>,
+    data: &[u8],
 ) {
     if !member_version_ok(ctx.form_version, member) {
         return;
     }
-
     match member {
-        MemberDef::Struct {
-            sig, name, fields, ..
-        } => decode_struct_member(ctx, sig, name, fields, out, by_sig, payload),
+        MemberDef::Struct { name, fields, .. } => {
+            decode_struct_fields(ctx, name, fields, data, out);
+        }
         MemberDef::Integer {
-            sig,
             name,
             width,
             signed,
             format,
-            stop_before,
             ..
         } => {
-            if let Some(data) = payload {
-                if let Some(v) = scalar_int(data, *width, *signed, format.as_ref()) {
-                    out.insert(name.clone(), v);
-                }
-            } else if let Some(sig) = sig {
-                // If stop_before is set and a boundary sig precedes this
-                // integer in document order, defer — leave the subrecord in
-                // the pool for the correctly-positioned schema member.
-                if !stop_before.is_empty() && stop_before_check(by_sig, sig, stop_before) {
-                    // deferred
-                } else if let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-                    && let Some(v) = scalar_int(&sr.data, *width, *signed, format.as_ref())
-                {
-                    out.insert(name.clone(), v);
-                }
-            }
-        }
-        MemberDef::Float { sig, name, .. } => {
-            if let Some(data) = payload {
-                if let Some(v) = scalar_float(data) {
-                    out.insert(name.clone(), v);
-                }
-            } else if let Some(sig) = sig
-                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-                && let Some(v) = scalar_float(&sr.data)
-            {
+            if let Some(v) = scalar_int(data, *width, *signed, format.as_ref()) {
                 out.insert(name.clone(), v);
             }
         }
-        MemberDef::String {
-            sig, name, sized, ..
-        } => {
-            if let Some(sig) = sig
-                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-            {
-                out.insert(name.clone(), scalar_string(&sr.data, sized));
+        MemberDef::Float { name, .. } => {
+            if let Some(v) = scalar_float(data) {
+                out.insert(name.clone(), v);
             }
-        }
-        MemberDef::LString { sig, name, table } => {
-            decode_lstring_member(ctx, sig, name, table, out, by_sig)
         }
         MemberDef::FormId {
-            sig,
-            name,
-            valid_refs,
-            ..
+            name, valid_refs, ..
         } => {
-            if let Some(data) = payload {
-                if let Some(v) = scalar_formid(valid_refs, data) {
-                    out.insert(name.clone(), v);
-                }
-            } else if let Some(sig) = sig
-                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-                && let Some(v) = scalar_formid(valid_refs, &sr.data)
-            {
+            if let Some(v) = scalar_formid(valid_refs, data) {
                 out.insert(name.clone(), v);
             }
         }
-        MemberDef::Bytes { sig, name, len, .. } => {
-            if let Some(data) = payload {
-                let n = len.unwrap_or(data.len());
-                out.insert(name.clone(), scalar_bytes(&data[..data.len().min(n)]));
-            } else if let Some(sig) = sig
-                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-            {
-                let n = len.unwrap_or(sr.data.len());
-                out.insert(name.clone(), scalar_bytes(&sr.data[..sr.data.len().min(n)]));
-            }
+        MemberDef::Bytes { name, len, .. } => {
+            let n = len.unwrap_or(data.len());
+            out.insert(name.clone(), scalar_bytes(&data[..data.len().min(n)]));
         }
-        MemberDef::ByteRgba { sig, name, .. } => {
-            if let Some(sig) = sig
-                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-                && let Some(v) = scalar_rgba(&sr.data)
-            {
+        MemberDef::Vec3 { name, .. } => {
+            // NVNM's Vertices is a bare Vec3 array element.
+            if let Some(v) = scalar_vec3(data) {
                 out.insert(name.clone(), v);
             }
         }
-        MemberDef::Vec3 { sig, name } => {
-            // Two calling shapes, mirroring the Struct arm above: (1) called with
-            // an explicit `payload` slice already in hand — e.g. as a bare array
-            // element via decode_field_value (NVNM's Vertices is the first real
-            // exercise of this path); (2) called with no payload but its own
-            // `sig`, so it must pull its own subrecord's bytes via `by_sig`.
-            // Before this fix only (2) was handled, so a sig-less Vec3 array
-            // element silently decoded to `{}` (nothing inserted into `out`).
-            if let Some(data) = payload {
-                if let Some(v) = scalar_vec3(data) {
-                    out.insert(name.clone(), v);
-                }
-            } else if let Some(sig) = sig
-                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-                && let Some(v) = scalar_vec3(&sr.data)
-            {
-                out.insert(name.clone(), v);
-            }
-        }
-        MemberDef::RStruct { name, members } => {
-            let (scope_min, scope_max) = rstruct_present_signature_scope(by_sig, members);
-            let scoped_ctx = if scope_min.is_some() || scope_max.is_some() {
-                &ctx.with_scope(scope_min, scope_max)
-            } else {
-                ctx
-            };
-            let mut group = Fields::new();
-            for m in members {
-                decode_member(scoped_ctx, m, &mut group, by_sig, None);
-            }
-            if !group.is_empty() {
-                out.insert(name.clone(), Node::Struct(group));
-            }
-        }
-        MemberDef::RArray {
-            name,
-            element,
-            count,
-            stop_before,
-        } => decode_rarray_member(ctx, name, element, count, stop_before, out, by_sig),
         MemberDef::Array {
-            sig,
+            sig: None,
             name,
             element,
-            count,
-        } => decode_array_member(ctx, sig, name, element, count, out, by_sig, payload),
+            count: Some(ArrayCount::Fixed(n)),
+        } => {
+            // A nested array element (e.g. the inner dimension of an
+            // array-of-arrays, such as CELL's 32x32 Max Height Data grid)
+            // reached via decode_field_value with its own byte slice. Only
+            // the Fixed-count shape occurs in this position — mirrors
+            // decode_struct_fields's packed Array arm but starting at
+            // position 0 of the given slice.
+            if let Some(elem_size) = field_byte_size(ctx, element) {
+                let mut items = Vec::with_capacity((*n).min(4096));
+                let mut pos = 0;
+                for _ in 0..*n {
+                    if pos + elem_size > data.len() {
+                        break;
+                    }
+                    items.push(decode_field_value(
+                        ctx,
+                        element,
+                        &data[pos..pos + elem_size],
+                    ));
+                    pos += elem_size;
+                }
+                if !items.is_empty() {
+                    out.insert(name.to_owned(), Node::Array(items));
+                }
+            }
+        }
         MemberDef::Union {
-            sig,
             name,
             decider,
             variants,
-        } => decode_union_member(ctx, sig, name, decider, variants, out, by_sig, payload),
-        MemberDef::Empty { sig, name, .. } => {
-            if let Some(sig) = sig {
-                // Unscoped (`take_first`, not `take_first_in_scope`): QUST
-                // alias bodies close with an `Empty{sig:"ALED"}` ("Alias
-                // End") member, and `rstruct_present_signature_scope` defines
-                // an alias's own scope_max as "up to but NOT including the
-                // next ALED" (see its doc comment) — i.e. exclusive of the
-                // alias's own closing ALED subrecord. Scoping this arm made
-                // an alias unable to consume its own terminator (doc_index ==
-                // scope_max is out of range), regressing
-                // qust_gq_horde_alias_fill_decodes_correctly /
-                // qust_gq_workshop_reclaim_decodes_correctly with a leftover
-                // `_unmapped 'ALED'`. GMRW's ITME terminator doesn't need
-                // this arm scoped either — it is bounded by the RArray's own
-                // inclusive `term_idx + 1` upper bound in the RArray arm
-                // above, not by this take.
-                //
-                // One real-ESM case DOES need a zero-length marker scoped:
-                // PGTR's per-reward "Next Reward Present" (sig NAM3), which
-                // shares its sig with the reward's own "Description Text".
-                // Declared `Empty`, this unscoped take stole the NEXT entry's
-                // description and corrupted every entry after the first
-                // two-reward one. That case is handled in the schema, not
-                // here: `schema/fo76.overrides.json` declares the marker as
-                // `lstring` (element-scoped, renders the same `null`), so
-                // this arm stays unscoped rather than special-casing ALED —
-                // see `pgtr_world_pets_radhog_track_decodes_correctly` in
-                // tests/decode_records/pet_tracks.rs. Any future zero-length marker
-                // whose sig is reused inside the same element wants the same
-                // `lstring` treatment.
-                //
-                // Only emit the marker when the empty subrecord is actually present.
-                if take_first(by_sig, sig).is_some() {
-                    out.insert(name.clone(), Node::Null);
-                }
-            }
+            ..
+        } => decode_union(ctx, name, decider, variants, out, data),
+        MemberDef::RawFallback {
+            sig: None,
+            name,
+            reason,
+        } => {
+            out.insert(name.clone(), Node::raw_reason(None, reason));
         }
-        MemberDef::Unused { bytes, sig, .. } => {
-            if let Some(data) = payload {
-                // Payload-context skip: bytes already consumed as part of an
-                // enclosing struct/subrecord, nothing left to look up in `by_sig`.
-                let _ = data.get(..*bytes);
-            } else if let Some(sig) = sig {
-                // Subrecord-level `wbUnused(SIG, 0)`: consume and discard the
-                // whole subrecord so it doesn't linger as `_unmapped`.
-                let _ = take_first_in_scope(by_sig, sig, ctx);
-            }
+        MemberDef::Ctda { name, .. } => {
+            out.insert(name.clone(), crate::ctda::ctda_node(data, ctx));
         }
-        MemberDef::Unknown { sig, name } => {
-            if let Some(sig) = sig
-                && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-            {
-                out.insert(name.clone(), Node::raw(&sr.data));
-            }
+        MemberDef::ModelInfo { name, .. } => {
+            out.insert(name.clone(), decode_model_info(data));
         }
-        MemberDef::RawFallback { sig, name, reason } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    out.insert(name.clone(), Node::raw_reason(Some(&sr.data), reason));
-                }
-            } else {
-                out.insert(name.clone(), Node::raw_reason(None, reason));
-            }
-        }
-        MemberDef::Vmad { sig, name } => decode_vmad_member(ctx, sig, name, out, by_sig),
-        MemberDef::Ctda { sig, name } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    out.insert(name.clone(), crate::ctda::ctda_node(&sr.data, ctx));
-                }
-            } else if let Some(data) = payload {
-                out.insert(name.clone(), crate::ctda::ctda_node(data, ctx));
-            }
-        }
-        MemberDef::ModelInfo { sig, name } => {
-            if let Some(sig) = sig {
-                if let Some(sr) = take_first_in_scope(by_sig, sig, ctx) {
-                    out.insert(name.clone(), decode_model_info(&sr.data));
-                }
-            } else if let Some(data) = payload {
-                out.insert(name.clone(), decode_model_info(data));
-            }
-        }
+        // Subrecord-level kinds: they only ever decode a whole subrecord of
+        // their own (see bind.rs).
+        MemberDef::String { .. }
+        | MemberDef::LString { .. }
+        | MemberDef::ByteRgba { .. }
+        | MemberDef::Empty { .. }
+        | MemberDef::Unused { .. }
+        | MemberDef::Unknown { .. }
+        | MemberDef::RawFallback { .. }
+        | MemberDef::Vmad { .. }
+        | MemberDef::Array { .. }
+        | MemberDef::RStruct { .. }
+        | MemberDef::RArray { .. } => {}
     }
 }
 
-pub(super) fn decode_struct_member(
+/// Pick a union's variant. `fields` are the already-decoded siblings (read by
+/// field-value and FormID-target-type deciders, falling back to
+/// `ctx.outer_struct`); `payload` is the bytes the union decodes from (read by
+/// byte-offset and payload-size deciders).
+pub(super) fn choose_variant(
     ctx: &DecodeContext<'_>,
-    sig: &Option<String>,
-    name: &str,
-    fields: &[FieldDef],
-    out: &mut Fields,
-    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
-    payload: Option<&[u8]>,
-) {
-    if let Some(payload) = payload {
-        decode_struct_fields(ctx, name, fields, payload, out);
-    } else if let Some(sig) = sig
-        && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-    {
-        let child_ctx = if fields
-            .iter()
-            .any(|f| contains_field_value_union(f) || counts_from_enclosing_scope(f))
-        {
-            Some(ctx.with_outer_struct(out.clone()))
-        } else {
-            None
-        };
-        let decode_ctx = child_ctx.as_ref().unwrap_or(ctx);
-        decode_struct_fields(decode_ctx, name, fields, &sr.data, out);
-    }
-}
-
-pub(super) fn decode_lstring_member(
-    ctx: &DecodeContext<'_>,
-    sig: &Option<String>,
-    name: &str,
-    table: &LStringTable,
-    out: &mut Fields,
-    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
-) {
-    if let Some(sig) = sig
-        && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-    {
-        // "No string present" must decode to the same JSON in both
-        // modes (`Node::Null`). The two representations are not
-        // interchangeable on the wire — localized files store a
-        // 4-byte ID, non-localized files store inline text — so a
-        // mode-dependent encoding of "empty" makes every nameless
-        // record look changed when a localized snapshot is diffed
-        // against a non-localized one.
-        let value = if ctx.is_localized {
-            // Localized ESM: field is a 4-byte ID into string tables.
-            if sr.data.len() < 4 {
-                Node::Null
-            } else {
-                let id = u32::from_le_bytes(sr.data[0..4].try_into().unwrap());
-                if id == 0 {
-                    // 0 is the engine's "no string" sentinel, not a
-                    // missing table entry — mirrors resolve_formid's
-                    // null-FormID special case.
-                    Node::Null
-                } else {
-                    let kind = lstring_table_to_kind(table, ctx.record_signature, sig);
-                    Node::LString { id, kind }
-                }
-            }
-        } else {
-            // Non-localized ESM: field is inline Windows-1252 text.
-            crate::reader::decode_inline_lstring(&sr.data).map_or(Node::Null, Node::Str)
-        };
-        out.insert(name.to_owned(), value);
-    }
-}
-
-pub(super) fn decode_rarray_member(
-    ctx: &DecodeContext<'_>,
-    name: &str,
-    element: &MemberDef,
-    count: &Option<ArrayCount>,
-    stop_before: &[String],
-    out: &mut Fields,
-    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
-) {
-    let mut items = Vec::new();
-    let target_count = rarray_count(count.as_ref(), out, ctx);
-    let anchor = anchor_sig(element);
-    // Elements whose RStruct ends in a sig-bearing `Empty` terminator
-    // (e.g. GMRW Reward's trailing `ITME` "Reward End Marker") can
-    // fall back to partitioning by that terminator's doc_index
-    // instead of by the element's *leading* anchor, for the
-    // iterations where the anchor-based scope below comes up empty.
-    // This matters when the leading anchor is optional and can be
-    // absent on every element in a given record (GMRW Reward's
-    // `CTRG` is one such case): an anchor-based scope degrades to
-    // "unscoped" the moment the anchor sig is missing, letting every
-    // member's own `by_sig` pop bleed across element boundaries
-    // (column-wise mixing).
-    //
-    // This is a per-*iteration* fallback, not a whole-array
-    // strategy switch: a trailing sig-bearing `Empty` is
-    // not always a true one-per-element terminator — e.g. MESG Menu
-    // Button's trailing `MBNR` ("No Response") has the same shape
-    // but is itself an optional per-element flag, present on only
-    // some buttons in a given record. Using it as an array-wide
-    // terminator would misattribute its (sparse) doc_index as the
-    // bound for buttons that never carried it. Reaching for it only
-    // when the *anchor* (normally reliable — `ITXT`/"Button Text" is
-    // mandatory) fails to produce a scope keeps well-behaved arrays
-    // like Menu Buttons on their existing anchor-based path
-    // untouched, while rescuing GMRW's Reward array, whose anchor
-    // (`CTRG`) is unconditionally absent so anchor-based scoping
-    // fails on every single iteration.
-    let terminator = element_terminator_sig(element);
-    let mut next_element_start: usize = 0;
-    while target_count.is_none_or(|n| items.len() < n) {
-        // If stop_before is set, halt when a boundary sig precedes
-        // the element's anchor in document order.
-        if !stop_before.is_empty()
-            && let Some(anchor) = anchor
-            && stop_before_check(by_sig, anchor, stop_before)
-        {
-            break;
-        }
-        let before: usize = by_sig.values().map(|v| v.len()).sum();
-
-        // Bound this element to [its own anchor's doc_index, the next
-        // anchor's doc_index) before decoding it. `by_sig` is one
-        // global FIFO queue per signature across the whole record, so
-        // without this an element's *optional* trailing sig-bearing
-        // members (e.g. ALCH/SPEL Effect's CVT0/MAGA/DURG/MAGG/CODV)
-        // can be stolen from a later element that happens to share
-        // the same signature — the earlier element decodes with the
-        // later element's subrecord instead of leaving it absent.
-        // Mandatory members (present on every element, e.g.
-        // EFID/EFIT) are unaffected: FIFO order already aligns them
-        // correctly, and `take_first_in_scope` is a no-op restriction
-        // when the popped subrecord is genuinely this element's own.
-        let element_scope = anchor.and_then(|sig| {
-            by_sig.get(sig).and_then(|queue| {
-                let mut iter = queue.iter();
-                iter.next()
-                    .map(|first| (first.doc_index, iter.next().map(|second| second.doc_index)))
-            })
-        });
-
-        let scoped_ctx;
-        let element_ctx: &DecodeContext<'_>;
-        match element_scope {
-            Some((current_idx, next_idx)) => {
-                scoped_ctx = ctx.with_scope(Some(current_idx), next_idx);
-                // Track a floor for a *future* iteration's terminator
-                // fallback, in case a later element in this same
-                // array lacks the anchor (mixed presence).
-                if let Some(next_idx) = next_idx {
-                    next_element_start = next_idx;
-                }
-                element_ctx = &scoped_ctx;
-            }
-            None => {
-                // Anchor-based scoping produced nothing (no anchor,
-                // or the anchor sig's queue is exhausted/absent for
-                // this element) — fall back to terminator-based
-                // scoping: [next_element_start, terminator_doc_index
-                // + 1). The `+ 1` includes the terminator subrecord
-                // itself so the element's own trailing Empty member
-                // can still consume it.
-                let term_idx = terminator.and_then(|term_sig| {
-                    by_sig
-                        .get(term_sig)
-                        .and_then(|q| q.front())
-                        .map(|sr| sr.doc_index)
-                });
-                match term_idx {
-                    Some(term_idx) => {
-                        scoped_ctx = ctx.with_scope(Some(next_element_start), Some(term_idx + 1));
-                        // Advance past this terminator for the next
-                        // iteration. Since this element's own decode
-                        // below consumes the terminator (its trailing
-                        // Empty member pops the front of the
-                        // terminator's queue), the queue's front
-                        // necessarily moves forward each iteration —
-                        // this loop cannot spin forever on the same
-                        // terminator.
-                        next_element_start = term_idx + 1;
-                        element_ctx = &scoped_ctx;
-                    }
-                    // No anchor and no terminator left either — decode
-                    // unscoped, but only while the array continues: the
-                    // earliest queued subrecord must be able to open one of
-                    // this element's own (a trailing Object Template
-                    // combination's `OBTS` without its optional `OBTF`
-                    // anchor). Anything else belongs to a later member, and
-                    // decoding it here built phantom elements: objectives
-                    // made of QUST alias `FNAM`s, scene actions made of
-                    // SCEN's record-level `INAM`/`PNAM`.
-                    None => {
-                        if anchor.is_some()
-                            && !earliest_queued_sig(by_sig, ctx)
-                                .is_some_and(|sig| can_open_element(element, sig))
-                        {
-                            break;
-                        }
-                        element_ctx = ctx;
-                    }
-                }
-            }
-        }
-
-        let mut item = Fields::new();
-        decode_member(element_ctx, element, &mut item, by_sig, None);
-        let after: usize = by_sig.values().map(|v| v.len()).sum();
-        if before == after {
-            break; // no subrecords consumed — done
-        }
-        items.push(Node::Struct(item));
-    }
-    if !items.is_empty() {
-        out.insert(name.to_owned(), Node::Array(items));
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn decode_array_member(
-    ctx: &DecodeContext<'_>,
-    sig: &Option<String>,
-    name: &str,
-    element: &FieldDef,
-    count: &Option<ArrayCount>,
-    out: &mut Fields,
-    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
-    payload: Option<&[u8]>,
-) {
-    if let Some(sig) = sig {
-        let taken = take_all_in_scope(by_sig, sig, ctx);
-        // A single subrecord may pack multiple fixed-size elements (e.g. KWDA
-        // packs every keyword FormID into one subrecord, counted by KSIZ; APPR
-        // packs attach-parent-slot FormIDs similarly).  Split each subrecord by
-        // the element's static byte size when it is known and the subrecord is
-        // strictly larger; otherwise fall back to one element per subrecord so
-        // variable-size element arrays are unaffected.
-        let elem_size = field_byte_size(ctx, element);
-        let mut items: Vec<Node> = Vec::new();
-        for sr in taken {
-            match elem_size {
-                Some(sz) if sz > 0 && sr.data.len() > sz => {
-                    let mut pos = 0;
-                    while pos + sz <= sr.data.len() {
-                        items.push(decode_field_value(ctx, element, &sr.data[pos..pos + sz]));
-                        pos += sz;
-                    }
-                }
-                None if matches!(element, MemberDef::Struct { .. }) => {
-                    // Variable-size struct element (e.g. contains a nested
-                    // count-prefixed array): the subrecord may pack one or
-                    // more instances back-to-back with no static per-element
-                    // size. Loop using the real consumed-byte count per
-                    // instance (mirrors advance_union) until the subrecord's
-                    // data is exhausted, instead of decoding only the first
-                    // instance and silently dropping the rest.
-                    if let MemberDef::Struct {
-                        name: elem_name,
-                        fields,
-                        ..
-                    } = element
-                    {
-                        let mut pos = 0;
-                        while pos < sr.data.len() {
-                            let mut elem_out = Fields::new();
-                            let consumed = decode_struct_fields(
-                                ctx,
-                                elem_name,
-                                fields,
-                                &sr.data[pos..],
-                                &mut elem_out,
-                            );
-                            if consumed == 0 {
-                                break;
-                            }
-                            if let Some(v) = elem_out.swap_remove(elem_name) {
-                                items.push(v);
-                            }
-                            pos += consumed;
-                        }
-                    }
-                }
-                _ => items.push(decode_field_value(ctx, element, &sr.data)),
-            }
-        }
-        if let Some(ArrayCount::Fixed(n)) = count {
-            items.truncate(*n);
-        }
-        if !items.is_empty() {
-            out.insert(name.to_owned(), Node::Array(items));
-        }
-    } else if let (Some(data), Some(ArrayCount::Fixed(n))) = (payload, count) {
-        // No sig: a nested array element (e.g. the inner dimension of an
-        // array-of-arrays, such as CELL's 32x32 Max Height Data grid)
-        // reached via decode_field_value with its own byte slice as
-        // `payload`. Only the Fixed-count shape is handled here (the only
-        // one that currently occurs in this position) — mirrors
-        // decode_struct_fields's packed Array arm but starting at position
-        // 0 of the given slice, since decode_field_value already hands us
-        // exactly this one array instance's bytes.
-        if let Some(elem_size) = field_byte_size(ctx, element) {
-            let mut items = Vec::with_capacity((*n).min(4096));
-            let mut pos = 0;
-            for _ in 0..*n {
-                if pos + elem_size > data.len() {
-                    break;
-                }
-                items.push(decode_field_value(
-                    ctx,
-                    element,
-                    &data[pos..pos + elem_size],
-                ));
-                pos += elem_size;
-            }
-            if !items.is_empty() {
-                out.insert(name.to_owned(), Node::Array(items));
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn decode_union_member(
-    ctx: &DecodeContext<'_>,
-    sig: &Option<String>,
-    name: &str,
     decider: &UnionDecider,
-    variants: &[MemberDef],
-    out: &mut Fields,
-    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
-    payload: Option<&[u8]>,
-) {
-    // If the union has a sig, consume the subrecord and use its bytes as payload.
-    let taken = sig
-        .as_deref()
-        .and_then(|s| take_first_in_scope(by_sig, s, ctx));
-    let taken_data: Option<&[u8]> = taken.as_ref().map(|sr| sr.data.as_slice());
-    let effective_payload = taken_data.or(payload);
-
-    let chosen = match decider {
+    n_variants: usize,
+    fields: &Fields,
+    payload: &[u8],
+) -> Option<usize> {
+    let outer = ctx.outer_struct.as_ref();
+    match decider {
         UnionDecider::FieldValue {
             field,
             map,
@@ -601,32 +148,20 @@ pub(super) fn decode_union_member(
             bits,
         } => {
             // Bitmask check first (for flag-field deciders like wbBOOKTeachesDecider).
-            let by_bits = if !bits.is_empty() {
-                let raw = field_int_value(out, field, ctx).or_else(|| {
-                    ctx.outer_struct
-                        .as_ref()
-                        .and_then(|o| field_int_value(o, field, ctx))
-                });
-                raw.and_then(|v| {
-                    bits.iter().find_map(|[mask, var_idx]| {
-                        if v & mask != 0 {
-                            Some(*var_idx as usize)
-                        } else {
-                            None
-                        }
-                    })
-                })
-            } else {
+            let by_bits = if bits.is_empty() {
                 None
+            } else {
+                field_int_value(fields, field, ctx)
+                    .or_else(|| outer.and_then(|o| field_int_value(o, field, ctx)))
+                    .and_then(|v| {
+                        bits.iter()
+                            .find_map(|[mask, idx]| (v & mask != 0).then_some(*idx as usize))
+                    })
             };
             by_bits
                 .or_else(|| {
-                    field_value_key(out, field, ctx)
-                        .or_else(|| {
-                            ctx.outer_struct
-                                .as_ref()
-                                .and_then(|o| field_value_key(o, field, ctx))
-                        })
+                    field_value_key(fields, field, ctx)
+                        .or_else(|| outer.and_then(|o| field_value_key(o, field, ctx)))
                         .and_then(|k| map.get(&k).copied())
                 })
                 .or(*default_variant)
@@ -636,131 +171,136 @@ pub(super) fn decode_union_member(
             map,
             default_variant,
             width_bytes,
-        } => effective_payload
-            .and_then(|p| read_le_uint(p, *byte_offset, *width_bytes))
+        } => read_le_uint(payload, *byte_offset, *width_bytes)
             .and_then(|b| map.get(&b.to_string()).copied())
             .or(*default_variant),
         UnionDecider::PayloadSize {
             payload_size,
             default_variant,
-        } => effective_payload
-            .and_then(|p| payload_size.get(&p.len().to_string()).copied())
+        } => payload_size
+            .get(&payload.len().to_string())
+            .copied()
             .or(*default_variant),
-        UnionDecider::PresentSignature { present_signature } => {
-            // wbRUnion: select the variant whose anchor subrecord appears
-            // earliest in the document (lowest doc_index).  Each variant
-            // may have multiple anchor sigs (nested-union branches).
-            // When `scope_*_doc_index` is set (QUST alias bodies), only
-            // anchors inside that range are considered so later aliases
-            // cannot steal fill-type subrecords.
-            let in_scope = |idx: usize| doc_index_in_present_signature_scope(ctx, idx);
-            present_signature
-                .iter()
-                .enumerate()
-                .filter_map(|(i, anchors)| {
-                    anchors
-                        .iter()
-                        .filter_map(|anchor| {
-                            by_sig.get(anchor.as_str()).and_then(|subs| {
-                                subs.iter()
-                                    .map(|sr| sr.doc_index)
-                                    .find(|&idx| in_scope(idx))
-                            })
-                        })
-                        .min()
-                        .map(|doc_idx| (i, doc_idx))
-                })
-                .min_by_key(|&(_, doc_idx)| doc_idx)
-                .map(|(i, _)| i)
-        }
         UnionDecider::FormIdTargetType {
             form_id_target_type,
             map,
             default_variant,
-        } => out
+        } => fields
             .get(form_id_target_type)
-            .or_else(|| {
-                ctx.outer_struct
-                    .as_ref()
-                    .and_then(|o| o.get(form_id_target_type))
-            })
+            .or_else(|| outer.and_then(|o| o.get(form_id_target_type)))
             .and_then(|v| sibling_target_sig(v, ctx))
             .and_then(|sig| map.get(&sig).copied())
             .or(*default_variant),
-        _ => choose_union_variant(
-            ctx.form_version,
-            ctx.record_edid_char,
-            decider,
-            variants.len(),
-        ),
-    };
-    if let Some(idx) = chosen
-        && let Some(variant) = variants.get(idx)
-    {
-        // Decode into a temporary map first: some variants are
-        // anonymous (Pascal `wbInteger('', ...)` reusing the
-        // union's own name conceptually), so their decoded value
-        // would otherwise land under the empty-string key instead
-        // of the union's own (correctly-deduped) name.
-        let mut tmp = Fields::new();
-        decode_member(ctx, variant, &mut tmp, by_sig, effective_payload);
-        for (k, v) in tmp {
-            let key = if k.is_empty() { name.to_owned() } else { k };
-            insert_unique(out, key, v);
-        }
-        return;
+        _ => choose_union_variant(ctx.form_version, ctx.record_edid_char, decider, n_variants),
     }
-    if let UnionDecider::PresentSignature { present_signature } = decider {
-        let in_scope = |idx: usize| doc_index_in_present_signature_scope(ctx, idx);
-        let any_anchor_in_scope = present_signature.iter().flatten().any(|anchor| {
-            by_sig
-                .get(anchor.as_str())
-                .is_some_and(|subs| subs.iter().any(|sr| in_scope(sr.doc_index)))
-        });
-        if !any_anchor_in_scope {
-            return;
-        }
-    }
-    out.insert(
-        name.to_owned(),
-        Node::raw_reason(None, "union decider unresolved"),
-    );
 }
 
-pub(super) fn decode_vmad_member(
+/// Decode a union whose bytes are `payload` (its own subrecord, or a payload
+/// variant), inserting the chosen variant's value under the union's name.
+pub(super) fn decode_union(
     ctx: &DecodeContext<'_>,
-    sig: &Option<String>,
     name: &str,
+    decider: &UnionDecider,
+    variants: &[MemberDef],
     out: &mut Fields,
-    by_sig: &mut HashMap<String, VecDeque<&OwnedSubrecord>>,
+    payload: &[u8],
 ) {
-    if let Some(sig) = sig
-        && let Some(sr) = take_first_in_scope(by_sig, sig, ctx)
-    {
-        let decoded = match ctx.record_signature {
-            Some("QUST") => decode_vmad_qust(ctx, &sr.data),
-            Some("INFO") => decode_vmad_info(ctx, &sr.data),
-            Some("PACK") => decode_vmad_pack(ctx, &sr.data),
-            Some("PERK") => decode_vmad_perk(ctx, &sr.data),
-            Some("SCEN") => decode_vmad_scen(ctx, &sr.data),
-            // TERM wires wbVMADFragmentedPERK in xEdit's FO76 definitions
-            // ("same fragments format as in PERK") — reuse that decoder so
-            // the fragment tail's script-entry properties (e.g. a prize
-            // terminal's `Form_*` item grants) are decoded and harvested
-            // into the xref index instead of being silently dropped by the
-            // generic `decode_vmad`, which stops after the base scripts.
-            Some("TERM") => decode_vmad_perk(ctx, &sr.data),
-            _ => vmad_node(ctx, &sr.data),
-        };
-        out.insert(name.to_owned(), decoded);
+    let chosen = choose_variant(ctx, decider, variants.len(), out, payload);
+    let Some(variant) = chosen.and_then(|idx| variants.get(idx)) else {
+        out.insert(
+            name.to_owned(),
+            Node::raw_reason(None, "union decider unresolved"),
+        );
+        return;
+    };
+    // Decode into a temporary map first: some variants are anonymous (Pascal
+    // `wbInteger('', ...)` reusing the union's own name conceptually), so
+    // their decoded value would otherwise land under the empty-string key
+    // instead of the union's own (correctly-deduped) name.
+    let mut tmp = Fields::new();
+    decode_member(ctx, variant, &mut tmp, payload);
+    for (k, v) in tmp {
+        let key = if k.is_empty() { name.to_owned() } else { k };
+        insert_unique(out, key, v);
     }
 }
 
-/// Returns true when `member` or any nested field uses a `FieldValue` union decider.
+/// Decode a packed-array member from its subrecords (`run`: one, or several
+/// consecutive copies of the same signature).
+pub(super) fn decode_array_payloads(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    element: &FieldDef,
+    count: &Option<ArrayCount>,
+    run: &[&OwnedSubrecord],
+    out: &mut Fields,
+) {
+    // A single subrecord may pack multiple fixed-size elements (e.g. KWDA
+    // packs every keyword FormID into one subrecord, counted by KSIZ; APPR
+    // packs attach-parent-slot FormIDs similarly).  Split each subrecord by
+    // the element's static byte size when it is known and the subrecord is
+    // strictly larger; otherwise fall back to one element per subrecord so
+    // variable-size element arrays are unaffected.
+    let elem_size = field_byte_size(ctx, element);
+    let mut items: Vec<Node> = Vec::new();
+    for sr in run {
+        match elem_size {
+            Some(sz) if sz > 0 && sr.data.len() > sz => {
+                let mut pos = 0;
+                while pos + sz <= sr.data.len() {
+                    items.push(decode_field_value(ctx, element, &sr.data[pos..pos + sz]));
+                    pos += sz;
+                }
+            }
+            None if matches!(element, MemberDef::Struct { .. }) => {
+                // Variable-size struct element (e.g. contains a nested
+                // count-prefixed array): the subrecord may pack one or more
+                // instances back-to-back with no static per-element size.
+                // Loop using the real consumed-byte count per instance
+                // (mirrors advance_union) until the subrecord's data is
+                // exhausted, instead of decoding only the first instance and
+                // silently dropping the rest.
+                if let MemberDef::Struct {
+                    name: elem_name,
+                    fields,
+                    ..
+                } = element
+                {
+                    let mut pos = 0;
+                    while pos < sr.data.len() {
+                        let mut elem_out = Fields::new();
+                        let consumed = decode_struct_fields(
+                            ctx,
+                            elem_name,
+                            fields,
+                            &sr.data[pos..],
+                            &mut elem_out,
+                        );
+                        if consumed == 0 {
+                            break;
+                        }
+                        if let Some(v) = elem_out.swap_remove(elem_name) {
+                            items.push(v);
+                        }
+                        pos += consumed;
+                    }
+                }
+            }
+            _ => items.push(decode_field_value(ctx, element, &sr.data)),
+        }
+    }
+    if let Some(ArrayCount::Fixed(n)) = count {
+        items.truncate(*n);
+    }
+    if !items.is_empty() {
+        out.insert(name.to_owned(), Node::Array(items));
+    }
+}
+
 /// Whether `member` is an array whose count lives in the enclosing scope
 /// (`up >= 1`), so its struct must be decoded with that scope in
 /// `ctx.outer_struct`.
-fn counts_from_enclosing_scope(member: &MemberDef) -> bool {
+pub(super) fn counts_from_enclosing_scope(member: &MemberDef) -> bool {
     matches!(
         member,
         MemberDef::Array {
@@ -770,7 +310,8 @@ fn counts_from_enclosing_scope(member: &MemberDef) -> bool {
     )
 }
 
-fn contains_field_value_union(member: &MemberDef) -> bool {
+/// Whether `member` or any nested field uses a `FieldValue` union decider.
+pub(super) fn contains_field_value_union(member: &MemberDef) -> bool {
     match member {
         MemberDef::Union {
             decider: UnionDecider::FieldValue { .. },
@@ -897,82 +438,16 @@ pub(crate) fn decode_struct_fields(
                 variants,
                 ..
             } => {
-                let chosen = match decider {
-                    UnionDecider::ByteAtOffset {
-                        byte_offset,
-                        map,
-                        default_variant,
-                        width_bytes,
-                    } => read_le_uint(data, pos + byte_offset, *width_bytes)
-                        .and_then(|b| map.get(&b.to_string()).copied())
-                        .or(*default_variant),
-                    UnionDecider::FieldValue {
-                        field,
-                        map,
-                        default_variant,
-                        bits,
-                    } => {
-                        // Bitmask check first.
-                        let by_bits = if !bits.is_empty() {
-                            let raw = field_int_value(&struct_out, field, ctx).or_else(|| {
-                                ctx.outer_struct
-                                    .as_ref()
-                                    .and_then(|o| field_int_value(o, field, ctx))
-                            });
-                            raw.and_then(|v| {
-                                bits.iter().find_map(|[mask, var_idx]| {
-                                    if v & mask != 0 {
-                                        Some(*var_idx as usize)
-                                    } else {
-                                        None
-                                    }
-                                })
-                            })
-                        } else {
-                            None
-                        };
-                        by_bits
-                            .or_else(|| {
-                                field_value_key(&struct_out, field, ctx)
-                                    .or_else(|| {
-                                        ctx.outer_struct
-                                            .as_ref()
-                                            .and_then(|o| field_value_key(o, field, ctx))
-                                    })
-                                    .and_then(|k| map.get(&k).copied())
-                            })
-                            .or(*default_variant)
-                    }
-                    UnionDecider::FormIdTargetType {
-                        form_id_target_type,
-                        map,
-                        default_variant,
-                    } => struct_out
-                        .get(form_id_target_type)
-                        .or_else(|| {
-                            ctx.outer_struct
-                                .as_ref()
-                                .and_then(|o| o.get(form_id_target_type))
-                        })
-                        .and_then(|v| sibling_target_sig(v, ctx))
-                        .and_then(|sig| map.get(&sig).copied())
-                        .or(*default_variant),
-                    _ => choose_union_variant(
-                        ctx.form_version,
-                        ctx.record_edid_char,
-                        decider,
-                        variants.len(),
-                    ),
-                };
+                let chosen =
+                    choose_variant(ctx, decider, variants.len(), &struct_out, &data[pos..]);
                 if let Some(idx) = chosen {
                     if let Some(variant) = variants.get(idx) {
-                        let mut dummy = HashMap::new();
                         // Decode into a temporary map so we can insert_unique
                         // each key, avoiding silent clobbers when two union
                         // slots share the same variant name (e.g. MGEF's two
                         // `wbActorValue` fields both named "Actor Value").
                         let mut tmp = Fields::new();
-                        decode_member(ctx, variant, &mut tmp, &mut dummy, Some(&data[pos..]));
+                        decode_member(ctx, variant, &mut tmp, &data[pos..]);
                         for (k, v) in tmp {
                             insert_unique(&mut struct_out, k, v);
                         }
@@ -1125,8 +600,7 @@ fn advance_union(ctx: &DecodeContext<'_>, variant: &MemberDef, data: &[u8], pos:
 
 fn decode_field_value(ctx: &DecodeContext<'_>, field: &FieldDef, data: &[u8]) -> Node {
     let mut m = Fields::new();
-    let mut by_sig = HashMap::new();
-    decode_member(ctx, field, &mut m, &mut by_sig, Some(data));
+    decode_member(ctx, field, &mut m, data);
     if m.len() == 1 {
         m.into_values().next().unwrap()
     } else {
@@ -1140,6 +614,29 @@ mod tests {
     use crate::decode::{FormIdRefResolver, FormIdStub, ResolveDepth};
     use serde_json::{Map, Value, json};
 
+    /// Bind `members` against `subrecords` the way a record's members bind,
+    /// returning the rendered fields and the signatures left unbound.
+    fn bind(
+        ctx: &DecodeContext<'_>,
+        members: Vec<MemberDef>,
+        subrecords: &[OwnedSubrecord],
+    ) -> (Map<String, Value>, Vec<String>) {
+        let def = crate::schema::RecordDef {
+            name: "Test".into(),
+            members,
+            unordered: false,
+        };
+        let mut cur = super::super::bind::Cursor::new(subrecords);
+        let mut out = Fields::new();
+        super::super::bind::bind_record(ctx, &def, &mut cur, &mut out);
+        let unbound = cur
+            .into_unbound()
+            .iter()
+            .map(|sr| sr.signature.as_str().to_owned())
+            .collect();
+        (rendered(ctx, out), unbound)
+    }
+
     /// Render decoded fields to boundary JSON for assertions.
     fn rendered(ctx: &DecodeContext<'_>, fields: Fields) -> Map<String, Value> {
         match Node::Struct(fields).into_json(ctx) {
@@ -1148,7 +645,7 @@ mod tests {
         }
     }
     use crate::formid::FormId;
-    use crate::schema::{IntegerWidth, Schema};
+    use crate::schema::{IntegerWidth, LStringTable, Schema};
 
     fn bare_ctx(schema: &Schema) -> DecodeContext<'_> {
         DecodeContext {
@@ -1162,8 +659,6 @@ mod tests {
             outer_struct: None,
             record_signature: None,
             record_edid_char: None,
-            scope_min_doc_index: None,
-            scope_max_doc_index: None,
         }
     }
 
@@ -1181,7 +676,6 @@ mod tests {
             from_version: None,
             below_version: None,
             from_size: None,
-            stop_before: vec![],
         }
     }
 
@@ -1204,7 +698,6 @@ mod tests {
             from_version: None,
             below_version: None,
             from_size: None,
-            stop_before: vec![],
         }
     }
 
@@ -1339,18 +832,8 @@ mod tests {
         let xcnt: Vec<u8> = [2u32, 1].iter().flat_map(|n| n.to_le_bytes()).collect();
         let payload: Vec<u8> = [7u32, 8, 9].iter().flat_map(|n| n.to_le_bytes()).collect();
         let subrecords = [subrecord("XCNT", xcnt, 0), subrecord("DATA", payload, 1)];
-        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
-        for sr in &subrecords {
-            by_sig
-                .entry(sr.signature.as_str().to_string())
-                .or_default()
-                .push_back(sr);
-        }
 
-        let mut out = Fields::new();
-        decode_member(&ctx, &counts, &mut out, &mut by_sig, None);
-        decode_member(&ctx, &data, &mut out, &mut by_sig, None);
-        let out = rendered(&ctx, out);
+        let (out, _) = bind(&ctx, vec![counts, data], &subrecords);
         assert_eq!(out["Footsteps"]["Walking Steps"], json!([7, 8]));
         assert_eq!(out["Footsteps"]["Running Steps"], json!([9]));
     }
@@ -1370,18 +853,22 @@ mod tests {
                         element: Box::new(MemberDef::RStruct {
                             name: "Morph Preset".into(),
                             members: vec![sig_int_field("MPPI", "Index", IntegerWidth::U32)],
+                            unordered: false,
+                            any_member: false,
+                            skip_sigs: Vec::new(),
                         }),
                         count: Some(ArrayCount::CountPath(CountPath {
                             up: 0,
                             path: vec!["Count".into()],
                         })),
-                        stop_before: Vec::new(),
                     },
                     sig_int_field("MPPK", "Tail", IntegerWidth::U16),
                 ],
+                unordered: false,
+                any_member: false,
+                skip_sigs: Vec::new(),
             }),
             count: None,
-            stop_before: Vec::new(),
         };
 
         let subrecords = [
@@ -1392,17 +879,8 @@ mod tests {
             subrecord("MPPI", 20u32.to_le_bytes().to_vec(), 4),
             subrecord("MPPK", 200u16.to_le_bytes().to_vec(), 5),
         ];
-        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
-        for sr in &subrecords {
-            by_sig
-                .entry(sr.signature.as_str().to_string())
-                .or_default()
-                .push_back(sr);
-        }
 
-        let mut out = Fields::new();
-        decode_member(&ctx, &morph_groups, &mut out, &mut by_sig, None);
-        let out = rendered(&ctx, out);
+        let (out, _) = bind(&ctx, vec![morph_groups], &subrecords);
         let groups = out
             .get("Morph Groups")
             .and_then(|v| v.as_array())
@@ -1512,7 +990,6 @@ mod tests {
                         from_version: None,
                         below_version: None,
                         from_size: None,
-                        stop_before: vec![],
                     },
                 ],
             },
@@ -1566,7 +1043,6 @@ mod tests {
                 from_version: Some(166),
                 below_version: None,
                 from_size: None,
-                stop_before: vec![],
             },
             MemberDef::Float {
                 sig: None,
@@ -1584,7 +1060,6 @@ mod tests {
                 from_version: None,
                 below_version: None,
                 from_size: None,
-                stop_before: vec![],
             },
             MemberDef::Integer {
                 sig: None,
@@ -1595,7 +1070,6 @@ mod tests {
                 from_version: None,
                 below_version: None,
                 from_size: None,
-                stop_before: vec![],
             },
             MemberDef::Bytes {
                 sig: None,
@@ -1753,21 +1227,12 @@ mod tests {
         data.extend_from_slice(&0u16.to_le_bytes()); // frag_count = 0
 
         let subrecords = [subrecord("VMAD", data, 0)];
-        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
-        for sr in &subrecords {
-            by_sig
-                .entry(sr.signature.as_str().to_string())
-                .or_default()
-                .push_back(sr);
-        }
 
         let member = MemberDef::Vmad {
             sig: Some("VMAD".into()),
             name: "Virtual Machine Adapter".into(),
         };
-        let mut out = Fields::new();
-        decode_member(&ctx, &member, &mut out, &mut by_sig, None);
-        let out = rendered(&ctx, out);
+        let (out, _) = bind(&ctx, vec![member], &subrecords);
 
         let decoded = out
             .get("Virtual Machine Adapter")
@@ -1787,21 +1252,14 @@ mod tests {
         );
     }
 
-    /// Decode an `lstring` member against a one-subrecord `by_sig` map.
+    /// Bind an `lstring` member to one subrecord.
     fn decode_lstring(ctx: &DecodeContext<'_>, sr: &OwnedSubrecord) -> Map<String, Value> {
         let member = MemberDef::LString {
             sig: Some("DESC".into()),
             name: "Description".into(),
             table: LStringTable::Dlstrings,
         };
-        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
-        by_sig
-            .entry(sr.signature.as_str().to_string())
-            .or_default()
-            .push_back(sr);
-        let mut out = Fields::new();
-        decode_member(ctx, &member, &mut out, &mut by_sig, None);
-        rendered(ctx, out)
+        bind(ctx, vec![member], std::slice::from_ref(sr)).0
     }
 
     /// "No string present" must decode to `Value::Null` in BOTH localization
@@ -1887,14 +1345,9 @@ mod tests {
         }
     }
 
-    /// Fix E regression: a sig-bearing `Unused` member (Pascal
-    /// `wbUnused(INDX, 0)` — an entire subrecord whose payload is
-    /// intentionally ignored) must consume its subrecord from `by_sig` and
-    /// emit nothing, instead of leaving it queued to show up as `_unmapped`.
-    /// Before this fix `MemberDef::Unused`'s decode arm only ever looked at
-    /// `payload` (the struct-payload-context byte-skip path) and never
-    /// touched `by_sig` at all, so a schema entry giving it a `sig` would
-    /// have been silently inert.
+    /// A sig-bearing `Unused` member (Pascal `wbUnused(INDX, 0)` — an entire
+    /// subrecord whose payload is intentionally ignored) binds its subrecord
+    /// and emits nothing, so the subrecord never shows up as `_unmapped`.
     #[test]
     fn unused_with_sig_consumes_subrecord_and_emits_nothing() {
         let schema = empty_schema();
@@ -1906,26 +1359,17 @@ mod tests {
             below_version: None,
         };
         let subrecords = [subrecord("INDX", vec![0x01, 0x02, 0x03, 0x04], 0)];
-        let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
-        for sr in &subrecords {
-            by_sig
-                .entry(sr.signature.as_str().to_string())
-                .or_default()
-                .push_back(sr);
-        }
 
-        let mut out = Fields::new();
-        decode_member(&ctx, &member, &mut out, &mut by_sig, None);
-        let out = rendered(&ctx, out);
+        let (out, unbound) = bind(&ctx, vec![member], &subrecords);
 
         assert!(
             out.is_empty(),
             "sig-bearing Unused must emit no output key, got {out:?}"
         );
         assert!(
-            by_sig.get("INDX").is_none_or(|q| q.is_empty()),
-            "sig-bearing Unused must consume its subrecord from by_sig, \
-             leaving nothing behind to show up as _unmapped"
+            unbound.is_empty(),
+            "sig-bearing Unused must bind its subrecord, leaving nothing \
+             behind to show up as _unmapped"
         );
     }
 

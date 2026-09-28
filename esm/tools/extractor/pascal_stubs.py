@@ -111,7 +111,7 @@ BUILTIN_HELPERS: dict[str, str] = {
         "wbENLT,"
         "wbENLS,"
         "wbAUUV,"
-        "wbMODD])"
+        "wbMODD]).IncludeFlag(dfAllowAnyMember)"
     ),
     # wbDEST: full rstruct matching wbDefinitionsFO76.pas:6905-6991.
     # Includes the Stages rarray with DSTD (Destruction Stage Data).
@@ -158,10 +158,10 @@ BUILTIN_HELPERS: dict[str, str] = {
         "wbString(DMDL,'Model FileName',0),"
         "wbByteArray(DMDT,'Model Information',0),"
         "wbDMDC,wbDMDS,wbENLM,wbENLT,wbENLS,wbAUUV"
-        "])),"
+        "]).IncludeFlag(dfAllowAnyMember)),"
         "wbEmpty(DSTF,'End Marker')"
         "]))"
-        "])"
+        "],[],cpNormal,False,nil,True).IncludeFlag(dfAllowAnyMember)"
     ),
     "wbEnchantment": "wbFormIDCk(EITM, 'Enchantment', [ENCH,NULL])",
     "wbModelInfo": "wbByteArray(MODT, 'Model Information', 0)",
@@ -318,8 +318,8 @@ BUILTIN_HELPERS: dict[str, str] = {
     # CTDA / Conditions — modeled as a structural (no-Rust) helper.
     # Wrapped in an RStruct so the preceding CITC count subrecord
     # (wbDefinitionsFO76.pas:6888 SetCountPath(CITC)) is consumed and
-    # not left in _unmapped.  CITC is optional — records without it
-    # (e.g. direct CTDA blocks) simply skip the missing integer.
+    # not left in _unmapped.  CITC is optional, so the grouping (which
+    # xEdit doesn't have) accepts any member as its opener.
     # ----------------------------------------------------------------
     "wbConditions": (
         "wbRStruct('Conditions',["
@@ -347,7 +347,7 @@ BUILTIN_HELPERS: dict[str, str] = {
         "wbString(CIS1,'Parameter #1'),"
         "wbString(CIS2,'Parameter #2')"
         "]))"
-        "])"
+        "]).IncludeFlag(dfAllowAnyMember)"
     ),
     # EFIT layout is form-version-conditional. The bands come from the comment at
     # wbDefinitionsFO76.pas:6727 (the Pascal itself uses a bare wbUnknown): Effect ID
@@ -430,13 +430,13 @@ BUILTIN_HELPERS: dict[str, str] = {
         "wbVec3(XRGB,'Biped Rotation')"
         "])"
     ),
-    # wbKWDAs — used in REFR/ACHR to add keywords.
-    # Minimal: array of keyword formids with KWDA sig.
+    # wbKWDAs — used in REFR/ACHR to add keywords. xEdit's is the bare
+    # KWDA array; grouping it with an optional KSIZ means either opens it.
     "wbKWDAs": (
         "wbRStruct('Keywords',["
         "wbInteger(KSIZ,'Keyword Count',itU32),"
         "wbArrayS(KWDA,'Keywords',wbFormIDCk('Keyword',[KYWD,NULL]))"
-        "])"
+        "]).IncludeFlag(dfAllowAnyMember)"
     ),
     # wbOwnership — ownership data (owner ref + rank).
     # wbDefinitionsCommon.pas:8655 (simplified: XOWN + XRNK).
@@ -444,7 +444,7 @@ BUILTIN_HELPERS: dict[str, str] = {
         "wbRStruct('Ownership',["
         "wbFormIDCk(XOWN,'Owner',[FACT,NPC_,NULL]),"
         "wbInteger(XRNK,'Faction Rank',itS32)"
-        "])"
+        "],[],cpNormal,False,nil,True)"
     ),
     # wbActionFlag — wbDefinitionsCommon.pas (single flag byte, XACT).
     "wbActionFlag": "wbInteger(XACT,'Action Flag',itU32)",
@@ -594,7 +594,9 @@ BUILTIN_HELPERS: dict[str, str] = {
         "[wbFloat('Offset'),"
         "wbArray('Max Heights',wbArray('Row',wbInteger('Column',itU8),32),32)])"
     ),
-    "wbWeatherCloudTextures": "wbRStruct('Cloud Textures',[" + ",".join(_cloud_tex_parts) + "])",
+    "wbWeatherCloudTextures": (
+        "wbRStruct('Cloud Textures',[" + ",".join(_cloud_tex_parts) + "]).IncludeFlag(dfAllowAnyMember)"
+    ),
     # wbWeatherCloudSpeed — wbDefinitionsCommon.pas:8918-8937.
     # RStruct with RNAM (Y Speeds) and QNAM (X Speeds), each a 32-element byte array.
     "wbWeatherCloudSpeed": (
@@ -776,7 +778,7 @@ BUILTIN_HELPERS_DEFAULTS: dict[str, str] = {
         "wbRArrayS('Sounds',"
         "wbRStructSK([0],'Sound',["
         "wbFormIDCk(CS2K,'Keyword',[KYWD]),"
-        "wbFormIDCk(CS2D,'Sound',[SNDR])]))"
+        "wbFormIDCk(CS2D,'Sound',[SNDR])],[],cpNormal,False,nil,True))"
     ),
     # ----------------------------------------------------------------
     # wbIdleAnimation — wbDefinitionsCommon.pas:8186-8223.
@@ -1022,7 +1024,12 @@ def _expand_wbTexturedModel(args: str, ctx: ExpandContext) -> str | None:
                 e = e.strip()
                 if e:
                     members_out.append(e)
-    return f"wbRStruct('{t_name}',[{','.join(members_out)}])"
+    # xEdit builds it unordered with dfAllowAnyMember (a model's enlighten
+    # data can appear without its filename).
+    return (
+        f"wbRStruct('{t_name}',[{','.join(members_out)}],nil,cpNormal,False,nil,True)"
+        ".IncludeFlag(dfAllowAnyMember)"
+    )
 
 
 def _expand_wbStructs(args: str, ctx: ExpandContext) -> str | None:

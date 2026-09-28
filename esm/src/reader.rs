@@ -88,8 +88,7 @@ pub struct OwnedSubrecord {
     pub signature: Signature,
     pub data: Vec<u8>,
     /// Position of this subrecord within its parent record's subrecord list
-    /// (0-based). Used by the decoder to resolve cross-signature ordering
-    /// when `stop_before` is set on an `rarray` schema member.
+    /// (0-based).
     pub doc_index: usize,
 }
 

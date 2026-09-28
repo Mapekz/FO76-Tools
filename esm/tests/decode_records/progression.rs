@@ -116,18 +116,10 @@ fn pcrd_data_decodes_race_restriction() {
     }
 }
 
-/// GMRW-shaped regression test for terminator-based `RArray` element
-/// partitioning (`src/decode.rs`, "Fix C").
-///
-/// Mirrors the diagnosed shape of GMRW `0x006311D8`: a "Rewards List" rarray
-/// of "Reward" rstructs whose optional leading anchor (`CTRG`) is absent on
-/// every element, but whose *last* member is a sig-unique `Empty` terminator
-/// (`ITME`, "Reward End Marker") present exactly once per reward. Before the
-/// fix, with the leading anchor absent, each element decoded fully unscoped —
-/// every member popped the global front of its own sig queue regardless of
-/// which reward it belonged to, so this record's condition parameter strings
-/// (`CIS2`) ended up misattributed or left over as `_unmapped`. Bounding each
-/// element to `[start, terminator_doc_index + 1)` fixes it.
+/// GMRW `0x006311D8` shape: a "Rewards List" rarray of "Reward" rstructs whose
+/// optional leading `CTRG` is absent on every element and whose last member is
+/// the `ITME` "Reward End Marker". Each reward's condition parameter strings
+/// (`CIS2`) stay with that reward.
 ///
 /// Two sparse rewards here: each carries only `NAM7` (to tell them apart) and
 /// one condition (`CTDA` + `CIS2`), then its own `ITME`.

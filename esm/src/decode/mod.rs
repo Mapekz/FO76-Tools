@@ -1,11 +1,11 @@
 use crate::formid::FormId;
 use crate::reader::OwnedSubrecord;
-use crate::schema::{ArrayCount, LStringTable, MemberDef, Schema};
+use crate::schema::{LStringTable, Schema};
 use crate::strings::{Localization, StringKind};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
-use std::collections::{HashMap, VecDeque};
 
+mod bind;
 pub(crate) mod leaf_values;
 /// [`level_curves::LevelCurveRow`] is `pub` (used by `esm::walk`'s public
 /// digest structs) — the module is `pub` too so that type is externally
@@ -16,30 +16,22 @@ mod model_info;
 pub mod node;
 mod rules;
 mod scalars;
-mod scope;
 mod vmad;
 mod walk;
 
+use leaf_values::InlineSource;
 #[cfg(test)]
 pub(crate) use rules::apply_weapon_bash_curve;
 use rules::{PostDecodeTarget, apply_post_decode_rules};
-// `ArrayCount`/`MemberDef` above and `field_int_value` here aren't used
-// directly in this file; they exist so that `scope.rs`'s and `rules.rs`'s own
-// `use super::*;` (both are private submodules that historically drew these
-// names from decode/mod.rs's own namespace) keep resolving after the
-// scalar/leaf toolbox and core interpreter moved out to `scalars.rs`/`walk.rs`.
-use leaf_values::InlineSource;
 pub(crate) use scalars::json_f32;
 #[cfg(test)]
 pub(crate) use scalars::member_version_bounds;
 pub(crate) use scalars::member_version_ok;
-use scalars::{count_path_value, field_int_value};
 pub use vmad::decode_vmad;
 #[cfg(test)]
 use vmad::{
     decode_vmad_info, decode_vmad_pack, decode_vmad_perk, decode_vmad_qust, decode_vmad_scen,
 };
-use walk::decode_member;
 
 /// Single source of truth for the schema decode-coverage marker keys (see
 /// "Decode output key conventions" in esm/AGENTS.md). Exported to TypeScript
@@ -147,20 +139,14 @@ pub struct DecodeContext<'a> {
     /// First character of the current record's EditorID subrecord.
     /// Pre-scanned in `decode_record` for use by `EdidPrefix` union deciders.
     pub record_edid_char: Option<char>,
-    /// When set, `PresentSignature` union deciders only consider anchor subrecords
-    /// at or after this document index (inclusive).
-    pub scope_min_doc_index: Option<usize>,
-    /// When set, `PresentSignature` union deciders only consider anchor subrecords
-    /// strictly before this document index (typically the enclosing `ALED`).
-    pub scope_max_doc_index: Option<usize>,
 }
 
 impl<'a> DecodeContext<'a> {
-    /// Build a fresh top-level context for decoding a record: the five
+    /// Build a fresh top-level context for decoding a record: the
     /// recursion-threading fields (`outer_struct`, `record_signature`,
-    /// `record_edid_char`, `scope_min_doc_index`, `scope_max_doc_index`) start
-    /// unset. `decode_record` populates `record_signature`/`record_edid_char`
-    /// itself once it has scanned the record's subrecords.
+    /// `record_edid_char`) start unset. `decode_record` populates
+    /// `record_signature`/`record_edid_char` itself once it has scanned the
+    /// record's subrecords.
     pub fn for_record(
         schema: &'a Schema,
         form_version: u16,
@@ -181,39 +167,13 @@ impl<'a> DecodeContext<'a> {
             outer_struct: None,
             record_signature: None,
             record_edid_char: None,
-            scope_min_doc_index: None,
-            scope_max_doc_index: None,
         }
     }
 
     /// Return a new context identical to `self` but with `outer_struct` set.
-    fn with_outer_struct(&self, outer: node::Fields) -> DecodeContext<'a> {
+    pub(super) fn with_outer_struct(&self, outer: node::Fields) -> DecodeContext<'a> {
         DecodeContext {
             outer_struct: Some(outer),
-            ..self.clone()
-        }
-    }
-
-    /// Narrow the current scope to `min`/`max`, intersecting with (rather
-    /// than replacing) any scope already in effect. This matters because a
-    /// scope set up by an enclosing `MemberDef::RArray` element (see its
-    /// per-element anchor-bounded scope) must survive a nested rstruct's own
-    /// scope computation — e.g. `rstruct_present_signature_scope`'s QUST
-    /// alias ALED bounding — instead of being silently widened back to
-    /// unbounded when that inner call has no opinion about one side of the
-    /// range (`None`).
-    fn with_scope(&self, min: Option<usize>, max: Option<usize>) -> DecodeContext<'a> {
-        let scope_min_doc_index = match (self.scope_min_doc_index, min) {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (a, b) => a.or(b),
-        };
-        let scope_max_doc_index = match (self.scope_max_doc_index, max) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        };
-        DecodeContext {
-            scope_min_doc_index,
-            scope_max_doc_index,
             ..self.clone()
         }
     }
@@ -375,46 +335,33 @@ fn record_node(
     let mut out = Fields::new();
     let record_def = ctx.schema.record(signature);
 
-    let mut by_sig: HashMap<String, VecDeque<&OwnedSubrecord>> = HashMap::new();
-    for sr in subrecords {
-        by_sig
-            .entry(sr.signature.as_str().to_string())
-            .or_default()
-            .push_back(sr);
-    }
-
+    let mut cur = bind::Cursor::new(subrecords);
     if let Some(def) = record_def {
         out.insert("_record_type".into(), Node::str(&def.name));
-        for member in &def.members {
-            decode_member(ctx, member, &mut out, &mut by_sig, None);
-        }
+        bind::bind_record(ctx, def, &mut cur, &mut out);
     } else {
         out.insert("_record_type".into(), Node::str(signature));
         out.insert(markers::UNKNOWN_RECORD.into(), Node::Bool(true));
+        while cur.skip_one() {}
     }
 
-    // Emit any subrecords not consumed, by signature in document order.
-    let mut leftover: Vec<(&String, &VecDeque<&OwnedSubrecord>)> =
-        by_sig.iter().filter(|(_, subs)| !subs.is_empty()).collect();
-    leftover.sort_by_key(|(_, subs)| subs.front().map(|sr| sr.doc_index));
-    let raw_remaining: Fields = leftover
-        .into_iter()
-        .map(|(sig, subs)| {
-            let entries = subs
-                .iter()
-                .map(|sr| {
-                    Node::obj([
-                        ("signature", Node::str(sig.as_str())),
-                        ("hex", Node::Str(hex::encode(&sr.data))),
-                        (markers::RAW, Node::Bool(true)),
-                    ])
-                })
-                .collect();
-            (sig.clone(), Node::Array(entries))
-        })
-        .collect();
-    if !raw_remaining.is_empty() {
-        out.insert(markers::UNMAPPED.into(), Node::Struct(raw_remaining));
+    // Subrecords no member took, grouped by signature in document order.
+    let mut unmapped: Fields = Fields::new();
+    for sr in cur.into_unbound() {
+        let entry = Node::obj([
+            ("signature", Node::str(sr.signature.as_str())),
+            ("hex", Node::Str(hex::encode(&sr.data))),
+            (markers::RAW, Node::Bool(true)),
+        ]);
+        match unmapped.get_mut(sr.signature.as_str()) {
+            Some(Node::Array(entries)) => entries.push(entry),
+            _ => {
+                unmapped.insert(sr.signature.as_str().to_owned(), Node::Array(vec![entry]));
+            }
+        }
+    }
+    if !unmapped.is_empty() {
+        out.insert(markers::UNMAPPED.into(), Node::Struct(unmapped));
     }
 
     if signature == "WEAP" {
@@ -472,8 +419,6 @@ mod tests {
             outer_struct: None,
             record_signature: None,
             record_edid_char: None,
-            scope_min_doc_index: None,
-            scope_max_doc_index: None,
         }
     }
 

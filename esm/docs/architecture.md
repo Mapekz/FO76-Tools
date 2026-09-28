@@ -27,10 +27,17 @@ serde_json::Value   — one JSON object per record
 ```
 
 `decode_record` looks up the record's shape in `ctx.schema` (`src/schema.rs`'s `Schema`,
-loaded once via `Schema::load_embedded()` from the compiled-in `schema/fo76.json`) and walks
-its `MemberDef` tree with `decode/walk.rs`'s `decode_member`/`decode_struct_fields` (one giant
-match per member kind, `RArray`/`Union` broken further into named `decode_*_member` helpers),
-dispatching per field kind into a `decode::node::Node` tree: leaf scalar codecs (`scalar_int`,
+loaded once via `Schema::load_embedded()` from the compiled-in `schema/fo76.json`).
+`decode/bind.rs` then binds the record's subrecords to its members in file order, the way
+xEdit does: a record or `rstruct` keeps a cursor over its member list and each subrecord goes
+to the next member at or after the cursor that can take its signature; an `rstruct` opens on
+its first member's signature (any member's when the schema marks it `any_member`) and ends at
+the first subrecord it can't place; an `rarray` takes elements while its element can open on
+the next subrecord; a signature-less union takes the first variant that can. Records and
+rstructs marked `unordered` look members up by signature instead. The flags come from xEdit's
+own definitions via the extractor. Each bound subrecord's bytes are decoded by
+`decode/walk.rs` (`decode_struct_fields`, and `decode_member` for payload-level union variants
+and array elements) into a `decode::node::Node` tree: leaf scalar codecs (`scalar_int`,
 `scalar_formid`, …) in `decode/scalars.rs`,
 self-describing Model Information blobs in `decode/model_info.rs`, `VMAD` script-attachment blobs to
 `src/decode/vmad.rs` (`decode_vmad`, plus type-specific `decode_vmad_{qust,info,pack,perk,scen}`
@@ -268,7 +275,7 @@ extracts the newest section of an official patch-notes page for the discrepancy 
 
 | Want to... | Look in |
 |---|---|
-| Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py`, then `src/decode/walk.rs`'s `decode_member` / `src/decode/rules.rs` for any post-decode synthesis |
+| Add or fix a decoded field | `schema/fo76.overrides.json` or `tools/extractor/extract.py` (member order and the `unordered`/`any_member` binding flags decide which subrecord a member binds), then `src/decode/bind.rs` for binding, `src/decode/walk.rs` for payload decoding, `src/decode/rules.rs` for any post-decode synthesis |
 | Add a new CLI subcommand | `src/bin/cli/main.rs` (`Commands` enum + `dispatch_command`); its handler body goes in the matching `src/bin/cli/*.rs` module (`query.rs`, `refs.rs`, `walk.rs`, `diff.rs`, `cache.rs`, `inspect.rs`, …); add the op itself (an `Args` struct and function in a `src/ops/` family module, plus one `ops!` line in `src/ops/mod.rs`) if it needs `esm batch`/N-API reach too |
 | Change diff noise suppression | `src/diff/noise.rs`'s `strip_noise_fields` / `DiffOptions` |
 | Change array-pairing behavior | `src/diff/array_diff.rs`'s `element_key_spec` / `widen_key_spec_until_unique` — read ADR 0005 first, especially before touching CTDA `Conditions[]` |

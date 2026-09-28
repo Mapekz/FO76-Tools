@@ -627,169 +627,21 @@ def sig_id(token: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# stop_before annotation pass
+# Binding flags
 # ---------------------------------------------------------------------------
 
-def _anchor_sig(member: dict | None) -> str | None:
-    """Return the first 4-char subrecord signature found in a parsed member dict.
-
-    Mirrors decode.rs `anchor_sig`: recurses into rstruct members and rarray
-    elements to find the leading sig.  Used to set `stop_before` boundaries on
-    Conditions-style rarrays so they don't greedily consume CTDAs that belong
-    to following entries.
-    """
-    if member is None:
-        return None
-    sig = member.get("sig")
-    if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
-        return sig
-    kind = member.get("kind")
-    if kind == "rstruct":
-        for m in member.get("members", []):
-            s = _anchor_sig(m)
-            if s:
-                return s
-    elif kind == "rarray":
-        elem = member.get("element")
-        if elem:
-            return _anchor_sig(elem)
-    return None
+def _sig_list(arg: str) -> list[str]:
+    """Signatures in a Pascal `[SIG1, SIG2]` list argument (`[]`/`nil` → [])."""
+    arg = arg.strip()
+    if not arg.startswith("["):
+        return []
+    return [t for t in (sig_id(x.strip()) for x in split_top_level(arg[1:-1])) if t]
 
 
-def _annotate_stop_before(members: list[dict], outer_stops: list[str]) -> None:
-    """Walk a member list and set ``stop_before`` on rarrays that need boundaries.
-
-    Two cases receive a boundary:
-
-    1. **Conditions rarrays** (element anchor ``CTDA``) — the original case.
-       Without a boundary hint the decoder consumes CTDAs greedily from the
-       shared ``by_sig`` map, so per-entry conditions are stolen by the
-       record-level Conditions slot.
-
-    2. **Any rarray nested inside a repeating record group** (``outer_stops``
-       non-empty).  When an rarray sits inside an rstruct element of an outer
-       rarray, ``outer_stops`` carries the element anchor of that outer rarray
-       (and its siblings), making it non-empty.  Without a boundary the nested
-       array over-consumes across entry boundaries — e.g. all ``QSRD``
-       "Rewarded Items" in a GMRW record are pulled into the first reward entry
-       rather than being split per-reward by the ``ITME`` end-marker.
-
-    ``stop_before`` is set to the union of:
-      • anchor sigs of all sibling members that follow this rarray, and
-      • ``outer_stops`` — boundaries propagated from enclosing rarrays.
-
-    The function recurses into rstruct members, rarray elements, and union
-    variants so every nesting depth is covered.
-    """
-    for i, member in enumerate(members):
-        # Collect anchor sigs of all siblings that follow position i.
-        sibling_stops: list[str] = []
-        for j in range(i + 1, len(members)):
-            s = _anchor_sig(members[j])
-            if s and s not in sibling_stops:
-                sibling_stops.append(s)
-
-        kind = member.get("kind")
-
-        if kind == "rarray":
-            elem = member.get("element")
-            elem_anchor = _anchor_sig(elem) if elem else None
-
-            if elem_anchor == "CTDA":
-                # Conditions rarray: add stop_before so consumption halts at
-                # the next structural boundary.  Use sibling_stops + outer_stops
-                # so the boundary propagates from enclosing levels.
-                stops: list[str] = sibling_stops[:]
-                for s in outer_stops:
-                    if s not in stops:
-                        stops.append(s)
-                if stops:
-                    member["stop_before"] = stops
-                    # Also annotate the immediately-preceding CITC count
-                    # integer with the same boundary list so it defers when
-                    # the conditions appear out-of-position (e.g. FO76
-                    # NPC_ camp-pet tail CITC).
-                    for prev in reversed(members[:i]):
-                        if prev.get("kind") == "integer" and prev.get("sig") == "CITC":
-                            prev["stop_before"] = stops
-                            break
-            elif outer_stops and sibling_stops and elem and elem.get("kind") == "struct":
-                # Non-CTDA rarray nested inside a repeating record group, where
-                # the element is an atomic single-subrecord struct (kind="struct").
-                #
-                # For struct elements the anchor sig IS the element itself: if the
-                # anchor is absent there is genuinely nothing to consume, so
-                # stop_before_check's "anchor absent → halt" is correct.
-                #
-                # For rstruct elements the anchor is only the FIRST member — the
-                # anchor can be absent while later members (e.g. CS2D without CS2K
-                # in NPC_ Actor Sounds, or OBTS without OBTF in Object Templates)
-                # are still present.  Adding stop_before there causes an immediate
-                # false halt and orphans those subrecords.  So rstruct-element
-                # rarrays are excluded from this branch.
-                #
-                # Use ONLY sibling_stops (not outer_stops) as the boundary: outer_stops
-                # propagates record-level sigs (e.g. CNAM, FULL) that appear before
-                # the array elements in document order and would cause false halts.
-                stops = sibling_stops[:]
-                member["stop_before"] = stops
-
-            # Recurse into the element.  From inside the element the enclosing
-            # rarray's element anchor is itself a repeat boundary (e.g. LVLO
-            # marks the start of each new leveled-list entry).
-            if elem:
-                inner_outer: list[str] = []
-                if elem_anchor:
-                    inner_outer.append(elem_anchor)
-                for s in sibling_stops:
-                    if s not in inner_outer:
-                        inner_outer.append(s)
-                for s in outer_stops:
-                    if s not in inner_outer:
-                        inner_outer.append(s)
-                _annotate_stop_before_member(elem, inner_outer)
-
-        elif kind == "rstruct":
-            inner_outer = sibling_stops[:]
-            for s in outer_stops:
-                if s not in inner_outer:
-                    inner_outer.append(s)
-            _annotate_stop_before(member.get("members", []), inner_outer)
-
-        elif kind == "union":
-            inner_outer = sibling_stops[:]
-            for s in outer_stops:
-                if s not in inner_outer:
-                    inner_outer.append(s)
-            for variant in member.get("variants", []):
-                _annotate_stop_before_member(variant, inner_outer)
-
-
-def _annotate_stop_before_member(member: dict | None, outer_stops: list[str]) -> None:
-    """Recurse into a single member for stop_before annotation."""
-    if member is None:
-        return
-    kind = member.get("kind")
-    if kind == "rstruct":
-        _annotate_stop_before(member.get("members", []), outer_stops)
-    elif kind == "rarray":
-        elem = member.get("element")
-        elem_anchor = _anchor_sig(elem) if elem else None
-        if elem_anchor == "CTDA":
-            stops = list(outer_stops)
-            if stops:
-                member["stop_before"] = stops
-        if elem:
-            inner_outer: list[str] = []
-            if elem_anchor:
-                inner_outer.append(elem_anchor)
-            for s in outer_stops:
-                if s not in inner_outer:
-                    inner_outer.append(s)
-            _annotate_stop_before_member(elem, inner_outer)
-    elif kind == "union":
-        for variant in member.get("variants", []):
-            _annotate_stop_before_member(variant, outer_stops)
+def _allow_unordered_after(parts: list[str], members_idx: int) -> bool:
+    """wbRecord/wbRefRecord's aAllowUnordered: the argument right after the
+    member list."""
+    return members_idx + 1 < len(parts) and parts[members_idx + 1].strip() == "True"
 
 
 def _patch_qust_location_fill_type(rec: dict, extractor: "Extractor") -> None:
@@ -829,12 +681,6 @@ def _patch_qust_location_fill_type(rec: dict, extractor: "Extractor") -> None:
         return
 
     loc_fill["variants"].append(copy.deepcopy(ref_alrt_variant))
-    anchors = [extractor._extract_anchor_sigs(v) for v in loc_fill["variants"]]
-    for i, a in enumerate(anchors):
-        if not a:
-            first = extractor._extract_first_anchor_sig(loc_fill["variants"][i])
-            anchors[i] = [first] if first else []
-    loc_fill["decider"]["present_signature"] = anchors
 
 
 class Extractor:
@@ -1151,8 +997,11 @@ class Extractor:
         cp = re.search(r"\.SetCountPath\s*\(\s*'([^']+)'", expr)
         if cp:
             count_path = cp.group(1)
-        # Strip trailing Pascal method chains before dispatch.
-        expr = self._strip_method_chain(expr)
+        # dfAllowAnyMember (a binding flag, see _parse_rstruct) lives in the
+        # method chain; read it before the chain is stripped.
+        stripped = self._strip_method_chain(expr)
+        any_member = "dfAllowAnyMember" in expr[len(stripped):]
+        expr = stripped
 
         if expr.startswith("__from_version__"):
             m = re.match(r"__from_version__\((\d+),\s*(.+)\)\s*$", expr, re.DOTALL)
@@ -1197,7 +1046,10 @@ class Extractor:
         if expr.startswith("wbRStructS") and not expr.startswith("wbRStructSK"):
             return self._parse_rstructS(expr)
         if expr.startswith("wbRStruct") or expr.startswith("wbRStructSK"):
-            return self._parse_rstruct(expr)
+            result = self._parse_rstruct(expr)
+            if any_member and result.get("kind") == "rstruct":
+                result["any_member"] = True
+            return result
         if expr.startswith("wbRArray") or expr.startswith("wbRArrayS"):
             result = self._parse_rarray(expr)
             if count_path and isinstance(result, dict) and result.get("kind") == "rarray":
@@ -1242,7 +1094,7 @@ class Extractor:
         # wbVec3 / wbVec3PosRot — vec3 support
         if expr.startswith("wbVec3") and "(" in expr:
             return self._parse_vec3(expr)
-        # wbRUnion — record-level polymorphic union; use PresentSignature decider.
+        # wbRUnion — record-level polymorphic union, chosen by subrecord signature.
         if expr.startswith("wbRUnion"):
             return self._parse_runion(expr)
         # wbLenString — length-prefixed string (all uses in FO76 are inside VMAD).
@@ -1344,13 +1196,15 @@ class Extractor:
         # []-starting part after the name that looks like a member list (not a
         # numeric sort-key array).  The same heuristic as _parse_struct applies.
         members_expr: str | None = None
-        for p in parts[idx + 1:]:
+        members_idx = -1
+        for i, p in enumerate(parts[idx + 1:], start=idx + 1):
             ps = p.strip()
             if ps.startswith("["):
                 inner = ps[1:].rstrip("]").strip()
                 if inner and re.match(r"^[\d\s,]+$", inner):
                     continue  # numeric sort-key array — skip
                 members_expr = p
+                members_idx = i
                 break
         if members_expr is None:
             # Fallback: first []-starting arg anywhere in parts
@@ -1360,7 +1214,18 @@ class Extractor:
         start = members_expr.index("[")
         fe = find_matching_bracket(members_expr, start)
         members = self._parse_member_list(members_expr[start + 1 : fe])
-        return {"kind": "rstruct", "name": name, "members": members}
+        out = {"kind": "rstruct", "name": name, "members": members}
+        # Binding flags (xEdit TwbSubRecordStructDef): the trailing positional
+        # args after the member list are (aSkipSigs, aPriority, aRequired,
+        # aDontShow, aAllowUnordered, ...).
+        if members_idx >= 0:
+            trailing = [p.strip() for p in parts[members_idx + 1 :]]
+            skip_sigs = _sig_list(trailing[0]) if trailing else []
+            if skip_sigs:
+                out["skip_sigs"] = skip_sigs
+            if len(trailing) > 4 and trailing[4] == "True":
+                out["unordered"] = True
+        return out
 
     def _parse_rstructS(self, expr: str) -> dict:
         """wbRStructS('GroupName', 'ElemName', [...members...]) → rarray of rstruct.
@@ -1858,108 +1723,17 @@ class Extractor:
     def _parse_sig_ref(self, sig: str) -> dict:
         return {"kind": "unknown", "sig": sig, "name": sig}
 
-    def _extract_anchor_sig(self, member: dict | None) -> str | None:
-        """Return the first 4-char subrecord signature found in a parsed member dict."""
-        sigs = self._extract_anchor_sigs(member)
-        return sigs[0] if sigs else None
-
-    def _unwrap_member_list(self, member: dict | None) -> list[dict]:
-        if member is None:
-            return []
-        if member.get("kind") in ("rstruct", "struct"):
-            return member.get("members") or member.get("fields") or []
-        return [member]
-
-    def _direct_sibling_sigs(self, member: dict | None) -> list[str]:
-        """Top-level sig members of an rstruct/struct variant branch (stops at nested rstruct/union)."""
-        sigs: list[str] = []
-        for child in self._unwrap_member_list(member):
-            if child.get("kind") == "union":
-                break
-            if child.get("kind") in ("rstruct", "struct"):
-                break
-            sig = child.get("sig")
-            if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
-                sigs.append(sig)
-        return sigs
-
-    def _extract_anchor_sigs(self, member: dict | None) -> list[str]:
-        """Return discriminant subrecord signatures for a wbRUnion variant.
-
-        Normally the first sig-bearing member selects the variant.  When a variant
-        begins with a nested wbRUnion (QUST Alias Fill-Type → Match Type), collect
-        the first sig (plus any sibling sigs) from each nested branch so ALNA/ALFE/
-        ALFD/ALCC all resolve to the same parent variant.
-        """
-        if member is None:
-            return []
-
-        sig = member.get("sig")
-        if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
-            return [sig]
-
-        members = self._unwrap_member_list(member)
-        if members and members[0].get("kind") == "union":
-            sigs: list[str] = []
-            for branch in members[0].get("variants", []):
-                for sig in self._direct_sibling_sigs(branch):
-                    if sig not in sigs:
-                        sigs.append(sig)
-            return sigs
-
-        sigs: list[str] = []
-        for child in members:
-            if child.get("kind") == "union":
-                break
-            if child.get("kind") in ("rstruct", "struct"):
-                break
-            sig = child.get("sig")
-            if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
-                sigs.append(sig)
-        if sigs:
-            return sigs
-
-        # Variant may lead with a nested union/struct (QUST General → DATA); fall back
-        # to the first sig anywhere in the variant subtree.
-        first = self._extract_first_anchor_sig(member)
-        if first:
-            return [first]
-        return []
-
-    def _extract_first_anchor_sig(self, member: dict | None) -> str | None:
-        if member is None:
-            return None
-        sig = member.get("sig")
-        if sig and re.fullmatch(r"[A-Z0-9_]{4}", sig):
-            return sig
-        for child in member.get("members", []):
-            found = self._extract_first_anchor_sig(child)
-            if found:
-                return found
-        for child in member.get("fields", []):
-            found = self._extract_first_anchor_sig(child)
-            if found:
-                return found
-        for child in member.get("variants", []):
-            found = self._extract_first_anchor_sig(child)
-            if found:
-                return found
-        elem = member.get("element")
-        if elem:
-            return self._extract_first_anchor_sig(elem)
-        return None
-
     def _parse_runion(self, expr: str) -> dict:
         """Parse a wbRUnion(...) expression into a union MemberDef.
 
         Signature forms:
-            wbRUnion('Name', [variants])                  — no decider (PresentSignature)
+            wbRUnion('Name', [variants])                  — no decider (by_signature)
             wbRUnion('Name', wbSomeDecider, [variants])   — explicit decider (check KNOWN_UNION_DECIDERS)
 
-        For the no-decider form, the anchor signature of each variant is determined
-        by the first sig-bearing member it contains, and a PresentSignature decider
-        is emitted.  For the explicit-decider form, KNOWN_UNION_DECIDERS is checked;
-        if not found, a raw_fallback is returned.
+        The no-decider form emits a `by_signature` decider: the decoder binds the
+        first variant that can take the current subrecord, as xEdit does. For the
+        explicit-decider form, KNOWN_UNION_DECIDERS is checked; if not found, a
+        raw_fallback is returned.
         """
         lparen = expr.index("(")
         rparen = find_matching_paren(expr, lparen)
@@ -2006,21 +1780,8 @@ class Extractor:
             return {"kind": "raw_fallback", "name": name or "Record Union", "reason": "wbRUnion no variants parsed"}
 
         if decider is None:
-            # Build PresentSignature from all reachable anchor sigs of each variant.
-            anchors = [self._extract_anchor_sigs(v) for v in variants]
-            # Drop sigs shared across variants (e.g. ALID on every QUST Alias type) so
-            # only discriminant anchors remain.
-            from collections import Counter
-
-            freq = Counter(sig for a in anchors for sig in a)
-            shared = {sig for sig, n in freq.items() if n > 1}
-            if shared:
-                anchors = [[sig for sig in a if sig not in shared] for a in anchors]
-            for i, a in enumerate(anchors):
-                if not a:
-                    first = self._extract_first_anchor_sig(variants[i])
-                    anchors[i] = [first] if first else []
-            decider = {"present_signature": anchors}
+            # No decider: the first variant that can bind the subrecord wins.
+            decider = {"by_signature": True}
 
         return {"kind": "union", "name": name or "Record Union", "decider": decider, "variants": variants}
 
@@ -2064,6 +1825,7 @@ class Extractor:
         """
         if hasattr(self, "_reference_record_members_cache"):
             return self._reference_record_members_cache
+        self._reference_record_unordered = False
 
         # Find the procedure declaration
         proc_m = re.search(r"\bprocedure\s+ReferenceRecord\s*\(", self.fo76)
@@ -2095,12 +1857,14 @@ class Extractor:
         parts = split_top_level(inner)
 
         # Find the [...members...] arg (last top-level [...] part)
-        members_expr = next(
-            (p for p in reversed(parts) if p.strip().startswith("[")), None
+        members_idx = max(
+            (i for i, p in enumerate(parts) if p.strip().startswith("[")), default=-1
         )
-        if members_expr is None:
+        if members_idx < 0:
             self._reference_record_members_cache = []
             return []
+        members_expr = parts[members_idx]
+        self._reference_record_unordered = _allow_unordered_after(parts, members_idx)
 
         mb = members_expr.index("[")
         me = find_matching_bracket(members_expr, mb)
@@ -2129,17 +1893,24 @@ class Extractor:
             )
             name = name_m.group(1) if name_m else sig
             members = self._get_reference_record_members()
-            return {"name": name, "members": members}
+            out = {"name": name, "members": members}
+            if self._reference_record_unordered:
+                out["unordered"] = True
+            return out
         lparen = self.fo76.index("(", m.start())
         rparen = find_matching_paren(self.fo76, lparen)
         args = self.fo76[lparen + 1 : rparen]
         parts = split_top_level(args)
         name = unquote(parts[1])
-        members_expr = next(p for p in reversed(parts) if p.strip().startswith("["))
+        members_idx = max(i for i, p in enumerate(parts) if p.strip().startswith("["))
+        members_expr = parts[members_idx]
         mb = members_expr.index("[")
         me = find_matching_bracket(members_expr, mb)
         members = self._parse_member_list(members_expr[mb + 1 : me])
-        return {"name": name, "members": members}
+        out = {"name": name, "members": members}
+        if _allow_unordered_after(parts, members_idx):
+            out["unordered"] = True
+        return out
 
     def run(self) -> dict:
         records: dict = {}
@@ -2155,12 +1926,6 @@ class Extractor:
                 print(f"extracted {sig}: {len(rec['members'])} members", file=sys.stderr)
             else:
                 print(f"WARNING: missing {sig}", file=sys.stderr)
-
-        # Annotate Conditions rarrays with stop_before boundaries so the decoder
-        # does not greedily consume per-entry CTDAs into the record-level Conditions
-        # slot.
-        for rec in records.values():
-            _annotate_stop_before(rec.get("members", []), [])
 
         # Fixup OBTS "Property" union default_variant per record type.
         # OBTS contains wbObjectModProperties whose "Property" field is a FieldValue
@@ -2337,7 +2102,7 @@ def _apply_schema_kinds(members: list) -> None:
             _apply_schema_kinds([elem])
 
 
-def _dedup_field_names(members: list) -> None:
+def _dedup_field_names(members: list, subrecord_level: bool = True) -> None:
     """Rename duplicate sibling field names to '<name> 2', '<name> 3', …
 
     Bakes `insert_unique`'s runtime disambiguation (e.g. MGEF's twin
@@ -2345,24 +2110,35 @@ def _dedup_field_names(members: list) -> None:
     are declared rather than patched at decode time. Union `variants` are
     NOT deduped — only one variant decodes per record, so same-named
     variants never collide.
+
+    A record or rstruct member that repeats an earlier sibling's definition
+    exactly keeps its name: xEdit lists the same subrecord at several
+    positions (MISC's two `wbFULL`, three `wbOPDSs`) so it binds wherever
+    the data places it, and it is still that one field. Payload struct
+    fields all decode, so they are always renamed.
     """
     if not members:
         return
     seen: dict[str, int] = {}
+    first_def: dict[str, dict] = {}
     for m in members:
         if not isinstance(m, dict):
             continue
         name = m.get("name")
         if isinstance(name, str) and name:
+            body = {k: v for k, v in m.items() if k != "name"}
+            if subrecord_level and first_def.get(name) == body:
+                continue
+            first_def.setdefault(name, body)
             count = seen.get(name, 0) + 1
             seen[name] = count
             if count > 1:
                 m["name"] = f"{name} {count}"
-        for key in ("members", "fields"):
-            _dedup_field_names(m.get(key, []))
+        _dedup_field_names(m.get("members", []), True)
+        _dedup_field_names(m.get("fields", []), False)
         elem = m.get("element")
         if isinstance(elem, dict):
-            _dedup_field_names([elem])
+            _dedup_field_names([elem], m.get("kind") == "rarray")
 
 
 # pt* → CTDA param class (must match ctda.rs decode_param).

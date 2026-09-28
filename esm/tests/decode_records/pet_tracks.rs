@@ -6,20 +6,11 @@ use crate::common::{assert_fully_decoded, assert_record_type, decode_fixture};
 
 /// PGTR 0x00927373 — `WorldPets_ProgressionTrack_Radhog` (World Pets progression track).
 ///
-/// form_version 210. Regression test for an RArray-scoping bug this record's schema
-/// (`schema/fo76.overrides.json` records.PGTR) originally hit: the "Reward" rstruct's
-/// trailing "Next Reward Present" marker (sig `NAM3`, shared with the earlier "Description
-/// Text" field in the same rstruct) was declared `kind: "empty"`, which uses the
-/// UNSCOPED `take_first` (see `src/decode/walk.rs`'s `MemberDef::Empty` arm — empty
-/// markers intentionally bypass scope for the QUST-alias-ALED case) instead of the scoped
-/// `take_first_in_scope` every other field kind uses. An unscoped marker sharing a sig with
-/// an earlier scoped field in the same repeated rstruct blindly steals the NEXT unconsumed
-/// subrecord of that sig regardless of element boundaries — here, every entry's "Next Reward
-/// Present" check stole the FOLLOWING entry's own "Description Text", corrupting every
-/// entry after the first. Fixed by changing that member's `kind` from `"empty"` to `"lstring"`
-/// (matching its sibling field's type — the scoped lstring decoder respects element
-/// boundaries correctly, and produces the same JSON shape: `null` when present with empty
-/// content, key omitted when genuinely absent).
+/// form_version 210. The "Reward" rstruct's trailing "Next Reward Present"
+/// marker (sig `NAM3`, shared with the earlier "Description Text" field of the
+/// same rstruct) binds within its own reward, so every entry keeps its own
+/// "Description Text". The marker is declared `lstring`, which renders `null`
+/// when present with empty content and omits the key when absent.
 ///
 /// This record exercises both shapes: single-reward entries (thresholds 5-20 etc.) and
 /// two-reward entries (thresholds 25 and 80 — the second reward is an alternate for an

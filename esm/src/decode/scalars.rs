@@ -365,11 +365,11 @@ pub(super) fn choose_union_variant(
                 None
             }
         }
-        // ByteAtOffset, FieldValue, PresentSignature, FormIdTargetType, and
+        // ByteAtOffset, FieldValue, BySignature, FormIdTargetType, and
         // PayloadSize are handled by the callers
         UnionDecider::ByteAtOffset { .. }
         | UnionDecider::FieldValue { .. }
-        | UnionDecider::PresentSignature { .. }
+        | UnionDecider::BySignature { .. }
         | UnionDecider::FormIdTargetType { .. }
         | UnionDecider::PayloadSize { .. } => None,
         UnionDecider::Raw => None,

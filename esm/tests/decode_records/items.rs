@@ -86,26 +86,11 @@ fn alch_tracking_dart_decodes_correctly() {
     assert_eq!(kws.len(), 2, "expected 2 keywords");
 }
 
-/// Synthetic ALCH with two effects — regression test for the cross-effect
-/// trailer-stealing bug fixed by scoping `MemberDef::RArray` elements to
-/// `[this element's anchor doc_index, next element's anchor doc_index)`.
-///
-/// `by_sig` is one global FIFO queue per signature across the whole record.
-/// Before the fix, an effect's *optional* trailing sig-bearing members
-/// (`CVT0`/`MAGA`/`DURG`/`MAGG`/`EIES`/`CODG`/`CODV`) were popped via a bare,
-/// unbounded `take_first`, so an earlier effect with no `DURG`/`MAGG` of its
-/// own would steal a *later* effect's `DURG`/`MAGG` — exactly the pattern
-/// proven against the live ESM for ALCH `Psycho` (0x0003377D) and `Buffout`
-/// (0x00033778), where a ghoul-only effect's `GLOB` landed on an earlier,
-/// unrelated damage effect.
-///
-/// Effect 0 here carries only the mandatory `EFID`/`EFIT` pair (no
-/// `DURG`/`MAGG`); Effect 1 carries `EFID`/`EFIT` plus its own `DURG`/`MAGG`.
-/// Pre-fix, Effect 0 would wrongly inherit Effect 1's `DURG`/`MAGG` FormIDs
-/// (stolen out from under it) and Effect 1 would decode with no
-/// Duration/Magnitude at all (already stolen). Post-fix, Effect 0 must have
-/// neither key, and Effect 1 must resolve to exactly the FormIDs encoded in
-/// its own `DURG`/`MAGG` bytes.
+/// Synthetic ALCH with two effects: each effect's optional trailing members
+/// (`CVT0`/`MAGA`/`DURG`/`MAGG`/`EIES`/`CODG`/`CODV`) bind to that effect only,
+/// so an effect with no `DURG`/`MAGG` of its own never takes a later effect's.
+/// This is the live-ESM shape of ALCH `Psycho` (0x0003377D) and `Buffout`
+/// (0x00033778), whose ghoul-only effect carries the `GLOB`.
 #[test]
 fn alch_two_effects_do_not_cross_contaminate_optional_trailers() {
     // EFIT payload at form_version 209 (>=183, so neither below_version-gated
@@ -489,22 +474,10 @@ fn misc_bobby_pin_decodes_correctly() {
     );
 }
 
-/// ARMA-shaped regression test for the min-doc-index rstruct scoping fix
-/// (`rstruct_present_signature_scope` in `src/decode.rs`, "Fix A").
-///
-/// Mirrors the diagnosed shape of ARMA `0x00156CB9`
-/// (`AAClothesPreWarHouseDress`): a "Biped Model" rstruct whose `Male` and
-/// `Female` sub-rstructs share the `ENLT`/`ENLS`/`AUUV`/`XFLG` sigs. The Male
-/// group has no model of its own (`MOD2`/`MO2T`/`MO2C`/`MO2S` all absent), so
-/// in *schema declaration order* its own first present member is `XFLG` —
-/// but `XFLG` here belongs (in document order) to the Female group's own
-/// instance, which sits *after* Female's `MOD3`. Before the fix,
-/// `rstruct_present_signature_scope` used `find_map` (first schema-order
-/// hit) to compute the whole "Biped Model" rstruct's `scope_min`, landing on
-/// `XFLG`'s doc_index and stranding Male's own earlier `ENLT`/`ENLS`/`AUUV`
-/// and Female's own earlier `MOD3` outside that scope forever (`_unmapped`
-/// `ENLS` and `MOD3`). Taking the MINIMUM doc_index across all members fixes
-/// both.
+/// ARMA `0x00156CB9` (`AAClothesPreWarHouseDress`) shape: the "Biped Model"
+/// rstruct's `Male` group has no model of its own (`MOD2`/`MO2T`/`MO2C`/`MO2S`
+/// absent), so its `ENLT`/`ENLS`/`AUUV` open it, and the `XFLG` after
+/// `Female`'s `MOD3` belongs to `Female`. Nothing is left `_unmapped`.
 #[test]
 fn arma_biped_model_male_missing_model_does_not_strand_scoped_members() {
     let result = decode_fixture(

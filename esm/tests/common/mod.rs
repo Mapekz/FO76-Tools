@@ -61,8 +61,6 @@ pub fn bare_ctx_fv(schema: &Schema, form_version: u16) -> DecodeContext<'_> {
         outer_struct: None,
         record_signature: None,
         record_edid_char: None,
-        scope_min_doc_index: None,
-        scope_max_doc_index: None,
     }
 }
 

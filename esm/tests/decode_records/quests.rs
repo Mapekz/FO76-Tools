@@ -67,7 +67,7 @@ fn qmdl_object_destruction_decodes_correctly() {
     assert_fully_decoded(&result);
 }
 
-/// QUST 0x000011F0 — `GQ_WorkshopReclaim` — alias fill-type + scoped PresentSignature regression.
+/// QUST 0x000011F0 — `GQ_WorkshopReclaim` — each alias takes its own fill type.
 #[test]
 fn qust_gq_workshop_reclaim_decodes_correctly() {
     let result = decode_fixture(
@@ -204,7 +204,7 @@ fn qust_gq_workshop_reclaim_decodes_correctly() {
     assert_eq!(aliases.len(), 0);
 }
 
-/// QUST 0x0000123F — `GQ_Horde` — alias fill-type + scoped PresentSignature regression.
+/// QUST 0x0000123F — `GQ_Horde` — each alias takes its own fill type.
 #[test]
 fn qust_gq_horde_alias_fill_decodes_correctly() {
     let result = decode_fixture(
@@ -768,21 +768,10 @@ fn qust_gq_horde_alias_fill_decodes_correctly() {
     );
 }
 
-/// SCEN-shaped regression test for the `RArray` recursion arm added to
-/// `first_anchor_doc_index` (`src/decode.rs`, "Fix B").
-///
-/// Mirrors the diagnosed shape of SCEN `0x001D1410`
-/// (`SFM04_Organic_TrackerRadioScene`): a "Start Scene" action variant
-/// rstruct `[STSC (absent), Scenes rarray of [LCEP, INTT, SSPN, CITC,
-/// Conditions], HTID]`. Before the fix, `first_anchor_doc_index` had no arm
-/// for `MemberDef::RArray`, so the `Scenes` member contributed no candidate
-/// to the enclosing rstruct's `scope_min` computation — with `STSC` absent,
-/// the only remaining candidate was `HTID`, which sits *after* every
-/// `LCEP`/`INTT`/`SSPN`/`CITC` subrecord in document order. That excluded the
-/// entire `Scenes` array from the "Start Scene" rstruct's scope, leaving all
-/// four sigs `_unmapped`. Recursing into the array's element (combined with
-/// Fix A's min-based `scope_min`) fixes it: the effective `scope_min` becomes
-/// `LCEP`'s own doc_index.
+/// SCEN `0x001D1410` (`SFM04_Organic_TrackerRadioScene`) shape: a "Start
+/// Scene" action variant `[STSC (absent), Scenes rarray of [LCEP, INTT, SSPN,
+/// CITC, Conditions], HTID]`. With `STSC` absent the `Scenes` array's `LCEP`
+/// opens the variant, and every `LCEP`/`INTT`/`SSPN`/`CITC` binds into it.
 #[test]
 fn scen_start_scene_action_scenes_array_not_stranded_by_trailing_htid() {
     let result = decode_fixture(

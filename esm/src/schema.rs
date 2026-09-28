@@ -44,6 +44,10 @@ pub struct RecordDef {
     pub name: String,
     #[serde(default)]
     pub members: Vec<MemberDef>,
+    /// xEdit `aAllowUnordered`: subrecords bind to members by signature in
+    /// any order, instead of following member order (see `decode/bind.rs`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unordered: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -64,6 +68,16 @@ pub enum MemberDef {
     RStruct {
         name: String,
         members: Vec<MemberDef>,
+        /// xEdit `aAllowUnordered`: members bind by signature in any order.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        unordered: bool,
+        /// xEdit `dfAllowAnyMember`: any member's subrecord (not only the
+        /// first member's) can open the struct.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        any_member: bool,
+        /// xEdit `aSkipSigs`: signatures passed over inside the struct.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        skip_sigs: Vec<String>,
     },
     #[serde(rename = "rarray")]
     RArray {
@@ -71,12 +85,6 @@ pub enum MemberDef {
         element: Box<MemberDef>,
         #[serde(default)]
         count: Option<ArrayCount>,
-        /// Halt iteration before consuming the next element when any listed
-        /// signature has a lower `doc_index` than the element's first sig-bearing
-        /// member. Used for PERK condition groups that are interleaved with
-        /// other subrecords (EPFT/PRKC) and cannot be bounded by count alone.
-        #[serde(default)]
-        stop_before: Vec<String>,
     },
     #[serde(rename = "array")]
     Array {
@@ -114,12 +122,6 @@ pub enum MemberDef {
         /// `member_from_size_ok` in decode.rs.
         #[serde(default)]
         from_size: Option<usize>,
-        /// Halt consumption when any listed sig has a lower `doc_index` than
-        /// this integer's `sig` in the subrecord stream.  Mirrors the same
-        /// field on `RArray` — used for condition-count integers (CITC) that
-        /// must defer to a later, correctly-positioned schema member.
-        #[serde(default)]
-        stop_before: Vec<String>,
     },
     #[serde(rename = "float")]
     Float {
@@ -285,6 +287,32 @@ impl MemberDef {
         }
     }
 
+    /// The member's name (its output key).
+    pub fn name(&self) -> &str {
+        match self {
+            MemberDef::Struct { name, .. }
+            | MemberDef::RStruct { name, .. }
+            | MemberDef::RArray { name, .. }
+            | MemberDef::Array { name, .. }
+            | MemberDef::Union { name, .. }
+            | MemberDef::Integer { name, .. }
+            | MemberDef::Float { name, .. }
+            | MemberDef::String { name, .. }
+            | MemberDef::LString { name, .. }
+            | MemberDef::FormId { name, .. }
+            | MemberDef::Bytes { name, .. }
+            | MemberDef::ByteRgba { name, .. }
+            | MemberDef::Vec3 { name, .. }
+            | MemberDef::Empty { name, .. }
+            | MemberDef::Unknown { name, .. }
+            | MemberDef::RawFallback { name, .. }
+            | MemberDef::Vmad { name, .. }
+            | MemberDef::Ctda { name, .. }
+            | MemberDef::ModelInfo { name, .. } => name,
+            MemberDef::Unused { .. } => "",
+        }
+    }
+
     /// Returns whether this member or any nested member declares `sig`.
     pub fn contains_sig(&self, sig: &str) -> bool {
         if self.sig() == Some(sig) {
@@ -437,13 +465,10 @@ pub enum UnionDecider {
         #[serde(default)]
         edid_default: Option<usize>,
     },
-    /// Select variant by which anchor subrecord is present in the stream.
-    /// `present_signature[i]` is the set of subrecord signatures that select
-    /// variant `i` (any match counts).  The variant whose earliest-matching
-    /// anchor has the lowest `doc_index` wins.
-    /// Used for `wbRUnion` (record-level polymorphic unions).
-    PresentSignature {
-        present_signature: Vec<Vec<String>>,
+    /// A `wbRUnion` without a decider: the first variant that can bind the
+    /// current subrecord (see `decode/bind.rs`). Always `{"by_signature": true}`.
+    BySignature {
+        by_signature: bool,
     },
     Raw,
 }
