@@ -276,8 +276,8 @@ pub enum VmadFragments {
     Scen,
 }
 
-// `SCHEMA_DIGEST`: FNV-1a over the embedded `fo76.json` and `fo76.ctda.json`,
-// computed by `build.rs`.
+// `SCHEMA_DIGEST`: FNV-1a over the embedded `fo76.json`, `fo76.ctda.json` and
+// `hardcoded_fo76.json`, computed by `build.rs`.
 include!(concat!(env!("OUT_DIR"), "/schema_digest.rs"));
 
 // `EMBEDDED_RECORDS`: `fo76.json`'s record definitions as raw JSON, one

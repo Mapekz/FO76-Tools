@@ -753,6 +753,21 @@ pub(crate) fn array_diff(a: &[Value], b: &[Value]) -> Value {
     diff
 }
 
+/// Array fields whose element order carries meaning even when no element
+/// changed: a region area's boundary polygon (`Points`), navmesh vertices
+/// (`Vertices`, which triangles address by position), and an
+/// instance-naming ruleset's `Names` (the first match wins). A reorder of
+/// one stays a plain change, never `reorder_only`; [`super::json_diff`]
+/// clears the mark by field name, since [`array_diff`] sees only elements.
+pub(crate) const ORDER_SIGNIFICANT_FIELDS: &[&str] = &["Points", "Vertices", "Names"];
+
+/// Drop the `reorder_only` mark from an `_array_diff` envelope.
+pub(crate) fn clear_reorder_only(diff: &mut Value) {
+    if let Some(inner) = diff.get_mut("_array_diff").and_then(Value::as_object_mut) {
+        inner.remove("reorder_only");
+    }
+}
+
 /// Whether `a` and `b` hold the same elements up to order, comparing nested
 /// arrays order-insensitively too. A CTDA condition list never counts: a
 /// condition's position is semantic (`AND`/`OR` chaining), so reordering
@@ -893,6 +908,16 @@ mod tests {
         let diff = array_diff(&a, &b);
         assert!(diff.get("_array_diff").is_some());
         assert!(!reorder_only(&diff));
+    }
+
+    #[test]
+    fn a_reordered_polygon_is_a_real_change() {
+        let point = |x: i64, y: i64| serde_json::json!({"x": x, "y": y});
+        let a = serde_json::json!({"Points": [point(0, 0), point(1, 0), point(0, 1)]});
+        let b = serde_json::json!({"Points": [point(1, 0), point(0, 0), point(0, 1)]});
+        let diff = super::super::json_diff(&a, &b);
+        assert!(diff["Points"].get("_array_diff").is_some());
+        assert!(!reorder_only(&diff["Points"]));
     }
 
     #[test]

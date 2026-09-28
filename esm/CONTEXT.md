@@ -100,7 +100,8 @@ implementation detail)
 **Reorder-only array**:
 An array diff whose two sides hold the same elements in a different order, compared
 order-insensitively at every depth; `_array_diff` marks it `reorder_only: true`. A CTDA condition
-list never counts, because its order is semantic.
+list never counts, nor do the fields whose order is semantic (a region's `Points` polygon,
+navmesh `Vertices`, an instance-naming ruleset's `Names`).
 
 **Unkeyed array**:
 An array whose elements have no stable element identity, so a diff reports only the elements

@@ -2,13 +2,11 @@
 //! just `output::print_json` on the raw `DiffResult`).
 
 use anyhow::Context as _;
-use esm::ops::Op;
 use esm::{BodyDetail, Database, DiffResult, FormIdBase};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::Backend;
 use crate::output::{esm_string_prefix, print_json, render_form_id};
 
 /// Rewrite every identity FormID in a `DiffResult` (the `added`/`removed`
@@ -99,7 +97,6 @@ fn resolve_localization_or_bail(
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_diff(
-    backend: &mut Backend,
     file_a: &Path,
     file_b: &Path,
     record_type: Option<&str>,
@@ -135,91 +132,73 @@ pub(crate) fn cmd_diff(
     let cd_a = curves_dir_a.or_else(|| curves_dir.clone());
     let cd_b = curves_dir_b.or_else(|| curves_dir.clone());
 
-    let has_overrides = lba2_a.is_some()
-        || lba2_b.is_some()
-        || sd_a.is_some()
-        || sd_b.is_some()
-        || sb_a.is_some()
-        || sb_b.is_some()
-        || cd_a.is_some()
-        || cd_b.is_some();
+    // Both sides open in-process with their own discovered sources; the flags
+    // above override them per side. A localized side must end up with string
+    // tables in `lang`: without them every FULL/DESC is an unresolved id and
+    // the diff is noise, so that bails instead of running.
+    let esm_a = esm::discover::resolve_sources(file_a, "en")?.esm;
+    let esm_b = esm::discover::resolve_sources(file_b, "en")?.esm;
+    let mut db_a = Database::open(&esm_a)?;
+    let mut db_b = Database::open(&esm_b)?;
+    apply_localization(&mut db_a, &esm_a, lba2_a, sd_a, lang)?;
+    apply_localization(&mut db_b, &esm_b, lba2_b, sd_b, lang)?;
 
-    if has_overrides {
-        // Resolve folder → ESM so that esm_string_prefix/resolve_localization_or_bail
-        // receive the actual .esm path (not a folder).
-        let esm_a = esm::discover::resolve_sources(file_a, "en")?.esm;
-        let esm_b = esm::discover::resolve_sources(file_b, "en")?.esm;
-
-        let mut db_a = Database::open(&esm_a)?;
-        let mut db_b = Database::open(&esm_b)?;
-
-        // Load localization per side — each side is independently optional.
-        //
-        // A side whose TES4 header lacks the Localized flag stores FULL/DESC
-        // inline and never consults a string table, so requiring one there
-        // would fail a diff that needs none. The two sides can genuinely
-        // differ: a PTS build may ship localized while the release build it is
-        // diffed against does not.
-        if lba2_a.is_some() || sd_a.is_some() {
-            if db_a.is_localized {
-                let loc_a = resolve_localization_or_bail(&esm_a, lba2_a, sd_a, lang)?;
-                db_a.set_localization(loc_a);
-            } else {
-                eprintln!(
-                    "note: {} is not localized (TES4 Localized flag unset); \
-                     ignoring the string tables supplied for it",
-                    esm_a.display()
-                );
-            }
-        }
-        if lba2_b.is_some() || sd_b.is_some() {
-            if db_b.is_localized {
-                let loc_b = resolve_localization_or_bail(&esm_b, lba2_b, sd_b, lang)?;
-                db_b.set_localization(loc_b);
-            } else {
-                eprintln!(
-                    "note: {} is not localized (TES4 Localized flag unset); \
-                     ignoring the string tables supplied for it",
-                    esm_b.display()
-                );
-            }
-        }
-
-        // Load curves per side.
-        if let Some(ba2) = sb_a {
-            db_a.load_curves(&ba2)?;
-        } else if let Some(dir) = cd_a {
-            db_a.load_curves_from_dir(&dir)?;
-        }
-        if let Some(ba2) = sb_b {
-            db_b.load_curves(&ba2)?;
-        } else if let Some(dir) = cd_b {
-            db_b.load_curves_from_dir(&dir)?;
-        }
-
-        let args = esm::ops::DiffArgs {
-            b: file_b.to_path_buf(),
-            record_type: record_type.map(str::to_string),
-            options,
-        };
-        let mut result = esm::ops::diff(&db_a, &db_b, &args)?;
-        convert_diff_form_ids(&mut result, base);
-
-        return print_diff(file_a, file_b, &mut result, record_type, as_json, pretty);
+    // Curves: an override replaces what the ESM's folder supplied.
+    if let Some(ba2) = sb_a {
+        db_a.load_curves(&ba2)?;
+    } else if let Some(dir) = cd_a {
+        db_a.load_curves_from_dir(&dir)?;
+    }
+    if let Some(ba2) = sb_b {
+        db_b.load_curves(&ba2)?;
+    } else if let Some(dir) = cd_b {
+        db_b.load_curves_from_dir(&dir)?;
     }
 
-    // No source overrides: let the host open both ESMs with their own sources.
-    let v = backend.run(
-        file_a,
-        Op::Diff(esm::ops::DiffArgs {
-            b: file_b.to_path_buf(),
-            record_type: record_type.map(|s| s.to_string()),
-            options,
-        }),
-    )?;
-    let mut result: DiffResult = serde_json::from_value(v)?;
+    let args = esm::ops::DiffArgs {
+        b: file_b.to_path_buf(),
+        record_type: record_type.map(str::to_string),
+        options,
+    };
+    let mut result = esm::ops::diff(&db_a, &db_b, &args)?;
     convert_diff_form_ids(&mut result, base);
     print_diff(file_a, file_b, &mut result, record_type, as_json, pretty)
+}
+
+/// Give one side the string tables it needs. A side whose TES4 header lacks
+/// the Localized flag stores FULL/DESC inline and never consults a table, so
+/// supplied tables are ignored with a note (the two sides can differ: a PTS
+/// build may ship localized while the build it is diffed against does not).
+/// A localized side keeps the tables its folder supplied when they are the
+/// default language and nothing overrides them; otherwise it loads them from
+/// the overrides or its folder in `lang`, or bails.
+fn apply_localization(
+    db: &mut Database,
+    esm: &Path,
+    strings_ba2: Option<PathBuf>,
+    strings_dir: Option<PathBuf>,
+    lang: &str,
+) -> anyhow::Result<()> {
+    let overridden = strings_ba2.is_some() || strings_dir.is_some();
+    if !db.is_localized {
+        if overridden {
+            eprintln!(
+                "note: {} is not localized (TES4 Localized flag unset); \
+                 ignoring the string tables supplied for it",
+                esm.display()
+            );
+        }
+        return Ok(());
+    }
+    if overridden || lang != "en" || db.localization().is_none() {
+        db.set_localization(resolve_localization_or_bail(
+            esm,
+            strings_ba2,
+            strings_dir,
+            lang,
+        )?);
+    }
+    Ok(())
 }
 
 fn print_diff(

@@ -1,11 +1,11 @@
 //! Compile-time preparation of the embedded schema files.
 //!
 //! - `schema_digest.rs`: the `xref` cache section is derived from a full
-//!   schema decode of every record, so its on-disk identity must change
-//!   whenever the embedded schema does. This digest is folded into that
-//!   section's fingerprint (see `src/index.rs`), so a rebuilt binary with a
-//!   different schema rebuilds `xref` instead of reading one built from the
-//!   old schema.
+//!   schema decode of every record, keeping references to hardcoded engine
+//!   forms, so its on-disk identity must change whenever the embedded schema
+//!   or hardcoded-forms table does. This digest over both is folded into that
+//!   section's fingerprint (see `src/index.rs`), so a rebuilt binary with
+//!   different data rebuilds `xref` instead of reading one built from the old.
 //! - `schema_records.rs`: `fo76.json` split into one raw-JSON string per
 //!   record type, so opening the embedded schema doesn't scan 2 MB of JSON;
 //!   each definition is still parsed on first use (see `src/schema.rs`).
@@ -17,10 +17,11 @@ use std::path::Path;
 use serde_json::value::RawValue;
 
 const SCHEMA_FILES: [&str; 2] = ["schema/fo76.json", "schema/fo76.ctda.json"];
+const HARDCODED_FORMS: &str = "schema/hardcoded_fo76.json";
 
 fn main() {
     let mut digest: u64 = 0xcbf2_9ce4_8422_2325;
-    for file in SCHEMA_FILES {
+    for file in SCHEMA_FILES.into_iter().chain([HARDCODED_FORMS]) {
         println!("cargo:rerun-if-changed={file}");
         let bytes = std::fs::read(file).unwrap_or_else(|e| panic!("reading {file}: {e}"));
         for b in bytes {

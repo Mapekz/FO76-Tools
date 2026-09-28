@@ -826,7 +826,6 @@ fn dispatch_command(
                 curves_dir_b,
             } = *args;
             diff::cmd_diff(
-                backend,
                 &file_a,
                 &file_b,
                 record_type.as_deref(),

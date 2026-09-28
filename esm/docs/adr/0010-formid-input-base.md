@@ -27,7 +27,7 @@ committing to a concrete `RecordSel::FormId` without ever attempting the hex rea
 *identity* FormIDs (a record's own FormID, never a FormID appearing as a decoded reference field
 inside `fields`/`digest`) render as decimal in `list`/`search`/`refs`/`get`/`tree`/`diff`/`walk`
 output. `chase` is exempt from the output half: its JSON is a machine pipeline contract (ADR
-0001) consumed by `../patch-notes/pn/patchnotes_lib.py`'s `is_formid_str`, which requires literal `0x` plus 8
+0001) consumed by `../patch-notes/pn/formids.py`'s `is_rendered`, which requires literal `0x` plus 8
 hex digits — decimal output there would silently break the patch-notes pipeline, so `--decimal`
 only affects `chase`'s *input* selector parsing, for consistency with every other subcommand.
 
@@ -85,7 +85,7 @@ output, and those values are never touched.
   `GET /records?id=`) all gained an optional `decimal` argument/query-param — input interpretation
   only; none of these surfaces render output through the CLI's `--decimal`-aware paths, so their
   JSON responses stay hex regardless.
-- `../patch-notes/pn/esm_gateway.py`'s `formid_to_int` was re-synced to match the same hex-first rule — it
+- `../patch-notes/pn/formids.py`'s `to_int` was re-synced to match the same hex-first rule — it
   previously had no bare-hex branch at all and would raise on a token like `"463F"` that the Rust
   side already accepted, despite its own doc comment claiming to mirror `src/formid.rs`. It has no
   decimal-fallback logic to remove, since none was ever added there.

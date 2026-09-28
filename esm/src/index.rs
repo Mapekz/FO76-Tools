@@ -154,7 +154,8 @@ pub(crate) struct XrefSection {
 /// Version of this section's archived layout, stored in its file header so
 /// a cache written by a build with another layout is rebuilt.
 /// Also folds in the schema digest: the xref index comes from a full
-/// schema-driven decode, so a schema change invalidates it too. Bump it when
+/// schema-driven decode that keeps references to hardcoded engine forms, so
+/// a change to the schema or the hardcoded-forms table invalidates it too. Bump it when
 /// the layout golden test in this module fails.
 const XREF_LAYOUT_FINGERPRINT: u64 = crate::rkyvcache::fnv1a_u64(1, crate::schema::SCHEMA_DIGEST);
 
@@ -670,12 +671,11 @@ pub(crate) fn build_xref_section(
             // that point nowhere (misdecoded or stale data), and
             // `index.contains` is what keeps those out. `0x0` (NULL) in
             // particular appears dozens of times among PERK effects alone
-            // and stays correctly excluded — it is below the hardcoded
-            // table's `0x1A` floor. A few other low FormIDs also fall
-            // outside both the index and the table (e.g. `0x14`, just
-            // under that floor, and a couple just above the table's
-            // `0x39B` ceiling); those stay dropped too — undocumented
-            // engine internals this table doesn't cover.
+            // and stays correctly excluded — it is below the table's
+            // `0x14` (PlayerRef) floor. A few other low FormIDs also fall
+            // outside both the index and the table (a couple just above
+            // the table's `0x39B` ceiling); those stay dropped too —
+            // undocumented engine internals this table doesn't cover.
             let target_exists =
                 index.contains(target) || crate::hardcoded::lookup(target).is_some();
             if target != referencer && target_exists && seen.insert(target) {

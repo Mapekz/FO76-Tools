@@ -23,7 +23,7 @@ one syscall, answerable even while the daemon's own per-ESM `Mutex<Database>` (`
 held for the whole build.
 
 This protocol lives on the filesystem, **not** a daemon HTTP endpoint: an endpoint would only cover
-the daemon path — `--local`, the N-API/Electron host, and `../patch-notes/pn/esm_gateway.py` would stay blind,
+the daemon path — `--local`, the N-API/Electron host, and `../patch-notes/pn/esmcli.py` would stay blind,
 and a second `--local` process couldn't dedup against a building daemon at all. One filesystem
 protocol covers every caller uniformly with no IPC.
 

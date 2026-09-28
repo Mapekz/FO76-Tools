@@ -144,7 +144,8 @@ def extract(esp_path: Path, esm_bin: str) -> list[dict]:
                 entry["full"] = full
         out.append(entry)
 
-    out.append(PLAYER_REF)
+    if all(e["formid"] != PLAYER_REF["formid"] for e in out):
+        out.append(PLAYER_REF)
     out.sort(key=lambda e: e["formid"])
     return out
 

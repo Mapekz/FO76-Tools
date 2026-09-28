@@ -681,7 +681,10 @@ pub fn json_diff(a: &Value, b: &Value) -> Value {
                         if av == bv {
                             // unchanged — omit
                         } else {
-                            let diff = json_diff(av, bv);
+                            let mut diff = json_diff(av, bv);
+                            if array_diff::ORDER_SIGNIFICANT_FIELDS.contains(&key.as_str()) {
+                                array_diff::clear_reorder_only(&mut diff);
+                            }
                             if let Value::Object(ref m) = diff {
                                 if !m.is_empty() {
                                     out.insert(key.clone(), diff);
