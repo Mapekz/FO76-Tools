@@ -64,7 +64,9 @@ impl BodyDetail {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DiffOptions {
-    /// Detail level for decoded fields attached to added/removed record stubs.
+    /// Detail level for decoded fields attached to added/removed record
+    /// stubs. Defaults to `Stub`: `Full` inlines every referenced record
+    /// recursively, which on a churn-heavy snapshot pair needs over 10 GB.
     pub bodies: BodyDetail,
     /// Strip known-noisy fields (placement transforms, CELL precombine data,
     /// …) from `changed` records, dropping the record entirely when nothing
@@ -91,7 +93,7 @@ pub struct DiffOptions {
 impl Default for DiffOptions {
     fn default() -> Self {
         Self {
-            bodies: BodyDetail::Full,
+            bodies: BodyDetail::Stub,
             suppress_noise: true,
             exclude_types: Vec::new(),
             only_type: None,

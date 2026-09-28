@@ -476,7 +476,7 @@ fn op_diff_without_options_field_deserializes() {
         }) => {
             assert_eq!(b, PathBuf::from("Other.esm"));
             assert_eq!(record_type, None);
-            assert_eq!(options.bodies, BodyDetail::Full);
+            assert_eq!(options.bodies, BodyDetail::Stub);
             assert!(options.suppress_noise);
             assert!(options.exclude_types.is_empty());
         }

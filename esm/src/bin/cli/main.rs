@@ -55,8 +55,9 @@ struct DiffArgs {
     /// Indent JSON output.
     #[arg(long)]
     pretty: bool,
-    /// Detail level for decoded fields attached to added/removed record stubs.
-    #[arg(long, value_enum, default_value = "full")]
+    /// Detail level for decoded fields attached to added/removed record stubs
+    /// (`full` inlines referenced records recursively and can need 10+ GB).
+    #[arg(long, value_enum, default_value = "stub")]
     bodies: BodiesArg,
     /// Keep noisy fields (placement transforms, CELL precombine bookkeeping,
     /// Object Bounds, and — when form_version differs across the two files —

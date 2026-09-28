@@ -7,7 +7,9 @@ import type { BodyDetail } from "./BodyDetail";
  */
 export type DiffOptions = { 
 /**
- * Detail level for decoded fields attached to added/removed record stubs.
+ * Detail level for decoded fields attached to added/removed record
+ * stubs. Defaults to `Stub`: `Full` inlines every referenced record
+ * recursively, which on a churn-heavy snapshot pair needs over 10 GB.
  */
 bodies: BodyDetail, 
 /**
