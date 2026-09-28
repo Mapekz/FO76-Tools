@@ -389,13 +389,249 @@ pub struct Evidence {
     pub source: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub via: Option<String>,
-    #[cfg_attr(test, ts(type = "unknown"))]
-    pub detail: Value,
+    pub detail: EvidenceDetail,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hop_depth: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(type = "unknown"))]
     pub path_chain: Option<Value>,
+}
+
+/// What an [`Evidence`] found, by how it was found. Untagged: the JSON is the
+/// variant's own fields (the chase JSON contract predates the type).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(untagged)]
+pub enum EvidenceDetail {
+    /// Why nothing more could be said (a failed fetch, a record with no
+    /// Description/Effects, an effect row that couldn't be isolated).
+    Note { note: String },
+    /// A [`HopKind::TagKeyword`]'s keyword: its own Notes and Type.
+    Tag(TagDetail),
+    /// One `Effects[N]` row of a reverse-chased consumer, sliced by the
+    /// field path that references the keyword/AVIF.
+    Effect {
+        #[cfg_attr(test, ts(type = "unknown"))]
+        effect: Value,
+    },
+    /// A forward-fetched record's Description and Effects.
+    Record(RecordDetail),
+    /// An MGEF's `Perk to Apply`/`Equip Ability`.
+    PassThrough(PassThroughDetail),
+    /// A projectile override: the PROJ's speed/type and its explosion.
+    Projectile(Box<ProjectileDetail>),
+}
+
+impl EvidenceDetail {
+    /// A forward-fetched record's `Effects[]` rows, if this is one.
+    pub fn effects(&self) -> Option<&[Value]> {
+        match self {
+            EvidenceDetail::Record(record) => record.effects.as_deref(),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct TagDetail {
+    /// Always `true`: marks the evidence as synthetic (no fetch).
+    pub tag: bool,
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub notes: Value,
+    #[serde(rename = "type")]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub kind: Value,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct RecordDetail {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub description: Option<Value>,
+    /// At most 12 of the record's `Effects[]` rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "Array<unknown> | null"))]
+    pub effects: Option<Vec<Value>>,
+    /// How many `Effects[]` rows the cap left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects_truncated: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+#[serde(deny_unknown_fields)]
+pub struct PassThroughDetail {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub perk_to_apply: Option<Value>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub equip_ability: Option<Value>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct ProjectileDetail {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub speed: Option<Value>,
+    #[serde(
+        rename = "type",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub kind: Option<Value>,
+    /// The linked EXPL's stub.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub explosion: Option<Value>,
+    /// That explosion's summary; empty unless it was fetched.
+    #[serde(flatten, default)]
+    pub summary: ExplosionSummary,
+}
+
+/// An EXPL's radius/force/stagger/chain and damage, whichever of the five
+/// corpus damage shapes it uses (see [`summarize_explosion`]).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct ExplosionSummary {
+    /// `[Inner Radius, Outer Radius]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "[unknown, unknown] | null"))]
+    pub radius: Option<[Value; 2]>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub force: Option<Value>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub stagger: Option<Value>,
+    /// The Impact Data Set's EditorID (or FormID when it has none).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub impact_data_set: Option<Value>,
+    /// Whether the explosion chains; set whenever the EXPL has `Data`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain: Option<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub placed_object: Option<Value>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub spawn_projectile: Option<Value>,
+    /// Every damage source (possibly none); absent from a projectile whose
+    /// explosion wasn't fetched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub damage: Option<Vec<ExplosionDamage>>,
+}
+
+/// One damage source of an explosion: a per-type `Damage Types[]` row
+/// (`type` plus a curve or amount), the legacy `Damage Curve Table`
+/// (`curve`), `Base Weapon Damage Mult` or flat `Damage`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[cfg_attr(test, ts(export))]
+pub struct ExplosionDamage {
+    /// The damage type's EditorID (present, possibly null, on a
+    /// `Damage Types[]` row).
+    #[serde(
+        rename = "type",
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub kind: Option<Value>,
+    /// The curve table's EditorID.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub curve: Option<Value>,
+    /// The curve's `[min y, max y]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<[f64; 2]>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub amount: Option<Value>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub base_weapon_mult: Option<Value>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "present"
+    )]
+    #[cfg_attr(test, ts(type = "unknown"))]
+    pub flat: Option<Value>,
+}
+
+/// Deserialize a present field, `null` included, as `Some`: an evidence
+/// detail keeps a key whose value is `null` (e.g. an explosion damage row's
+/// `"type": null`), and must read it back the same way.
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Value>, D::Error> {
+    Value::deserialize(d).map(Some)
 }
 
 // ─── schema helpers (pure `serde_json::Value` walking) ─────────────────────
@@ -565,17 +801,13 @@ fn mgef_pass_through_evidence(
     if perk_to_apply.is_none() && equip_ability.is_none() {
         return None;
     }
-    let mut detail = serde_json::Map::new();
-    if let Some(p) = perk_to_apply {
-        detail.insert("perk_to_apply".to_string(), p);
-    }
-    if let Some(e) = equip_ability {
-        detail.insert("equip_ability".to_string(), e);
-    }
     Some(Evidence {
         source: stub(mgef_target),
         via: Some("Base Effect".to_string()),
-        detail: Value::Object(detail),
+        detail: EvidenceDetail::PassThrough(PassThroughDetail {
+            perk_to_apply,
+            equip_ability,
+        }),
         hop_depth: None,
         path_chain: None,
     })
@@ -601,6 +833,10 @@ fn stub(v: &Value) -> Value {
     })
 }
 
+fn note(text: impl Into<String>) -> EvidenceDetail {
+    EvidenceDetail::Note { note: text.into() }
+}
+
 fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) -> Evidence {
     let formid = target.get("formid").and_then(Value::as_str).unwrap_or("");
     let entry = by_sel.get(formid).copied();
@@ -609,7 +845,7 @@ fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) ->
             return Evidence {
                 source: stub(target),
                 via: None,
-                detail: json!({"note": "fetch failed: no response"}),
+                detail: note("fetch failed: no response"),
                 hop_depth: None,
                 path_chain: None,
             };
@@ -620,36 +856,33 @@ fn forward_evidence(target: &Value, by_sel: &HashMap<&str, &BulkRecordEntry>) ->
         return Evidence {
             source: stub(target),
             via: None,
-            detail: json!({"note": format!("fetch failed: {err}")}),
+            detail: note(format!("fetch failed: {err}")),
             hop_depth: None,
             path_chain: None,
         };
     }
     let fields = entry.fields.clone().unwrap_or(Value::Null);
-    let mut detail = serde_json::Map::new();
+    let mut detail = RecordDetail::default();
     if is_truthy(fields.get("Description")) {
-        detail.insert("description".to_string(), fields["Description"].clone());
+        detail.description = Some(fields["Description"].clone());
     }
     if let Some(effects) = fields.get("Effects").and_then(Value::as_array)
         && !effects.is_empty()
     {
         let capped: Vec<Value> = effects.iter().take(12).cloned().collect();
         let truncated = effects.len().saturating_sub(capped.len());
-        detail.insert("effects".to_string(), Value::Array(capped));
-        if truncated > 0 {
-            detail.insert("effects_truncated".to_string(), json!(truncated));
-        }
+        detail.effects = Some(capped);
+        detail.effects_truncated = (truncated > 0).then_some(truncated);
     }
-    if detail.is_empty() {
-        detail.insert(
-            "note".to_string(),
-            json!("no Description/Effects field on this record"),
-        );
-    }
+    let detail = if detail.description.is_none() && detail.effects.is_none() {
+        note("no Description/Effects field on this record")
+    } else {
+        EvidenceDetail::Record(detail)
+    };
     Evidence {
         source: stub(target),
         via: None,
-        detail: Value::Object(detail),
+        detail,
         hop_depth: None,
         path_chain: None,
     }
@@ -674,96 +907,97 @@ fn curve_y_range(curve_table: &Value) -> Option<(f64, f64)> {
     }
 }
 
-/// Summarize an EXPL record's damage / radius / force / stagger / chain payload
-/// into one JSON object. Covers the five corpus damage shapes (per-type
-/// `Damage Types[]` + curve, legacy `Data.Damage Curve Table`,
-/// `Base Weapon Damage Mult`, flat `Data.Damage`, or none) plus utility
-/// fields so a JSON consumer can read damage without guessing which shape is
-/// present. `pub(crate)` so `esm::walk`'s EXPL digest arm reuses the same
-/// logic.
-pub(crate) fn summarize_explosion_detail(fields: &Value) -> Value {
+/// Summarize an EXPL record's damage / radius / force / stagger / chain
+/// payload. Covers the five corpus damage shapes (per-type `Damage Types[]` +
+/// curve, legacy `Data.Damage Curve Table`, `Base Weapon Damage Mult`, flat
+/// `Data.Damage`, or none) plus utility fields so a JSON consumer can read
+/// damage without guessing which shape is present. `pub(crate)` so
+/// `esm::walk`'s EXPL digest arm reuses the same logic.
+pub(crate) fn summarize_explosion(fields: &Value) -> ExplosionSummary {
     let data = fields.get("Data");
-    let mut detail = serde_json::Map::new();
+    let mut summary = ExplosionSummary::default();
+    let mut damage = Vec::new();
 
     if let Some(d) = data {
         let inner = d.get("Inner Radius").cloned().unwrap_or(Value::Null);
         let outer = d.get("Outer Radius").cloned().unwrap_or(Value::Null);
         if !inner.is_null() || !outer.is_null() {
-            detail.insert("radius".to_string(), json!([inner, outer]));
+            summary.radius = Some([inner, outer]);
         }
         if is_truthy(d.get("Force")) {
-            detail.insert("force".to_string(), d["Force"].clone());
+            summary.force = Some(d["Force"].clone());
         }
         let stagger = named(d.get("Stagger"));
         if is_truthy(Some(&stagger)) {
-            detail.insert("stagger".to_string(), stagger);
+            summary.stagger = Some(stagger);
         }
         if let Some(ipds) = d.get("Impact Data Set").filter(|v| is_formid_stub(v)) {
-            detail.insert(
-                "impact_data_set".to_string(),
+            summary.impact_data_set = Some(
                 ipds.get("editor_id")
                     .cloned()
                     .unwrap_or_else(|| stub(ipds).get("formid").cloned().unwrap_or(Value::Null)),
             );
         }
-        let chain = d
-            .pointer("/Flags1/flags")
-            .and_then(Value::as_array)
-            .is_some_and(|flags| flags.iter().any(|f| f.as_str() == Some("Chain")));
-        detail.insert("chain".to_string(), json!(chain));
-
-        if let Some(placed) = d.get("Placed Object").filter(|v| is_formid_stub(v)) {
-            detail.insert("placed_object".to_string(), stub(placed));
-        }
-        if let Some(spawn) = d.get("Spawn Projectile").filter(|v| is_formid_stub(v)) {
-            detail.insert("spawn_projectile".to_string(), stub(spawn));
-        }
+        summary.chain = Some(
+            d.pointer("/Flags1/flags")
+                .and_then(Value::as_array)
+                .is_some_and(|flags| flags.iter().any(|f| f.as_str() == Some("Chain"))),
+        );
+        summary.placed_object = d
+            .get("Placed Object")
+            .filter(|v| is_formid_stub(v))
+            .map(stub);
+        summary.spawn_projectile = d
+            .get("Spawn Projectile")
+            .filter(|v| is_formid_stub(v))
+            .map(stub);
     }
 
-    let mut damage: Vec<Value> = Vec::new();
+    let curve_row = |ct: &Value, kind: Option<Value>| ExplosionDamage {
+        kind,
+        curve: Some(ct.get("editor_id").cloned().unwrap_or(Value::Null)),
+        range: curve_y_range(ct).map(|(lo, hi)| [lo, hi]),
+        ..ExplosionDamage::default()
+    };
     if let Some(types) = fields.get("Damage Types").and_then(Value::as_array) {
         for entry in types {
-            let type_edid = entry
-                .pointer("/Type/editor_id")
-                .cloned()
-                .unwrap_or(Value::Null);
-            let mut row = serde_json::Map::new();
-            row.insert("type".to_string(), type_edid);
-            if let Some(ct) = entry.get("Curve Table").filter(|v| is_truthy(Some(*v))) {
-                row.insert(
-                    "curve".to_string(),
-                    ct.get("editor_id").cloned().unwrap_or(Value::Null),
-                );
-                if let Some((lo, hi)) = curve_y_range(ct) {
-                    row.insert("range".to_string(), json!([lo, hi]));
-                }
-            } else if is_truthy(entry.get("Amount")) {
-                row.insert("amount".to_string(), entry["Amount"].clone());
-            }
-            damage.push(Value::Object(row));
+            let kind = Some(
+                entry
+                    .pointer("/Type/editor_id")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            );
+            damage.push(
+                match entry.get("Curve Table").filter(|v| is_truthy(Some(*v))) {
+                    Some(ct) => curve_row(ct, kind),
+                    None => ExplosionDamage {
+                        kind,
+                        amount: is_truthy(entry.get("Amount")).then(|| entry["Amount"].clone()),
+                        ..ExplosionDamage::default()
+                    },
+                },
+            );
         }
     }
     if let Some(d) = data {
         if let Some(ct) = d.get("Damage Curve Table").filter(|v| is_truthy(Some(*v))) {
-            let mut row = serde_json::Map::new();
-            row.insert(
-                "curve".to_string(),
-                ct.get("editor_id").cloned().unwrap_or(Value::Null),
-            );
-            if let Some((lo, hi)) = curve_y_range(ct) {
-                row.insert("range".to_string(), json!([lo, hi]));
-            }
-            damage.push(Value::Object(row));
+            damage.push(curve_row(ct, None));
         }
         if is_truthy(d.get("Base Weapon Damage Mult")) {
-            damage.push(json!({"base_weapon_mult": d["Base Weapon Damage Mult"]}));
+            damage.push(ExplosionDamage {
+                base_weapon_mult: Some(d["Base Weapon Damage Mult"].clone()),
+                ..ExplosionDamage::default()
+            });
         }
         if is_truthy(d.get("Damage")) {
-            damage.push(json!({"flat": d["Damage"]}));
+            damage.push(ExplosionDamage {
+                flat: Some(d["Damage"].clone()),
+                ..ExplosionDamage::default()
+            });
         }
     }
-    detail.insert("damage".to_string(), Value::Array(damage));
-    Value::Object(detail)
+    summary.damage = Some(damage);
+    summary
 }
 
 /// Build forward evidence for a PROJ-targeting OMOD property: speed/type plus
@@ -773,34 +1007,30 @@ fn projectile_evidence(
     proj_fields: &Value,
     expl_by_sel: &HashMap<&str, &BulkRecordEntry>,
 ) -> Evidence {
-    let mut detail = serde_json::Map::new();
+    let mut detail = ProjectileDetail::default();
     if let Some(data) = proj_fields.get("Data") {
         if is_truthy(data.get("Speed")) {
-            detail.insert("speed".to_string(), data["Speed"].clone());
+            detail.speed = Some(data["Speed"].clone());
         }
         let proj_type = named(data.get("Type"));
         if is_truthy(Some(&proj_type)) {
-            detail.insert("type".to_string(), proj_type);
+            detail.kind = Some(proj_type);
         }
         if let Some(expl) = data.get("Explosion").filter(|v| is_formid_stub(v)) {
-            detail.insert("explosion".to_string(), stub(expl));
+            detail.explosion = Some(stub(expl));
             let expl_fid = expl.get("formid").and_then(Value::as_str).unwrap_or("");
             if let Some(entry) = expl_by_sel.get(expl_fid)
                 && entry.error.is_none()
             {
                 let expl_fields = entry.fields.as_ref().unwrap_or(&Value::Null);
-                if let Value::Object(expl_detail) = summarize_explosion_detail(expl_fields) {
-                    for (k, v) in expl_detail {
-                        detail.insert(k, v);
-                    }
-                }
+                detail.summary = summarize_explosion(expl_fields);
             }
         }
     }
     Evidence {
         source: stub(target),
         via: None,
-        detail: Value::Object(detail),
+        detail: EvidenceDetail::Projectile(Box::new(detail)),
         hop_depth: None,
         path_chain: None,
     }
@@ -817,7 +1047,11 @@ fn tag_keyword_evidence(target: &Value, kywd_fields: Option<&Value>, type_name: 
     Evidence {
         source: stub(target),
         via: None,
-        detail: json!({"tag": true, "notes": notes, "type": type_name}),
+        detail: EvidenceDetail::Tag(TagDetail {
+            tag: true,
+            notes,
+            kind: type_name,
+        }),
         hop_depth: None,
         path_chain: None,
     }
@@ -1085,11 +1319,13 @@ fn reverse_chase(
         for path in paths {
             let sliced = path.and_then(|p| slice_effect(&fields, p));
             let detail = match sliced {
-                Some(v) => json!({"effect": v}),
-                None => json!({
-                    "note": "reference confirmed but the exact effect could not be \
-                             isolated from the field path; inspect the full record"
-                }),
+                Some(effect) => EvidenceDetail::Effect {
+                    effect: effect.clone(),
+                },
+                None => note(
+                    "reference confirmed but the exact effect could not be isolated from the \
+                     field path; inspect the full record",
+                ),
             };
             let (hop_depth, path_chain) = if row.depth > 1 {
                 (
@@ -1377,13 +1613,7 @@ pub(crate) fn omod_chase(
                 if rt == "PROJ" {
                     return None;
                 }
-                let effects = hops[*i]
-                    .evidence
-                    .first()?
-                    .detail
-                    .get("effects")?
-                    .as_array()?
-                    .clone();
+                let effects = hops[*i].evidence.first()?.detail.effects()?.to_vec();
                 Some((*i, effects))
             })
             .collect();
@@ -1522,13 +1752,8 @@ fn effect_chase(
         }
     }
     for (i, _) in &forward_targets {
-        if let Some(effects) = hops[*i]
-            .evidence
-            .first()
-            .and_then(|ev| ev.detail.get("effects"))
-            .and_then(Value::as_array)
-        {
-            mgef_sources.push((*i, effects.clone()));
+        if let Some(effects) = hops[*i].evidence.first().and_then(|ev| ev.detail.effects()) {
+            mgef_sources.push((*i, effects.to_vec()));
         }
     }
     for (idx, ev) in mgef_pass_through(f, &mgef_sources)? {
@@ -1708,8 +1933,42 @@ mod tests {
         );
         let by_sel: HashMap<&str, &BulkRecordEntry> = [("0x1", &entry)].into_iter().collect();
         let ev = mgef_pass_through_evidence(&mgef_target, &by_sel).expect("evidence");
-        assert_eq!(ev.detail["perk_to_apply"]["formid"], json!("0x2"));
-        assert_eq!(ev.detail["equip_ability"]["formid"], json!("0x3"));
+        let EvidenceDetail::PassThrough(pass) = &ev.detail else {
+            panic!("expected pass-through evidence, got {:?}", ev.detail);
+        };
+        assert_eq!(pass.perk_to_apply.as_ref().unwrap()["formid"], json!("0x2"));
+        assert_eq!(pass.equip_ability.as_ref().unwrap()["formid"], json!("0x3"));
+    }
+
+    /// Each detail variant's JSON is its own fields, and reads back as the
+    /// same variant.
+    #[test]
+    fn evidence_detail_json_round_trips_per_variant() {
+        let cases = [
+            json!({"note": "fetch failed: no response"}),
+            json!({"tag": true, "notes": "UI tag", "type": "None"}),
+            json!({"effect": {"Effect": {"Base Effect": null}}}),
+            json!({"description": "Grants bonus damage.", "effects": [], "effects_truncated": 3}),
+            json!({"perk_to_apply": {"formid": "0x00000002"}}),
+            json!({"speed": 5000.0, "type": "Missile", "explosion": {"formid": "0x3"},
+                   "radius": [0.0, 256.0], "chain": false, "damage": [{"type": null, "amount": 50}]}),
+        ];
+        let variants = [
+            "Note",
+            "Tag",
+            "Effect",
+            "Record",
+            "PassThrough",
+            "Projectile",
+        ];
+        for (json, variant) in cases.into_iter().zip(variants) {
+            let detail: EvidenceDetail = serde_json::from_value(json.clone()).unwrap();
+            assert!(
+                format!("{detail:?}").starts_with(variant),
+                "{variant}: {detail:?}"
+            );
+            assert_eq!(serde_json::to_value(&detail).unwrap(), json, "{variant}");
+        }
     }
 
     #[test]

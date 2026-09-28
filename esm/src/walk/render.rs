@@ -14,9 +14,10 @@ use super::{
     WeapDigest,
 };
 use crate::chase::{
-    Evidence, FetchDirection, Hop, HopKind, first_array_container, is_truthy, named,
+    Evidence, EvidenceDetail, ExplosionDamage, ExplosionSummary, FetchDirection, Hop, HopKind,
+    first_array_container, is_truthy, named,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Display cap on rendered KYWD/AVIF consumer rows per record-type group —
 /// distinct from [`super::CONSUMER_REF_LIMIT`], the *fetch* cap (see that
@@ -686,45 +687,51 @@ fn render_expl(d: &ExplDigest, lines: &mut Vec<String>) {
 
 /// Shared EXPL field lines (radius/force/stagger/impact/chain/damage) used by
 /// both the OMOD projectile-evidence slice and the EXPL digest arm.
-fn render_explosion_detail_lines(detail: &Value, lines: &mut Vec<String>, indent: &str) {
-    if let Some(radius) = detail.get("radius").and_then(Value::as_array) {
-        let inner = radius.first().map(pyish).unwrap_or_else(|| "?".to_string());
-        let outer = radius.get(1).map(pyish).unwrap_or_else(|| "?".to_string());
-        lines.push(format!("{indent}radius {inner}/{outer}"));
+fn render_explosion_detail_lines(detail: &ExplosionSummary, lines: &mut Vec<String>, indent: &str) {
+    if let Some([inner, outer]) = &detail.radius {
+        lines.push(format!("{indent}radius {}/{}", pyish(inner), pyish(outer)));
     }
     let mut phys: Vec<String> = Vec::new();
-    if let Some(f) = detail.get("force") {
+    if let Some(f) = &detail.force {
         phys.push(format!("force {}", pyish(f)));
     }
-    if let Some(s) = detail.get("stagger").and_then(Value::as_str) {
+    if let Some(s) = detail.stagger.as_ref().and_then(Value::as_str) {
         phys.push(format!("stagger {s}"));
     }
     if !phys.is_empty() {
         lines.push(format!("{indent}{}", phys.join("  ")));
     }
-    if let Some(ipds) = detail.get("impact_data_set").and_then(Value::as_str) {
+    if let Some(ipds) = detail.impact_data_set.as_ref().and_then(Value::as_str) {
         lines.push(format!("{indent}impact {ipds}"));
     }
-    if detail.get("chain").and_then(Value::as_bool) == Some(true) {
+    let chain = detail.chain == Some(true);
+    if chain {
         lines.push(format!("{indent}chain"));
     }
-    if let Some(placed) = detail.get("placed_object").filter(|v| is_ref_stub_like(v)) {
+    if let Some(placed) = detail
+        .placed_object
+        .as_ref()
+        .filter(|v| is_ref_stub_like(v))
+    {
         lines.push(format!("{indent}placed object → {}", fmt_stub(placed)));
     }
     if let Some(spawn) = detail
-        .get("spawn_projectile")
+        .spawn_projectile
+        .as_ref()
         .filter(|v| is_ref_stub_like(v))
     {
         lines.push(format!("{indent}spawn projectile → {}", fmt_stub(spawn)));
     }
-    if let Some(damage) = detail.get("damage").and_then(Value::as_array) {
-        if damage.is_empty() {
-            // Empty + chain signals arc falloff elsewhere; empty alone is a
-            // utility explosion (radius/force/stagger IS the effect).
-            if detail.get("chain").and_then(Value::as_bool) != Some(true) {
+    match detail.damage.as_deref() {
+        None => {}
+        // Empty + chain signals arc falloff elsewhere; empty alone is a
+        // utility explosion (radius/force/stagger IS the effect).
+        Some([]) => {
+            if !chain {
                 lines.push(format!("{indent}damage (none)"));
             }
-        } else {
+        }
+        Some(damage) => {
             for row in damage {
                 lines.push(format!("{indent}damage {}", format_damage_row(row)));
             }
@@ -742,30 +749,28 @@ fn is_ref_stub_like(v: &Value) -> bool {
     matches!(v, Value::Object(map) if map.contains_key("formid"))
 }
 
-fn format_damage_row(row: &Value) -> String {
-    if let Some(flat) = row.get("flat") {
+fn format_damage_row(row: &ExplosionDamage) -> String {
+    if let Some(flat) = &row.flat {
         return format!("flat {}", pyish(flat));
     }
-    if let Some(m) = row.get("base_weapon_mult") {
+    if let Some(m) = &row.base_weapon_mult {
         return format!("base weapon mult {}", pyish(m));
     }
     let mut parts: Vec<String> = Vec::new();
-    if let Some(t) = row.get("type").and_then(Value::as_str) {
+    if let Some(t) = row.kind.as_ref().and_then(Value::as_str) {
         parts.push(t.to_string());
     }
-    if let Some(c) = row.get("curve").and_then(Value::as_str) {
+    if let Some(c) = row.curve.as_ref().and_then(Value::as_str) {
         parts.push(format!("via {c}"));
     }
-    if let Some(range) = row.get("range").and_then(Value::as_array)
-        && range.len() >= 2
-    {
-        parts.push(format!("[{}–{}]", pyish(&range[0]), pyish(&range[1])));
+    if let Some([lo, hi]) = row.range {
+        parts.push(format!("[{}–{}]", pyish(&json!(lo)), pyish(&json!(hi))));
     }
-    if let Some(amount) = row.get("amount") {
+    if let Some(amount) = &row.amount {
         parts.push(format!("amount {}", pyish(amount)));
     }
     if parts.is_empty() {
-        pyish(row)
+        pyish(&serde_json::to_value(row).unwrap_or(Value::Null))
     } else {
         parts.join("  ")
     }
@@ -1099,8 +1104,10 @@ fn render_tag_keyword_block(hops: &[Hop], lines: &mut Vec<String>) {
         let notes = hop
             .evidence
             .first()
-            .and_then(|ev| ev.detail.get("notes"))
-            .and_then(Value::as_str)
+            .and_then(|ev| match &ev.detail {
+                EvidenceDetail::Tag(tag) => tag.notes.as_str(),
+                _ => None,
+            })
             .filter(|s| !s.is_empty());
         match notes {
             Some(n) => lines.push(format!("    {edid} — {n}")),
@@ -1172,21 +1179,23 @@ fn render_omod_hop(hop: &Hop, lines: &mut Vec<String>) {
 /// Compact PROJ/EXPL summary from chase's projectile evidence detail.
 fn render_projectile_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
     for ev in evidence {
-        let d = &ev.detail;
+        let EvidenceDetail::Projectile(d) = &ev.detail else {
+            continue;
+        };
         let mut parts: Vec<String> = Vec::new();
-        if let Some(t) = d.get("type").and_then(Value::as_str) {
+        if let Some(t) = d.kind.as_ref().and_then(Value::as_str) {
             parts.push(format!("type {t}"));
         }
-        if let Some(s) = d.get("speed") {
+        if let Some(s) = &d.speed {
             parts.push(format!("speed {}", pyish(s)));
         }
         if !parts.is_empty() {
             lines.push(format!("  {}", parts.join("  ")));
         }
-        if let Some(expl) = d.get("explosion").filter(|v| is_ref_stub_like(v)) {
+        if let Some(expl) = d.explosion.as_ref().filter(|v| is_ref_stub_like(v)) {
             lines.push(format!("  explosion → {}", fmt_stub(expl)));
         }
-        render_explosion_detail_lines(d, lines, "  ");
+        render_explosion_detail_lines(&d.summary, lines, "  ");
     }
 }
 
@@ -1198,24 +1207,24 @@ fn render_projectile_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
 /// Apply"/"Equip Ability" (named, not expanded further — same as `chase`).
 fn render_forward_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
     for ev in evidence {
-        if let Some(effects) = ev.detail.get("effects").and_then(Value::as_array) {
-            for (i, eff) in effects.iter().enumerate() {
-                lines.push(format!("  Effects[{i}] {}", summarize_effect(eff)));
+        match &ev.detail {
+            EvidenceDetail::Record(record) => {
+                for (i, eff) in record.effects.iter().flatten().enumerate() {
+                    lines.push(format!("  Effects[{i}] {}", summarize_effect(eff)));
+                }
+                if let Some(trunc) = record.effects_truncated.filter(|n| *n > 0) {
+                    lines.push(format!("  … +{trunc} more effects (truncated)"));
+                }
             }
-            if let Some(trunc) = ev
-                .detail
-                .get("effects_truncated")
-                .and_then(Value::as_u64)
-                .filter(|n| *n > 0)
-            {
-                lines.push(format!("  … +{trunc} more effects (truncated)"));
+            EvidenceDetail::PassThrough(pass) => {
+                if let Some(p) = pass.perk_to_apply.as_ref().filter(|v| !v.is_null()) {
+                    lines.push(format!("  Perk to Apply → {}", fmt_stub(p)));
+                }
+                if let Some(e) = pass.equip_ability.as_ref().filter(|v| !v.is_null()) {
+                    lines.push(format!("  Equip Ability → {}", fmt_stub(e)));
+                }
             }
-        }
-        if let Some(p) = ev.detail.get("perk_to_apply").filter(|v| !v.is_null()) {
-            lines.push(format!("  Perk to Apply → {}", fmt_stub(p)));
-        }
-        if let Some(e) = ev.detail.get("equip_ability").filter(|v| !v.is_null()) {
-            lines.push(format!("  Equip Ability → {}", fmt_stub(e)));
+            _ => {}
         }
     }
 }
@@ -1246,15 +1255,17 @@ fn render_reverse_evidence(evidence: &[Evidence], lines: &mut Vec<String>) {
             lines.push(format!("  gates {}", fmt_stub(&ev.source)));
             last_source = Some(source_fid.to_string());
         }
-        if let Some(effect) = ev.detail.get("effect") {
-            let label = ev
-                .via
-                .as_deref()
-                .and_then(first_array_container)
-                .unwrap_or_else(|| "effect".to_string());
-            lines.push(format!("    {label} {}", summarize_effect(effect)));
-        } else if let Some(note) = ev.detail.get("note").and_then(Value::as_str) {
-            lines.push(format!("    {note}"));
+        match &ev.detail {
+            EvidenceDetail::Effect { effect } => {
+                let label = ev
+                    .via
+                    .as_deref()
+                    .and_then(first_array_container)
+                    .unwrap_or_else(|| "effect".to_string());
+                lines.push(format!("    {label} {}", summarize_effect(effect)));
+            }
+            EvidenceDetail::Note { note } => lines.push(format!("    {note}")),
+            _ => {}
         }
     }
 }

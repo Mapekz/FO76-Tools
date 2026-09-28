@@ -431,6 +431,11 @@ fn sel(fid: &str) -> RecordSel {
     RecordSel::FormId(fid.parse().unwrap())
 }
 
+/// An evidence detail as the JSON the chase contract emits.
+fn detail(ev: &esm::chase::Evidence) -> serde_json::Value {
+    serde_json::to_value(&ev.detail).unwrap()
+}
+
 #[test]
 fn omod_stub_fields_are_populated() {
     let mut f = fixture();
@@ -610,11 +615,11 @@ fn perk_grant_forward_evidence_via_bulk_get() {
     let ev = &hop.evidence[0];
     assert!(ev.via.is_none());
     assert_eq!(
-        ev.detail.get("description").and_then(|v| v.as_str()),
+        detail(ev).get("description").and_then(|v| v.as_str()),
         Some("Grants bonus damage.")
     );
     assert_eq!(
-        ev.detail
+        detail(ev)
             .get("effects")
             .and_then(|v| v.as_array())
             .map(Vec::len),
@@ -644,7 +649,8 @@ fn keyword_hook_reverse_evidence_slices_gated_effect() {
     );
     // The sliced evidence is the whole gated Effects[0] entry, not the full
     // SPEL record — see `esm::chase`'s `slice_effect`.
-    let effect = ev.detail.get("effect").unwrap();
+    let detail = detail(ev);
+    let effect = detail.get("effect").unwrap();
     assert_eq!(
         effect
             .pointer("/Effect/Base Effect/editor_id")
@@ -673,8 +679,7 @@ fn omod_forward_fetch_follows_base_effect_to_mgef_perk_to_apply() {
     assert_eq!(hop.kind, HopKind::DirectProperty);
     assert_eq!(hop.evidence.len(), 2);
     assert_eq!(
-        hop.evidence[0]
-            .detail
+        detail(&hop.evidence[0])
             .get("description")
             .and_then(|v| v.as_str()),
         Some("Adds a bonus effect.")
@@ -686,10 +691,10 @@ fn omod_forward_fetch_follows_base_effect_to_mgef_perk_to_apply() {
         Some(MGEF_FID)
     );
     assert_eq!(
-        pass_through.detail["perk_to_apply"]["formid"].as_str(),
+        detail(pass_through)["perk_to_apply"]["formid"].as_str(),
         Some(GRANTED_PERK_FID)
     );
-    assert!(pass_through.detail.get("equip_ability").is_none());
+    assert!(detail(pass_through).get("equip_ability").is_none());
 }
 
 #[test]
@@ -712,8 +717,7 @@ fn perk_root_forward_fetches_ability_and_has_no_target_entry() {
     );
     assert_eq!(ability_hop.evidence.len(), 1);
     assert_eq!(
-        ability_hop.evidence[0]
-            .detail
+        detail(&ability_hop.evidence[0])
             .get("description")
             .and_then(|v| v.as_str()),
         Some("Grants a temporary buff.")
@@ -735,7 +739,7 @@ fn spel_root_base_effect_follows_mgef_perk_to_apply() {
     assert_eq!(hop.kind, EffectHopKind::BaseEffect);
     assert_eq!(hop.evidence.len(), 1);
     assert_eq!(
-        hop.evidence[0].detail["perk_to_apply"]["formid"].as_str(),
+        detail(&hop.evidence[0])["perk_to_apply"]["formid"].as_str(),
         Some(GRANTED_PERK_FID)
     );
 }
@@ -747,7 +751,7 @@ fn alch_root_dispatches_via_ingestible_record_type_and_follows_mgef() {
     assert!(tree.hops.is_empty());
     assert_eq!(tree.effect_hops.len(), 1);
     assert_eq!(
-        tree.effect_hops[0].evidence[0].detail["perk_to_apply"]["formid"].as_str(),
+        detail(&tree.effect_hops[0].evidence[0])["perk_to_apply"]["formid"].as_str(),
         Some(GRANTED_PERK_FID)
     );
 }
@@ -760,7 +764,7 @@ fn ench_root_dispatches_and_follows_mgef_pass_through() {
     assert_eq!(tree.effect_hops.len(), 1);
     assert_eq!(tree.effect_hops[0].kind, EffectHopKind::BaseEffect);
     assert_eq!(
-        tree.effect_hops[0].evidence[0].detail["perk_to_apply"]["formid"].as_str(),
+        detail(&tree.effect_hops[0].evidence[0])["perk_to_apply"]["formid"].as_str(),
         Some(GRANTED_PERK_FID)
     );
     assert_eq!(tree.root.record_type.as_deref(), Some("ENCH"));

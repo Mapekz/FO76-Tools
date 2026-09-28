@@ -94,7 +94,7 @@ pub use render::{render_digest, render_text};
 
 use crate::chase::{
     ChaseFetcher, ChaseOptions, Hop, HopKind, RootStub, consumer_refs_by_type, omod_chase,
-    summarize_explosion_detail,
+    summarize_explosion,
 };
 use crate::ops::RecordSel;
 use crate::{BulkRecordEntry, FormId, RecordRow, RefRow, ResolveDepth};
@@ -539,12 +539,9 @@ pub struct ProjDigest {
 #[cfg_attr(test, derive(ts_rs::TS))]
 #[cfg_attr(test, ts(export))]
 pub struct ExplDigest {
-    /// `chase::summarize_explosion_detail`'s already-structured output
-    /// (radius/force/stagger/impact/chain/damage) — reused verbatim rather
-    /// than recomputed, the same detail an OMOD's PROJ mechanism evidence
-    /// carries.
-    #[cfg_attr(test, ts(type = "unknown"))]
-    pub detail: Value,
+    /// `chase::summarize_explosion`'s radius/force/stagger/impact/chain/damage,
+    /// the same summary an OMOD's PROJ mechanism evidence carries.
+    pub detail: crate::chase::ExplosionSummary,
     /// `--level` assumed by `level_curves` below.
     pub level: f32,
     /// Level-keyed curve fields (`Data.Damage Curve Table`, per-damage-type
@@ -1342,7 +1339,7 @@ fn digest_proj(fields: &Value, enqueue: &mut Vec<EnqueueTarget>) -> ProjDigest {
 
 fn digest_expl(fields: &Value, level: f32) -> ExplDigest {
     ExplDigest {
-        detail: summarize_explosion_detail(fields),
+        detail: summarize_explosion(fields),
         level,
         level_curves: level_curves::eval_level_curves("EXPL", fields, level),
     }
