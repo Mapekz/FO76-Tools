@@ -167,8 +167,9 @@ export const useStore = create<AppStore>((set, get) => {
     return 'shown'
   }
 
-  // Runs one navigation as the pending one; it clears itself unless a later
-  // navigation replaced it.
+  // Runs one navigation as the pending one. It stops pending once its record
+  // shows (Referenced By loads on without it) or its load ends, unless a
+  // later navigation replaced it.
   async function pendingLoad(
     pending: NavPending,
     dbId: string,
@@ -176,8 +177,14 @@ export const useStore = create<AppStore>((set, get) => {
     onShown: () => void,
   ): Promise<'shown' | 'failed' | 'superseded'> {
     set({ navPending: pending })
-    const outcome = await loadRecord(dbId, formid, onShown)
-    if (get().navPending === pending) set({ navPending: null })
+    const settle = () => {
+      if (get().navPending === pending) set({ navPending: null })
+    }
+    const outcome = await loadRecord(dbId, formid, () => {
+      onShown()
+      settle()
+    })
+    settle()
     return outcome
   }
 

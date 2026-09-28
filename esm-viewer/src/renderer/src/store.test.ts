@@ -112,6 +112,21 @@ describe('nav history', () => {
     expect(s.navPending).toBeNull()
   })
 
+  it('Back steps back once the record shows, while its refs still load', async () => {
+    installApi((target, op) => (target === '0x2' && op === 'referenced_by' ? 30 : 0))
+    const { navigate, goBack } = useStore.getState()
+    await navigate('db1', '0x1')
+    const loading = navigate('db1', '0x2')
+    await tick()
+    expect(useStore.getState().activeRecord?.editor_id).toBe('db1:0x2')
+    expect(useStore.getState().navPending).toBeNull()
+    await goBack()
+    await loading
+    const s = useStore.getState()
+    expect(s.activeRecord?.editor_id).toBe('db1:0x1')
+    expect(s.nav.index).toBe(0)
+  })
+
   it('Back is available while a new navigation is pending, Forward is not', async () => {
     installApi((target) => (target === '0x2' ? 30 : 0))
     const { navigate } = useStore.getState()
