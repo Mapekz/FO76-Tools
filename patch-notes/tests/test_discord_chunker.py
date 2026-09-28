@@ -11,6 +11,11 @@ a code block, and no source content is lost or a chunk left oversized.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
+import io
+import os
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -319,23 +324,69 @@ class TestMainExitCode(TempDirTestCase):
             self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
             self.assertEqual((out / "chunk_001.md").read_text(), "previous run")
 
-    def test_a_failed_chunk_write_keeps_the_previous_chunks(self):
+    def long_input(self) -> Path:
+        src = self.tmp / "in.md"
+        src.write_text("# Title\n\n" + "\n\n".join(f"Paragraph {i} " + "x" * 200 for i in range(30)))
+        return src
+
+    def previous_run(self) -> Path:
         out = self.tmp / "discord"
         out.mkdir()
         (out / "chunk_001.md").write_text("previous run")
-        src = self.tmp / "in.md"
-        src.write_text("# Title\n\n" + "\n\n".join(f"Paragraph {i} " + "x" * 200 for i in range(30)))
+        return out
+
+    def assert_previous_run_kept(self, out: Path) -> None:
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
+        self.assertEqual((out / "chunk_001.md").read_text(), "previous run")
+
+    def test_a_failed_chunk_write_keeps_the_previous_chunks(self):
+        out, src = self.previous_run(), self.long_input()
         real_write = Path.write_text
 
         def failing_write(path, *args, **kwargs):
-            if path.name.startswith(".chunk_002"):
+            if path.name == "chunk_002.md":
                 raise OSError("disk full")
             return real_write(path, *args, **kwargs)
 
         with mock.patch.object(Path, "write_text", failing_write):
             self.assertEqual(dc.main([str(src), str(out)]), 1)
-        self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
+        self.assert_previous_run_kept(out)
+
+    def test_a_failed_publication_puts_the_previous_chunks_back(self):
+        out, src = self.previous_run(), self.long_input()
+        real_replace = Path.replace
+
+        def failing_replace(path, target):
+            if path.parent.name.startswith(".staging-") and Path(target).name == "chunk_002.md":
+                raise OSError("disk full")
+            return real_replace(path, target)
+
+        with mock.patch.object(Path, "replace", failing_replace):
+            self.assertEqual(dc.main([str(src), str(out)]), 1)
+        self.assert_previous_run_kept(out)
+
+    def test_runs_on_one_directory_publish_in_turn(self):
+        out, src = self.previous_run(), self.long_input()
+        held = os.open(out, os.O_RDONLY)
+        fcntl.flock(held, fcntl.LOCK_EX)
+        codes = []
+
+        def run():
+            with contextlib.redirect_stdout(io.StringIO()):
+                codes.append(dc.main([str(src), str(out)]))
+
+        worker = threading.Thread(target=run)
+        worker.start()
+        worker.join(0.3)
+        self.assertTrue(worker.is_alive(), "published while another run held the directory")
         self.assertEqual((out / "chunk_001.md").read_text(), "previous run")
+        fcntl.flock(held, fcntl.LOCK_UN)
+        os.close(held)
+        worker.join(10)
+        self.assertEqual(codes, [0])
+        names = sorted(p.name for p in out.iterdir())
+        self.assertGreater(len(names), 1)
+        self.assertTrue(all(n.startswith("chunk_") for n in names), names)
 
     def test_unsplittable_oversize_line_exits_one_unless_allowed(self):
         src = self.tmp / "in.md"

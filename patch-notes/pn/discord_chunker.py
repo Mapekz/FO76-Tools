@@ -23,8 +23,12 @@ Exit code 1 when any chunk had to be hard-truncated (content lost) unless
 """
 
 import argparse
+import fcntl
+import os
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from pn import layout
@@ -378,6 +382,47 @@ def build_arg_parser():
     return ap
 
 
+def publish_chunks(out: Path, contents: list[str]) -> None:
+    """Replace `out`'s `chunk_NNN.md` set with `contents`, whole or not at
+    all. A run stages its chunks in a directory of its own, moves the
+    previous set aside, and puts that set back if publishing fails, so a
+    failed run leaves the previous chunks as they were (and raises). Runs
+    publishing to the same directory take turns under a lock on it."""
+    out.mkdir(parents=True, exist_ok=True)
+    names = [f"chunk_{i:03d}.md" for i in range(1, len(contents) + 1)]
+    lock = os.open(out, os.O_RDONLY)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with tempfile.TemporaryDirectory(prefix=".staging-", dir=out) as staging_dir:
+            staging = Path(staging_dir)
+            for name, content in zip(names, contents):
+                (staging / name).write_text(content)
+            previous = Path(tempfile.mkdtemp(prefix=".previous-", dir=out))
+            moved: list[str] = []
+            published: list[str] = []
+            try:
+                # A re-run after the summary shrank must not leave the old
+                # run's higher-numbered chunks behind. Path.glob, not
+                # glob.glob: the directory is literal even if it holds glob
+                # metacharacters.
+                for old in sorted(out.glob("chunk_*.md")):
+                    old.replace(previous / old.name)
+                    moved.append(old.name)
+                for name in names:
+                    (staging / name).replace(out / name)
+                    published.append(name)
+            except OSError:
+                for name in published:
+                    (out / name).unlink(missing_ok=True)
+                for name in moved:
+                    (previous / name).replace(out / name)
+                previous.rmdir()
+                raise
+            shutil.rmtree(previous, ignore_errors=True)
+    finally:
+        os.close(lock)
+
+
 def main(argv=None) -> int:
     args = build_arg_parser().parse_args(argv)
     input_path = args.input
@@ -422,29 +467,12 @@ def main(argv=None) -> int:
                   f"{output_dir} are kept", file=sys.stderr)
             return 1
 
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-    # Stage the new chunks beside the old ones, so a failed write leaves the
-    # previous run's chunks as they were.
-    staged = []
     try:
-        for i, content in enumerate(contents, 1):
-            tmp = out / f".chunk_{i:03d}.md.tmp"
-            staged.append(tmp)
-            tmp.write_text(content)
+        publish_chunks(Path(output_dir), contents)
     except OSError as exc:
-        for tmp in staged:
-            tmp.unlink(missing_ok=True)
         print(f"error: writing the chunks failed ({exc}); the chunks in {output_dir} are kept",
               file=sys.stderr)
         return 1
-    # A re-run after the summary shrank must not leave the old run's
-    # higher-numbered chunks behind. Path.glob, not glob.glob: the directory
-    # is literal even if it holds glob metacharacters (`release[1]/`).
-    for stale in out.glob("chunk_*.md"):
-        stale.unlink()
-    for i, tmp in enumerate(staged, 1):
-        tmp.replace(out / f"chunk_{i:03d}.md")
 
     sizes = [len(c) for c in chunks]
     print(f"Written to {output_dir}/")
