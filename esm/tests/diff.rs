@@ -1520,3 +1520,79 @@ fn array_diff_keys_bone_scale_modifiers_by_bone_name() {
         json!({"from": 0.04565704, "to": 0.05})
     );
 }
+
+// ---------------------------------------------------------------------------
+// refs after noise suppression
+// ---------------------------------------------------------------------------
+
+/// 100 records gain the same keyword across a form-version restamp, which
+/// calibrated suppression removes as an engine default, and change a script
+/// string to text that renders like that keyword's FormID. With the keyword
+/// suppressed, only the string edit is left, and it references nothing.
+#[test]
+fn a_suppressed_reference_leaves_no_ref_behind() {
+    let vmad = |text: &str| {
+        let ws = |s: &str| {
+            let mut v = (s.len() as u16).to_le_bytes().to_vec();
+            v.extend_from_slice(s.as_bytes());
+            v
+        };
+        let mut v = Vec::new();
+        for n in [6u16, 2, 1] {
+            v.extend_from_slice(&n.to_le_bytes()); // version, object format, script count
+        }
+        v.extend(ws("Script"));
+        v.push(0); // script flags
+        v.extend_from_slice(&1u16.to_le_bytes()); // property count
+        v.extend(ws("Prop"));
+        v.extend_from_slice(&[2, 1]); // string, edited
+        v.extend(ws(text));
+        v
+    };
+    let side = |old: bool| {
+        let mut records = Vec::new();
+        for i in 0..100u32 {
+            let mut subs = Vec::new();
+            append_subrecord(&mut subs, b"EDID", &cstr(&format!("Test{i}")));
+            append_subrecord(
+                &mut subs,
+                b"VMAD",
+                &vmad(if old { "before" } else { "0x12345678" }),
+            );
+            if !old {
+                append_subrecord(&mut subs, b"KSIZ", &1u32.to_le_bytes());
+                append_subrecord(&mut subs, b"KWDA", &0x1234_5678u32.to_le_bytes());
+            }
+            let start = records.len();
+            append_record(&mut records, b"ACTI", 0x50_0000 + i, &subs);
+            if old {
+                // An older form version: the restamp the calibrated pass needs.
+                records[start + 20..start + 22].copy_from_slice(&207u16.to_le_bytes());
+            }
+        }
+        let mut buf = tes4_header();
+        buf.extend(wrap_grup(b"ACTI", &records));
+        buf
+    };
+    let pair = esm_pair(&side(true), &side(false), "diff_suppressed_ref");
+    let result = diff_databases(&pair.a, &pair.b).expect("diff");
+    assert_eq!(result.changed.len(), 100);
+    for rd in &result.changed {
+        assert!(
+            rd.field_changes.get("Keywords").is_none(),
+            "the keyword appearance is suppressed: {}",
+            rd.field_changes
+        );
+        assert!(
+            rd.field_changes.to_string().contains("0x12345678"),
+            "the script string edit remains: {}",
+            rd.field_changes
+        );
+        assert!(rd.refs.is_empty(), "refs: {:?}", rd.refs);
+        assert!(
+            rd.dangling_refs.is_empty(),
+            "dangling: {:?}",
+            rd.dangling_refs
+        );
+    }
+}
