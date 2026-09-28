@@ -1,6 +1,6 @@
 # FO76-Tools
 
-An umbrella for independent Fallout 76 tooling. Each subproject has its own language, toolchain, and build pipeline — there is no shared workspace. The one cross-project dependency is `esm-viewer/`, which consumes the native addon built from `esm/bindings/napi`.
+An umbrella for independent Fallout 76 tooling. The Rust crates (`esm`, its `esm-napi` addon, and `ba2`) share one Cargo workspace at the repo root, building into `target/`; the TypeScript and Python projects have their own toolchains. The one cross-project dependency is `esm-viewer/`, which consumes the native addon built from `esm/bindings/napi`.
 
 | Project | Language | Description |
 |---|---|---|

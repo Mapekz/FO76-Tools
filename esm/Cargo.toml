@@ -1,6 +1,3 @@
-[workspace]
-members = [".", "bindings/napi"]
-
 [package]
 name = "esm"
 version = "0.1.0"
@@ -52,13 +49,3 @@ serde_json = { version = "1", features = ["raw_value"] }
 # `no-serde-warnings`: ts-rs warns on serde attributes it ignores, such as
 # `deserialize_with`, which leave the exported (serialized) shape unchanged.
 ts-rs = { version = "12.0.1", features = ["no-serde-warnings"] }
-
-# Profile used by .github/workflows/release.yml to build the published binaries.
-# Kept separate from `release` so the local `cargo build --release` that backs
-# ~/.local/bin/esm keeps its symbols and its faster link step.  Applies
-# workspace-wide (this file is the workspace root); Cargo ignores [profile] in
-# the bindings/napi member.
-[profile.dist]
-inherits = "release"
-strip = true
-lto = "thin"

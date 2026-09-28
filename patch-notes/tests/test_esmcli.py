@@ -302,7 +302,7 @@ class FindEsmBinaryTests(unittest.TestCase):
             self.assertEqual(esmcli.find_esm_binary(str(exe)), exe)
 
     def test_nothing_found_raises(self):
-        with mock.patch.object(esmcli, "ESM_CRATE_DIR", Path("/nonexistent-esm-crate")):
+        with mock.patch.object(esmcli, "REPO_ROOT", Path("/nonexistent-repo")):
             with mock.patch("shutil.which", return_value=None):
                 with self.assertRaises(EsmError):
                     esmcli.find_esm_binary(None)

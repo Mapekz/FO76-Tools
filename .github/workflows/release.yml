@@ -122,24 +122,14 @@ jobs:
       # `-D warnings` into RUSTFLAGS, which would fail a release build on any
       # new lint.  Linting is ci.yml's job, not this workflow's.
       #
-      # Both crates are independent cargo projects with independent lockfiles,
-      # so both are listed as cache workspaces (target/dist/ is under target/).
       - id: rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ''
-          cache-workspaces: |
-            esm
-            ba2
 
-      # -p esm keeps the bindings/napi workspace member out of the build.
-      - name: build esm
-        working-directory: esm
-        run: cargo build --profile dist -p esm --bin esm
-
-      - name: build ba2
-        working-directory: ba2
-        run: cargo build --profile dist --bin ba2
+      # -p keeps the esm-napi workspace member out of the build.
+      - name: build
+        run: cargo build --profile dist -p esm --bin esm -p ba2 --bin ba2
 
       # Neither CLI implements --version; --help is the only zero-exit probe.
       - name: smoke test
@@ -147,8 +137,8 @@ jobs:
           EXT: ${{ matrix.ext }}
         run: |
           set -euo pipefail
-          "esm/target/dist/esm${EXT}"        --help > /dev/null
-          "ba2/target/dist/ba2${EXT}"        --help > /dev/null
+          "target/dist/esm${EXT}"        --help > /dev/null
+          "target/dist/ba2${EXT}"        --help > /dev/null
 
       - name: stage archive contents
         env:
@@ -161,8 +151,8 @@ jobs:
           set -euo pipefail
           name="fo76-tools-${VERSION}-${TARGET}"
           mkdir -p "dist/${name}"
-          cp "esm/target/dist/esm${EXT}"        "dist/${name}/"
-          cp "ba2/target/dist/ba2${EXT}"        "dist/${name}/"
+          cp "target/dist/esm${EXT}"        "dist/${name}/"
+          cp "target/dist/ba2${EXT}"        "dist/${name}/"
           cp LICENSE README.md                  "dist/${name}/"
           {
             echo "FO76-Tools"

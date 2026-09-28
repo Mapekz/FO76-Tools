@@ -1,10 +1,10 @@
 # esm — FO76 ESM Reader
 
-A Rust workspace for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 183 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, mechanics digests, and schema coverage auditing.
+A Rust crate (plus its N-API addon) for reading and inspecting Fallout 76 `.esm` plugin/master files. Parses the Bethesda binary record format, schema-decodes 183 record types into structured JSON, indexes records by FormID and EditorID, resolves FormID references, loads localized string tables, evaluates curve tables, and supports search, diff, tree browsing, mechanics digests, and schema coverage auditing.
 
 > **Read-only.** This tool never modifies your `.esm` files. The only files it writes live in a shared sidecar directory next to the ESM, `esm_cache/`, holding zero-copy rkyv cache sections per ESM (`<name>.esm.tree`, `.forms`, `.edid`, `.search`, `.xref`, `.lstrings`, `.curves`) — see [Cache](#cache) below. Game data files (`*.esm`, `*.ba2`, and `esm_cache/`) are gitignored and non-redistributable — obtain them from your own game install.
 
-## Workspace layout
+## Layout
 
 ```
 esm/
@@ -30,8 +30,8 @@ The Electron GUI ("FO76 ESM Viewer") that consumes the N-API addon lives in the 
 ## Build
 
 ```sh
-cargo build --release          # esm CLI → target/release/esm
-cargo test --workspace         # every test; game-data tests skip without their env vars
+cargo build --release -p esm   # builds ../target/release/esm (repo-root workspace target/)
+cargo test -p esm -p esm-napi  # every test; game-data tests skip without their env vars
 ```
 
 ## Quickstart
@@ -160,7 +160,7 @@ python3 tools/extractor/audit.py --gate
 Integration test targets live in `tests/` (one per module) alongside inline `#[cfg(test)]` blocks for internals not public outside the crate. `tests/decode_records/` is a directory-backed target — one `main.rs` plus a module per record family — whose fixtures are verbatim subrecord bytes captured from `esm get --raw`, so it runs entirely in CI with no game data. Run all:
 
 ```sh
-cargo test --workspace
+cargo test -p esm -p esm-napi
 
 # Exhaustive decode sweep over CLEAN_TYPES (needs real ESM — skips silently if unset)
 RUST_TEST_ESM=path/to/data cargo test

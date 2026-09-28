@@ -1,0 +1,11 @@
+[workspace]
+members = ["esm", "esm/bindings/napi", "ba2"]
+resolver = "3"
+
+# Profile used by .github/workflows/release.yml to build the published binaries.
+# Kept separate from `release` so the local `cargo build --release` that backs
+# ~/.local/bin/{esm,ba2} keeps its symbols and its faster link step.
+[profile.dist]
+inherits = "release"
+strip = true
+lto = "thin"

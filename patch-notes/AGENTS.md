@@ -13,7 +13,7 @@ Run commands from `patch-notes/`; `justfile` owns the recipes.
 - Every stage is a verb: `python3 -m pn <verb>` from here, or `python3 patch-notes/cli.py
   <verb>` from anywhere; `python3 -m pn --help` lists them.
 - `pn/` is stdlib-only at runtime. `pn/esmcli.py` finds the `esm` binary at
-  `../esm/target/release/esm`, then on `PATH`.
+  `../target/release/esm` (the workspace target), then on `PATH`.
 - Tests import `pn` and `tests` as packages; a stage that talks to `esm` takes its gateway as a
   `client=` argument, so tests pass `tests/fake_gateway.FakeGateway` and production code never
   imports `tests/`.

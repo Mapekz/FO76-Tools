@@ -1,15 +1,16 @@
 # ESM
 
-Scoped guidance for the ESM Rust workspace. Shared policy and validation mapping
+Scoped guidance for the ESM crate and its N-API addon. Shared policy and validation mapping
 live in [../AGENTS.md](../AGENTS.md).
 
 ## Build and validation
 
 Run commands from `esm/`; `justfile` owns the complete recipe list.
 
-- Rebuild with `just release` (a plain `cargo build --release`) before querying
-  the CLI after changes; every call runs in-process, so the next one uses it.
-- `just check` covers formatting, clippy and tests across the workspace,
+- Rebuild with `just release` (`cargo build --release -p esm`, into the repo-root
+  `target/`) before querying the CLI after changes; every call runs in-process, so
+  the next one uses it.
+- `just check` covers formatting, clippy and tests for `esm` and `esm-napi`,
   generated-type drift, and schema formatting. `just audit` adds TES5Edit schema
   parity.
 - `just tools-test` and `just tools-lint` validate the Python schema tooling in

@@ -10,33 +10,22 @@ on:
 jobs:
   # ── Rust: fmt / clippy / test ──────────────────────────────────────────────
   #
-  # Matrix covers both independent Rust crates.  setup-rust-toolchain reads the
-  # repo-root rust-toolchain.toml, so CI always matches the pinned local
-  # toolchain.
+  # One job over the repo-root Cargo workspace (esm, esm-napi, ba2).
+  # setup-rust-toolchain reads the repo-root rust-toolchain.toml, so CI always
+  # matches the pinned local toolchain.
   rust:
-    name: ${{ matrix.crate }} (fmt / clippy / test)
+    name: rust (fmt / clippy / test)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        crate: [esm, ba2]
-    defaults:
-      run:
-        working-directory: ${{ matrix.crate }}
 
     steps:
       - uses: actions/checkout@v7
 
-      # Reads the repo-root rust-toolchain.toml.
       # rustflags: "" prevents the action from injecting its own -D warnings
       # (we pass that flag explicitly per-step so it shows up in the log).
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ""
-          cache-workspaces: ${{ matrix.crate }}
 
-      # --all / --workspace: esm/Cargo.toml is a non-virtual workspace root, so
-      # without them only the root package is checked and bindings/napi is not.
       - name: fmt
         run: cargo fmt --all --check
 
@@ -47,16 +36,14 @@ jobs:
         run: cargo test --workspace
         # Game-data integration tests skip silently when their env vars are unset
         # (no #[ignore] attributes anywhere in esm/src or esm/tests):
-        #   tests/decode_coverage.rs  — RUST_TEST_ESM
-        #   tests/diff.rs             — RUST_TEST_ESM_A and RUST_TEST_ESM_B
+        #   esm/tests/decode_coverage.rs  — RUST_TEST_ESM
+        #   esm/tests/diff.rs             — RUST_TEST_ESM_A and RUST_TEST_ESM_B
 
       - name: export bindings (generated TypeScript)
-        if: matrix.crate == 'esm'
-        run: cargo test export_bindings -- --test-threads=1
+        run: cargo test -p esm export_bindings -- --test-threads=1
 
       - name: check generated TypeScript drift
-        if: matrix.crate == 'esm'
-        run: git diff --exit-code -- ../esm-viewer/src/shared/generated/
+        run: git diff --exit-code -- esm-viewer/src/shared/generated/
 
   # ── Python tooling tests ──────────────────────────────────────────────────
   #
@@ -94,7 +81,6 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          # Matches the .python-version file (3.14.5).
           python-version: "3.14"
 
       - name: test
@@ -165,7 +151,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ""
-          cache-workspaces: esm
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -190,16 +175,11 @@ jobs:
   # Named `deps`, not `audit` — the `audit` job below is the unrelated
   # TES5Edit schema-parity gate.
   #
-  # Both crates share one policy at the repo root (deny.toml), checked once per
-  # crate because they have independent Cargo.lock files.  --all-features so an
-  # advisory reachable only through an optional feature is covered too.
+  # One policy (deny.toml) over the workspace's one Cargo.lock.  --all-features
+  # so an advisory reachable only through an optional feature is covered too.
   deps:
-    name: ${{ matrix.crate }} (cargo-deny)
+    name: cargo-deny
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        crate: [esm, ba2]
 
     steps:
       - uses: actions/checkout@v7
@@ -208,12 +188,10 @@ jobs:
       #   cargo-deny <arguments> <command> <command-arguments>
       # so `--config` and `--all-features` belong in `arguments` — both are
       # global cargo-deny flags and must precede the `check` subcommand.
-      # Putting --config in command-arguments makes `check` reject it.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
           arguments: --all-features --config deny.toml
-          manifest-path: ${{ matrix.crate }}/Cargo.toml
 
   # ── Schema parity audit ───────────────────────────────────────────────────
   #
@@ -234,16 +212,14 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          # Matches the .python-version file (3.14.5).
           python-version: "3.14"
 
-      # hardcoded.py shells out to the esm CLI (same reader as reader.rs) so the
+      # hardcoded.py shells out to the esm CLI (same reader as reader.rs), so the
       # drift guard below needs a release build on PATH.  Shares this job with
       # the TES5Edit clone rather than duplicating it in a separate job.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           rustflags: ""
-          cache-workspaces: esm
 
       # Clone the Eckserah FO76 fork — the source schema/fo76.json is generated
       # from — as a sibling of esm/ (the path extract.py hard-codes).  Pinned
@@ -271,17 +247,16 @@ jobs:
           python3 tools/extractor/extract.py
           git diff --exit-code schema/fo76.json schema/fo76.ctda.json
 
-      # hardcoded.py drives the esm CLI (`esm batch`), so the drift guard
-      # below needs a release build on PATH.
+      # hardcoded.py runs `esm tree`/`list`/`get`, so the drift guard below
+      # needs a release build on PATH.
       - name: build esm CLI (release)
-        working-directory: esm
-        run: cargo build --release
+        run: cargo build --release -p esm
 
       # Regenerates schema/hardcoded_fo76.json via the esm CLI and fails if the
       # checked-in table drifts from Fallout76.esp at the pinned TES5Edit commit.
       - name: hardcoded.py drift guard
         working-directory: esm
         run: |
-          export PATH="$PWD/target/release:$PATH"
+          export PATH="$GITHUB_WORKSPACE/target/release:$PATH"
           python3 tools/extractor/hardcoded.py
           git diff --exit-code schema/hardcoded_fo76.json

@@ -47,9 +47,9 @@ broke something — rerun `bun run postinstall` (or `bun install`) first.
 ## Dependency on `esm/bindings/napi`
 
 This app depends on `@fo76/esm-napi` via `"file:../esm/bindings/napi"` in `package.json` —
-a symlinked local dependency, not a published package. The addon is a Rust workspace member
-of `esm/Cargo.toml`, so it lives under `esm/` rather than in this directory, and this app
-consumes it via that `file:` symlink dependency.
+a symlinked local dependency, not a published package. The addon is the `esm-napi` crate in
+the repo-root Cargo workspace; it lives under `esm/` rather than in this directory, and this
+app consumes it via that `file:` symlink dependency.
 
 Follow [the root validation map](../AGENTS.md#validation-map) for addon builds,
 DTO regeneration, and IPC synchronization. `predev` and `prebuild` rebuild the

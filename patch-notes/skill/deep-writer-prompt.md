@@ -19,16 +19,16 @@ every one to ground truth. Run all commands from the repo root.
 - **Per-record structured diff** (batch FormIDs in one call):
   `python3 patch-notes/cli.py extract {OUT} <FORMID> [<FORMID>...]`
 - **Live verification:**
-  - `esm/target/release/esm --esm "{NEW_ESM}" get <id-or-edid> [<id2-or-edid> ...] --resolve stub --pretty`
+  - `target/release/esm --esm "{NEW_ESM}" get <id-or-edid> [<id2-or-edid> ...] --resolve stub --pretty`
     — batch every FormID/EditorID you need into ONE call. 2+ selectors return a JSON array
     (one `{"sel": ..., ...}` entry per selector, mixed FormID/EditorID, errors isolated
     per-selector); never loop single `get`s.
-  - `esm/target/release/esm --esm "{NEW_ESM}" refs <id> --type <SIG> --paths [--depth N] [--limit N] --pretty`
+  - `target/release/esm --esm "{NEW_ESM}" refs <id> --type <SIG> --paths [--depth N] [--limit N] --pretty`
     — `--type` takes ONE 4-char record-type signature per call (run it once per referencing
     type, e.g. once for `SPEL`, once for `PERK` — not comma-joined); `--paths` annotates each
     row with the exact field path (e.g. `Effects[2].Conditions[0]`) that references your
     target, so you can jump straight to the gating field instead of dumping the whole record.
-  - `esm/target/release/esm --esm "{NEW_ESM}" search "<pattern>" [--type T] --pretty`
+  - `target/release/esm --esm "{NEW_ESM}" search "<pattern>" [--type T] --pretty`
   - Old-side (pre-patch values): same commands with `--esm "{OLD_ESM}"`. Batch all changed
     anchors for a bundle into one bulk `get` against `{OLD_ESM}` rather than querying
     value-by-value.
@@ -39,7 +39,7 @@ every one to ground truth. Run all commands from the repo root.
 
 1. **Chase the mechanic to ground truth** (`{MECHANICS_KB}`, "Chasing a unique-weapon effect"). For
    `mod_Custom_*`/unique-effect OMODs, run
-   `esm/target/release/esm --esm "{NEW_ESM}" chase <OMOD>` FIRST (always emits classified JSON) — it automates the
+   `target/release/esm --esm "{NEW_ESM}" chase <OMOD>` FIRST (always emits classified JSON) — it automates the
    keyword/perk-grant/direct-property walk in a handful of bulk calls and returns just the
    gating `Effects[N]` entry, not full record dumps. `chase` also accepts a **PERK, SPEL, ALCH,
    or ENCH selector directly** — run it on whatever the OMOD forward-fetches (or on the record

@@ -13,15 +13,15 @@ check: fmt clippy test
 
 # Verify formatting.
 fmt:
-    cargo fmt --check
+    cargo fmt -p ba2 --check
 
 # Lint (deny warnings).
 clippy:
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy -p ba2 --all-targets -- -D warnings
 
 # Run all tests.
 test:
-    cargo test
+    cargo test -p ba2
 
 # Compare the real archives in DIR (the Playtest install's Data folder) with
 # tests/baselines/playtest.tsv.

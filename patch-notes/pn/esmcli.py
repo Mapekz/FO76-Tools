@@ -81,13 +81,13 @@ def _sel_display(sel: Mapping[str, Any]) -> str:
 # ─── esm binary discovery (the one find_esm_binary, shared by ─────────────
 # ─── make_patch_notes.py/build_bundles.py) ─────────────────────────────────
 
-#: The esm crate's directory -- this file lives at patch-notes/pn/esmcli.py.
-ESM_CRATE_DIR = Path(__file__).resolve().parents[2] / "esm"
+#: The repo root -- this file lives at patch-notes/pn/esmcli.py.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def find_esm_binary(explicit: str | Path | None = None) -> Path:
     """Locate the `esm` CLI binary: an explicit path, else the workspace
-    release build (`esm/target/release/esm`), else whatever is on
+    release build (`target/release/esm` at the repo root), else whatever is on
     `$PATH` as `esm`.
 
     Raises `EsmError` (never calls `sys.exit`/prints to stderr) -- this is
@@ -103,7 +103,7 @@ def find_esm_binary(explicit: str | Path | None = None) -> Path:
             return p
         raise EsmError(f"--esm-bin path not executable: {explicit}")
 
-    release = ESM_CRATE_DIR / "target" / "release" / "esm"
+    release = REPO_ROOT / "target" / "release" / "esm"
     if release.is_file() and os.access(release, os.X_OK):
         return release
 

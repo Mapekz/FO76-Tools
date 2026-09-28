@@ -14,7 +14,7 @@ file except the one output named at the end.
 - `{OUT}/work/claims-check.json` — every structured number claim and its verdict.
 - `{OUT}/work/official-notes.txt` — the official article, if one was provided (may be absent).
 - Live data, read-only, for spot checks (batch selectors, never loop single `get`s):
-  `esm/target/release/esm --esm "{NEW_ESM}" get <id-or-edid> [...] --resolve stub --pretty`
+  `target/release/esm --esm "{NEW_ESM}" get <id-or-edid> [...] --resolve stub --pretty`
   and the same with `--esm "{OLD_ESM}"` for pre-patch values.
 
 ## CHECK, IN THIS ORDER

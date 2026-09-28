@@ -11,7 +11,7 @@
 #
 # Usage:
 #   just          -> fmt + clippy + test + gen-types + drift check + schema-fmt-check (full local esm pass)
-#   just release  -> build the release CLI (target/release/esm)
+#   just release  -> build the release CLI (../target/release/esm, the workspace target)
 #   just gen-types -> regenerate ../esm-viewer/src/shared/generated/ from Rust DTOs
 #   just audit    -> schema parity gate (needs ../TES5Edit checkout/symlink)
 #   just schema   -> regenerate schema/fo76.json + fo76.ctda.json (needs ../TES5Edit)
@@ -30,31 +30,31 @@ check: fmt clippy test gen-types schema-fmt-check
 
 # Build the release CLI that ~/.local/bin/esm points at.
 release:
-    cargo build --release
+    cargo build --release -p esm
 
 # Verify formatting (bindings/napi included).
 fmt:
-    cargo fmt --all --check
+    cargo fmt -p esm -p esm-napi --check
 
-# Lint the whole workspace (bindings/napi included).
+# Lint esm and bindings/napi.
 clippy:
-    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy -p esm -p esm-napi --all-targets -- -D warnings
 
 # Run all tests (game-data integration tests are env-gated and skip silently when unset).
 test:
-    cargo test --workspace
+    cargo test -p esm -p esm-napi
 
 # Regenerate the TypeScript mirrors of the N-API DTOs (ts-rs, see Cargo.toml
 # dev-dependencies) plus their hand-written companions (esm/tests/gen_bindings.rs:
 # recordTypeNames.generated.ts from schema/fo76.json, markers.generated.ts from
 # src/decode.rs's `markers` module) into ../esm-viewer/src/shared/generated/.
-# TS_RS_EXPORT_DIR/TS_RS_LARGE_INT are set globally in .cargo/config.toml (not
-# just here) so a bare `cargo test` can never fall back to ts-rs's default
+# TS_RS_EXPORT_DIR/TS_RS_LARGE_INT are set globally in ../.cargo/config.toml
+# (not just here) so a bare `cargo test` can never fall back to ts-rs's default
 # `./bindings` dir, which would collide with the tracked `bindings/napi/` crate.
 # --test-threads=1: some of these tests share a target directory (mkdir +
 # sibling files) and ts-rs itself recommends serializing export tests.
 gen-types:
-    cargo test export_bindings -- --test-threads=1
+    cargo test -p esm export_bindings -- --test-threads=1
 
 # Schema parity audit against the Pascal source in ../TES5Edit.
 # Expects ../TES5Edit = Eckserah/TES5Edit @ 80a2c3c6 (branch dev-4.1.6).

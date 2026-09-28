@@ -34,8 +34,8 @@ Options:
     --lang LANG           Localization language code (default: en)
     --out-dir DIR         Output directory. Default: patch_<OLDTOK>_to_<NEWTOK>/
                           next to NEW.esm.
-    --esm-bin PATH        Path to the esm binary (default: target/release/esm relative to
-                          the esm/ workspace root, or whatever is on $PATH as 'esm').
+    --esm-bin PATH        Path to the esm binary (default: the repo's target/release/esm,
+                          else esm on $PATH).
     --type SIG            Only include records of this type (passed to esm diff).
     --bodies LEVEL        Detail level for decoded fields on added/removed record
                           stubs: none|stub|full (default: stub; `full` recursively

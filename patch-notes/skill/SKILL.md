@@ -19,8 +19,8 @@ mechanical stage (diffing, bundling, linting, triage) is deterministic Python; y
 steps 1-7 below. Run every command from the repo root. The pipeline is
 `python3 patch-notes/cli.py <verb>` (below, `pn <verb>`); `prepare`, `merge-assessment`,
 `gate` and `publish` each print a JSON summary on stdout. The `esm` binary is
-`esm/target/release/esm`; build it first if missing:
-`test -x esm/target/release/esm || (cd esm && cargo build --release)`.
+`target/release/esm`; build it first if missing:
+`test -x target/release/esm || cargo build --release -p esm`.
 
 Use the client's available delegation capability for the roles below; tool names
 are not part of this procedure. If delegation is unavailable, perform triage and
@@ -170,8 +170,8 @@ Read every draft + report. Then, in order:
 1. **Reconcile every deferral the gate flagged** (`deferred_uncovered`) and every
    `unresolved[]` item worth a story: chase it yourself now — extract the record diff, then
    for `mod_Custom_*`/unique-effect OMODs (or a PERK/SPEL/ALCH/ENCH selector directly) run
-   `esm/target/release/esm --esm "$NEW_ESM" chase <OMOD_OR_PERK_OR_SPEL_OR_ALCH_OR_ENCH>
-   --json`; for anything else, `esm/target/release/esm --esm "$NEW_ESM" refs <id> --type
+   `target/release/esm --esm "$NEW_ESM" chase <OMOD_OR_PERK_OR_SPEL_OR_ALCH_OR_ENCH>
+   --json`; for anything else, `target/release/esm --esm "$NEW_ESM" refs <id> --type
    <SIG> --paths --pretty` (one 4-char type per call) plus a bulk `get` for whatever it turns
    up. Write the missing bullets into `$OUT/drafts/deep.orchestrator.md` with a matching
    `$OUT/drafts/deep.orchestrator.report.json` (`bundles_covered` + `claims`, same contract as
@@ -255,7 +255,7 @@ either.
 - Never assert a record's liveness from an EDID prefix alone (`zzz_`/`CUT_`/`DEL_`/`POST_`).
   For PCRD-granted perks the clean signal is a PCRD listing the rank; item-granted perks
   (OMOD/ENCH Perks property) legitimately have no PCRD — verify the grant path instead via
-  `esm/target/release/esm --esm "$NEW_ESM" refs <perk-id> --type PCRD --paths --pretty`.
+  `target/release/esm --esm "$NEW_ESM" refs <perk-id> --type PCRD --paths --pretty`.
 - Every number in the final summary traces to the slice, a `pn extract`, or a live `esm`
   call this run — never memory, never estimation, never rounding — and is a `claims[]` entry
   the gate verified this run.

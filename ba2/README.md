@@ -19,7 +19,7 @@ A Rust CLI and library for reading, extracting, and creating Bethesda **BA2 / BT
 
 ```sh
 cargo build --release
-# Binary is at: target/release/ba2
+# Binary is at: ../target/release/ba2 (the workspace target)
 ```
 
 ## CLI Usage
