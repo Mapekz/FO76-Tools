@@ -434,7 +434,7 @@ mod tests {
     }
 
     fn empty_schema() -> Schema {
-        serde_json::from_str(r#"{"records":{}}"#).unwrap()
+        crate::schema::Schema::from_json(r#"{"records":{}}"#).unwrap()
     }
 
     /// Regression test: `resolve_formid`'s CURV branch inlines `formid`,

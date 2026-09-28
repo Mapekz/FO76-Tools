@@ -1222,7 +1222,7 @@ mod tests {
     }
 
     fn empty_schema() -> Schema {
-        serde_json::from_str(r#"{"records":{}}"#).unwrap()
+        crate::schema::Schema::from_json(r#"{"records":{}}"#).unwrap()
     }
 
     fn int_field(name: &str, width: IntegerWidth) -> MemberDef {

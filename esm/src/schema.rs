@@ -1,10 +1,42 @@
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// The decoder's record definitions, keyed by signature.
+///
+/// Each definition stays raw JSON until first use: a query touches a handful
+/// of record types, and parsing all ~300 definitions up front was most of
+/// what opening a database cost. The embedded schema is parsed and
+/// validated in full by `tests::embedded_schema_parses_and_validates`; a
+/// schema loaded from a file is parsed and validated eagerly.
+#[derive(Debug)]
 pub struct Schema {
-    pub records: HashMap<String, RecordDef>,
+    records: HashMap<String, LazyRecord>,
+}
+
+#[derive(Debug)]
+struct LazyRecord {
+    raw: Box<RawValue>,
+    parsed: OnceLock<RecordDef>,
+}
+
+impl LazyRecord {
+    fn parse(&self, sig: &str) -> anyhow::Result<&RecordDef> {
+        if let Some(def) = self.parsed.get() {
+            return Ok(def);
+        }
+        let def: RecordDef = serde_json::from_str(self.raw.get())
+            .map_err(|e| anyhow::anyhow!("schema record {sig}: {e}"))?;
+        def.validate(sig)?;
+        Ok(self.parsed.get_or_init(|| def))
+    }
+}
+
+#[derive(Deserialize)]
+struct RawSchema {
+    records: HashMap<String, Box<RawValue>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -464,7 +496,7 @@ impl MemberDef {
 
 impl Schema {
     pub fn load_embedded() -> anyhow::Result<Self> {
-        Self::from_json(include_str!("../schema/fo76.json"))
+        Self::from_json_lazy(include_str!("../schema/fo76.json"))
     }
 
     pub fn load_path(path: impl AsRef<Path>) -> anyhow::Result<Self> {
@@ -472,17 +504,59 @@ impl Schema {
         Self::from_json(&text)
     }
 
+    /// Parse and validate every record definition in `text`.
     pub fn from_json(text: &str) -> anyhow::Result<Self> {
-        let schema: Self = serde_json::from_str(text)?;
-        schema.validate()?;
+        let schema = Self::from_json_lazy(text)?;
+        for (sig, record) in &schema.records {
+            record.parse(sig)?;
+        }
         Ok(schema)
     }
 
-    /// Reject schema content the decoder cannot interpret, so a bad extractor
-    /// or override edit fails at load instead of decoding silently wrong.
-    fn validate(&self) -> anyhow::Result<()> {
-        for (sig, record) in &self.records {
-            for member in &record.members {
+    fn from_json_lazy(text: &str) -> anyhow::Result<Self> {
+        let raw: RawSchema = serde_json::from_str(text)?;
+        Ok(Schema {
+            records: raw
+                .records
+                .into_iter()
+                .map(|(sig, raw)| {
+                    (
+                        sig,
+                        LazyRecord {
+                            raw,
+                            parsed: OnceLock::new(),
+                        },
+                    )
+                })
+                .collect(),
+        })
+    }
+
+    /// The definition for record type `sig`, parsed on first use.
+    ///
+    /// # Panics
+    /// If the embedded schema holds a definition the decoder rejects — which
+    /// `tests::embedded_schema_parses_and_validates` makes a test failure,
+    /// not a runtime one.
+    pub fn record(&self, sig: &str) -> Option<&RecordDef> {
+        let record = self.records.get(sig)?;
+        Some(record.parse(sig).unwrap_or_else(|e| panic!("{e:#}")))
+    }
+
+    /// Every record type's signature and definition, parsing each on first use.
+    pub fn records(&self) -> impl Iterator<Item = (&str, &RecordDef)> {
+        self.records
+            .keys()
+            .filter_map(|sig| Some((sig.as_str(), self.record(sig)?)))
+    }
+}
+
+impl RecordDef {
+    /// Reject content the decoder cannot interpret, so a bad extractor or
+    /// override edit fails loudly instead of decoding silently wrong.
+    fn validate(&self, sig: &str) -> anyhow::Result<()> {
+        {
+            for member in &self.members {
                 member.try_visit(&mut |m| match m {
                     MemberDef::RArray {
                         name,
@@ -503,10 +577,6 @@ impl Schema {
         }
         Ok(())
     }
-
-    pub fn record(&self, sig: &str) -> Option<&RecordDef> {
-        self.records.get(sig)
-    }
 }
 
 #[cfg(test)]
@@ -519,6 +589,17 @@ mod tests {
             "element":{{"kind":"integer","name":"Thing","width":"u8"}},
             "count":{{"count_path":{count_path}}}}}]}}}}}}"#
         )
+    }
+
+    #[test]
+    fn embedded_schema_parses_and_validates() {
+        let text = include_str!("../schema/fo76.json");
+        let schema = Schema::from_json(text).unwrap();
+        let raw: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            schema.records().count(),
+            raw["records"].as_object().unwrap().len()
+        );
     }
 
     #[test]

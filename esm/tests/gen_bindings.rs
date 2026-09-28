@@ -40,9 +40,8 @@ fn export_bindings_record_type_names() {
     let schema = Schema::load_embedded().expect("load embedded schema");
 
     let mut entries: Vec<(&str, &str)> = schema
-        .records
-        .iter()
-        .map(|(sig, def)| (sig.as_str(), def.name.as_str()))
+        .records()
+        .map(|(sig, def)| (sig, def.name.as_str()))
         .collect();
     entries.sort_by_key(|(sig, _)| *sig);
 
