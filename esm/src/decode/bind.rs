@@ -306,12 +306,14 @@ fn bind_one(ctx: &DecodeContext<'_>, member: &MemberDef, cur: &mut Cursor<'_>, o
             name,
             decider,
             variants,
+            ..
         } => bind_runion(ctx, name, decider, variants, cur, out),
         MemberDef::Array {
             sig: Some(sig),
             name,
             element,
             count,
+            ..
         } => {
             // A packed array subrecord; consecutive copies of it continue
             // the same array.

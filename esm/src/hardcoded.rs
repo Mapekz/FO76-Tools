@@ -10,7 +10,7 @@
 //! `tools/extractor/hardcoded.py` parses that pseudo-plugin, adds the
 //! `PlayerRef` xEdit synthesizes in code, and emits
 //! `schema/hardcoded_fo76.json`, embedded here at compile time (mirrors the
-//! `Schema::load_embedded` pattern in `src/schema.rs` and the CTDA table in
+//! `Schema::load_embedded` pattern in `src/schema/mod.rs` and the CTDA table in
 //! `src/ctda.rs`). The table is small (~229 entries) and looked up rarely
 //! (only on an index miss), so a sorted `Vec` + binary search is plenty.
 

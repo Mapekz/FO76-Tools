@@ -361,44 +361,7 @@ pub(super) fn choose_union_variant(
 /// read, so the two can never disagree on whether a member is active:
 /// active iff `fv >= from` (when set) and `fv < below` (when set, strict).
 pub(crate) fn member_version_bounds(member: &MemberDef) -> (Option<u16>, Option<u16>) {
-    match member {
-        MemberDef::Struct {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Integer {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Float {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Unused {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Empty {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::Bytes {
-            from_version,
-            below_version,
-            ..
-        }
-        | MemberDef::FormId {
-            from_version,
-            below_version,
-            ..
-        } => (*from_version, *below_version),
-        _ => (None, None),
-    }
+    member.version_gate()
 }
 
 pub(crate) fn member_version_ok(form_version: u16, member: &MemberDef) -> bool {

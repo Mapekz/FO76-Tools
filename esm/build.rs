@@ -8,13 +8,19 @@
 //!   different data rebuilds `xref` instead of reading one built from the old.
 //! - `schema_records.rs`: `fo76.json` split into one raw-JSON string per
 //!   record type, so opening the embedded schema doesn't scan 2 MB of JSON;
-//!   each definition is still parsed on first use (see `src/schema.rs`).
+//!   each definition is parsed on first use (see `src/schema/mod.rs`). Every
+//!   definition is parsed and validated here first, with the decoder's own
+//!   types (`src/schema/defs.rs`), so an invalid one fails the build.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
 use serde_json::value::RawValue;
+
+#[path = "src/schema/defs.rs"]
+#[allow(dead_code)]
+mod defs;
 
 const SCHEMA_FILES: [&str; 2] = ["schema/fo76.json", "schema/fo76.ctda.json"];
 const HARDCODED_FORMS: &str = "schema/hardcoded_fo76.json";
@@ -46,6 +52,11 @@ fn main() {
     let schema: RawSchema = serde_json::from_str(&text).expect("parsing fo76.json");
     let mut table = String::from("static EMBEDDED_RECORDS: &[(&str, &str)] = &[\n");
     for (sig, raw) in schema.records {
+        let def: defs::RecordDef = serde_json::from_str(raw.get())
+            .unwrap_or_else(|e| panic!("fo76.json record {sig}: {e}"));
+        if let Err(e) = def.validate(sig) {
+            panic!("fo76.json record {e}");
+        }
         writeln!(table, "    ({sig:?}, {:?}),", raw.get()).unwrap();
     }
     table.push_str("];\n");

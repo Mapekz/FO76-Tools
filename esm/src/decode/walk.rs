@@ -67,6 +67,7 @@ pub(crate) fn decode_member(
             name,
             element,
             count: Some(ArrayCount::Fixed(n)),
+            ..
         } => {
             // A nested array element (e.g. the inner dimension of an
             // array-of-arrays, such as CELL's 32x32 Max Height Data grid)
@@ -630,6 +631,7 @@ mod tests {
             name: "Test".into(),
             members,
             unordered: false,
+            comment: None,
         };
         let mut cur = super::super::bind::Cursor::new(subrecords);
         let mut out = Fields::new();
@@ -675,6 +677,8 @@ mod tests {
 
     fn prefix_array(name: &str, width: usize, elem: MemberDef) -> MemberDef {
         MemberDef::Array {
+            from_version: None,
+            below_version: None,
             sig: None,
             name: name.to_string(),
             element: Box::new(elem),
@@ -805,6 +809,8 @@ mod tests {
             below_version: None,
         };
         let counted = |name: &str, field: &str| MemberDef::Array {
+            from_version: None,
+            below_version: None,
             sig: None,
             name: name.into(),
             element: Box::new(int_field("Step", IntegerWidth::U32)),
@@ -962,6 +968,8 @@ mod tests {
                 from_size: None,
             },
             MemberDef::Union {
+                from_version: None,
+                below_version: None,
                 sig: None,
                 name: "union".into(),
                 decider: UnionDecider::FormIdTargetType {
@@ -1415,6 +1423,8 @@ mod tests {
             vec![
                 sig_int_field("ANAM", "Type", IntegerWidth::U32),
                 MemberDef::Union {
+                    from_version: None,
+                    below_version: None,
                     sig: None,
                     name: "Data".into(),
                     decider: UnionDecider::FieldValue {
@@ -1448,6 +1458,8 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let keywords = MemberDef::Array {
+            from_version: None,
+            below_version: None,
             sig: Some("KWDA".into()),
             name: "Keywords".into(),
             element: Box::new(int_field("Keyword", IntegerWidth::U32)),
@@ -1503,6 +1515,8 @@ mod tests {
         let schema = empty_schema();
         let ctx = bare_ctx(&schema);
         let array = |name: &str, count: Option<ArrayCount>| MemberDef::Array {
+            from_version: None,
+            below_version: None,
             sig: None,
             name: name.into(),
             element: Box::new(int_field("V", IntegerWidth::U16)),
@@ -1550,6 +1564,8 @@ mod tests {
             vec![
                 int_field("Type", IntegerWidth::U32),
                 MemberDef::Union {
+                    from_version: None,
+                    below_version: None,
                     sig: None,
                     name: "Data".into(),
                     decider: UnionDecider::FieldValue {

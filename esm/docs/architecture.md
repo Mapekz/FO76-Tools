@@ -26,8 +26,13 @@ decode::node::Node  — typed value tree (FormIds, lstring ids, enums, flags sta
 serde_json::Value   — one JSON object per record
 ```
 
-`decode_record` looks up the record's shape in `ctx.schema` (`src/schema.rs`'s `Schema`,
-loaded once via `Schema::load_embedded()` from the compiled-in `schema/fo76.json`).
+`decode_record` looks up the record's shape in `ctx.schema` (`src/schema/mod.rs`'s `Schema`,
+loaded once via `Schema::load_embedded()` from the compiled-in `schema/fo76.json`). The
+definition types in `src/schema/defs.rs` reject any key a member's kind doesn't know (a
+`_comment` excepted) and a union decider that doesn't name exactly one kind, and
+`RecordDef::validate` rejects what the decoder can't interpret (unresolvable count paths, empty
+version gates, deciders picking a variant the union lacks); `build.rs` runs both over every
+embedded definition, so an invalid one fails the build.
 `decode/bind.rs` then binds the record's subrecords to its members in file order, the way
 xEdit does: a record or `rstruct` keeps a cursor over its member list and each subrecord goes
 to the next member at or after the cursor that can take its signature; an `rstruct` opens on

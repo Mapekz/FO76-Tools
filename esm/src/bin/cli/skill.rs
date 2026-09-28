@@ -4,7 +4,7 @@ use anyhow::Context as _;
 use std::path::{Path, PathBuf};
 
 /// The `esm-cli` usage-knowledge skill doc, embedded at compile time (same
-/// `include_str!` pattern as `schema/fo76.json` in `src/schema.rs`). `esm
+/// `include_str!` pattern as `schema/fo76.json` in `src/schema/mod.rs`). `esm
 /// skill` prints it verbatim; `esm skill --install` writes it into a
 /// consumer repo for its agents to auto-discover.
 const SKILL_MD: &str = include_str!("../../../skills/esm-cli/SKILL.md");
