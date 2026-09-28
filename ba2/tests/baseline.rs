@@ -142,17 +142,12 @@ fn write_manifest(dir: &Path) {
     std::fs::write(manifest_path(), out).unwrap();
 }
 
-#[test]
-fn playtest_archives_match_the_baseline() {
-    let Ok(dir) = std::env::var("BA2_BASELINE_DIR") else {
-        return;
-    };
-    let dir = PathBuf::from(dir);
-    if std::env::var_os("BA2_BASELINE_WRITE").is_some() {
-        write_manifest(&dir);
-        return;
-    }
+/// Compare the archives in `dir` with the manifest: the mismatches, or why
+/// the comparison proves nothing. An archive missing from `dir`, or whose
+/// size changed since the baseline, is skipped; skipping all of them fails.
+fn check_against_manifest(dir: &Path) -> Result<usize, String> {
     let manifest = std::fs::read_to_string(manifest_path()).expect("read the baseline manifest");
+    let (mut compared, mut skipped) = (0usize, 0usize);
     let mut mismatches = Vec::new();
     for line in manifest.lines().filter(|l| !l.starts_with('#')) {
         let cols: Vec<&str> = line.split('\t').collect();
@@ -162,13 +157,16 @@ fn playtest_archives_match_the_baseline() {
         let path = dir.join(name);
         let Ok(meta) = std::fs::metadata(&path) else {
             eprintln!("skip {name}: not in {}", dir.display());
+            skipped += 1;
             continue;
         };
         if meta.len().to_string() != size {
             eprintln!("skip {name}: size changed since the baseline (run `just baseline`)");
+            skipped += 1;
             continue;
         }
-        let row = measure(&dir, name);
+        compared += 1;
+        let row = measure(dir, name);
         if row.index != index {
             mismatches.push(format!("{name}: index digest {} != {index}", row.index));
         }
@@ -179,9 +177,39 @@ fn playtest_archives_match_the_baseline() {
             ));
         }
     }
-    assert!(
-        mismatches.is_empty(),
-        "baseline mismatches:\n{}",
-        mismatches.join("\n")
-    );
+    eprintln!("compared {compared} archive(s), skipped {skipped}");
+    if compared == 0 {
+        return Err(format!(
+            "no archive in {} matches the baseline to compare ({skipped} skipped)",
+            dir.display()
+        ));
+    }
+    if !mismatches.is_empty() {
+        return Err(format!("baseline mismatches:\n{}", mismatches.join("\n")));
+    }
+    Ok(compared)
+}
+
+#[test]
+fn playtest_archives_match_the_baseline() {
+    let Ok(dir) = std::env::var("BA2_BASELINE_DIR") else {
+        return;
+    };
+    let dir = PathBuf::from(dir);
+    if std::env::var_os("BA2_BASELINE_WRITE").is_some() {
+        write_manifest(&dir);
+        return;
+    }
+    if let Err(problem) = check_against_manifest(&dir) {
+        panic!("{problem}");
+    }
+}
+
+/// A baseline check that compares no archive (a wrong or empty directory)
+/// fails rather than passing on nothing.
+#[test]
+fn a_baseline_check_that_compares_nothing_fails() {
+    let empty = tempfile::TempDir::new().unwrap();
+    let problem = check_against_manifest(empty.path()).unwrap_err();
+    assert!(problem.contains("no archive"), "{problem}");
 }
