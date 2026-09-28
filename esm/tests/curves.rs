@@ -180,6 +180,45 @@ fn get_curv_record_inlines_curve_points() {
     );
 }
 
+/// The cached curves section notices a curve file added to or removed from
+/// a subdirectory of `curvetables/json/` after it was built: a fresh open
+/// sees the change.
+#[test]
+fn a_curve_file_added_or_removed_in_a_subdirectory_reaches_a_fresh_open() {
+    let dir = unique_temp_dir("curv_nested_change");
+    std::fs::create_dir_all(&dir).expect("create isolated test dir");
+    let mut subrecords = Vec::new();
+    common::append_subrecord(&mut subrecords, b"EDID", &common::cstr("CT_Nested"));
+    common::append_subrecord(&mut subrecords, b"JASF", &common::cstr(r"Sub\Test.json"));
+    let mut records = Vec::new();
+    common::append_record(&mut records, b"CURV", 0x003, &subrecords);
+    let mut esm_buf = common::tes4_header();
+    esm_buf.extend(common::wrap_grup(b"CURV", &records));
+    std::fs::write(dir.join("Test.esm"), &esm_buf).expect("write test esm");
+    let sub = dir.join("misc/curvetables/json/sub");
+    std::fs::create_dir_all(&sub).expect("create curve json dir");
+
+    let curve = || {
+        Database::open(&dir)
+            .expect("open db")
+            .record_by_formid_resolved(FormId::new(0x003), ResolveDepth::None)
+            .expect("decode CURV record")
+            .fields
+            .get("Curve")
+            .cloned()
+    };
+    assert_eq!(curve(), None, "no curve file yet");
+    std::fs::write(sub.join("test.json"), br#"[{"x":0,"y":10},{"x":1,"y":20}]"#)
+        .expect("write curve json");
+    assert_eq!(
+        curve(),
+        Some(serde_json::json!([{"x": 0.0, "y": 10.0}, {"x": 1.0, "y": 20.0}]))
+    );
+    std::fs::remove_file(sub.join("test.json")).expect("remove curve json");
+    assert_eq!(curve(), None, "the removed curve is gone");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// Fallback: when no curve source was discovered (no sibling
 /// `misc/curvetables/json/`, no Startup BA2), a CURV `get` must fall back to
 /// today's path-only behavior — no `"Curve"` key at all — rather than erroring

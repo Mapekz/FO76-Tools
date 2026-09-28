@@ -158,21 +158,24 @@ impl ArchivedCurve {
 }
 
 /// Every CURV record's curve, sorted by FormID, plus a stamp of the curve
-/// files it was read from — the `curves` cache section.
+/// files it was read from — the `curves` cache section. `source_dirs` are the
+/// loose curve tree's subdirectories the stamp covers (none for a BA2).
 #[derive(rkyv::Archive, rkyv::Serialize)]
 pub(crate) struct CurvesSection {
     source: u64,
+    source_dirs: Vec<String>,
     ids: Vec<u32>,
     curves: Vec<Curve>,
 }
 
 impl CurvesSection {
-    fn new(source: u64, mut entries: Vec<(u32, Curve)>) -> Self {
+    fn new(source: u64, source_dirs: Vec<String>, mut entries: Vec<(u32, Curve)>) -> Self {
         entries.sort_by_key(|(id, _)| *id);
         entries.dedup_by_key(|(id, _)| *id);
         let (ids, curves) = entries.into_iter().unzip();
         CurvesSection {
             source,
+            source_dirs,
             ids,
             curves,
         }
@@ -182,7 +185,7 @@ impl CurvesSection {
 /// Version of this section's archived layout, stored in its file header so
 /// a cache written by a build with another layout is rebuilt. Bump it when
 /// the layout golden test in this module fails.
-const CURVES_LAYOUT_FINGERPRINT: u64 = 1;
+const CURVES_LAYOUT_FINGERPRINT: u64 = 2;
 
 impl SectionSpec for ArchivedCurvesSection {
     const KIND: SectionKind = SectionKind::Curves;
@@ -218,7 +221,7 @@ impl CurveIndex {
     pub fn from_curves(curves: impl IntoIterator<Item = (FormId, Curve)>) -> Result<CurveIndex> {
         let entries = curves.into_iter().map(|(id, c)| (id.raw(), c)).collect();
         Ok(CurveIndex {
-            section: ArchiveBuf::serialize(&CurvesSection::new(0, entries))?,
+            section: ArchiveBuf::serialize(&CurvesSection::new(0, Vec::new(), entries))?,
         })
     }
 
@@ -231,7 +234,7 @@ impl CurveIndex {
         index: &crate::index::Index,
         misc_dir: &Path,
     ) -> Result<CurveIndex> {
-        let section = CurvesSection::new(0, read_loose(esm, index, misc_dir)?);
+        let section = CurvesSection::new(0, Vec::new(), read_loose(esm, index, misc_dir)?);
         Ok(CurveIndex {
             section: ArchiveBuf::serialize(&section)?,
         })
@@ -243,7 +246,7 @@ impl CurveIndex {
         index: &crate::index::Index,
         ba2_path: &Path,
     ) -> Result<CurveIndex> {
-        let section = CurvesSection::new(0, read_ba2(esm, index, ba2_path)?);
+        let section = CurvesSection::new(0, Vec::new(), read_ba2(esm, index, ba2_path)?);
         Ok(CurveIndex {
             section: ArchiveBuf::serialize(&section)?,
         })
@@ -252,28 +255,44 @@ impl CurveIndex {
     /// The curves `Database::open` discovered for `esm`, served from the
     /// `curves` cache section: read and published on first use, then mapped.
     /// A section built from a different curve source is rebuilt. A loose
-    /// `curvetables/json/` directory is stamped by its own metadata, so
-    /// rewriting a curve file inside it in place is not detected.
+    /// `curvetables/json/` tree is stamped by its directories' metadata (see
+    /// `rkyvcache::tree_stamp`), so adding or removing a curve file anywhere
+    /// in it is detected but rewriting one in place is not.
     pub(crate) fn cached(
         esm: &EsmFile,
         index: &crate::index::Index,
         src: &CurvesSrc,
     ) -> Result<CurveIndex> {
-        let source_path = match src {
-            CurvesSrc::LooseBase(base) => base.join("curvetables/json"),
-            CurvesSrc::Ba2(path) => path.clone(),
+        const SALT: &str = "curves";
+        let stamp = |dirs: &[&str]| match src {
+            CurvesSrc::LooseBase(base) => {
+                crate::rkyvcache::tree_stamp(&base.join("curvetables/json"), dirs, SALT)
+            }
+            CurvesSrc::Ba2(path) => crate::rkyvcache::source_stamp(std::slice::from_ref(path), SALT),
         };
-        let stamp = crate::rkyvcache::source_stamp(&[source_path], "curves")?;
         let section = crate::rkyvcache::map_or_build::<CurvesSection>(
             &esm.path,
             index.count_by_type("CURV") as u64,
-            |cached| cached.source.to_native() == stamp,
+            |cached| {
+                let dirs: Vec<&str> = cached.source_dirs.iter().map(|d| d.as_str()).collect();
+                stamp(&dirs).is_ok_and(|s| s == cached.source.to_native())
+            },
             |_lease| {
+                // Stamp before reading, so a curve added meanwhile is seen
+                // as a change next time rather than missed.
+                let dirs = match src {
+                    CurvesSrc::LooseBase(base) => {
+                        crate::rkyvcache::subdirs(&base.join("curvetables/json"))?
+                    }
+                    CurvesSrc::Ba2(_) => Vec::new(),
+                };
+                let dir_refs: Vec<&str> = dirs.iter().map(String::as_str).collect();
+                let source = stamp(&dir_refs)?;
                 let entries = match src {
                     CurvesSrc::LooseBase(base) => read_loose(esm, index, base)?,
                     CurvesSrc::Ba2(path) => read_ba2(esm, index, path)?,
                 };
-                Ok(CurvesSection::new(stamp, entries))
+                Ok(CurvesSection::new(source, dirs, entries))
             },
         )?;
         Ok(CurveIndex {
@@ -546,7 +565,7 @@ mod layout_tests {
                 CurvePoint { x: 50.0, y: 50.0 },
             ],
         };
-        let section = CurvesSection::new(7, vec![(0x10, curve)]);
-        crate::rkyvcache::assert_archived_layout("curves", &section, 0xe67efa43fe07698b);
+        let section = CurvesSection::new(7, vec!["sub".to_string()], vec![(0x10, curve)]);
+        crate::rkyvcache::assert_archived_layout("curves", &section, 0xd8ef07bfebe7c3ce);
     }
 }

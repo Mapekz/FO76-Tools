@@ -943,34 +943,77 @@ where
 /// A stamp of the files a section was derived from besides the ESM: FNV-1a
 /// over `salt` and each path's name, size, mtime and (on Unix) inode. A
 /// directory contributes its own metadata only, which changes when entries
-/// are added, removed or the tree is re-extracted, but not when a file inside
-/// it is rewritten in place.
+/// are added to or removed from it; see [`tree_stamp`] for a whole tree.
 pub(crate) fn source_stamp(paths: &[PathBuf], salt: &str) -> anyhow::Result<u64> {
     let mut acc = FNV_OFFSET_BASIS;
-    let fold_bytes = |acc: &mut u64, bytes: &[u8]| {
-        for b in bytes {
-            *acc = fnv1a_u64(*acc, u64::from(*b));
-        }
-    };
     fold_bytes(&mut acc, salt.as_bytes());
     for path in paths {
         let meta = fs::metadata(path).with_context(|| format!("stat {}", path.display()))?;
         fold_bytes(&mut acc, path.as_os_str().as_encoded_bytes());
-        acc = fnv1a_u64(acc, meta.len());
-        let mtime = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .unwrap_or_default();
-        acc = fnv1a_u64(acc, mtime.as_secs());
-        acc = fnv1a_u64(acc, u64::from(mtime.subsec_nanos()));
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            acc = fnv1a_u64(acc, meta.ino());
-        }
+        fold_meta(&mut acc, &meta);
     }
     Ok(acc)
+}
+
+/// [`source_stamp`] over the directory `root` and `subdirs`, the relative
+/// paths of every directory beneath it ([`subdirs`]). Adding, removing or
+/// re-extracting an entry anywhere in the tree changes some directory's
+/// metadata, so this sees it without listing the tree; rewriting a file in
+/// place does not.
+pub(crate) fn tree_stamp(root: &Path, subdirs: &[&str], salt: &str) -> anyhow::Result<u64> {
+    let mut paths = vec![root.to_path_buf()];
+    paths.extend(subdirs.iter().map(|rel| root.join(rel)));
+    source_stamp(&paths, salt)
+}
+
+/// Every directory beneath `root`, as `/`-separated relative paths in name
+/// order.
+pub(crate) fn subdirs(root: &Path) -> anyhow::Result<Vec<String>> {
+    fn walk(dir: &Path, rel: &str, out: &mut Vec<String>) -> anyhow::Result<()> {
+        let mut names = Vec::new();
+        for entry in fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                names.push(entry.file_name().to_string_lossy().into_owned());
+            }
+        }
+        names.sort();
+        for name in names {
+            let rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            out.push(rel.clone());
+            walk(&dir.join(&name), &rel, out)?;
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(root, "", &mut out)?;
+    Ok(out)
+}
+
+fn fold_bytes(acc: &mut u64, bytes: &[u8]) {
+    for b in bytes {
+        *acc = fnv1a_u64(*acc, u64::from(*b));
+    }
+}
+
+fn fold_meta(acc: &mut u64, meta: &fs::Metadata) {
+    *acc = fnv1a_u64(*acc, meta.len());
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .unwrap_or_default();
+    *acc = fnv1a_u64(*acc, mtime.as_secs());
+    *acc = fnv1a_u64(*acc, u64::from(mtime.subsec_nanos()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        *acc = fnv1a_u64(*acc, meta.ino());
+    }
 }
 
 /// An archived root held either in a mapped cache section or in bytes
@@ -1027,6 +1070,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tree_stamp_sees_entries_added_and_removed_in_subdirectories() {
+        let root = std::env::temp_dir().join(format!("esm_tree_stamp_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("sub/deeper")).unwrap();
+        let dirs = subdirs(&root).unwrap();
+        assert_eq!(dirs, ["sub", "sub/deeper"]);
+        let dirs: Vec<&str> = dirs.iter().map(String::as_str).collect();
+        let stamp = || tree_stamp(&root, &dirs, "t").unwrap();
+        let before = stamp();
+        assert_eq!(stamp(), before);
+        fs::write(root.join("sub/deeper/curve.json"), "[]").unwrap();
+        let added = stamp();
+        assert_ne!(added, before);
+        fs::remove_file(root.join("sub/deeper/curve.json")).unwrap();
+        assert_ne!(stamp(), added);
+        let _ = fs::remove_dir_all(&root);
+    }
 
     #[derive(Debug, PartialEq, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)]
     struct Dummy {
