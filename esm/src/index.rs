@@ -1,6 +1,6 @@
-use crate::decode::{DecodeContext, ResolveDepth, decode_record};
+use crate::decode::{DecodeContext, ResolveDepth, decode_record_node};
 use crate::format::Signature;
-use crate::formid::{FormId, parse_formid};
+use crate::formid::FormId;
 use crate::reader::{
     EsmFile, RecordMeta, WalkEvent, edid_from_subrecords, inline_string_from_subrecords,
     lstring_id_from_subrecords,
@@ -20,7 +20,6 @@ use crate::rkyvcache::{SectionKind, section_path_for};
 use crate::schema::Schema;
 use crate::strings::Localization;
 use crate::tree::TreeIndex;
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
@@ -33,7 +32,7 @@ use std::path::PathBuf;
 // which `XREF_LAYOUT_FINGERPRINT` folds in itself. All five sections (`tree`/`forms`/`edid`/`search`/`xref`)
 // share this one constant, so a bump rebuilds all five even when only one
 // changed.
-pub(crate) const CACHE_VERSION: u32 = 19;
+pub(crate) const CACHE_VERSION: u32 = 20;
 
 /// Per-record data stored in the lazy search index.
 ///
@@ -693,9 +692,10 @@ pub(crate) fn build_search_section(
 /// This is the most expensive of the three lazy builds (a full schema
 /// decode of every record, not just an EDID/name lookup).
 ///
-/// Walks every record, decodes it with `ResolveDepth::None` (so FormID
-/// fields come out as `"0x........"` hex strings), harvests those strings,
-/// and inverts them into a referencee→referencers map.
+/// Walks every record, decodes it into a typed node tree, collects its
+/// `Node::FormId` references, and inverts them into a referencee→referencers
+/// map. Only schema-typed FormIDs count: hex-shaped flags values and Model
+/// Information hashes are not references.
 pub(crate) fn build_xref_section(
     index: &Index,
     esm: &EsmFile,
@@ -725,9 +725,9 @@ pub(crate) fn build_xref_section(
             ResolveDepth::None,
             None,
         );
-        let fields = decode_record(&ctx, &rec.header.signature, &rec.subrecords);
         let mut refs = Vec::new();
-        harvest_formids(&fields, &mut refs);
+        decode_record_node(&ctx, &rec.header.signature, &rec.subrecords)
+            .for_each_formid(&mut |id| refs.push(id));
         // Dedup within this record: a single record may reference the same
         // target FormID multiple times (e.g. the same FormID in two
         // separate subrecords, or repeated array entries).  We want each
@@ -747,13 +747,12 @@ pub(crate) fn build_xref_section(
             // only as a fallback" contract.
             //
             // This is a bounded, curated allowlist, not a relaxation of
-            // the existence check itself: `harvest_formids` collects
-            // every `0x…`-shaped string in the decoded JSON, including
-            // values from misdecoded bytes, and `index.contains` is what
-            // keeps that garbage out. `0x0` (NULL) in particular appears
-            // dozens of times among PERK effects alone and stays
-            // correctly excluded — it is below the hardcoded table's
-            // `0x1A` floor. A few other harvested low FormIDs also fall
+            // the existence check itself: a FormID field can hold bytes
+            // that point nowhere (misdecoded or stale data), and
+            // `index.contains` is what keeps those out. `0x0` (NULL) in
+            // particular appears dozens of times among PERK effects alone
+            // and stays correctly excluded — it is below the hardcoded
+            // table's `0x1A` floor. A few other low FormIDs also fall
             // outside both the index and the table (e.g. `0x14`, just
             // under that floor, and a couple just above the table's
             // `0x39B` ceiling); those stay dropped too — undocumented
@@ -1058,33 +1057,6 @@ fn section_spec_fingerprint_for(kind: SectionKind) -> u64 {
 pub fn full_name_for_record(esm: &EsmFile, meta: &RecordMeta) -> anyhow::Result<Option<u32>> {
     let rec = esm.parse_record_at(meta.offset)?;
     Ok(lstring_id_from_subrecords(&rec.subrecords, "FULL"))
-}
-
-/// Recursively walk a decoded JSON value and collect every string that looks
-/// like a FormID hex literal (`"0x........"`).
-fn harvest_formids(val: &Value, out: &mut Vec<FormId>) {
-    match val {
-        Value::String(s) => {
-            if (s.starts_with("0x") || s.starts_with("0X"))
-                && let Ok(fid) = parse_formid(s)
-            {
-                out.push(fid);
-            }
-        }
-        Value::Array(arr) => {
-            for v in arr {
-                harvest_formids(v, out);
-            }
-        }
-        Value::Object(map) => {
-            for (k, v) in map {
-                if !k.starts_with('_') {
-                    harvest_formids(v, out);
-                }
-            }
-        }
-        _ => {}
-    }
 }
 
 #[cfg(test)]

@@ -314,8 +314,18 @@ pub fn decode_record(
     signature: &str,
     subrecords: &[OwnedSubrecord],
 ) -> Value {
+    decode_record_node(ctx, signature, subrecords).into_json(ctx)
+}
+
+/// Decode a record's subrecords into a typed [`node::Node`] tree; render it
+/// with [`node::Node::into_json`] using the same `ctx`.
+pub fn decode_record_node(
+    ctx: &DecodeContext<'_>,
+    signature: &str,
+    subrecords: &[OwnedSubrecord],
+) -> node::Node {
     let ctx = ctx.for_signature(signature, subrecords);
-    record_node(&ctx, signature, subrecords).into_json(&ctx)
+    record_node(&ctx, signature, subrecords)
 }
 
 impl<'a> DecodeContext<'a> {

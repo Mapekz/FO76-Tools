@@ -107,6 +107,16 @@ impl Node {
         self.as_struct()?.get(key)
     }
 
+    /// Call `f` with every FormID reference in the tree, in tree order.
+    pub fn for_each_formid(&self, f: &mut impl FnMut(FormId)) {
+        match self {
+            Node::FormId { id, .. } => f(*id),
+            Node::Struct(fields) => fields.values().for_each(|v| v.for_each_formid(f)),
+            Node::Array(items) => items.iter().for_each(|v| v.for_each_formid(f)),
+            _ => {}
+        }
+    }
+
     /// Render the tree to its boundary JSON, resolving FormIDs and localized
     /// strings through `ctx`.
     pub fn into_json(self, ctx: &DecodeContext<'_>) -> Value {
