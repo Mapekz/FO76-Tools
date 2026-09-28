@@ -395,6 +395,34 @@ def main(argv=None) -> int:
     discord_text = '\n'.join(discord_lines)
     print(f"Converted to Discord markdown: {len(discord_text):,} chars", file=sys.stderr)
 
+    chunks = split_into_chunks(discord_lines, heading_indices)
+    total = len(chunks)
+    if not total:
+        print(f"error: {input_path} has nothing to post; the chunks in {output_dir} are kept",
+              file=sys.stderr)
+        return 1
+    print(f"Split into {total} Discord chunks (≤{MAX_CHARS} chars each)")
+
+    # Build the whole replacement set before touching the directory, so a
+    # run that fails leaves the previous run's chunks as they were.
+    contents = []
+    oversized = 0
+    for i, chunk in enumerate(chunks, 1):
+        header = f"*(Part {i}/{total})*\n\n"
+        content = header + chunk
+        # Hard safety net — should not trigger with the code-block split above
+        if len(content) > DISCORD_HARD_LIMIT:
+            content = content[: DISCORD_HARD_LIMIT - len(TRUNCATION_MARK)] + TRUNCATION_MARK
+            oversized += 1
+        contents.append(content)
+    if oversized:
+        print(f"WARNING: {oversized} chunks exceeded 2000 chars and were hard-truncated", file=sys.stderr)
+        if not args.allow_oversize:
+            print("error: hard-truncated chunks lose content; fix the summary (cut prose, "
+                  "never numbers) and re-run, or pass --allow-oversize; the chunks in "
+                  f"{output_dir} are kept", file=sys.stderr)
+            return 1
+
     os.makedirs(output_dir, exist_ok=True)
     # A re-run after the summary shrank must not leave the old run's
     # higher-numbered chunks behind.
@@ -402,21 +430,8 @@ def main(argv=None) -> int:
     # glob metacharacters (`release[1]/`).
     for stale in Path(output_dir).glob("chunk_*.md"):
         stale.unlink()
-
-    chunks = split_into_chunks(discord_lines, heading_indices)
-    total = len(chunks)
-    print(f"Split into {total} Discord chunks (≤{MAX_CHARS} chars each)")
-
-    oversized = 0
-    for i, chunk in enumerate(chunks, 1):
-        path = os.path.join(output_dir, f"chunk_{i:03d}.md")
-        header = f"*(Part {i}/{total})*\n\n"
-        content = header + chunk
-        # Hard safety net — should not trigger with the code-block split above
-        if len(content) > DISCORD_HARD_LIMIT:
-            content = content[: DISCORD_HARD_LIMIT - len(TRUNCATION_MARK)] + TRUNCATION_MARK
-            oversized += 1
-        with open(path, 'w') as f:
+    for i, content in enumerate(contents, 1):
+        with open(os.path.join(output_dir, f"chunk_{i:03d}.md"), 'w') as f:
             f.write(content)
 
     sizes = [len(c) for c in chunks]
@@ -424,12 +439,6 @@ def main(argv=None) -> int:
     print(f"Largest chunk: {max(sizes)} chars")
     print(f"Average chunk: {sum(sizes) // len(sizes)} chars")
     print(f"Smallest chunk: {min(sizes)} chars")
-    if oversized:
-        print(f"WARNING: {oversized} chunks exceeded 2000 chars and were hard-truncated", file=sys.stderr)
-        if not args.allow_oversize:
-            print("error: hard-truncated chunks lose content; fix the summary (cut prose, "
-                  "never numbers) and re-run, or pass --allow-oversize", file=sys.stderr)
-            return 1
     return 0
 
 

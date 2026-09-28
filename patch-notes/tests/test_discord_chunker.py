@@ -306,11 +306,23 @@ class TestMainExitCode(TempDirTestCase):
         self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
         self.assertTrue((sibling / "chunk_009.md").exists())
 
+    def test_a_failed_run_keeps_the_previous_chunks(self):
+        out = self.tmp / "discord"
+        out.mkdir()
+        (out / "chunk_001.md").write_text("previous run")
+        for text in ("", "# Title\n\n" + "y" * 2500 + "\n"):
+            src = self.tmp / "in.md"
+            src.write_text(text)
+            self.assertEqual(dc.main([str(src), str(out)]), 1, repr(text[:20]))
+            self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
+            self.assertEqual((out / "chunk_001.md").read_text(), "previous run")
+
     def test_unsplittable_oversize_line_exits_one_unless_allowed(self):
         src = self.tmp / "in.md"
         src.write_text("# Title\n\n" + "y" * 2500 + "\n")
         out = self.tmp / "discord"
         self.assertEqual(dc.main([str(src), str(out)]), 1)
+        self.assertFalse(out.exists())
         self.assertEqual(dc.main([str(src), str(out), "--allow-oversize"]), 0)
         chunk = (out / "chunk_001.md").read_text()
         self.assertLessEqual(len(chunk), 2000)
