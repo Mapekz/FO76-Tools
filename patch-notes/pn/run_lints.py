@@ -70,6 +70,11 @@ ORPHANED_UNIQUE_DEPTH = 4
 #: Hard cap on `dangling_ref` lints in one run.
 DANGLING_REF_CAP = 50
 
+#: World-building record types whose unresolved references never reach a
+#: player: NAVI navmesh edge links, LAYR layer parents, RFGP reference-group
+#: links and ACHR layers name records absent from both snapshots.
+DANGLING_REF_SKIP_TYPES = {"NAVI", "LAYR", "RFGP", "ACHR"}
+
 #: Record status values several rules treat as "this patch touched or
 #: introduced the record" (as opposed to `"removed"`/`"unchanged"`).
 _ADDED_OR_CHANGED = ("added", "changed")
@@ -155,13 +160,15 @@ def _is_description_path(path):
     return bool(_DESC_PATH_RE.search(path))
 
 
-def _is_full_ish_string_change(ce):
-    """A prose-description-shaped string change: both sides are strings and
-    at least one side is long enough to be prose, not a short label."""
-    if ce.get("kind") not in ("scalar", "string"):
-        return False
+def _is_description_change(ce):
+    """A Description-named field (`Description`, `Magic Item Description`,
+    ...) whose text changed. Other long strings -- EditorIDs, model paths,
+    undecoded hex -- are not prose."""
     fv, tv = ce.get("from"), ce.get("to")
-    return isinstance(fv, str) and isinstance(tv, str) and (len(fv) > 20 or len(tv) > 20)
+    sides_are_text = all(v is None or isinstance(v, str) for v in (fv, tv)) and (
+        isinstance(fv, str) or isinstance(tv, str)
+    )
+    return sides_are_text and _is_description_path(ce.get("path", ""))
 
 
 def _numbers_in_text(s):
@@ -479,7 +486,7 @@ def rule_dangling_ref(ctx: pl.RuleContext):
     capped = False
 
     for fid, rec in sorted(ctx["records"].items()):
-        if not isinstance(rec, dict):
+        if not isinstance(rec, dict) or rec.get("record_type") in DANGLING_REF_SKIP_TYPES:
             continue
         tally.examined()
         for cand in rec.get("dangling_refs") or []:
@@ -665,8 +672,7 @@ def rule_desc_changed_stats_same(ctx: pl.RuleContext):
             for ce in rec.get("changes") or []:
                 if not isinstance(ce, dict):
                     continue
-                path = ce.get("path", "")
-                if _is_description_path(path) or _is_full_ish_string_change(ce):
+                if _is_description_change(ce):
                     desc_entries.append(ce)
                 if ce.get("suppressed") == "noise":
                     continue

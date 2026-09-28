@@ -336,6 +336,10 @@ class TestDanglingRef(TestRunLintsBase):
         self.assertEqual(lints[0]["data"]["dangling_formid"], "0x0BADF00D")
         self.assertIn("`WEAP_Test`", lints[0]["message"])
 
+    def test_navi_edge_links_never_flag(self):
+        rec = make_record("0x00000FF1", "NAVI", "changed", dangling_refs=["0x0004EAC8"])
+        self.assertEqual(rl.RULES["dangling_ref"](self.ctx_for(make_comp([rec]))), [])
+
     def test_refs_out_alone_never_flag(self):
         # `esm diff` decides what dangles; an unresolved-looking refs_out
         # entry without a matching dangling_refs entry is not a lint.
@@ -491,6 +495,19 @@ class TestUnreferencedPerkRank(TestRunLintsBase):
 
 
 class TestDescChangedStatsSame(TestRunLintsBase):
+    def test_long_non_description_strings_never_flag(self):
+        # EditorID renames, model swaps and undecoded hex are not prose.
+        changes = [
+            {"path": "Editor ID", "kind": "string", "from": "zzz_OldEditorIdName01",
+             "to": "zzz_NewEditorIdName01", "suppressed": None},
+            {"path": "Model / Model FileName", "kind": "string", "from": "Props/Graves/GraveA01.nif",
+             "to": "Props/Graves/GraveB01.nif", "suppressed": None},
+            {"path": "Unknown CTRN / hex", "kind": "string", "from": "00" * 16, "to": "01" * 16,
+             "suppressed": None},
+        ]
+        rec = make_record("0x04000009", "TACT", "changed", editor_id="TACT_X", changes=changes)
+        self.assertEqual(rl.RULES["desc_changed_stats_same"](self.ctx_for(make_comp([rec]))), [])
+
     def test_description_only_change_flagged(self):
         rec = make_record(
             "0x04000001",

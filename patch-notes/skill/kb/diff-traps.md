@@ -337,33 +337,6 @@ ceiling (Strength, Endurance, Agility and Luck moved from float-max).
 
 # Lint false positives
 
-## `dangling_ref` on engine forms and navmesh links
-
-The lint reads `esm diff`'s typed `dangling_refs`: FormID fields a record newly points at that
-resolve in neither snapshot. Bitfields, enum sentinels and hashes never lint. Two typed
-references resolve nowhere without being broken:
-- `0x00000014` is the engine's hardcoded PlayerRef, so a new `Run On: Reference` condition
-  targeting it lints (`PowerArmorImpactEnchantment` 0x0011D53B, `DLC01Bot_KnockdownSpell`
-  0x0010EB2A).
-- NAVI `Navmesh Info / Edge Links` and `Preferred Edge Links` hold navmesh-local link ids (NAVI
-  0x00000FF1).
-
-**Example:** a new SPEL condition `Run On: Reference` → `0x00000014` lints; it is the player.
-*verified 2026-09-14 vs 20260914; typed lint 2026-09-27*
-
-## `desc_changed_stats_same` fires on records with no description change
-
-The rule counts any string change with a side longer than 20 characters as a description change,
-so it fires when the only changes are an undecoded blob (`Unknown CTRN / hex` on TACT/TERM,
-`Unknown / hex`, STAT `Distant LOD`), a bare `Model / Model FileName` swap, or an `Editor
-ID`/`Filter` rename. Check that the record has a
-description field that actually changed before trusting the lint.
-
-**Example:** 77 of 116 lints in one deep slice were blob-only; also TACT
-`TEST_ENB_ModusSceneTerminal` (0x00006DB5), `SDOW_MQ02_Graves_GraveActivator` (0x008F1672, model
-swap) and FISH `Fishing_Fish_Small_Axolotl_Gold` (0x0091391B, zzz rename).
-*verified 2026-09-14 vs 20260914*
-
 ## `desc_changed_stats_same` misses stats that move through a linked GLOB or a swapped include
 
 The lint only compares the record's own fields. An OMOD whose `Data / Includes` row swaps one
