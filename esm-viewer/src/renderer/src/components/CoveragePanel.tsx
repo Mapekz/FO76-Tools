@@ -27,7 +27,8 @@ export function CoveragePanel() {
   const [sig, setSig] = useState<string>(ALL_TYPES)
   const [sample, setSample] = useState(DEFAULT_SAMPLE)
   const [scanAll, setScanAll] = useState(false)
-  const [report, setReport] = useState<CoverageReport | null>(null)
+  // Tagged with its file: a report shows only while that file is active.
+  const [scanned, setScanned] = useState<{ dbId: string; report: CoverageReport } | null>(null)
   const { loading, error, run } = useAsyncAction()
 
   useEffect(() => {
@@ -35,9 +36,15 @@ export function CoveragePanel() {
       setSigs([])
       return
     }
+    let current = true
     listRecordTypeSigs(window.api, activeDbId)
-      .then((list) => setSigs(list))
+      .then((list) => {
+        if (current) setSigs(list)
+      })
       .catch(console.error)
+    return () => {
+      current = false
+    }
   }, [activeDbId])
 
   if (!activeDbId) return null
@@ -51,10 +58,11 @@ export function CoveragePanel() {
         record_type: sig || null,
         sample: scanAll ? 0 : sample,
       })
-      setReport(res)
+      setScanned({ dbId, report: res })
     })
   }
 
+  const report = scanned?.dbId === activeDbId ? scanned.report : null
   const rows = report
     ? Object.entries(report.by_type).toSorted(([sigA, a], [sigB, b]) => {
         const diff = totalGaps(b) - totalGaps(a)

@@ -1,9 +1,10 @@
 import React from 'react'
-import { useStore } from '../store'
+import { navReach, useStore } from '../store'
 import { colors } from '../theme'
 
 export function NavHistory() {
-  const { nav, goBack, goForward } = useStore()
+  const { nav, navPending, goBack, goForward } = useStore()
+  const reach = navReach({ nav, navPending })
 
   return (
     <div
@@ -14,10 +15,10 @@ export function NavHistory() {
         borderBottom: `1px solid ${colors.seam}`,
       }}
     >
-      <button onClick={() => void goBack()} disabled={nav.index <= 0}>
+      <button onClick={() => void goBack()} disabled={!reach.back}>
         ← Back
       </button>
-      <button onClick={() => void goForward()} disabled={nav.index >= nav.entries.length - 1}>
+      <button onClick={() => void goForward()} disabled={!reach.forward}>
         Forward →
       </button>
     </div>

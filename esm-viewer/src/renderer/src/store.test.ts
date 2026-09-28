@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, it, expect } from 'bun:test'
-import { useStore } from './store'
+import { navReach, useStore } from './store'
 import type { DbId, RefListResult, RunnableOp } from '../../shared/api-types'
 import { makeDbHandle, makeRecordResult, mockRun } from '../../test-support/fixtures'
 
@@ -65,6 +65,7 @@ beforeEach(() => {
     referencedByError: null,
     raw: { view: null, loading: false, error: null },
     nav: { entries: [], index: -1 },
+    navPending: null,
     openDbs: [makeDbHandle('db1', '/data/A.esm'), makeDbHandle('db2', '/data/B.esm')],
   })
 })
@@ -84,12 +85,41 @@ describe('showRecord', () => {
 })
 
 describe('nav history', () => {
-  it('Back returns the entry with its own file', () => {
-    const { navPush, navBack } = useStore.getState()
-    navPush({ dbId: 'db1', formid: '0x1' })
-    navPush({ dbId: 'db2', formid: '0x2' })
+  it('Back returns the entry with its own file', async () => {
+    installApi()
+    const { navigate, goBack } = useStore.getState()
+    await navigate('db1', '0x1')
+    await navigate('db2', '0x2')
+    await goBack()
 
-    expect(navBack()).toEqual({ dbId: 'db1', formid: '0x1' })
+    const s = useStore.getState()
+    expect(s.activeRecord?.editor_id).toBe('db1:0x1')
+    expect(s.nav.index).toBe(0)
+  })
+
+  it('the cursor moves only when the stepped-to record shows', async () => {
+    installApi((target) => (target === '0x1' ? 30 : 0))
+    const { navigate, goBack } = useStore.getState()
+    await navigate('db1', '0x1')
+    await navigate('db1', '0x2')
+    const back = goBack()
+    await goBack() // at the boundary: the pending step stands
+    expect(useStore.getState().nav.index).toBe(1)
+    await back
+    const s = useStore.getState()
+    expect(s.activeRecord?.editor_id).toBe('db1:0x1')
+    expect(s.nav.index).toBe(0)
+    expect(s.navPending).toBeNull()
+  })
+
+  it('Back is available while a new navigation is pending, Forward is not', async () => {
+    installApi((target) => (target === '0x2' ? 30 : 0))
+    const { navigate } = useStore.getState()
+    await navigate('db1', '0x1')
+    const pending = navigate('db1', '0x2')
+    expect(navReach(useStore.getState())).toEqual({ back: true, forward: false })
+    await pending
+    expect(navReach(useStore.getState())).toEqual({ back: true, forward: false })
   })
 
   it('re-selecting the current entry does not grow history', () => {

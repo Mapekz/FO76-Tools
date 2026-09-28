@@ -31,6 +31,10 @@ export interface RawState {
   error: string | null
 }
 
+/** A navigation in flight: a new one enters history once it shows; a history
+ * step moves the cursor to `entry` once it shows. */
+export type NavPending = { kind: 'new' } | { kind: 'step'; entry: NavEntry }
+
 export interface AppStore {
   openDbs: DbHandle[]
   activeDbId: string | null
@@ -45,6 +49,7 @@ export interface AppStore {
   /** The shown record's raw dump, fetched on demand by `loadRaw`. */
   raw: RawState
   nav: { entries: NavEntry[]; index: number }
+  navPending: NavPending | null
 
   setOpenDbs: (dbs: DbHandle[]) => void
   /** Show a navigated-to record. The selection carries its file: `dbId`
@@ -69,18 +74,29 @@ export interface AppStore {
    * shown record changed is dropped. */
   loadRaw: () => Promise<void>
   navPush: (entry: NavEntry) => void
-  navBack: () => NavEntry | null
-  navForward: () => NavEntry | null
-  navCurrent: () => NavEntry | null
 
   /** A new navigation choice (tree row, FormID link, search, diff or refs
    * row): load `formid` from `dbId`, entering history once it shows, so a
    * failed or superseded navigation leaves history alone. A `dbId` that is
    * not open is ignored. */
   navigate: (dbId: string, formid: string) => Promise<void>
-  /** Step history back or forward and load that entry from its own file. */
+  /** Step history back or forward from the pending step's entry, or else
+   * from the cursor, and load that entry from its own file; the cursor moves
+   * once it shows. Back cancels a pending new navigation instead; Forward is
+   * unavailable while one is pending. */
   goBack: () => Promise<void>
   goForward: () => Promise<void>
+}
+
+/** Where Back and Forward would start from, and whether each can move. */
+export function navReach(s: Pick<AppStore, 'nav' | 'navPending'>): {
+  back: boolean
+  forward: boolean
+} {
+  if (s.navPending?.kind === 'new') return { back: true, forward: false }
+  const from =
+    s.navPending?.kind === 'step' ? s.nav.entries.indexOf(s.navPending.entry) : s.nav.index
+  return { back: from > 0, forward: from >= 0 && from < s.nav.entries.length - 1 }
 }
 
 const NO_REFS = {
@@ -151,6 +167,38 @@ export const useStore = create<AppStore>((set, get) => {
     return 'shown'
   }
 
+  // Runs one navigation as the pending one; it clears itself unless a later
+  // navigation replaced it.
+  async function pendingLoad(
+    pending: NavPending,
+    dbId: string,
+    formid: string,
+    onShown: () => void,
+  ): Promise<'shown' | 'failed' | 'superseded'> {
+    set({ navPending: pending })
+    const outcome = await loadRecord(dbId, formid, onShown)
+    if (get().navPending === pending) set({ navPending: null })
+    return outcome
+  }
+
+  async function step(delta: 1 | -1): Promise<void> {
+    const s = get()
+    if (s.navPending?.kind === 'new') {
+      if (delta === -1) {
+        loadSeq++ // Back cancels a navigation that has not entered history
+        set({ navPending: null })
+      }
+      return
+    }
+    const from =
+      s.navPending?.kind === 'step' ? s.nav.entries.indexOf(s.navPending.entry) : s.nav.index
+    const entry = s.nav.entries[from + delta]
+    if (from < 0 || !entry) return
+    await pendingLoad({ kind: 'step', entry }, entry.dbId, entry.formid, () =>
+      set((st) => ({ nav: { ...st.nav, index: st.nav.entries.indexOf(entry) } })),
+    )
+  }
+
   return {
     openDbs: [],
     activeDbId: null,
@@ -163,6 +211,7 @@ export const useStore = create<AppStore>((set, get) => {
     referencedByError: null,
     raw: NO_RAW,
     nav: { entries: [], index: -1 },
+    navPending: null,
 
     setOpenDbs: (dbs) => set({ openDbs: dbs }),
     showRecord: (dbId, record, columns) =>
@@ -178,16 +227,18 @@ export const useStore = create<AppStore>((set, get) => {
       const shown = get().activeRecord
       if (!shown) {
         loadSeq++ // supersede a load still pending for another file
-        set({ activeDbId: dbId })
+        set({ activeDbId: dbId, navPending: null })
         return
       }
       const formid = shown.header.form_id
-      const outcome = await loadRecord(dbId, formid, () => get().navPush({ dbId, formid }))
+      const outcome = await pendingLoad({ kind: 'new' }, dbId, formid, () =>
+        get().navPush({ dbId, formid }),
+      )
       if (outcome === 'failed') set({ activeDbId: dbId, ...NO_RECORD })
     },
 
     fileClosed: async (id, remaining) => {
-      const { activeDbId, recordColumns, nav } = get()
+      const { activeDbId, recordColumns, nav, navPending } = get()
       const kept = nav.entries.filter((e) => e.dbId !== id)
       const removedThroughIndex = nav.entries
         .slice(0, nav.index + 1)
@@ -206,6 +257,11 @@ export const useStore = create<AppStore>((set, get) => {
         openDbs: remaining,
         recordColumns: recordColumns.filter((c) => c.dbId !== id),
         nav: { entries: kept, index },
+        // A reload supersedes any pending navigation; a pending step into the
+        // closed file cannot land.
+        ...(reload || (navPending?.kind === 'step' && navPending.entry.dbId === id)
+          ? { navPending: null }
+          : {}),
         ...(activeDbId === id
           ? { activeDbId: reload?.dbId ?? remaining[0]?.id ?? null, ...NO_RECORD }
           : {}),
@@ -254,44 +310,12 @@ export const useStore = create<AppStore>((set, get) => {
         return { nav: { entries, index: entries.length - 1 } }
       }),
 
-    navBack: () => {
-      const { nav } = get()
-      if (nav.index <= 0) return null
-      const newIndex = nav.index - 1
-      set({ nav: { ...nav, index: newIndex } })
-      return nav.entries[newIndex]
-    },
-
-    navForward: () => {
-      const { nav } = get()
-      if (nav.index >= nav.entries.length - 1) return null
-      const newIndex = nav.index + 1
-      set({ nav: { ...nav, index: newIndex } })
-      return nav.entries[newIndex]
-    },
-
-    navCurrent: () => {
-      const { nav } = get()
-      return nav.entries[nav.index] ?? null
-    },
-
     navigate: async (dbId, formid) => {
       if (!isOpen(dbId)) return
-      await loadRecord(dbId, formid, () => get().navPush({ dbId, formid }))
+      await pendingLoad({ kind: 'new' }, dbId, formid, () => get().navPush({ dbId, formid }))
     },
 
-    // Back and Forward also cancel a navigation still pending: it has not
-    // entered history, so stepping is relative to what is shown.
-    goBack: async () => {
-      loadSeq++
-      const entry = get().navBack()
-      if (entry) await loadRecord(entry.dbId, entry.formid)
-    },
-
-    goForward: async () => {
-      loadSeq++
-      const entry = get().navForward()
-      if (entry) await loadRecord(entry.dbId, entry.formid)
-    },
+    goBack: () => step(-1),
+    goForward: () => step(1),
   }
 })
