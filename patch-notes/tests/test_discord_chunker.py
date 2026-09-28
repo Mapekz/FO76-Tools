@@ -12,6 +12,8 @@ a code block, and no source content is lost or a chunk left oversized.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from pn import discord_chunker as dc
 from tests.builders import TempDirTestCase
@@ -316,6 +318,24 @@ class TestMainExitCode(TempDirTestCase):
             self.assertEqual(dc.main([str(src), str(out)]), 1, repr(text[:20]))
             self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
             self.assertEqual((out / "chunk_001.md").read_text(), "previous run")
+
+    def test_a_failed_chunk_write_keeps_the_previous_chunks(self):
+        out = self.tmp / "discord"
+        out.mkdir()
+        (out / "chunk_001.md").write_text("previous run")
+        src = self.tmp / "in.md"
+        src.write_text("# Title\n\n" + "\n\n".join(f"Paragraph {i} " + "x" * 200 for i in range(30)))
+        real_write = Path.write_text
+
+        def failing_write(path, *args, **kwargs):
+            if path.name.startswith(".chunk_002"):
+                raise OSError("disk full")
+            return real_write(path, *args, **kwargs)
+
+        with mock.patch.object(Path, "write_text", failing_write):
+            self.assertEqual(dc.main([str(src), str(out)]), 1)
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ["chunk_001.md"])
+        self.assertEqual((out / "chunk_001.md").read_text(), "previous run")
 
     def test_unsplittable_oversize_line_exits_one_unless_allowed(self):
         src = self.tmp / "in.md"

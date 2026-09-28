@@ -23,7 +23,6 @@ Exit code 1 when any chunk had to be hard-truncated (content lost) unless
 """
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
@@ -423,16 +422,29 @@ def main(argv=None) -> int:
                   f"{output_dir} are kept", file=sys.stderr)
             return 1
 
-    os.makedirs(output_dir, exist_ok=True)
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    # Stage the new chunks beside the old ones, so a failed write leaves the
+    # previous run's chunks as they were.
+    staged = []
+    try:
+        for i, content in enumerate(contents, 1):
+            tmp = out / f".chunk_{i:03d}.md.tmp"
+            staged.append(tmp)
+            tmp.write_text(content)
+    except OSError as exc:
+        for tmp in staged:
+            tmp.unlink(missing_ok=True)
+        print(f"error: writing the chunks failed ({exc}); the chunks in {output_dir} are kept",
+              file=sys.stderr)
+        return 1
     # A re-run after the summary shrank must not leave the old run's
-    # higher-numbered chunks behind.
-    # Path.glob, not glob.glob: the directory is literal even if it holds
-    # glob metacharacters (`release[1]/`).
-    for stale in Path(output_dir).glob("chunk_*.md"):
+    # higher-numbered chunks behind. Path.glob, not glob.glob: the directory
+    # is literal even if it holds glob metacharacters (`release[1]/`).
+    for stale in out.glob("chunk_*.md"):
         stale.unlink()
-    for i, content in enumerate(contents, 1):
-        with open(os.path.join(output_dir, f"chunk_{i:03d}.md"), 'w') as f:
-            f.write(content)
+    for i, tmp in enumerate(staged, 1):
+        tmp.replace(out / f"chunk_{i:03d}.md")
 
     sizes = [len(c) for c in chunks]
     print(f"Written to {output_dir}/")
