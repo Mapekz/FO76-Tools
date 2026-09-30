@@ -17,6 +17,15 @@ type Handler = (...args: unknown[]) => unknown
  * `registerIpc` wires them to Electron and tests call them directly. */
 export function createHandlers(deps: HandlerDeps): Record<string, Handler> {
   const { host, registry } = deps
+  // An open in flight may resolve to a file whose last id is closed before
+  // it registers; evicting that file then would leave its new id naming a
+  // closed database. Closes wait until no open is in flight.
+  let pendingOpens = 0
+  const deferredCloses = new Set<string>()
+
+  function closeUnlessOpen(key: string): void {
+    if (!registry.isOpen(key)) host.close(key)
+  }
 
   function entry(id: unknown): DbHandle {
     const handle = typeof id === 'string' ? registry.get(id) : undefined
@@ -35,12 +44,21 @@ export function createHandlers(deps: HandlerDeps): Record<string, Handler> {
     [CH.openFolderDialog]: () => pick({ properties: ['openDirectory'] }),
     [CH.openDatabase]: async (path) => {
       if (typeof path !== 'string' || path.length === 0) throw new Error('invalid path')
-      const info = await host.open(path)
-      return registry.add(path, info)
+      pendingOpens++
+      try {
+        return registry.add(path, await host.open(path))
+      } finally {
+        if (--pendingOpens === 0) {
+          for (const key of deferredCloses) closeUnlessOpen(key)
+          deferredCloses.clear()
+        }
+      }
     },
     [CH.closeDatabase]: (id) => {
       const closed = registry.remove(id as DbId)
-      if (closed && !registry.isOpen(closed.info.path)) host.close(closed.info.path)
+      if (!closed) return
+      if (pendingOpens > 0) deferredCloses.add(closed.info.path)
+      else closeUnlessOpen(closed.info.path)
     },
     [CH.listOpen]: () => registry.listAll(),
     [CH.parseFormId]: (s) => {

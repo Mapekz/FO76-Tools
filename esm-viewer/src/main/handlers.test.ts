@@ -92,6 +92,47 @@ describe('createHandlers', () => {
     expect(t.host.close).toHaveBeenCalledWith('/real/A.esm')
   })
 
+  /** Hold the host's next open until the returned `release` resolves it
+   * (or `fail` rejects it). */
+  function holdNextOpen() {
+    let release!: () => void
+    let fail!: () => void
+    t.host.open.mockImplementationOnce(
+      (path: string) =>
+        new Promise((resolve, reject) => {
+          release = () => resolve({ ...info, path: canonical(path) })
+          fail = () => reject(new Error('open failed'))
+        }),
+    )
+    return { release: () => release(), fail: () => fail() }
+  }
+
+  it('closing a file’s last id while an alias opens keeps the file open', async () => {
+    await t.handlers[CH.openDatabase]!('/data/A.esm')
+    const held = holdNextOpen()
+    const reopening = t.handlers[CH.openDatabase]!('/data') as Promise<unknown>
+    t.handlers[CH.closeDatabase]!('1')
+    held.release()
+    await reopening
+    expect(t.host.close).not.toHaveBeenCalled()
+    await t.handlers[CH.run]!('2', { op: 'file_info' })
+    expect(t.host.run).toHaveBeenCalledWith('/real/A.esm', { op: 'file_info' })
+  })
+
+  it.each(['release', 'fail'] as const)(
+    'a close deferred by an open in flight runs once the open settles (%s)',
+    async (settle) => {
+      await t.handlers[CH.openDatabase]!('/data/A.esm')
+      const held = holdNextOpen()
+      const opening = t.handlers[CH.openDatabase]!('/data/B.esm') as Promise<unknown>
+      t.handlers[CH.closeDatabase]!('1')
+      expect(t.host.close).not.toHaveBeenCalled()
+      held[settle]()
+      await opening.catch(() => {})
+      expect(t.host.close).toHaveBeenCalledWith('/real/A.esm')
+    },
+  )
+
   it('the file dialog passes its filter and returns null when canceled', async () => {
     expect(await t.handlers[CH.openFileDialog]!()).toBeNull()
     expect(t.deps.showOpenDialog).toHaveBeenCalledWith({
