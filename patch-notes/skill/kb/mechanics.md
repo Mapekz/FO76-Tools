@@ -173,6 +173,17 @@ gated on bleed; new: ADD `STAT_DmgVsBleeding` (0x00837DFC) 50.0. Same magnitude.
 Power Damage Mult (full-charge bonus +100% → +200%) and +0.5 Full Power Seconds (1.0 → 1.5 s).
 *verified 2026-07-14 vs 20260710; receivers 2026-09-20 vs 20260918*
 
+## A damage type's status effect is one SPEL scaled by its build-up AV
+
+A DMGT names a `Status Build Up Actor Value` and a `Status Spell`. The spell's effects take their
+magnitude from a curve keyed on that AV (`Effects[N].Actor Value` + `Curve Table`), and their
+Conditions decide when the status starts, so one condition edit changes every weapon of that
+damage type.
+
+**Example:** `dtCryo` (0x00060A83) → `CryoFreezeSpell` (0x0018C35A): slow/AP drain on curves
+0x0085A237/0x0085A236 keyed on `StatusBuildUpCryo` (0x0085A235), gated at build-up ≥ 60.
+*verified 2026-09-28 vs 20260928*
+
 ## Shared engine counters live at hardcoded AV slots
 
 Bullet Storm, Kill Streak and Onslaught have **no queryable AVIF** (`esm get 0x399` 404s though
@@ -266,6 +277,18 @@ not epic rank. ESM-derived HP (base curve × `HealthMult`) is authoritative and 
 "~32k HP" figure is the old signed-int cap, and no data scales HP by player count.
 *verified 2026-07-19 vs 20260710*
 
+## Hideout enemy levels come from per-role normalize perks keyed on the selected difficulty
+
+Each Hideout NPC_ carries one `HIDE_crNormalizePerk_<Role>` (General, Popcorn, Lieutenant,
+Wildcard, Boss, Miniboss, Wildlife) on its `Perks[]`. Entry points 206/207 (Mod NPC Normalized
+Min/Max Level) set the level band from `HIDE_Renorm<Role>Min/Max` curves whose x is AV
+`HIDE_SelectedDifficulty` (0x008FBD04, 0–3); entry point 208 multiplies the level (Popcorn ×0.9,
+Lieutenant ×1.1). A perk swap on a Hideout enemy is a level-band change: diff the two perks' curves.
+
+**Example:** Lost Voltaic Adjutant (0x008F4EB4): General (0x008D4761, 29–65 at difficulty 0) →
+Lieutenant (0x008FAE28, 32–71, ×1.1).
+*verified 2026-09-28 vs 20260928*
+
 ---
 
 # Items, crafting & vendors
@@ -303,6 +326,16 @@ Sources: `E06_Colossus_LLS_Quest_Rewards_Unique` (Shovel, Pickaxe, Harpoon Gun) 
 (0x005A70B4).
 *verified 2026-07-24 vs 20260724*
 
+## Dual-slot unique mods lock duplicates with crossed `Not<X>Mod01/02` keywords
+
+The base custom OMOD adds `Not<X>Mod01` and `Not<X>Mod02` to the weapon. The slot-1 version of
+mod X requires `Not<X>Mod02` in `Target OMOD Keywords` and removes `Not<X>Mod01`; slot 2 mirrors
+it. A mod that removes a keyword its own `Target OMOD Keywords` requires is the broken shape.
+
+**Example:** V63-Z `mod_custom_StormSlasher_Burning01` (0x008B0901) targets
+`RTSV_Stormslasher_NotBurningMod02` and removes `..._NotBurningMod01`.
+*verified 2026-09-28 vs 20260928*
+
 ## Resolving a special-currency vendor's price and gate
 
 Follow `refs` from the item to its vendor LVLI tier entry, the CONT/NPC selling it, and that
@@ -337,12 +370,16 @@ species; also read `Comparison Value`, since `== 0.0` on a tier's own entry inve
 and `WorldPets_PetLevelling_Level_*` are unused), and the `WorldPets_ENTM_*_BUFF/PERK_*`
 entitlements and `WorldPets_LvReward_*` GMRWs are `zzz` and empty. Magnitudes sit on `Magnitude`
 GLOBs beside a flat 0.0.
-Pet Prowess by tier: outgoing ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2.
+Pet Prowess by tier: outgoing ×2/×3.5/×5.5/×8, incoming ×0.8/×0.6/×0.4/×0.2. A pet actor gets
+the list at all only through NPC_ `AWPB` → `WorldPets_<Species>BuffList` (FLST of Buff01, Buff02,
+CarryCapacity, PetProwess SPELs); the Pet Prowess PERK rides on NPC_ `Perks[]`. Cross-track gates
+still live: Cat Pet Carrier 1 → Deathclaw entry 9, Dog PC1 → Radhog 9, Deathclaw PC2 → Cat 9,
+Radhog PC2 → Radhog 19, Stimpak Fetcher 2 → Radhog 11; re-decode them each patch.
 
 **Example:** `WorldPets_CatBuff_Buff01` (0x0093BD1C) CIS1 `UMtHagAAAAA=` → Entry UID 1783090000 =
 Cat track "Baits Finder 1"; `WorldPets_DogBuff_Buff01` (Stimpak Fetcher, 0x0093BD1E)
 `Effects[0].Magnitude` → GLOB `WorldPets_ConsumableBuff_Dog01` (0x008D1875, 2.0).
-*verified 2026-09-14 vs 20260914; UID formula 2026-09-20 vs 20260918*
+*verified 2026-09-14 vs 20260914; UID formula 2026-09-20 vs 20260918; AWPB and gate list 2026-09-28 vs 20260928*
 
 ## A World Pets progression track is one PGTR record per species
 

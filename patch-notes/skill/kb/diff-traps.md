@@ -50,14 +50,27 @@ separate PERK records, so never call a row rank-locked or inert from it.
 carry the same ten `Ab_Spotlight_*` abilities plus eight empty slots.
 *verified 2026-09-14 vs 20260903*
 
-## `Parameter 1` on `IsPreviousMeleeAttackEvent` is a string pointer
+## `Parameter 1` on string/UID conditions is a pointer
 
-That condition's `Condition Data / Parameter 1` is a raw string offset that shifts on every
-re-serialization; the decoded value is the sibling `Parameter #1` (the attack-event name). A
-`Parameter 1` delta with `Parameter #1` unchanged is no change.
+On `IsPreviousMeleeAttackEvent` and on World Pets condition function 942, `Condition Data /
+Parameter 1` is a raw offset that shifts on every re-serialization; the decoded value is the
+sibling `Parameter #1` (the attack-event name, or the base64 PGTR Entry UID). A `Parameter 1`
+delta with `Parameter #1` and `Comparison Value` unchanged is no change.
 
-**Example:** Sheepsquatch (0x00479D50): all 39 attacks' `Parameter 1` moved, no event name did.
-*verified 2026-07-24 vs 20260724*
+**Example:** Sheepsquatch (0x00479D50): all 39 attacks' `Parameter 1` moved, no event name did;
+20260928, every World Pets passive SPEL/PERK/LVLI gate moved, and only Cat Pet Carrier
+(0x0093BD1B) `Effects[2]` `Comparison Value` 0.0 → 1.0 was real.
+*verified 2026-07-24 vs 20260724; function 942 2026-09-28 vs 20260928*
+
+## `FTAG` Form Tags are labels, not changes
+
+`FTAG` is a string list (hex `576f726c645065747300` = "WorldPets"). It decodes as `Form Tags` on
+record types whose schema has it and as `_unmapped` elsewhere (PERK/SPEL/MGEF/AVIF/CNDF/…); a tag
+appearing alone carries no gameplay. On pet ARMO/OMOD/COBJ/MISC it arrived with a `Flags` Premium
+(0x100) removal, which is real.
+
+**Example:** 20260928, ~190 World Pets records, e.g. SPEL `WorldPets_WellRested` 0x0092D8CA.
+*verified 2026-09-28 vs 20260928*
 
 ## REGN `Region Areas` point lists re-serialize reversed or rotated
 
@@ -336,6 +349,27 @@ ceiling (Strength, Endurance, Agility and Luck moved from float-max).
 
 ---
 
+## `IsTrueForConditionForm` replaced by the CNDF's own test is inlining
+
+When a condition calling `IsTrueForConditionForm` on a CNDF becomes that CNDF's single test (same
+function, parameter and Run On) and the CNDF goes `zzz`, the gate is unchanged. Get the old CNDF
+before writing up a rule change.
+
+**Example:** Brain in a Jar CHAL 0x008AF713: `IsTrueForConditionForm` 0x00951139 → `GetIsForm
+RTSV_SQ01_BrainInJar` on Target, the CNDF's own body.
+*verified 2026-09-28 vs 20260928*
+
+## Weather `_i` records are Appalachia's default weather
+
+`NewWeatherClear_i` (0x004398AE) and its `NewWeather_Clear*_i` IMGS / `GRay_Clear_*_i` VOLI
+satellites are the first weather in `DefaultClimate`/`76Climate` and the Forest, Mountain and
+Whitespring regions, so an edit there is a world-wide visual change even when a bundle files it
+under an instanced quest. The numbers live on VOLI `Intensity`/`Range Factor`.
+
+**Example:** 20260928, `GRay_Clear_Day_i` (0x004398AC) Intensity 50 → 25 arrived bundled with
+QUST `HIDEHideoutQuest` (0x008B2ED0).
+*verified 2026-09-28 vs 20260928*
+
 # Lint false positives
 
 ## `desc_changed_stats_same` misses stats that move through a linked GLOB or a swapped include
@@ -344,23 +378,26 @@ The lint only compares the record's own fields. An OMOD whose `Data / Includes` 
 `_PARENT_` template for another (`mod_GaussPistol_Barrel_Suppressed_Base` 0x0054A170) changes every
 stat the templates carry while its own `Properties` stay put; diff the two templates. A description change whose magnitude lives on a
 referenced GLOB (`Effect.Magnitude`, `Quantity Global`) reads as text-only even when the number
-moved; check every such reference before trusting the lint.
+moved, and so does a value inside a keyed-array row (CONT `Properties / [Actor Value=…] / Value`);
+read the record's full change list before trusting the lint.
 
 **Example:** `WorldPets_Dog_ConsumableBuff` MGEF (0x008B7A75) "every hour" → "every 30 min", called
 text-only; its GLOB `WorldPets_ConsumableGiftInterval` moved 7000.0 → 1801.0.
-*verified 2026-09-03 vs 20260903; includes 2026-09-20 vs 20260918*
+*verified 2026-09-03 vs 20260903; includes 2026-09-20 vs 20260918; keyed rows 2026-09-28*
 
 ## `unreferenced_perk_rank` on perks granted outside a PCRD
 
 Perks granted by an OMOD/ENCH `Perks` property have no PCRD, and `STAT_BeneficialPerk`
-(0x0018ADAD) is attached directly to the Player NPC_ (0x00000007); verify with `refs <perk-id>
---type PCRD --paths`. Some obtainable cards have no PCRD and no reference at all (Lady
+(0x0018ADAD) is attached directly to the Player NPC_ (0x00000007). Hidden NPC-only perks
+(`HIDE_crNormalizePerk_*`, `WorldPets_<Species>_PetProwess`) ride on NPC_ `Perks[]`. Verify with
+`refs <perk-id> --type PCRD --paths` and `--type NPC_`; a templated child whose Template Flags
+include Use Spell List (`0x8`) has a dead own perk list. Some obtainable cards have no PCRD and no reference at all (Lady
 Killer/Black Widow, Critical Banker, Pickpocket, Blitz, Intimidation, I'm Cured!), so an empty
 `refs` never proves a rank ungrantable: call it orphaned only when the card is unobtainable in game.
 
 **Example:** `LadyKiller01` (0x00019AA3) has zero refs and no `LadyKillerCard` record, while
 `Sneak01` (0x0004C935) resolves to `SneakCard` (0x0034409F).
-*found 2026-09-14*
+*found 2026-09-14; NPC_ perks 2026-09-28*
 
 ## `lvli_blocked_entry`'s `quantity_zero` on an entry that isn't dead
 

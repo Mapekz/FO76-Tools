@@ -115,6 +115,22 @@ Control Outfit" copies 0x0076D18B and is referenced only by `HIDE_crLLI_Outfit_L
 (0x008F4E83).
 *found 2026-09-20*
 
+## The assessor promotes count-only digests to DEEP
+
+`ambiguous.json` digests that show only field names and counts (`Effects ~3`) leave the assessor
+unable to see values, and "between brief and deep, pick deep" sends them all to DEEP, often
+whole families of sibling records (one per species, one per grip).
+
+**Symptom:** the merge multiplies DEEP (tens of bundles → 150+), and the promoted reasons repeat
+one sentence across a family.
+**Fix:** before dispatching, group the promoted bundles by story and route siblings of an existing
+writer's story to that writer; give the rest to one extra writer told to write one section per
+story and a single "No gameplay change" line for churn. Tell anything summarised collectively
+but not named individually in `cuts.json` with the section it is folded into.
+**Example:** 20260918→20260928, the assessor promoted 101 of 236 (DEEP 51 → 152); after
+chasing, about a third were condition-pointer churn.
+*found 2026-09-28*
+
 ---
 
 # Failures: runs that break or poison downstream work
