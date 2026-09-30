@@ -90,6 +90,11 @@ class TestExtract(unittest.TestCase):
         result2 = sb.extract_records(self.comprehensive, ["0X00123456"])
         self.assertIsNotNone(result2["records"]["0X00123456"])
 
+    def test_bare_hex_selector_matches(self):
+        result = sb.extract_records(self.comprehensive, ["00123456", "123456"])
+        self.assertEqual(result["records"]["00123456"]["editor_id"], "EnclavePlasmaGun")
+        self.assertEqual(result["records"]["123456"]["editor_id"], "EnclavePlasmaGun")
+
     def test_ref_names_subset_only_includes_referenced_formids(self):
         result = sb.extract_records(self.comprehensive, ["0x00123456"])
         self.assertIn("0x00ABCDEF", result["ref_names"])

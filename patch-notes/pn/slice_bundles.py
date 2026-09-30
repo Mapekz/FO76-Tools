@@ -58,7 +58,7 @@ def _collect_formid_strings(value, out=None):
 def extract_records(comprehensive_data, requested):
     """
     Core of `pn extract`: given the parsed comprehensive.json dict and a list
-    of requested FormID strings (case-insensitive 0x-hex), return
+    of requested FormID strings (hex, `0x` optional, any case), return
     {"records": {fid: <entry or None>}, "ref_names": {...capped}}.
 
     Result `records` keys echo back the caller's original requested strings
@@ -72,7 +72,8 @@ def extract_records(comprehensive_data, requested):
     out_records = {}
     matched_keys = []
     for fid in requested:
-        actual_key = records_lookup.get(formids.canonical(fid) or fid)
+        key = formids.display(fid) if formids.looks_like_formid(fid) else fid
+        actual_key = records_lookup.get(key)
         if actual_key is not None:
             out_records[fid] = records[actual_key]
             matched_keys.append(actual_key)
