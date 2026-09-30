@@ -40,7 +40,9 @@ pub struct WriteOptions {
     /// `Lz4` (default) — raw LZ4 block, compatible with FO76.
     /// `Zlib`          — DEFLATE, compatible with FO4 and DX10 texture chunks.
     /// `Store`         — uncompressed.
-    /// `Auto`          — treated as `Store` on write.
+    ///
+    /// Auto-detection is read-only ([`crate::ReadCodec::Auto`]); a write
+    /// always names its codec.
     pub codec: Codec,
     /// Skip compression and store the file raw when the compressed size is
     /// not smaller than `raw_len * min_shrink_ratio` (default `1.0`, meaning
