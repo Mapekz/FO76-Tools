@@ -53,7 +53,7 @@ auto-detected sources aren't what you want.
 If a query has to wait on a cold cache build, it shows live progress on stderr and still returns
 the real result once the cache is ready. Pass the global `--no-wait` flag to instead print the
 in-flight build's status and exit immediately (status 75) — useful for scripts that would rather
-retry later than block.
+retry later than block. Under `esm batch`, such a request gets an `err` line instead.
 
 A bare (no `0x` prefix) FormID token is always read as hex, never decimal — `esm get 00568635`
 means `0x00568635`, not decimal 568635. If that hex reading has no record, resolution falls

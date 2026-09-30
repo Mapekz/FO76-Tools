@@ -458,6 +458,8 @@ enum Commands {
     /// "data": ...}` or `{"status": "err", "error": ...}` line back, in order.
     /// Databases stay open until stdin closes, so a script owning one `esm batch`
     /// child pays each ESM's open cost once.
+    /// With `--no-wait`, a request whose ESM has a cache build running gets
+    /// an `err` line instead of waiting for it.
     Batch,
 }
 
@@ -616,6 +618,32 @@ fn progress_watch_path(esm: &Path) -> PathBuf {
     esm::discover::resolve_esm_path(esm).unwrap_or_else(|_| esm.to_path_buf())
 }
 
+/// The cache build already running for any of `esms`, which `--no-wait`
+/// refuses to wait on. Read purely from the build lock's filesystem state,
+/// before anything opens the database (see `esm::progress`'s module doc).
+fn build_in_progress(esms: &[&Path]) -> Option<esm::progress::BuildProgress> {
+    esms.iter()
+        .find_map(|p| esm::progress::read(&progress_watch_path(p)))
+}
+
+/// One-line description of an in-flight build, for `--no-wait`'s refusal.
+fn build_in_progress_message(progress: &esm::progress::BuildProgress) -> String {
+    format!(
+        "index cache is being built by pid {} ({})",
+        progress.pid,
+        progress_ui::format_stage_summary(progress)
+    )
+}
+
+/// `--no-wait`'s refusal: print the in-flight build and exit with
+/// [`EXIT_BUILD_IN_PROGRESS`].
+fn exit_build_in_progress(progress: &esm::progress::BuildProgress) -> ! {
+    eprintln!("esm: index cache is being built by pid {}", progress.pid);
+    eprintln!("  {}", progress_ui::format_stage_summary(progress));
+    std::io::Write::flush(&mut std::io::stderr()).ok();
+    std::process::exit(EXIT_BUILD_IN_PROGRESS);
+}
+
 #[derive(Clone, Copy)]
 struct DispatchOptions {
     /// From `--decimal` — see `Cli::decimal`'s doc comment.
@@ -675,7 +703,7 @@ fn main() -> anyhow::Result<()> {
     // delegate like every other query command.
     if let Commands::Batch = cli.command {
         esm::progress::delegate_builds(cache::build_in_detached_process);
-        return batch::cmd_batch();
+        return batch::cmd_batch(cli.no_wait);
     }
 
     // `cache status` reads `esm_cache/` and the build lock/heartbeat
@@ -690,6 +718,12 @@ fn main() -> anyhow::Result<()> {
         // itself fails (bad path, ambiguous folder), that's a real error worth
         // surfacing rather than reporting a misleading "empty" status.
         let esm = esm::discover::resolve_esm_path(&esm)?;
+        if cli.no_wait
+            && matches!(action, CacheAction::Build { .. })
+            && let Some(progress) = build_in_progress(&[&esm])
+        {
+            exit_build_in_progress(&progress);
+        }
         return match action {
             CacheAction::Status { json } => cache::cmd_cache_status(&esm, json),
             CacheAction::Build { sections } => cache::cmd_cache_build(&esm, &sections),
@@ -707,18 +741,13 @@ fn main() -> anyhow::Result<()> {
         _ => resolve_esm(esm_opt.clone())?,
     };
 
-    // `--no-wait` is checked purely from the build lock's filesystem state,
-    // before anything opens the database (see `esm::progress`'s module doc).
     if cli.no_wait {
-        let mut watched = vec![progress_watch_path(&esm)];
+        let mut watched = vec![esm.as_path()];
         if let Commands::Diff(args) = &cmd {
-            watched.push(progress_watch_path(&args.file_b));
+            watched.push(&args.file_b);
         }
-        if let Some(progress) = watched.iter().find_map(|p| esm::progress::read(p)) {
-            eprintln!("esm: index cache is being built by pid {}", progress.pid);
-            eprintln!("  {}", progress_ui::format_stage_summary(&progress));
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-            std::process::exit(EXIT_BUILD_IN_PROGRESS);
+        if let Some(progress) = build_in_progress(&watched) {
+            exit_build_in_progress(&progress);
         }
     }
 
