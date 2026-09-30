@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import re
 import sys
@@ -1078,9 +1079,32 @@ def write_outputs(out_dir, result):
     jsonio.write(layout.work_triage_json(out_dir), result["triage"])
 
 
+def inputs_digest(out_dir, tiers_path=DEFAULT_TIERS_PATH):
+    """A digest of every file a triage is computed from (bundles, records,
+    lints, tier rules). `work/triage.json` records it as `inputs`, so a kept
+    triage can be checked against the files as they are now."""
+    digest = hashlib.sha256()
+    paths = (
+        layout.bundles_json(out_dir),
+        layout.comprehensive_json(out_dir),
+        layout.lints_json(out_dir),
+        Path(tiers_path),
+    )
+    for path in paths:
+        digest.update(f"{path.name}\0".encode())
+        if not path.is_file():
+            digest.update(b"missing\0")
+            continue
+        with path.open("rb") as fh:
+            while chunk := fh.read(1 << 20):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
 def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):
     """Fresh rule-only tiering. Returns the same dict `assemble_outputs`
     does; also writes the five `work/` files."""
+    inputs = inputs_digest(out_dir, tiers_path)
     bundles_data = load_bundles(out_dir)
     comp_data = load_comprehensive(out_dir)
     config = load_tiers_config(tiers_path)
@@ -1092,6 +1116,7 @@ def run_triage(out_dir, tiers_path=DEFAULT_TIERS_PATH):
 
     tiers_by_id, rollout_shapes = compute_bundle_tiers(bundles, records, config)
     result = assemble_outputs(bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config)
+    result["triage"]["inputs"] = inputs
     write_outputs(out_dir, result)
     return result
 
@@ -1147,6 +1172,7 @@ def truncated_ids(bundles, records, tiers_by_id, config) -> set[str]:
 def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH):
     """Recompute rule-based tiers, overlay the assessor's resolution for the
     ambiguous set, and re-emit all five `work/` files."""
+    inputs = inputs_digest(out_dir, tiers_path)
     bundles_data = load_bundles(out_dir)
     comp_data = load_comprehensive(out_dir)
     config = load_tiers_config(tiers_path)
@@ -1165,6 +1191,7 @@ def run_merge_assessment(out_dir, assessment_path, tiers_path=DEFAULT_TIERS_PATH
         bundles, records, lints_by_id, tiers_by_id, rollout_shapes, config,
         extra_stats={"resolved_by_assessor": resolved},
     )
+    result["triage"]["inputs"] = inputs
     write_outputs(out_dir, result)
     return result
 

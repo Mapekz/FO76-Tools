@@ -150,6 +150,7 @@ def triage(**tiers: list[str]) -> dict[str, Any]:
         "stats": {},
         "reasons": {},
         "rollout_shapes": [],
+        "inputs": "",
         **tiers,
     }
 

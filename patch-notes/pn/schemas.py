@@ -22,7 +22,7 @@ from typing import Any, Callable, Literal, NotRequired, TypedDict, TypeVar, cast
 from pn import jsonio
 
 #: Bumped whenever any artifact's shape changes.
-PIPELINE_VERSION = 4
+PIPELINE_VERSION = 5
 
 T = TypeVar("T")
 
@@ -363,13 +363,13 @@ def validate_comprehensive_payload(value: object, *, label: str = "comprehensive
 
 
 TIERS: tuple[TierName, ...] = ("rollout", "deep", "brief", "drop", "ambiguous")
-_TRIAGE_KEYS = {*TIERS, "stats", "reasons", "rollout_shapes"}
+_TRIAGE_KEYS = {*TIERS, "stats", "reasons", "rollout_shapes", "inputs"}
 _ROLLOUT_SHAPE_KEYS = set(RolloutShape.__annotations__)
 
 
 def validate_triage(value: object, *, label: str = "triage.json") -> dict[str, Any]:
     """`work/triage.json`: every tier's bundle ids (each bundle in one tier),
-    the reasons, stats and rollout shapes. A missing or misspelled tier is
+    the reasons, stats, rollout shapes and the digest of its inputs. A missing or misspelled tier is
     an error, never an empty tier."""
     root = _require_mapping(value, label)
     _reject_unknown_keys(root, _TRIAGE_KEYS, label)
@@ -386,6 +386,7 @@ def validate_triage(value: object, *, label: str = "triage.json") -> dict[str, A
     _require_mapping(_require_key(root, "stats", label), f"{label}.stats")
     for i, shape in enumerate(_require_list(_require_key(root, "rollout_shapes", label), f"{label}.rollout_shapes")):
         _validate_rollout_shape(shape, f"{label}.rollout_shapes[{i}]")
+    _require_str(_require_key(root, "inputs", label), f"{label}.inputs")
     return root
 
 

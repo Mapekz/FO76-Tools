@@ -193,6 +193,23 @@ class TestPrepareGatePublish(TempDirTestCase):
         self.assertTrue(summary["reused"])
         self.assertTrue(summary["retriaged"])
 
+    def test_a_triage_of_other_lints_is_retriaged(self):
+        self.prepare()
+        lints = jsonio.read(layout.lints_json(self.out))
+        self.assertTrue(lints["lints"], "the fixture needs lints to drop")
+        kept = lints["lints"][:1]
+        jsonio.write(layout.lints_json(self.out), {**lints, "lints": kept})
+        _, summary = self.prepare()
+        assert summary is not None
+        self.assertTrue(summary["reused"])
+        self.assertTrue(summary["retriaged"])
+        sliced = {
+            lint["id"]
+            for bundle in jsonio.read(layout.work_deep_slice_json(self.out))["bundles"]
+            for lint in bundle.get("lints") or []
+        }
+        self.assertLessEqual(sliced, {lint["id"] for lint in kept})
+
     def test_a_malformed_diff_or_lints_is_not_reused(self):
         self.prepare()
         for path_of in (layout.diff_json, layout.lints_json):

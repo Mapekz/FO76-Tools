@@ -174,9 +174,10 @@ def reuse_problem(out_dir: Path, old_esm: Path, new_esm: Path, options: dict) ->
 
 
 def triage_problem(out_dir: Path) -> str | None:
-    """Why the five `work/` triage files aren't a usable triage of
-    `bundles.json` (all present and well-formed, every bundle in exactly one
-    tier); `None` when they are."""
+    """Why the five `work/` triage files aren't a usable triage of the
+    current mechanical output (all present and well-formed, made from the
+    bundles, records, lints and tier rules as they are now, every bundle in
+    exactly one tier); `None` when they are."""
     if not layout.work_triage_json(out_dir).is_file():
         return "no triage yet"
     for path_of in (layout.work_ambiguous_json, layout.work_brief_lines_md, layout.work_rollouts_md):
@@ -191,6 +192,8 @@ def triage_problem(out_dir: Path) -> str | None:
         bundles = jsonio.read(layout.bundles_json(out_dir))["bundles"]
     except (OSError, ValueError, TypeError, KeyError) as exc:
         return f"malformed: {exc}"
+    if triage["inputs"] != triage_bundles.inputs_digest(out_dir):
+        return "it was made from other bundles, records, lints or tier rules"
     tiered = {bid for tier in schemas.TIERS for bid in triage[tier]}
     if tiered != {b["id"] for b in bundles}:
         return "its tiers don't cover exactly the bundles"
