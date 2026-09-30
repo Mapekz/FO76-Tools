@@ -755,12 +755,22 @@ pub(crate) fn array_diff(a: &[Value], b: &[Value]) -> Value {
 }
 
 /// Array fields whose element order carries meaning even when no element
-/// changed: a region area's boundary polygon (`Points`), navmesh vertices
-/// (`Vertices`, which triangles address by position), and an
-/// instance-naming ruleset's `Names` (the first match wins). A reorder of
-/// one stays a plain change, never `reorder_only`; [`super::json_diff`]
-/// clears the mark by field name, since [`array_diff`] sees only elements.
-pub(crate) const ORDER_SIGNIFICANT_FIELDS: &[&str] = &["Points", "Vertices", "Names"];
+/// changed: a region area's boundary polygon (`Points`), the navmesh arrays
+/// other elements address by position (`Vertices` from triangles and
+/// covers, `Triangles` from triangle edges and door/edge/cover links,
+/// `Edge Links` from triangle edges, `Cover Array` from cover-triangle
+/// mappings), and an instance-naming ruleset's `Names` (the first match
+/// wins). A reorder of one stays a plain change, never `reorder_only`;
+/// [`super::json_diff`] clears the mark by field name, since
+/// [`array_diff`] sees only elements.
+pub(crate) const ORDER_SIGNIFICANT_FIELDS: &[&str] = &[
+    "Points",
+    "Vertices",
+    "Triangles",
+    "Edge Links",
+    "Cover Array",
+    "Names",
+];
 
 /// Whether the array at `key` of `parent` is a Papyrus array: the `value`
 /// of a script property or struct member (`{"name", "type", "value"}`, the
@@ -977,6 +987,23 @@ mod tests {
         let diff = super::super::json_diff(&a, &b);
         assert!(diff["Region Areas"].get("_array_diff").is_some());
         assert!(!reorder_only(&diff["Region Areas"]));
+    }
+
+    #[test]
+    fn swapped_navmesh_triangles_are_a_real_change() {
+        let triangle = |v: i64| json!({"Vertex 0": v, "Vertex 1": v + 1, "Vertex 2": v + 2});
+        let geometry = |tris: Vec<Value>| {
+            json!({"Navmesh Geometry": {
+                "Triangles": tris,
+                "Door Links": [{"Triangle": 0, "Door Ref": "0x00000123"}],
+            }})
+        };
+        let a = geometry(vec![triangle(0), triangle(3)]);
+        let b = geometry(vec![triangle(3), triangle(0)]);
+        let diff = super::super::json_diff(&a, &b);
+        let triangles = &diff["Navmesh Geometry"]["Triangles"];
+        assert!(triangles.get("_array_diff").is_some());
+        assert!(!reorder_only(triangles));
     }
 
     /// A Papyrus property's value `[{name,type,value}]`, as the VMAD decoder
