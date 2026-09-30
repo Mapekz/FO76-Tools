@@ -432,12 +432,14 @@ enum Commands {
         /// Write the skill into a repo instead of printing it.
         #[arg(long)]
         install: bool,
-        /// Agents to install for, comma-separated: `codex` writes
-        /// `.agents/skills/esm-cli/SKILL.md`, `claude` writes
-        /// `.claude/skills/esm-cli/SKILL.md`. Defaults to `codex`.
+        /// Skill directories to install into, comma-separated: `agents`
+        /// writes the cross-agent `.agents/skills/esm-cli/SKILL.md` (Codex,
+        /// Gemini CLI, Copilot, Cursor, ...), `claude` writes Claude Code's
+        /// `.claude/skills/esm-cli/SKILL.md`. Defaults to `agents`.
         #[arg(long, value_enum, value_delimiter = ',', requires = "install")]
         target: Vec<skill::SkillTarget>,
-        /// Repo root to install into (defaults to the current directory).
+        /// Repo root to install into (defaults to the current directory);
+        /// `--dir ~` installs for the user instead of one repo.
         #[arg(long, requires = "install")]
         dir: Option<PathBuf>,
         /// Overwrite existing installed copies.

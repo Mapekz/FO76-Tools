@@ -9,30 +9,32 @@ use std::path::{Path, PathBuf};
 /// consumer repo for its agents to auto-discover.
 const SKILL_MD: &str = include_str!("../../../skills/esm-cli/SKILL.md");
 
-/// An agent whose skill directory `esm skill --install` can write to. Each
-/// gets its own copy: a downstream tree isn't ours to symlink into, and Codex
-/// skips a symlinked `SKILL.md`.
+/// A skill directory `esm skill --install` can write to: `agents` is the
+/// cross-agent `.agents/skills/` (Codex, Gemini CLI, Copilot, Cursor and
+/// others read it), `claude` is Claude Code's `.claude/skills/`, which it
+/// alone reads. Each gets its own copy: a downstream tree isn't ours to
+/// symlink into, and Codex skips a symlinked `SKILL.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum SkillTarget {
-    Codex,
+    Agents,
     Claude,
 }
 
 impl SkillTarget {
     fn dest(self, dir: &Path) -> PathBuf {
         let skills = match self {
-            SkillTarget::Codex => ".agents/skills",
+            SkillTarget::Agents => ".agents/skills",
             SkillTarget::Claude => ".claude/skills",
         };
         dir.join(skills).join("esm-cli/SKILL.md")
     }
 }
 
-/// Every destination `targets` names under `dir` (`codex` when none are
-/// given), deduplicated in the order given.
+/// Every destination `targets` names under `dir` (`agents` when none
+/// are given), deduplicated in the order given.
 fn destinations(targets: &[SkillTarget], dir: &Path) -> Vec<PathBuf> {
     let targets = if targets.is_empty() {
-        &[SkillTarget::Codex][..]
+        &[SkillTarget::Agents][..]
     } else {
         targets
     };
@@ -107,7 +109,7 @@ mod tests {
     fn each_target_has_its_own_destination() {
         let dir = Path::new("/repo");
         assert_eq!(
-            destinations(&[SkillTarget::Codex], dir),
+            destinations(&[SkillTarget::Agents], dir),
             [PathBuf::from("/repo/.agents/skills/esm-cli/SKILL.md")]
         );
         assert_eq!(
@@ -117,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn default_target_is_codex() {
+    fn default_target_is_agents() {
         assert_eq!(
             destinations(&[], Path::new(".")),
             [PathBuf::from("./.agents/skills/esm-cli/SKILL.md")]
@@ -127,8 +129,8 @@ mod tests {
     #[test]
     fn target_takes_a_comma_separated_list_and_rejects_unknown_names() {
         assert_eq!(
-            parse_targets(&["--install", "--target", "claude,codex"]).unwrap(),
-            [SkillTarget::Claude, SkillTarget::Codex]
+            parse_targets(&["--install", "--target", "claude,agents"]).unwrap(),
+            [SkillTarget::Claude, SkillTarget::Agents]
         );
         assert!(parse_targets(&["--install", "--target", "cursor"]).is_err());
     }
@@ -140,7 +142,7 @@ mod tests {
 
     #[test]
     fn preflight_checks_every_destination_before_writing() {
-        let dests = destinations(&[SkillTarget::Codex, SkillTarget::Claude], Path::new("/r"));
+        let dests = destinations(&[SkillTarget::Agents, SkillTarget::Claude], Path::new("/r"));
         let claude_exists = |p: &Path| p.to_string_lossy().contains(".claude");
         let err = preflight(&dests, false, claude_exists)
             .unwrap_err()

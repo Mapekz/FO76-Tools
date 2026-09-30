@@ -86,7 +86,7 @@ esm [--esm <ESM-or-folder>] <subcommand> [options] [...]
 | `cache status [--json]` | Inspect the on-disk cache without opening the ESM: each section built, missing, or (`lstrings`/`curves`, JSON `null`) with no source beside the ESM |
 | `cache build [--section S]`, `cache clear` | Build cache sections now (a wanted section that can't be built fails the command), or delete them all |
 | `batch` | Answer one JSON `{"esm", "op"}` request per stdin line, keeping databases open (for scripts) |
-| `skill [--install [--target codex,claude]]` | Print the agent usage-knowledge doc, or install it into another repo's `.agents/skills/` (default) and/or `.claude/skills/` |
+| `skill [--install [--target agents,claude]]` | Print the agent usage-knowledge doc, or install it into another repo's cross-agent `.agents/skills/` (default) and/or Claude Code's `.claude/skills/` |
 
 A bare positional `<target>` auto-detects FormID (`0x`-prefixed or bare hex — see `--decimal`
 above for the decimal reading) vs EditorID; explicit `--formid`/`--edid` skip the ambiguity.
