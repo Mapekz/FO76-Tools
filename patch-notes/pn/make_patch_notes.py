@@ -78,6 +78,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -220,6 +221,16 @@ def source_args(args: argparse.Namespace) -> list[str]:
     return out
 
 
+def source_identity(args: argparse.Namespace) -> str:
+    """The explicit sources as the manifest records them: a digest of
+    `source_args`, so a run is reusable only for the same sources without
+    their absolute paths landing in `$OUT`. Empty when esm discovers them."""
+    sources = source_args(args)
+    if not sources:
+        return ""
+    return hashlib.sha256("\0".join(sources).encode()).hexdigest()[:16]
+
+
 def output_options(args: argparse.Namespace) -> dict:
     """The options that shape the mechanical stage's output, as its manifest
     records them: a run is reusable only for the same ones."""
@@ -230,7 +241,7 @@ def output_options(args: argparse.Namespace) -> dict:
         "exclude_type": (args.exclude_type or "").strip(),
         "refs_depth": args.refs_depth,
         "lang": args.lang,
-        "sources": source_args(args),
+        "sources": source_identity(args),
     }
 
 

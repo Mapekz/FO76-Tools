@@ -120,6 +120,16 @@ class TestSourceArgs(unittest.TestCase):
              "--strings-dir-b", "/new/strings", "--curves-dir", "/misc"],
         )
 
+    def test_manifest_options_carry_a_digest_not_source_paths(self):
+        args = self._args("--strings-dir", "/private-root/strings")
+        sources = mpn.output_options(args)["sources"]
+        self.assertNotIn("private-root", sources)
+        self.assertRegex(sources, r"^[0-9a-f]{16}$")
+        self.assertEqual(sources, mpn.output_options(args)["sources"])
+        other = self._args("--strings-dir", "/other-root/strings")
+        self.assertNotEqual(sources, mpn.output_options(other)["sources"])
+        self.assertEqual(mpn.output_options(self._args())["sources"], "")
+
 
 # ---------------------------------------------------------------------------
 # Unit: esm-diff command construction (--exclude-type default/disable, etc.)
