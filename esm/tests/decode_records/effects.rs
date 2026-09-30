@@ -316,6 +316,64 @@ fn spel_ab_nemesis_rank00_decodes_correctly() {
     );
 }
 
+/// SPEL 0x0092D8CA — `WorldPets_WellRested` — decodes its Form Tags fully.
+///
+/// Build 20260928 (form_version 211) adds FTAG to 21 record types xEdit gives
+/// no Form Tags; a schema override inserts it after DEFL, just before FULL.
+/// Without it the FTAG lands in `_unmapped`.
+///
+/// Verbatim subrecords from `esm get <esm> 0x0092D8CA --raw`.
+#[test]
+fn spel_world_pets_well_rested_decodes_form_tags() {
+    let result = decode_fixture(
+        "SPEL",
+        211,
+        &[
+            ("EDID", "576f726c64506574735f57656c6c52657374656400"),
+            ("OBND", "000000000000000000000000"),
+            ("FTAG", "576f726c645065747300"),
+            ("FULL", "3c49443d36313032423645383e5065742052657374656400"),
+            ("KSIZ", "01000000"),
+            ("KWDA", "c9d89200"),
+            ("MDOB", "a2321100"),
+            ("ETYP", "443f0100"),
+            (
+                "DESC",
+                "3c49443d36313032423546413e5370656c6c20746f206170706c79207468652057656c6c\
+                 2052657374656420627566662028757365642070726f6772616d6d61746963616c6c7929\
+                 2e0d0a0d0a4761696e206d6f726520576f726c642050657420455850207768696c652074\
+                 6865206275666620697320616374697665\
+                 2e00",
+            ),
+            (
+                "SPIT",
+                "000000000000000000000000000000000000000000000000000000000000000000000000",
+            ),
+            ("EFID", "c8d89200"),
+            ("EFIT", "03000000000010410000000040380000"),
+            ("MAGF", "00000000"),
+            ("CODV", "00000000"),
+            ("MIID", "03000000"),
+        ],
+    );
+
+    assert_record_type(&result, "Spell");
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Form Tags"),
+        Some(&serde_json::json!([{"Form Tag": "WorldPets"}])),
+        "Form Tags"
+    );
+    assert_eq!(
+        result
+            .pointer("/Keywords/Keywords/0")
+            .and_then(|v| v.as_str()),
+        Some("0x0092D8C9"),
+        "first keyword FormID"
+    );
+}
+
 /// EXPL 0x000001F5 — `ExplosionDefaultWater` — decodes to Explosion fully.
 ///
 /// Six subrecords: EDID, OBND, DESC, MODL, MODT, DATA (92 bytes).  Exercises

@@ -87,6 +87,7 @@ Drift subrecords newer than the TES5Edit reference are handled as follows:
 
 - **LVLI/LVLN/LVPC/LVLP `LVLD`**, **RESO `NAM5`**, **NPC_ `AWPB`+`CTDA`**, **GMRW `XALG`**, **STAT `SNAM`+`ANLD`**, **REFR `MCND`**, **COEN `ETGR`**, **COBJ `ENAM`** — mapped in `schema/fo76.overrides.json` (GMRW XALG expands from `$pascal_var: wbXALG`, u64 legendary flags; REFR MCND is an rarray-of-unknown, in no TES5Edit definition at all).
 - **QUST objective `QOST`**, **REGN weather-entry `RDWC`** — nested drift, inserted beside an existing member by an `insert_after` override.
+- **`FTAG` Form Tags on ALCH AVIF AVTR BPTD CLAS CMPT CNDF CURV DFOB EMOT FACT FLST MESG MGEF MISC PERK PLYT SPEL TRNS WEAP** — one top-level `insert_after` per type expanding `$pascal_var: wbFTAGs`, placed just before `FULL` (after `EDID` on types without it), where xEdit puts it on the 23 types it declares; PGTR carries it inside its whole-record `replace` node.
 - **PKIN Child Pack-In** — the game repeats the `HNAM`+`INAM` pair `GNAM` times; xEdit models a single pair, so a `replace` override turns it into an rarray.
 - **CTDA function table** — generated to `schema/fo76.ctda.json` from Pascal; loaded at runtime in `src/ctda.rs`.
 - **EFIT**, **Model Information**, **CTDA** — schema kinds (`struct` / `model_info` / `ctda`); no magic-string dispatch in `src/decode/mod.rs`.

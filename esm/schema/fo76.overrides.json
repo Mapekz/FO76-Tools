@@ -2,6 +2,39 @@
   "_comment": "Hand-authored schema fixes applied, in order, over the extractor's output: each entry names a record, an op (replace, insert_after, append), a path of member sigs/names ('element' enters an array element; [] is the record itself), the node (a list inserts or appends several), and the reason xEdit's definition doesn't match the game data. The parity audit applies the same entries, so every divergence from xEdit is one of these.",
   "overrides": [
     {
+      "record": "ALCH",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not ALCH. Observed order EDID OBND PTRN FTAG FULL, e.g. WorldPetLevellingPotion_25 0x0094A64E = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "AVIF",
+      "op": "insert_after",
+      "path": [
+        "DURL"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not AVIF. Observed order EDID [DURL] FTAG DESC/FULL, e.g. WorldPetXpGainMult 0x000003A2 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "AVTR",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not AVTR. Observed order EDID FTAG FULL, e.g. WorldPets_AVTR_PlayerIcon_Deathclaw01 0x008B5340 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
       "record": "BOOK",
       "op": "insert_after",
       "path": [
@@ -15,6 +48,50 @@
         "width": "u8",
         "signed": false,
         "from_version": 210
+      }
+    },
+    {
+      "record": "BPTD",
+      "op": "insert_after",
+      "path": [
+        "EDID"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not BPTD. Observed order EDID FTAG MODL, e.g. CatWorldPetBodyPartData 0x008F8391 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "CLAS",
+      "op": "insert_after",
+      "path": [
+        "EDID"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not CLAS. Observed order EDID FTAG FULL, e.g. WorldPetsClass 0x008DA564 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "CMPT",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not CMPT. Observed order EDID FTAG ANAM, e.g. WorldPets_CampTitles_Prefix_LifetimeChallenge_Radhog01 0x008B5349 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "CNDF",
+      "op": "insert_after",
+      "path": [
+        "EDID"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not CNDF. Observed order EDID FTAG CTDA, e.g. WorldPets_Challenge_Deathclaw_Condition_Lifetime_InfestationKills03 0x008B5357 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
       }
     },
     {
@@ -61,6 +138,39 @@
       }
     },
     {
+      "record": "CURV",
+      "op": "insert_after",
+      "path": [
+        "EDID"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not CURV. Observed order EDID FTAG JASF, e.g. CT_WorldPets_PetProwess_Resist_Cryo0 0x008F0EA2 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "DFOB",
+      "op": "insert_after",
+      "path": [
+        "EDID"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not DFOB. Observed order EDID FTAG DATA, e.g. WorldPetsWoundedPetEmote_DO 0x00950952 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "EMOT",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not EMOT. Observed order EDID OBND FTAG FULL, e.g. WorldPets_Emote_Down 0x00950953 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
       "record": "ENCH",
       "op": "append",
       "path": [],
@@ -90,6 +200,28 @@
             "sig": "KWDA"
           }
         ]
+      }
+    },
+    {
+      "record": "FACT",
+      "op": "insert_after",
+      "path": [
+        "EDID"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not FACT. Observed order EDID FTAG XNAM, e.g. WorldPetFaction 0x008B092F = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "FLST",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not FLST. Observed order EDID FTAG LNAM, e.g. WorldPets_CatBuffList 0x0093BD17 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
       }
     },
     {
@@ -204,6 +336,39 @@
             "True"
           ]
         }
+      }
+    },
+    {
+      "record": "MESG",
+      "op": "insert_after",
+      "path": [
+        "EDID"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not MESG. Observed order EDID FTAG DESC, e.g. WorldPets_PetConsumableGiftPlayerMessage 0x008B4292 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "MGEF",
+      "op": "insert_after",
+      "path": [
+        "VMAD"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not MGEF. Observed order EDID [VMAD] FTAG FULL, e.g. WorldPets_Dog_ConsumableBuff02 0x0094B0D6 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
+      "record": "MISC",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not MISC. Observed order EDID OBND PTRN FTAG FULL, e.g. BoS_SteelReignFlair_WorldPets_DCFlair_MiscFlair 0x008B5091 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
       }
     },
     {
@@ -1209,10 +1374,21 @@
       }
     },
     {
+      "record": "PERK",
+      "op": "insert_after",
+      "path": [
+        "VMAD"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not PERK. Observed order EDID FTAG FULL/DESC, e.g. WorldPets_ResistantToPoison 0x008F2113 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
       "record": "PGTR",
       "op": "replace",
       "path": [],
-      "reason": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed.",
+      "reason": "PGTR \u2014 whole-record override: no TES5Edit definition exists (every wbDefinitions*.pas in the pinned checkout and its full history; EcksEdit 4.1.6.18 still crashes on PGTR per fwdekker/fo76-dumps). Shape read off the 4 WorldPets_ProgressionTrack_* records in 20260903 (581 subrecords each: 30 entries, 32 rewards). Field names come from the game's own UI model in interface/petprogressiontrackmenu.swf (Shared/ProgressionNode.as, PetProgressionTrackMenu.as); members that model doesn't name stay 'Unknown' with the observed constant recorded, not guessed. Form Tags (FTAG 'WorldPets') follows EDID from 20260928 (fv 211).",
       "node": {
         "name": "Progression Track",
         "members": [
@@ -1221,6 +1397,15 @@
             "name": "Editor ID",
             "sized": 0,
             "sig": "EDID"
+          },
+          {
+            "kind": "rarray",
+            "name": "Form Tags",
+            "element": {
+              "kind": "string",
+              "name": "Form Tag",
+              "sig": "FTAG"
+            }
           },
           {
             "kind": "lstring",
@@ -1489,6 +1674,17 @@
       }
     },
     {
+      "record": "PLYT",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not PLYT. Observed order EDID FTAG ANAM, e.g. WorldPets_PlayerTitles_Suffix_Deathclaw02 0x008C90D6 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
       "record": "QUST",
       "op": "replace",
       "path": [
@@ -1648,6 +1844,17 @@
       }
     },
     {
+      "record": "SPEL",
+      "op": "insert_after",
+      "path": [
+        "DEFL"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not SPEL. Observed order EDID OBND FTAG FULL, e.g. WorldPets_CatBuff_CarryCapacity 0x0093BD1B = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
+      }
+    },
+    {
       "record": "STAT",
       "op": "append",
       "path": [],
@@ -1670,6 +1877,17 @@
         "kind": "unknown",
         "sig": "ANLD",
         "name": "Unknown"
+      }
+    },
+    {
+      "record": "TRNS",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not TRNS. Observed order EDID FTAG DATA, e.g. WorldPets_Cat_Transform 0x008F6124 = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
       }
     },
     {
@@ -1697,6 +1915,17 @@
         "width": "u16",
         "signed": false,
         "sig": "EAMT"
+      }
+    },
+    {
+      "record": "WEAP",
+      "op": "insert_after",
+      "path": [
+        "XALG"
+      ],
+      "reason": "FTAG Form Tags \u2014 live-game drift, 20260928 (fv 211); xEdit declares wbFTAGs on 23 types, not WEAP. Observed order EDID OBND FTAG FULL, e.g. crUnarmedWorldPet_Cat 0x008E529C = 'WorldPets'.",
+      "node": {
+        "$pascal_var": "wbFTAGs"
       }
     },
     {

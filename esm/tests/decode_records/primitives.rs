@@ -1,4 +1,4 @@
-//! Scalar and list records: GLOB, KYWD, FLST, AVIF.
+//! Scalar and list records: GLOB, KYWD, FLST, AVIF, CURV.
 //!
 //! See [`super`] for the fixture conventions shared by every module here.
 
@@ -316,3 +316,42 @@ fn avif_strength_decodes_correctly() {
 //
 // All clean-type tests (assert_fully_decoded) lock the no-marker status.
 // ════════════════════════════════════════════════════════════════════════════
+
+/// CURV 0x008F0EA2 — `CT_WorldPets_PetProwess_Resist_Cryo0` — decodes its
+/// Form Tags fully.
+///
+/// FTAG (form_version 211) follows EDID here; the schema override anchors it
+/// on EDID for types without FULL. JASF after it must still bind.
+///
+/// Verbatim subrecords from `esm get <esm> 0x008F0EA2 --raw`.
+#[test]
+fn curv_world_pets_resist_cryo0_decodes_form_tags() {
+    let result = decode_fixture(
+        "CURV",
+        211,
+        &[
+            (
+                "EDID",
+                "43545f576f726c64506574735f50657450726f776573735f5265736973745f4372796f3000",
+            ),
+            ("FTAG", "576f726c645065747300"),
+            (
+                "JASF",
+                "576f726c64506574735c576f726c64506574735f5265736973745f4372796f302e6a736f6e00",
+            ),
+        ],
+    );
+
+    assert_fully_decoded(&result);
+
+    assert_eq!(
+        result.get("Form Tags"),
+        Some(&serde_json::json!([{"Form Tag": "WorldPets"}])),
+        "Form Tags"
+    );
+    assert_eq!(
+        result.get("JSON File Path 2").and_then(|v| v.as_str()),
+        Some("WorldPets\\WorldPets_Resist_Cryo0.json"),
+        "JSON File Path 2"
+    );
+}

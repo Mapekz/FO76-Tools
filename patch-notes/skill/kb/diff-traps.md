@@ -64,13 +64,16 @@ delta with `Parameter #1` and `Comparison Value` unchanged is no change.
 
 ## `FTAG` Form Tags are labels, not changes
 
-`FTAG` is a string list (hex `576f726c645065747300` = "WorldPets"). It decodes as `Form Tags` on
-record types whose schema has it and as `_unmapped` elsewhere (PERK/SPEL/MGEF/AVIF/CNDF/…); a tag
-appearing alone carries no gameplay. On pet ARMO/OMOD/COBJ/MISC it arrived with a `Flags` Premium
-(0x100) removal, which is real.
+`FTAG` is a string list (hex `576f726c645065747300` = "WorldPets") that decodes as `Form Tags` on
+every record type that carries it. A tag appearing alone carries no gameplay. The diff strips it
+as a materialized default (`auto_suppressed_defaults` in `diff.json`) only on records whose form
+version changed; on the rest a `Form Tags` row survives and is still just a label. On pet
+ARMO/OMOD/COBJ/MISC it arrived with a `Flags` Premium (0x100) removal, which is real.
 
-**Example:** 20260928, ~190 World Pets records, e.g. SPEL `WorldPets_WellRested` 0x0092D8CA.
-*verified 2026-09-28 vs 20260928*
+**Example:** 20260918→20260928, `auto_suppressed_defaults` counts 648 `[WorldPets]` appearances,
+yet 83 changed records keep a `Form Tags` row (36 with nothing else), e.g. RACE
+`CAMPPets_Cat_TabbyRace` 0x0077D824.
+*verified 2026-09-29 vs 20260928*
 
 ## REGN `Region Areas` point lists re-serialize reversed or rotated
 

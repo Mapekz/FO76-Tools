@@ -3876,6 +3876,15 @@
           }
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
@@ -9302,6 +9311,15 @@
           "sig": "DURL"
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
@@ -9490,6 +9508,15 @@
               "Unknown 31",
               "Unknown 32"
             ]
+          }
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
           }
         },
         {
@@ -10614,6 +10641,15 @@
           "name": "Editor ID",
           "sig": "EDID",
           "sized": 0
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
         },
         {
           "kind": "rstruct",
@@ -13213,6 +13249,15 @@
           "sized": 0
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
@@ -13873,6 +13918,15 @@
           }
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "ANAM",
           "name": "Title"
@@ -14309,6 +14363,15 @@
           "name": "Editor ID",
           "sig": "EDID",
           "sized": 0
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
         },
         {
           "kind": "rstruct",
@@ -16842,6 +16905,15 @@
           "sized": 0
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "string",
           "name": "JSON File Path",
           "sig": "CRVE"
@@ -16955,6 +17027,15 @@
           "name": "Editor ID",
           "sig": "EDID",
           "sized": 0
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
         },
         {
           "kind": "formid",
@@ -19174,6 +19255,15 @@
           }
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
@@ -20548,6 +20638,15 @@
           "name": "Editor ID",
           "sig": "EDID",
           "sized": 0
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
         },
         {
           "kind": "lstring",
@@ -22636,6 +22735,15 @@
               "Unknown 31",
               "Unknown 32"
             ]
+          }
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
           }
         },
         {
@@ -39750,6 +39858,15 @@
           "sized": 0
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "DESC",
           "name": "Description"
@@ -39954,6 +40071,15 @@
           "kind": "vmad",
           "sig": "VMAD",
           "name": "Virtual Machine Adapter"
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
         },
         {
           "kind": "lstring",
@@ -41027,6 +41153,15 @@
               "Unknown 31",
               "Unknown 32"
             ]
+          }
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
           }
         },
         {
@@ -51018,6 +51153,15 @@
           "fragments": "perk"
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
@@ -54427,6 +54571,15 @@
               "Unknown 31",
               "Unknown 32"
             ]
+          }
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
           }
         },
         {
@@ -73666,6 +73819,15 @@
           "sig": "DEFL"
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "lstring",
           "sig": "FULL",
           "name": "Name"
@@ -80898,6 +81060,15 @@
           }
         },
         {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
+        },
+        {
           "kind": "struct",
           "name": "Data",
           "fields": [
@@ -82576,6 +82747,15 @@
               "Unknown 31",
               "Unknown 32"
             ]
+          }
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
           }
         },
         {
@@ -86781,6 +86961,15 @@
           "name": "Editor ID",
           "sized": 0,
           "sig": "EDID"
+        },
+        {
+          "kind": "rarray",
+          "name": "Form Tags",
+          "element": {
+            "kind": "string",
+            "name": "Form Tag",
+            "sig": "FTAG"
+          }
         },
         {
           "kind": "lstring",
