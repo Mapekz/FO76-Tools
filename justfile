@@ -29,3 +29,14 @@ policy:
 # hardcoded-forms drift guards.
 [doc("esm's schema parity audit and drift guards (needs ./TES5Edit)")]
 audit: esm::audit
+
+# Local Linux guard for heavy commands; the existing CI recipes stay portable.
+[doc("Cap a heavy command: just heavy cargo just esm::check, or just heavy esm esm diff ...")]
+[positional-arguments]
+heavy profile +command:
+    #!/usr/bin/env bash
+    exec "{{justfile_directory()}}/tools/run-heavy.sh" "$@"
+
+[doc("Test the Linux resource guard with real user scopes, without game data")]
+heavy-test:
+    python3 -m unittest discover -s tools/tests -v

@@ -49,6 +49,17 @@ rather than rerunning every subproject for unrelated edits.
 - Game-data integration tests skip when their environment variables are unset.
   Report that coverage gap; a passing synthetic suite does not validate real data.
 
+## Heavy local commands
+
+Use `just heavy cargo just esm::check` for heavy Rust checks or builds and
+`just heavy esm esm <args>` for heavy ESM operations. The Linux launcher in
+[tools/run-heavy.sh](tools/run-heavy.sh) caps the entire command tree at 10G for
+cargo or 5G for ESM, disables swap, rejects overlapping heavy runs across
+worktrees, and stores temporary files and full logs on disk. It fails closed
+when the guard is unavailable. See [the operating procedure](docs/agents/heavy-commands.md)
+for scratch configuration, failure output and cancellation. Existing CI recipes
+run unchanged on their isolated runners.
+
 ## Dependencies
 
 The workspace's one `Cargo.lock` is checked against root `deny.toml` by the `deps` CI
