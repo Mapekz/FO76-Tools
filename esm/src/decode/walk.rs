@@ -285,6 +285,8 @@ pub(super) fn decode_array_payloads(
     // variable-size element arrays are unaffected.
     let elem_size = field_byte_size(ctx, element);
     let mut items: Vec<Node> = Vec::new();
+    // Bytes short of a whole element, kept as raw rather than dropped.
+    let mut partial: Vec<Node> = Vec::new();
     for sr in run {
         match elem_size {
             Some(sz) if sz > 0 && sr.data.len() > sz => {
@@ -292,6 +294,12 @@ pub(super) fn decode_array_payloads(
                 while pos + sz <= sr.data.len() {
                     items.push(decode_field_value(ctx, element, &sr.data[pos..pos + sz]));
                     pos += sz;
+                }
+                if pos < sr.data.len() {
+                    partial.push(Node::raw(
+                        Some(&sr.data[pos..]),
+                        RawReason::Malformed("partial array element".into()),
+                    ));
                 }
             }
             None if matches!(element, MemberDef::Struct { .. }) => {
@@ -334,6 +342,7 @@ pub(super) fn decode_array_payloads(
     if let Some(ArrayCount::Fixed(n)) = count {
         items.truncate(*n);
     }
+    items.extend(partial);
     if !items.is_empty() {
         out.insert(name.to_owned(), Node::Array(items));
     }
@@ -1699,6 +1708,30 @@ mod tests {
         let (out, unbound) = bind(&ctx, members, &subrecords);
         assert!(unbound.is_empty(), "{unbound:?}");
         assert_eq!(out["Keywords"], json!([1, 2, 3]));
+    }
+
+    /// A packed array subrecord that isn't a whole number of elements keeps
+    /// its leftover bytes as a malformed raw element instead of dropping
+    /// them.
+    #[test]
+    fn packed_array_keeps_a_partial_element_as_raw() {
+        let schema = empty_schema();
+        let ctx = bare_ctx(&schema);
+        let slots = MemberDef::Array {
+            from_version: None,
+            below_version: None,
+            sig: Some("RBPI".into()),
+            name: "Slots".into(),
+            element: Box::new(int_field("Slot", IntegerWidth::U32)),
+            count: None,
+        };
+        let mut data: Vec<u8> = [1u32, 2].iter().flat_map(|v| v.to_le_bytes()).collect();
+        data.push(0xAA);
+        let (out, _) = bind(&ctx, vec![slots], &[subrecord("RBPI", data, 0)]);
+        assert_eq!(
+            out["Slots"],
+            json!([1, 2, {"hex": "aa", "_raw": true, "reason": "partial array element"}])
+        );
     }
 
     fn struct_member(sig: &str, name: &str, fields: Vec<MemberDef>) -> MemberDef {
